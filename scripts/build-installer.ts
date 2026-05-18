@@ -32,7 +32,7 @@
  *   tools handle native addons via fragile runtime extraction.
  */
 
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import fs from 'node:fs';
@@ -130,10 +130,16 @@ async function main() {
   // walk-up — each package is a real directory under
   // node_modules/@mcp-midi-control/, no symlinks needed.
   console.log('[build] Staging artifacts');
+  // Keep in sync with `workspaces` in root package.json. Adding a new
+  // workspace package and forgetting it here ships a bundle that boots
+  // partially — server-all imports the missing package via dynamic
+  // device-registry registration and dies with ERR_MODULE_NOT_FOUND on
+  // first launch.
   const WORKSPACE_PACKAGES = [
     'core',
     'am4',
     'axe-fx-ii',
+    'axe-fx-iii',
     'hydrasynth-explorer',
     'server-all',
   ] as const;
@@ -146,7 +152,11 @@ async function main() {
   const devPkg = JSON.parse(
     fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'),
   ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
-  const leafDeps = ['@modelcontextprotocol/sdk', 'midi', 'zod'] as const;
+  // `fractal-midi` was added in the Phase B extraction (2026-05-18) — each
+  // workspace package now imports the Fractal codec from this published npm
+  // package. The bundle must install it at the root so runtime walk-up
+  // resolution from `node_modules/@mcp-midi-control/*/dist/*.js` finds it.
+  const leafDeps = ['@modelcontextprotocol/sdk', 'fractal-midi', 'midi', 'zod'] as const;
   const leanDeps: Record<string, string> = {};
   for (const d of leafDeps) {
     const v = devPkg.devDependencies?.[d] ?? devPkg.dependencies?.[d];
@@ -270,12 +280,79 @@ async function main() {
     );
   }
 
-  // Note: skipping a deeper import-resolution smoke test here because the
-  // server reads stdio for MCP and shouldn't be spawned headless without
-  // a transport peer. The `npm run preflight` smoke-server step already
-  // exercises the same dist/ entry against a real MCP handshake, so any
-  // import-resolution regression would have been caught before this
-  // script runs.
+  // Smoke-boot the bundled server with the bundled node.exe to catch
+  // import-resolution regressions BEFORE producing the ZIP. The dev-tree
+  // `npm run preflight` smoke-server step doesn't catch these because it
+  // resolves through the workspace's hoisted node_modules — the bundle
+  // has its own, narrower node_modules built from the lean root pkg +
+  // copied workspace dirs, and missing deps there only surface at bundle
+  // boot. Two real regressions caught here on the Phase-B release path
+  // (2026-05-18):
+  //   1. `fractal-midi` missing from `leafDeps` → ERR_MODULE_NOT_FOUND
+  //      on the first codec import inside any workspace package.
+  //   2. `axe-fx-iii` missing from `WORKSPACE_PACKAGES` → server-all
+  //      can't load the III device adapter.
+  // Pipe empty stdin so the JSON-RPC reader settles into wait-mode
+  // instead of hanging on no-tty stdin. 5s is plenty for the device-
+  // registry to finish; if it hasn't booted by then there's a fatal.
+  // The MCP server reads JSON-RPC frames from stdin and prints
+  // diagnostics to stderr (stdout is the JSON-RPC channel). Passing
+  // empty stdin → it reads EOF and exits cleanly with status 0 within
+  // milliseconds. The timeout is a safety net for two real failure
+  // modes:
+  //   (a) startup deadlock in some imported module
+  //   (b) Windows Defender real-time scan still indexing the freshly-
+  //       written node_modules/ tree — observed during the Phase-B
+  //       installer fix run (2026-05-18) when smoke-boot ran moments
+  //       after `npm install --omit=dev` populated staging. 15s
+  //       absorbs typical AV scan latency without flapping CI.
+  console.log('[build] Smoke-booting bundled server (15s timeout)');
+  const smokeResult = spawnSync(stagedNodeExe, [stagedEntry], {
+    input: '',
+    timeout: 15_000,
+    encoding: 'utf8',
+  });
+  console.log(
+    `[build]   smoke result: status=${smokeResult.status} signal=${smokeResult.signal} ` +
+    `stderrBytes=${smokeResult.stderr?.length ?? 0} stdoutBytes=${smokeResult.stdout?.length ?? 0}` +
+    (smokeResult.error ? ` spawn-error=${smokeResult.error.message}` : ''),
+  );
+  // ERR_MODULE_NOT_FOUND is the headline regression this smoke catches.
+  // Check first so the error message points at the actual cause when
+  // the bundle is missing a dep or workspace package.
+  if (smokeResult.stderr.includes('ERR_MODULE_NOT_FOUND')) {
+    throw new Error(
+      `Smoke-boot: ERR_MODULE_NOT_FOUND in the bundled server's stderr. ` +
+      `A package is missing from the bundle.\n\nstderr:\n${smokeResult.stderr}`,
+    );
+  }
+  // Startup banner proves the server reached MCP initialization. Both
+  // banner and scan lines go to stderr (stdout is the JSON-RPC channel).
+  if (!smokeResult.stderr.includes('MCP MIDI Control MCP server running on stdio')) {
+    throw new Error(
+      `Smoke-boot did not print the startup banner. The server may have ` +
+      `failed to register tools before being killed.\n\nstderr:\n${smokeResult.stderr}\n\n` +
+      `stdout:\n${smokeResult.stdout}`,
+    );
+  }
+  // Each device package's port-scan log proves its module loaded — if any
+  // codec or device package was missing, we'd reach the banner but skip
+  // its scan. Verify all four printed. Match the per-device scan-prefix
+  // substring (stable across `not visible` vs `detected` wording).
+  const expectedScans = [
+    'Startup port scan: AM4',
+    'Hydrasynth port scan',
+    'Axe-Fx II port scan',
+    'Axe-Fx III port scan',
+  ];
+  const missingScans = expectedScans.filter((s) => !smokeResult.stderr.includes(s));
+  if (missingScans.length > 0) {
+    throw new Error(
+      `Smoke-boot: some device packages didn't print their startup port ` +
+      `scan — likely a missing transitive import. Missing scans: ` +
+      `[${missingScans.join(', ')}]\n\nstderr:\n${smokeResult.stderr}`,
+    );
+  }
 
   const stagedSize = dirSizeMb(STAGING);
 
