@@ -24,7 +24,7 @@ MIDI ports you can see" to confirm your gear is reachable.
 If your gear's tools don't appear, or Claude says it can't find the
 device, double-click verify-midi.cmd. It asks the OS directly which
 MIDI devices it sees and tells you whether your AM4 / Axe-Fx II /
-Hydrasynth is reachable — useful for ruling out a driver / cable /
+Hydrasynth is reachable -useful for ruling out a driver / cable /
 power issue before troubleshooting Claude Desktop.
 
 WILL THIS WRECK MY PRESETS?
@@ -57,9 +57,9 @@ REQUIREMENTS
 
 - Windows 10 or 11.
 - At least one supported device connected by USB:
-  * Fractal AM4 — driver: https://www.fractalaudio.com/am4-downloads/
-  * Fractal Axe-Fx II XL+ — uses the Fractal USB driver (same family)
-  * ASM Hydrasynth Explorer — class-compliant USB MIDI, no driver needed
+  * Fractal AM4 -driver: https://www.fractalaudio.com/am4-downloads/
+  * Fractal Axe-Fx II XL+ -uses the Fractal USB driver (same family)
+  * ASM Hydrasynth Explorer -class-compliant USB MIDI, no driver needed
   (Unsupported devices still reachable through the generic-MIDI tools.)
 - Claude Desktop installed: https://claude.ai/download
 
@@ -92,7 +92,7 @@ A: It can't, by default. Saves require explicit save-language from
    PRESETS?" above and SAFETY-FOR-MUSICIANS.md on GitHub.
 
 Q: What if the AI saves something I didn't want?
-A: Fractal's factory presets are recoverable without a backup — call
+A: Fractal's factory presets are recoverable without a backup -call
    the tool "restore A01 to factory" (or any range) and the slot
    returns to factory bytes. AM4-Edit also exports full-flash .syx
    backups if you want extra insurance.

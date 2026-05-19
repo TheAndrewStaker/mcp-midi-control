@@ -28,13 +28,13 @@ if (-not (Test-Path $InstallDir)) {
     exit 1
 }
 
-# Three layouts are supported — the script auto-detects (in priority order):
+# Three layouts are supported -the script auto-detects (in priority order):
 #
 #   1. Installer ZIP layout (v0.1.x post-workspace-split):
 #      $InstallDir\node.exe           (bundled Node runtime)
 #      $InstallDir\node_modules\@mcp-midi-control\server-all\dist\server\index.js
 #      (Each workspace package is copied as a real directory under
-#       node_modules\@mcp-midi-control\ — no symlinks, ZIP-safe.)
+#       node_modules\@mcp-midi-control\ -no symlinks, ZIP-safe.)
 #
 #   2. Source-install layout (developer running `npm run setup-claude-
 #      desktop` after `npm run build`):
@@ -69,7 +69,7 @@ $bundledNodeExe = Join-Path $InstallDir 'node.exe'
 if (Test-Path $bundledNodeExe) {
     $nodeCommand = $bundledNodeExe
 } else {
-    # Source-install path — use the user's system Node.
+    # Source-install path -use the user's system Node.
     $nodeCommand = 'node'
 }
 

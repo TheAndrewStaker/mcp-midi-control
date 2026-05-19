@@ -1,17 +1,21 @@
 @echo off
+rem UTF-8 console so non-ASCII glyphs render correctly. Without this,
+rem cmd.exe interprets UTF-8 multi-byte sequences via the legacy code
+rem page (CP437/CP1252) and produces mojibake for any multi-byte char.
+chcp 65001 >nul
 setlocal
 
-rem MCP MIDI Control v0.1.0 — setup script.
+rem MCP MIDI Control v0.1.0 -setup script.
 rem
 rem Run this once after extracting the ZIP. It writes an entry into
 rem Claude Desktop's claude_desktop_config.json so the tools appear in
-rem your next chat session. Idempotent — safe to run repeatedly.
+rem your next chat session. Idempotent -safe to run repeatedly.
 
 set "INSTALL_DIR=%~dp0"
 if "%INSTALL_DIR:~-1%"=="\" set "INSTALL_DIR=%INSTALL_DIR:~0,-1%"
 
 echo.
-echo MCP MIDI Control v0.1.0 — setup
+echo MCP MIDI Control v0.1.0 -setup
 echo Install location: %INSTALL_DIR%
 echo.
 

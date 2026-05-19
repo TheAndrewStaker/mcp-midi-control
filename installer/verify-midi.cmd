@@ -1,7 +1,11 @@
 @echo off
+rem UTF-8 console so non-ASCII glyphs render correctly. Without this,
+rem cmd.exe interprets UTF-8 multi-byte sequences via the legacy code
+rem page (CP437/CP1252) and produces mojibake for any multi-byte char.
+chcp 65001 >nul
 setlocal
 
-rem MCP MIDI Control v0.1.0 — post-install MIDI device check.
+rem MCP MIDI Control v0.1.0 -post-install MIDI device check.
 rem
 rem Asks the OS what MIDI devices it can see and reports whether the
 rem AM4, Axe-Fx II, or Hydrasynth is visible. Bypasses Claude Desktop
