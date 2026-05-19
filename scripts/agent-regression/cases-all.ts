@@ -6,6 +6,7 @@
 import { AM4_CASES } from './cases-am4.js';
 import { AXE_FX_II_CASES } from './cases-axe-fx-ii.js';
 import { AXE_FX_III_CASES } from './cases-axe-fx-iii.js';
+import { CROSS_DEVICE_CASES } from './cases-cross-device.js';
 import { HYDRASYNTH_CASES } from './cases-hydrasynth.js';
 import type { AgentRegressionCase } from './types.js';
 
@@ -14,4 +15,5 @@ export const ALL_CASES: readonly AgentRegressionCase[] = [
   ...AXE_FX_II_CASES,
   ...AXE_FX_III_CASES,
   ...HYDRASYNTH_CASES,
+  ...CROSS_DEVICE_CASES,
 ];

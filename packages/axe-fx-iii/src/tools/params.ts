@@ -67,55 +67,22 @@ const BLOCK_INPUT_DESCRIPTION = [
 ].join('\n');
 
 const SET_VERIFIED_BANNER = [
-  'Parameter SET is NOT in the published Fractal third-party MIDI spec —',
-  'Fractal deliberately omits parameter writes from that document. The',
-  'wire shape used here is byte-verified against public AxeEdit III',
-  'captures spanning two effect blocks and two sub-actions (typed-input',
-  '+ mouse-drag). If the device rejects the write, the reply carries an',
-  'error code; surface it verbatim to the user.',
+  'Parameter SET is not in the published Fractal third-party MIDI spec. The wire shape used here is byte-verified against public AxeEdit III captures (typed-input + mouse-drag sub-actions across two effect blocks). If the device rejects the write, the reply carries an error code; surface it verbatim.',
 ].join('\n');
 
 const GET_HYPOTHESIS_BANNER = [
-  'GET is hypothesis-only — no captured Axe-Fx III device-emitted SET',
-  'response exists on the open web. The wire shape mirrors SET with the',
-  'value field zeroed. Open-web research suggests the device\'s state-',
-  'broadcast traffic is an editor-driven heartbeat poll, not a device-',
-  'initiated push-on-edit. A bare Axe-Fx III with no editor running will',
-  'likely produce NO inbound state-broadcast frames at all — so a 250 ms',
-  'timeout from this tool is the EXPECTED outcome on bare hardware, not',
-  'a tool error. Fallback strategies: (1) hold the SET value',
-  'optimistically and skip read-back; (2) use the documented status-dump',
-  'surface for bypass+channel state; (3) if a user is running AxeEdit III',
-  'alongside, listen for the heartbeat-poll broadcasts on idle.',
+  'GET is hypothesis-only. A bare Axe-Fx III with no editor running will likely produce NO inbound response, so a 250 ms timeout is the EXPECTED outcome on bare hardware, not a tool error. Fallbacks: (1) hold the SET value optimistically, (2) use axefx3_status_dump for bypass+channel state, (3) if AxeEdit III is running, listen for heartbeat-poll broadcasts.',
 ].join('\n');
 
 export function registerAxeFxIIIParamTools(server: McpServer): void {
 
   server.registerTool('axefx3_set_parameter', {
     description: [
-      'Set the wire-level value of one parameter on one block on the',
-      'Axe-Fx III. Targets the ACTIVE scene only.',
-      '',
+      'Write a raw 16-bit wire value to one paramId on one block on the Axe-Fx III. Targets the active scene only.',
       SET_VERIFIED_BANNER,
-      '',
-      'Wire: PARAMETER_SETGET (function 0x01, sub-action 09 00 typed-input).',
-      'Envelope (23 bytes):',
-      '  09 00     = sub-action: typed-input SET (clean, drag-context zero)',
-      '  id id     = 14-bit effect ID per v1.4 Appendix 1 (LS-first)',
-      '  pid pid   = 14-bit paramId (LS-first) — see the param-name catalog',
-      '              shipped with the package for the paramId→symbolic-name',
-      '              table per effect family.',
-      '  00 00 00  = drag-context bytes (zero for typed input)',
-      '  v0 v1 v2  = 16-bit value (0..65534) packed into 3 septets:',
-      '              v0 = bits 6..0, v1 = bits 13..7, v2 = bits 15..14',
-      '              (All observed III params use 14-bit values; v2 zero.)',
-      '  00 00 00  = reserved zeros',
-      '',
-      'Value range: raw wire 0..65534 (16-bit). Caller computes',
-      'display↔wire — the III publishes no per-param display calibration.',
-      '',
+      '- value: raw 0..65534. The III publishes no per-param display calibration, so display<->wire is the caller\'s responsibility.',
+      '- param_id: see the param-name catalog shipped with the package for paramId -> symbolic-name tables per effect family.',
       NO_ACK_NOTE,
-      '',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {
@@ -156,21 +123,8 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
 
   server.registerTool('axefx3_get_parameter', {
     description: [
-      'Query the wire-level value of one parameter on one block on the',
-      'Axe-Fx III. Targets the ACTIVE scene only.',
-      '',
+      'Query the wire-level value of one paramId on one block on the Axe-Fx III. Targets the active scene only.',
       GET_HYPOTHESIS_BANNER,
-      '',
-      'Wire: PARAMETER_SETGET (function 0x01, sub-action 09 00, value=0).',
-      'Same 23-byte envelope as SET with the value field zeroed.',
-      '',
-      'Response (hypothesis, unverified): either a fn=0x01 frame echoing',
-      'effectId + paramId + the actual 16-bit wire value, OR the III emits',
-      'an unsolicited STATE_BROADCAST (sub-action 04 01) with the current',
-      'value when a parameter changes. parseSetGetParameterResponse handles',
-      'both shapes; on STATE_BROADCAST the paramId field is zero (caller',
-      'tracks last-SET to attribute the broadcast).',
-      '',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {

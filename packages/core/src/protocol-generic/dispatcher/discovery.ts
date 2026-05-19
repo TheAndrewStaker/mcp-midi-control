@@ -11,6 +11,7 @@ import {
   DispatchError,
   type CompatibleTypesResult,
   type DeviceDescriptor,
+  type PresetSpec,
 } from '../types.js';
 
 import { requireDevice } from './core.js';
@@ -33,6 +34,7 @@ export function describeDevice(port: string): {
   blocks: readonly string[];
   block_types: readonly string[];
   agent_guidance?: DeviceDescriptor['agent_guidance'];
+  example_spec?: PresetSpec;
 } {
   const desc = requireDevice(port);
   // RegExp objects serialize to `{}` through JSON.stringify, so MCP agents
@@ -51,6 +53,7 @@ export function describeDevice(port: string): {
     blocks: Object.keys(desc.blocks),
     block_types: desc.block_types ? Object.keys(desc.block_types) : [],
     agent_guidance: desc.agent_guidance,
+    example_spec: desc.example_spec,
   };
 }
 

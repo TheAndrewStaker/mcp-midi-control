@@ -36,12 +36,31 @@
  *   ✗ switch_scene / set_bypass / set_block / restore_defaults — no-op for synth
  */
 
-import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
+import type { DeviceDescriptor, PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 import { HYDRASYNTH_AGENT_GUIDANCE } from './descriptor/agentGuidance.js';
 import { buildBlocks, buildBlockTypes } from './descriptor/schema.js';
 import { reader } from './descriptor/reader.js';
 import { writer } from './descriptor/writer.js';
+
+/**
+ * Working `apply_preset` payload literal for the unified surface. Hydrasynth
+ * is a synth: modules (osc/filter/amp/fx) are always-on, there are no
+ * scenes, and no per-block channels. The "slot" is a per-module addressing
+ * placeholder (always 1); every module instance is named directly by its
+ * canonical block slug. The spec passes `collectApplyPresetPreflight` with
+ * zero errors (verified by `scripts/verify-describe-device.ts`).
+ */
+const HYDRASYNTH_EXAMPLE_SPEC: PresetSpec = {
+  name: 'Demo',
+  slots: [
+    { slot: 1, block_type: 'osc1', params: { semi: 0 } },
+    { slot: 1, block_type: 'filter1', params: { cutoff: 60 } },
+    { slot: 1, block_type: 'amp', params: { level: 90 } },
+    { slot: 1, block_type: 'reverb', params: { dry_wet: 25, predelay: 10 } },
+    { slot: 1, block_type: 'delay', params: { dry_wet: 15 } },
+  ],
+};
 
 export const HYDRASYNTH_DESCRIPTOR: DeviceDescriptor = {
   id: 'hydrasynth',
@@ -80,4 +99,5 @@ export const HYDRASYNTH_DESCRIPTOR: DeviceDescriptor = {
   reader,
   writer,
   agent_guidance: HYDRASYNTH_AGENT_GUIDANCE,
+  example_spec: HYDRASYNTH_EXAMPLE_SPEC,
 };

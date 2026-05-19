@@ -1196,6 +1196,46 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
   ].join('\n'),
 };
 
+// ── Example spec ───────────────────────────────────────────────────
+
+/**
+ * Working `apply_preset` payload literal for the unified surface. The III
+ * uses {row, col} grid slot refs (4 rows x 14 cols) and A/B/C/D channels.
+ * Values are RAW WIRE INTEGERS (0..65534) because the III ships without a
+ * published display calibration; wire 32767 is the rough knob midpoint.
+ *
+ * The III amp block has no parameter catalog in the v1.4 PDF, so the amp
+ * slot is placed empty here; channel and bypass control on amp still
+ * work via scenes. The spec passes `collectApplyPresetPreflight` with
+ * zero errors (verified by `scripts/verify-describe-device.ts`).
+ */
+const AXEFX3_EXAMPLE_SPEC: PresetSpec = {
+  name: 'Demo',
+  slots: [
+    {
+      slot: { row: 2, col: 1 },
+      block_type: 'drive',
+      params: {
+        A: { type: 3, bass: 5, mid: 5, treble: 5, master: 5 },
+      },
+    },
+    { slot: { row: 2, col: 2 }, block_type: 'amp' },
+    { slot: { row: 2, col: 3 }, block_type: 'cab' },
+    {
+      slot: { row: 2, col: 4 },
+      block_type: 'reverb',
+      params: {
+        A: { type: 3, time: 5, mix: 25 },
+      },
+    },
+  ],
+  scenes: [
+    { scene: 1, name: 'Clean', channels: { reverb: 'A' }, bypassed: { drive: true } },
+    { scene: 2, name: 'Lead', channels: { reverb: 'A' }, bypassed: { drive: false } },
+  ],
+  landingScene: 1,
+};
+
 // ── Descriptor ─────────────────────────────────────────────────────
 
 export const AXEFX3_DESCRIPTOR: DeviceDescriptor = {
@@ -1233,4 +1273,5 @@ export const AXEFX3_DESCRIPTOR: DeviceDescriptor = {
   reader,
   writer,
   agent_guidance: AXEFX3_AGENT_GUIDANCE,
+  example_spec: AXEFX3_EXAMPLE_SPEC,
 };

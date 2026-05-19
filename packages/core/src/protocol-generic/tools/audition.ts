@@ -63,20 +63,10 @@ function parseNoteInput(input: string | number): number {
 export function registerAuditionTools(server: McpServer): void {
   server.registerTool('play_note', {
     description: [
-      'Audition the active patch on the named device by playing a single',
-      'MIDI note for a specified duration. Sends Note On, waits, sends',
-      'Note Off. Useful after editing parameters to hear the result',
-      'without asking the user to play a key.',
-      '',
-      'Whether the note produces audible sound is per-device. Synthesizers',
-      '(Hydrasynth) sound the current patch. Audio processors (AM4,',
-      'Axe-Fx II) typically produce no sound — they process guitar input,',
-      'not MIDI notes. Axe-Fx III sounds only when the Synth block is',
-      'placed in the active preset. Call describe_device(port).agent_',
-      'guidance.note_response to see what to expect before calling.',
-      '',
-      'Notes accept MIDI numbers (0..127, middle C = 60) or scientific',
-      'pitch names ("C4", "F#3", "Bb-1"). C4 = 60 (Yamaha convention).',
+      'Audition the active patch by playing one MIDI note (Note On, wait, Note Off). Useful after editing params to hear the result without asking the user to play.',
+      'Audibility is per-device: synths (Hydrasynth) sound; audio processors (AM4, Axe-Fx II) are silent because they process guitar input. Axe-Fx III sounds only when a Synth block is in the active preset. Check describe_device(port).agent_guidance.note_response.',
+      '- `note`: MIDI number 0..127 or pitch name ("C4", "F#3", "Bb-1"). C4 = 60.',
+      '- `duration_ms` capped at 5000 to bound stuck notes.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
@@ -111,20 +101,10 @@ export function registerAuditionTools(server: McpServer): void {
 
   server.registerTool('play_chord', {
     description: [
-      'Audition the active patch on the named device by playing multiple',
-      'simultaneous MIDI notes for a specified duration. Sends Note On for',
-      'each note (optionally staggered by `strum_ms` to simulate a strum),',
-      'waits `duration_ms`, then sends Note Off for each.',
-      '',
-      'USE THIS over play_note when the patch is designed to be played as',
-      'a chord (orchestral stabs, pads, brass stacks, supersaw recipes).',
-      'Auditioning a chord patch with single notes hides stack-detuning',
-      'behavior and inter-note filter dynamics that the patch was tuned',
-      'for. Common voicings: minor stab (C-Eb-G, F-Ab-C), root-fifth pad',
-      '(C-G), full triad with octave (C-E-G-C).',
-      '',
-      'Same per-device audibility caveats as play_note. See describe_',
-      'device(port).agent_guidance.note_response.',
+      'Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). Prefer this over play_note when the patch is chord-designed (pads, orchestral stabs, supersaws) so stack-detuning and inter-note filter dynamics are exercised.',
+      '- `notes`: array of MIDI numbers or pitch names ("C3"/"Eb3"/"G3", or [48,51,55]). 1..16 notes.',
+      '- `strum_ms`: 0 = block chord, 20..50 = subtle strum, 80..200 = arpeggio attack.',
+      '- Same per-device audibility caveats as play_note.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),

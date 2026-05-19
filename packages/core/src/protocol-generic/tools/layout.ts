@@ -20,16 +20,10 @@ import { PORT_DESC, asError, asText } from './shared.js';
 export function registerLayoutTools(server: McpServer): void {
   server.registerTool('set_block', {
     description: [
-      'Place (or clear) a block at a slot in the signal chain. Use this to',
-      'build up a preset\'s block layout before tuning per-block params via',
-      'set_param. Slot indexing is 1-based on linear devices (AM4: 1..4)',
-      'and {row, col} on grid devices (Axe-Fx II — Wave 2).',
-      'block_type accepts the device\'s registered block names ("amp",',
-      '"drive", "reverb", "delay", …) plus "none" to clear the slot.',
-      'See describe_device.block_types for the full list per device.',
-      'For bypass writes (silence an existing block without removing it),',
-      'use set_bypass instead — the AM4\'s bypass register is addressed',
-      'by block name, not by slot.',
+      'Place or clear a block at a slot in the signal chain. Use to build a preset layout before tuning per-block params with set_param.',
+      '- Slot is 1-based on linear devices (AM4: 1..4).',
+      '- block_type takes a registered block name ("amp", "drive", "reverb") or "none" to clear. See describe_device.block_types.',
+      '- For bypass (silence without removing), use set_bypass instead.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
@@ -51,20 +45,9 @@ export function registerLayoutTools(server: McpServer): void {
 
   server.registerTool('set_bypass', {
     description: [
-      'Silence (bypass = true) or activate (bypass = false) a block on the',
-      'currently active scene. A bypassed block passes audio through',
-      'unchanged — its params stay intact, it just makes no sound. Common',
-      'use: "mute the drive on the clean scene" — switch to that scene',
-      'first, then set_bypass(block="drive", bypassed=true).',
-      'SCENE SCOPE: the write lands on whichever scene is active right now.',
-      'To configure bypass on a specific scene, switch_scene first and then',
-      'set_bypass.',
-      'DIAGNOSTIC USE: when the user reports an unwanted artifact in a tone',
-      '(stray ringing, pitch creep, wash on the tail), bypass one suspect',
-      'block at a time and re-audition with play_note / play_chord before',
-      'changing any param values. Bulk edits across multiple FX during',
-      'diagnosis hide which change mattered; isolation surfaces the source',
-      'in one round-trip per suspect.',
+      'Silence (bypassed=true) or activate (bypassed=false) a block on the currently-active scene. Params stay intact; the block just passes signal through.',
+      '- Scene scope: writes land on the active scene. To bypass on a different scene, switch_scene first.',
+      '- Diagnostic pattern: when chasing an unwanted artifact, bypass one suspect block at a time and re-audition before changing params.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),

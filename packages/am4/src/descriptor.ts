@@ -30,6 +30,7 @@ import type {
   CompatibleTypesQuery,
   CompatibleTypesResult,
   DeviceDescriptor,
+  PresetSpec,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 import { findCompatibleTypes as am4FindCompatibleTypes } from 'fractal-midi/am4';
@@ -51,6 +52,53 @@ function findCompatibleTypes(query: CompatibleTypesQuery): CompatibleTypesResult
     note: r.note,
   };
 }
+
+/**
+ * Working `apply_preset` payload literal the agent can clone. AM4 uses
+ * linear bare-int slots 1..4 and A/B/C/D channels on amp/drive/reverb/delay.
+ * Every value here is in the device's display vocabulary (knob 0..10,
+ * canonical enum spelling); the spec passes `collectApplyPresetPreflight`
+ * with zero errors (verified by `scripts/verify-describe-device.ts`).
+ */
+const AM4_EXAMPLE_SPEC: PresetSpec = {
+  name: 'Demo',
+  slots: [
+    {
+      slot: 1,
+      block_type: 'drive',
+      params: {
+        A: { type: 'Tube Drive 3-Knob', drive: 3, tone: 6, level: 5 },
+      },
+    },
+    {
+      slot: 2,
+      block_type: 'amp',
+      params: {
+        A: { type: 'USA Pre Clean', gain: 3, master: 5 },
+        B: { type: 'USA MK IIC+', gain: 6, master: 4 },
+      },
+    },
+    {
+      slot: 3,
+      block_type: 'reverb',
+      params: {
+        A: { type: 'Hall, Medium', mix: 25 },
+      },
+    },
+    {
+      slot: 4,
+      block_type: 'delay',
+      params: {
+        A: { type: 'Digital Stereo', mix: 15 },
+      },
+    },
+  ],
+  scenes: [
+    { scene: 1, name: 'Clean', channels: { amp: 'A', reverb: 'A' }, bypassed: { drive: true } },
+    { scene: 2, name: 'Lead', channels: { amp: 'B', reverb: 'A' }, bypassed: { drive: false } },
+  ],
+  landingScene: 1,
+};
 
 export const AM4_DESCRIPTOR: DeviceDescriptor = {
   id: 'am4',
@@ -87,4 +135,5 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
   writer,
   agent_guidance: AM4_AGENT_GUIDANCE,
   findCompatibleTypes,
+  example_spec: AM4_EXAMPLE_SPEC,
 };

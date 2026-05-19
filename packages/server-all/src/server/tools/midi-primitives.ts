@@ -71,13 +71,8 @@ function sendErrorResponse(
 export function registerMidiPrimitiveTools(server: McpServer): void {
     server.registerTool('send_cc', {
         description: [
-            'Send a single MIDI Control Change to any MIDI device the OS exposes.',
-            'Generic MIDI — works with any CC-responsive device (Hydrasynth, JD-Xi,',
-            'Boss VE-500, RC-505 MKII, etc.). The AM4 has its own dedicated tools',
-            '(set_param, set_params, apply_preset) which understand block/parameter',
-            'semantics — prefer those when targeting the AM4. `send_cc` is for',
-            'devices without a dedicated wrapper.',
-            'Channel is 1..16 (musician convention). Controller 0..127, value 0..127.',
+            'Send a MIDI Control Change to any CC-responsive device. Channel 1..16 (musician convention), controller 0..127, value 0..127.',
+            'Prefer the unified set_param tools for registered devices (AM4 / Axe-Fx / Hydrasynth) which understand block/param semantics; use send_cc for devices without a dedicated wrapper.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe(
@@ -105,12 +100,8 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_note', {
         description: [
-            'Play a single MIDI note on any note-responsive MIDI device',
-            '(synth, drum pad, sampler).',
-            'Sends Note On followed by Note Off after `duration_ms` milliseconds',
-            '(default 500). Channel 1..16, note 0..127 (60 = middle C), velocity',
-            '0..127. The tool blocks until the Note Off is sent; durations longer',
-            'than 5000 ms are rejected so a stuck note is bounded.',
+            'Play one MIDI note on any note-responsive device (synth, drum pad, sampler). Sends Note On, waits `duration_ms` (default 500, max 5000), sends Note Off.',
+            'Channel 1..16, note 0..127 (60 = middle C), velocity 0..127.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -144,11 +135,8 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_program_change', {
         description: [
-            'Switch patches on any PC-responsive MIDI device.',
-            'Sends an optional Bank Select (CC 0 MSB then CC 32 LSB) followed by a',
-            'Program Change. Channel 1..16, program 0..127, banks 0..127. Bank',
-            'arguments are optional and emitted only when supplied — many devices',
-            'don\'t use banks.',
+            'Switch patches on any PC-responsive device. Sends optional Bank Select (CC 0 MSB + CC 32 LSB), then Program Change.',
+            'Channel 1..16, program 0..127, banks 0..127 (omit unused bank args).',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -192,13 +180,8 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_nrpn', {
         description: [
-            'Write a Non-Registered Parameter Number on any NRPN-responsive MIDI',
-            'device.',
-            'Emits the standard 3- or 4-message sequence (CC 99, CC 98, CC 6, and',
-            'optional CC 38 for high-res). Channel 1..16, MSB/LSB 0..127. `value`',
-            'is 0..127 in 7-bit mode (default) or 0..16383 when `high_res` is true,',
-            'unlocking the higher-resolution view of the same parameter on devices',
-            'that support it (e.g. the ASM Hydrasynth in NRPN mode).',
+            'Write an NRPN on any NRPN-responsive device. Emits the standard 3- or 4-message sequence (CC 99, CC 98, CC 6, optional CC 38).',
+            '- value: 0..127 in 7-bit mode (default), or 0..16383 when high_res=true (14-bit, e.g. Hydrasynth engine NRPN).',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -234,14 +217,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_pitch_bend', {
         description: [
-            'Use this tool to send a MIDI Pitch Bend message — bend the pitch of',
-            'all currently-held notes on a channel up or down. Do not produce a',
-            'written spec instead of calling this tool unless the user explicitly',
-            'asks for a dry run.',
-            'Value is signed -8192..+8191 where 0 = no bend, +8191 = max bend up,',
-            '-8192 = max bend down. The actual semitone range each unit covers is',
-            'set per-synth (typical default is ±2 semitones at full deflection).',
-            'Channel 1..16.',
+            'Send a MIDI Pitch Bend on a channel. value is signed -8192..+8191 (0 = no bend, +8191 = max up, -8192 = max down). Per-synth bend range typically defaults to +/-2 semitones at full deflection.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -269,11 +245,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_channel_pressure', {
         description: [
-            'Send a MIDI Channel Pressure (aftertouch) message — one pressure',
-            'value affecting every currently-held note on a channel.',
-            'For per-key aftertouch use Polyphonic Pressure (not yet exposed as a',
-            'tool — many synths support only channel aftertouch anyway).',
-            'Channel 1..16, pressure 0..127.',
+            'Send MIDI Channel Pressure (aftertouch) on a channel: one pressure value affecting every held note. For per-key aftertouch use Polyphonic Pressure (not yet exposed).',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -298,11 +270,8 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_clock_start', {
         description: [
-            'Send a MIDI Timing Clock Start (system real-time 0xFA) to start a',
-            'sequencer, drum machine, or clock-aware synth from its beginning.',
-            'No channel — system message affects every receiver on the port.',
-            'For mid-song restart use send_clock_continue (0xFB); for jump-to-bar',
-            'send a send_song_position before send_clock_continue.',
+            'Send MIDI Timing Clock Start (0xFA) to start a sequencer / drum machine / clock-aware synth from the beginning. System message; affects every receiver on the port.',
+            'For mid-song restart use send_clock_continue; for jump-to-bar precede send_clock_continue with send_song_position.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -325,11 +294,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_clock_stop', {
         description: [
-            'Use this tool to send a MIDI Timing Clock Stop (system real-time 0xFC)',
-            'to halt a running sequencer, drum machine, or clock-aware synth. Do',
-            'not produce a written spec instead of calling this tool unless the',
-            'user explicitly asks for a dry run.',
-            'No channel — system message affects every receiver on the port.',
+            'Send MIDI Timing Clock Stop (0xFC) to halt a running sequencer / drum machine / clock-aware synth. System message; affects every receiver on the port.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -352,11 +317,8 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_clock_continue', {
         description: [
-            'Send a MIDI Timing Clock Continue (system real-time 0xFB) to resume',
-            'a stopped sequencer or drum machine from its current position.',
-            'No channel — system message affects every receiver on the port.',
-            'Pair with send_song_position first if you want to jump to a specific',
-            'bar before resuming.',
+            'Send MIDI Timing Clock Continue (0xFB) to resume a stopped sequencer / drum machine from its current position. System message.',
+            'Precede with send_song_position to jump to a specific bar before resuming.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -379,11 +341,9 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_song_position', {
         description: [
-            'Send a MIDI Song Position Pointer (system common 0xF2) — jumps a',
-            'connected sequencer or drum machine to a specific beat in its song.',
-            'Beats are 14-bit (0..16383); one beat = 6 MIDI Timing Clock pulses',
-            '(equivalent to a sixteenth note at 24 PPQN). Most receivers do',
-            'nothing with Song Position until they get a Start or Continue.',
+            'Send MIDI Song Position Pointer (0xF2): jump a sequencer / drum machine to a specific beat.',
+            '- beats: 14-bit 0..16383. One beat = 6 MIDI Timing Clock pulses (a sixteenth-note at 24 PPQN).',
+            '- Most receivers do nothing until a subsequent Start or Continue.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -409,14 +369,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_panic', {
         description: [
-            'Use this tool as a "MIDI panic" button — silences every stuck note on',
-            'every channel of a connected MIDI device. Do not produce a written',
-            'spec instead of calling this tool unless the user explicitly asks for',
-            'a dry run.',
-            'Sends both All Sound Off (CC 120) and All Notes Off (CC 123) on all',
-            '16 channels (32 messages total). CC 120 cuts sustained release tails',
-            'too; CC 123 lets natural release finish. Doing both is the standard',
-            'panic recipe — every receiver responds to at least one.',
+            'MIDI panic: silence every stuck note on every channel of a device. Sends All Sound Off (CC 120) + All Notes Off (CC 123) on all 16 channels (32 messages). CC 120 cuts release tails; CC 123 lets natural release finish; doing both covers every receiver.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -445,14 +398,8 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_reset_controllers', {
         description: [
-            'Use this tool to send Reset All Controllers (CC 121) on a channel —',
-            'resets pitch bend, mod wheel, expression, channel pressure, and other',
-            'continuous controllers to their default values. Do not produce a',
-            'written spec instead of calling this tool unless the user explicitly',
-            'asks for a dry run.',
-            'Useful after a take where the mod wheel was pushed up or the pitch',
-            'bend was held — gets the device back to a clean baseline without a',
-            'full panic. Channel 1..16.',
+            'Reset All Controllers (CC 121) on a channel: pitch bend, mod wheel, expression, channel pressure, etc. revert to defaults.',
+            'Use after a take where mod wheel was pushed up or pitch bend was held, to restore a clean baseline without a full panic.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),
@@ -476,14 +423,8 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
 
     server.registerTool('send_sysex', {
         description: [
-            'Send a raw System Exclusive frame to any MIDI device.',
-            'Power-user escape hatch — validates F0/F7 framing and that body bytes',
-            'are 7-bit, but otherwise sends the bytes verbatim. Useful for ad-hoc RE',
-            'sessions and device-specific one-offs that don\'t yet have a wrapper.',
-            'WARNING: malformed SysEx can put devices into unexpected states.',
-            'Prefer device-specific tools when they exist (the AM4 has set_param,',
-            'apply_preset, etc.). Use send_sysex only when no wrapper covers the',
-            'frame you need.',
+            'Send a raw SysEx frame. Power-user escape hatch: validates F0/F7 framing + 7-bit body, then sends verbatim. Useful for ad-hoc RE and device one-offs without a wrapper.',
+            'WARNING: malformed SysEx can put devices into unexpected states. Prefer the unified set_param / apply_preset / device-specific tools when available.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),

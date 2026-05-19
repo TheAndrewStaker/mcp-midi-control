@@ -101,8 +101,8 @@ export const presetSlotShape = z.object({
     z.record(z.string(), z.record(z.string(), z.union([z.number(), z.string()]))),
   ]).optional().describe(
     'Block params. TWO SHAPES accepted; PICK BY BLOCK: ' +
-    '(1) FLAT — `{ rate: 0.8, depth: 35 }` — for NON-channel blocks (AM4: filter, chorus, flanger, phaser, comp, geq, peq, tremolo, rotary, wah, enhancer, gate, volpan, ingate). Channel blocks on Axe-Fx II/III accept flat too: writes land on the currently-active channel. ' +
-    '(2) CHANNEL-NESTED — `{ A: { gain: 6 }, D: { gain: 8 } }` — for CHANNEL blocks. AM4 channel blocks are amp/drive/reverb/delay (A/B/C/D). Axe-Fx II/III use X/Y. ' +
+    '(1) FLAT `{ rate: 0.8, depth: 35 }` for NON-channel blocks (AM4: filter, chorus, flanger, phaser, comp, geq, peq, tremolo, rotary, wah, enhancer, gate, volpan, ingate). Channel blocks on Axe-Fx II/III accept flat too: writes land on the currently-active channel. ' +
+    '(2) CHANNEL-NESTED `{ A: { gain: 6 }, D: { gain: 8 } }` for CHANNEL blocks. AM4 channel blocks are amp/drive/reverb/delay (A/B/C/D). Axe-Fx II/III use X/Y. ' +
     'AM4 rejects channel-nested params on non-channel blocks; use the flat shape there. See describe_device.capabilities.channel_blocks for the per-device list.',
   ),
   bypassed: z.boolean().optional(),
@@ -117,7 +117,7 @@ export const presetSlotShape = z.object({
 export const presetSceneShape = z.object({
   scene: z.number().int().min(1).describe('Scene number (1-indexed).'),
   channels: z.record(z.string(), z.union([z.string(), z.number()])).optional().describe(
-    'Per-block channel selection: { "amp": "A", "drive": "A" }. Optional — supply at least one of channels / bypassed / name per entry.',
+    'Per-block channel selection: { "amp": "A", "drive": "A" }. Optional; supply at least one of channels / bypassed / name per entry.',
   ),
   bypassed: z.record(z.string(), z.boolean()).optional().describe(
     'Per-block bypass: { "drive": true } silences drive on this scene.',
@@ -147,6 +147,6 @@ export const presetShape = z.object({
     '(e.g. land on solo scene for an immediate lead test). Devices without scenes ignore this.',
   ),
   routing: z.array(routingEdgeShape).optional().describe(
-    'v0.4: explicit routing edges for grid devices (parallel chains, FX loops, wet/dry splits). When omitted on a grid device, the descriptor infers a row-2 linear chain. Linear devices (AM4) reject this field — they route implicitly by slot order. See docs/FRACTAL-PRESET-SCHEMA.md for worked examples.',
+    'v0.4: explicit routing edges for grid devices (parallel chains, FX loops, wet/dry splits). When omitted on a grid device, the descriptor infers a row-2 linear chain. Linear devices (AM4) reject this field; they route implicitly by slot order. See docs/FRACTAL-PRESET-SCHEMA.md for worked examples.',
   ),
 });

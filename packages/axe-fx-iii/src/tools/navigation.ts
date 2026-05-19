@@ -43,11 +43,7 @@ export function registerAxeFxIIINavigationTools(server: McpServer): void {
 
   server.registerTool('axefx3_get_active_scene', {
     description: [
-      'Read the currently-active scene within the active preset.',
-      'Returns 1-based display number.',
-      '',
-      'Wire: SET_GET_SCENE (function 0x0C) with the 0x7F query sentinel.',
-      '',
+      'Read the currently-active scene (1-based) within the active Axe-Fx III preset.',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {},
@@ -85,20 +81,8 @@ export function registerAxeFxIIINavigationTools(server: McpServer): void {
 
   server.registerTool('axefx3_get_preset_name', {
     description: [
-      'Read a preset name on the Axe-Fx III. By default returns the',
-      'active preset (working buffer). Pass `preset` to look up a',
-      "specific preset's name.",
-      '',
-      'Wire: QUERY_PATCH_NAME (function 0x0D). Spec quote:',
-      '  Request:  F0 00 01 74 10 0D dd dd cs F7 (dd dd = preset #,',
-      '            or 7F 7F to query current)',
-      '  Response: F0 00 01 74 10 0D nn nn dd*32 cs F7 (nn nn = preset',
-      '            #, dd*32 = 32-char ASCII name)',
-      '',
-      'Returns BOTH the preset number AND the name in one round-trip —',
-      'there is no separate "get preset number" function in the III',
-      'spec.',
-      '',
+      'Read a preset\'s name + number on the Axe-Fx III in one round-trip. Default reads the active preset; pass `preset` (0..1023) to look up a stored preset by number.',
+      'There is no separate "get preset number" function on the III; this is how you get both.',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {
@@ -143,15 +127,8 @@ export function registerAxeFxIIINavigationTools(server: McpServer): void {
 
   server.registerTool('axefx3_get_scene_name', {
     description: [
-      'Read the name of a scene (1..8) in the active preset, or the',
-      'currently-active scene by passing scene="current".',
-      '',
-      'Wire: QUERY_SCENE_NAME (function 0x0E). Returns scene index +',
-      '32-char ASCII name (space-padded).',
-      '',
-      'NB: there is no SET_SCENE_NAME envelope in the v1.4 III spec —',
-      'scene rename support requires future capture work.',
-      '',
+      'Read a scene\'s name (1..8) in the active Axe-Fx III preset, or pass scene="current" for the active scene.',
+      'Read-only: the public spec has no SET_SCENE_NAME envelope.',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {

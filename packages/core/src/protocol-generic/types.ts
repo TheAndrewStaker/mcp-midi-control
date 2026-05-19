@@ -866,6 +866,23 @@ export interface DeviceDescriptor {
    * list with `applicability_known: false`.
    */
   findCompatibleTypes?: (query: CompatibleTypesQuery) => CompatibleTypesResult;
+
+  /**
+   * Concrete, working `apply_preset` payload literal the agent can clone
+   * verbatim. Surfaced via `describe_device.example_spec` so the LLM has
+   * a starting payload (canonical block names, canonical enum values, the
+   * device's slot shape, channel keys, scene structure) instead of
+   * reconstructing one from prose rules.
+   *
+   * Every example MUST validate against `collectApplyPresetPreflight`
+   * with zero errors on its own device; the `verify-describe-device.ts`
+   * golden enforces this on every preflight run.
+   *
+   * The example covers at minimum: amp + drive + one time-based effect,
+   * 2 scenes, channel-shape demonstration for devices with channels.
+   * Devices without scenes/channels (Hydrasynth) omit those sections.
+   */
+  example_spec?: PresetSpec;
 }
 
 // ── find_compatible_types ───────────────────────────────────────────

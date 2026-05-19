@@ -41,14 +41,8 @@ export function registerAxeFxIIIUtilityTools(server: McpServer): void {
 
   server.registerTool('axefx3_tempo_tap', {
     description: [
-      'Send a tempo-tap to the Axe-Fx III — equivalent to one press',
-      'of the front-panel TAP button. Each call counts as one tap;',
-      'the III computes BPM from the inter-tap interval.',
-      '',
-      'Wire: TEMPO_TAP (function 0x10). No payload.',
-      '',
+      'Send one tempo-tap to the Axe-Fx III, equivalent to pressing the front-panel TAP button. The device computes BPM from the inter-tap interval.',
       NO_ACK_NOTE,
-      '',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {},
@@ -74,15 +68,8 @@ export function registerAxeFxIIIUtilityTools(server: McpServer): void {
 
   server.registerTool('axefx3_set_tempo', {
     description: [
-      'Set the master tempo (BPM) on the Axe-Fx III.',
-      '',
-      'Wire: SET_TEMPO (function 0x14). Payload is the BPM as a 14-bit',
-      'LS-first septet pair. The III front-panel range is roughly',
-      '30..250 BPM; the wire accepts the full 14-bit range and the',
-      'device clamps.',
-      '',
+      'Set the master tempo (BPM) on the Axe-Fx III. Front-panel range is roughly 30..250; the device clamps out-of-range values.',
       NO_ACK_NOTE,
-      '',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {
@@ -113,9 +100,6 @@ export function registerAxeFxIIIUtilityTools(server: McpServer): void {
   server.registerTool('axefx3_get_tempo', {
     description: [
       'Read the current master tempo (BPM) from the Axe-Fx III.',
-      '',
-      'Wire: GET_TEMPO (function 0x14 with `dd dd = 7F 7F`).',
-      '',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {},
@@ -153,12 +137,8 @@ export function registerAxeFxIIIUtilityTools(server: McpServer): void {
 
   server.registerTool('axefx3_set_tuner', {
     description: [
-      "Turn the Axe-Fx III's tuner display on or off.",
-      '',
-      'Wire: TUNER_ON_OFF (function 0x11). `dd = 0` off, `dd = 1` on.',
-      '',
+      'Turn the Axe-Fx III tuner display on or off.',
       NO_ACK_NOTE,
-      '',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {
@@ -188,15 +168,8 @@ export function registerAxeFxIIIUtilityTools(server: McpServer): void {
 
   server.registerTool('axefx3_set_looper', {
     description: [
-      "Trigger a Looper button-press on the Axe-Fx III. Equivalent to",
-      "pressing the corresponding button on the III's Looper page.",
-      '',
-      'Wire: SET_LOOPER (function 0x0F). dd values per spec:',
-      '  0 = Record, 1 = Play, 2 = Undo, 3 = Once,',
-      '  4 = Reverse, 5 = Half-speed',
-      '',
+      'Trigger a Looper button-press on the Axe-Fx III. Same effect as pressing the corresponding button on the III\'s Looper page (record, play, undo, once, reverse, half_speed).',
       NO_ACK_NOTE,
-      '',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {
@@ -226,13 +199,7 @@ export function registerAxeFxIIIUtilityTools(server: McpServer): void {
 
   server.registerTool('axefx3_get_looper_state', {
     description: [
-      "Read the Looper state on the Axe-Fx III. Returns each looper",
-      'flag (recording, playing, overdubbing, once, reverse, half-speed).',
-      '',
-      'Wire: GET_LOOPER (function 0x0F with `dd = 0x7F`). Response is',
-      'a single byte bitfield: bit0=Record, 1=Play, 2=Overdub, 3=Once,',
-      '4=Reverse, 5=Half-speed.',
-      '',
+      'Read the Axe-Fx III Looper state. Returns flags: recording, playing, overdubbing, once, reverse, half-speed.',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {},

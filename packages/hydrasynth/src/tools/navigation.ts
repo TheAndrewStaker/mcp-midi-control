@@ -34,18 +34,9 @@ export function registerHydrasynthNavigationTools(server: McpServer): void {
 
 server.registerTool('hydra_navigate_to', {
   description: HYDRA_DEV_MODE_PREAMBLE + [
-    '**Diagnostic primitive.** Sends Bank Select (CC0=0, CC32=bank) +',
-    'Program Change to navigate the device\'s active patch to the named',
-    'slot. Captures any inbound MIDI for 200 ms after.',
-    '',
-    'Use BEFORE any test that bundles bank/PC navigation with SysEx, to',
-    'verify in isolation that the device responds to PC at all. If the',
-    'device\'s front-panel display does not change to the named slot when',
-    'this runs, navigation is broken upstream and any tool that bundles',
-    'PC + SysEx (like `hydra_apply_init`) is testing the wrong thing.',
-    '',
-    'Does NOT send SysEx. Does NOT modify any patch contents — just',
-    'changes which patch the device is currently playing.',
+    'Diagnostic primitive. Sends Bank Select + Program Change to navigate the Hydrasynth\'s active patch to a slot ("A001".."H128"), then captures inbound MIDI for 200 ms.',
+    'Use before any test that bundles bank/PC + SysEx to verify in isolation that the device responds to PC. If the front-panel display doesn\'t change, bank/PC is broken upstream and tools that bundle PC + SysEx will silently miss.',
+    'No SysEx, no patch-content changes.',
   ].join('\n'),
   inputSchema: {
     slot: z.string().describe(

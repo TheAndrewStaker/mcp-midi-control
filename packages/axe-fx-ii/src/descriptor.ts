@@ -30,7 +30,7 @@
  * see `docs/_private/axefx2-descriptor-plan.md` § 9).
  */
 
-import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
+import type { DeviceDescriptor, PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 import { AXE_FX_II_BLOCKS } from 'fractal-midi/axe-fx-ii';
 
@@ -47,6 +47,48 @@ import { writer } from './descriptor/writer.js';
 const CHANNEL_BLOCKS: readonly string[] = Object.freeze(
   AXE_FX_II_BLOCKS.filter((b) => b.canBypass).map((b) => b.name.toLowerCase().replace(/ \d+$/, '')),
 );
+
+/**
+ * Working `apply_preset` payload literal for the unified surface. Axe-Fx II
+ * uses {row, col} grid slot refs and X/Y channels on channel-bearing blocks.
+ * Every value is in the device's display vocabulary (knob 0..10, canonical
+ * upper-case enum spelling per AxeEdit). The spec passes
+ * `collectApplyPresetPreflight` with zero errors (verified by
+ * `scripts/verify-describe-device.ts`).
+ */
+const AXEFX2_EXAMPLE_SPEC: PresetSpec = {
+  name: 'Demo',
+  slots: [
+    {
+      slot: { row: 2, col: 1 },
+      block_type: 'drive',
+      params: {
+        X: { effect_type: 'TUBE DRV 3-KNOB', gain: 3, tone: 6, volume: 5 },
+      },
+    },
+    {
+      slot: { row: 2, col: 2 },
+      block_type: 'amp',
+      params: {
+        X: { effect_type: 'USA CLEAN', input_drive: 3, master_volume: 5 },
+        Y: { effect_type: 'USA IIC+', input_drive: 6, master_volume: 4 },
+      },
+    },
+    { slot: { row: 2, col: 3 }, block_type: 'cab' },
+    {
+      slot: { row: 2, col: 4 },
+      block_type: 'reverb',
+      params: {
+        X: { effect_type: 'MEDIUM PLATE', mix: 25 },
+      },
+    },
+  ],
+  scenes: [
+    { scene: 1, name: 'Clean', channels: { amp: 'X', reverb: 'X' }, bypassed: { drive: true } },
+    { scene: 2, name: 'Lead', channels: { amp: 'Y', reverb: 'X' }, bypassed: { drive: false } },
+  ],
+  landingScene: 1,
+};
 
 export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
   id: 'axe-fx-ii',
@@ -81,4 +123,5 @@ export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
   reader,
   writer,
   agent_guidance: AXEFX2_AGENT_GUIDANCE,
+  example_spec: AXEFX2_EXAMPLE_SPEC,
 };

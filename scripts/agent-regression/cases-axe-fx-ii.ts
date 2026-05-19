@@ -140,4 +140,112 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 60,
     },
   },
+
+  // ── Bouncing-regression cases (v0.1.0 install-test gap) ─────────
+  //
+  // Same theme as the AM4 bouncing cases (see cases-am4.ts): watch
+  // the apply_preset RETRY COUNT, not just the final-state correct.
+  // The pattern the v0.1.0 install test surfaced: agents building
+  // multi-scene presets bounce 3-5 apply_preset calls through
+  // validation errors. The Wave 1 fixes (Levenshtein hints, slot
+  // auto-coerce, internal-ref scrub) close that. These cases assert
+  // the budget directly.
+
+  // Enter Sandman 4-scene build on II — tests the X/Y channel surface,
+  // grid slot shape, and the BK-058 fix at the same time (X AND Y nested
+  // params survive the agent\'s spec). Asserts ≤ 1 apply_preset retry.
+  {
+    id: 'axefx2-enter-sandman-4scene',
+    device: 'axe-fx-ii',
+    tier: 'hardware',
+    description: 'Enter Sandman across 4 scenes on Axe-Fx II. Bouncing-regression — Wave 1 fixes + BK-058 channel-Y survival should let the agent land in ≤ 1 apply_preset retry. Verifies 4 scenes, X+Y channel amp params, no silently-muted master_volume.',
+    prompt: "Build me Enter Sandman across 4 scenes on the Axe-Fx II. Scene 1 clean intro on the X channel, scene 2 chugging rhythm on the Y channel with a high-gain amp, scene 3 verse loud, scene 4 lead solo. Use the working buffer, don\'t save. Make every scene actually audible.",
+    expectations: {
+      must_call: ['describe_device', 'apply_preset'],
+      max_tools: 10,
+      max_repeats: { apply_preset: 2 },
+      tool_call_validators: [{
+        tool: 'apply_preset',
+        call_index: 0,
+        check: (args) => {
+          const spec = (args.spec ?? {}) as { scenes?: unknown };
+          const scenes = Array.isArray(spec.scenes) ? spec.scenes.length : 0;
+          if (scenes !== 4) {
+            return `apply_preset spec should declare 4 scenes, got ${scenes}.`;
+          }
+          // BK-058 regression-piggyback: both X and Y must reach apply_preset.
+          const channelKeys = ampChannelKeys(args);
+          if (!channelKeys.has('X') || !channelKeys.has('Y')) {
+            return `apply_preset amp params should include BOTH X and Y channels, got: ${[...channelKeys].sort().join(',') || '(none)'}.`;
+          }
+          // Sensible master_volume on II — anything below display ~2 is
+          // a near-mute on the 0..10 knob. The H1-class trap, ported.
+          let muted = false;
+          if (Array.isArray((args.spec as { slots?: unknown[] }).slots)) {
+            for (const slot of (args.spec as { slots: unknown[] }).slots) {
+              if (slot === null || typeof slot !== 'object') continue;
+              const s = slot as { block_type?: string; params?: unknown };
+              if (s.block_type !== 'amp') continue;
+              const p = s.params;
+              if (p === null || typeof p !== 'object') continue;
+              for (const v of Object.values(p as Record<string, unknown>)) {
+                if (v === null || typeof v !== 'object') continue;
+                const mv = (v as Record<string, unknown>).master_volume ?? (v as Record<string, unknown>).master;
+                if (typeof mv === 'number' && mv < 2) muted = true;
+              }
+            }
+          }
+          if (muted) {
+            return `apply_preset spec sets amp master_volume < 2 on at least one channel — silently-muted amp regression. Audible target: ≥ 2 on the 0..10 knob.`;
+          }
+          return true;
+        },
+      }],
+      text_not_contains: ['saved to', 'persisted to', 'stored to'],
+      max_wall_seconds: 240,
+    },
+  },
+
+  // Slot-shape recovery — Wave 1 added an auto-coerce path in the
+  // preflight walker (preflight.ts:374): a bare-int slot=3 on a grid
+  // device gets coerced to {row:2, col:3} with an `info[]` advisory.
+  // The agent should NOT need to retry. The case fires apply_preset
+  // with slot:3 and verifies (a) the call succeeded on the first try
+  // (b) the result envelope carries the "coerced shorthand" info line.
+  {
+    id: 'axefx2-slot-shape-recovery',
+    device: 'axe-fx-ii',
+    tier: 'no-hardware',
+    description: 'Slot auto-coerce on Axe-Fx II — Wave 1 fix lets bare-int slot:3 on grid devices auto-coerce to {row:2, col:3} with an info[] advisory. Bouncing-regression: agent should NOT retry, the FIRST apply_preset call should succeed with the advisory surfaced. Catches an agent that ignores the coerce + reissues with {row, col}.',
+    prompt: "On the Axe-Fx II, place an amp in slot 3 using the working buffer. Use a clean amp at moderate gain. Don\'t save.",
+    expectations: {
+      must_call: ['apply_preset'],
+      max_tools: 6,
+      // Single apply_preset call is the win condition. A retry on
+      // slot:3 means the agent didn\'t trust the auto-coerce.
+      max_repeats: { apply_preset: 1 },
+      tool_call_validators: [{
+        tool: 'apply_preset',
+        call_index: 0,
+        check: (args, result) => {
+          // First, verify the agent passed slot:3 as the bare int.
+          const spec = (args.spec ?? {}) as { slots?: unknown };
+          if (!Array.isArray(spec.slots) || spec.slots.length === 0) {
+            return `apply_preset spec.slots empty — no amp placed.`;
+          }
+          const first = spec.slots[0] as { slot?: unknown; block_type?: string };
+          if (first.slot !== 3 && (typeof first.slot !== 'object' || first.slot === null)) {
+            return `apply_preset slot should be the bare-int shorthand 3 (testing the auto-coerce path) — got ${JSON.stringify(first.slot)}.`;
+          }
+          // Then, verify the response surfaced the "coerced shorthand"
+          // info advisory the preflight walker emits on the auto-coerce.
+          if (result === undefined || !/coerced shorthand|row.*2.*col.*3|validation_info/i.test(result)) {
+            return `apply_preset result should carry the auto-coerce info advisory ("coerced shorthand slot=3 -> {row: 2, col: 3}"). Got: ${result?.slice(0, 280)}.`;
+          }
+          return true;
+        },
+      }],
+      max_wall_seconds: 60,
+    },
+  },
 ];

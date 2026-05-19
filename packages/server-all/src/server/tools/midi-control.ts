@@ -20,18 +20,10 @@ import { invalidateChannelCache } from '@mcp-midi-control/am4/shared/channels.js
 export function registerMidiControlTools(server: McpServer): void {
     server.registerTool('list_midi_ports', {
         description: [
-            'List every MIDI port the server can see on this machine, for both',
-            'inputs and outputs. Safe to call at any time — does not open any MIDI',
-            'connection or interfere with an in-progress session.',
-            'Default behaviour tags ports whose names contain "am4" or "fractal"',
-            'as the AM4. Pass `pattern` to tag a different device — e.g. "hydra"',
-            'for the Hydrasynth, "axe-fx" for the Axe-Fx II — when diagnosing',
-            'whether a non-AM4 device is plugged in.',
-            'Use when a user reports a device isn\'t connected to diagnose whether',
-            'it\'s visible at all, whether the driver is installed, or whether',
-            'another app is holding the port. If the device shows up here but',
-            'writes still fail, call reconnect_midi (with the matching `port`',
-            'argument for non-AM4 devices) to force a fresh handle.',
+            'List every MIDI input + output port the OS exposes. Safe any time; opens no connection.',
+            'Call when the user reports a device isn\'t connected, to diagnose whether the device is visible, the driver is installed, or another app holds the port.',
+            '- Default tags AM4 (needles "am4"/"fractal"). Pass `pattern` to tag a different device (e.g. "hydra", "axe-fx").',
+            '- If a port shows up but writes still fail, call reconnect_midi (with matching `port` for non-AM4 devices).',
         ].join(' '),
         inputSchema: {
             pattern: z.union([z.string(), z.array(z.string())]).optional().describe(
@@ -79,17 +71,9 @@ export function registerMidiControlTools(server: McpServer): void {
 
     server.registerTool('reconnect_midi', {
         description: [
-            'Reset the server\'s MIDI connection when writes stop acking.',
-            'Force the server to close its cached MIDI connection and open a fresh',
-            'one. Use this if writes stop getting ack\'d — typically after a USB',
-            'replug, the AM4 power-cycling, or any other event that leaves the',
-            'cached handle in a dead state. The server also auto-reconnects after',
-            `${STALE_HANDLE_TIMEOUT_THRESHOLD} consecutive ack-less writes, so`,
-            'manual use is only needed when you want to force it sooner without',
-            'waiting for writes to accumulate.',
-            'Defaults to reconnecting the AM4. Pass `port` to target a different',
-            'device (e.g. "hydra" for the Hydrasynth) — the server treats the',
-            'string as a case-insensitive name-substring needle.',
+            'Reset the MIDI connection: close the cached handle and open a fresh one. Use after USB replug, device power-cycle, or any event leaving the handle dead.',
+            `The server auto-reconnects after ${STALE_HANDLE_TIMEOUT_THRESHOLD} consecutive ack-less writes; call this manually to force it sooner.`,
+            '- Defaults to AM4. Pass `port` (case-insensitive substring needle) for other devices.',
         ].join(' '),
         inputSchema: {
             port: z.string().optional().describe(

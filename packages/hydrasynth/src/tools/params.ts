@@ -29,19 +29,9 @@ export function registerHydrasynthParamTools(server: McpServer): void {
 
 server.registerTool('hydra_set_param', {
   description: HYDRA_DEV_MODE_PREAMBLE + [
-    'Use this tool to set a SYSTEM CC on the user\'s ASM Hydrasynth Explorer — these are',
-    'the always-on MIDI controls that work regardless of the device\'s Param TX/RX setting:',
-    'Master Volume (system.master_volume), Modulation Wheel (system.modulation_wheel),',
-    'Sustain Pedal (system.sustain_pedal), Expression Pedal (system.expression_pedal),',
-    'Bank Select MSB/LSB (system.bank_select_msb / .bank_select_lsb), All Notes Off',
-    '(system.all_notes_off). 7 parameters total.',
-    '',
-    'For ANY OTHER engine parameter (oscillators, filters, envelopes, mixer, FX, etc.)',
-    'use hydra_set_engine_param (single) or hydra_set_engine_params (batch) — those use',
-    'NRPN, which is the device\'s standard mode for engine control and covers 1175',
-    'parameters including the wave/filter/FX type selectors that aren\'t on CCs at all.',
-    '',
-    'Values are 0..127 (raw MIDI CC range). No wire-ack is expected.',
+    'Set a Hydrasynth SYSTEM CC: master_volume, modulation_wheel, sustain_pedal, expression_pedal, bank_select_msb/lsb, all_notes_off. These are always-on regardless of the device\'s Param TX/RX setting.',
+    'For ENGINE params (oscillators, filters, envelopes, mixer, FX) use the unified set_param({port:"hydrasynth", block, name, value}) instead, which routes through NRPN and covers the full 1175-param surface.',
+    '- value: 0..127 (raw MIDI CC range). No wire-ack expected.',
   ].join('\n'),
   inputSchema: {
     id: z.string().describe(
@@ -80,15 +70,8 @@ server.registerTool('hydra_set_param', {
 
 server.registerTool('hydra_set_macro', {
   description: HYDRA_DEV_MODE_PREAMBLE + [
-    'Use this tool to set one of the user\'s Macro controls on the Hydrasynth Explorer.',
-    'Macros 1-8 are patch-defined: each loaded patch wires its 8 Macros to whatever',
-    'synthesis parameters the patch designer chose, via the mod matrix. So "Macro 1"',
-    'might be filter sweep on one patch and reverb mix on another — there\'s no fixed',
-    'mapping. Macros are an excellent first lever for tone tweaks because they\'re',
-    'curated by the patch designer to be musically useful for that patch.',
-    '',
-    'Macros are CCs 16-23 internally. Like other engine CCs they require Param TX/RX = CC',
-    'on the device.',
+    'Set one of the Hydrasynth\'s 8 Macro controls (CCs 16-23). Each patch wires its Macros to different synthesis params via the mod matrix, so the audible effect is per-patch. Excellent first lever for tone tweaks because they\'re curated by the patch designer.',
+    'Requires Param TX/RX = CC on the device.',
   ].join('\n'),
   inputSchema: {
     macro: z.number().int().min(1).max(8).describe('Macro number 1..8 (1-indexed, matching the device\'s display).'),

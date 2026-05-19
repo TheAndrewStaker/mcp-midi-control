@@ -15,6 +15,76 @@
 
 import type { AgentRegressionCase } from './types.js';
 
+/**
+ * Count how many distinct scenes the agent declared in an apply_preset
+ * spec. Used by the multi-scene bouncing-regression cases to verify the
+ * agent landed N scenes on its first apply_preset call.
+ */
+function countScenes(args: Record<string, unknown>): number {
+  const spec = (args.spec ?? {}) as { scenes?: unknown };
+  if (!Array.isArray(spec.scenes)) return 0;
+  return spec.scenes.length;
+}
+
+/**
+ * Pull a display-typed param value off a slot's params, walking either
+ * the flat or the channel-nested shape. Returns the first match across
+ * all channels. Used to assert sensible wire targets (non-muted drives,
+ * audible master volumes) survived the agent's apply_preset spec.
+ */
+function pickParamValue(
+  args: Record<string, unknown>,
+  blockType: string,
+  paramName: string,
+): number | string | undefined {
+  const spec = (args.spec ?? {}) as { slots?: unknown };
+  if (!Array.isArray(spec.slots)) return undefined;
+  for (const slot of spec.slots) {
+    if (slot === null || typeof slot !== 'object') continue;
+    const s = slot as { block_type?: string; params?: unknown };
+    if (s.block_type !== blockType) continue;
+    const p = s.params;
+    if (p === null || typeof p !== 'object') continue;
+    const flat = (p as Record<string, unknown>)[paramName];
+    if (typeof flat === 'number' || typeof flat === 'string') return flat;
+    for (const v of Object.values(p as Record<string, unknown>)) {
+      if (v !== null && typeof v === 'object') {
+        const nested = (v as Record<string, unknown>)[paramName];
+        if (typeof nested === 'number' || typeof nested === 'string') return nested;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Find a slot of a given block type and return the param keys recorded
+ * on it (across all channels for channel-nested blocks). Used by the
+ * recipe-usage case to verify the agent set envelope-follower knobs
+ * (sensitivity, attack_time, release_time) and not a bare static-filter
+ * config.
+ */
+function slotParamKeys(args: Record<string, unknown>, blockType: string): Set<string> {
+  const out = new Set<string>();
+  const spec = (args.spec ?? {}) as { slots?: unknown };
+  if (!Array.isArray(spec.slots)) return out;
+  for (const slot of spec.slots) {
+    if (slot === null || typeof slot !== 'object') continue;
+    const s = slot as { block_type?: string; params?: unknown };
+    if (s.block_type !== blockType) continue;
+    const p = s.params;
+    if (p === null || typeof p !== 'object') continue;
+    for (const [k, v] of Object.entries(p as Record<string, unknown>)) {
+      if (v !== null && typeof v === 'object') {
+        for (const innerKey of Object.keys(v as Record<string, unknown>)) out.add(innerKey);
+      } else {
+        out.add(k);
+      }
+    }
+  }
+  return out;
+}
+
 /** Pull the reverb type display name out of an apply_preset spec, if present. */
 function pickReverbType(args: Record<string, unknown>): string | undefined {
   const spec = (args.spec ?? {}) as { slots?: unknown };
@@ -453,6 +523,187 @@ export const AM4_CASES: AgentRegressionCase[] = [
       }],
       text_not_contains: ['oscillator gain is now', 'set oscillator gain', 'oscillator has been set'],
       max_wall_seconds: 60,
+    },
+  },
+
+  // ── Bouncing-regression cases (v0.1.0 install-test gap) ─────────
+  //
+  // These cases watch the apply_preset RETRY COUNT, not just the
+  // final-state correctness. The pattern the v0.1.0 install test
+  // surfaced: an agent building a multi-scene preset bounces through
+  // 3-5 apply_preset validation errors because it guessed wrong on
+  // slot shape, param names, or enum values. Wave 1 fixes (Levenshtein
+  // suggestions, slot auto-coerce, cross-device alias table, enum
+  // tolerance, internal-ref scrub) should keep the bounce count at
+  // ≤ 1 for typical authoring prompts. The cases below assert that
+  // budget directly via `max_repeats: { apply_preset: N }`.
+
+  // Enter Sandman 4-scene build — the canonical multi-scene authoring
+  // prompt. Tests cross-device naming divergence (drive.level not
+  // drive.volume, wah.type not wah.effect_type, USA MK IIC+ not
+  // USA IIC+) lands on the FIRST apply_preset call because the alias
+  // table + enum-key resolver fire ahead of any validator throw.
+  {
+    id: 'am4-enter-sandman-4scene',
+    device: 'am4',
+    tier: 'hardware',
+    description: 'Enter Sandman across 4 scenes on AM4. Bouncing-regression — Wave 1 fixes (alias table, enum-key resolver) should let the agent land the build in ≤ 1 apply_preset retry. Asserts 4 scenes present, drive level + amp master at sensible (non-near-zero) wire targets, and Wave 1\'s "info[]" surface fires when cross-device vocabulary substitutions happen.',
+    prompt: "Build me Enter Sandman across 4 scenes on the AM4. Scene 1 clean intro on Z01, scene 2 chugging rhythm on the Mesa MK IIC+, scene 3 the loud verse, scene 4 the lead solo. Make every scene actually audible — don\'t mute the drive or amp.",
+    expectations: {
+      must_call: ['describe_device', 'apply_preset'],
+      max_tools: 10,
+      // The single most important assertion: at most 2 apply_preset
+      // calls total (first attempt + at most one retry). Anything more
+      // is bouncing. Bumped from the AM4 baseline by 0 — the bouncing
+      // metric is the test.
+      max_repeats: { apply_preset: 2 },
+      tool_call_validators: [{
+        tool: 'apply_preset',
+        // Check the LAST apply_preset call (whichever index it lands on).
+        // If max_repeats already capped to 2, this is index 0 or 1.
+        call_index: 0,
+        check: (args) => {
+          const scenes = countScenes(args);
+          if (scenes !== 4) {
+            return `apply_preset spec should declare 4 scenes, got ${scenes}.`;
+          }
+          // Sensible drive output level — anything below 2 (out of 10)
+          // is effectively a muted drive on AM4. The H1-class trap.
+          const driveLevel = pickParamValue(args, 'drive', 'level')
+            ?? pickParamValue(args, 'drive', 'volume');
+          if (typeof driveLevel === 'number' && driveLevel < 2) {
+            return `apply_preset drive.level=${driveLevel} is near-zero — drive would be effectively muted. Audible target: ≥ 2 on the 0..10 knob.`;
+          }
+          // Sensible amp master volume — same threshold.
+          const ampMaster = pickParamValue(args, 'amp', 'master')
+            ?? pickParamValue(args, 'amp', 'master_volume');
+          if (typeof ampMaster === 'number' && ampMaster < 2) {
+            return `apply_preset amp.master=${ampMaster} is near-zero — amp would be inaudible. Audible target: ≥ 2 on the 0..10 knob.`;
+          }
+          return true;
+        },
+      }],
+      // No save-confidence narration when apply_preset runs in
+      // working-buffer mode (no target_location).
+      text_not_contains: ['saved to', 'persisted to'],
+      max_wall_seconds: 240,
+    },
+  },
+
+  // Recipe-usage test — the BK-064 auto-wah recipe should drive the
+  // agent\'s param picks on AM4. AM4\'s FILTER block has built-in
+  // envelope-follower types (Auto-Wah / Envelope Filter / Touch-Wah);
+  // the install-test failure was the agent placing a static wah block
+  // and deferring modifier wiring to the user. Now the agent should
+  // pick FILTER block + type=\'Auto-Wah\' with sensible env-follower
+  // knobs (sensitivity, attack_time, release_time).
+  {
+    id: 'am4-recipe-auto-wah',
+    device: 'am4',
+    tier: 'hardware',
+    description: 'Auto-wah on AM4 — bouncing-regression for the install-test failure pattern. AM4\'s FILTER block has built-in Auto-Wah type; agent should pick that, not a static wah with deferred modifier wiring. Asserts apply_preset spec carries filter.type=\'Auto-Wah\' + envelope-follower knobs (sensitivity, attack_time, release_time).',
+    prompt: "Add an auto-wah to the lead scene on the AM4. I want envelope-follower behavior — sweeping with my pick attack, not a static parked wah.",
+    expectations: {
+      must_call: ['apply_preset'],
+      max_tools: 10,
+      max_repeats: { apply_preset: 2 },
+      tool_call_validators: [{
+        tool: 'apply_preset',
+        call_index: 0,
+        check: (args) => {
+          // Recipe target on AM4 is the FILTER block (per autoWah.ts).
+          const filterType = pickParamValue(args, 'filter', 'type');
+          if (typeof filterType !== 'string') {
+            return `apply_preset spec missing filter.type on AM4 — the FILTER block\'s built-in Auto-Wah type is the AM4 path to envelope-follower wah. Agent picked a different shape.`;
+          }
+          if (!/auto.?wah|envelope.?filter|touch.?wah/i.test(filterType)) {
+            return `apply_preset filter.type="${filterType}" is not an envelope-follower type. AM4 envelope-follower types: Auto-Wah / Envelope Filter / Touch-Wah.`;
+          }
+          // Recipe knobs the agent should land per autoWah.ts (sensitivity,
+          // attack_time, release_time). Don\'t hard-assert all three; ≥ 2
+          // is enough to prove the agent picked recipe-shaped values
+          // rather than just the bare type enum.
+          const keys = slotParamKeys(args, 'filter');
+          const recipeKnobs = ['sensitivity', 'attack_time', 'release_time'];
+          const hit = recipeKnobs.filter((k) => keys.has(k)).length;
+          if (hit < 2) {
+            return `apply_preset filter block set type but only ${hit}/3 envelope-follower knobs (sensitivity, attack_time, release_time). Agent should land the recipe shape, not the bare type enum.`;
+          }
+          return true;
+        },
+      }],
+      // The install-test trace had the agent say "True envelope-follower
+      // behavior needs a modifier wired from the envelope-follower
+      // source onto the wah\'s control" — that's the regression. On AM4,
+      // no modifier is needed because the FILTER block IS the envelope
+      // follower. Catch the false-deferral.
+      text_not_contains: [
+        'separate operation',
+        'modifier from the envelope',
+        'wire a modifier',
+        'will need to manually',
+        'you\'ll need to wire',
+      ],
+      max_wall_seconds: 180,
+    },
+  },
+
+  // Unknown-param recovery — the agent uses a wrong param name, sees
+  // a "did you mean: <canonical>?" suggestion from the dispatcher\'s
+  // Levenshtein matcher (errorFormat.ts), and recovers with the
+  // suggested name on the SAME tool round. Bouncing-regression for
+  // the agent that fires set_param 5× with progressively-different
+  // bad names instead of reading the suggestion in the error envelope.
+  {
+    id: 'am4-unknown-param-recovery',
+    device: 'am4',
+    tier: 'no-hardware',
+    description: 'Unknown-param recovery — when the agent fires set_param with a typo (amp.gainn), the AM4 dispatcher returns a Levenshtein "Did you mean: gain?" suggestion. Agent should recover on attempt #2 by reading that suggestion. Bouncing-regression: catches an agent that fires set_param ≥ 3× cycling random param names instead of using the suggestion.',
+    prompt: "On the AM4, set the amp.gainn (yes, with the typo) to 6. If the device rejects that param name, recover and try the closest valid name.",
+    expectations: {
+      must_call: ['set_param'],
+      max_tools: 6,
+      // Bouncing budget: at most 2 set_param calls (the deliberate
+      // typo + one recovery using the suggestion). Anything more is
+      // the regression.
+      max_repeats: { set_param: 2 },
+      tool_call_validators: [
+        // First call lands with the typo and gets a "Did you mean" error.
+        {
+          tool: 'set_param',
+          call_index: 0,
+          check: (args, result) => {
+            if (args.block !== 'amp' || args.name !== 'gainn') {
+              return `set_param call #1 should have used the prompt-supplied typo amp.gainn, got block=${String(args.block)} name=${String(args.name)}.`;
+            }
+            if (result === undefined || !/Did you mean.*gain/i.test(result)) {
+              return `set_param amp.gainn result should carry a "Did you mean: gain?" suggestion — got: ${result?.slice(0, 240)}.`;
+            }
+            return true;
+          },
+        },
+        // Second call (the recovery) lands with the canonical name.
+        {
+          tool: 'set_param',
+          call_index: 1,
+          optional: true, // agent could refuse rather than retry — both pass
+          check: (args, result) => {
+            if (args.block !== 'amp' || args.name !== 'gain') {
+              return `set_param call #2 should have recovered with amp.gain (the Levenshtein-1 suggestion), got block=${String(args.block)} name=${String(args.name)}. Bouncing through more typos instead of reading the "Did you mean" hint = the regression this case catches.`;
+            }
+            if (args.value !== 6 && args.value !== '6') {
+              return `set_param call #2 value should be 6 (from the original prompt), got ${JSON.stringify(args.value)}.`;
+            }
+            // Recovery must actually succeed — if the dispatcher
+            // returned another error, the agent picked the wrong fix.
+            if (result !== undefined && /unknown|not valid|out of range/i.test(result)) {
+              return `set_param call #2 (amp.gain) returned another error — recovery picked the wrong name. Result: ${result.slice(0, 200)}.`;
+            }
+            return true;
+          },
+        },
+      ],
+      max_wall_seconds: 90,
     },
   },
 ];

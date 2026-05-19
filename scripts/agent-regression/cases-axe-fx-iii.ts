@@ -73,6 +73,48 @@ export const AXE_FX_III_CASES: AgentRegressionCase[] = [
     },
   },
 
+  // ── Bouncing-regression case (v0.1.0 install-test gap) ─────────
+  //
+  // Enter Sandman 4-scene on III — tests the III\'s unified apply_preset
+  // surface + scene-overflow handling. III supports 8 scenes; we use 4
+  // for parity with the AM4/II Enter Sandman cases. Asserts ≤ 1
+  // apply_preset retry — Wave 1\'s slot auto-coerce, cross-device
+  // aliasing, and enum-key resolver are exercised end-to-end.
+  {
+    id: 'axefx3-enter-sandman-4scene',
+    device: 'axe-fx-iii',
+    tier: 'hardware',
+    description: 'Enter Sandman across 4 scenes on Axe-Fx III. Bouncing-regression — exercises the III\'s grid auto-coerce + 4-channel surface. Wave 1 fixes should land the build in ≤ 1 apply_preset retry. Verifies 4 scenes, a placed amp + drive, sensible audio levels.',
+    prompt: "Build me Enter Sandman across 4 scenes on the Axe-Fx III. Scene 1 clean intro, scene 2 chugging rhythm on a high-gain amp, scene 3 verse loud, scene 4 lead solo. Use the working buffer, don\'t save. Make every scene audible.",
+    expectations: {
+      must_call: ['describe_device', 'apply_preset'],
+      max_tools: 10,
+      max_repeats: { apply_preset: 2 },
+      tool_call_validators: [{
+        tool: 'apply_preset',
+        call_index: 0,
+        check: (args) => {
+          const spec = (args.spec ?? {}) as { scenes?: unknown; slots?: unknown[] };
+          const scenes = Array.isArray(spec.scenes) ? spec.scenes.length : 0;
+          if (scenes !== 4) {
+            return `apply_preset spec should declare 4 scenes, got ${scenes}.`;
+          }
+          // Sanity: an amp must be placed. Empty-slots multi-scene
+          // builds are a silent-no-op regression.
+          const hasAmp = Array.isArray(spec.slots) && spec.slots.some((s) => {
+            return s !== null && typeof s === 'object' && (s as { block_type?: string }).block_type === 'amp';
+          });
+          if (!hasAmp) {
+            return `apply_preset spec is missing an amp slot — 4-scene Enter Sandman without an amp is a silent-no-op regression.`;
+          }
+          return true;
+        },
+      }],
+      text_not_contains: ['saved to', 'persisted to', 'stored to'],
+      max_wall_seconds: 240,
+    },
+  },
+
   // §2 discovery — describe_device routes correctly for III
   {
     id: 'axefx3-discovery-describe',

@@ -47,20 +47,9 @@ export function registerNavigationTools(server: McpServer): void {
     // surfaces the raw bytes for the probe harness.
     server.registerTool('am4_request_active_buffer_dump', {
         description: [
-            'Request a dump of the AM4\'s current working buffer in stored-form',
-            'bytes. Returns the raw 6-message dump stream (0x77 header + 4x 0x78',
-            'chunks + 0x79 footer) without any parsing of the masked content.',
-            'Non-destructive: working-buffer state is preserved, active location is',
-            'preserved, no audible side effects. The guitarist can keep playing',
-            'on the active preset during the dump.',
-            'Primary use case: probe series for decoding the preset binary',
-            'format. After setting the working buffer to a known state via',
-            'apply_preset, dump and diff against a baseline to map byte-to-',
-            'param relationships.',
-            'Performance: ~150-200 ms wire time for the 12 KB response.',
-            'Returns raw masked bytes (the chunk content reflects working-',
-            'buffer state structurally; v0.1.0 does NOT decode them).',
-            'Useful raw for diff-based probe series.',
+            'Dump the AM4 working buffer as raw stored-form bytes (6-message stream: 0x77 header + 4x 0x78 chunks + 0x79 footer). No parsing of the masked content.',
+            'Non-destructive: working buffer, active location, and playback are preserved.',
+            'Primary use: diff-based probe series for decoding the preset binary format. Returns ~12 KB in ~150-200 ms.',
         ].join(' '),
         inputSchema: {},
     }, async () => {

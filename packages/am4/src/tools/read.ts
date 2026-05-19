@@ -54,17 +54,10 @@ const BYPASS_STATE_PID_HIGH = 0x0003;
 export function registerReadTools(server: McpServer): void {
     server.registerTool('am4_get_block_layout', {
         description: [
-            'Read the current 4-slot block layout from the AM4 working buffer.',
-            'Returns the block type at each signal-chain position 1..4 — e.g.',
-            '"Slot 1: filter, Slot 2: amp, Slot 3: delay, Slot 4: reverb" — or',
-            '"none" for empty slots. Use this BEFORE proposing layout changes so',
-            'the user can see the diff in chat ("you currently have drive→amp→',
-            'delay→reverb; I\'ll change slot 1 from drive to compressor").',
-            'Read-only, ~4 wire round-trips, < 200 ms total. Does not affect any',
-            'audible state. Block names match the dictionary in list_block_types.',
-            'For per-block bypass state (which slots are off in the current scene)',
-            'this tool does not yet read; use the AM4 display or AM4-Edit for that',
-            'until the bypass-read decode lands.',
+            'Read the AM4 working-buffer block layout (4 slots). Returns the block type at each signal-chain position 1..4, or "none" for empty slots.',
+            'Call before proposing layout changes so the user can see the diff in chat ("currently drive->amp->delay->reverb; changing slot 1 to compressor").',
+            '- Read-only, 4 wire round-trips, < 200 ms.',
+            '- Block bypass state is NOT included; use am4_get_block_bypass for that.',
         ].join(' '),
         inputSchema: {},
     }, async () => {
@@ -114,12 +107,7 @@ export function registerReadTools(server: McpServer): void {
 
     server.registerTool('am4_get_active_scene', {
         description: [
-            'Read the AM4\'s currently active scene number (1..4). Use this when',
-            'the user asks "what scene am I on?" or as part of a session-opener',
-            'that summarizes current device state. Read-only, single round-trip,',
-            '< 100 ms. Wire address: pidLow=0x00CE, pidHigh=0x000D — same family',
-            'as preset switch and block placement. Encoding: raw u32 little-',
-            'endian integer = scene index (0..3); display = index + 1.',
+            'Read the AM4\'s currently active scene (1..4). Use for "what scene am I on?" or session-opener state summaries. Read-only, single round-trip, < 100 ms.',
         ].join(' '),
         inputSchema: {},
     }, async () => {
@@ -156,12 +144,7 @@ export function registerReadTools(server: McpServer): void {
 
     server.registerTool('am4_get_active_location', {
         description: [
-            'Read the AM4\'s currently active preset location code (e.g. "W04",',
-            '"A01", "Z04"). Use this when the user asks "what preset am I on?"',
-            'or to anchor "tweak this preset" requests. Read-only, single round-',
-            'trip, < 100 ms. Wire address: pidLow=0x00CE, pidHigh=0x000A. Encoding:',
-            'raw u32 little-endian integer = location index 0..103, mapped to',
-            'A01..Z04 via the standard 4-per-bank scheme.',
+            'Read the AM4\'s currently active preset location (e.g. "W04", "A01"). Use for "what preset am I on?" or to anchor "tweak this preset" requests. Read-only, single round-trip, < 100 ms.',
         ].join(' '),
         inputSchema: {},
     }, async () => {
@@ -209,17 +192,8 @@ export function registerReadTools(server: McpServer): void {
 
     server.registerTool('am4_get_block_bypass', {
         description: [
-            'Read whether a block is bypassed (silent) or active in the AM4\'s',
-            'currently-selected scene. Returns "active" or "bypassed". Use this',
-            'when the user asks "is the amp on?" or before changing a param on a',
-            'block they may have toggled off. Read-only, single round-trip,',
-            '< 100 ms. Wire address: pidLow=blockTypeValue (e.g. amp=0x003A),',
-            'pidHigh=0x0003, action=0x0d (long-form param descriptor read — the',
-            'same poll AM4-Edit uses to keep its UI in sync with front-panel',
-            'bypass toggles). Bypass flag is byte 22 of the 64-byte response;',
-            'value 1 = bypassed, value 0 = active. Tracks live state regardless',
-            'of whether the bypass last changed via this MCP tool, the front',
-            'panel, or AM4-Edit.',
+            'Read whether an AM4 block is bypassed or active in the currently-selected scene. Returns "active" or "bypassed".',
+            'Call for "is the amp on?" or before changing a param on a block the user may have toggled off. Tracks live state regardless of source (this tool, front panel, or AM4-Edit). Read-only, < 100 ms.',
         ].join(' '),
         inputSchema: {
             block: z.string().describe('Block name, e.g. "amp", "drive", "reverb", "delay", "compressor", "filter"'),

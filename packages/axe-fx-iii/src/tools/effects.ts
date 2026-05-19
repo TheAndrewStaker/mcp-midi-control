@@ -56,10 +56,7 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
 
   server.registerTool('axefx3_get_bypass', {
     description: [
-      "Read a block's current bypass state on the Axe-Fx III.",
-      '',
-      'Wire: GET_BYPASS (function 0x0A with `dd=0x7F`).',
-      '',
+      'Read a block\'s current bypass state on the Axe-Fx III. Returns BYPASSED or ENGAGED.',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {
@@ -101,16 +98,8 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
 
   server.registerTool('axefx3_set_channel', {
     description: [
-      "Switch a block's active channel on the Axe-Fx III. Each block",
-      'holds up to 4 independent parameter sets (channels A/B/C/D).',
-      'Targets the ACTIVE scene only.',
-      '',
-      'Wire: SET_CHANNEL (function 0x0B). Payload: `id id dd` where',
-      '  id id = 14-bit effect ID per v1.4 Appendix 1 (LS-first)',
-      '  dd    = 0 (A), 1 (B), 2 (C), 3 (D)',
-      '',
+      'Switch a block\'s active channel (A/B/C/D) on the Axe-Fx III. Each block holds up to 4 independent param sets. Targets the ACTIVE scene only.',
       NO_ACK_NOTE,
-      '',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {
@@ -144,10 +133,7 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
 
   server.registerTool('axefx3_get_channel', {
     description: [
-      "Read a block's current channel (A/B/C/D) on the Axe-Fx III.",
-      '',
-      'Wire: GET_CHANNEL (function 0x0B with `dd=0x7F`).',
-      '',
+      'Read a block\'s current channel (A/B/C/D) on the Axe-Fx III.',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {
