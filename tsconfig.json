@@ -17,7 +17,7 @@
       "@mcp-midi-control/am4/*": ["packages/am4/src/*"],
       "@mcp-midi-control/axe-fx-ii/*": ["packages/axe-fx-ii/src/*"],
       "@mcp-midi-control/axe-fx-iii/*": ["packages/axe-fx-iii/src/*"],
-      "@mcp-midi-control/hydrasynth-explorer/*": ["packages/hydrasynth-explorer/src/*"],
+      "@mcp-midi-control/hydrasynth/*": ["packages/hydrasynth/src/*"],
       "@mcp-midi-control/server-all/*": ["packages/server-all/src/*"]
     }
   },

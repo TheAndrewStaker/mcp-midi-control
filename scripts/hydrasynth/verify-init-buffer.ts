@@ -16,7 +16,7 @@
  * buffer plays audibly, asserting display interpretations risks locking
  * in the wrong interpretation.
  */
-import { INIT_PATCH_BUFFER } from '@mcp-midi-control/hydrasynth-explorer/initPatchBuffer.js';
+import { INIT_PATCH_BUFFER } from '@mcp-midi-control/hydrasynth/initPatchBuffer.js';
 import {
   PATCH_BUFFER_SIZE,
   PATCH_META,
@@ -25,7 +25,7 @@ import {
   readPatchName,
   decodePatch,
   defaultPatchBuffer,
-} from '@mcp-midi-control/hydrasynth-explorer/patchEncoder.js';
+} from '@mcp-midi-control/hydrasynth/patchEncoder.js';
 
 let pass = 0;
 const fail: string[] = [];

@@ -33,7 +33,7 @@ const SEMITONE_BY_LETTER: Record<string, number> = {
  * "F#3", "Bb-1"). Returns the 0..127 note. Middle C = C4 = 60 (Yamaha
  * convention, matches Hydrasynth manual and most DAWs).
  *
- * Mirrors `parseNote` in `packages/hydrasynth-explorer/src/tools/shared.ts`
+ * Mirrors `parseNote` in `packages/hydrasynth/src/tools/shared.ts`
  * — kept inline here so the unified surface has no cross-device package
  * dependency for a primitive that's fundamentally vendor-agnostic.
  */

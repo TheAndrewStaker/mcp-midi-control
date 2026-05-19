@@ -594,7 +594,7 @@ packages/
 │   └── src/
 │       ├── tools/                #   Axe-Fx II XL+ tool surface
 │       └── (params, setParam, blockTypes, midi.ts, descriptor/, …)
-├── hydrasynth-explorer/          # @mcp-midi-control/hydrasynth-explorer
+├── hydrasynth/                   # @mcp-midi-control/hydrasynth
 │   └── src/
 │       ├── tools/                #   Hydrasynth tool surface (single-file
 │       │                         #     pattern; NRPN-driven engine)

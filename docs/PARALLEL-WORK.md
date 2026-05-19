@@ -57,7 +57,7 @@ The natural seams here, in rough order of safety:
 
 1. **Per-device.** AM4 / Axe-Fx II / Axe-Fx III / Hydrasynth code and
    docs are physically separated:
-   - `packages/am4/`, `packages/axe-fx-ii/`, `packages/hydrasynth-explorer/`
+   - `packages/am4/`, `packages/axe-fx-ii/`, `packages/hydrasynth/`
    - `docs/SYSEX-MAP.md` (AM4), `docs/SYSEX-MAP-AXE-FX-II.md`,
      `docs/SYSEX-MAP-AXE-FX-III.md`, `docs/HYDRASYNTH-*.md`
    - `docs/_private/HARDWARE-TASKS-AM4.md` etc.

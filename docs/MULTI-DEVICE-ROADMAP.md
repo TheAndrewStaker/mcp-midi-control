@@ -3,7 +3,7 @@
 > **Status (2026-05-15):** Phase 1 (single-repo workspace split) shipped
 > 2026-05-04 (commit `6f5a17e`). The codebase is a single npm-workspaces
 > monorepo with one package per device (`@mcp-midi-control/am4`,
-> `axe-fx-ii`, `axe-fx-iii`, `hydrasynth-explorer`) plus shared
+> `axe-fx-ii`, `axe-fx-iii`, `hydrasynth`) plus shared
 > `@mcp-midi-control/core` and an `@mcp-midi-control/server-all` entry
 > point. The split into a framework repo + per-vendor protocol-package
 > repos (`fractal-midi`, `asm-midi`, …) is still planned for v0.2, after
@@ -120,7 +120,7 @@ github.com/TheAndrewStaker/mcp-midi-control              ← single repo
     │       ├── descriptor.ts        ← betaRefusals on write ops pending capture
     │       ├── device.ts
     │       └── tools/
-    ├── hydrasynth-explorer/         ← ASM Hydrasynth Explorer descriptor
+    ├── hydrasynth/                  ← ASM Hydrasynth descriptor (Explorer / KB / Deluxe / Desktop)
     │   └── src/
     │       ├── descriptor.ts
     │       ├── server.ts            ← legacy hydra_* device-namespaced tools
@@ -273,7 +273,7 @@ Per [BK-005 / BK-014 / BK-015 / BK-031 in the backlog](_private/04-BACKLOG.md):
 |---|---|---|---|---|
 | **0** | Fractal AM4 | `@mcp-midi-control/am4` | Shipping in v0.1.0 | Founder owns, deepest RE done, MVP-shape proven |
 | **1** | Fractal Axe-Fx II XL+ | `@mcp-midi-control/axe-fx-ii` | In-repo, alpha | Founder owns, same SysEx envelope as AM4 (huge reuse — validates `fractal-shared/` boundary), wiki + Blocks Guide published. **First boundary-validation device** — confirmed the vendor-package shape works |
-| **1** | ASM Hydrasynth Explorer | `@mcp-midi-control/hydrasynth-explorer` | In-repo, alpha (BK-031) | Founder owns. CC chart fully published (manual pp. 94–96), zero capture-RE for the engine. The **non-Fractal vendor** validation point — confirmed the unified surface absorbs a totally different protocol family |
+| **1** | ASM Hydrasynth (line) | `@mcp-midi-control/hydrasynth` | In-repo, alpha (BK-031) | Founder owns the Explorer model; same SysEx/NRPN engine ships across Keyboard / Deluxe / Desktop / Explorer per ASM. CC chart fully published (manual pp. 94–96), zero capture-RE for the engine. The **non-Fractal vendor** validation point — confirmed the unified surface absorbs a totally different protocol family |
 | **1** | Fractal Axe-Fx III | `@mcp-midi-control/axe-fx-iii` | Community beta — descriptor scaffolded, write ops refused pending capture (BK-015) | Founder does not own. Same SysEx envelope as II. Scaffolded with `betaRefusals` so community contributors with hardware can iterate. |
 | **2** | Fractal FM9 / FM3 / VP4 | future `@mcp-midi-control/<device>` | Community beta | Need community-owned hardware for capture. Same vendor package, sibling subdirs |
 | **2** | Roland / Boss family (RC-505 MKII, VE-500, SPD-SX, JD-Xi) | future `@mcp-midi-control/<device>` | Queued | Roland publishes MIDI Implementation PDFs — zero capture-RE. Different SysEx family from Fractal but structurally simpler. Single vendor package across the family |
@@ -300,7 +300,7 @@ not promoted.
 
 ### Phase 1 — Workspace split (done 2026-05-04)
 
-- [x] Restructure `src/` → `packages/{core,am4,axe-fx-ii,hydrasynth-explorer,server-all}/`
+- [x] Restructure `src/` → `packages/{core,am4,axe-fx-ii,hydrasynth,server-all}/`
       (commit `6f5a17e`). Workspace npm setup with `@mcp-midi-control/*`
       scoped names. `server-all` is the MCP entrypoint; `core` carries
       cross-device foundation; each device is a sibling package.
@@ -330,8 +330,8 @@ without slowing core iteration.
       device (`fractal-midi/am4`, `fractal-midi/axe-fx-ii`, `…/axe-fx-iii`).
 - [ ] Update `mcp-midi-control` to depend on `fractal-midi` as an npm
       package instead of a local workspace.
-- [ ] Extract `packages/hydrasynth-explorer/` into `asm-midi` repo with
-      `asm-midi/hydrasynth-explorer` subpath; same pattern.
+- [ ] Extract `packages/hydrasynth/` into `asm-midi` repo with
+      `asm-midi/hydrasynth` subpath; same pattern.
 - [ ] Keep device-namespaced MCP wrappers (`am4_*`, `axefx2_*`,
       `hydra_*`) deprecated through v0.2 — full removal in v0.3 once
       `describe_device` carries the per-device guidance the long tool

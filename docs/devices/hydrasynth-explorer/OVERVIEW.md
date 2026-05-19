@@ -1,4 +1,4 @@
-<!-- Provenance: harvested from branch `hydrasynth-explorer` (commit 3d63075 "hydrasynth updates"). Source path: docs/devices/hydrasynth-explorer/OVERVIEW.md. Updated to reflect current monorepo state: NRPN map now decoded (1175 params live in `packages/hydrasynth-explorer/src/nrpn.ts`), CC catalog embedded in tool descriptions (117 entries), SysEx patch flow implemented (`hydra_apply_patch`), and `/8` patch-buffer scaling + 14-bit auto-scale rules summarized. -->
+<!-- Provenance: harvested from branch `hydrasynth-explorer` (commit 3d63075 "hydrasynth updates"). Source path: docs/devices/hydrasynth-explorer/OVERVIEW.md. Updated to reflect current monorepo state: NRPN map now decoded (1175 params live in `packages/hydrasynth/src/nrpn.ts`), CC catalog embedded in tool descriptions (117 entries), SysEx patch flow implemented (`hydra_apply_patch`), and `/8` patch-buffer scaling + 14-bit auto-scale rules summarized. -->
 
 # Hydrasynth Explorer — Overview
 
@@ -42,7 +42,7 @@ Apache-2.0). SysEx encoding sourced from
 |---|---|---|
 | **System CCs** (always on) | 🟢 documented + used in tools | CC 0/32 Bank Select MSB/LSB, CC 1 Mod Wheel, CC 7 Master Volume, CC 11 Expression Pedal, CC 64 Sustain, CC 123 All Notes Off. Per p. 82, these are NOT affected by the Param TX/RX setting — they always work. Exposed via `hydra_set_param` (System CCs only). |
 | **Engine CCs** (Param TX/RX = CC) | 🟡 documented, partly verified | 117 CCs across Osc / Mixer / Filter / Amp / Env / LFO / Mutator / Macro / Arp / FX, embedded in the `hydra_set_engine_param` tool description. **Requires the device's MIDI Param TX/RX setting set to CC** (System Setup → MIDI page 10). 117 CCs also aliased to the NRPN catalog so the same parameter name works whichever mode the device is in. |
-| **Engine NRPNs** (Param TX/RX = NRPN) | 🟢 1175 params decoded | Full NRPN map in `packages/hydrasynth-explorer/src/nrpn.ts`. Address by parameter name; the schema handles multi-slot disambiguation, 14-bit value resolution, and enum name lookup. Param TX/RX = NRPN is the device's default and the path the tooling assumes by default. |
+| **Engine NRPNs** (Param TX/RX = NRPN) | 🟢 1175 params decoded | Full NRPN map in `packages/hydrasynth/src/nrpn.ts`. Address by parameter name; the schema handles multi-slot disambiguation, 14-bit value resolution, and enum name lookup. Param TX/RX = NRPN is the device's default and the path the tooling assumes by default. |
 | **Program Change + Bank Select** | 🟢 documented | Bank A–H = MSB 0, LSB 0–7. PC 0–127 selects within bank. Pgm Chg TX/RX toggles on MIDI page 11. |
 | **SysEx patch dump** | 🟢 envelope + base64 + CRC-32 decoded; byte-map of patch payload decoded; round-trip implemented as `hydra_apply_patch` | Wire shape from `references/SysexEncoding.txt`; byte-offset map of the patch payload from `references/SysexPatchFormat.txt`. Implementation: `sysexEnvelope.ts` (envelope codec) + `patchEncoder.ts` (byte-map writer). |
 | **MPE** | 🟡 documented | On/off toggle on MIDI page 9. Out of scope for v1. |
@@ -51,7 +51,7 @@ Apache-2.0). SysEx encoding sourced from
 
 These three rules cover most of the surprises when reading or
 writing engine values. Full implementation lives in
-`packages/hydrasynth-explorer/src/encoding.ts` (`resolveNrpnValue`)
+`packages/hydrasynth/src/encoding.ts` (`resolveNrpnValue`)
 and `patchEncoder.ts`.
 
 ### `/8` patch-buffer scaling
@@ -91,7 +91,7 @@ NRPN entries that reference an enum table (auto-detected from the CSV
 notes column) accept either an integer index or a display-name string
 (`osc1type: "Sine"`, `prefxtype: "Lo-Fi"`). Tables are vendored from
 edisyn's `ASMHydrasynth.java` and live in
-`packages/hydrasynth-explorer/src/enums.ts`. The sparse-encoded FX
+`packages/hydrasynth/src/enums.ts`. The sparse-encoded FX
 type family (prefxtype / postfxtype / delaytype / reverbtype /
 reverbtime) carries an `enumValueScale` (×8 for FX types) so that
 "Lo-Fi" resolves to enum index 1 × scale 8 = wire 8.

@@ -26,13 +26,13 @@
  *
  * Run:  npx tsx scripts/hydrasynth/verify-enum-mapping.ts
  */
-import { findHydraNrpn } from '@mcp-midi-control/hydrasynth-explorer/nrpn.js';
-import { resolveNrpnValue } from '@mcp-midi-control/hydrasynth-explorer/encoding.js';
+import { findHydraNrpn } from '@mcp-midi-control/hydrasynth/nrpn.js';
+import { resolveNrpnValue } from '@mcp-midi-control/hydrasynth/encoding.js';
 import {
   encodePatch,
   findPatchOffset,
   readPatchValue,
-} from '@mcp-midi-control/hydrasynth-explorer/patchEncoder.js';
+} from '@mcp-midi-control/hydrasynth/patchEncoder.js';
 
 interface Case {
   label: string;

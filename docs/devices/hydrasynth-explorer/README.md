@@ -26,12 +26,12 @@ at the top of `docs/`.
 - **Manual (PDF):** `docs/manuals/other-gear/Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf`
 - **Manual (text extract):** `docs/manuals/other-gear/Hydrasynth_Explorer_Owners_Manual_2.2.0.txt`
 - **Factory patch listing (xlsx):** `docs/manuals/other-gear/Hydrasynth_Single_Factory_Patch_Listing_2.0.xlsx`
-- **Code — NRPN catalog (auto-generated):** `packages/hydrasynth-explorer/src/nrpn.ts`
-- **Code — value resolution + NRPN encoding:** `packages/hydrasynth-explorer/src/encoding.ts`
-- **Code — enum tables (vendored from edisyn):** `packages/hydrasynth-explorer/src/enums.ts`
-- **Code — SysEx envelope codec:** `packages/hydrasynth-explorer/src/sysexEnvelope.ts`
-- **Code — patch byte-map encoder:** `packages/hydrasynth-explorer/src/patchEncoder.ts`
-- **Code — MCP server (tools `hydra_*`):** `packages/hydrasynth-explorer/src/server.ts`
+- **Code — NRPN catalog (auto-generated):** `packages/hydrasynth/src/nrpn.ts`
+- **Code — value resolution + NRPN encoding:** `packages/hydrasynth/src/encoding.ts`
+- **Code — enum tables (vendored from edisyn):** `packages/hydrasynth/src/enums.ts`
+- **Code — SysEx envelope codec:** `packages/hydrasynth/src/sysexEnvelope.ts`
+- **Code — patch byte-map encoder:** `packages/hydrasynth/src/patchEncoder.ts`
+- **Code — MCP server (tools `hydra_*`):** `packages/hydrasynth/src/server.ts`
 - **References (vendored from eclab/edisyn, Apache-2.0):** `references/` in this folder — `nrpn.csv`, `SysexEncoding.txt`, `SysexPatchFormat.txt`, `ASMHydrasynth.java`. See `references/README.md` for provenance.
 
 ## Status legend (used in this folder)

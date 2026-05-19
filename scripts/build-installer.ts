@@ -119,7 +119,7 @@ async function main() {
   //   │       ├── core/{package.json,dist/}        (copied from packages/core)
   //   │       ├── am4/{package.json,dist/}         (copied from packages/am4)
   //   │       ├── axe-fx-ii/{package.json,dist/}
-  //   │       ├── hydrasynth-explorer/{package.json,dist/}
+  //   │       ├── hydrasynth/{package.json,dist/}
   //   │       └── server-all/{package.json,dist/}
   //   ├── LICENSE, NOTICE
   //   ├── setup.cmd, uninstall.cmd, verify-midi.cmd, instructions.txt
@@ -140,7 +140,7 @@ async function main() {
     'am4',
     'axe-fx-ii',
     'axe-fx-iii',
-    'hydrasynth-explorer',
+    'hydrasynth',
     'server-all',
   ] as const;
 

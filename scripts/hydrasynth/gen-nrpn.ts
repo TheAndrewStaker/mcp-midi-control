@@ -31,7 +31,7 @@ const CSV_PATH = path.resolve(
 );
 const OUTPUT_PATH = path.resolve(
   __dirname,
-  '../../packages/hydrasynth-explorer/src/nrpn.ts',
+  '../../packages/hydrasynth/src/nrpn.ts',
 );
 
 /**
@@ -390,7 +390,7 @@ function main(): void {
   // indexes a named lookup table. We grep for any token matching the
   // ALL_CAPS_WITH_UNDERSCORES naming convention that ASMHydrasynth.java
   // uses, then verify the named table actually exists in enums.ts.
-  const ENUMS_PATH = path.resolve(__dirname, '../../packages/hydrasynth-explorer/src/enums.ts');
+  const ENUMS_PATH = path.resolve(__dirname, '../../packages/hydrasynth/src/enums.ts');
   const knownEnumNames = new Set<string>();
   if (fs.existsSync(ENUMS_PATH)) {
     const enumsText = fs.readFileSync(ENUMS_PATH, 'utf8');
@@ -405,7 +405,7 @@ function main(): void {
   // generated from cc-chart-raw.txt and lives in
   // src/asm/hydrasynth-explorer/params.ts; we read it as text and
   // pull the cc/id pairs out.
-  const PARAMS_PATH = path.resolve(__dirname, '../../packages/hydrasynth-explorer/src/params.ts');
+  const PARAMS_PATH = path.resolve(__dirname, '../../packages/hydrasynth/src/params.ts');
   const ccToCatalogId = new Map<number, string>();
   if (fs.existsSync(PARAMS_PATH)) {
     const paramsText = fs.readFileSync(PARAMS_PATH, 'utf8');
