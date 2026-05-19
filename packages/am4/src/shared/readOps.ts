@@ -5,7 +5,7 @@
  *
  * Wire shapes decoded HW-044 (general param read, 2026-05-01) and HW-070
  * (READ_PRESET_NAME, Session 50, 2026-05-07). See SYSEX-MAP.md §6a +
- * §6m and `docs/preset-read-research.md`.
+ * §6m and `docs/devices/am4/preset-read-research.md`.
  */
 
 import {
@@ -36,7 +36,7 @@ export async function sendReadAndParse(
 
 // HW-070 (Session 50, 2026-05-07): READ_PRESET_NAME — non-destructive
 // stored-preset name reads. Wire shape decoded byte-exact from the
-// AM4-Edit launch capture; see SYSEX-MAP §6m and `docs/preset-read-research.md`.
+// AM4-Edit launch capture; see SYSEX-MAP §6m and `docs/devices/am4/preset-read-research.md`.
 const READ_PRESET_NAME_RESPONSE_TOTAL_BYTES = 55;
 const READ_PRESET_NAME_RESPONSE_HDR4_LO = 0x20;
 const READ_PRESET_NAME_RESPONSE_HDR4_HI = 0x00;

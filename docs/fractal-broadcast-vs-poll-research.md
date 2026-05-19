@@ -121,6 +121,6 @@ likely have at least as much broadcast as the II, possibly more.
   showing the polling pattern.
 - `scripts/capture-midi-passive.ts` — the script used to surface
   this difference.
-- `docs/axe-fx-ii-community-re-methodology.md` — public-facing
+- `docs/devices/axe-fx-ii/community-re-methodology.md` — public-facing
   community-RE survey; should note this behavioural difference if
   any contributor doc updates land.

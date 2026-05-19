@@ -183,7 +183,7 @@ export function formatMultipurposeError(err: MultipurposeErrorReport): string {
 // classification happens at the connection layer (`packages/axe-fx-iii/
 // src/midi.ts:wrapWithDirtyClassification`) — STATE_BROADCAST inbound
 // frames mark dirty; STORE_PRESET / PC outbound mark clean. See
-// `docs/axefx3-dirty-state-research.md` for evidence.
+// `docs/devices/axe-fx-iii/dirty-state-research.md` for evidence.
 
 export const AXEFX3_DIRTY_LABEL = AXEFX3_LABEL;
 

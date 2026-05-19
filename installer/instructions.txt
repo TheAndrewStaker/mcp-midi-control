@@ -115,4 +115,4 @@ LINKS
 
 - Source + issues: https://github.com/TheAndrewStaker/mcp-midi-control
 - Safety guide:    https://github.com/TheAndrewStaker/mcp-midi-control/blob/main/docs/SAFETY-FOR-MUSICIANS.md
-- Forum thread:    [link goes in the launch post]
+- Forum thread:    [filled in at release time]

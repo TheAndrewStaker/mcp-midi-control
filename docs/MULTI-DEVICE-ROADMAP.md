@@ -311,7 +311,7 @@ not promoted.
       the per-device `am4_*` / `axefx2_*` / `hydra_*` patterns
       (`packages/core/src/protocol-generic/`).
 - [x] Publish this roadmap doc as the architectural reference for
-      launch posts ("here's where it's going").
+      the project announcement ("here's where it's going").
 
 ### Phase 2 — Vendor protocol-package extraction (v0.2 or first non-AM4 Fractal expansion)
 
@@ -347,7 +347,7 @@ touching the MCP project. The plan is:
 - Per-vendor package repo template.
 - Documented hardware-RE methodology (`docs/capture-guides/`
   already exists for AM4; generalize for other devices). The
-  `docs/axe-fx-ii-community-re-methodology.md` is a first attempt
+  `docs/devices/axe-fx-ii/community-re-methodology.md` is a first attempt
   at vendor-agnostic guidance.
 - Conformance test suite (golden writes + reads against captures)
   any vendor package must pass before being listed.
@@ -378,7 +378,7 @@ touching the MCP project. The plan is:
 
 ## What this enables on launch day
 
-The roadmap committed lets the launch post say:
+The roadmap committed lets the project announcement say:
 
 > "v0.1.0 is `mcp-midi-control` — a vendor-neutral MCP framework with
 > Fractal AM4 as the headline device, plus alpha support for Axe-Fx II,

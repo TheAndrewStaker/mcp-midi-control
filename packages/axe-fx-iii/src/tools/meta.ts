@@ -74,7 +74,7 @@ export function registerAxeFxIIIMetaTools(server: McpServer): void {
       'INPUT format: bytes as a hex string. Spaces and commas tolerated.',
       'Must start with F0 and end with F7. Checksum byte is the caller\'s',
       'responsibility — Fractal SysEx uses XOR-of-everything-up-to-cs,',
-      'AND 0x7F (see docs/axefx3-design-notes.md for the family-wide rule).',
+      'AND 0x7F (see docs/devices/axe-fx-iii/design-notes.md for the family-wide rule).',
       '',
       'OUTPUT: structured response listing each inbound message by',
       '  [+Nms] hex (length)',

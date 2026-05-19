@@ -534,7 +534,7 @@ this path is blocked.
 
 - `scripts/_research/mine-axefx3-fn01.ts` — re-runnable extractor;
   drop more scrapes into `docs/_private/` and re-run.
-- `docs/SYSEX-MAP-AXE-FX-III.md` "Undocumented function bytes seen
+- [`SYSEX-MAP.md`](SYSEX-MAP.md) "Undocumented function bytes seen
   in the wild" section — earlier note on 0x01.
-- `docs/manuals/AxeFx3-MIDI-3rdParty.txt` — the official v1.4 PDF
-  that deliberately omits this function.
+- `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt` — the
+  official v1.4 PDF that deliberately omits this function.

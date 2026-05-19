@@ -11,7 +11,7 @@ via `npm run hydra:gen-nrpn`.
 
 Page references in this file are to the official Owner's Manual
 v2.2.0 located at
-`docs/manuals/other-gear/Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf`
+`docs/manuals/Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf`
 (text-extracted alongside as `…_2.2.0.txt`).
 
 Status legend:

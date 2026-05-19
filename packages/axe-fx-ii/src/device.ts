@@ -31,7 +31,7 @@
  *     384 presets total in factory bundle. Per Owner's Manual XL+
  *     supports 768 user preset locations (vs 384 on Mark I/II).
  *
- * Public protocol map: `docs/SYSEX-MAP-AXE-FX-II.md`.
+ * Public protocol map: `docs/devices/axe-fx-ii/SYSEX-MAP.md`.
  *
  * What still needs hardware:
  *
@@ -90,7 +90,7 @@ export const AXE_FX_II_DEVICE: FractalDevice = {
   // Axe-Fx II XL+ uses model byte 0x07 in the Fractal manufacturer's
   // SysEx envelope (F0 00 01 74 07 ... F7). Verified Session 53 against
   // 8448/8448 messages in Axe-Fx-II_XL+_Bank-{A,B,C}_Q8p02.syx — see
-  // `docs/SYSEX-MAP-AXE-FX-II.md` §1. Other family variants:
+  // `docs/devices/axe-fx-ii/SYSEX-MAP.md` §1. Other family variants:
   // 0x03 = Mark I/II, 0x06 = XL, 0x08 = AX8.
   modelByte: 0x07,
   displayName: 'Fractal Axe-Fx II XL+',

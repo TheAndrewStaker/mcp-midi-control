@@ -43,8 +43,9 @@ follow without re-reading the backlog.
 `docs/_private/` is the founder's operational scratch (gitignored,
 local-only): STATE, HARDWARE-TASKS, SESSIONS log, BACKLOG, HW-NNN test
 plans, marketing drafts, internal data dumps. The committed `docs/`
-files (`SYSEX-MAP.md`, `BLOCK-PARAMS.md`, `DECISIONS.md`,
-`ARCHITECTURE.md`, `*-research.md`, `capture-guides/`, etc.) are the
+files (`devices/<device>/SYSEX-MAP.md`, `BLOCK-PARAMS.md`,
+`DECISIONS.md`, `ARCHITECTURE.md`, `*-research.md`, `capture-guides/`,
+etc.) are the
 OSS public good — protocol RE, architecture, decision log, research
 artefacts — and DO ship in the repo.
 
@@ -85,10 +86,10 @@ the web — most common questions are answered by one of the local PDFs
 **Per-device spec quick-references** (read these before WebFetching
 or speculating about wire shapes):
 
-- **AM4** → `docs/SYSEX-MAP.md`
-- **Axe-Fx II** → `docs/SYSEX-MAP-AXE-FX-II.md`
-- **Axe-Fx III** → `docs/SYSEX-MAP-AXE-FX-III.md` (covers Fractal v1.4 PDF; extracted text at `docs/manuals/AxeFx3-MIDI-3rdParty.txt`) + `docs/axefx3-preset-format-research.md` (community RE of preset .syx format; Forum thread #159885 archived at `docs/_private/fractal-forum-text.txt`)
-- **Hydrasynth** → `docs/SYSEX-MAP-HYDRASYNTH.md` + `docs/HYDRASYNTH-OVERVIEW.md` for capability landscape; `docs/hydrasynth-preset-format-research.md` for the `.hydra` / `.patch` file format probe; `docs/HYDRASYNTH-ICONIC-TONES.md` for the iconic-tones test portfolio
+- **AM4** → `docs/devices/am4/SYSEX-MAP.md`
+- **Axe-Fx II** → `docs/devices/axe-fx-ii/SYSEX-MAP.md`
+- **Axe-Fx III** → `docs/devices/axe-fx-iii/SYSEX-MAP.md` (covers Fractal v1.4 PDF; extracted text at `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`) + `docs/devices/axe-fx-iii/preset-format-research.md` (community RE of preset .syx format; Forum thread #159885 archived at `docs/_private/fractal-forum-text.txt`)
+- **Hydrasynth** → `docs/devices/hydrasynth/SYSEX-MAP.md` + `docs/devices/hydrasynth/OVERVIEW.md` for capability landscape; `docs/devices/hydrasynth/preset-format-research.md` for the `.hydra` / `.patch` file format probe; `docs/devices/hydrasynth/ICONIC-TONES.md` for the iconic-tones test portfolio
 
 ## Reverse-engineering workflow
 
@@ -108,8 +109,9 @@ claims that aren't byte-verified.
 4. **`docs/_private/HARDWARE-TASKS-<DEVICE>.md`** — open captures the
    founder owes. If a 🔜 Pending task gates the work you're about to
    do, surface it instead of speculating around the missing data.
-5. **Per-device wire map** — `SYSEX-MAP.md`, `SYSEX-MAP-AXE-FX-II.md`,
-   or `SYSEX-MAP-AXE-FX-III.md`. The authoritative byte-shape doc.
+5. **Per-device wire map** — `docs/devices/<device>/SYSEX-MAP.md`
+   (AM4, Axe-Fx II, Axe-Fx III, Hydrasynth). The authoritative
+   byte-shape doc for the device you're working on.
 6. **`docs/REFERENCES.md`** — only the section for your device. Don't
    WebFetch for a manual we already have extracted to `.txt`.
 
@@ -194,7 +196,7 @@ saves a session every time someone re-asks the same question.
 ## AM4 SysEx — quick facts
 
 Full envelope, checksum, function-byte table, and capture-cited
-decodes live in **`docs/SYSEX-MAP.md`**. The basics, here:
+decodes live in **`docs/devices/am4/SYSEX-MAP.md`**. The basics, here:
 
 - **Model byte:** `0x15`. Envelope: `F0 00 01 74 15 [fn] [...] [cksum] F7`.
 - **Checksum:** `bytes.reduce((a,b)=>a^b,0) & 0x7F` over `F0`..last payload byte.
@@ -353,7 +355,7 @@ says > 1 s, redesign before implementing.
 - All .syx binary samples + USB captures + decoded analysis outputs go
   in `samples/` — **the entire directory is gitignored**. Nothing in
   `samples/` is committed; treat it as local debug scratch.
-- All reverse-engineering notes go in docs/SYSEX-MAP.md
+- All reverse-engineering notes go in docs/devices/am4/SYSEX-MAP.md
 - All block parameter tables go in docs/BLOCK-PARAMS.md
 - Sniffing session logs go in docs/_private/SESSIONS.md
 - Tests that require hardware are in tests/integration/ and skipped in CI
@@ -438,7 +440,7 @@ Cheaper than discovering drift later.
 | `docs/_private/PROMPT-COVERAGE.md` | A new MCP tool ships, a protocol decode lands, or founder testing surfaces a new user prompt pattern. Flip ⚠ → ✅ when the blocker clears; flip ❌ → ⚠ when a research item gets a concrete decode plan; add new rows for unanticipated prompts. |
 | `docs/_private/HARDWARE-TASKS.md` | A HW-NNN item completes (mark ✅ + capture outcome), or a new hardware action is identified that Claude can't perform alone (append HW-NNN with step-by-step instructions). |
 | `docs/_private/04-BACKLOG.md` | A new backlog item is identified, an existing item ships / re-scopes / is superseded, or a cross-reference between items is worth recording. |
-| `docs/SYSEX-MAP.md` | A new protocol decode is confirmed against captured bytes. Include the concrete capture reference and byte-exact example. (Public — protocol RE is the OSS public good.) |
+| `docs/devices/<device>/SYSEX-MAP.md` | A new protocol decode is confirmed against captured bytes. Include the concrete capture reference and byte-exact example. (Public — protocol RE is the OSS public good.) |
 | `docs/_private/SESSIONS.md` | A session produces a substantive finding worth a chronological entry (decodes, major tool changes, hardware-verified behavior). STATE.md is the summary; SESSIONS.md is the log. |
 | `docs/DECISIONS.md` | A non-obvious architectural or library choice is made. (Public — committed for OSS contributors.) |
 

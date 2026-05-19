@@ -15,7 +15,7 @@ const ROOT = resolve(import.meta.dirname ?? __dirname, '../..');
 const PRIVATE = resolve(ROOT, 'docs/_private');
 
 // All Fractal modern-family model bytes per
-// docs/manuals/AxeFx3-MIDI-3rdParty.txt and docs/SYSEX-MAP-AXE-FX-III.md.
+// docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt and docs/devices/axe-fx-iii/SYSEX-MAP.md.
 const MODELS: Array<{ byte: string; label: string }> = [
   { byte: '00', label: 'Axe-Fx Standard (gen 1)' },
   { byte: '01', label: 'Axe-Fx Ultra (gen 1)' },

@@ -366,7 +366,7 @@ function assertDumpMessageShape(
  * Returns the structured stream including the addressing bytes
  * (bank/sub) decoded from the 0x77 header payload. For an
  * active-buffer dump these are `0x7F` and `0x00`; the response shape
- * is documented in `docs/preset-dump-request-research.md`.
+ * is documented in `docs/devices/am4/preset-dump-request-research.md`.
  */
 export function receivePresetDumpStream(
   conn: MidiConnection,

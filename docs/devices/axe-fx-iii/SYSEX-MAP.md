@@ -6,9 +6,9 @@ shapes, check this doc and the underlying text extraction.
 
 ## Spec text extraction (READ THIS FIRST)
 
-- **Local extracted text:** [`docs/manuals/AxeFx3-MIDI-3rdParty.txt`](manuals/AxeFx3-MIDI-3rdParty.txt) (353 lines).
-- **Original PDF:** [`docs/manuals/Axe-Fx III MIDI for 3rd Party Devices.pdf`](manuals/Axe-Fx%20III%20MIDI%20for%203rd%20Party%20Devices.pdf), Revision 1.4, "supported in Axe-Fx III firmware 1.13 or greater."
-- **Index entry:** [`docs/REFERENCES.md`](REFERENCES.md) row "Axe-Fx III MIDI for 3rd Party Devices.pdf".
+- **Local extracted text:** [`docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`](../../manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt) (353 lines).
+- **Original PDF:** [`docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf`](../../manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf), Revision 1.4, "supported in Axe-Fx III firmware 1.13 or greater."
+- **Index entry:** [`docs/REFERENCES.md`](../../REFERENCES.md) row "Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf".
 
 The PDF is the **only** public protocol document Fractal ships for
 the III generation. Everything beyond what it covers is either
@@ -62,7 +62,7 @@ are NOT in the III's third-party spec:
   envelope** (1× `0x77` header + 16× `0x78` body + 1× `0x79` footer
   for the III; 10-frame for FM3/FM9). Body content is **Huffman-
   compressed**. Full research log + post-by-post evidence chain in
-  [`docs/axefx3-preset-format-research.md`](axefx3-preset-format-research.md).
+  [`preset-format-research.md`](preset-format-research.md).
   Forum thread #159885 is archived locally at `docs/_private/fractal-forum-text.txt`.
 - **No `FRONT_PANEL_CHANGE` push (0x21).** Our earlier design notes
   reference `0x21` as the III's dirty-state signal — it is NOT in
@@ -190,7 +190,7 @@ The list below is preserved as a historical record:
 | 6 | `axefx3_get_preset_name` uses 0x0F (LOOPER) — sends a looper-button command, not a name query. | `tools/navigation.ts` get_preset_name handler | Use 0x0D with `dd dd = 7F 7F` for current preset name. |
 | 7 | `axefx3_get_active_preset_number` and `get_preset_name` ought to be one tool: 0x0D query returns BOTH the preset number AND its name. | both navigation.ts handlers | One 0x0D query gives `nn nn` (preset number) + `dd*32` (name). |
 | 8 | `FN_SET_PARAMETER_VALUE = 0x02` is declared as a constant — but `0x02` is NOT in the v1.4 PDF. This is family inference from Axe-Fx II. | `setParam.ts:51` | The III's parameter-write opcode is NOT documented anywhere public. Family inference is the only path. |
-| 9 | `FN_FRONT_PANEL_CHANGE = 0x21` is referenced in design notes as the III dirty signal. Not in v1.4 PDF. Source unidentified. | `setParam.ts:59`, `docs/axefx3-design-notes.md` | Treat as unverified. The PDF documents only `0x10` (tempo down-beat) and `0x11` (tuner) as push frames. |
+| 9 | `FN_FRONT_PANEL_CHANGE = 0x21` is referenced in design notes as the III dirty signal. Not in v1.4 PDF. Source unidentified. | `setParam.ts:59`, [`design-notes.md`](design-notes.md) | Treat as unverified. The PDF documents only `0x10` (tempo down-beat) and `0x11` (tuner) as push frames. |
 | 10 | Block roster (`blockTypes.ts`) ships every block with `id: null` claiming "effectId pending capture." Effect IDs ARE in the spec Appendix 1 — only AMP and post-firmware-1.13 blocks are unspecified. | `blockTypes.ts` | Populate `id:` from Appendix 1. Leave AMP, NAM, Dynamic Distortion as `null`. |
 
 ## 0x01 PARAMETER_SETGET — byte-verified from public captures 🟢 SET / 🟡 GET
@@ -201,8 +201,8 @@ opcode is **`fn=0x01`** with a 2-byte sub-action discriminator, NOT
 was triggered by an open-web research sweep that surfaced 6 byte-exact
 public captures (Mountain Utilities forum, user "gabbernutter",
 2019-03-13) of AxeEdit III writing Delay 1 TIME. Combined with the 4
-FC-12 captures previously archived in [`axefx3-fn01-decode.md`](
-axefx3-fn01-decode.md), the corpus is now **10 captures from 2
+FC-12 captures previously archived in [`fn01-decode.md`](
+fn01-decode.md), the corpus is now **10 captures from 2
 independent community sources spanning 2 effect blocks and 2 sub-action
 codes** — all on `fn=0x01`, **zero on `fn=0x02`**. The Session 84-era
 "port from II" was a reasonable hypothesis but contradicted every
@@ -212,8 +212,8 @@ captured III parameter-write on the open web.
 `packages/axe-fx-iii/src/setParam.ts` ship with 4 byte-exact encoder
 goldens + 4 capture-parse goldens in
 `scripts/verify-axe-fx-iii-encoding.ts`. Full capture corpus +
-field-layout table: [`docs/axefx3-set-parameter-captures.md`](
-axefx3-set-parameter-captures.md).
+field-layout table: [`set-parameter-captures.md`](
+set-parameter-captures.md).
 
 **GET** wire shape is still 🟡 hypothesis — and Session 97 research
 clarified the response side is more subtle than initially framed.
@@ -640,7 +640,7 @@ Byte-exact predicate + parser goldens (including the community-captured
 `MIDI_ERROR_*` string table at .rdata offset 0x597108 in
 `Axe-Edit III.exe`; 0x00 = `MIDI_ERROR_BAD_CHKSUM` matches the
 empirically-verified bad-checksum capture above, so the index → code
-mapping is high-confidence. See `docs/axefx3-fn01-decode.md` for the
+mapping is high-confidence. See [`fn01-decode.md`](fn01-decode.md) for the
 full extraction evidence.
 
 | Code | Label | Meaning |
@@ -951,6 +951,6 @@ Given the function-byte map + Appendix 1 effect IDs:
 
 - **Project README and CLAUDE.md** — point at `docs/REFERENCES.md` for any "where do I find X" question. The III spec is row 30 there.
 - **III package source** — `packages/axe-fx-iii/src/setParam.ts` carries an inline pointer to this doc at the top of the file (after edits land).
-- **Community beta-testing workflow** — [`docs/community/axefx3-beta-testing.md`](community/axefx3-beta-testing.md). III owners run a small list of tool calls and report whether the front panel matches the response.
-- **Design notes** (some predate the bug discovery here) — [`docs/axefx3-design-notes.md`](axefx3-design-notes.md).
+- **Community beta-testing workflow** — [`docs/community/axefx3-beta-testing.md`](../../community/axefx3-beta-testing.md). III owners run a small list of tool calls and report whether the front panel matches the response.
+- **Design notes** (some predate the bug discovery here) — [`design-notes.md`](design-notes.md).
 - **Forum reverse-engineering** of preset save format — Fractal Forum thread #159885 ("Axe-Fx III and deconstructing / parsing a .syx / sysex preset file"). Three-function envelope: `0x77` (header, contains destination), 16× `0x78` (body chunks), `0x79` (footer).

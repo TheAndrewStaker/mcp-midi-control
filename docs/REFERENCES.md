@@ -16,11 +16,12 @@ manuals.
   index (AM4 / Axe-Fx II / Axe-Fx III). Last full sweep Session 82–83
   (Ghidra mining). Tells you which paramId families are named and
   which are still open per device.
-- **`docs/SYSEX-MAP.md`**: AM4 wire map, byte-exact, with capture
-  references for every confirmed claim.
-- **`docs/SYSEX-MAP-AXE-FX-II.md`**: Axe-Fx II wire map.
-- **`docs/SYSEX-MAP-AXE-FX-III.md`**: Axe-Fx III wire map (covers
-  Fractal's v1.4 PDF + community RE).
+- **`docs/devices/am4/SYSEX-MAP.md`**: AM4 wire map, byte-exact, with
+  capture references for every confirmed claim.
+- **`docs/devices/axe-fx-ii/SYSEX-MAP.md`**: Axe-Fx II wire map.
+- **`docs/devices/axe-fx-iii/SYSEX-MAP.md`**: Axe-Fx III wire map
+  (covers Fractal's v1.4 PDF + community RE).
+- **`docs/devices/hydrasynth/SYSEX-MAP.md`**: Hydrasynth wire map.
 - **`docs/ghidra-mining-workflow.md`**: proven canonical RE method
   for paramId catalog extraction (99% wire-accuracy verified). Read
   before opening a new Ghidra project on any Fractal editor binary.
@@ -49,13 +50,13 @@ Contains:
 - Channel/modifier/controller architecture.
 - Is the correct source for "what does parameter X do" once you know the TYPE.
 
-### `docs/manuals/Axe-Fx III MIDI for 3rd Party Devices.pdf` (220 KB, extracted to `AxeFx3-MIDI-3rdParty.txt`)
+### `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf` (220 KB, extracted to `Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`)
 The only public SysEx protocol document from Fractal. AM4 is in the same family,
 so this defines the "baseline" command set (bypass 0x0A, channel 0x0B, scene 0x0C,
 patch/scene name query 0x0D/0x0E, status dump 0x13, tempo 0x14). **AM4 has been
 empirically confirmed to follow this spec** (session 02, 2026-04-14) with AM4-specific
 extensions above block ID 200 and an internal editor-streaming function `0x01`
-not documented here. See `docs/SYSEX-MAP.md` for the AM4-resolved mapping.
+not documented here. See `docs/devices/am4/SYSEX-MAP.md` for the AM4-resolved mapping.
 
 ### `samples/factory/README AM4+VP4 Presets Update Guide.pdf` (extracted alongside)
 Short guide on using **Fractal-Bot** (the librarian built into AM4-Edit) to push
@@ -74,7 +75,7 @@ by the number of presets.
 ## Other-manufacturer manuals (local)
 
 Docs for devices on the multi-device expansion roadmap (BK-014..BK-020).
-All files live in `docs/manuals/other-gear/`. **PDFs are gitignored** for
+All files live in `docs/manuals/`. **PDFs are gitignored** for
 copyright and size reasons; only the plain-text extractions are committed.
 If you need the source PDF, obtain it from the manufacturer's downloads
 page. Extract with `pdftotext -layout <file>.pdf <file>.txt` (ships with
@@ -99,7 +100,7 @@ Manuals added 2026-05-09 (Session 53), live at `docs/manuals/`:
   cab-modeling whitepaper.
 - **No dedicated Axe-Fx II SysEx implementation chart published.**
   Fractal didn't release one for the II line (only the III+ family
-  got `Axe-Fx III MIDI for 3rd Party Devices.pdf`). For Axe-Fx II
+  got `Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf`). For Axe-Fx II
   protocol, the canonical source is the wiki MIDI_SysEx page below.
 
 ### Fractal factory bank exports (BK-014, founder hardware)
@@ -109,17 +110,17 @@ firmware Quantum 8.02:
   per bank. Used Session 53 to wire-confirm model byte `0x07`,
   envelope `00 01 74`, XOR-and-0x7F checksum, and the 1+64+1
   message-per-preset shape (vs AM4's 1+4+1). See
-  `docs/SYSEX-MAP-AXE-FX-II.md` §6.
+  `docs/devices/axe-fx-ii/SYSEX-MAP.md` §6.
 - `Axe-Fx-II-XL+_All-Banks_Q8p02.syx`: all three banks concatenated
   (4.8 MB).
 
 ### Tier 2 Roland / Boss devices (parked)
 
 The roadmap names a future Tier 2 of Roland / Boss devices (RC-505 MKII,
-VE-500, SPD-SX, JD-Xi). Manuals for SPD-SX / VE-500 / JD-Xi previously
-lived under `docs/manuals/other-gear/` but were removed when the focus
-narrowed to the Tier 1 Fractal + Hydrasynth surface. Re-add the relevant
-manual `.txt` extracts if any of those device decodes activate.
+VE-500, SPD-SX, JD-Xi). Manuals for those devices were once cached
+locally but were dropped when the focus narrowed to the Tier 1
+Fractal + Hydrasynth surface. Re-add the relevant manual `.txt`
+extracts if any of those device decodes activate.
 See [`docs/MULTI-DEVICE-ROADMAP.md`](MULTI-DEVICE-ROADMAP.md) Tier 2
 for source URLs and per-device scope notes.
 
@@ -160,7 +161,7 @@ Active community. Useful search terms:
 ### Axe-Fx II community libraries
 A detailed scan of the open-source community RE projects (bspaulding,
 tysonlt, laxu) with license / staleness / coverage notes lives in
-**`docs/axe-fx-ii-community-re-methodology.md`**. That doc is the
+**`docs/devices/axe-fx-ii/community-re-methodology.md`**. That doc is the
 canonical inventory; don't duplicate the per-library breakdown here.
 
 ### Axe-Fx III preset-format reverse-engineering
@@ -178,9 +179,9 @@ Committed working reference for AM4 block types and their available effect TYPEs
 Distilled from the wiki scrape + AM4 owner's manual. First stop when building a
 preset IR.
 
-### `docs/SYSEX-MAP.md`
-Working SysEx protocol reference, AM4-resolved. Updated after every sniff/probe
-session. First stop when encoding a message to send.
+### `docs/devices/<device>/SYSEX-MAP.md`
+Working SysEx protocol reference, one file per device. Updated after every
+sniff/probe session. First stop when encoding a message to send.
 
 ### `docs/_private/SESSIONS.md` (gitignored)
 Chronological log of every reverse-engineering session with raw captures and

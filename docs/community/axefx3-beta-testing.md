@@ -180,7 +180,7 @@ For each call you confirm:
 ## Reference
 
 - **Fractal published spec:** ["Axe-Fx III MIDI for Third-Party Devices" v1.4](https://www.fractalaudio.com/downloads/misc/Axe-Fx%20III%20MIDI%20for%203rd%20Party%20Devices.pdf)
-- **III protocol decode summary:** [`docs/SYSEX-MAP-AXE-FX-III.md`](../SYSEX-MAP-AXE-FX-III.md)
+- **III protocol decode summary:** [`docs/devices/axe-fx-iii/SYSEX-MAP.md`](../devices/axe-fx-iii/SYSEX-MAP.md)
 - **Per-call wire shape:** `fractal-midi/src/axe-fx-iii/setParam.ts`
   in the upstream codec package. Every function's evidence chain is in
   the doc comments.

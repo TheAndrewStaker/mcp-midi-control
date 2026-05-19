@@ -330,7 +330,7 @@ function decode14(lo: number, hi: number): number {
  *
  * AM4 envelope: `F0 00 01 74 15 [function] [payload...] [checksum] F7`.
  * Documented function bytes that we label (cross-reference
- * `docs/SYSEX-MAP.md`):
+ * `docs/devices/am4/SYSEX-MAP.md`):
  *
  *   - 0x01 PARAM_RW — write echo (64B, hdr4=0x0028) or 18B command-ack
  *           (save / preset-rename / scene-rename — addressing-only echo

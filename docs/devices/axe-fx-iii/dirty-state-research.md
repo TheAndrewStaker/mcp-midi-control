@@ -29,11 +29,11 @@ Strongest first.
   traffic. Effect IDs span 1, 2, 58, 59, 190 — full Appendix 1 range,
   consistent with a state-stream the device emits during edits. Field
   layout: `[id_lo id_hi 00 00 value_lo value_hi flag 00*6 cs]`. See
-  `docs/axefx3-fn01-decode.md` §"Sub-action `04 01` —
+  [`fn01-decode.md`](fn01-decode.md) §"Sub-action `04 01` —
   STATE_BROADCAST (device→host)" (lines 105-134) and
   `packages/axe-fx-iii/src/setParam.ts` `parseSetGetParameterResponse`
   (lines 300-331, branch at line 314).
-- **v1.4 PDF (`docs/manuals/AxeFx3-MIDI-3rdParty.txt` lines 149-176)
+- **v1.4 PDF (`docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt` lines 149-176)
   explicitly enumerates only TWO documented pushes: tempo down-beat
   (0x10) and tuner (0x11).** Both are gated by the "Send Realtime
   Sysex" global parameter AND — critically — Fractal says: "this data
@@ -42,8 +42,8 @@ Strongest first.
   us at all** over USB; whatever the III emits on USB during normal
   AxeEdit operation is undocumented territory.
 - **`0x21 FRONT_PANEL_CHANGE` is a phantom.** Earlier design notes
-  (`docs/axefx3-design-notes.md` line 25) cite `0x21` as the III's
-  dirty signal. `docs/SYSEX-MAP-AXE-FX-III.md` lines 67-69 retracts
+  ([`design-notes.md`](design-notes.md) line 25) cite `0x21` as the III's
+  dirty signal. [`SYSEX-MAP.md`](SYSEX-MAP.md) lines 67-69 retracts
   this: "Source for that claim is unidentified; treat as unverified."
   Session 82 Ghidra mining of `Axe-Edit III.exe` enumerated every
   fn byte AxeEdit III emits (SYSEX-MAP-AXE-FX-III.md lines 720-752);
@@ -59,7 +59,7 @@ Strongest first.
   channel — the spec just doesn't document it because it's not part
   of the third-party MIDI surface.
 - **OSS priors are silent on this.** bspaulding/axe-fx-midi
-  (`docs/axe-fx-ii-community-re-methodology.md` lines 42+) and
+  (`docs/devices/axe-fx-ii/community-re-methodology.md` lines 42+) and
   tysonlt/AxeFxControl (line 74+) are request-response only — they
   navigate and read, they don't listen for state pushes. No prior
   art either way.
@@ -67,7 +67,7 @@ Strongest first.
   (`docs/_private/HARDWARE-TASKS-AM4.md` line 61-64, archived) was a
   passive capture: idle 66.7 s = 0 messages, preset-switch 16.6 s = 0
   messages. II broadcast confirmation
-  (`docs/axefx2-state-broadcast-decode-research.md`) was the same
+  (`docs/devices/axe-fx-ii/state-broadcast-decode-research.md`) was the same
   passive shape: 0x12/0x15/0x10 firehose continuously, plus
   0x74/0x75/0x76 triple ONLY on edit actions. **A passive III capture
   matching either shape would settle this in one session.**
@@ -167,13 +167,13 @@ That's the minimum hardware-loop closure for this question.
   (STATE_BROADCAST comment).
 - `packages/axe-fx-iii/src/setParam.ts:300-331`
   (`parseSetGetParameterResponse` already disambiguates by sub-action).
-- `docs/axefx3-fn01-decode.md` §"Sub-action `04 01` —
+- [`fn01-decode.md`](fn01-decode.md) §"Sub-action `04 01` —
   STATE_BROADCAST" (lines 105-134).
-- `docs/SYSEX-MAP-AXE-FX-III.md` lines 67-69 (0x21 retraction) and
+- [`SYSEX-MAP.md`](SYSEX-MAP.md) lines 67-69 (0x21 retraction) and
   lines 614-619 (forum 0x21 claim — likely MIDI-Out, not USB).
 - `docs/fractal-broadcast-vs-poll-research.md` (the AM4/II methodology
   reference — replicate this script shape on the III).
-- `docs/manuals/AxeFx3-MIDI-3rdParty.txt:149-176` ("PUSH DATA" spec).
+- `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt:149-176` ("PUSH DATA" spec).
 - `packages/axe-fx-ii/src/midi.ts:108-268` (classifier to mirror).
 - `packages/am4/src/bufferFingerprint.ts` + `packages/am4/src/tools/safeEdit.ts`
   (fallback pattern to port if the hardware test refutes the broadcast).

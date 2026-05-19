@@ -24,7 +24,7 @@ same purpose: replay = restore.
 
 - Total size: 1,284,608 bytes = exactly 104 x 12,352.
 - Format: 104 back-to-back AM4 preset dumps in the documented 0x77 / 0x78 /
-  0x79 envelope (`docs/SYSEX-MAP.md` §10b). No file-level header, no
+  0x79 envelope ([`SYSEX-MAP.md`](SYSEX-MAP.md) §10b). No file-level header, no
   separator, no trailer.
 - Each per-preset dump is 6 SysEx messages: 1 header (0x77, 13 B), 4 chunks
   (0x78, 3082 B each), 1 footer (0x79, 11 B).
@@ -51,7 +51,7 @@ Confirmed by running the probe in dry-run mode:
 | header payload[2..4] | constant `00 20 00` | identical across all 104 dumps |
 | chunk payload size | 3074 B (envelope strips 8 B) | constant |
 | chunks 1..2 | content-bearing (block layout, params, name) | mostly non-zero |
-| chunks 3..4 | mostly zeros | per `docs/SYSEX-MAP.md` §10b - padding for unused slots/channels |
+| chunks 3..4 | mostly zeros | per [`SYSEX-MAP.md`](SYSEX-MAP.md) §10b - padding for unused slots/channels |
 | footer payload | 3 B | distinct across all 104 (content-derived hash) |
 
 Slot ordering in the file is monotonic A01, A02, A03, A04, B01, ..., Z04.

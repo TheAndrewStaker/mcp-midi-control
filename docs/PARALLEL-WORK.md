@@ -58,8 +58,9 @@ The natural seams here, in rough order of safety:
 1. **Per-device.** AM4 / Axe-Fx II / Axe-Fx III / Hydrasynth code and
    docs are physically separated:
    - `packages/am4/`, `packages/axe-fx-ii/`, `packages/hydrasynth/`
-   - `docs/SYSEX-MAP.md` (AM4), `docs/SYSEX-MAP-AXE-FX-II.md`,
-     `docs/SYSEX-MAP-AXE-FX-III.md`, `docs/HYDRASYNTH-*.md`
+   - `docs/devices/am4/`, `docs/devices/axe-fx-ii/`,
+     `docs/devices/axe-fx-iii/`, `docs/devices/hydrasynth/`
+     (each carries its own `SYSEX-MAP.md` plus per-device research)
    - `docs/_private/HARDWARE-TASKS-AM4.md` etc.
 2. **Per-package in the monorepo.** Even within one device, `core` /
    `am4` / `server-all` rarely overlap.
@@ -73,8 +74,8 @@ Concrete example of a clean 3-session split for a single afternoon:
 
 | Session | Task | Files it touches |
 | :-- | :-- | :-- |
-| A | Decode a new Axe-Fx II param family | `packages/axe-fx-ii/src/params.ts`, `docs/SYSEX-MAP-AXE-FX-II.md`, `verify-msg.ts` golden |
-| B | Mine a new AM4 Ghidra coverage gap | `packages/am4/src/params.ts`, `docs/SYSEX-MAP.md` |
+| A | Decode a new Axe-Fx II param family | `packages/axe-fx-ii/src/params.ts`, `docs/devices/axe-fx-ii/SYSEX-MAP.md`, `verify-msg.ts` golden |
+| B | Mine a new AM4 Ghidra coverage gap | `packages/am4/src/params.ts`, `docs/devices/am4/SYSEX-MAP.md` |
 | C | Add a tool to the unified surface | `packages/core/src/protocol/generic/tools.ts`, `dispatcher.ts` |
 
 ### AM4 `params.ts` / `paramNames.ts` / `cacheParams.ts` pipeline reality

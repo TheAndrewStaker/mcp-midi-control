@@ -25,10 +25,6 @@ docs/wiki/
 # re-supplying the source PDFs.
 docs/manuals/*.pdf
 
-# Other-manufacturer manuals (Roland / Boss / ASM / etc.). Same policy:
-# source PDFs stay local, .txt extractions are committed alongside.
-docs/manuals/other-gear/*.pdf
-
 # samples/ is entirely local-only — captures, factory preset exports
 # (Fractal IP, don't redistribute), debug logs, and decoded outputs
 # from analysis scripts. Nothing in here is committed. Generated

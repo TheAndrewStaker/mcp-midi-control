@@ -2,8 +2,8 @@
  * Axe-Fx III DeviceDescriptor — community-beta scaffold (BK-015).
  *
  * BEFORE EDITING, READ:
- *   - `docs/SYSEX-MAP-AXE-FX-III.md`
- *   - `docs/manuals/AxeFx3-MIDI-3rdParty.txt` (Fractal v1.4 PDF extracted)
+ *   - `docs/devices/axe-fx-iii/SYSEX-MAP.md`
+ *   - `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt` (Fractal v1.4 PDF extracted)
  *
  * The v1.4 PDF is the only Fractal-published spec for the III's third-
  * party MIDI surface. It documents bypass / channel / scene / preset
@@ -132,8 +132,8 @@ function notInSpec(op: string, gap: string): DispatchError {
     `axe-fx-iii ${op}: not in v1.4 third-party MIDI spec. ${gap}`,
     {
       retry_action:
-        'See docs/SYSEX-MAP-AXE-FX-III.md for the spec coverage and ' +
-        'docs/_private/HARDWARE-TASKS-AXEFX3.md for the community ' +
+        'See docs/devices/axe-fx-iii/SYSEX-MAP.md for the spec coverage ' +
+        'and docs/community/axefx3-beta-testing.md for the community ' +
         'capture workflow that can unlock this operation.',
     },
   );
@@ -984,7 +984,7 @@ const writer: DeviceWriter = {
    * Safe-edit dirty-gate adapter. Delegates to the III's device-sourced
    * dirty signal (STATE_BROADCAST `fn=0x01 04 01`) classified at the
    * connection layer in `midi.ts:wrapWithDirtyClassification`. See
-   * `docs/axefx3-dirty-state-research.md` for the evidence chain.
+   * `docs/devices/axe-fx-iii/dirty-state-research.md` for the evidence chain.
    *
    * 🟡 Beta: the inbound broadcast captures are all from AxeEdit-active
    * sessions; emission when the MCP server is the sole host has not been
@@ -1098,7 +1098,7 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
     "  - Plex Delay 1..4    →  178..181",
     "  - Multiplexer 1..4   →  191..194",
     "  - IR Player 1..4     →  195..198",
-    'Full table: docs/SYSEX-MAP-AXE-FX-III.md.',
+    'Full table: docs/devices/axe-fx-iii/SYSEX-MAP.md.',
     '',
     'AMP, Dynamic Distortion, NAM, Global Block, Shunt — effect IDs NOT',
     'in v1.4; bypass/channel control for these will refuse until decoded.',

@@ -4,7 +4,7 @@
  *
  * A single bank file is N presets × 49,336 bytes each, where each
  * preset is the 18-frame envelope (1× 0x77 + 16× 0x78 + 1× 0x79)
- * documented in `docs/axefx3-preset-format-research.md`. For the
+ * documented in `docs/devices/axe-fx-iii/preset-format-research.md`. For the
  * v28.06 banks: each single-bank file holds exactly 128 presets
  * (128 × 49,336 = 6,315,008 bytes); the ALL-BANKS file holds 384.
  *

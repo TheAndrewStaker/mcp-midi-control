@@ -181,7 +181,7 @@ if (!sectionB) {
       w('');
       w('**This table gives function-byte → SYSEX_* symbol-name mapping for every');
       w('III SysEx function the AxeEdit source defines, including undocumented');
-      w('ones. Use this to extend `docs/SYSEX-MAP-AXE-FX-III.md`.**');
+      w('ones. Use this to extend `docs/devices/axe-fx-iii/SYSEX-MAP.md`.**');
     } else {
       w('_No switch/case pattern recognized in the lookup body. Hand-inspect the body:_');
       w('');
@@ -200,7 +200,7 @@ if (!sectionB) {
     w('');
     w('Each of these references exactly one `SYSEX_*` string — they\'re the');
     w('per-function message builders for the named opcode. Cross-check the');
-    w('payload layout against `docs/SYSEX-MAP-AXE-FX-III.md`.');
+    w('payload layout against `docs/devices/axe-fx-iii/SYSEX-MAP.md`.');
     w('');
     for (const b of builders) {
       w(`- **${b.label}** — \`${b.funcName} @ ${b.address}\``);

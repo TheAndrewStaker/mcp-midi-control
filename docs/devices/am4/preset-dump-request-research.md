@@ -76,7 +76,7 @@ IN response is the expected 6-message dump stream, totalling exactly **12,352 by
 | 6 | 12208 | 14.264 | 0x79 | 11B | `f0 00 01 74 15 79 04 24 01 48 f7` |
 
 13 + 4*3082 + 11 = 12,352 bytes — matches the per-preset count in the
-factory bank file (`docs/factory-restore-research.md`). Response shape
+factory bank file ([`factory-restore-research.md`](factory-restore-research.md)). Response shape
 is the canonical dump stream, no surprises.
 
 The 0x77 header payload is `7F 00 00 20 00`: **bank = 0x7F (active
@@ -244,7 +244,7 @@ H1 + H4 are the two strongest. The capture will resolve which.
 
 The device-to-host side of this transaction IS already decoded - it's
 the standard 6-message preset dump documented in
-`docs/SYSEX-MAP.md` §10b:
+[`SYSEX-MAP.md`](SYSEX-MAP.md) §10b:
 
 ```
 Msg 1   13B    func 0x77   PRESET_DUMP_HEADER  (5-byte payload)
@@ -596,14 +596,14 @@ the request is decoded):
 
 Existing reference files used for this analysis:
 
-- `docs/preset-read-research.md` - the workflow that decoded
-  `READ_PRESET_NAME`. Repeated approach here, but the negative result
-  required a different structure.
-- `docs/SYSEX-MAP.md` §10b (Preset Dump Commands) and §6m
+- [`preset-read-research.md`](preset-read-research.md) - the workflow
+  that decoded `READ_PRESET_NAME`. Repeated approach here, but the
+  negative result required a different structure.
+- [`SYSEX-MAP.md`](SYSEX-MAP.md) §10b (Preset Dump Commands) and §6m
   (READ_PRESET_NAME) and §10b (factory bank file structure) -
   documented response side and location encoding.
-- `docs/factory-restore-research.md` - bank file structure, header
-  payload byte meanings, mask theory.
+- [`factory-restore-research.md`](factory-restore-research.md) - bank
+  file structure, header payload byte meanings, mask theory.
 - `samples/captured/session-46-am4edit-launch-device-connected.midi-events.txt` -
   primary cold-attach capture, no dump traffic.
 - `samples/captured/session-46-refresh-after-new-firmware.midi-events.txt` -
@@ -634,9 +634,9 @@ Existing reference files used for this analysis:
 > File -> Export Preset action in AM4-Edit (~1 minute on hardware).
 > The first OUT SysEx immediately before the 6-message dump reply
 > IS the request. Once captured, decode is a one-session job. See
-> `docs/preset-dump-request-research.md` §9 for the exact procedure.
+> this doc §9 for the exact procedure.
 > Until then, BK-036 (binary-format mapping), `dump_working_buffer`,
 > and `backup_location` all stay blocked. Preset *upload* / restore
 > works fine via the verbatim factory-bank replay path documented in
-> `docs/factory-restore-research.md` and exposed via the eventual
+> [`factory-restore-research.md`](factory-restore-research.md) and exposed via the eventual
 > `am4_restore_factory(location)` tool.

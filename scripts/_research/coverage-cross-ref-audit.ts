@@ -171,7 +171,7 @@ const PIDLOW_TO_FAMILY: Record<number, string> = {
   // pidLow=0x0001; 98 entries shipped under block:'global' in params.ts.
   // BLOCK_TO_FAMILY can't reach this because 'global' isn't a placeable
   // AM4 block, and the family-detection majority-vote needs the override
-  // to count it as anything but PIDLOW-UNKNOWN. See docs/SYSEX-MAP.md §6bb.
+  // to count it as anything but PIDLOW-UNKNOWN. See docs/devices/am4/SYSEX-MAP.md §6bb.
   0x0001: 'GLOBAL',
 };
 

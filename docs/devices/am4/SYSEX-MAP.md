@@ -1380,7 +1380,7 @@ interpretations. Reusable for other Main-Levels-style decodes.
 and the parallel "Refresh Preset Names" capture
 `samples/captured/session-46-refresh-after-new-firmware.midi-events.txt`.
 Both captures show the same 104-message OUT/IN loop AM4-Edit fires to
-populate its preset list. See `docs/preset-read-research.md` for the
+populate its preset list. See [`preset-read-research.md`](preset-read-research.md) for the
 full investigation, hypothesis space, and end-to-end name corpus
 round-trip.
 
@@ -1808,7 +1808,7 @@ working-buffer content for the duration of each build, so a user looking
 at the device mid-batch sees the slot being saved into. Direct-to-slot
 writes that bypass the working buffer entirely are queued for v0.1.x
 once the preset binary format decode lands (see
-`docs/preset-binary-format-research.md` and BK-036). Until then these
+[`preset-binary-format-research.md`](preset-binary-format-research.md) and BK-036). Until then these
 composites are working-buffer-mediated by construction.
 
 Goldens in `verify-msg`: byte-exact concatenated wire sequences for a
@@ -1825,7 +1825,7 @@ batch) that proves no wire bytes leave the host on rejection.
 File -> Export Preset menu, clicked with no stored preset selected,
 emits this single 11-byte SysEx; the device replies with the canonical
 6-message preset-dump stream documented in §10b. See
-`docs/preset-dump-request-research.md` for the full investigation,
+[`preset-dump-request-research.md`](preset-dump-request-research.md) for the full investigation,
 hypothesis space, and stored-preset variant gap.
 
 This is a **new function byte** (`0x03`) — not part of the 0x01
@@ -1917,7 +1917,7 @@ dump request (e.g. dumping A01 or Z04 without affecting the working
 buffer) is a plausible second mode that would replace the `7F 7F`
 sentinels with the location's `bank, sub` bytes (matching the response
 header's encoding documented in §10b). This is consistent with H1 in
-`docs/preset-dump-request-research.md` §2 but has not been captured
+[`preset-dump-request-research.md`](preset-dump-request-research.md) §2 but has not been captured
 on hardware. HW-045 is parked at 🟡 partial pending one more capture
 of File -> Export Preset against a specifically-clicked stored preset.
 
@@ -1975,7 +1975,7 @@ parameter envelope aren't arbitrary handles — they encode a clean
   dispatcher (`FUN_140397a40`) yields the same `(paramId, nameStr)`
   pairs for shared block families. The III's wire envelope for
   SET_PARAM uses a different shape (effectId + paramId; see
-  [`docs/SYSEX-MAP-AXE-FX-III.md`](SYSEX-MAP-AXE-FX-III.md)) — but
+  [`docs/devices/axe-fx-iii/SYSEX-MAP.md`](../axe-fx-iii/SYSEX-MAP.md)) — but
   the `paramId` value itself is shared with AM4.
 
 ### Ghidra-extracted catalog
@@ -2383,8 +2383,9 @@ phase of the project. Concrete plan once 0x02 works:
    bytes locate that parameter in the binary.
 3. Repeat across representative parameters (amp gain, delay time, reverb
    mix, filter frequency, scene selection) until the structure is mapped.
-4. Document findings in `docs/SYSEX-MAP.md` under a new "Preset binary
-   layout" section, and in `docs/SESSIONS.md` for the per-session log.
+4. Document findings in this file under a new "Preset binary
+   layout" section, and in `docs/_private/SESSIONS.md` for the
+   per-session log.
 
 ---
 
@@ -2449,7 +2450,7 @@ documented here.
 ### Cross-references
 
 - **No-indirect-read enforcement (AM4):** `packages/am4/src/descriptor/agentGuidance.ts` — `read_requires_navigation` guidance block, exposed to the LLM via `describe_device({port:'am4'})`.
-- **No-indirect-read (Axe-Fx III):** `docs/axefx3-design-notes.md:30-34` documents the move-before-write/read pattern.
+- **No-indirect-read (Axe-Fx III):** [`docs/devices/axe-fx-iii/design-notes.md`](../axe-fx-iii/design-notes.md):30-34 documents the move-before-write/read pattern.
 - **AM4 dirty signal absence + polled-fingerprint workaround:** `packages/am4/src/bufferFingerprint.ts` + `packages/am4/src/tools/safeEdit.ts`; cross-device contract in `docs/SAFE-EDIT-WORKFLOW.md`.
 - **HW-107 closure note:** AM4 emits zero unsolicited MIDI on front-panel edits (3 independent captures, Session 74).
 - **Preset binary scrambling:** DECISIONS.md 2026-04-14 (architecture pivot).
