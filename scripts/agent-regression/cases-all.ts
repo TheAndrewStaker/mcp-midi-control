@@ -4,10 +4,14 @@
  * caring which device file declares it.
  */
 import { AM4_CASES } from './cases-am4.js';
+import { AXE_FX_II_CASES } from './cases-axe-fx-ii.js';
+import { AXE_FX_III_CASES } from './cases-axe-fx-iii.js';
+import { HYDRASYNTH_CASES } from './cases-hydrasynth.js';
 import type { AgentRegressionCase } from './types.js';
 
 export const ALL_CASES: readonly AgentRegressionCase[] = [
   ...AM4_CASES,
-  // Axe-Fx II, Hydrasynth, Axe-Fx III cases land here once the AM4
-  // harness pattern proves itself end-to-end.
+  ...AXE_FX_II_CASES,
+  ...AXE_FX_III_CASES,
+  ...HYDRASYNTH_CASES,
 ];

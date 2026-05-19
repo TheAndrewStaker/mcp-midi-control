@@ -55,6 +55,9 @@ channel switching, applyExecutor) against synthesized ack envelopes.
 ```bash
 npm run agent-sweep                                 # all cases under mock
 npm run agent-sweep:am4                             # AM4 only, mock
+npm run agent-sweep:axefx2                          # Axe-Fx II only, mock
+npm run agent-sweep:axefx3                          # Axe-Fx III only, mock
+npm run agent-sweep:hydra                           # Hydrasynth only, mock
 npx tsx scripts/agent-regression/index.ts --tier=no-hardware
 npx tsx scripts/agent-regression/index.ts --case=am4-h1-sunday-morning --verbose
 ```
@@ -66,6 +69,9 @@ the env). Verifies wire-level correctness alongside agent behavior.
 ```bash
 npm run agent-sweep:real                            # all cases against real hardware
 npm run agent-sweep:am4:real                        # AM4 only, real hardware
+npm run agent-sweep:axefx2:real                     # Axe-Fx II only, real hardware
+npm run agent-sweep:axefx3:real                     # Axe-Fx III only, real hardware
+npm run agent-sweep:hydra:real                      # Hydrasynth only, real hardware
 npx tsx scripts/agent-regression/index.ts --real-hardware
 ```
 
@@ -178,11 +184,14 @@ rate limits apply.
 
 ```
 scripts/agent-regression/
-├── README.md            # this file
-├── mcp-config.json      # MCP server config passed to claude -p
-├── types.ts             # AgentRegressionCase / Expectations types
-├── runner.ts            # spawn + stream-json parser + assertion engine
-├── cases-am4.ts         # AM4 cases (H1/H2/H3 + §2 surface coverage)
-├── cases-all.ts         # aggregator
-└── index.ts             # CLI entry
+├── README.md              # this file
+├── mcp-config.json        # MCP server config passed to claude -p
+├── types.ts               # AgentRegressionCase / Expectations types
+├── runner.ts              # spawn + stream-json parser + assertion engine
+├── cases-am4.ts           # AM4 cases (H1/H2/H3 + §2 surface coverage)
+├── cases-axe-fx-ii.ts     # Axe-Fx II cases (BK-058 X/Y channel + discovery)
+├── cases-axe-fx-iii.ts    # Axe-Fx III cases (fn=0x01 SET_PARAMETER envelope + discovery)
+├── cases-hydrasynth.ts    # Hydrasynth cases (System CC + macro + discovery)
+├── cases-all.ts           # aggregator
+└── index.ts               # CLI entry
 ```
