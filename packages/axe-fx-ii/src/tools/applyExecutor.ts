@@ -20,7 +20,6 @@ import {
   buildSetSceneNumber,
   buildStorePreset,
   buildSwitchPreset,
-  displayToWire,
   isGetGridLayoutResponse,
   isSetCellRoutingResponse,
   isSetGridCellResponse,
@@ -33,9 +32,9 @@ import {
 } from 'fractal-midi/axe-fx-ii';
 
 import { GET_RESPONSE_TIMEOUT_MS, findBlock, findParam } from './shared.js';
-import { getCalibration } from '../calibration.js';
 import { KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/axe-fx-ii';
 import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
+import { resolveParamKind } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
 
 /**
  * Enumerate valid param names on a block by walking `KNOWN_PARAMS`
@@ -400,35 +399,19 @@ export function buildApplyPresetAtOps(
       wire = value;
       modeNote = `wire ${wire}`;
     } else {
-      // Resolve calibration: codec catalog first, calibration.ts
-      // overlay (AM4_SHARED / EDITOR_OBSERVED / SUFFIX_RULES) second.
-      // Without overlay coverage here, the legacy auto-detect path
-      // sends display values straight through as wire integers for any
-      // param that the codec catalog leaves uncalibrated — the same
-      // class of bug that hit the descriptor writer pre-Session 100.
-      let displayMin: number | undefined;
-      let displayMax: number | undefined;
-      let displayScale: 'linear' | 'log10' | undefined;
-      if (param.displayMin !== undefined && param.displayMax !== undefined) {
-        displayMin = param.displayMin;
-        displayMax = param.displayMax;
-        displayScale = param.displayScale;
-      } else {
-        const overlay = getCalibration(param.block, param.name);
-        if (overlay !== undefined) {
-          displayMin = overlay.displayMin;
-          displayMax = overlay.displayMax;
-          displayScale = overlay.displayScale;
-        }
-      }
-      const hasCalibration = displayMin !== undefined && displayMax !== undefined;
-      const useDisplay = hasCalibration && value <= (displayMax as number);
+      // Cross-device source of truth: same resolveParamKind helper the
+      // descriptor schema, writer, and reader consult. Auto-detect keeps
+      // its legacy back-compat shape: when the param has calibration AND
+      // value <= displayMax, encode as display; otherwise pass through
+      // as wire (so callers mixing wire+display in one apply still work
+      // — the original wireMode-false invariant).
+      const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
+      const useDisplay =
+        kind.encodeDisplay !== undefined
+        && kind.displayMax !== undefined
+        && value <= kind.displayMax;
       if (useDisplay) {
-        wire = displayToWire(value, {
-          displayMin: displayMin as number,
-          displayMax: displayMax as number,
-          displayScale,
-        });
+        wire = kind.encodeDisplay!(value);
         modeNote = `${value} → wire ${wire}`;
       } else {
         if (!Number.isInteger(value) || value < 0 || value > 65534) {

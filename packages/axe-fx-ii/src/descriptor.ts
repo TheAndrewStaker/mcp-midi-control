@@ -31,13 +31,20 @@
  */
 
 import type { DeviceDescriptor, PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { registerParamKindResolver } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
 
 import { AXE_FX_II_BLOCKS } from 'fractal-midi/axe-fx-ii';
 
 import { AXEFX2_AGENT_GUIDANCE } from './descriptor/agentGuidance.js';
+import { resolveAxeFxIIParamKind } from './calibration.js';
 import { buildBlocks, buildBlockTypes } from './descriptor/schema.js';
 import { reader } from './descriptor/reader.js';
 import { writer } from './descriptor/writer.js';
+
+// Plug the Axe-Fx II resolver into the cross-device param-kind registry
+// BEFORE buildBlocks() runs (schema.ts uses resolveParamKind to derive
+// each param's encode/decode closures + display range + unit).
+registerParamKindResolver('axe-fx-ii', resolveAxeFxIIParamKind);
 
 // Channel-blocks list — every AxeFxIIBlock.canBypass=true entry exposes
 // X/Y in principle. The wiki / firmware spec doesn't carry an explicit

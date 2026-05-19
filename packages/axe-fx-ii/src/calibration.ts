@@ -72,6 +72,17 @@
  *      passes the new entry's round-trip.
  */
 
+import type {
+  ParamKindResolver,
+  ResolvedParamKind,
+} from '@mcp-midi-control/core/protocol-generic/paramKind.js';
+import {
+  KNOWN_PARAMS,
+  displayToWire,
+  wireToDisplay,
+  type AxeFxIIParam,
+} from 'fractal-midi/axe-fx-ii';
+
 export type CalibrationProvenance =
   | 'am4-shared'
   | 'editor-observed'
@@ -454,4 +465,195 @@ export function calibrationStats(): {
     editorObserved: Object.keys(EDITOR_OBSERVED).length,
     suffixRules: SUFFIX_RULES.length,
   };
+}
+
+// ── Param-kind resolver ────────────────────────────────────────────
+//
+// Single source of truth for "what kind of knob is this and how do
+// we encode it" across every Axe-Fx II call site (schema encode /
+// decode, writer reverse-display, reader forward-display, applyExecutor
+// pre-encode). Wraps the catalog-first / overlay-second ladder + the
+// existing display unit classification so every site sees the same
+// answer for the same (block, name) input.
+//
+// Lookup order:
+//   1. fractal-midi KNOWN_PARAMS catalog: if param.displayMin/Max are
+//      set, use them — they're the hardware-verified codec entry.
+//      Source: 'codec_catalog'.
+//   2. calibration.ts overlay: getCalibration consults EDITOR_OBSERVED
+//      first, then AM4_SHARED, then SUFFIX_RULES. Source: 'overlay'
+//      for the explicit tables, 'suffix_rule' for the suffix fallback.
+//   3. Param recognized but uncalibrated: returns unit by controlType
+//      (enum / bool / opaque) with no closures. Source: 'unknown' is
+//      reserved for "param not even in the catalog" — recognized-but-
+//      uncalibrated returns 'codec_catalog' to mean "the catalog says
+//      this knob has no display range."
+//   4. Param not in catalog at all: helper returns undefined; the core
+//      helper's UNKNOWN envelope is what the caller sees.
+
+function findParam(block: string, name: string): AxeFxIIParam | undefined {
+  for (const key of Object.keys(KNOWN_PARAMS)) {
+    const p = KNOWN_PARAMS[key as keyof typeof KNOWN_PARAMS] as AxeFxIIParam;
+    if (p.block === block && p.name === name) return p;
+  }
+  return undefined;
+}
+
+/**
+ * Classify a calibrated param into one of the cross-device display
+ * units. Matches the previous `unitFor` shape in schema.ts (log10 →
+ * 'hz', linear -100..100 → 'bipolar_percent', linear 0..100 →
+ * 'percent', linear 0..10 → 'knob'). The original `unitFor` lived in
+ * three places (schema.ts, reader.ts, plus implicit logic in
+ * encodeParamForApply); this one helper replaces all three.
+ */
+function classifyUnit(
+  controlType: AxeFxIIParam['controlType'] | undefined,
+  displayMin: number | undefined,
+  displayMax: number | undefined,
+  displayScale: 'linear' | 'log10' | undefined,
+): ResolvedParamKind['unit'] {
+  if (controlType === 'select') return 'enum';
+  if (controlType === 'switch') return 'bool';
+  if (displayMin === undefined || displayMax === undefined) return 'opaque';
+  if (displayScale === 'log10') return 'hz';
+  if (displayMin === 0 && displayMax === 10) return 'knob';
+  if (displayMin === -100 && displayMax === 100) return 'bipolar_percent';
+  if (displayMin === 0 && displayMax === 100) return 'percent';
+  return 'knob';
+}
+
+/**
+ * The Axe-Fx II resolver. Plugged into the cross-device registry by
+ * `registerParamKindResolver('axe-fx-ii', resolveAxeFxIIParamKind)` at
+ * descriptor module load.
+ */
+export const resolveAxeFxIIParamKind: ParamKindResolver = (
+  block,
+  name,
+): ResolvedParamKind | undefined => {
+  const param = findParam(block, name);
+  if (param === undefined) return undefined;
+
+  // Enum / switch params don't carry a display range; encode through
+  // the codec's label-resolution path. Decode is the inverse.
+  if (param.controlType === 'select') {
+    return {
+      unit: 'enum',
+      source: 'codec_catalog',
+      encodeDisplay: (value: number | string) => resolveEnumWire(param, value),
+      decodeWire: (wire: number) => param.enumValues?.[Math.round(wire)] ?? wire,
+    };
+  }
+  if (param.controlType === 'switch') {
+    return {
+      unit: 'bool',
+      source: 'codec_catalog',
+      encodeDisplay: (value: number | string) => coerceSwitchWire(value),
+      decodeWire: (wire: number) => (wire ? 'on' : 'off'),
+    };
+  }
+
+  // Knob / unknown — resolve calibration via catalog → overlay ladder.
+  let displayMin: number | undefined;
+  let displayMax: number | undefined;
+  let displayScale: 'linear' | 'log10' | undefined;
+  let source: ResolvedParamKind['source'];
+  if (param.displayMin !== undefined && param.displayMax !== undefined) {
+    displayMin = param.displayMin;
+    displayMax = param.displayMax;
+    displayScale = param.displayScale;
+    source = 'codec_catalog';
+  } else {
+    const overlay = getCalibration(block, name);
+    if (overlay !== undefined) {
+      displayMin = overlay.displayMin;
+      displayMax = overlay.displayMax;
+      displayScale = overlay.displayScale;
+      source = overlay.provenance === 'fractal-convention' ? 'suffix_rule' : 'overlay';
+    } else {
+      // Param recognized in catalog but no calibration anywhere — wire
+      // pass-through, no closures, but unit reflects controlType.
+      return {
+        unit: classifyUnit(param.controlType, undefined, undefined, undefined),
+        source: 'codec_catalog',
+      };
+    }
+  }
+
+  const unit = classifyUnit(param.controlType, displayMin, displayMax, displayScale);
+  return {
+    unit,
+    displayMin,
+    displayMax,
+    source,
+    encodeDisplay: (value: number | string) => {
+      const num = typeof value === 'number' ? value : Number(value);
+      if (!Number.isFinite(num)) {
+        throw new Error(`Expected a number for ${block}.${name}, got "${value}"`);
+      }
+      if (num < (displayMin as number) || num > (displayMax as number)) {
+        throw new Error(
+          `${block}.${name} out of range [${displayMin}..${displayMax}]: ${num}`,
+        );
+      }
+      return displayToWire(num, {
+        displayMin: displayMin as number,
+        displayMax: displayMax as number,
+        displayScale,
+      });
+    },
+    decodeWire: (wire: number) =>
+      wireToDisplay(wire, {
+        displayMin: displayMin as number,
+        displayMax: displayMax as number,
+        displayScale,
+      }),
+  };
+};
+
+function resolveEnumWire(param: AxeFxIIParam, value: number | string): number {
+  const enumValues = param.enumValues ?? {};
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value) || !(value in enumValues)) {
+      const samples = Object.values(enumValues).slice(0, 8).join(', ');
+      throw new Error(
+        `${value} is not a valid enum index for ${param.block}.${param.name}. First few values: ${samples}…`,
+      );
+    }
+    return value;
+  }
+  const lower = value.trim().toLowerCase();
+  const matches: Array<{ idx: number; label: string }> = [];
+  for (const [idxStr, label] of Object.entries(enumValues)) {
+    if (label.toLowerCase() === lower) return Number(idxStr);
+    if (label.toLowerCase().includes(lower)) {
+      matches.push({ idx: Number(idxStr), label });
+    }
+  }
+  if (matches.length === 1) return matches[0].idx;
+  if (matches.length > 1) {
+    const list = matches.slice(0, 6).map((m) => `"${m.label}"`).join(' / ');
+    throw new Error(
+      `"${value}" is ambiguous — matched ${matches.length} entries: ${list}. Pick one verbatim.`,
+    );
+  }
+  const samples = Object.values(enumValues).slice(0, 8).join(', ');
+  throw new Error(
+    `"${value}" is not a valid ${param.block}.${param.name} value. First few valid names: ${samples}… (call list_params for the full list).`,
+  );
+}
+
+function coerceSwitchWire(value: number | string): number {
+  if (typeof value === 'string') {
+    const lower = value.trim().toLowerCase();
+    if (lower === 'true' || lower === 'on' || lower === '1') return 1;
+    if (lower === 'false' || lower === 'off' || lower === '0') return 0;
+    throw new Error(`Expected boolean / "on" / "off", got "${value}"`);
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    throw new Error(`Expected a number/boolean, got "${value}"`);
+  }
+  return num ? 1 : 0;
 }

@@ -50,6 +50,7 @@ import type {
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
+import { resolveParamKind } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
 
 import {
   AXE_FX_II_BLOCKS,
@@ -69,14 +70,12 @@ import {
   buildStorePreset,
   buildSwitchPreset,
   channelToWire,
-  displayToWire,
   isGetPresetNameResponse,
   isSetGridCellResponse,
   isStorePresetResponse,
   parseGetPresetNameResponse,
   parseSetGridCellResponse,
   parseStorePresetResponse,
-  wireToDisplay,
   buildGetGridLayout,
   isGetGridLayoutResponse,
   parseGetGridLayoutResponse,
@@ -92,7 +91,6 @@ import {
 } from '../tools/applyExecutor.js';
 import { findParamFuzzy } from 'fractal-midi/axe-fx-ii';
 import { guardActiveBufferOrSave } from '../tools/shared.js';
-import { getCalibration } from '../calibration.js';
 
 import { findBlockBySlug, parseAxeFxIILocation } from './schema.js';
 
@@ -252,37 +250,14 @@ export const writer: DeviceWriter = {
     // acked: true to match the AM4 descriptor's success shape and let
     // the warning carry the no-ack semantics.
     //
-    // Reverse-display calibration matches encodeParamForApply: codec
-    // catalog first, calibration.ts overlay second. Without this the
-    // display_value field returns the wire integer for overlay-only
-    // calibrated knobs (drive.volume, drive.tone, etc).
-    let display: number | string;
-    if (param.controlType === 'select') {
-      display = param.enumValues?.[wireValue] ?? wireValue;
-    } else if (param.controlType === 'switch') {
-      display = wireValue ? 'on' : 'off';
-    } else {
-      let displayMin: number | undefined;
-      let displayMax: number | undefined;
-      let displayScale: 'linear' | 'log10' | undefined;
-      if (param.displayMin !== undefined && param.displayMax !== undefined) {
-        displayMin = param.displayMin;
-        displayMax = param.displayMax;
-        displayScale = param.displayScale;
-      } else {
-        const overlay = getCalibration(param.block, param.name);
-        if (overlay !== undefined) {
-          displayMin = overlay.displayMin;
-          displayMax = overlay.displayMax;
-          displayScale = overlay.displayScale;
-        }
-      }
-      if (displayMin !== undefined && displayMax !== undefined) {
-        display = wireToDisplay(wireValue, { displayMin, displayMax, displayScale });
-      } else {
-        display = wireValue;
-      }
-    }
+    // Reverse-display via the cross-device paramKind helper: one source
+    // of truth for "wire -> display." Schema, reader, writer, and apply
+    // executor all consult the same resolver so display_value matches
+    // whatever set_param's encode closure round-trips to.
+    const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
+    const display: number | string = kind.decodeWire !== undefined
+      ? kind.decodeWire(wireValue)
+      : wireValue;
     return {
       op: 'set_param',
       target: `${blockSlug}.${param.name}`,
@@ -981,22 +956,14 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
 }
 
 /**
- * Pre-encode a single param value for the apply path. Mirrors what the
- * descriptor's `params[name].encode` does so apply_preset and set_param
- * share one display-first source of truth. When a param has either
- * (a) catalog-supplied displayMin/displayMax (fractal-midi codec) or
- * (b) overlay calibration via `getCalibration` (AM4_SHARED,
- * EDITOR_OBSERVED, SUFFIX_RULES), the apply path now honors it just
- * like set_param does — Session 100+ fix for the bug where
- * `drive.volume: 4` passed through as wire 4 (effectively muted).
+ * Pre-encode a single param value for the apply path. Funnels through
+ * the shared `resolveParamKind` helper so apply_preset, set_param, and
+ * the reader all share one display->wire source of truth.
  *
- * Falls back to wire pass-through only when no calibration is
- * available from either source.
- *
- * Cannot delegate to `descriptor.blocks[block].params[name].encode`
- * directly because that would create a circular import through
- * descriptor.ts → writer.ts. Instead we duplicate the schema's
- * `resolveCalibration` priority (param → overlay) here.
+ * Calibrated params (catalog or overlay) use the helper's
+ * `encodeDisplay` closure verbatim — same closure the schema's encode
+ * uses. Uncalibrated params still fall back to wire pass-through with
+ * 0..65534 range validation.
  */
 function encodeParamForApply(
   blockSlug: string,
@@ -1005,58 +972,16 @@ function encodeParamForApply(
 ): number {
   const block = resolveBlockOrThrow(blockSlug);
   const param = findParamOrThrow(block, paramName);
-  if (param.controlType === 'select') {
-    if (typeof value === 'number') {
-      if (param.enumValues?.[value] !== undefined) return value;
-      throw new Error(`${blockSlug}.${paramName}: enum index ${value} out of range.`);
-    }
-    const lower = value.trim().toLowerCase();
-    for (const [idxStr, label] of Object.entries(param.enumValues ?? {})) {
-      if (label.toLowerCase() === lower) return Number(idxStr);
-    }
-    throw new Error(`${blockSlug}.${paramName}: unknown enum value "${value}".`);
+  const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
+  if (kind.encodeDisplay !== undefined) {
+    return kind.encodeDisplay(value);
   }
-  if (param.controlType === 'switch') {
-    if (typeof value === 'string') {
-      const lower = value.trim().toLowerCase();
-      return (lower === 'true' || lower === 'on' || lower === '1') ? 1 : 0;
-    }
-    return value ? 1 : 0;
-  }
+  // Uncalibrated path — wire pass-through. Matches schema.ts:makeEncode
+  // fallback semantics so set_param and apply_preset behave identically
+  // on opaque knobs.
   const num = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(num)) {
     throw new Error(`${blockSlug}.${paramName}: expected a number, got "${value}".`);
-  }
-  // Resolve calibration: codec catalog first, then calibration.ts
-  // overlay (AM4_SHARED / EDITOR_OBSERVED / SUFFIX_RULES). Matches
-  // schema.ts:resolveCalibration so set_param and apply_preset share
-  // one calibration source.
-  let displayMin: number | undefined;
-  let displayMax: number | undefined;
-  let displayScale: 'linear' | 'log10' | undefined;
-  if (param.displayMin !== undefined && param.displayMax !== undefined) {
-    displayMin = param.displayMin;
-    displayMax = param.displayMax;
-    displayScale = param.displayScale;
-  } else {
-    const overlay = getCalibration(param.block, param.name);
-    if (overlay !== undefined) {
-      displayMin = overlay.displayMin;
-      displayMax = overlay.displayMax;
-      displayScale = overlay.displayScale;
-    }
-  }
-  if (displayMin !== undefined && displayMax !== undefined) {
-    if (num < displayMin || num > displayMax) {
-      throw new Error(
-        `${blockSlug}.${paramName} out of range [${displayMin}..${displayMax}]: ${num}`,
-      );
-    }
-    return displayToWire(num, {
-      displayMin,
-      displayMax,
-      displayScale,
-    });
   }
   if (!Number.isInteger(num) || num < 0 || num > 65534) {
     throw new Error(`${blockSlug}.${paramName}: wire value out of range (0..65534): ${num}`);

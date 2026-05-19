@@ -25,6 +25,7 @@ import type {
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
+import { resolveParamKind } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
 
 import {
   AXE_FX_II_BLOCKS,
@@ -45,7 +46,6 @@ import {
   parseGetBlockParameterResponse,
   parseGetPresetNameResponse,
   parseGetPresetNumberResponse,
-  wireToDisplay,
   type AxeFxIIChannel,
 } from 'fractal-midi/axe-fx-ii';
 import {
@@ -55,7 +55,6 @@ import {
   type AxeFxIILineageBlock,
 } from '../lineageLookup.js';
 import { findParamFuzzy } from 'fractal-midi/axe-fx-ii';
-import { getCalibration } from '../calibration.js';
 
 import { findBlockBySlug, parseAxeFxIILocation } from './schema.js';
 
@@ -117,30 +116,10 @@ function findParamOrThrow(block: AxeFxIIBlock, name: string): AxeFxIIParam {
 }
 
 function unitFor(param: AxeFxIIParam): string {
-  if (param.controlType === 'select') return 'enum';
-  if (param.controlType === 'switch') return 'bool';
-  // Resolve calibration the same way schema.ts/writer.ts do — catalog
-  // first, calibration.ts overlay second. Without the overlay check,
-  // unitFor reports 'opaque' for params that ARE calibrated via
-  // AM4_SHARED / EDITOR_OBSERVED / SUFFIX_RULES, misleading the agent.
-  let displayMin: number | undefined;
-  let displayMax: number | undefined;
-  let displayScale: 'linear' | 'log10' | undefined;
-  if (param.displayMin !== undefined && param.displayMax !== undefined) {
-    displayMin = param.displayMin;
-    displayMax = param.displayMax;
-    displayScale = param.displayScale;
-  } else {
-    const overlay = getCalibration(param.block, param.name);
-    if (overlay !== undefined) {
-      displayMin = overlay.displayMin;
-      displayMax = overlay.displayMax;
-      displayScale = overlay.displayScale;
-    }
-  }
-  if (displayMin === undefined || displayMax === undefined) return 'opaque';
-  if (displayScale === 'log10') return 'hz';
-  return 'knob';
+  // Cross-device source of truth for "what unit does the LLM see."
+  // Same resolver schema.ts/writer.ts use, so the unit reported on
+  // get_param matches what set_param's encode closure expects.
+  return resolveParamKind('axe-fx-ii', param.block, param.name).unit;
 }
 
 function normalizeChannel(channel: string | number | undefined): AxeFxIIChannel | undefined {
@@ -193,35 +172,19 @@ export const reader: DeviceReader = {
     }
     const parsed = parseGetBlockParameterResponse(response);
     const wire = parsed.value;
+    // Cross-device source of truth: same wire->display closure schema's
+    // decode + writer's reverse-display use. For uncalibrated knobs the
+    // resolver omits decodeWire; fall back to the device's own label
+    // string from the GET response, then to the raw wire integer.
+    const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
     let display: number | string;
-    if (param.controlType === 'select') {
-      display = param.enumValues?.[wire] ?? parsed.label ?? wire;
-    } else if (param.controlType === 'switch') {
-      display = wire ? 'on' : 'off';
+    if (kind.decodeWire !== undefined) {
+      display = kind.decodeWire(wire);
+    } else if (param.controlType === 'select') {
+      // Enum without resolver decodeWire (defensive) - prefer label.
+      display = parsed.label ?? wire;
     } else {
-      // Calibration resolution matches schema.ts/writer.ts: codec
-      // catalog first, calibration.ts overlay second.
-      let displayMin: number | undefined;
-      let displayMax: number | undefined;
-      let displayScale: 'linear' | 'log10' | undefined;
-      if (param.displayMin !== undefined && param.displayMax !== undefined) {
-        displayMin = param.displayMin;
-        displayMax = param.displayMax;
-        displayScale = param.displayScale;
-      } else {
-        const overlay = getCalibration(param.block, param.name);
-        if (overlay !== undefined) {
-          displayMin = overlay.displayMin;
-          displayMax = overlay.displayMax;
-          displayScale = overlay.displayScale;
-        }
-      }
-      if (displayMin !== undefined && displayMax !== undefined) {
-        display = wireToDisplay(wire, { displayMin, displayMax, displayScale });
-      } else {
-        // Fall back to the device's own label string when uncalibrated.
-        display = parsed.label || wire;
-      }
+      display = parsed.label || wire;
     }
     return {
       block: blockSlug,
