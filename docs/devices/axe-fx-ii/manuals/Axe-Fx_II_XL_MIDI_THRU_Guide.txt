@@ -1,3 +1,14 @@
+<!-- mcp-midi-control: source attribution + trimmed extract -->
+Source: Axe-Fx II XL MIDI Thru Guide by Fractal Audio Systems.
+Copyright (c) Fractal Audio Systems. All rights reserved.
+This file contains selected technical reference content extracted under
+fair-use interoperability research. Marketing, legal, and regulatory
+front-matter / back-matter sections have been removed; the remaining
+content is the technical reference relied on by the MCP MIDI Control
+project for protocol decoding and tool authoring. See
+docs/manuals/README.md for the policy.
+
+---
 Axe--Fx  II  XL  --  MIDI  Controller/MIDI  THRU  Connections  Guide  
 
 Depending  on  how  you  connect  an  MFC--101  
@@ -66,5 +77,5 @@ THRU  port.  No  special  settings  are  required.
 
 To  get  help  using  MIDI  Thru  on  the  Axe--Fx  II  XL,  please  reach  us  at  http://support.fractalaudio.com      
 
-                             ©  2014  Fractal  Audio  Systems.  All  rights  reserved.  
+                             ï¿½  2014  Fractal  Audio  Systems.  All  rights  reserved.  
 

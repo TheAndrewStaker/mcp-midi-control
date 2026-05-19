@@ -1,3 +1,14 @@
+<!-- mcp-midi-control: source attribution + trimmed extract -->
+Source: Axe-Fx II Tone Match Manual by Fractal Audio Systems.
+Copyright (c) Fractal Audio Systems. All rights reserved.
+This file contains selected technical reference content extracted under
+fair-use interoperability research. Marketing, legal, and regulatory
+front-matter / back-matter sections have been removed; the remaining
+content is the technical reference relied on by the MCP MIDI Control
+project for protocol decoding and tool authoring. See
+docs/manuals/README.md for the policy.
+
+---
 Axe-Fx II Tone Match Mini Manual
 
 The Tone Match block changes the sound of an Axe-Fx preset to match a reference signal,
@@ -36,7 +47,7 @@ All amp and effect settings are fully editable in presets using Tone Match.
                                                  right in the preset, which can be exported and shared like any other.
                                                  Alternately, you can EXPORT Tone Match data into a User Cab memory.
 
-                                                                     © Copyright. Fractal Audio Systems. All rights reserved. Doc v1.05
+                                                                     ï¿½ Copyright. Fractal Audio Systems. All rights reserved. Doc v1.05
 1 Create            The Starting Point Preset
 
        AMP CAB TMA  Use your Axe-Fx II to create a starting point preset. Use the same or
@@ -93,19 +104,19 @@ All amp and effect settings are fully editable in presets using Tone Match.
                                 "REFERENCE SOURCE" input on the PROCESS page of the Tone Match
                                 block's edit menu. The following choices are available:
 
-                                Row 1­4: Selects any block from the column to the left of the Tone
+                                Row 1ï¿½4: Selects any block from the column to the left of the Tone
                                 Match block. Using one of these options requires that your reference
                                 signal be routed on the grid to the Tone Match block. Except in rare
                                 cases, it is best to use one of the other "direct input" options below.
 
-                                Input 1­2: Selecting Input 1 or 2 effectively ignores the grid and
+                                Input 1ï¿½2: Selecting Input 1 or 2 effectively ignores the grid and
                                 (invisibly) routes signal directly from the designated input to the refer-
                                 ence input of the Tone Match block. "INPUT 2" would be the typical
                                 selection when your reference signal is the analog output from a
                                 computer audio interface or the feed from a mixer/mic pre connected
                                 directly to the 1/4" inputs on the rear of the Axe-Fx II.
 
-                                Block L­R: Using the left or right inputs of the Tone Match block
+                                Block Lï¿½R: Using the left or right inputs of the Tone Match block
                                 depends on the reference signal being present on the grid and routed
                                 to the appropriate block input. Like the options "Row 1-4", this would
                                 be a somewhat rare configuration.
@@ -201,7 +212,7 @@ All amp and effect settings are fully editable in presets using Tone Match.
             The Tone Match block has two parameters for optional fine-tuning.
             These appear on the PROCESS page of its edit menu.
 
-            Amount: Scales the effect of the Tone Match filter from 0­100%. Use
+            Amount: Scales the effect of the Tone Match filter from 0ï¿½100%. Use
             this to control how much tone re-shaping is applied.
 
             Smoothing: This "intelligently" averages the frequency curve to

@@ -1,19 +1,14 @@
-Multipoint Iterative Matching
-& Impedance Correction
-Technology (MIMICTM)
+<!-- mcp-midi-control: source attribution + trimmed extract -->
+Source: MIMIC (tm) Speaker Simulation Technology by Fractal Audio Systems.
+Copyright (c) Fractal Audio Systems. All rights reserved.
+This file contains selected technical reference content extracted under
+fair-use interoperability research. Marketing, legal, and regulatory
+front-matter / back-matter sections have been removed; the remaining
+content is the technical reference relied on by the MCP MIDI Control
+project for protocol decoding and tool authoring. See
+docs/manuals/README.md for the policy.
 
-A Fractal Audio Systems White Paper I April 2013
-                                                                                                                                   
-
-INTRODUCTION
-
-We  at  Fractal  Audio  Systems  are  proud  to  announce  a  significant  advancement  in  the  field  of  amplifier  
-simulation  technology:  Multi--Point  Iterative  Matching  and  Impedance  Correction  (MIMICTM).    MIMIC  offers  a  
-level  or  realism  unmatched  by  any  other  product  at  any  price--point.  
-
-In  this  white--paper  we  present  the  interested  user  with  a  simplified  explanation  of  the  technology  and  its  
-inherent  benefits.  
-
+---
 Guitar Amplifier Evolution and the Paradigm of Electric Guitar Tone
 
 The  origin  of  the  electric  guitar  and  the  electric  guitar  amplifier  stems  from  the  classic  "necessity  is  the  mother  
@@ -39,7 +34,7 @@ FILTER  DISTORT  FILTER
                                                                                    
 FIGURE  1:  THE  FUNDAMENTAL  PARADIGM  OF  ELECTRIC  GUITAR  TONE  
 
-PAGE  1  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+PAGE  1  of  10    ï¿½    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ï¿½  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
                                                                                                                                      
 
 We  can  further  elaborate  on  the  paradigm  by  breaking  it  into  its  constituent  components,  as  desired.    For  
@@ -62,7 +57,7 @@ diagram  of  a  modern  tube  amp  might  be:
 
                                                                                                                             
 
-Amplifier Simulation ­ Theory and Practice
+Amplifier Simulation ï¿½ Theory and Practice
 
 TUBE AMPS
 
@@ -81,7 +76,7 @@ generated  by  a  tube  amp  is  a  complex  relationship  between  the  various
 
                           
 
-PAGE  2  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+PAGE  2  of  10    ï¿½    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ï¿½  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
                                                                                                                                             
 
 SIMULATION BASICS
@@ -121,7 +116,7 @@ filtering  of  the  loudspeaker.    While  early  products  relied  on  what  wa
 the  complex  response  of  a  loudspeaker,  FIR  filters  (or  IRs)  allowed  designers  to  capture  the  actual  response  of  
 a  loudspeaker  (plus  microphone).    This  afforded  a  huge  improvement  in  overall  realism.  
 
-    PAGE  3  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+    PAGE  3  of  10    ï¿½    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ï¿½  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
                                                                                                                                           
 
 IRs  are  captured  by  essentially  sampling  the  loudspeaker.    A  sample  of  the  speaker's  impulse  response  (hence  
@@ -163,7 +158,7 @@ improvement  over  classic  static  IRs.
 
       
 
-PAGE  4  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+PAGE  4  of  10    ï¿½    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ï¿½  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
                                                                                                                                           
 
 DYNAMIC WAVESHAPERS
@@ -208,7 +203,7 @@ using  IRs  (and  IIRs  when  necessary).    In  some  cases  the  user  may  wi
 
 using  a  traditional  speaker  cabinet  and  therefore  does  not  desire  the  speaker  simulation.                                         
 
-PAGE  5  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+PAGE  5  of  10    ï¿½    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ï¿½  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
                                                                                                                                    
 
 USER CONTROL
@@ -243,7 +238,7 @@ the  technology  to  address  these  concerns:  Multipoint  Iterative  Matching 
 
       
 
-PAGE  6  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+PAGE  6  of  10    ï¿½    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ï¿½  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
                                                                                                                                             
 
 Introducing MIMICTM Technology
@@ -287,7 +282,7 @@ the  presence  (and  depth)  control  can  deviate  from  the  actual  amp.    I
 control  on  many  amps  did  nothing  for  the  first  80%  of  its  rotation  and  all  the  action  occurred  in  the  last  20%.    
 We  feel  that  this  design  anomaly  is  undesirable  and  therefore  did  not  model  that  aspect.  
 
-    PAGE  7  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+    PAGE  7  of  10    ï¿½    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ï¿½  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
                                                                                                                                             
 
 2. FREQUENCY RESPONSE DEVIATION
@@ -332,7 +327,7 @@ issues  a  warning.    This  warning  is  an  indication  to  reevaluate  the  m
 Note  that  MIMIC  is  more  than  just  EQ  matching.    It  matches  all  the  various  filters  in  the  simulation  to  their  
 real--world  counterparts  by  carefully  applying  test  signals  of  various  amplitudes  to  isolate  the  desired  filters.  
 
-    PAGE  8  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+    PAGE  8  of  10    ï¿½    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ï¿½  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
                                                                                                                                      
 
 3. NONLINEAR RESPONSE DEVIATION
@@ -369,7 +364,7 @@ distortion  transfer  function  and  bias  point  are  then  identified  and  co
 
       
 
-PAGE  9  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+PAGE  9  of  10    ï¿½    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ï¿½  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
                                                                                                                                             
 
 4. DYNAMIC RESPONSE DEVIATION
@@ -401,5 +396,5 @@ tones  with  ease.
 A  tremendous  amount  of  work  went  into  this  technology  and  we  are  pleased  to  offer  this  upgrade  free--of--
 charge  to  all  owners  of  the  Axe--Fx  II  Digital  Guitar  Processor.  
 
-    PAGE  10  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+    PAGE  10  of  10    ï¿½    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ï¿½  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
 

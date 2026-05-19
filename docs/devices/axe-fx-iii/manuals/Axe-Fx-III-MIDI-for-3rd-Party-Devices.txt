@@ -1,3 +1,14 @@
+<!-- mcp-midi-control: source attribution + trimmed extract -->
+Source: Axe-Fx III MIDI for 3rd-Party Devices by Fractal Audio Systems.
+Copyright (c) Fractal Audio Systems. All rights reserved.
+This file contains selected technical reference content extracted under
+fair-use interoperability research. Marketing, legal, and regulatory
+front-matter / back-matter sections have been removed; the remaining
+content is the technical reference relied on by the MCP MIDI Control
+project for protocol decoding and tool authoring. See
+docs/manuals/README.md for the policy.
+
+---
 AXE-FX III MIDI FOR THIRD-PARTY DEVICES
 
 Revision 1.4
@@ -40,7 +51,7 @@ Sets and/or gets the channel of an effect.
 Message format:
 F0 00 01 74 10 0B id id dd cs F7.
 id id is the effect ID as two 7-bit MIDI bytes, LS first.
-dd is the channel (0 ­ 3).
+dd is the channel (0 ï¿½ 3).
 To query set dd = 7F.
 Returns:
 F0 00 01 74 10 0B id id dd cs F7
@@ -169,8 +180,8 @@ Sent when the Tuner is activated.
 Message format:
 F0 00 01 74 10 11 nn ss cc F7.
 where:
-nn = note (0 ­ 11)
-ss = string (0 ­ 5, 0 = low E)
+nn = note (0 ï¿½ 11)
+ss = string (0 ï¿½ 5, 0 = low E)
 cc = cents (offset binary, 63 = 0, 62 = -1, 64 = +1, etc.)
 
 Note that no checksum is sent so as to minimize message length.

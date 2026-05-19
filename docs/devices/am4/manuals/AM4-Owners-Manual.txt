@@ -1,6 +1,17 @@
+<!-- mcp-midi-control: source attribution + trimmed extract -->
+Source: AM4 Owner's Manual by Fractal Audio Systems.
+Copyright (c) 2025 Fractal Audio Systems. All rights reserved.
+This file contains selected technical reference content extracted under
+fair-use interoperability research. Marketing, legal, and regulatory
+front-matter / back-matter sections have been removed; the remaining
+content is the technical reference relied on by the MCP MIDI Control
+project for protocol decoding and tool authoring. See
+docs/manuals/README.md for the policy.
+
+---
 OWNER'S
 MANUAL
-Contents                                                              ©2025 Fractal Audio Systems, LLC. All rights reserved. v1.0.2 ­ 2025-12-16
+Contents                                                              ï¿½2025 Fractal Audio Systems, LLC. All rights reserved. v1.0.2 ï¿½ 2025-12-16
 
 Welcome  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 4       Effect Blocks Inventory .  .  .  .  .  .  .  .  .  .  .  26            Controllers > Tempo .  .  .  .  .  .  .  .  .  .  .  .  .  47
 Introducing the Setup Menu  .  .  .  .  .  .  .  . 4                  Moving Blocks .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  26       Controllers > LFO (A/B) .  .  .  .  .  .  .  .  .  .  .  47
@@ -65,7 +76,7 @@ Mitchell, Buddy Gill, and Leon Todd.                                            
 Legal Notices
                                                                                               The AM4 is designed to be used only with the included 9V DC 1.5A
 Fractal Audio Systems. AM4 Owner's Manual.                                                    negative center power supply or direct equivalent. Operating the
-Contents Copyright © 2025. All Rights Reserved. No part of this publication may be            unit using a supply with different specifications can cause problems
+Contents Copyright ï¿½ 2025. All Rights Reserved. No part of this publication may be            unit using a supply with different specifications can cause problems
 reproduced in any form without the written permission of Fractal Audio Systems.               including damage to your AM4 or other connected equipment.
 "Fractal Audio Systems", the Fractal Audio Systems logo, Axe-Fx, UltraRes, DynaCab,
 are trademarks of Fractal Audio Systems.                                               EMC/EMI
@@ -79,25 +90,25 @@ performance characteristics.                                                    
                                                                                        occur in a particular installation. If this equipment does cause harmful interference,
                                                                                        which can be determined by turning the equipment off and on, the user is encouraged
                                                                                        to try to correct the interference by one or more of the following measures:
-                                                                                       · Reorient or relocate the equipment or increase the separation between the devices.
-                                                                                       · Connect the equipment to different outlets on different circuits.
-                                                                                       ·Consult the dealer or an experienced technician for help.
+                                                                                       ï¿½ Reorient or relocate the equipment or increase the separation between the devices.
+                                                                                       ï¿½ Connect the equipment to different outlets on different circuits.
+                                                                                       ï¿½Consult the dealer or an experienced technician for help.
 AM4 OWNER'S MANUAL                             INTRODUCTION                                                                                                                             4
 
 Welcome
 
-Welcome to the AM4 Amp Modeler                 Four Amp/cab Channels ­ The Amp block             Expression Pedal Support ­ Connect          4x4 USB Audio ­ Record the processed
+Welcome to the AM4 Amp Modeler                 Four Amp/cab Channels ï¿½ The Amp block             Expression Pedal Support ï¿½ Connect          4x4 USB Audio ï¿½ Record the processed
 from Fractal Audio Systems.                    provides four fully independent channels,         up to two external expression pedals or     outputs, play computer audio at the main
 The AM4 delivers our industry-                 allowing you to create and instantly switch       switches for real-time control. Fractal     outs, capture a DI, or play back computer
 leading amp modeling, cab                      among four complete amp-and-cab setups            Audio EV pedals are perfect for the AM4.    audio through the AM4 for processing or
 simulation, and effects from the               within a single preset, enhanced by our                                                       re-amping.
-award-winning Axe-Fx III, all in a             gapless switching technology. It's like having    Pro-Grade I/O ­ A low-noise instrument
-streamlined, compact floor unit.               four premium amp pedals in one compact            input with Auto-Z automatically adjusts     AM4-Edit Software ­ Our free editor
+award-winning Axe-Fx III, all in a             gapless switching technology. It's like having    Pro-Grade I/O ï¿½ A low-noise instrument
+streamlined, compact floor unit.               four premium amp pedals in one compact            input with Auto-Z automatically adjusts     AM4-Edit Software ï¿½ Our free editor
 It has a new easy-to-use interface             unit--without the cost or clutter.                impedance to accurately load your           and librarian makes it easy to create,
 inspired by our popular VP4 Virtual                                                              guitar's pickups--such as when vintage-     organize, and manage presets, scenes,
-Pedalboard, and much more.                     Legendary Effects ­ The AM4 offers a              style effects appear first in the chain.    cabs, and more from a Mac or PC.
+Pedalboard, and much more.                     Legendary Effects ï¿½ The AM4 offers a              style effects appear first in the chain.    cabs, and more from a Mac or PC.
                                                curated selection of classic stompbox and         Balanced TRS outs provide clean, quiet,
-Industry-Leading Amp Modeling ­ The            studio effects powered by the acclaimed           flexible connections to FRFRs, mixers, or   Upgradeable Firmware ­ True to Fractal
+Industry-Leading Amp Modeling ï¿½ The            studio effects powered by the acclaimed           flexible connections to FRFRs, mixers, or   Upgradeable Firmware ï¿½ True to Fractal
 AM4 features Fractal Audio's latest amp        algorithms of the Axe-Fx III. With 77+ Drive      interfaces. A stereo insert allows you to   Audio's commitment to continual
 modeling, recognized for accurate tone,        pedal models, 75+ Reverbs, dozens of              integrate external effects or processors    improvement, the AM4 supports firmware
 dynamic feel, and continuous innovation.       delays and 150+ options across Chorus,            after the AM4 without compromising          updates for new features, enhancements,
@@ -107,7 +118,7 @@ models every critical component in the         complete polished tones. Connect 
 analog circuit--tubes, transformers, filters,  Virtual Pedalboard or add your favorite           silent monitoring.
 even power supply--so the model responds       pedals for an unlimited sonic palette.
 and interacts just like the real amp at any                                                      Introducing the Setup Menu
-setting--and even into creative sound          104 Presets, 4 Scenes Each ­ The AM4
+setting--and even into creative sound          104 Presets, 4 Scenes Each ï¿½ The AM4
 design and beyond. We also continually         provides 104 preset slots for you to load,        The Setup menu helps you make the most of the AM4.
 refine our algorithms through improved         customize or build your own complete rigs.        It contains various global settings, options, utilities, and info, with pages for
 techniques to deliver updates that will        Each preset can contain four blocks, with         Audio, Footswitches, Pedals, MIDI/Remote, Settings, Reset, and System Info.
@@ -116,15 +127,15 @@ This commitment has made our modeling          per block--offering tremendous to
 the benchmark for professionals worldwide      flexibility. Factory presets can be edited or     OPEN THE SETUP MENU
 in both studio and stage applications.         overwritten to suit your needs.
                                                                                                   Press ENTER and EXIT together.
-Integrated Speaker Cab Simulation ­ The        Four Footswitches, Five Modes ­ four               Use PAGE LEFT and PAGE RIGHT
+Integrated Speaker Cab Simulation ï¿½ The        Four Footswitches, Five Modes ï¿½ four               Use PAGE LEFT and PAGE RIGHT
 Amp block includes a built-in Cab Section      onboard footswitches with five easy-to-use
 without needing a separate block. Choose       modes switch instantly between Presets                to navigate the menu.
 from 45+ DynaCabTM models with visual mic      or Scenes, toggle effects and channels,            Press EXIT to go back to wherever you came from.
 positioning, or load your favorite impulse     access Tuner/Tempo, or engage Amp
 responses as User Cabs in UltraResTM or        Mode to select amp channels with a built-in       Changes in SETUP are stored automatically as you make
 standard formats. There's even a built-in      Output Boost.                                     them. When this happens, the title bar of the AM4 will display
-stereo room sim­and more.                                                                        "SAVING...". Do not turn the power off while the AM4 is
-                                               Uncompromising Sound Quality ­ True to            saving, or your most recent changes could be lost.
+stereo room simï¿½and more.                                                                        "SAVING...". Do not turn the power off while the AM4 is
+                                               Uncompromising Sound Quality ï¿½ True to            saving, or your most recent changes could be lost.
                                                our reputation, the AM4 has an audiophile
                                                quality signal path with the clarity, depth, and
                                                range for professional live and studio use.
@@ -205,10 +216,10 @@ A B C D CHAN Tap these twoC-sHAwNitch combos for quiCcHkANaccess to essentialCsH
 
                                                                                                                    CH A           CH B                                         CH C          CH D
 
-     HOLD 1:                                         HOLD 4:                                               A B C D ·CTHAANP the active channeClHtAoN toggle Boost on or CoHfAfN. (White LED = BoosCtHAANctive).
+     HOLD 1:                                         HOLD 4:                                               A B C D ï¿½CTHAANP the active channeClHtAoN toggle Boost on or CoHfAfN. (White LED = BoosCtHAANctive).
 Previous Preset                                    Next Preset
-                                                                                                           · Customize channel color on the Amp Type page (far left of the Amp Edit menu.)
-                                                                                                           · Adjust "Out Boost Level" on page 6 of the Amp Edit menu.
+                                                                                                           ï¿½ Customize channel color on the Amp Type page (far left of the Amp Edit menu.)
+                                                                                                           ï¿½ Adjust "Out Boost Level" on page 6 of the Amp Edit menu.
 
                        EFFECTS MODE                                                                                           TUNER + TAP TEMPO MODE
 
@@ -240,24 +251,24 @@ The AM4 contains                                                             Pag
 104 PRESETS.                                                                                                       here whenever there
                            Page Title                                                                     CPU:63%  are unsaved changes
 Presets are grouped                                                                                                to the current preset.
-in BANKS (A­Z)             A1: Preset Name
+in BANKS (Aï¿½Z)             A1: Preset Name
 containing four            S1: Scene Name                                                                          Each preset can have four
 presets each.                                                                                                      blocks. The centerpiece is the
                                 A        A            A                                        A                   Amp block, but you'll also find
 See p. 31 for more                                                                                                 Effects including Drives, Delays,
 about presets.             Knob A Label     TIP TEXT                                        Knob D Label           Reverbs, Modulation FX, EQs,
                                                                                                                    and many more.
-· Each preset also                       Knob B Label Knob C Label
+ï¿½ Each preset also                       Knob B Label Knob C Label
 contains four SCENES.                                                                                              See p. 25 for more.
 
-· Scenes are a power user                                                                                          · The letter beneath each effect
+ï¿½ Scenes are a power user                                                                                          ï¿½ The letter beneath each effect
 feature that can reduce                                                                                            indicates its current Channel.
 the need to "tap dance"
-on Footswitches--and                                                                                               · Channels add significant flexibility
+on Footswitches--and                                                                                               ï¿½ Channels add significant flexibility
 much more. See p. 38                                                                                               to a single preset. They are also
 for more about Scenes.                                                                                             essential to how Amp Mode works.
 
-                           Labels show the functions of ABCD knobs on many pages.                                  · See p. 60 for more.
+                           Labels show the functions of ABCD knobs on many pages.                                  ï¿½ See p. 60 for more.
 
 Other Pages                The different areas of the AM4 use different types of pages containing various settings and options.
                            Use the ABCD and Select knobs to navigate these pages and make changes.
@@ -282,14 +293,14 @@ w DISPLAY -- The                                                                
 
 e BUTTONS -- Six buttons operate the AM4:                                                    t SELECT knob: Highlights different areas of the current page. For
                                                                                                    instance, if the page displays multiple rows of controls, turning the
-  · HOME: Press this to show the Home page at any time.                                            SELECT knob will switch between the rows. Once a row is highlighted,
+  ï¿½ HOME: Press this to show the Home page at any time.                                            SELECT knob will switch between the rows. Once a row is highlighted,
                                                                                                    use the ABCD knobs to adjust the controls in the selected row.
-  · SAVE: Press this to save the current Preset. See p. 30.
+  ï¿½ SAVE: Press this to save the current Preset. See p. 30.
                                                                                                    NOTE: On the HOME page, SELECT also changes the Mode between
-  · 3PAGE LEFT and PAGE RIGHT4: Use these to navigate left and right                               Preset, Scene, and Effects.
+  ï¿½ 3PAGE LEFT and PAGE RIGHT4: Use these to navigate left and right                               Preset, Scene, and Effects.
       through any menu. Icons in the title bar show where you are.
                                                                                              y Footswitches -- Four footswitches use our proprietary Solid State
-  · ENTER, EXIT: These confirm or cancel various options, and also perform                         Switching (SSSTM) technology, ensuring smooth, quiet operation with no
+  ï¿½ ENTER, EXIT: These confirm or cancel various options, and also perform                         Switching (SSSTM) technology, ensuring smooth, quiet operation with no
       special actions. Some pages show tips. For example, with an Effect PHONES
       block selected on the Home page, yoFuOR will see, STEREO, TRS TIP=L / RING=R BAL. TRS  11 mcuercrehnat1nMi2coadl ce1o.3ntacts1t4o fail. Th1e5ir default functions vary based on the
       "ENTER = Edit Selected Effect".
@@ -318,7 +329,7 @@ u INPUT -- Connectyour         FOR STEREO, TRS TIP=L / RING=R  BAL. TRS  PHONES
      input clipping occurs, an IN CLIP warning is displayed and the Input Pad                    runs at a fixed sample rate of 48 kHz. To use the SPDIF input, you must
      setting is temporarily increased. See p. 12 for more on Input Levels.                       first select it manually in SETUP > Input Source. See p. 21
 
-i INSERTS -- These jacks provide a fixed insert point between the AM4's                     1# USB -- The AM4 is also a high quality, 4ß4, 24-bit/48kHz audio interface
+i INSERTS -- These jacks provide a fixed insert point between the AM4's                     1# USB -- The AM4 is also a high quality, 4ï¿½4, 24-bit/48kHz audio interface
      internal effects and its balanced outputs. Use them to connect external gear                for Mac and Windows computers, with added MIDI-over-USB capability
      while preserving the clean, low-noise performance of the balanced outputs.                  for connecting to AM4-Edit, Fractal-Bot, or any DAW or computer MIDI
      For mono, use a standard patch cable. For stereo, use a TRS-to-dual-mono                    application. See USB on p. 15 for more.
@@ -358,7 +369,7 @@ EXPRESSION                                                                      
    PEDAL                                                                                                                                                                                                    Out Volume eliminating the need to add a Volume block to your presets.
                                                                                                                       ExpressioSnIpNeGdLaElsSsWhoITuCldHhave a linDeaUrArLesSisWtaITnCceHtaper
           TRS                                                                                                         and must have a maximum resistance in the range of                                       1. Open SETUP > MIDI/Remote.
-                                                                                                                      10­100k. Expression pedals must be used with Tip-                                        2. Turn SELECT to Input Volume, Output Volume, or Amp Block Out Volume.
+                                                                                                                      10ï¿½100k. Expression pedals must be used with Tip-                                        2. Turn SELECT to Input Volume, Output Volume, or Amp Block Out Volume.
                                                                                                                       Ring-Sleeve (TRS) cables.                                                                3. Turn Knob A to set the value to "PEDAL 1" or "PEDAL 2".
                                                                                                                                                                                                                4. Press HOME when finished.
                                                                                                                          1. Connect an eTxSpression pedal to one oTfRtShe AM4
@@ -562,7 +573,7 @@ MIXED/FLATS/SHARPS
 Calibration          as Sharps, Flats, or a mix of both.
 Downtune
                      Calibrates the tuner. The tuner defaults to A440.
-0 ­ 4 Semitones
+0 ï¿½ 4 Semitones
                      The Downtune control makes tuning feel more familiar when
 Use Offsets          your guitar is tuned down. For example, if your guitar is tuned
                      down half a step to Eb, setting Downtune to "1" will show the
@@ -578,7 +589,7 @@ OFF/ON               notes in the tuner as if the guitar were in standard E tuni
 
 USB                                                                                                           macOS Minimum Requirements
 
-USB provides the AM4 with a host of great audio features. With 4×4 channels,                                   OS: macOS 10.13 High Sierra or newer. (Earlier
+USB provides the AM4 with a host of great audio features. With 4ï¿½4 channels,                                   OS: macOS 10.13 High Sierra or newer. (Earlier
 you can record the AM4's outputs or its input, play back computer audio at the                                    versions may work but are not supported.)
 outputs of the AM4, or send computer audio to the AM4 for processing.
                                                                                                                CPU: Intel processor or Apple Silicon.
@@ -866,7 +877,7 @@ SETTING UP
     the AM4 to SPDIF In on the VP4.
 
  Connect a "dummy plug" into the Insert Send on the AM4.
-      A dummy plug is simply a standard ¼ TS or TRS plug with no cable attached.
+      A dummy plug is simply a standard ï¿½ TS or TRS plug with no cable attached.
          Its only purpose is to disable the AM4's local signal at the Send so the Return
          can pass signal directly to the balanced outputs.
          A 1/4" TRS to mini headphones adapter works great for this!
@@ -962,7 +973,7 @@ SETTING UP
  Any AM4 preset can be used in this setup. However, use the Input Gate
     on the VP4 as your primary noise gate and disable the AM4 gate by
     turning its Gate Threshold fully counterclockwise in each preset, or by
-    setting SETUP > Global Settings > Noisegate Offset to ­40.0 dB.
+    setting SETUP > Global Settings > Noisegate Offset to ï¿½40.0 dB.
 
  Connect for 4CM:
 
@@ -1006,32 +1017,32 @@ TURNING EFFECTS ON AND OFF
                                                                                          Block Types available on the AM4 (above) vs. some of the
  Change to EFFECTS MODE and use the footswitches.                                      Effect Types available in the Drive block, for example (below).
 
-      Note: The default action for the amp is BOOST instead of BYPASS.                 · 77 Custom OD           · Gauss Drive              · PI Fuzz - Bass
-                                                                                       · Angry Chuck            · Griddle Cake             · Plus Distortion
-CHOOSING BLOCKS IN A PRESET                                                            · BB Pre                 · Guardian Photon Speed    · Rat Distortion
-                                                                                       · BB Pre AT              · Hard Fuzz                · Royal Bass DI
- On the Home page, turn SELECT to highlight any effect or empty slot.                  · Bender Fuzz            · Heartpedal 11            · SDD Preamp
- Turn the corresponding A­D to set the Block Type. (Ex: "Amp" or "Reverb").            · Bit Crusher            · Hoodoo Drive             · Shimmer Drive
-                                                                                       · Blackglass 7K          · Horizon Precision Drive  · Shred Distortion
-      To remove an effect, choose "No Effect" from the list.                           · Blues OD               · Integral Pre             · Sonic Drive
- Press ENTER to confirm or EXIT to cancel.                                             · Bosom Boost            · Jam Ray                  · Suhr Riot
-                                                                                       · Box o' Crunch          · Klone Chiron             · Sunrise Splendor
-EDIT AMP AND EFFECT SETTINGS                                                           · Colortone Booster      · M-Zone Distortion        · Super Fuzz
-                                                                                       · Colortone OD           · Master Fuzz              · Super OD
- On the Home page, turn SELECT to highlight any effect.                                · Compulsion Distortion  · Maxoff 808               · T808 Mod
- Press ENTER to open its editor.                                                       · DS1 Distortion         · MCMLXI Drive             · T808 OD
-                                                                                       · DS1 Distortion Mod     · Micro Boost              · Tape Distortion
-      NOTE: The edit menu for the Amp is also shown while you are in Amp Mode.         · Esoteric ACB           · Mid Boost                · Timothy
- Use the ABCD knobs to adjust settings. Turn SELECT to change rows.                    · Esoteric Bass RCB      · MOSFET Distortion        · Tone of Kings
- For effects with additional options, PAGE buttons access other pages.                 · Esoteric RCB           · NoAmp Bass DI            · Treble Boost
- While editing, you can change the Effect Type by tapping PAGE                         · Eternal Love           · NoAmp Bass Pre           · TS9DX +
-                                                                                       · Face Fuzz              · Nobelium OVD-1           · TS9DX Hot
-    LEFT until the Type Picker appears (see FAQ, right).                               · FAS Boost              · Octave Distortion        · Tube Drive 3-Knob
-      The Type page also allows you to change the Channel, and for the Amp, set        · FAS LED-Drive          · OD 250                   · Tube Drive 4-Knob
-                                                                                       · Fat Rat                · OD 250 Gray              · Tube Drive 5-Knob
-         the channel's LED color.                                                      · FET Boost              · OD-One Overdrive         · Valve Screamer VS9
- Press EXIT or HOME when finished.                                                     · FET Preamp             · Paradigm Shifter         · Zen Master
-                                                                                       · Full OD                · PI Fuzz
+      Note: The default action for the amp is BOOST instead of BYPASS.                 ï¿½ 77 Custom OD           ï¿½ Gauss Drive              ï¿½ PI Fuzz - Bass
+                                                                                       ï¿½ Angry Chuck            ï¿½ Griddle Cake             ï¿½ Plus Distortion
+CHOOSING BLOCKS IN A PRESET                                                            ï¿½ BB Pre                 ï¿½ Guardian Photon Speed    ï¿½ Rat Distortion
+                                                                                       ï¿½ BB Pre AT              ï¿½ Hard Fuzz                ï¿½ Royal Bass DI
+ On the Home page, turn SELECT to highlight any effect or empty slot.                  ï¿½ Bender Fuzz            ï¿½ Heartpedal 11            ï¿½ SDD Preamp
+ Turn the corresponding Aï¿½D to set the Block Type. (Ex: "Amp" or "Reverb").            ï¿½ Bit Crusher            ï¿½ Hoodoo Drive             ï¿½ Shimmer Drive
+                                                                                       ï¿½ Blackglass 7K          ï¿½ Horizon Precision Drive  ï¿½ Shred Distortion
+      To remove an effect, choose "No Effect" from the list.                           ï¿½ Blues OD               ï¿½ Integral Pre             ï¿½ Sonic Drive
+ Press ENTER to confirm or EXIT to cancel.                                             ï¿½ Bosom Boost            ï¿½ Jam Ray                  ï¿½ Suhr Riot
+                                                                                       ï¿½ Box o' Crunch          ï¿½ Klone Chiron             ï¿½ Sunrise Splendor
+EDIT AMP AND EFFECT SETTINGS                                                           ï¿½ Colortone Booster      ï¿½ M-Zone Distortion        ï¿½ Super Fuzz
+                                                                                       ï¿½ Colortone OD           ï¿½ Master Fuzz              ï¿½ Super OD
+ On the Home page, turn SELECT to highlight any effect.                                ï¿½ Compulsion Distortion  ï¿½ Maxoff 808               ï¿½ T808 Mod
+ Press ENTER to open its editor.                                                       ï¿½ DS1 Distortion         ï¿½ MCMLXI Drive             ï¿½ T808 OD
+                                                                                       ï¿½ DS1 Distortion Mod     ï¿½ Micro Boost              ï¿½ Tape Distortion
+      NOTE: The edit menu for the Amp is also shown while you are in Amp Mode.         ï¿½ Esoteric ACB           ï¿½ Mid Boost                ï¿½ Timothy
+ Use the ABCD knobs to adjust settings. Turn SELECT to change rows.                    ï¿½ Esoteric Bass RCB      ï¿½ MOSFET Distortion        ï¿½ Tone of Kings
+ For effects with additional options, PAGE buttons access other pages.                 ï¿½ Esoteric RCB           ï¿½ NoAmp Bass DI            ï¿½ Treble Boost
+ While editing, you can change the Effect Type by tapping PAGE                         ï¿½ Eternal Love           ï¿½ NoAmp Bass Pre           ï¿½ TS9DX +
+                                                                                       ï¿½ Face Fuzz              ï¿½ Nobelium OVD-1           ï¿½ TS9DX Hot
+    LEFT until the Type Picker appears (see FAQ, right).                               ï¿½ FAS Boost              ï¿½ Octave Distortion        ï¿½ Tube Drive 3-Knob
+      The Type page also allows you to change the Channel, and for the Amp, set        ï¿½ FAS LED-Drive          ï¿½ OD 250                   ï¿½ Tube Drive 4-Knob
+                                                                                       ï¿½ Fat Rat                ï¿½ OD 250 Gray              ï¿½ Tube Drive 5-Knob
+         the channel's LED color.                                                      ï¿½ FET Boost              ï¿½ OD-One Overdrive         ï¿½ Valve Screamer VS9
+ Press EXIT or HOME when finished.                                                     ï¿½ FET Preamp             ï¿½ Paradigm Shifter         ï¿½ Zen Master
+                                                                                       ï¿½ Full OD                ï¿½ PI Fuzz
  Gear Nerd? Expert Tweaker?
 
  The AM4 was designed for ease of use, offering minimal
@@ -1108,7 +1119,7 @@ letting you shape your complete tone--from amp to speaker and beyond--plus      
 useful extras, all within a single, powerful block.                                            to set the custom LED color for the current channel.
 
 You can edit the Amp block like any other (highlight it on the Home page and                   Note: Read Amp > DynaCab Linking on the next page for more on changing types.
-press Enter), but the AM4 also includes a dedicated Amp Mode (see pp. 5­6).
+press Enter), but the AM4 also includes a dedicated Amp Mode (see pp. 5ï¿½6).
 Switching to Amp Mode automatically displays the Amp Edit menu at the                          Amp GEQ
 same time, showing essential "front-panel" controls and more. Note that this
 menu spans multiple pages, giving you access to the cab and more. A map                        A built-in Graphic EQ allows toneshaping without a separate block. Choose
@@ -1116,7 +1127,7 @@ appears below.                                                                  
                                                                                                include a GEQ, the EQ is OFF by default to save a small amount of DSP.)
 Four Amp Channels with Custom Led Colors
                                                                                                Amp Out Boost & Level
-With channels, the Amp block is really four amps in one. Each channel (A­D)
+With channels, the Amp block is really four amps in one. Each channel (Aï¿½D)
 stores its own complete set of settings--including the cab--and can be                         The Amp block includes a built-in Out Boost, removing the need for an
 recalled with a tap. For example, you might set A as a clean Double Verb, B as                 extra Drive, EQ, or Volume block. You can set its level from 0 to +4.0 dB per
 an edgy AC-20, C as a dimed Plexi 100W, and D as a soaring USA JP IIC+.                        channel. To toggle the Boost, tap the Amp footswitch in Effects Mode, OR tap
@@ -1287,7 +1298,7 @@ Each preset in the AM4 stores a complete amp, cab, and effects setup--your      
 own ready-to-play rig.                                                           Press footswitch 1 to enter Preset Mode.
                                                                                  Tap the footswitches to select one of the four
 Every preset includes your chosen Amp (including its Speaker Cab) and up to
-three additional effect blocks, along with its own Noise Gate, Master EQ, and       presets in the current bank (e.g., A1­A4).
+three additional effect blocks, along with its own Noise Gate, Master EQ, and       presets in the current bank (e.g., A1ï¿½A4).
 level settings.                                                                  To change the BANK in Preset Mode using the footswitches, press
 
 Each block offers multiple channels, extending the flexibility of every preset      and hold Switch 4 or Switch 1 to step up or down through the banks.
@@ -1301,14 +1312,14 @@ sounds--or even separate ones for each song in a set.                           
                                                                                     Knob A to browse the entire list of presets on the AM4.
 Preset Banks                                                                        Inside the preset list, Knob B changes the bank.
 
-The AM4 organizes its presets into 26 banks labeled A­Z, each containing         To delve further into the options within any particular preset,
-four presets numbered 1­4.                                                          return to Mode Select and then enter Scene Mode with
+The AM4 organizes its presets into 26 banks labeled Aï¿½Z, each containing         To delve further into the options within any particular preset,
+four presets numbered 1ï¿½4.                                                          return to Mode Select and then enter Scene Mode with
                                                                                     footswitch 2, or try Effects Mode to turn effects on or off.
-For example, the first bank includes presets A1­A4.
+For example, the first bank includes presets A1ï¿½A4.
                                                                                 CHANGE PRESETS IN SCENE MODE
 This makes it easy to tell from the preset's number which footswitch it will
 appear on.                                                                       In Scene Mode, hold Footswitch 4 to change the preset up (+1)
-                                                                                    or hold Footswitch 1 to change the preset down (­1).
+                                                                                    or hold Footswitch 1 to change the preset down (ï¿½1).
 
                                                                                 CHANGE PRESETS USING MIDI
 
@@ -1349,8 +1360,8 @@ Save the Preset                                                                 
  Press the SAVE button.                                                           Add a Reverb.
  We're not going to change the LOCATION but let's edit the NAME.
                                                                                    Use what you've learned to add a Reverb block in slot 4.
-    · Turn SELECT to highlight the NAME line.
-    · Use: Cursor (knob A) A-Z, (knob B) a-z (knob C) 0-9 (knob D)                Want to learn more?
+    ï¿½ Turn SELECT to highlight the NAME line.
+    ï¿½ Use: Cursor (knob A) A-Z, (knob B) a-z (knob C) 0-9 (knob D)                Want to learn more?
  Enter the name "My AM4".
       If you make a mistake, PAGE LEFT and PAGE RIGHT can be used to delete or    To explore more of what a single AM4 preset can do, continue to p. 42
                                                                                   where this tutorial dives into Channels and Scenes--two features that greatly
@@ -1369,7 +1380,7 @@ useful with high-gain amps or in noisy environments.                            
                                                                                  dramatically when the gate is closed, while the lowest setting (1:1) has no effect.
 The Input gate has the following controls:
                                                                                  Attack: Determines how quickly the gate opens after the signal exceeds the
-Gate Type ­ The "CLASSIC" type opens and closes like a typical gate pedal.       threshold--typically when you start playing. Choose a fast setting for a tight,
+Gate Type ï¿½ The "CLASSIC" type opens and closes like a typical gate pedal.       threshold--typically when you start playing. Choose a fast setting for a tight,
 The "INTELLIGENT" and "NOISE REDUCER" types use precision filtering to           aggressive response, or a slower one for a gradual opening. The default of 2.0 ms
 minimize noise from electromagnetic interference ("EMI"). For these gates        is a good starting point. Note: setting gate times too fast can cause distortion!
 to work effectively, it is crucial to set SETUP > Global Settings > AC Line
@@ -1378,15 +1389,15 @@ for North America and most of Central and South America. The "50 Hz"
 setting is for Europe, Asia, Africa, Australia/New Zealand, and parts of South   The Input Impedance setting, found in the Expert Settings for the Gate (above),
 America such as Argentina and Chile.                                             controls how the AM4 uses real analog components to vary the load on your guitar
                                                                                  pickups. This replicates the tonal interaction between pickups and classic analog
-Threshold ­ Determines how quiet the signal must be for the gate to close.       pedals such as vibe or fuzz effects.
+Threshold ï¿½ Determines how quiet the signal must be for the gate to close.       pedals such as vibe or fuzz effects.
 Higher settings make the gate more aggressive, closing on louder signals. To
 turn the gate completely off, set this control fully counterclockwise.           In the default AUTO mode, impedance is set automatically based on the first active
                                                                                  effect in your preset. This behavior--applied even if you never open the Expert
-Release ­ Sets how long it takes for the gate to close after the signal falls    page--is generally best, but you can also select a fixed value if desired.
+Release ï¿½ Sets how long it takes for the gate to close after the signal falls    page--is generally best, but you can also select a fixed value if desired.
 below the threshold, typically when you stop playing. Use lower values for a
 tight, fast, abrupt cutoff or higher values for a slower fade.                   Main Levels  HOME ... PAGE RIGHT 2x
 
-Level ­ This adjusts the level of the signal coming out of the gate if you need
+Level ï¿½ This adjusts the level of the signal coming out of the gate if you need
 a boosted level going into your effects.
 
                                                                                  The Main Levels page of every preset contains the master Preset Level and
@@ -1401,7 +1412,7 @@ a boosted level going into your effects.
                                                                                  output. All effects and scenes in the current preset are processed by the EQ.
 AM4 OWNER'S MANUAL  PRESETS                                                                                                                                                     34
 
-Preset Mix/Routing HOME ... PAGE RIGHT 4x                                          Routing ­ Determines whether Effects 2­4 are in Series or Parallel with
+Preset Mix/Routing HOME ... PAGE RIGHT 4x                                          Routing ï¿½ Determines whether Effects 2ï¿½4 are in Series or Parallel with
 
 The Preset Mix/Routing page is like a "Command Center" for the various mix-        respect to the previous block. A dynamic diagram shows the signal path as
 related settings for all effects in the current preset. It shows the four effect
@@ -1412,29 +1423,29 @@ row, and turn ABCD to adjust settings for the four effects.                     
 TIP: In Scene Mode, this page is an excellent Scene Manager. Use the four          Remember, Series or Parallel always refers to the       FX3
 footswitches to change scenes while adjusting bypass, channel, level, and more.
                                                                                    previous block--so Effect 2 is in series with Effect 1, and Effect 3 is parallel to
-Bypass ­ Use this to bypass/engage effects outside of Effects Mode.
+Bypass ï¿½ Use this to bypass/engage effects outside of Effects Mode.
                                                                                    Effect 2. Effect 1 cannot be set to parallel because there is no previous block.
-Channel ­ Changes the Channel of the selected effect. Remember that each
+Channel ï¿½ Changes the Channel of the selected effect. Remember that each
 channel has its own settings for all parameters -- including Mix, Level, Bypass    FAQ: Why Do People Use Parallel Effects?
 Mode, Kill Dry, etc.). Channels can even have a different Effect type -- just not
 a different Block Type). See p. 38 for more on Channels.                           If you, like most people, have always strung pedals together in a chain, you'll be
                                                                                    comfortable with the default settings on the AM4, with four effects in series.
-Mix ­ This adjusts the balance of "Dry" and "Wet" for the effect. Effects with
+Mix ï¿½ This adjusts the balance of "Dry" and "Wet" for the effect. Effects with
 no mix, such as Wah, GEQ, etc., will show "NA".                                    The option to run effects in parallel does create certain creative sound design
                                                                                    opportunities however. An easy example to understand is Reverb and Delay in
-Level ­ This adjusts the total level of the effect, both wet and dry.              series or in parallel. In series, you hear reverb on the dry (what you play) and
+Level ï¿½ This adjusts the total level of the effect, both wet and dry.              series or in parallel. In series, you hear reverb on the dry (what you play) and
                                                                                    the wet (the echo that follows). In parallel, only the dry signal passes into the
-Meters ­ Each column shows input level (blue) and output level (green). The        reverb, so the echoes that follow are dry, with no reverb.
+Meters ï¿½ Each column shows input level (blue) and output level (green). The        reverb, so the echoes that follow are dry, with no reverb.
 meter turns red when clipping occurs, making this page useful for finding and
 fixing overloads within a preset.                                                  MYTH: Time-based effects sound better in parallel.
 
-Bypass Mode ­ Determines how an effect behaves when bypassed. For time-            FACT: On the AM4, time-based effects work just as well in series as
+Bypass Mode ï¿½ Determines how an effect behaves when bypassed. For time-            FACT: On the AM4, time-based effects work just as well in series as
 based effects, the default Mute FX In allows tails to continue when bypassed.      they do in parallel, with no difference in the dry signal's level or tone.
-(In this mode, Level still affects the dry signal.) For non­time-based effects,
+(In this mode, Level still affects the dry signal.) For nonï¿½time-based effects,
 the default Thru acts like analog true bypass, passing the signal unchanged.       First, adjusting Mix for time-based effects does not affect the dry level until settings
 Additional options are described on the next page.                                 exceed 50%, making it easy to maintain a consistent dry level.
 
-Kill Dry ­ Kill dry is a provided for those who run time-based effects in          Second, The AM4's "dry" routing is handled entirely in the digital domain. There's no
+Kill Dry ï¿½ Kill dry is a provided for those who run time-based effects in          Second, The AM4's "dry" routing is handled entirely in the digital domain. There's no
 parallel (see "Routing" below). With Kill Dry turned on, no DRY signal passes      analog compromise as with traditional gear or pedals, and no need for a parallel dry.
 through the block. Instead, the Mix control functions as a level control for the
 Wet signal only, potentially making parallel effects easier to use.                In short, you can easily achieve excellent results with series effects. If anything, it's
@@ -1447,7 +1458,7 @@ Wet signal only, potentially making parallel effects easier to use.             
      adjust block levels instead.                                                            parameter on the Mix Overview page and then press ENTER.
 AM4 OWNER'S MANUAL  PRESETS                                                                                                                              35
 
-Bypass Mode                                                                   MUTE FX OUT ­ When the block is
+Bypass Mode                                                                   MUTE FX OUT ï¿½ When the block is
                                                                               bypassed, the outputs of the wet/effect
 Bypass Mode might be considered an expert feature, since most players won't   are muted, ending tails immediately. The
 need to adjust it often. Understanding it can still be useful, however.       bypassed effect continues to process
@@ -1458,7 +1469,7 @@ feature, most do.
 You can find Bypass Mode for each effect on the Home > Preset Mix/Routing     Note that Level, Balance, and other parameters that affect the Dry signal
 page. It's also available in Expert Edit (p. 25) for each effect.             continue to do so even when the block is bypassed.
 The default setting of "Mute FX In" for time-based effects allows spillover
-of tails when the effect is bypassed. The default setting of "Thru" for non   MUTE IN ­ When the block is bypassed,
+of tails when the effect is bypassed. The default setting of "Thru" for non   MUTE IN ï¿½ When the block is bypassed,
 time-based effects behaves similarly to "True Bypass" on a pedal -- while     its inputs are muted. This ultimately
 bypassed, that effect has no impact whatsoever on the sound.                  silences both wet and dry signals but
 Different effects include additional options, detailed below and at right.    allows effect tails to spill over. Use this
@@ -1466,12 +1477,12 @@ Different effects include additional options, detailed below and at right.    al
            USING CHANNELS? If so, remember to check the Bypass Mode           based effect in parallel and Kill Dry is
            setting for each one. See p. 38 for more on Channels.              not on or available.
 
-MUTE ­ When the block is bypassed, both wet and dry are silenced.             MUTE OUT ­ When the block is
+MUTE ï¿½ When the block is bypassed, both wet and dry are silenced.             MUTE OUT ï¿½ When the block is
                                                                               bypassed, all audio is totally silenced
-THRU ­ When bypassed, the block is completely disengaged. None of its         immediately, but the input is still
+THRU ï¿½ When bypassed, the block is completely disengaged. None of its         immediately, but the input is still
 parameters have any effect on the sound. It behaves like an empty effect.     "listening," so tails will be "pre-loaded"
                                                                               when you engage the effect. Use this
-MUTE FX IN ­ When the block is bypassed,                                      mode when you want no tails on a time-
+MUTE FX IN ï¿½ When the block is bypassed,                                      mode when you want no tails on a time-
 the inputs to the wet portion of the effect                                   based effect in parallel and Kill Dry is
 are muted, effectively turning off the effect                                 not on or available.
 while "tails" ring out or "spillover." The
@@ -1573,7 +1584,7 @@ Intro to Channels                                                               
 Each block on the AM4 provides four complete variations called Channels--A,      Imagine a traditional rig where you might need to turn several effects on or
 B, C, and D. A channel stores a full set of parameters for that block, allowing  off or change amp channels quickly to set up different sounds. Scenes on
 you to switch instantly between completely different sounds. You can change      the AM4 make this easy, letting you recall complete combinations of effects,
-channels manually or as part of a Scene.                                         levels, and amp/cab setups with a single action­no "tap dancing."
+channels manually or as part of a Scene.                                         levels, and amp/cab setups with a single actionï¿½no "tap dancing."
 
 For the Amp block, each channel includes all settings for both the Amp and       Scenes can also change effect Channels (left), allowing instant transitions
 Cab sections, giving you four complete tones within a single preset. Unlike      between entirely different amp/cab and effect combinations within a preset.
@@ -1597,11 +1608,11 @@ A                   B  C  D
       Tap any footswitch to change the channel and exit.
       Press and hold to change the channel and stay in the picker.                On the Home Page, you can also highlight the Scene
                                                                                      name and press ENTER to use a Scene Picker.
- While Editing an Effect ­ Page left to the "Type" page and turn Knob D.
+ While Editing an Effect ï¿½ Page left to the "Type" page and turn Knob D.
                                                                                    MIDI can be used to select Scenes using the various
  Use the Preset Mix/Routing page (p. 34).                                             options in the SETUP > MIDI/Remote menu (p. 53).
 
- MIDI ­ Channels can also be changed using MIDI (p. 53).                           AM4-Edit provides an easy, one-click way to change the Scene.
+ MIDI ï¿½ Channels can also be changed using MIDI (p. 53).                           AM4-Edit provides an easy, one-click way to change the Scene.
 
 SETTING UP CHANNELS
 
@@ -1666,8 +1677,8 @@ To set up Scene MIDI messages:
       There are four MIDI messages for each scene, running vertically down.
  Enter the Desired MIDI message.
 
-      Use Knob B to select the message type (PC or CC#0­127).
-      Use Knob C to choose the MIDI channel (1­16).
+      Use Knob B to select the message type (PC or CC#0ï¿½127).
+      Use Knob C to choose the MIDI channel (1ï¿½16).
       Use Knob D to set the specific value for the PC or CC message.
  Press ENTER on a selected row to test an individual
     message, or switch to Scene Mode and use the footswitches
@@ -1730,7 +1741,7 @@ Set Up Channel B in the Amp Block                                               
  Press PAGE LEFT to go to the Amp Types page.                                         to open the Channel Picker, then it to Channel A.
  Turn SELECT or knob A to select "1987X Treble" and press ENTER.                  Tap the footswitches to turn Drive and Delay OFF, and the Reverb On.
  Press Page Right to show the basic settings for the amp.                         Save the preset by pressing SAVE.
- Dial in Gain, Bass, Mid, Treble, Presence.                                       Turn SELECT to the "S1 Name" row and use knobs A­D to enter the name "AC Verb".
+ Dial in Gain, Bass, Mid, Treble, Presence.                                       Turn SELECT to the "S1 Name" row and use knobs Aï¿½D to enter the name "AC Verb".
                                                                                   Press ENTER twice to save the changes.
       You can change between amp channels A and B to compare levels.
  SAVE the preset when you're done (Save, Enter, Enter).                          Set Up Scene 2
@@ -1740,7 +1751,7 @@ Set Up Channel B in the Drive Block                                             
                                                                                   Press and hold the Drive footswitch to open its Channel Picker and set it to Channel B.
  Change to Effects Mode.                                                          Use the footswitches to turn Drive and Delay ON, and the Reverb OFF.
       Press footswitches 1+2 at the same time, then tap switch 3.                 Save the preset by pressing SAVE.
-                                                                                  Turn SELECT to the "S2 Name" row and use knobs A­D to enter the name "AC Drive FX".
+                                                                                  Turn SELECT to the "S2 Name" row and use knobs Aï¿½D to enter the name "AC Drive FX".
  Press and hold the Drive footswitch to open its Channel Picker.                  Press ENTER twice to save the changes.
       Channel A should be active--it is lit and marked with a white dot.
       Press footswitch 2 to select Channel B.                                    Set Up Scene 3
@@ -1776,7 +1787,7 @@ shimmer, and more.                                                              
 Starting simply, you might assign a connected expression pedal. Digging deeper,            Set the Range for the parameter being controlled. For example, a volume
 you'll discover other "sources" to use instead of pedals: every preset has its
 own LFO, Envelope Follower, Sequencer, Pitch Follower, and an ADSR "envelope                  pedal might range from 0.0 (silent) to 10.0 (max), or it might be limited to
-generator". You can also use a MIDI CC# message via an "External Controller."                 8.0­10.0, going from "slightly dialed down" to "full on."
+generator". You can also use a MIDI CC# message via an "External Controller."                 8.0ï¿½10.0, going from "slightly dialed down" to "full on."
                                                                                            You might want to set up Auto-Engage (p. 44) which activates the effect
 Modifiers let you define both the range ("min" and "max") for the target                      when the modifier is used.
 parameter. For example, a reverb mix could range from 0-100% or be restricted                 NOTE: Auto-Engage disables normal ON/OFF footswitch control of the effect,
@@ -1812,25 +1823,25 @@ Source                                                                         c
                                                                                bypasses when you pull it back. Auto-Engage works the same way but can be
 The Source is the controller that drives a modifier. There are 12 options:     applied to any modifiable parameter in any effect. Once you try it, you might
                                                                                find it conveniently eliminates the need for expression pedal toe switches.
- Pedal 1, 2 ­ Use these to assign pedals or switches connected directly
+ Pedal 1, 2 ï¿½ Use these to assign pedals or switches connected directly
     to the AM4. (See p. 10 for instructions on Pedal/Switch initial setup).    Auto-Engage has two settings:
 
- External 1, 2, 3, 4 ­ External Controllers allow you to assign MIDI           Auto-Engage ­ This sets the auto-engage "mode".
+ External 1, 2, 3, 4 ï¿½ External Controllers allow you to assign MIDI           Auto-Engage ï¿½ This sets the auto-engage "mode".
     CCs as modifier sources. They can also be set globally to either of
     the onboard PEDAL jacks. To assign a CC or pedal globally to any                 Choose "OFF" to disable Auto-Engage.
     of the 4 External Controllers, open SETUP > MIDI Remote, scroll                  POSITION ("POS") options trigger the effect based on OFF VALUE (see below).
     down using SELECT, and then turn A to assign the desired value.                  SPEED ("SPD") options engage the effect when the controller is moved quickly.
                                                                                      The FAST, MEDIUM and SLOW options determine how quickly the effect turns
- LFO A, LFO B, ADSR, Sequencer, Envelope ­ The AM4 includes
+ LFO A, LFO B, ADSR, Sequencer, Envelope ï¿½ The AM4 includes
     four "Internal Controllers" that can be used as modifier sources.                   ON or OFF once Auto-Engage is triggered.
     Settings for these sources can be found in the Controllers menu                     Use SLOW to "relax" Auto-Engage, so it doesn't switch off too suddenly.
     (p. 47) and are saved independently in every preset.
-                                                                               Off Value ­ Sets the threshold that the source must cross for auto-engage to
- Pitch ­ The Pitch Detector analyzes the pitch of your playing and             occur. If Off Value is below 50%, the effect bypasses when the controller goes
+                                                                               Off Value ï¿½ Sets the threshold that the source must cross for auto-engage to
+ Pitch ï¿½ The Pitch Detector analyzes the pitch of your playing and             occur. If Off Value is below 50%, the effect bypasses when the controller goes
     outputs a low value for low notes and a high value for high notes. It is   below the threshold. If it's set to 50% or higher, the effect bypasses when the
     keyed to the lowest and highest notes on a standard 6-string guitar.       controller goes above the threshold.
 
- None ­ Assigning this controller removes the modifier from a parameter.       For "heel down = bypassed," set to 5%. For "toe down = bypassed," use 95%.
+ None ï¿½ Assigning this controller removes the modifier from a parameter.       For "heel down = bypassed," set to 5%. For "toe down = bypassed," use 95%.
 
 Parameter Range                                                                Performance
 
@@ -1919,9 +1930,9 @@ an "LFO wah" instead, requiring no pedal.
 8. Press ENTER to show the Modifier screen.
                                                                                      11. Select the top row. Change Run to "RUN". Set Steps to "8"
 9. The "Source" setting will be highlighted. Turn Knob A to select "Pedal 1".
-    (Option: You can also use "Pedal 2" if you have it set up, or if you don't       12. Select the 2nd row. Use Knobs A­D to set Steps 1­4 as desired.
+    (Option: You can also use "Pedal 2" if you have it set up, or if you don't       12. Select the 2nd row. Use Knobs Aï¿½D to set Steps 1ï¿½4 as desired.
     have a pedal, try "LFO A".)
-                                                                                     13. Turn SELECT one click to the right, then use Knobs A­D to set Steps 5­8
+                                                                                     13. Turn SELECT one click to the right, then use Knobs Aï¿½D to set Steps 5ï¿½8
 10. Test your pedal. You should hear the wah working, and see the dot moving             as desired.
     on screen while you move the pedal.
                                                                                      14. You can continue to explore the Sequencer, or press HOME when finished.
@@ -1945,29 +1956,29 @@ To view or edit these Internal Controllers:                                     
                                                                                          the source for any modifier, enabling you to craft a wide range of interesting
  Load the desired Preset                                                                 effects. It offers the following settings:
  Press Home, and then press Page Right six times to CONTROLLERS.
- Press ENTER to open the Controllers menu                                                Rate, Tempo ­ You can manually set the rate in Hertz, or synchronize it to a
+ Press ENTER to open the Controllers menu                                                Rate, Tempo ï¿½ You can manually set the rate in Hertz, or synchronize it to a
  You can page left and right to access Tempo, LFO, Envelope                              rhythmic value in time with the AM4's tempo.
 
-    Follower, ADSR (Envelope Generator), Sequencer, and                                  Depth ­ This controls the amplitude, or intensity, of the LFO, adjusting how
+    Follower, ADSR (Envelope Generator), Sequencer, and                                  Depth ï¿½ This controls the amplitude, or intensity, of the LFO, adjusting how
     the Modifiers overview for the current preset.                                       prominently it affects the sound.
  Press HOME or EXIT at any time to exit the Modifiers menu.
- If you want to save your Controller changes, save the entire Preset.                    LFO Type ­ Sets the waveform shape. Options include classics like Sine,
+ If you want to save your Controller changes, save the entire Preset.                    LFO Type ï¿½ Sets the waveform shape. Options include classics like Sine,
                                                                                          Triangle, Square, Saw, and Random, as well as more specialized shapes like
 Controllers > Tempo                                                                      Log, Exponential, and Astable, which simulates certain analog LFOs.
 
-The Tempo page allows you to view or change the tempo, change tempo                      Duty and Shape ­ These alter the waveform in distinctive and useful ways.
+The Tempo page allows you to view or change the tempo, change tempo                      Duty and Shape ï¿½ These alter the waveform in distinctive and useful ways.
 settings for the current preset, and turn on a metronome to use for practicing.          Adjusting the Duty of a Square wave, for instance, controls the proportion of
                                                                                          time that the waveform stays in its "high" state versus its "low" state during
-Tempo ­ Sets a specific tempo such as 90 beats per minute (BPM).                         each cycle. The best way to understand these controls is to observe the
+Tempo ï¿½ Sets a specific tempo such as 90 beats per minute (BPM).                         each cycle. The best way to understand these controls is to observe the
                                                                                          waveform graph while making adjustments.
 TIP: While you're on this page, the ENTER key allows you to tap the desired
-tempo. The Tap Tempo feature has two modes: "AVERAGE" ­ which results in                 High Cut ­ This filters the waveform, smoothing out aspects of its shape.
+tempo. The Tap Tempo feature has two modes: "AVERAGE" ï¿½ which results in                 High Cut ï¿½ This filters the waveform, smoothing out aspects of its shape.
 smooth changes over multiple taps and "LAST TWO", which sets the tempo
-instantly after just two taps. You can choose the desired option in SETUP >              Quantize ­ This converts smooth waveforms into stepped ones. For example,
+instantly after just two taps. You can choose the desired option in SETUP >              Quantize ï¿½ This converts smooth waveforms into stepped ones. For example,
 Global Settings > Tap Tempo Mode.                                                        applying Quantize to a Triangle waveform will change its smooth, continuous
                                                                                          rise and fall into a series of distinct "terraces".
-Tempo To Use ­ Determines how the AM4 behaves when the preset loads.
-The choices are:                                                                         Run ­ Starts and stops the LFO. This can be used to assign a Pedal/Switch
+Tempo To Use ï¿½ Determines how the AM4 behaves when the preset loads.
+The choices are:                                                                         Run ï¿½ Starts and stops the LFO. This can be used to assign a Pedal/Switch
                                                                                          or Envelope Follower to trigger the LFO, or to start/stop it via MIDI, ensuring
       GLOBAL TEMPO: The Global Tempo value is a system setting independent of            perfect alignment with a track.
          any preset or effect. When you load a preset with this setting, the tempo does
@@ -1978,7 +1989,7 @@ The choices are:                                                                
          (Note: The Global Tempo remains set in the background and will be used when
          you load a different preset with "Tempo To Use" set to "GLOBAL.")
 
-Metronome ­ Adjusts the level of a built in metronome, handy for practicing.
+Metronome ï¿½ Adjusts the level of a built in metronome, handy for practicing.
 AM4 OWNER'S MANUAL  MODIFIERS & CONTROLLERS                                                                                                                          48
 
 Controllers > Envelope Follower                                                 Controllers > Modifiers
@@ -2087,7 +2098,7 @@ COPY L- > R, MUTE, SPLIT  setting. When this occurs, the word "Auto" will appear
 Output Phase              selected value is restored. If you want to make the automatic pad setting permanent, just turn the Input Pad knob one "click" to
 NORMAL/INVERT             clear "Auto" and set the desired value.
 USB 1/2 & 3/4 Level       If the input still clips with the pad setting at 18dB, decrease the output level of the device(s) connected to the AM4 input(s).
--40.00 ­ + 20.00 dB       Sets the input source, selecting between Analog (the onboard jacks), SPDIF (the onboard SPDIF IN connector) or USB Channels
+-40.00 ï¿½ + 20.00 dB       Sets the input source, selecting between Analog (the onboard jacks), SPDIF (the onboard SPDIF IN connector) or USB Channels
 SPDIF In Level            3/4, which appear as outputs on a connected computer. See p. 15 for more on USB.
                           Connect only 48k streams to the SPDIF input, as the AM4 will automatically derive its 48k clock signal from the detected input.
                           This setting determines how signal is processed at the analog outputs. This control makes it easy to use the same presets in a
@@ -2119,15 +2130,15 @@ Amp Mode
 
 Press & Hold Mode Selects between available options for global press and hold footswitch functions.
 
-                    Disabled ­ Disables all press and hold functions. Every operation must be executed using the knobs, buttons, and tap switches.
+                    Disabled ï¿½ Disables all press and hold functions. Every operation must be executed using the knobs, buttons, and tap switches.
 
-                    Gig Mode ­ Selects a ready-to-play set of custom press-and-hold functions. See p. 6 for full details.
+                    Gig Mode ï¿½ Selects a ready-to-play set of custom press-and-hold functions. See p. 6 for full details.
 
-                    Custom Mode ­ Allows you to select between various options for press and hold on the four switches.
+                    Custom Mode ï¿½ Allows you to select between various options for press and hold on the four switches.
 
 Hold Timeout        This sets the time limit before any Hold function is fired, beginning from the moment the switch is depressed. When a Hold function is
 
-0.25 ­ 2.00 Seconds assigned, a Tap function fires if the switch is released before the press and hold timeout elapses.
+0.25 ï¿½ 2.00 Seconds assigned, a Tap function fires if the switch is released before the press and hold timeout elapses.
 
                     Tap a switch WITHOUT          Tap a switch WITH                  Hold Function
                         a Hold function             a Hold function              Under a Tap Switch
@@ -2144,15 +2155,15 @@ Hold Timeout        This sets the time limit before any Hold function is fired, 
 
 Custom Press & Hold 1 These four parameters provide the option to assign optional global Press & Hold functions to the four footswitches of the AM4.
 Custom Press & Hold 2 These options are shown when Press & Hold Mode is set to "CUSTOM". IMPORTANT: Any custom assignment is global across every mode.
-Custom Press & Hold 3  Disabled ­ The selected footswitch has no hold function. Its tap function fires at the moment the switch is depressed.
-Custom Press & Hold 4  Mode Select ­ The mode select screen is displayed, just as if you had pressed HOME + SAVE.
+Custom Press & Hold 3  Disabled ï¿½ The selected footswitch has no hold function. Its tap function fires at the moment the switch is depressed.
+Custom Press & Hold 4  Mode Select ï¿½ The mode select screen is displayed, just as if you had pressed HOME + SAVE.
 
-                               Preset Mode, Scene Mode, FX Mode, Tuner Mode, Amp Mode ­ The AM4 changes to the designated mode.
-                               Bank +1, Bank -1 ­ The AM4 switches to the next or previous bank. When you change banks, the same preset number
+                               Preset Mode, Scene Mode, FX Mode, Tuner Mode, Amp Mode ï¿½ The AM4 changes to the designated mode.
+                               Bank +1, Bank -1 ï¿½ The AM4 switches to the next or previous bank. When you change banks, the same preset number
 
                                   from the new bank is automatically loaded (e.g., if C3 is selected and you switch to Bank D, D3 will load).
-                               Preset +1, Preset -1, Scene +1, Scene -1 ­ The AM4 switches to the next or previous Preset or Scene.
-                               Channel Picker ­ Shows the 4-button "Channel Picker" for the corresponding effect. For example, if this function
+                               Preset +1, Preset -1, Scene +1, Scene -1 ï¿½ The AM4 switches to the next or previous Preset or Scene.
+                               Channel Picker ï¿½ Shows the 4-button "Channel Picker" for the corresponding effect. For example, if this function
 
                                   is assigned to switch 3, holding Switch 3 = will show the channel picker for the effect in slot 3.
 AM4 OWNER'S MANUAL  THE SETUP MENU                                                                                                                  52
@@ -2162,7 +2173,7 @@ SETUP > Pedals
 PARAMETER           Description
 Pedal 1 Type        Set this according to whether you have connected a pedal or a certain type of footswitch:
 Pedal 2 Type        EXPRESSION PEDAL: Choose this option when using an expression pedal such as the Fractal Audio EV-1 or EV-2. Third-party pedals
-                    should have a linear resistance taper and a maximum resistance between 10­100k. Expression pedals must be connected with
+                    should have a linear resistance taper and a maximum resistance between 10ï¿½100k. Expression pedals must be connected with
 Calibrate PEDAL 1   Tip-Ring-Sleeve (TRS) cables.
 Calibrate PEDAL 2   Each pedal jack can also support one switch, but dual switches are not supported.
                     SWITCH (Momentary, Virtual Toggle): Forces a connected momentary switch to behave like a latching/toggle switch.
@@ -2184,13 +2195,13 @@ SETUP > MIDI/Remote
 
 PARAMETER                 Description
 MIDI Channel              Sets the channel on which the AM4 will receive MIDI messages.
-1­16, OMNI                "OMNI" causes the unit to respond to incoming messages on all channels.
+1ï¿½16, OMNI                "OMNI" causes the unit to respond to incoming messages on all channels.
 MIDI Thru
 Off, On                   This enables or disables MIDI Thru, which causes messages received at the MIDI In port to be merged with any internally generated
 Receive MIDI PC           MIDI data at the MIDI Out port.
 ON/OFF                    Determines whether the AM4 will process or ignore incoming MIDI Program Change messages.
 Send MIDI PC
-1­16                      Determines whether or not the AM4 will automatically transmit a MIDI Program Change message at its MIDI OUT port when a new
+1ï¿½16                      Determines whether or not the AM4 will automatically transmit a MIDI Program Change message at its MIDI OUT port when a new
 OMNI                      preset is loaded. This is the easiest way for most people to operate a single connected MIDI device while changing presets on the
 OFF                       AM4. Any custom MIDI mapping is left to the downstream device. To use this feature you simply select which channel you want the
 Ignore Redundant PC       message to be transmitted on. The "OMNI" setting transmits the message on all channels.
@@ -2206,7 +2217,7 @@ Send Scene Sync CC#       Scene Select, the value sent for CC#17 (ranging from 0
 
                           1 = Scene 2 3 = Scene 4
 
-                          The series continues, cycling through scenes 1­4 for the remaining values.
+                          The series continues, cycling through scenes 1ï¿½4 for the remaining values.
                           These two settings allow you to step up or down through the Scenes of the current preset using MIDI CC# messages.
 
                           Scene Sync sends a MIDI CC message automatically when you change the scene on the AM4. It's a simple global option for syncing
@@ -2244,7 +2255,7 @@ External 1,2,3,4      You can set the AM4 to automatically display the tuner whe
                       This feature works best when the same controller is also assigned to Input Volume or Output Volume, allowing the tuner to pop up
 Preset +1, Preset -1  when you turn the volume down.
 INITIAL VALUE:
-External Control 1­4  These four options allow you to use external switches or MIDI messages to bypass or engage the four FX of the AM4.
+External Control 1ï¿½4  These four options allow you to use external switches or MIDI messages to bypass or engage the four FX of the AM4.
 
                       These options let you use MIDI messages to select channels for the four block slots on the AM4, or to dedicate a CC to change
                       the Amp Channel. The first four settings are positional--they affect whichever block occupies that slot. The Amp Channel option,
@@ -2288,7 +2299,7 @@ OFF, DELAY, REVERB,
 DELAY+REVERB         NOTE: Spillover inside of a single preset is automatic and determined by the Bypass Mode. See p. 36
 
 Default Scene        When set to "As Saved" the scene selected when recalling a preset is the scene that was active when the preset was last saved.
-AS SAVED, 1­8        When set to a particular scene value that scene will always be selected when any preset is recalled.
+AS SAVED, 1ï¿½8        When set to a particular scene value that scene will always be selected when any preset is recalled.
 Tap Tempo Mode
 AVERAGE, LAST TWO    Determines how the tempo is adjusted when tapping the Tempo footswitch, an external tap tempo controller, or the EDIT button on
                      the Controllers > Tempo page.
@@ -2332,16 +2343,16 @@ Amp- > Cab Type Linking  Determines whether changing the Amp Type automatically 
 LCD Contrast             When disabled, the Cab Type remains unchanged when you switch Amp Types.
                          Adjusts the contrast of the main display.
 
-0­100%
+0ï¿½100%
 
 Switch LED "ON" Brightness These two settings independently adjust the brightness of footswitch LEDs when they are turned ON or OFF.
 Switch LED "OFF" Brightness
 
-1­100%
+1ï¿½100%
 
 Fade Selected Effect Timeout On the Home page, the selected effect is highlighted with a yellow box. If you find this distracting while playing, you can set the
 
-OFF, 1­10 Seconds        highlight to fade after a period of up to 10 seconds. To bring the highlight back, simply turn SELECT by one click, or toggle any effect
+OFF, 1ï¿½10 Seconds        highlight to fade after a period of up to 10 seconds. To bring the highlight back, simply turn SELECT by one click, or toggle any effect
                          on or off.
 AM4 OWNER'S MANUAL       THE SETUP MENU                                                                                                                 57
 
@@ -2373,22 +2384,22 @@ Connector:           1 M (less w. "Input Impedance" settings applied.)  Format: 
 Impedance:           +20dBu                                             Channels:           48 kHz fixed
 Max. Input Level:                                                       USB Audio Clock:
 
-A/D CONVERSION       24 bits                                            MIDI INTERFACE      (1) TRS 3.5 mm Female ­ Type A
-Bit Depth:           48 kHz                                             Input Connector:    (1) TRS 3.5 mm Female ­ Type A
+A/D CONVERSION       24 bits                                            MIDI INTERFACE      (1) TRS 3.5 mm Female ï¿½ Type A
+Bit Depth:           48 kHz                                             Input Connector:    (1) TRS 3.5 mm Female ï¿½ Type A
 Sample Rate:         114 dB                                             Output Connector:   No dedicated connector, but incoming MIDI can be
-Dynamic Range:       20 ­ 20kHz, +0 / -1 dB                             Thru:               merged to the output by enabling
+Dynamic Range:       20 ï¿½ 20kHz, +0 / -1 dB                             Thru:               merged to the output by enabling
 Frequency Response:                                                                         Setup > MIDI/Remote > MIDI Thru to "ENABLED"
 
 ANALOG OUTPUTS       (2) 1/4" jack balanced TRS                         PEDAL INTERFACE     (2) 1/4" TRS phone jack
-Connectors:          1K                                                 Connectors:         Pedal: 10­100 k max
+Connectors:          1K                                                 Connectors:         Pedal: 10ï¿½100 k max
 Impedance:           +16dBu                                             Format:             Switch: momentary or latching
 Max Output Level:
 
 INSERT SEND          (1) 1/4" jack, TRS (Tip = Left, Ring = Right)      GENERAL             Powder coated steel chassis.
 Connector:           1K                                                 Finish:             6 buttons, 5 knobs, 4 footswitches.
-Impedance:           +16dBu                                             Controls:           480 × 272 high contrast color LCD.
-Max Output Level:                                                       Display:            10.0" W. × 2.6" H. × 6.31" D.
-                                                                        Dimensions:         (254.0mm W. × 66.0mm H. × 160.3mm D.)
+Impedance:           +16dBu                                             Controls:           480 ï¿½ 272 high contrast color LCD.
+Max Output Level:                                                       Display:            10.0" W. ï¿½ 2.6" H. ï¿½ 6.31" D.
+                                                                        Dimensions:         (254.0mm W. ï¿½ 66.0mm H. ï¿½ 160.3mm D.)
 INSERT RETURN        (1) 1/4" jack, TRS (Tip = Left, Ring = Right)                          3 lbs 7 oz (1.56 kg)
 Connector:           1M                                                 Weight:             9V DC 1.5A
 Impedance:                                                              Power Requirement:  2.1mm barrel connector, negative center
@@ -2401,9 +2412,9 @@ Connectors:          (1) 3.5mm jack stereo, Impedance: 35.
 
 D/A CONVERSION                                                          ENVIRONMENTAL
 
-Dynamic Range:       114 dB                                             Operating Temperature:32 to 122 °F (0 to 50 °C)
+Dynamic Range:       114 dB                                             Operating Temperature:32 to 122 ï¿½F (0 to 50 ï¿½C)
 
-Frequency Response: 20 ­ 20kHz, +0 / -1 dB                              Storage Temperature: -22 to 167 °F (-30 to 70 °C)
+Frequency Response: 20 ï¿½ 20kHz, +0 / -1 dB                              Storage Temperature: -22 to 167 ï¿½F (-30 to 70 ï¿½C)
 
 DIGITAL I/O                                                             Humidity:           Max. 90% non-condensing
 Connectors:
@@ -2607,7 +2618,6 @@ created, converted or modified using Fractal Audio Systems hardware and/or softw
 license. Recording studios, consultants, and other commercial entities may use these features in conjunction with work         previous written and oral agreements, communications and other understandings relating to the subject matter of this
 performed for their commercial customers, but the resulting data files created may not be offered for sale or gifted to their  Agreement, and that all modifications to this EULA, or any commercial license that you may have obtained from FAS and or
 commercial customers or other third parties without a commercial license from FAS and its licensors where applicable.          its licensors must be in a writing signed by you, FAS and or its licensors, where applicable, except as otherwise provided
-Contact sales@fractalaudio.com to obtain a commercial license.                                                                 herein. No agency, partnership, joint venture, or employment is created as a result of this Agreement and you do not have
                                                                                                                                any authority of any kind to bind FAS and or its licensors in any respect whatsoever. In any action or proceeding to enforce
 4) IMPULSE RESPONSE DATA EXPORT FOR NON-COMMERCIAL USE                                                                         rights under this Agreement, the prevailing party will be entitled to recover costs and attorneys' fees. All notices under
                                                                                                                                this Agreement will be in writing and will be deemed to have been duly given when received, if personally delivered; when
@@ -2615,7 +2625,6 @@ If the product supports Impulse Response capture and export, you are free to exp
 commercial use. This includes producing, converting, or modifying Impulse Response data for yourself, or offering/             by recognized overnight delivery service; and upon receipt, if sent by certified or registered mail, return receipt requested.
 distributing such data at no charge to third parties. Creating Impulses for sale requires a Commercial License. Files
 created without a commercial license cannot be included for free with another product or package that is offered for sale.
-Contact sales@fractalaudio.com to obtain a commercial license.
 
 5) SUPPORT
 AM4 OWNER'S MANUAL   FACTORY PRESETS                                                                                                                                  64
@@ -2665,7 +2674,7 @@ H2 Divided By             13--uh, TWO boutique CJ/FT-style amps, plus a phaser s
 H3 Dizzy Herbie           Massive multi-channel high-gain amp with Mids, Scooped, and Lead tones--plus a Mk III scene.
 H4 Dizzy V4 Silver        Four tones from three gain channels of a four-channel high-gain heavy hitter.
 I1 Double Tweed 5F8       High-Power Tweed with a big, open sound great for edge-of-breakup playing.
-I2 Double Verb            The definitive clean 2x12­classic mid-'60s voicings plus a later '70s silverface version, all loud, proud, and pedal-ready.
+I2 Double Verb            The definitive clean 2x12ï¿½classic mid-'60s voicings plus a later '70s silverface version, all loud, proud, and pedal-ready.
 I3 Fox ODS                A boutique special overdrive perfect for fusion, blues, and expressive rock.
 I4 Friedman BE/HBE        Dave Friedman's ultimate hot-rodded rock machine--two BE crunch voices and two HBE high-gain voices.
 J1 Hi-Gain Heavies        Four modern high-gain heavies: An Uber-style, two Angles, and a hot-rodded Nitrous brute.
@@ -2695,15 +2704,15 @@ O2 Shirley Smallbox       Two Hot Rod Friedman amps--Dirty Shirley and Small Box
 O3 Solo 100 AB            Solo 100 scenes for a gig ready rig preset by Ausin Budddy.
 O4 Q-Rod Rig MF           Spawn Quickrod scenes in a gig-ready rig preset by Marco Fanton.
 P1 Suhr Badgers           Two Badger amps--18 and 30 watts--each with Cool and Hot scenes for chime and crunch.
-P2 Supers + Concert       Two channels from the mid-'60s 4×10 combo, plus earlier "blonde-era" Super and Concert circuits--three classic Fullerton amps.
+P2 Supers + Concert       Two channels from the mid-'60s 4ï¿½10 combo, plus earlier "blonde-era" Super and Concert circuits--three classic Fullerton amps.
 P3 SV Bass                From huge clean lows to gritty growl--everything that makes this colossus a fixture in the bass world.
 P4 Texas Star             A mid-driven American-style amp with a slightly ragged edge--clean to crunch and beyond with pedals, plus a lead channel.
 Q1 Triple Crest           Clean, Crunch, and Lead from a three-channel modern amp with sound as big as the lone star state.
 Q2 Try Axes Pre           Four scenes from a classic rack preamp--Clean FX, LD2 Green, Yellow, and Red for progressively hotter tones.
 Q3 USA Mk IV              Four scenes from the 4th evolution of the Petaluma hot-rod--Rhythm 1 Clean, Rhythm 2 Fat, Lead Fat, and Lead Mid.
 Q4 USA Mk V               A history of the Mark series in one box, as they say.. Here you have Red XT, MKIV, and IIC+ modes, plus a classic clean.
-R1 Vibrato Lux + King     A classic mid-'60s 1×12 combo with tremolo, paired with a 90s Custom Shop model in Normal and Fat modes.
-R2 Vibrato Verb SRV       Classic SRV-style 1×15 combo tones plus a great sounding 4×12 EV on Scene 4.
+R1 Vibrato Lux + King     A classic mid-'60s 1ï¿½12 combo with tremolo, paired with a 90s Custom Shop model in Normal and Fat modes.
+R2 Vibrato Verb SRV       Classic SRV-style 1ï¿½15 combo tones plus a great sounding 4ï¿½12 EV on Scene 4.
 R3 W-Rocket +Liverpool    Two hand-built NJ "Wreckers" by Ken Fischer--Rocket for chime and smooth breakup, Liverpool for tighter mids and a rawer edge.
 R4 Wrecker Express        Ken Fischer's higher-gain design--more muscular and immediate, yet still touch-responsive and harmonically rich.
 S1 Brett's Gig Rig EV12   Four different amps into our x-pattern "Rumble" cab for a gig rig preset by Brett Kingman.
@@ -2720,7 +2729,7 @@ U3 Pitch Follow Magic LT  The pitch follower is used to adjust effect mix and mo
 U4 Tape Loops LT          What if an analog delay and a digital LFO had a love child? Leon Todd struts his creative stuff.
 V1 More Gary FSM          Thick sustain, searing vibrato, and soaring leads--turn it up and still get the blues. Preset by Frank Steffen Mueller.
 V2 Yngwie! FSM            Unleash the freakin fury with this preset by Frank Steffen Mueller.
-V3 Call from Mr. Floyd    Four road-tested tones in a preset by Cooper Carter and Edo Scordó.
+V3 Call from Mr. Floyd    Four road-tested tones in a preset by Cooper Carter and Edo Scordï¿½.
 V4 MF Euro                Euro XTC gig rig preset by Marco Fanton.
 AM4 OWNER'S MANUAL  APPENDIX                                                                                                                                         67
 
@@ -2900,7 +2909,7 @@ Play 3,4                              Gate
                                                            MIDI/Remote>                                               USB                  the Send, the circuit is open and no sound will reach the outputs. When
                                                           Amp Out Volume                                                                   both Send and Return are connected, the inserted device is heard normally
                                                                                                                       Play 1,2             at the balanced outputs. If you need to use the Return without using the
-                                                              Output of the Amp block,                                                     Send--such as when S/PDIF functions as your "send"--insert a dummy ¼"
+                                                              Output of the Amp block,                                                     Send--such as when S/PDIF functions as your "send"--insert a dummy ï¿½"
                                                           wherever it may be in the preset.                                        USB     plug into the Send jack. This disables the AM4's local signal path and
                                                                                                                                  1/2 Play  routes the Return directly to the balanced outputs.
 

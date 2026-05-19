@@ -1,3 +1,14 @@
+<!-- mcp-midi-control: source attribution + trimmed extract -->
+Source: Hydrasynth Explorer Owner's Manual v2.2.0 by Ashun Sound Machines (ASM).
+Copyright (c) Ashun Sound Machines (ASM). All rights reserved.
+This file contains selected technical reference content extracted under
+fair-use interoperability research. Marketing, legal, and regulatory
+front-matter / back-matter sections have been removed; the remaining
+content is the technical reference relied on by the MCP MIDI Control
+project for protocol decoding and tool authoring. See
+docs/manuals/README.md for the policy.
+
+---
 Owner's Manual PHONES
 
               Version 2.0
@@ -180,41 +191,41 @@ damages caused by the use of or the inability
 
                    DESIGN & DIRECTION
 
-                          · Glen Darcey
+                          ï¿½ Glen Darcey
 
                    PRODUCT MANAGER
 
-                          · Dominic Au
+                          ï¿½ Dominic Au
 
                                    ENGINEERING
 
-                                      · Chen Jiejun (engine)
-                   · Banner Xu (firmware) · Yang Zhihang (software)
-· Ye Haipeng (electronic) · Chen Si (electronic) · Luo Liangsheng (electronic)
-               · Fu Jieming (Mechanics) · Liang Weiming (Mechanics)
-                 · Zhou Peng (Mechanics) · Fan Xiaoxian (Mechanics)
+                                      ï¿½ Chen Jiejun (engine)
+                   ï¿½ Banner Xu (firmware) ï¿½ Yang Zhihang (software)
+ï¿½ Ye Haipeng (electronic) ï¿½ Chen Si (electronic) ï¿½ Luo Liangsheng (electronic)
+               ï¿½ Fu Jieming (Mechanics) ï¿½ Liang Weiming (Mechanics)
+                 ï¿½ Zhou Peng (Mechanics) ï¿½ Fan Xiaoxian (Mechanics)
 
                     INDUSTRIAL DESIGN
 
-                   · Gao Chao · Long Ping
+                   ï¿½ Gao Chao ï¿½ Long Ping
 
-· Zheng Wei Cheng                   TESTING           · Randy Lee        · Leng An
+ï¿½ Zheng Wei Cheng                   TESTING           ï¿½ Randy Lee        ï¿½ Leng An
 
-                   · Ken "Flux" Pierce · Maria Zhang
+                   ï¿½ Ken "Flux" Pierce ï¿½ Maria Zhang
 
                    SOUND DESIGN
 
-· Drew Anderson    · Jim Cowgill · Mord Fustang · Ken "Flux" Pierce · Ben Scheffler
-  · Dominic Au
-  · Roger Austli   · Glen Darcey · Boele Gerkes   · Matt Pike            · Paul Schilling
+ï¿½ Drew Anderson    ï¿½ Jim Cowgill ï¿½ Mord Fustang ï¿½ Ken "Flux" Pierce ï¿½ Ben Scheffler
+  ï¿½ Dominic Au
+  ï¿½ Roger Austli   ï¿½ Glen Darcey ï¿½ Boele Gerkes   ï¿½ Matt Pike            ï¿½ Paul Schilling
 
-                   · Daniel Fisher · Rob Jervons  · Aquila Rift · Matia Simovich
+                   ï¿½ Daniel Fisher ï¿½ Rob Jervons  ï¿½ Aquila Rift ï¿½ Matia Simovich
 
                                          MANUAL
 
-                  · Randy Lee (author) · Nancy Lee (design & layout)
+                  ï¿½ Randy Lee (author) ï¿½ Nancy Lee (design & layout)
 
-                   © Ashun Sound Machines ­ 2025 ­ All rights reserved.
+                   ï¿½ Ashun Sound Machines ï¿½ 2025 ï¿½ All rights reserved.
                               www.AshunSoundMachines.com
 
 Information contained in this manual is subject to change without notice and does not
@@ -353,7 +364,7 @@ Main Systems  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18      
 
 The HOME button . . . . . . . . . . . . . . . . . . . . . . . . . . 18 Oscillator Bit Reduction . . . . . . . . . . . . . . . . . . 27
 The SAVE button  . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 Oscillator 3  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28
-System Setup . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 Mutants 1­4 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28
+System Setup . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 Mutants 1ï¿½4 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28
 
 The INIT button . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18                   FM-Lin . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28
 
@@ -533,13 +544,13 @@ The CV / Gate Section . . . . . . . . . . . . . . 72                            
     Arp TX  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .  84
     Pgm Chg TX / RX  . . . . . . . . . . . . . . . . . . . . . . . . . .  84
 
- CV ­ Pitch Gate: Page 12 . . . . . . . . . . . . . . . .  84
- CV ­ Pitch Gate: Page 13 . . . . . . . . . . . . . . . .  84
- CV ­ Clock: Page 14  . . . . . . . . . . . . . . . . . . . . .  84
+ CV ï¿½ Pitch Gate: Page 12 . . . . . . . . . . . . . . . .  84
+ CV ï¿½ Pitch Gate: Page 13 . . . . . . . . . . . . . . . .  84
+ CV ï¿½ Clock: Page 14  . . . . . . . . . . . . . . . . . . . . .  84
 
     Clock Division  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 85
 
- CV ­ Mods: Page 15  . . . . . . . . . . . . . . . . . . . . . . 85
+ CV ï¿½ Mods: Page 15  . . . . . . . . . . . . . . . . . . . . . . 85
  Calibration: Page 16 . . . . . . . . . . . . . . . . . . . . . . 85
 
     Calibrate Strips . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 85
@@ -603,73 +614,73 @@ quick answers to important questions in Specifications (p. 97).
 
 User interface                                       Sound engine
 
-   · Intuitive workflow, perceived at a glance          · 8 voices, with three oscillators per voice
+   ï¿½ Intuitive workflow, perceived at a glance          ï¿½ 8 voices, with three oscillators per voice
 
-   · Top-panel controls for instant access to           · Analog modeling (Osc 1-3) and WaveScan
+   ï¿½ Top-panel controls for instant access to           ï¿½ Analog modeling (Osc 1-3) and WaveScan
     important features                                   synthesis (Osc 1+2)
 
-   · Easy shortcuts for mod route construction          · Select from hundreds of waveforms and then
+   ï¿½ Easy shortcuts for mod route construction          ï¿½ Select from hundreds of waveforms and then
                                                          morph / mutate / warp them at will
-   · Two independent OLED displays
-                                                        · Preset scales with microtonal options and the
-   · 4 Control knobs and 4 Control buttons around        ability to import custom scales
+   ï¿½ Two independent OLED displays
+                                                        ï¿½ Preset scales with microtonal options and the
+   ï¿½ 4 Control knobs and 4 Control buttons around        ability to import custom scales
     the Right display
-                                                        · Filter 1: 16 filter types, including vocal formant
-   · 8 assignable Macros per patch, accessible on        filters
+                                                        ï¿½ Filter 1: 16 filter types, including vocal formant
+   ï¿½ 8 assignable Macros per patch, accessible on        filters
     Home page
-                                                        · Filter 2: classic state-variable 12dB / octave
-   · Arpeggiator: 8 modes with direction, octave,        with two modes
+                                                        ï¿½ Filter 2: classic state-variable 12dB / octave
+   ï¿½ Arpeggiator: 8 modes with direction, octave,        with two modes
     chord, and phrase options
-                                                        · Filters can be placed in series or parallel
-   · Patch browser: Organize by Name, Category, or
-    Patch number                                        · Loopable ADSR envelopes with Delay and
+                                                        ï¿½ Filters can be placed in series or parallel
+   ï¿½ Patch browser: Organize by Name, Category, or
+    Patch number                                        ï¿½ Loopable ADSR envelopes with Delay and
                                                          Hold stages
-   · Memorize / instantly recall up to 32 Favorites
-                                                        · Curve and BPM value for each segment
-   · Overflow mode can link two units for
-    expanded polyphony                                  · Each envelope can have up to 4 trigger
+   ï¿½ Memorize / instantly recall up to 32 Favorites
+                                                        ï¿½ Curve and BPM value for each segment
+   ï¿½ Overflow mode can link two units for
+    expanded polyphony                                  ï¿½ Each envelope can have up to 4 trigger
                                                          sources
 Patch features
                                                      Effects
-   · 8 banks of 128 patches each
-                                                        · Delay: five types, including Left-Right-Center
-   · Mono and Unison voice modes, with unison            and reverse
+   ï¿½ 8 banks of 128 patches each
+                                                        ï¿½ Delay: five types, including Left-Right-Center
+   ï¿½ Mono and Unison voice modes, with unison            and reverse
     detune
-                                                            · All delays can sync to tempo
-   · Glide and glissando with programmable time,
-    curve, trigger mode                                 · Reverb: four types, with pre-delay and
+                                                            ï¿½ All delays can sync to tempo
+   ï¿½ Glide and glissando with programmable time,
+    curve, trigger mode                                 ï¿½ Reverb: four types, with pre-delay and
                                                          damping parameters
-   · Mod Matrix with 32 routes per patch
-                                                            · Reverb lengths to 90 seconds, plus "Freeze"
-   · Programmable Analog Feel emulates the
-    behavior of analog circuits                         · Independent Pre/Post FX: Chorus, Flanger,
+   ï¿½ Mod Matrix with 32 routes per patch
+                                                            ï¿½ Reverb lengths to 90 seconds, plus "Freeze"
+   ï¿½ Programmable Analog Feel emulates the
+    behavior of analog circuits                         ï¿½ Independent Pre/Post FX: Chorus, Flanger,
                                                          Rotary, Phaser, Lo-Fi, Tremolo, EQ, Compressor,
-   · Randomize function for individual modules or        Distortion
+   ï¿½ Randomize function for individual modules or        Distortion
     an entire patch
-                                                        · Global bypass of any or all FX modules
+                                                        ï¿½ Global bypass of any or all FX modules
 
                 11
 Hardware
 
-   · MIDI In/Out
-   · USB type B port, class-compliant
-   · CV/Gate and outputs for integration with
+   ï¿½ MIDI In/Out
+   ï¿½ USB type B port, class-compliant
+   ï¿½ CV/Gate and outputs for integration with
     modular synthesizers
-   · Headphone output
-   · Stereo 1/4" outputs (balanced)
-   · Sustain pedal input (polarity-sensing)
-   · LED Brightness controls for darkened rooms
-   · Kensington lock port
-   · 37 mini-key, semi-weighted Polytouch®
+   ï¿½ Headphone output
+   ï¿½ Stereo 1/4" outputs (balanced)
+   ï¿½ Sustain pedal input (polarity-sensing)
+   ï¿½ LED Brightness controls for darkened rooms
+   ï¿½ Kensington lock port
+   ï¿½ 37 mini-key, semi-weighted Polytouchï¿½
     keyboard with polyphonic aftertouch and
     velocity sensitivity (note on/off )
-   · Dedicated controls for Filter and Arpeggiator
+   ï¿½ Dedicated controls for Filter and Arpeggiator
     sections
-   · Pitch bend strip and Modulation strip with LED
+   ï¿½ Pitch bend strip and Modulation strip with LED
     depth indicator
-   · Octave Down / Up buttons
-   · Chord mode with dedicated button
-   · Can be powered by 8 AA batteries for hours of
+   ï¿½ Octave Down / Up buttons
+   ï¿½ Chord mode with dedicated button
+   ï¿½ Can be powered by 8 AA batteries for hours of
     portable creativity
 
                                                                12
@@ -679,7 +690,7 @@ Inside the Box
 
 Your Hydrasynth Explorer was carefully packed at the factory with the following items:
 
-· The Hydrasynth Explorer  · This manual                     · The power supply (12VDC / 1A)
+ï¿½ The Hydrasynth Explorer  ï¿½ This manual                     ï¿½ The power supply (12VDC / 1A)
 
 Save Your Receipt!
 
@@ -692,7 +703,7 @@ please be sure to save your receipt in a safe location!
 
 Plug It In
 
-Power                                                       · Always remove the batteries once they are
+Power                                                       ï¿½ Always remove the batteries once they are
                                                              depleted, or if you do not plan to use the
 Before switching the unit on, please lower the               Hydrasynth Explorer for an extended period of
 volume of your speakers or mute the input                    time. (We know; that's hard to imagine!)
@@ -704,13 +715,13 @@ Hydrasynth Explorer: the included power supply
 or 8 AA batteries (optional). In either case it is       After muting the channel inputs or lowering the
 essential to use only the recommended sources:           volume of your speakers, connect a pair of 1/4"
                                                          cables from the rear-panel output jacks of the
-   · DC power: Use only the power supply that            Hydrasynth Explorer to the inputs of your mixer or
+   ï¿½ DC power: Use only the power supply that            Hydrasynth Explorer to the inputs of your mixer or
     was in the box with your Hydrasynth Explorer         audio interface. Then set the Hydrasynth Explorer
     (12 Volts DC, 1 Amp). Make sure the power            power switch to the ON position.
     switch is in the OFF position before making
     this connection.                                     Note: The USB connection is not an audio output.
 
-   · Batteries (optional): Use only 1.5V alkaline or     Using headphones
+   ï¿½ Batteries (optional): Use only 1.5V alkaline or     Using headphones
     1.2V Ni-MH rechargeable batteries. An icon
     in the upper right corner of the Left display        If you plan to connect headphones to the Phone
     indicates the power source type and battery          jack on the Hydrasynth Explorer, turn the unit
@@ -721,18 +732,18 @@ essential to use only the recommended sources:           volume of your speakers
                                                          Master Volume control
    Important notes about using battery power:
                                                          The Master Volume knob controls the overall
-   · DO NOT MIX BATTERY TYPES; all 8 batteries           output level of the Hydrasynth Explorer. It's
+   ï¿½ DO NOT MIX BATTERY TYPES; all 8 batteries           output level of the Hydrasynth Explorer. It's
     must be the same type.                               an analog control, which means it does not
                                                          communicate its position or movements digitally
-   · A separate device must be used to recharge          via USB or MIDI.
+   ï¿½ A separate device must be used to recharge          via USB or MIDI.
     the Ni-MH batteries. Do not attempt to
     recharge alkaline batteries.                         But Master Volume does respond to MIDI CC #7 via
                                                          USB and MIDI. So if you are using the Hydrasynth
-   · Replace all batteries at the same time with         Explorer with a computer, for example, remember
+   ï¿½ Replace all batteries at the same time with         Explorer with a computer, for example, remember
     new (or freshly recharged) batteries of the          that you'll need to adjust its level using a MIDI
     same type, model, and manufacturer.                  track in your DAW.
 
-   · Insert all batteries according to the +/- polarity
+   ï¿½ Insert all batteries according to the +/- polarity
     markings inside the battery compartment.
 
                                                          13
@@ -836,13 +847,13 @@ Check for Updates
 Be sure to visit www.AshunSoundMachines.com soon, and often! It's your source for important things
 such as:
 
-· Firmware updates for your Hydrasynth                   · Tutorial videos to help you master the
+ï¿½ Firmware updates for your Hydrasynth                   ï¿½ Tutorial videos to help you master the
  Explorer                                                 intricacies of the Hydrasynth Explorer
 
-· An interactive version of this manual                  · The original factory banks
+ï¿½ An interactive version of this manual                  ï¿½ The original factory banks
 
-· Banks of new patches from our top-notch                · Our free patch librarian, ASM Manager
- sound design team                                       · ...and more!
+ï¿½ Banks of new patches from our top-notch                ï¿½ Our free patch librarian, ASM Manager
+ sound design team                                       ï¿½ ...and more!
 
 That's Enough Reading for Now.
 
@@ -880,18 +891,18 @@ The Access buttons are located in several areas of the top panel. Many of the bu
 Systems and Master Control sections and all of the buttons in the Module Select section are Access
 buttons. Their purpose:
 
-   · Press an Access button and the main parameter page for that feature appears in the Right display
+   ï¿½ Press an Access button and the main parameter page for that feature appears in the Right display
     for editing.
-   · If more pages exist, one or both Page buttons will point to the other pages.
-   · Pressing an Access button repeatedly will also scroll through its pages.
+   ï¿½ If more pages exist, one or both Page buttons will point to the other pages.
+   ï¿½ Pressing an Access button repeatedly will also scroll through its pages.
 
 Function buttons
 
 These are the white-lettered buttons, and they make instant changes (switch filters, toggle something,
 activate a Macro, etc.). It might help to remember that
 
-   · buttons with orange letters select things and
-   · buttons with white letters do things.
+   ï¿½ buttons with orange letters select things and
+   ï¿½ buttons with white letters do things.
 For example: To enable the Arpeggiator, press the [ON] button. To exit any page, press [EXIT] or [HOME].
 
                                                                16
@@ -906,42 +917,42 @@ position of the knob.                                    Knob types
 The Control knobs play different roles depending         Selection knobs
 on the page that has been accessed:
                                                          These are only found in the Arpeggiator section. A
-   · On the Home page they are used as Macro             "selection knob" clicks between positions to select
+   ï¿½ On the Home page they are used as Macro             "selection knob" clicks between positions to select
     controls.                                            a value. Of these four, only the Swing parameter
                                                          can be set to intermediate values (see Swing (p.
-   · On a parameter page they are used to adjust         62)).
+   ï¿½ On a parameter page they are used to adjust         62)).
     parameter values.
                                                          Variable knobs
 A vertical bar next to each Control knob indicates
 value and range; the bar can be unipolar or              Hydrasynth uses two types of variable knobs:
 bipolar, depending on the parameter. If the
-parameter is bipolar, the middle point of the bar =         · 270° encoders: The range has an upper and
+parameter is bipolar, the middle point of the bar =         ï¿½ 270ï¿½ encoders: The range has an upper and
 0.0; values above or below that show an increase             lower limit. Examples: Master Volume, Filter
 or decrease in the value.                                    Cutoff
 
-Control buttons                                             · Endless encoders: These have no range limits,
+Control buttons                                             ï¿½ Endless encoders: These have no range limits,
                                                              so an edit always starts from the current value.
 Each Control knob is paired with a Control button.
 Their function also depends on the page that has         The displays
 been accessed.
                                                          At the center of it all are two high-resolution OLED
-   · On the Home page they can affect a Macro in         displays, also known as the Left display and the
+   ï¿½ On the Home page they can affect a Macro in         displays, also known as the Left display and the
     one of four ways (Toggle, Trigger, Switch, or        Right display. They serve different purposes:
     Reset). This choice is made on System Setup
-    Master: Page 3 (p. 79).                                 · The Left display is for Patch selection and
+    Master: Page 3 (p. 79).                                 ï¿½ The Left display is for Patch selection and
                                                              helpful graphics.
-   · On a parameter page they are used to:
-                                                            · The Right display is for parameter selection
-       · select a parameter value for editing                and adjustment. Each quadrant shows the
+   ï¿½ On a parameter page they are used to:
+                                                            ï¿½ The Right display is for parameter selection
+       ï¿½ select a parameter value for editing                and adjustment. Each quadrant shows the
                                                              value and status of the current parameter:
-       · toggle a value (Oscillator Solo on/off, for
-         example), or                                           · A vertical bar shows value and range; it can
+       ï¿½ toggle a value (Oscillator Solo on/off, for
+         example), or                                           ï¿½ A vertical bar shows value and range; it can
                                                                   be unipolar or bipolar, depending on the
-       · enter a lower-level editing page (i.e.,                  parameter. If it is bipolar, the middle point
+       ï¿½ enter a lower-level editing page (i.e.,                  parameter. If it is bipolar, the middle point
          Wavelist Edit for a WaveScan oscillator).                = 0.0; values above or below that show an
                                                                   increase or decrease in the value.
 A dot next to each Control button indicates the
-toggle status of certain items (Macro enabled/                  · A dot shows the status of certain items
+toggle status of certain items (Macro enabled/                  ï¿½ A dot shows the status of certain items
 disabled, Solo on/off, etc.).                                     (Macro enabled/disabled, Solo on/off, etc.).
 
 Module Select buttons                                    When an Access button is pressed, the Right
@@ -951,13 +962,13 @@ selected Module (Osc 1, Delay, LFO 5, etc.) The          parameters. The Page up
 signal path generally moves from left to right, but      other parameters within easy reach.
 vertical lines between two buttons indicate:
 
-   · a pre-wired connection (Env 1 / LFO 1 to
+   ï¿½ a pre-wired connection (Env 1 / LFO 1 to
     Filters, Env 2 / LFO 2 to Amp), or
 
-   · the ability to be routed in Series or Parallel, as
+   ï¿½ the ability to be routed in Series or Parallel, as
     with the Filters, or
 
-   · order of operations, such as the output of the
+   ï¿½ order of operations, such as the output of the
     Delay is fed to the input of the Reverb.
 
                                                          17
@@ -1007,23 +1018,23 @@ When you need to find your best sounds                    The INIT button will r
 immediately you can jump straight to your                 default value: just hold [INIT] and press the
 Favorites bank from any other page.                       Control button next to that parameter's value. The
                                                           Control button will light up next to any parameter
-   · Hold [SHIFT] and press [BROWSE] to access            that has been edited, which helps you know
+   ï¿½ Hold [SHIFT] and press [BROWSE] to access            that has been edited, which helps you know
     your Favorites                                        which one to press.
 
-   · Use the Page Down/Up arrows to move                  Initialize a Module
+   ï¿½ Use the Page Down/Up arrows to move                  Initialize a Module
     between the eight banks of Favorites
                                                           You can reset the parameters for an entire Module
-   · Press the Control button next to the patch           using a similar method:
+   ï¿½ Press the Control button next to the patch           using a similar method:
     name to select it.
-                                                             · Hold [INIT].
+                                                             ï¿½ Hold [INIT].
 The HOME button
 
-The Home button is in the center of the top panel.                 · Press the Access button for the desired
+The Home button is in the center of the top panel.                 ï¿½ Press the Access button for the desired
 It provides instant access to the Home page. Four                   module.
 of the eight Macros are located here; press [Home]
-again to reach the second set of Macros.                           · Confirm the decision by pressing [INIT] again.
+again to reach the second set of Macros.                           ï¿½ Confirm the decision by pressing [INIT] again.
 
-                                                               18  · If you decide not the initialize, press [EXIT] to
+                                                               18  ï¿½ If you decide not the initialize, press [EXIT] to
                                                                     cancel the procedure.
 Initialize a Patch                                       press, and after the second press a random
                                                          selection of values is pulled from other
@@ -1052,15 +1063,15 @@ Randomize a Module                                                 3 Voice, Amp,
 You can randomize the parameters for an entire       Note: a limited Range means the randomization
 Module using a similar method:                       selects from a smaller range of values when you
                                                      randomize a specific parameter (e.g., the OSC
-   · Hold [RANDOM].                                  Wave).
+   ï¿½ Hold [RANDOM].                                  Wave).
 
-   · Press the Access button for the desired         The SHIFT button
+   ï¿½ Press the Access button for the desired         The SHIFT button
     module.
                                                      The Shift button is used in combination with
-   · Confirm the decision by pressing [RANDOM]       various buttons and knobs to access secondary
+   ï¿½ Confirm the decision by pressing [RANDOM]       various buttons and knobs to access secondary
     again.                                           functions. When these are available the secondary
                                                      functions are indicated with a row of orange text
-   · If you decide not the randomize, press [EXIT]   under the control.
+   ï¿½ If you decide not the randomize, press [EXIT]   under the control.
     to cancel the procedure.
                                                      In some cases [SHIFT] is used to accelerate value
 Random Patch generation                              selection. For example, if you hold [SHIFT] and
@@ -1068,12 +1079,12 @@ Random Patch generation                              selection. For example, if 
 You can even randomize every value, including        banks, as opposed to the standard operation of
 the Effects! There are two ways:                     +/- 1 patch.
 
-   · Press [RANDOM] twice. The Left display shows    You can also use [SHIFT] to help fine-tune a value
+   ï¿½ Press [RANDOM] twice. The Left display shows    You can also use [SHIFT] to help fine-tune a value
     "GENERATE" after the first press, and after the  that has a large range. For example, if you want
     second press a random selection of values is     to set a precise value for filter resonance, hold
     generated.                                       [SHIFT] and turn the appropriate Control knob.
 
-   · Hold [SHIFT] and press [RANDOM] twice. The      For a complete list of the available Shift functions,
+   ï¿½ Hold [SHIFT] and press [RANDOM] twice. The      For a complete list of the available Shift functions,
     Left display shows "PATCHRND" after the first    see Control Combinations (p. 86).
 
 Master Control Section
@@ -1113,12 +1124,12 @@ in both directions. If neither is lit, there are no   per patch. These are in ad
 additional pages to select.                           although they can be controlled by them (and vice
                                                       versa).
 Access buttons can be used to flip between pages
-too, which works great if there are only a few           · Potential sources for the modulation routes
+too, which works great if there are only a few           ï¿½ Potential sources for the modulation routes
 pages. But if the module has a lot of pages and           include LFOs, Envelopes, Velocity, the Sustain
 the parameter you want is more than a few pages           pedal, and any MIDI CC # (Continuous Control
 away, hold [SHIFT] and press one of the lit arrows        number).
 to jump to the first or last page. Then use the Page
-Up/Down buttons to reach the desired page.               · Destinations can be almost any Hydrasynth
+Up/Down buttons to reach the desired page.               ï¿½ Destinations can be almost any Hydrasynth
                                                           parameter, including any Mod Matrix route.
 VOICE button                                              Additional destinations include the Macros,
                                                           the Mod 1 and Mod 2 CV outputs, and any
@@ -1186,25 +1197,25 @@ potential for unique performances is enhanced by      a time, which allows you t
 the Macro controls on the Home page, as well as       outside your normal reach. The lowest note you
 dedicated Filter and Arpeggiator controls. Along      enter will become the root note. When you're
 with those are a host of other interactive features,  done, release the button.
-such as 37 PolyTouch® keys, pitch/mod strips,
+such as 37 PolyTouchï¿½ keys, pitch/mod strips,
 Octave buttons, Chord mode, and a headphone           There are a few things to remember about Chord
 jack. And thanks to its portability and a healthy     mode:
 number of CV outputs, the outside world can join
-in on the fun!                                           · A chord can contain between 2-8 notes; <2
+in on the fun!                                           ï¿½ A chord can contain between 2-8 notes; <2
                                                           notes are not stored; notes >8 are ignored.
 
-We offer several models with identical voice                       · The chord is not saved with a patch, and will
+We offer several models with identical voice                       ï¿½ The chord is not saved with a patch, and will
 architecture and editing methods. And if you                        be erased when the Hydrasynth Explorer is
 will forgive the shameless plug, if you buy any                     power-cycled.
 one of the other models you can combine their
-polyphony by enabling Overflow (p. 83). It's a                     · Chord mode puts the keyboard into mono
+polyphony by enabling Overflow (p. 83). It's a                     ï¿½ Chord mode puts the keyboard into mono
 very cost-effective way to multiply the creative                    mode (last note priority).
 potential of your system.
-                                                                   · All notes in the chord will be quantized to
+                                                                   ï¿½ All notes in the chord will be quantized to
 Twice the fun for less than twice the price!                        notes within the selected scale. (See Select a
                                                                     Scale (p. 58) in The Voice Module (p. 55).)
 
-Chord mode                                                         · The chord is not transmitted over USB or MIDI.
+Chord mode                                                         ï¿½ The chord is not transmitted over USB or MIDI.
                                                                     A slaved device will only receive the played
 A single key can play up to 8 notes at once by                      note.
 activating the [CHORD] button. But a chord must
@@ -1237,9 +1248,9 @@ These five connectors allow the Hydrasynth         The Hydrasynth Explorer has t
 Explorer to interface with the wild and wonderful  to let you interface with other devices that might
 world of modular synthesizers. There are five      not have a USB port or CV / Gate connectors.
 outputs (Pitch, Gate, Mod 1, Mod 2, and Clock),
-and each one sends voltages and signals that can      · MIDI Out sends data from the Hydrasynth
+and each one sends voltages and signals that can      ï¿½ MIDI Out sends data from the Hydrasynth
 control external devices.                              Explorer to another MIDI device
-                                                      · MIDI In receives data from another MIDI device
+                                                      ï¿½ MIDI In receives data from another MIDI device
 The range of each voltage and what type of
 signals are sent are defined in The System Setup   USB
 Pages (p. 78), and information about how to use
@@ -1308,18 +1319,18 @@ Filter group                                             modulation sources for 
 Filter 1 and Filter 2 are similar in name and
 function but their features are very different.          Amp module
 
-   · Filter 1 has 16 different filter models, including  The Amp module contains only three parameters:
+   ï¿½ Filter 1 has 16 different filter models, including  The Amp module contains only three parameters:
     Low- / High- / Band Pass and vocal formant
-    options.                                                · LFO 2 Amount adjusts the amount and polarity
+    options.                                                ï¿½ LFO 2 Amount adjusts the amount and polarity
                                                              of the effect LFO 2 has on the Amplitude of the
-   · Filter 2 is a multi-mode filter with two types:         patch.
+   ï¿½ Filter 2 is a multi-mode filter with two types:         patch.
     Low Pass / Band Pass / High Pass and Low
-    Pass / Notch / High Pass. Each type can morph           · Velocity controls the velocity response of the
+    Pass / Notch / High Pass. Each type can morph           ï¿½ Velocity controls the velocity response of the
     between the three states.                                Amplitude stage. Negative values invert the
                                                              response: increased velocities reduce the
 The filters can be placed in parallel or series. Full        amplitude.
 details are in The Filters and their Controls (p. 35).
-                                                            · Amp Level can be used to compensate for
+                                                            ï¿½ Amp Level can be used to compensate for
 Envelope group                                               quieter or louder output from the oscillators
                                                              and filters.
 All five Envelopes have identical parameters,
@@ -1354,10 +1365,10 @@ routes very quickly. Instead of accessing the Mod     Macros is in the chapter M
 Matrix through its button and navigating to the       66).
 right page and field, try this from the Home page:
                                                       Copy / Paste settings
-   · Press and hold the module button for the
+   ï¿½ Press and hold the module button for the
     desired Modulation Sources (p. 70)                Some modules are identical, and their parameter
                                                       values can be copied from one module to another.
-   · Press the module button for the destination      For example, you can copy the settings from
+   ï¿½ Press the module button for the destination      For example, you can copy the settings from
     you want to modulate. See Modulation              Oscillator 1 to Oscillator 2, or vice versa, because
     Destinations (p. 71)                              their data is interchangeable.
 
@@ -1372,13 +1383,13 @@ knob 4. If the destination parameter has a top
 panel knob available, turning that will select it as  The process of copying the settings between
 the destination.                                      compatible modules is simple:
 
-This technique can also be used inside the Mod        · Press and hold the Save button: All modules
+This technique can also be used inside the Mod        ï¿½ Press and hold the Save button: All modules
 Matrix pages. The advantage to doing it there is       that are potential copy sources are lit
 that when you hold a source button, all of the
-potential mod route destinations will light up.       · Select the copy source: Only potential paste
+potential mod route destinations will light up.       ï¿½ Select the copy source: Only potential paste
 They don't do that from the Home page.                 destinations remain lit
 
-The Mod Matrix will be covered more fully in The      · Select the paste destination. The process will
+The Mod Matrix will be covered more fully in The      ï¿½ Select the paste destination. The process will
 Mod Matrix (p. 69).                                    execute and all buttons will become unlit,
                                                        indicating success.
 
@@ -1465,7 +1476,7 @@ Page Control Parameter Range                        Description
 
 2  2 BitRedux (various)                             Controls oscillator resolution; see Oscillator Bit
                                                     Reduction (p. 27).
-2  3 Keytrack 0­200%
+2  3 Keytrack 0ï¿½200%
                                                     Sets keyboard pitch tracking. [3]
 
 [1] Use [SHIFT] to jump by 12 semitones.
@@ -1513,18 +1524,18 @@ Default = 100%.
 
 Wavelist Edit page                                     and auditioning very easy:
 
-This lower-level page lets you pick a waveform for        · Press the corresponding Control button to solo
+This lower-level page lets you pick a waveform for        ï¿½ Press the corresponding Control button to solo
 each of the 8 WAV locations. Options include OFF,          that WAV position. The dot next to the Control
 Silence, and any one of the 219 waveforms. Note:           button will flash slowly to indicate the wave
 Wave 1 can't be set to OFF or Silence.                     being auditioned.
 
-The eight WAV slots correspond to the x.0                 · Hold [SHIFT] and turn a Control knob to
+The eight WAV slots correspond to the x.0                 ï¿½ Hold [SHIFT] and turn a Control knob to
 positions of the WaveScan parameter on page                change that waveform and all that follow it.
 1 of the upper level: WAV 1 = position 1.0, WAV            For example,
 2 = position 2.0, etc. A WaveScan value of 1.5,
-for example, is derived by "morphing" halfway                 · Hold [SHIFT] and turn Control knob 3.
+for example, is derived by "morphing" halfway                 ï¿½ Hold [SHIFT] and turn Control knob 3.
 between WAV 1 and WAV 2.
-                                                              · As WAV 3 selects waveform X, WAV 4
+                                                              ï¿½ As WAV 3 selects waveform X, WAV 4
 Two additional features make waveform selection                 selects waveform X+1, WAV 5 selects
                                                                 waveform X+2, etc.
 
@@ -1564,7 +1575,7 @@ the description of Single mode in Oscillators 1 and 2 (p. 26).
    sound. This feature is located on the first page of The Mixer Module (p. 33). Ring & Noise can
    also be soloed.
 
-Mutants 1­4
+Mutants 1ï¿½4
 
 Each of the Mutant modules is identical so we will describe them all at the same time. They are arranged
 in pairs: two for Oscillator 1 and two for Oscillator 2. Depending on the selected mode, the output of
@@ -1661,9 +1672,9 @@ instead of happening only once per cycle as with
 other synthesizers. It may help to think of it like  Pulse Width modulation
 this:
                                                      Pulse Width Modulation (PWM) alters the basic
-   · 1:1 = one process for one cycle of the wave.    shape of the waveform by shifting its internal
+   ï¿½ 1:1 = one process for one cycle of the wave.    shape of the waveform by shifting its internal
                                                      structure over time, making some areas narrower
-   · 2:1 = two processes for one cycle of the wave.  and others wider. This is usually done to square
+   ï¿½ 2:1 = two processes for one cycle of the wave.  and others wider. This is usually done to square
                                                      waves, but the Hydrasynth Explorer voice engine
 So at 2:1 the PWM is happening twice in a cycle      can apply PWM to any of its 219 waveforms.
 instead of once (the way "normal" PWM does); the
@@ -1742,7 +1753,7 @@ harmonics, like a sawtooth wave, than on a simpler waveform such as a sine wave.
 
 Page Control Parameter Range                                       Description
 
-1  1 Mode          8 species (focus: Harmonic) See list of Mutants 1­4 (p. 28)
+1  1 Mode          8 species (focus: Harmonic) See list of Mutants 1ï¿½4 (p. 28)
 
 1  2 Ratio         0.250-64.000; increments vary Selects emphasis harmonic. [1]
 
@@ -1911,21 +1922,21 @@ Hydrasynth Explorer includes a Solo function.
 
 It's easy to use:
 
-   · On pages 1 and 2, use Control button 4 to toggle Solo from Off to On. Those pages share this
+   ï¿½ On pages 1 and 2, use Control button 4 to toggle Solo from Off to On. Those pages share this
     parameter, so changing it on one page changes it on the other.
 
-   · When Solo is engaged the Control buttons for all 5 sources will light on their respective pages. This
+   ï¿½ When Solo is engaged the Control buttons for all 5 sources will light on their respective pages. This
     means they are still active.
 
-   · Press the Control button of the source you want to hear. Its Control button will become brighter
+   ï¿½ Press the Control button of the source you want to hear. Its Control button will become brighter
     than the others.
 
-   · Press another Control button to solo that source. The first Control button will dim and the selected
+   ï¿½ Press another Control button to solo that source. The first Control button will dim and the selected
     one will brighten.
 
-   · You can switch between pages 1 and 2 and solo any one source on either page.
+   ï¿½ You can switch between pages 1 and 2 and solo any one source on either page.
 
-   · Press Control button 4 on either page 1 or 2 to defeat the Solo function.
+   ï¿½ Press Control button 4 on either page 1 or 2 to defeat the Solo function.
 
 Mixer parameters: pages 3-4
 
@@ -1980,12 +1991,12 @@ Page Down arrow to select page 5. Control knobs        access the [MIXER] module
 1-3. Use the appropriate Control knob to adjust        knobs 1 and 2 contain the parameters RingFilt
 the filter routing of each item:                       and NoizFilt. Use the appropriate Control knob to
                                                        adjust the filter routing of each item:
-   · 100:0 sends the source only to Filter 1.
-                                                          · 100:0 sends the source only to Filter 1.
-   · 0:100 sends the source only to Filter 2.
-                                                          · 0:100 sends the source only to Filter 2.
-   · Intermediate values send the source to both
-    filters in varying amounts.                           · Intermediate values send the source to both
+   ï¿½ 100:0 sends the source only to Filter 1.
+                                                          ï¿½ 100:0 sends the source only to Filter 1.
+   ï¿½ 0:100 sends the source only to Filter 2.
+                                                          ï¿½ 0:100 sends the source only to Filter 2.
+   ï¿½ Intermediate values send the source to both
+    filters in varying amounts.                           ï¿½ Intermediate values send the source to both
                                                            filters in varying amounts.
 Use [SHIFT] + Control knob X to fine-tune the
 values. Control knob 4 sets the Filter configuration   Use [SHIFT] + Control knob X to fine-tune the
@@ -2043,10 +2054,10 @@ Compensated vs. Uncompensated filters
 Filter compensation could be an unfamiliar concept. It's another way in which ASM has adapted the
 sonic profile of various analog synthesizers. Here's the difference:
 
-  · Uncompensated filters: As resonance increases the low frequency content of the sound
+  ï¿½ Uncompensated filters: As resonance increases the low frequency content of the sound
     is reduced.
 
-  · Compensated filters: The bass response is not reduced as resonance is increased.
+  ï¿½ Compensated filters: The bass response is not reduced as resonance is increased.
 
 Filter 1 parameters: page 1
 
@@ -2148,10 +2159,10 @@ Filter 1 always passes through Filter 2. When they    the waveform is boosted be
 are in Parallel, sources can be routed so they pass   or whether the filter output is boosted before it
 through only one of the filters or through both       reaches the Amp stage.
 filters in varying amounts (as described in Filter
-Routing of Sources (p. 34)).                             · Pre places the Drive effect between the
+Routing of Sources (p. 34)).                             ï¿½ Pre places the Drive effect between the
                                                           waveform and the filter.
 The setting is linked to the parameter on Mixer
-page 3, edit field 4; changing one also changes the      · Post places the Drive effect after the filter.
+page 3, edit field 4; changing one also changes the      ï¿½ Post places the Drive effect after the filter.
 other.
                                                       Vowel Order
 
@@ -2195,10 +2206,10 @@ and low frequencies. The major difference is what     extreme, a High Pass filte
 happens in the middle, as Morph approaches a          Band Pass or Notch filter at the middle setting.
 value of 64:                                          Along the way there are hundreds of intermediate
                                                       settings. As the value changes, a graphic indicates
-   · Band Pass emphasizes the middle frequencies,     the filter character.
+   ï¿½ Band Pass emphasizes the middle frequencies,     the filter character.
     in a range defined by the Resonance setting.
                                                       When Filter 2 is selected on the top panel, the
-   · Notch reduces the middle frequencies, in a       Morph parameter is shared with the Drive / Morph
+   ï¿½ Notch reduces the middle frequencies, in a       Morph parameter is shared with the Drive / Morph
     range defined by the Resonance setting.           knob in the Filter Controls section.
 
 The differences are more pronounced with higher       The rest of the Page 1 parameters are identical in
@@ -2438,10 +2449,10 @@ when a new note is played, even if the previous
 note has not been released.                         In summary, here's what to expect with a
                                                     polyphonic patch:
 The difference between Reset On and Off is easy
-to hear with a monophonic patch. But with a            · Reset = On: The 9th voice starts the envelope
+to hear with a monophonic patch. But with a            ï¿½ Reset = On: The 9th voice starts the envelope
 polyphonic patch the behavior is more obvious           from its beginning.
 after the available polyphony has been exceeded.
-You'll need a sustain pedal for the following          · Reset = Off: The 9th voice starts the envelope
+You'll need a sustain pedal for the following          ï¿½ Reset = Off: The 9th voice starts the envelope
 example.                                                from the sustain level.
 
     1. Set speaker/headphone levels low; this       Freerun
@@ -2522,16 +2533,16 @@ parameters, so every description applies equally to all.
 
 LFO features
 
-These LFOs might be more flexible than any you          · A wide range of rates, from slow to audio
+These LFOs might be more flexible than any you          ï¿½ A wide range of rates, from slow to audio
 have encountered. Here are some highlights:
-                                                        · Independent LFO per voice
-   · Delayed onset through the Delay and Fade-in
-    parameters                                          · LFOs can modulate themselves, each other,
+                                                        ï¿½ Independent LFO per voice
+   ï¿½ Delayed onset through the Delay and Fade-in
+    parameters                                          ï¿½ LFOs can modulate themselves, each other,
                                                          and/or anything else
-   · Adjustable phase: start the modulation from
-    any point in the LFO waveform                       · Trigger an LFO once or loop it indefinitely.
+   ï¿½ Adjustable phase: start the modulation from
+    any point in the LFO waveform                       ï¿½ Trigger an LFO once or loop it indefinitely.
 
-   · Synchronized or unsynchronized modes               · Design your own LFO, arpeggio, or mini-
+   ï¿½ Synchronized or unsynchronized modes               ï¿½ Design your own LFO, arpeggio, or mini-
                                                          sequence with the Step LFO features
 
 The Vibrato feature is a sixth LFO dedicated to the mod strip. It is not available as a source or
@@ -2554,7 +2565,7 @@ Control  Parameter  Range                                      Description
     4    Level      BPM = Off: 0.02 to 150.0 Hz                Sets duration of LFO cycle
                     BPM = On: 0, 64' to 1/64T
 
-                    0° - 360°                                  Defines starting point of LFO
+                    0ï¿½ - 360ï¿½                                  Defines starting point of LFO
 
                     0.0 - 128.0                                Maximum amplitude of LFO
 
@@ -2598,13 +2609,13 @@ When the BPM Sync parameter is set to On the          This parameter governs whe
 LFO rates are represented by rhythmic values.         with each new note or operates independently
 These range from 1/64T (a sixty-fourth note           per voice.
 triplet) to 64' (64 quarter notes, or 16 bars in 4/4
-time). Dotted values are also available. Here are        · Poly: Each new note triggers its LFO indepen-
+time). Dotted values are also available. Here are        ï¿½ Poly: Each new note triggers its LFO indepen-
 some examples of how the values are shown:                dently. Use this for lush pads, etc.
 
-  Value Duration                                         · Single: One LFO affects all voices; each new
+  Value Duration                                         ï¿½ Single: One LFO affects all voices; each new
     64' Sixty-four quarter notes, or 16 bars              note retriggers that LFO.
      8' Eight quarter notes, or two bars
-    1/1 Whole note, or one bar                           · Off: The LFO runs freely and affects all voices.
+    1/1 Whole note, or one bar                           ï¿½ Off: The LFO runs freely and affects all voices.
                                                           It could be anywhere in its cycle when it
  1/16Dot Dotted sixteenth note                            appears.
    1/16 Sixteenth note
@@ -2624,11 +2635,11 @@ Control Parameter Range       Description
 
 Smooth                                                parameter is set to On. For example, it could:
 
-Also known as "slew", this parameter softens the         · allow a single warble from a sine wave LFO
+Also known as "slew", this parameter softens the         ï¿½ allow a single warble from a sine wave LFO
 transitions from one amplitude of an LFO to the
-next. When a waveform with abrupt changes is             · give a short burst from the Noise waveform
+next. When a waveform with abrupt changes is             ï¿½ give a short burst from the Noise waveform
 selected (Saw, Square, S&H, Step) the Smooth
-parameter makes the LFO "glide" between                  · When One-Shot = Step, the Step LFO sequence
+parameter makes the LFO "glide" between                  ï¿½ When One-Shot = Step, the Step LFO sequence
 adjacent values. At the highest setting the square        will advance by one step with each trigger.
 and triangle LFO waveforms are identical.
                                                       "Step LFO sequence?" For an explanation, see The
@@ -2718,9 +2729,9 @@ Continuing with the previous example:                        needed.
                                                       values to quantize to the chromatic scale, be sure
     3. Press [EXIT] and use Control knob 3 to set     to do the following:
        SemiLock back to On
-                                                         · Set the LFO output level to 128.
+                                                         ï¿½ Set the LFO output level to 128.
     4. Access the Step Edit page again (Control
-       button 4). The non-multiple step has an           · In the Mod Matrix, route the LFO to the pitch
+       button 4). The non-multiple step has an           ï¿½ In the Mod Matrix, route the LFO to the pitch
        asterisk (e.g., +1semi*)                           of an oscillator with a depth of 128.
 
     5. As the related Control knob is turned the      With those conditions met, the Step LFO semitone
@@ -2751,15 +2762,15 @@ advances to the next Step in the sequence.                    advances by one St
 
 Other parameters affect how this works. But for       Here are some important notes about Step LFOs:
 now, let's set up a crazy little Step LFO:
-                                                         · Review the SemiLock (p. 46) section for other
+                                                         ï¿½ Review the SemiLock (p. 46) section for other
     1. Press [INIT] twice, then press [LFO 1].            ways to make the Step LFO sequence conform
     2. Select Wave = Step with Control knob 1.            to the chromatic scale.
     3. Press [LFO 1] twice to access page 3.
-    4. Select One-Shot = Step with Control knob 2.       · When One-Shot = Step the Smooth setting has
+    4. Select One-Shot = Step with Control knob 2.       ï¿½ When One-Shot = Step the Smooth setting has
                                                           no effect. It is applied only when One-Shot =
                                                           ON or OFF.
 
-5. Press [LFO 1] again to access page 4.                 · Step LFOs advance differently depending on
+5. Press [LFO 1] again to access page 4.                 ï¿½ Step LFOs advance differently depending on
                                                           the Stereo Mode setting on page 2 of the Voice
 6. Use Control knob 3 to set SemiLock to ON.              module. See the next section for details.
    This provides semitone values in the Step
@@ -2785,12 +2796,12 @@ differently.                                             sequence to advance for
    that Step LFO sequence for all voices.
                                                          To summarize:
 
-                                                         · If the first note is played staccato by itself,
+                                                         ï¿½ If the first note is played staccato by itself,
                                                           Voice 1 is triggered each time and its
                                                           dedicated LFO outlines the sequence with
                                                           each successive trigger.
 
-TrigSync: Single (V = Voice, S = Step)                   · If the first note is held and another note is
+TrigSync: Single (V = Voice, S = Step)                   ï¿½ If the first note is held and another note is
                                                           played, Voice 2 is triggered and its dedicated
                                                           LFO begins its sequence with the same results,
                                                           and so on through all available voices and
@@ -2821,7 +2832,7 @@ get the full picture.                                    2 plays step 2, Voice 3
 
 Voice: StMode settings                                   To put it another way:
 
-The LFO TrigSync settings also interact with the         · If one note is played staccato by itself, it must
+The LFO TrigSync settings also interact with the         ï¿½ If one note is played staccato by itself, it must
 Stereo mode settings in the Voice module. The full        be played 8 times before the LFO sequence
 descriptions are here: Stereo mode, Stereo width (p.      advances to the next step. This is because the
 55). In this section we'll focus on two of those          Hydrasynth Explorer is cycling through all
@@ -2829,7 +2840,7 @@ settings (Alter and Rotate) and how they are used         available voices, and 
 to advance a Step LFO sequence. Remember,                 LFO that will follow the sequence order inde-
 there are 5 LFOs, and it's possible to have each one      pendently from the other voices.
 configured differently.
-                                                         · If a note is held and another is played, that
+                                                         ï¿½ If a note is held and another is played, that
 Note: When TrigSync = Single the shared Step LFO          note must be played 7 times before its LFO
 advances the same way regardless of the StMode            advances to the next step because the engine
 setting. So for these descriptions we will assume         is cycling through the 7 remaining voices, and
@@ -2838,24 +2849,24 @@ where each voice has a dedicated copy of the
 selected LFO.                                         More Step LFO ideas
 
 StMode: Alter allocates the voices based on           Here are more ways to use the Step LFO:
-how many voices are already active. If you start         · The maximum Step values are +/- 64.0, so
+how many voices are already active. If you start         ï¿½ The maximum Step values are +/- 64.0, so
 by playing only one note, you're playing Voice
 
                                                      48
- the total range is a little wider than an octave     · For longer step sequences, set the LFO 2 Delay
+ the total range is a little wider than an octave     ï¿½ For longer step sequences, set the LFO 2 Delay
  above and below the root pitch.                       so it comes in after LFO 1 (and set LFO 1 to
                                                        One-Shot = On).
-· Try using one or more oscillators with a Step
- LFO and BPM set to ON. Different Rate values         · Try the Copy feature described below: Copy
+ï¿½ Try using one or more oscillators with a Step
+ LFO and BPM set to ON. Different Rate values         ï¿½ Try the Copy feature described below: Copy
  provide interesting rhythms.                          one LFO to another and make slight changes
                                                        to create counterpoint or to harmonize. Be sure
-· Osc 1 and 2 could play step sequences while          to copy The Mod Matrix (p. 69) settings also.
+ï¿½ Osc 1 and 2 could play step sequences while          to copy The Mod Matrix (p. 69) settings also.
  Osc 3 drones on the root pitch, for example.
-                                                      · You can invert a melody with mod route level
-· Use different values of the Steps parameter to       of -128.
+                                                      ï¿½ You can invert a melody with mod route level
+ï¿½ Use different values of the Steps parameter to       of -128.
  create odd time signatures like 5/4, 6/8, 7/8, etc.
-                                                      · Remember, if you run out of LFOs, you can use
-· To hold a pitch for one or more steps, use the       a looping envelope as an LFO.
+                                                      ï¿½ Remember, if you run out of LFOs, you can use
+ï¿½ To hold a pitch for one or more steps, use the       a looping envelope as an LFO.
  same value as the previous step or the next
  one.
 
@@ -2901,9 +2912,9 @@ be covered in this section.
 
 These are the FX types available for the Pre-FX and Post-FX modules:
 
-· Chorus       · Flanger            · Rotary        · Phaser          · Lo-Fi
+ï¿½ Chorus       ï¿½ Flanger            ï¿½ Rotary        ï¿½ Phaser          ï¿½ Lo-Fi
 
-· Tremolo      · EQ                 · Compressor    · Distort
+ï¿½ Tremolo      ï¿½ EQ                 ï¿½ Compressor    ï¿½ Distort
 
 Each FX type has preset templates that can be used as starting points for your own creations. When the
 patch is saved the FX settings are preserved.
@@ -2920,7 +2931,7 @@ Page  Control  Parameter  Range                     Description
   1       3    [Depth]    0.0-128.0                 Controls chorus depth
   1       4    [Dry/Wet]  0-100.0%                  Sets dry signal/effect blend
   2       1    Preset     1-3                       Selects template
-  2       2    Offset     +/- 180°                  Sets initial effect phase relative to input
+  2       2    Offset     +/- 180ï¿½                  Sets initial effect phase relative to input
   2       3    Feedback   +/- 63                    Feeds chorus into itself (positive/negative
                                                     polarity)
   2       4    Mono/St    Mono, Stereo              Selects output mode
@@ -2939,7 +2950,7 @@ Page Control Parameter Range                        Description
 
 2        1 Preset         1-3
 
-2        2 Offset         +/- 180°
+2        2 Offset         +/- 180ï¿½
 
                                         50
 2       3       Feedback +/- 63                Feeds flanger into itself (positive/negative
@@ -2975,7 +2986,7 @@ Page   Control  Parameter   Range                                  Description
                                                                    Sets initial effect phase relative to
 2       3 Phase             0-127                                  input
 
-2       4 Offset            +/- 180°
+2       4 Offset            +/- 180ï¿½
 
 Lo-Fi
 
@@ -3008,7 +3019,7 @@ Page  Control Parameter    Range                                  Description
   1       4 [Dry/Wet]      0-100.0%                               Sets dry signal/effect blend
   2       1 Preset         1-3                                    Selects template
   2       2 LFO shape      Sine, Square                           Selects tremolo waveshape
-  2       3 Phase          +/- 180°                               Phase relationship of left/right LFOs
+  2       3 Phase          +/- 180ï¿½                               Phase relationship of left/right LFOs
   2       4 Pitch Mod      0-127                                  Vibrato depth
 
 EQ
@@ -3077,11 +3088,11 @@ Page  Control  Parameter   Range                              Description
 Delay Types
 
 Hydrasynth Explorer offers 5 delay types, each with distinct characteristics:
-   · Basic Mono combines the stereo input signal and produces a mono delay.
-   · Basic Stereo preserves the stereo positioning of the input signal.
-   · Pan Delay alternates between the right and left input signals.
-   · LRC Delay outputs the left input, then the right input, then both, and repeats that pattern.
-   · Reverse takes whatever comes in during the delay period and plays it backward.
+   ï¿½ Basic Mono combines the stereo input signal and produces a mono delay.
+   ï¿½ Basic Stereo preserves the stereo positioning of the input signal.
+   ï¿½ Pan Delay alternates between the right and left input signals.
+   ï¿½ LRC Delay outputs the left input, then the right input, then both, and repeats that pattern.
+   ï¿½ Reverse takes whatever comes in during the delay period and plays it backward.
 
 Delay Parameters
 
@@ -3105,7 +3116,7 @@ Page  Control  Parameter   Range                              Description
 
 Hydrasynth Explorer provides 4 reverb types, each with distinct characteristics:
 
-· Hall  · Room     · Plate     · Cloud
+ï¿½ Hall  ï¿½ Room     ï¿½ Plate     ï¿½ Cloud
 
 Reverb Parameters
 
@@ -3141,11 +3152,11 @@ about setting up a Macro, see Mastering the Macros (p. 66).
 Mod Route Shortcut
 
 Here's how to set up mod routes quickly from an Envelope or LFO to an effect:
-   · Hold the module button for the desired source
-   · Press the module button for the destination. This will create a mod route in the Mod Matrix at the
+   ï¿½ Hold the module button for the desired source
+   ï¿½ Press the module button for the destination. This will create a mod route in the Mod Matrix at the
     first available slot with the first parameter of the effect selected.
-   · Change the selected parameter if needed
-   · Set the mod amount with the appropriate Control knob.
+   ï¿½ Change the selected parameter if needed
+   ï¿½ Set the mod amount with the appropriate Control knob.
 
 Remember: not all FX parameters are available as mod destinations.
 
@@ -3188,13 +3199,13 @@ Lo, Hi, or both                                           The Density and Detune
 Both Mono and Unison modes have additional                Density sets the number of voices that are
 Lo- and Hi- options. Here's the difference:               triggered by the monophonic note. Detune
                                                           offsets the tuning of each of those voices equally
-   · Lo (low note priority): The only way to trigger a    within the range set by the Detune value.
+   ï¿½ Lo (low note priority): The only way to trigger a    within the range set by the Detune value.
     new note is to play one below the held note.
 
-   · Hi (high note priority): The only way to trigger a
+   ï¿½ Hi (high note priority): The only way to trigger a
     new note is to play one above the held note.
 
-   · If an option doesn't say "Lo" or "Hi", it's both: A
+   ï¿½ If an option doesn't say "Lo" or "Hi", it's both: A
     new note can be triggered by any note above
     or below the held note.
 
@@ -3250,7 +3261,7 @@ Random                                                 analog synth is that its 
 This option randomizes the voice selection when        cycles when they are triggered. It's the nature
 a note is triggered. If StWidth is > 0, the voices     of their circuits; they must be told to reset. This
 appear in the stereo field at the same positions       parameter emulates that behavior by telling the
-they use in Rotate mode.                               digital oscillators not to reset their phase to 0°
+they use in Rotate mode.                               digital oscillators not to reset their phase to 0ï¿½
                                                        when they are triggered.
 Rotate vs. Alter
                                                        Warm mode
@@ -3309,18 +3320,18 @@ Glide vs. Glissando                                  Other Glide settings
 Glide causes the pitch to slide between notes        The Glide curves are similar in shape to the
 rather than changing in chromatic steps.             envelope segment curves:
 Glissando provides a "stepped" glide, rather than
-providing a smooth glide between the start and          · An exponential curve rises slowly at first and
+providing a smooth glide between the start and          ï¿½ An exponential curve rises slowly at first and
 end notes.                                               accelerates upward. When moving downward
                                                          it starts falling quickly and slows down as it
 For extra fun, press [VOICE] again to access page 5      approaches its destination.
 and use Control knob 2 to select a non-chromatic
-scale. The glissando follows the selected scale,        · A logarithmic curve does the opposite: It rises
+scale. The glissando follows the selected scale,        ï¿½ A logarithmic curve does the opposite: It rises
 which can provide excellent musical results. You         quickly at first and its rate of change slows as
 may want to use the Key Lock setting, too; this is       it nears the peak. In the opposite direction
 described on the next page.                              it starts falling slowly and accelerates until it
                                                          reaches its resting state.
 When the Glide effect is enabled it reveals another
-three parameters on Voice page 4.                       · A linear curve rises and falls at the same rate
+three parameters on Voice page 4.                       ï¿½ A linear curve rises and falls at the same rate
                                                          throughout its duration.
 
                                                      Enabling the Glide Legato setting changes the
@@ -3388,11 +3399,11 @@ After the Custom scale is selected, press Control      To assign notes quickly t
 button 4 to enter the Scale Edit page. Here's what     Control button 1 and play the desired notes on
 you'll see:                                            the keyboard. The existing notes will be cleared as
                                                        soon as you play the first note.
-   · Control button 1: This is the first note in the
+   ï¿½ Control button 1: This is the first note in the
     custom scale, and it is based upon the Key         Note that if the root note is entered it will be
     Lock setting. The Control knob is disabled.        ignored (it's the Key). It's okay to enter the notes
                                                        out of order; they'll be placed in chromatic order
-   · Control knobs 2-4: These represent notes 2-4      when Control button 1 is released.
+   ï¿½ Control knobs 2-4: These represent notes 2-4      when Control button 1 is released.
     of the custom scale. Press the Down arrow to
     access notes 5-8 of the scale.
 
@@ -3490,30 +3501,30 @@ you want it!                                             framework for further e
 The fun starts in the VoiceMod menu, where you
 can define a per-voice offset to be applied via the      Per-voice offset: Tuning
 Mod Matrix to any destination. Use it to set each
-voice's filter cutoff to slightly different values, for     · Press [INIT] twice to initialize the patch.
+voice's filter cutoff to slightly different values, for     ï¿½ Press [INIT] twice to initialize the patch.
 example, or to apply radically different Mutant
-values to each voice. Note: To hear this, be sure           · Press [VOICE] twice and set StMode to Rotate.
+values to each voice. Note: To hear this, be sure           ï¿½ Press [VOICE] twice and set StMode to Rotate.
 to map a VoiceMod source to at least one mod
-destination in the Mod Matrix.                              · Hold [SHIFT] and press the Down arrow to
+destination in the Mod Matrix.                              ï¿½ Hold [SHIFT] and press the Down arrow to
                                                              reach page 6.
 In this section we'll describe how to access and
-change the per-voice offset values; in the next             · Use Control button 2 to enter the VoiceMod
+change the per-voice offset values; in the next             ï¿½ Use Control button 2 to enter the VoiceMod
 we'll explain how to route them to a destination.            Edit menu.
 
-   · Press [VOICE] to access that module.                   · Select values that are multiples of 10 on both
+   ï¿½ Press [VOICE] to access that module.                   ï¿½ Select values that are multiples of 10 on both
                                                              pages.
-   · Hold [SHIFT] and press the Down arrow to
-    reach page 6.                                           · Hold [VOICE] and press [OSC 1] to set up a
+   ï¿½ Hold [SHIFT] and press the Down arrow to
+    reach page 6.                                           ï¿½ Hold [VOICE] and press [OSC 1] to set up a
                                                              mod route.
-   · Press Control button 2 to enter the VoiceMod
-    Edit menu.                                              · Set a mod depth of 128 using Control knob 4.
+   ï¿½ Press Control button 2 to enter the VoiceMod
+    Edit menu.                                              ï¿½ Set a mod depth of 128 using Control knob 4.
 
-                                                            · Play the same note 8 times. It plays a melody!
+                                                            ï¿½ Play the same note 8 times. It plays a melody!
 
-· Use Control knobs 1-4 to set a positive or             Per-voice offset: Waveforms
+ï¿½ Use Control knobs 1-4 to set a positive or             Per-voice offset: Waveforms
  negative value for Voices 1-4.
                                                          The VoiceMod feature can even be used to make
-· Press the Down arrow to access the second              each voice play a different waveform!
+ï¿½ Press the Down arrow to access the second              each voice play a different waveform!
  page, then use Control knobs 5-8 to set a
  positive or negative value for Voices 5-8.                  1. Press [INIT] twice, then press [VOICE] twice.
 
@@ -3575,24 +3586,24 @@ manually. Hold [SHIFT] while turning Control knob       must be >1 or you may no
                                                         tions are based on an Octave setting of 2 except as
 If Clock Sync is set to an external source the letters  noted:
 EXT will be shown instead of the tempo. This
-setting is found on MIDI: Page 7 (p. 82).                  · Up plays the notes in the original octave and
+setting is found on MIDI: Page 7 (p. 82).                  ï¿½ Up plays the notes in the original octave and
                                                             then repeats the pattern an octave higher.
 Division
-                                                           · Dn (down) plays the notes in the original
+                                                           ï¿½ Dn (down) plays the notes in the original
 Control knob 2 selects the basic time division of           octave and then repeats the pattern an octave
 the arpeggiator relative to the tempo. There are 12         lower.
 settings here, 4 more than the top panel controls
-can reach. The Triplet options are there too, and          · UpDn (Octave = 3) plays the notes in the
+can reach. The Triplet options are there too, and          ï¿½ UpDn (Octave = 3) plays the notes in the
 the Triplet LED will light as they are selected. You        original octave, repeats them in the next 2
 can also press [TRIPLET] to select that setting             octaves, repeats them in the middle octave,
 immediately.                                                and starts over.
 
-Swing                                                      · Alt plays the notes in the original octave,
+Swing                                                      ï¿½ Alt plays the notes in the original octave,
                                                             repeats them in the next octave, and then
 The top panel Swing knob offers eight settings,             reverses the entire pattern. The top and
 including Off. But there are actually 26 settings           bottom notes are repeated.
 between 50% and 75%. Use Control knob 3 to
-select a value, or use the Swing knob first and            · Alt 2 is identical to Alt except the top and
+select a value, or use the Swing knob first and            ï¿½ Alt 2 is identical to Alt except the top and
 then Control knob 3 to select a nearby value.               bottom notes are not repeated.
 
 Gate                                                    Octave
@@ -3602,41 +3613,41 @@ of the arpeggiator notes. The parameter range is        arpeggiator. Minimum ran
 5% to 100%.                                             maximum range is 6 octaves.
 
                                                         62
-Mode                                                    · Increase Length to 6, then 7, then 8. Gradually
+Mode                                                    ï¿½ Increase Length to 6, then 7, then 8. Gradually
                                                          each note of the chord will appear in the
 Control knob 3 is used to specify the direction          second octave.
 of the arpeggio and other behaviors. For the
-following descriptions we'll use a 3-note chord         · Increase Length to 9. The lowest note of the
+following descriptions we'll use a 3-note chord         ï¿½ Increase Length to 9. The lowest note of the
 with Octave Mode = Up and Range = 2.                     chord will be repeated in the first octave and
                                                          the pattern will repeat.
-   · Up plays the notes from low to high in each
-    octave and starts again from the bottom.            · Increase Range to 3. The lowest note of the
+   ï¿½ Up plays the notes from low to high in each
+    octave and starts again from the bottom.            ï¿½ Increase Range to 3. The lowest note of the
                                                          chord will appear in the third octave instead of
-   · Down plays the notes from high to low in each       the first octave.
+   ï¿½ Down plays the notes from high to low in each       the first octave.
     octave and starts again from the top note of
     the low octave.                                  When Length = Default the arpeggios play their
                                                      full length based on the various settings and the
-   · Up / Dn plays the notes forward/backward in     number of held notes.
+   ï¿½ Up / Dn plays the notes forward/backward in     number of held notes.
     each octave and starts again from the bottom.
     The top and bottom notes are repeated in         Arp parameters: page 3
     each octave.
 
-· Up & Dn is identical to Up / Dn except the top     Tap Trig
+ï¿½ Up & Dn is identical to Up / Dn except the top     Tap Trig
  and bottom notes are not repeated in each
  octave.                                             When Tap Trig is enabled the arpeggiator triggers
                                                      a note every time [TAP TEMPO] is pressed. This lets
-· Order plays the notes in the order they were       you walk through the pattern one note or chord
+ï¿½ Order plays the notes in the order they were       you walk through the pattern one note or chord
  played, repeats the pattern in the next octave,     at a time, depending on the Mode and other
  and starts again from the bottom.                   settings.
 
-· Random plays the notes in a random order in        Note that Tap Trig sends signals only to the Gate
+ï¿½ Random plays the notes in a random order in        Note that Tap Trig sends signals only to the Gate
  each octave.                                        output. The Clock out still runs at the selected
                                                      clock rate.
-· Chord plays all held notes at one time in the
+ï¿½ Chord plays all held notes at one time in the
  first octave and then plays them again in the       Phrase
  second octave.
 
-   · Phrase provides preset musical phrases that     Select the Phrase here. To audition them the Mode
+   ï¿½ Phrase provides preset musical phrases that     Select the Phrase here. To audition them the Mode
     repeat in each octave. There are 64 phrases      must be set to Phrase on Arp Edit page 2. For tran-
     (see The Phrases (p. 90)), and the selection is  scriptions, see The Phrases (p. 90).
     made on Arp Edit page 3.
@@ -3659,12 +3670,12 @@ parameter interacts with the other settings. For     range from 0% (no chance) t
 these examples use Mode = Up, Oct Mode = Up,         on every step).
 and Range = 2.
 
-· With Length = 3, hold a 4-note chord. The
+ï¿½ With Length = 3, hold a 4-note chord. The
  arpeggiator will only play the first 3 notes in
  the chord. To hear all four, set Length to 4. They
  will only play in the first octave.
 
-· Increase Length to 5. The lowest note of the
+ï¿½ Increase Length to 5. The lowest note of the
  chord will appear in the second octave.
 
                                                      63
@@ -3675,10 +3686,10 @@ ClkLock                                                 experience a slight dela
 This locks the arpeggiator phase to the system
 clock so it will sync to other clocked elements         Tip: When synced to an external clock:
 such as an LFO with BPM Sync set to On.
-                                                           · Clock Lock On should be used when playing
+                                                           ï¿½ Clock Lock On should be used when playing
 Here's something else you might notice: With                manually
 ClkLock set to Off and the Hydrasynth Explorer as
-the master clock source, the arpeggio starts when          · Clock Lock Off is best when notes are triggered
+the master clock source, the arpeggio starts when          ï¿½ Clock Lock Off is best when notes are triggered
 the first note is played. With ClkLock set to On,           from an external source (e.g., during playback
 the arpeggio starts at the next quantized value             from a DAW)
 after the first note is played. In this case you might
@@ -3805,17 +3816,17 @@ Press [MACRO ASSIGN] and let's explore how they work. At this point every Macro 
 "Edit..." whether it's empty or not. From here you can inspect or modify an existing Macro by pressing its
 Control button to enter the Macro Edit page. After that, here's what you'll see in the Right display:
 
-· Destination 1 is listed in the upper left. Use the                   function.
+ï¿½ Destination 1 is listed in the upper left. Use the                   function.
  Page arrows to select Des 2-8.                                    Many orange-lettered Access buttons are lit
 
-· The top 2 lines on the right show the                                now; these are potential destinations.
+ï¿½ The top 2 lines on the right show the                                now; these are potential destinations.
  destination module and the specific
  parameter.                                                         5. For this example, press [OSC 1] to select it.
                                                                        Instantly the right column is populated with
-· The bottom 2 lines show the Button Value and                         Osc 1, Pitch, and zeroes.
+ï¿½ The bottom 2 lines show the Button Value and                         Osc 1, Pitch, and zeroes.
  the modulation Depth for the knob.
                                                                     6. Turn Control knob 4 to set an amount of
-· Use Control buttons 2 and 4 to move up and                           120.0. Use [SHIFT] to fine-tune the value.
+ï¿½ Use Control buttons 2 and 4 to move up and                           120.0. Use [SHIFT] to fine-tune the value.
  down the right side of the display.
 
 Assign a Destination                                                7. Press Control button 4 to reach the Button
@@ -3880,11 +3891,11 @@ Macro buttons behave on the Home page and while auditioning a Macro during editi
 To access the Macro Button settings, press [SYSTEM SETUP] and press the Page Down arrow twice to
 reach page 3. Use Control knob 4 to select one of the four options: Toggle, Trigger, Switch, and Reset.
 
-· Toggle: The Macro button toggles between           · Switch: Only one Macro button can be
+ï¿½ Toggle: The Macro button toggles between           ï¿½ Switch: Only one Macro button can be
  the Button Value setting and the current Macro       selected at a time.
  knob value.
-                                                     · Reset: The Macro button resets the corre-
-· Trigger: The Macro button triggers the              sponding Macro Knob to zero
+                                                     ï¿½ Reset: The Macro button resets the corre-
+ï¿½ Trigger: The Macro button triggers the              sponding Macro Knob to zero
  Button Value On when pressed and Off when
  released.
 
@@ -3997,32 +4008,32 @@ button is held. Outside the Mod Matrix they don't.
 Mod routes can be established between a source           Here are some concepts to keep in mind while
 and a specific parameter using this method. After        working with Mod Routes:
 you access the page with the parameter to be
-modulated, hold the modulation source button                · Some modules cannot be modulation sources,
+modulated, hold the modulation source button                ï¿½ Some modules cannot be modulation sources,
 and look at the Control buttons around the                   such as Oscillators or Mutants.
 display: the ones that are lit are the available desti-
-nations. Still holding the mod source button, press         · Some modules can be sources and destina-
+nations. Still holding the mod source button, press         ï¿½ Some modules can be sources and destina-
 the Control button of the target parameter. This             tions, such as Envelopes and LFOs. With these,
 creates a link between the source and destination            the order in which you press them determines
 in the fewest possible number of steps.                      the source and the destination.
 
-For example, here's how to route ENV 5 to the LFO           · Not all destinations can respond to polyphonic
+For example, here's how to route ENV 5 to the LFO           ï¿½ Not all destinations can respond to polyphonic
 1 Amount of Filter 1:                                        sources with independent modulation per
                                                              note. For example, routing PolyAT to Reverb
-   · Press [FILTER 1] twice to access page 2.                Time won't give different reverb times for
+   ï¿½ Press [FILTER 1] twice to access page 2.                Time won't give different reverb times for
                                                              each note. The latest input value overrides all
-   · Press and hold [ENV 5] to select it as the mod          previous values.
+   ï¿½ Press and hold [ENV 5] to select it as the mod          previous values.
     source.
-                                                            · Only the first two parameters and the Wet/Dry
+                                                            ï¿½ Only the first two parameters and the Wet/Dry
     Control buttons 1, 2, and 4 are lit. These are the       mix of the Pre-/Post-FX can be modulated.
     available mod destinations.
-                                                            · Some modules only have one parameter that
-   · Press Control button 2 to select LFO1amt as             can be modulated, such as the Ring-Noise
+                                                            ï¿½ Some modules only have one parameter that
+   ï¿½ Press Control button 2 to select LFO1amt as             can be modulated, such as the Ring-Noise
     the destination.                                         module; in this case, there is nothing else for
                                                              the upper Control knob to select when that
-   · The mod route ENV 5 to Filter 1's LFO 1                 field is highlighted.
+   ï¿½ The mod route ENV 5 to Filter 1's LFO 1                 field is highlighted.
     Amount is created.
 
-   · Use the Control knob on the bottom row to set
+   ï¿½ Use the Control knob on the bottom row to set
     the modulation amount, and you're done!
 
 If all 32 modulation routes are occupied and you try to add another, the Hydrasynth Explorer
@@ -4081,11 +4092,11 @@ Arp          Mode, Division, Swing, Gate, Octave,
 
              OctMode, Length, Phrase, Ratchet, Chance
 
-Osc 1­2      Pitch (+12/-12 semitones), Wave, WaveScan
+Osc 1ï¿½2      Pitch (+12/-12 semitones), Wave, WaveScan
 Osc 3        Pitch (+12/-12 semitones), Wave
 All Osc [1]  Pitch (+12/-12 semitones)
 
-Mutator 1­4  Ratio, Depth, Window, Feedback, Dry/Wet, Warp [1-8]
+Mutator 1ï¿½4  Ratio, Depth, Window, Feedback, Dry/Wet, Warp [1-8]
 
 Ring Mod     Depth
 Mixer
@@ -4097,18 +4108,18 @@ Pre-FX       Morph, Cutoff, Resonance, ENV1amt, LFO1amt, Keytrack
 Delay
 Reverb       LFO2Amt, Level
 Post-FX
-Env 1­5      Param1, Param2, Dry/Wet
+Env 1ï¿½5      Param1, Param2, Dry/Wet
              Time, Feedback, Wet Tone, FeedTone, Dry/Wet
              Time, Tone, HiDamp, LoDamp, Dry/Wet
              Param1, Param2, Dry/Wet
 
              Attack, Hold, Decay, Sustain, Release
 
-LFO 1­5      Rate, Level
+LFO 1ï¿½5      Rate, Level
 
 ModMtrx [2] Depth [1-32]
 
-Macro        Macro 1­ Macro 8
+Macro        Macro 1ï¿½ Macro 8
 Voice        Detune, AnalogFL, PitchBnd, Vib Amt, Vib Rate, GlidTime
 CV           ModOut 1, ModOut 2
 
@@ -4196,8 +4207,8 @@ results use one of the Mono or Unison options. A        combined use of these tw
 description of each of those modes and their note       Gate outputs enable the Hydrasynth Explorer
 priority variations is available in the Polyphony       to control the entire signal path of an external
 settings (p. 55). The voltage ranges for this           monophonic device from start to finish.
-output are defined on CV ­ Pitch Gate: Page 12 (p.
-84).                                                    The settings for these outputs are defined on CV ­
+output are defined on CV ï¿½ Pitch Gate: Page 12 (p.
+84).                                                    The settings for these outputs are defined on CV ï¿½
                                                         Mods: Page 15 (p. 85).
 Gate
                                                         Clock
@@ -4205,7 +4216,7 @@ When a key is played, two Gate signals are
 generated: Gate high (note played) and Gate low         As stated earlier, four different sync rates are
 (note released). The same signals are sent by the       available for this connector. This selection and
 Tap Tempo button for each held note when the            those for three related parameters are found and
-Tap Trig parameter is active on Arp Edit page 3.        explained on CV ­ Clock: Page 14 (p. 84).
+Tap Trig parameter is active on Arp Edit page 3.        explained on CV ï¿½ Clock: Page 14 (p. 84).
 
 Gate signals are normally transmitted to the
 same device that receives the control voltages
@@ -4215,7 +4226,7 @@ signals are available (V-trig or S-trig); please refer
 to the documentation for the external device so
 you'll know which type to use.
 
-The settings for this output are defined on CV ­
+The settings for this output are defined on CV ï¿½
 Pitch Gate: Page 13 (p. 84).
 
 CVs and Arpeggios
@@ -4255,11 +4266,11 @@ button 1.
 
 Browsing is fairly simple. This page presents all of the main functions:
 
-· Turn Control knob 1 to select a patch (or use the big knob).
+ï¿½ Turn Control knob 1 to select a patch (or use the big knob).
 
-· Basic information about each patch is shown in fields 2 and 3.
+ï¿½ Basic information about each patch is shown in fields 2 and 3.
 
-· The patches will appear in a different order depending on the "Find By" selection.
+ï¿½ The patches will appear in a different order depending on the "Find By" selection.
 
 Sort Methods
 
@@ -4287,7 +4298,7 @@ original locations.                                     the patches are not relo
 
 Control Parameter Range                                   Description
                                                           Jump to adjacent bank
-1 Bank [1]  A­H                                           Compare active patch to another
+1 Bank [1]  Aï¿½H                                           Compare active patch to another
                                                           Press Control button 2 to assign Favorites [2]
 2 Compare   8 banks x 128 patches
 
@@ -4331,13 +4342,13 @@ four patches each. You can put the same patch in
 several of those locations if you know you'll need    Your Favorite patches can be accessed from any
 that patch more than once during a performance,       other page.
 for example.
-                                                         · Hold [SHIFT] and press [BROWSE] to access the
+                                                         ï¿½ Hold [SHIFT] and press [BROWSE] to access the
 Favorites are not selected from inside the Favorites      Favorites.
 Assign page; this will be explained shortly. So
-the first step is to select the desired patch on the     · Use the Page Down/Up arrows to move
+the first step is to select the desired patch on the     ï¿½ Use the Page Down/Up arrows to move
 Home page. After that, here's how to add that             between the eight groups of Favorites.
 patch to the Favorites list.
-                                                         · Press one of the Control buttons to select a
+                                                         ï¿½ Press one of the Control buttons to select a
                                                           patch within the current group.
 
                                                           The Control button and the display field for the
@@ -4374,21 +4385,21 @@ Control  Parameter               Range                      Description
 It's fairly easy to save a patch. This page presents    Name the Patch
 all of the main functions:
                                                         The naming of a patch happens in edit field 2. The
-   · Use Control knob 1 to select a location in the     current character is highlighted. Turn Control knob
+   ï¿½ Use Control knob 1 to select a location in the     current character is highlighted. Turn Control knob
     current bank (or select a different bank on         2 to select a character. Use [SHIFT] + Control knob
     page 2). Use [SHIFT] + Control knob 1 to jump       2 to select the first character of the next character
     10 patches at a time.                               group: blank, 0-9, A-Z, a-z, and other characters (!,
                                                         #, +, -, etc.).
-   · Give the patch a name up to 16 characters
+   ï¿½ Give the patch a name up to 16 characters
     long. Details are in the next section.              Press Control button 2 to advance to the next
                                                         character field. Use [SHIFT] + Control button 2 to
-   · Select a patch category with Control knob 3.       select the previous character field.
+   ï¿½ Select a patch category with Control knob 3.       select the previous character field.
 
-   · Switch to page 2 and specify what will happen      Select a Category
+   ï¿½ Switch to page 2 and specify what will happen      Select a Category
     with the current Macro settings when the
     patch is saved (see Macro Options below).
 
-· Choose a color for the Patch knob LEDs, and           Turn Control knob 3 to select one of the preset
+ï¿½ Choose a color for the Patch knob LEDs, and           Turn Control knob 3 to select one of the preset
  select another bank for the patch if desired.          patch categories.
 
 Save parameters: page 2
@@ -4396,7 +4407,7 @@ Save parameters: page 2
 Control  Parameter      Range                               Description
     1    Macro options  Return, Save, Convert               Process current Macro values (see below)
     2    Color          32 colors                           Select LED color for Patch knob
-    4    Bank           A­H                                 Jump to adjacent bank
+    4    Bank           Aï¿½H                                 Jump to adjacent bank
 
                                                         76
 Macro Options                                          Choose a Color
@@ -4425,17 +4436,17 @@ parameters they control.
 Here's what else happens with the Macro Convert
 option:
 
-   · After the patch is saved, the depth of all Macro
+   ï¿½ After the patch is saved, the depth of all Macro
     knobs returns to zero and all buttons are set to
     Off.
 
-   · If the current relative value of a parameter
+   ï¿½ If the current relative value of a parameter
     exceeds that parameter's range, the value will
     be limited to the lowest or highest possible
     value depending on its current state. The Left
     display will show a warning when this is true.
 
-   · External CV and MIDI parameters under Macro
+   ï¿½ External CV and MIDI parameters under Macro
     control will be returned to their zero values.
 
                                                        77
@@ -4448,22 +4459,22 @@ Navigation                                              Saving the Settings
 The System Setup pages work the same way all            Press [EXIT] or any module button to save System
 other modules do, but here are some reminders:          Setup changes. The message "System saving..." will
                                                         be shown in the Left display for about 1 second.
-   · To access the next or previous page, use the       Note that sound output is silenced while the
+   ï¿½ To access the next or previous page, use the       Note that sound output is silenced while the
     Page Down / Up arrows.                              settings are being saved.
 
-   · Cycle forward to the desired page quickly by       Save System State
+   ï¿½ Cycle forward to the desired page quickly by       Save System State
     pressing [SYSTEM SETUP] repeatedly.
                                                         You can specify which patch you see first when
-   · Use [SHIFT] + the Page Down / Up arrows to         the Hydrasynth Explorer is powered up. It's a
+   ï¿½ Use [SHIFT] + the Page Down / Up arrows to         the Hydrasynth Explorer is powered up. It's a
     jump to the last page or back to first page.        simple process:
 
-Access, Action                                             · Select your favorite patch (that's the hard part).
+Access, Action                                             ï¿½ Select your favorite patch (that's the hard part).
 
-   · Some fields have Control buttons that execute         · Hold [SAVE] and press [SYSTEM SETUP].
+   ï¿½ Some fields have Control buttons that execute         ï¿½ Hold [SAVE] and press [SYSTEM SETUP].
     a function, such as the Factory Reset. These are
-    indicated by the word (action) in the charts.          · The display shows "STATE SAVED!" to confirm
+    indicated by the word (action) in the charts.          ï¿½ The display shows "STATE SAVED!" to confirm
                                                             the action.
-   · Some pages have access buttons that open
+   ï¿½ Some pages have access buttons that open
     another page. These are indicated by the word
     (access) in the charts. Follow the instructions in
     the Left display to calibrate the selected item.
@@ -4499,9 +4510,9 @@ The Light menu lets you set independent brightness levels for the Tap Tempo LED,
 all other LEDS as a group.
 
                                                78
-· Press [SYSTEM SETUP] twice to reach page 2.
-· Press Control button 3 to enter the Light Menu.
-· Use Control knobs 1-3 to set the brightness levels as shown in this table.
+ï¿½ Press [SYSTEM SETUP] twice to reach page 2.
+ï¿½ Press Control button 3 to enter the Light Menu.
+ï¿½ Use Control knobs 1-3 to set the brightness levels as shown in this table.
 
 Control Parameter Settings  Description
 
@@ -4531,13 +4542,13 @@ This setting governs the response of the Variable  This determines the response 
 knobs (p. 17) in the Filter and Arpeggiator        knobs only. It also affects the finer [SHIFT] + scroll
 sections, not the Selection knobs (p. 17).         movements. With a setting of Slow a full turn is
                                                    required to cover the full parameter range; with a
-   · Absolute: the parameter value jumps to the    setting of Fast it takes less than half a turn, which
+   ï¿½ Absolute: the parameter value jumps to the    setting of Fast it takes less than half a turn, which
     physical position of the knob                  can also sacrifice parameter resolution.
 
-   · Pickup: the knob must pass through the        Tempo Lock
+   ï¿½ Pickup: the knob must pass through the        Tempo Lock
     parameter value before an edit will happen
                                                    Each patch stores its own Tempo setting. Setting
-   · Scale: parameter value edit begins from the   Tempo Lock to On enables the tempo to remain
+   ï¿½ Scale: parameter value edit begins from the   Tempo Lock to On enables the tempo to remain
     current knob position; the remaining throw     the same while selecting patches.
     of the knob covers the remaining range of
     the parameter. After the knob reaches its      Macro Button
@@ -4566,15 +4577,15 @@ It's important to specify the type of batteries you're using so the battery leve
 An icon in the upper right corner of the Left display indicates the power source type and battery levels
 (when used).
 
-Important notes about battery power:                        · Replace all batteries at the same time with
+Important notes about battery power:                        ï¿½ Replace all batteries at the same time with
                                                              fresh batteries.
-   · Use only 1.5V alkaline or 1.2V Ni-MH recharge-
-    able batteries.                                         · Be sure to observe the +/- polarity markings
+   ï¿½ Use only 1.5V alkaline or 1.2V Ni-MH recharge-
+    able batteries.                                         ï¿½ Be sure to observe the +/- polarity markings
                                                              inside the battery compartment.
-   · DO NOT MIX BATTERY TYPES; all 8 batteries
-    must match.                                             · Always remove the batteries once they are
+   ï¿½ DO NOT MIX BATTERY TYPES; all 8 batteries
+    must match.                                             ï¿½ Always remove the batteries once they are
                                                              depleted, or if the unit will not be used for an
-   · The Hydrasynth Explorer does not recharge               extended period of time.
+   ï¿½ The Hydrasynth Explorer does not recharge               extended period of time.
     the Ni-MH batteries.
 
 FX Bypass Menu
@@ -4591,13 +4602,13 @@ Post-FX, Delay, and/or Reverb as needed. These                  2    Delay      
 settings are global; i.e., they affect all patches the          3    Reverb     On, Bypass
 same way.                                                       4    Post-FX    On, Bypass [1]
 
-   · Press [SYSTEM SETUP] four times to reach page      [1] A Pre-/Post-FX module can have its FX Type
+   ï¿½ Press [SYSTEM SETUP] four times to reach page      [1] A Pre-/Post-FX module can have its FX Type
     4.                                                  set to Bypass. That setting only affects the current
                                                         patch, not all patches, so the module LED stays lit.
-   · Press Control button 3 to enter the FxBypass       See Pre- and Post-FX (p. 50) for more information.
+   ï¿½ Press Control button 3 to enter the FxBypass       See Pre- and Post-FX (p. 50) for more information.
     Menu.
 
-   · Use Control knobs 1-4 to enable or disable the
+   ï¿½ Use Control knobs 1-4 to enable or disable the
     desired FX module. Their LED buttons toggle
     off and on to indicate the settings.
 
@@ -4609,8 +4620,8 @@ how to send and receive them.
 After accessing the microtuning menu the following options are shown in the Right display:
 
   Control Parameter       Range                         Description
-   Knob 1 Scale select    1­32
-2 (view only) Scale name  1­16 characters               Selects the Microtuning scale location
+   Knob 1 Scale select    1ï¿½32
+2 (view only) Scale name  1ï¿½16 characters               Selects the Microtuning scale location
   Button 3 Receive Scale  (action)
                                                         Define with third-party software (Scala, etc.)
 Button 4 Send Scale (action)
@@ -4674,17 +4685,17 @@ Control Parameter          Range                             Description
 
 Aftertouch settings
 
-· Aftertouch Delay: the time that transpires               minimum point, so it takes more pressure to
+ï¿½ Aftertouch Delay: the time that transpires               minimum point, so it takes more pressure to
  between note on and the onset of aftertouch.              start the aftertouch. Negative values set a
                                                            lower maximum point, so it takes less pressure
-· Aftertouch Fade: the time it takes to ramp               to reach the maximum aftertouch value.
+ï¿½ Aftertouch Fade: the time it takes to ramp               to reach the maximum aftertouch value.
  aftertouch to its current value from 0.
-                                                          · Aftertouch Release: more like a compressor
-· Aftertouch Curve: determines the amount of               than an envelope, this applies to all upwards
+                                                          ï¿½ Aftertouch Release: more like a compressor
+ï¿½ Aftertouch Curve: determines the amount of               than an envelope, this applies to all upwards
  force required to reach maximum aftertouch                movements. This can help avoid unwanted
  values.                                                   modulation "wobble" while pressure is applied,
                                                            and can sustain even after note off.
-· Aftertouch Offset: reduces the dynamic range
+ï¿½ Aftertouch Offset: reduces the dynamic range
  of the aftertouch. Positive values set a higher
 
                                                       81
@@ -4701,18 +4712,18 @@ Control Parameter Range                             Description
 
 4 MIDI RX Omni, 1-16
 
-Clock Sync                                             · AUTO: Hydrasynth Explorer sets the clock
+Clock Sync                                             ï¿½ AUTO: Hydrasynth Explorer sets the clock
                                                         source automatically to the first source that
-   · INT RUN: selects Hydrasynth Explorer as the        arrives. If the clock signal is interrupted,
+   ï¿½ INT RUN: selects Hydrasynth Explorer as the        arrives. If the clock signal is interrupted,
     master tempo clock. Sync signals are sent to        another is selected. Order of priority: USB >
     MIDI, USB, and the CV Clock output.                 MIDI > Internal.
 
-   · USB: selects the DAW as the clock master. CV   Local
+   ï¿½ USB: selects the DAW as the clock master. CV   Local
     Clock signals are sent to the CV Clock output
     at the selected rate. Tempo cannot be changed   When working with a DAW, setting Local to Off
     from the Hydrasynth Explorer.                   can prevent a MIDI loop. Most DAWs have the
                                                     ability to prevent this also.
-   · MIDI In: slaves the Hydrasynth Explorer to
+   ï¿½ MIDI In: slaves the Hydrasynth Explorer to
     incoming MIDI clock data. CV Clock signals are  The On/Off setting is remembered when power is
     sent to the CV Clock output at the selected     turned off. The Left display alerts you when Local
     rate. Tempo cannot be changed from the          = Off during power-up and on the Home page.
@@ -4761,9 +4772,9 @@ has MPE set to ON, any patch that uses PolyAftT     There are also several mod s
                                                     MPE. For a list, see Modulation Sources (p. 70).
 
 Enabling MPE will lock out, change or disable certain system parameters:
-· MIDI page 4: MIDI Tx & MIDI Rx = MPE Lock
-· MIDI page 5: At TX = MPE Lock
-· MIDI page 6: Overflow = MPE Lock (disabled).
+ï¿½ MIDI page 4: MIDI Tx & MIDI Rx = MPE Lock
+ï¿½ MIDI page 5: At TX = MPE Lock
+ï¿½ MIDI page 6: Overflow = MPE Lock (disabled).
 
 MIDI: Page 10
 
@@ -4818,24 +4829,24 @@ using Overflow mode. We'll assume you're using      the master. Connect both set
 two 8-voice Hydrasynth Explorers for this example.  your sound system, and set good levels for each.
 
                                                    83
-Now play 9 notes on the master: it plays voices 1-8     · If the slave doesn't have a certain patch, you
+Now play 9 notes on the master: it plays voices 1-8     ï¿½ If the slave doesn't have a certain patch, you
 and voice 9 comes from the slave. After that the         can send it from the master to the slave via
 slave will cycle through voices 9-16                     sys-ex (see the previous section). Warning: This
                                                          overwrites the current patch location on the
 Here are some other things to know about                 slave, so be sure to select an available location
 Overflow mode:                                           on the slave first.
 
-   · If both units have identical patch banks,          · Overflow only works over the 5-pin MIDI
+   ï¿½ If both units have identical patch banks,          ï¿½ Overflow only works over the 5-pin MIDI
     enable PgmChgTX on the master and                    connection, not USB MIDI.
     PgmChgRX on the slave. When you select
     a polyphonic patch, you'll have a 16-voice       Arp TX
     Hydrasynth!
 
-· Set the master ParamTX and slave ParamRX to        Set this parameter to On if you want the
+ï¿½ Set the master ParamTX and slave ParamRX to        Set this parameter to On if you want the
  NRPN. Then almost every edit you make on the        arpeggiator to transmit note on/off commands
  master will also be made on the slave.              over MIDI / USB. It also toggles the arpeggiator
                                                      response to incoming notes. See The Arpeggiator
-· When both units have Mono or Unison patches        & MIDI (p. 65) for more info. Sync information is
+ï¿½ When both units have Mono or Unison patches        & MIDI (p. 65) for more info. Sync information is
  selected, their voices are stacked as a single      sent whether Arp TX is On or Off.
  instrument (i.e., no overflow).
 
@@ -4851,7 +4862,7 @@ A-H  00
 Note: To change banks, both types of Bank Select messages and a program change are needed, or else
 the Hydrasynth will only select patches within the current bank.
 
-CV ­ Pitch Gate: Page 12
+CV ï¿½ Pitch Gate: Page 12
 
 These settings are compatible with most modular synthesizer equipment. Please refer to the specifica-
 tions of other devices and match those settings on the Hydrasynth Explorer.
@@ -4868,12 +4879,12 @@ Control Parameter       Range
 
 [2] 1V reference note for Hz/V, or lowest V reference note for V/Oct.
 
-CV ­ Pitch Gate: Page 13
+CV ï¿½ Pitch Gate: Page 13
 
 Control Parameter  Range                             Control Parameter        Range
     1 Gate Type    V-trig, S-trig                        2 Gate Volt          3V, 5V
 
-CV ­ Clock: Page 14
+CV ï¿½ Clock: Page 14
 
 These are the settings required to synchronize with most non-MIDI devices. Please refer to the specifica-
 tions of other devices and match those settings on the Hydrasynth Explorer.
@@ -4895,7 +4906,7 @@ even as a square wave LFO.                           divides by 0.5, so the cloc
 PPQ stands for Pulse Per Quarter note. Between       tempo and one-quarter tempo, respectively. A
 these three options and the Clock Division value     setting of Off = no change.
 
-CV ­ Mods: Page 15
+CV ï¿½ Mods: Page 15
 
 These settings enable the use of devices with different CV standards. For example, Output Mod 1 can be
 set to +/- 5V while Output Mod 2 are set to 0-5V. The Offset ranges are independent, which allows the
@@ -4947,11 +4958,11 @@ features as they are added!
 
 The following modules can be initialized by holding [INIT] and pressing the Access button.
 
-· Amp          · Env (1-5)      · Macro Assign · Mutant (1-4)  · Pre-FX                     · Voice
-· Arp On       · Filter (1, 2)
-· Delay        · LFO (1-5)      · Mixer  · Osc (1, 2, 3)       · Reverb
+ï¿½ Amp          ï¿½ Env (1-5)      ï¿½ Macro Assign ï¿½ Mutant (1-4)  ï¿½ Pre-FX                     ï¿½ Voice
+ï¿½ Arp On       ï¿½ Filter (1, 2)
+ï¿½ Delay        ï¿½ LFO (1-5)      ï¿½ Mixer  ï¿½ Osc (1, 2, 3)       ï¿½ Reverb
 
-                                · Mod Matrix · Post-FX         · Ring-Noise
+                                ï¿½ Mod Matrix ï¿½ Post-FX         ï¿½ Ring-Noise
 
 [INIT] + Control Button X
 
@@ -5612,37 +5623,37 @@ Weight (without batteries): 3.46 kg (7.63 lbs)
 
 Connections: Rear Panel
 
-· MIDI In/Out                                 · CV/Gate/Clock outputs: Five (1/8" TS)
-· USB type B port, class-compliant                · Pitch · Gate · Mod 1 · Mod 2 · Clock
-· Headphone output
-                                              · Power:
-    · Impedance: 16 ­ 75 Ohm                      · 12 V DC, 1A (Center: positive)
-· Stereo 1/4" outputs (balanced)                  · 8 x AA batteries (optional): Alkaline or
-· Sustain pedal input (polarity-sensing)            Ni-MH
+ï¿½ MIDI In/Out                                 ï¿½ CV/Gate/Clock outputs: Five (1/8" TS)
+ï¿½ USB type B port, class-compliant                ï¿½ Pitch ï¿½ Gate ï¿½ Mod 1 ï¿½ Mod 2 ï¿½ Clock
+ï¿½ Headphone output
+                                              ï¿½ Power:
+    ï¿½ Impedance: 16 ï¿½ 75 Ohm                      ï¿½ 12 V DC, 1A (Center: positive)
+ï¿½ Stereo 1/4" outputs (balanced)                  ï¿½ 8 x AA batteries (optional): Alkaline or
+ï¿½ Sustain pedal input (polarity-sensing)            Ni-MH
 
 CV/Gate/Clock outputs:
 
 Control Voltages
 
-   · Range: -5V to 5V
-       · Pitch: + / - 99 cents
-       · Mod: + / - 3.0V
+   ï¿½ Range: -5V to 5V
+       ï¿½ Pitch: + / - 99 cents
+       ï¿½ Mod: + / - 3.0V
 
-   · Standards: 1V / octave,
+   ï¿½ Standards: 1V / octave,
     1.2V / octave, Hz/Volt
 
 Gate Output
 
-   · Range: 3V, 5V
-   · Type: V-trig, S-trig
+   ï¿½ Range: 3V, 5V
+   ï¿½ Type: V-trig, S-trig
 
 Clock Output
 
-   · Range: 3V, 5V
-   · Rates: 1 PPS, 2PPQ, 24 PPQ, 48PPQ
+   ï¿½ Range: 3V, 5V
+   ï¿½ Rates: 1 PPS, 2PPQ, 24 PPQ, 48PPQ
 
-       · Offset: + / - 100ms
-       · Division: 1/2x, 2x, 4x
+       ï¿½ Offset: + / - 100ms
+       ï¿½ Division: 1/2x, 2x, 4x
 
                                           97
         Declaration of Conformity
@@ -5658,19 +5669,19 @@ quirements. Modifications not expressly approved     the equipment off and on, p
 by Ashun Sound Machines could void your FCC          the interference by one or more of the following
 authorization to use this product in the USA.        measures:
 
-IMPORTANT: When connecting this product to              · Relocate either this product or the device that
+IMPORTANT: When connecting this product to              ï¿½ Relocate either this product or the device that
 accessories and/or another product, use only             is affected by the interference.
 high-quality shielded cables. The cable(s) supplied
-with this product MUST be used. Follow all instal-      · Use power outlets that are on different branch
+with this product MUST be used. Follow all instal-      ï¿½ Use power outlets that are on different branch
 lation instructions. Failure to follow instructions      (circuit breaker or fuse) circuits or install AC
 could void your FCC authorization to use this            line filter(s).
 product in the USA.
-                                                        · In the case of radio or TV interference, relocate
+                                                        ï¿½ In the case of radio or TV interference, relocate
 NOTE: This product has been tested and found to          and/or reorient the antenna. If the antenna
 comply with the limit for a Class B Digital device,      lead-in is a 300 ohm ribbon lead, change the
 pursuant to Part 15 of the FCC rules. These limits       lead-in to the coaxial cable.
 are designed to provide a reasonable protection
-against harmful interference in a residential           · If these corrective measures do not achieve
+against harmful interference in a residential           ï¿½ If these corrective measures do not achieve
 environment. This equipment generates, uses, and         satisfactory results, please consult the dealer
 may radiate radio frequency energy and, if not           or an experienced radio/TV technician for help.
 installed and used in accordance with the instruc-
@@ -5679,9 +5690,9 @@ tions, may cause interferences harmful to the        The above statements apply 
 
 CANADA
 
-NOTICE: This class B digital apparatus meets all     AVIS: Cet appareil numérique de la classe B
-the requirements of the Canadian Interference-       respecte toutes les exigences du Règlement sur le
-Causing Equipment Regulation.                        matériel brouilleur du Canada.
+NOTICE: This class B digital apparatus meets all     AVIS: Cet appareil numï¿½rique de la classe B
+the requirements of the Canadian Interference-       respecte toutes les exigences du Rï¿½glement sur le
+Causing Equipment Regulation.                        matï¿½riel brouilleur du Canada.
 
 EUROPE
 

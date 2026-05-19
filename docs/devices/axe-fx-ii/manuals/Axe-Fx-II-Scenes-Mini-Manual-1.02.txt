@@ -1,3 +1,14 @@
+<!-- mcp-midi-control: source attribution + trimmed extract -->
+Source: Axe-Fx II Scenes Mini-Manual v1.02 by Fractal Audio Systems.
+Copyright (c) Fractal Audio Systems. All rights reserved.
+This file contains selected technical reference content extracted under
+fair-use interoperability research. Marketing, legal, and regulatory
+front-matter / back-matter sections have been removed; the remaining
+content is the technical reference relied on by the MCP MIDI Control
+project for protocol decoding and tool authoring. See
+docs/manuals/README.md for the policy.
+
+---
                                                                                                 SCENES MINI MANUAL
 
 SCENES OVERVIEW
@@ -48,7 +59,7 @@ To set the BYPASS STATES within a scene:
       Select the desired scene by turning the "A" QUICK CONTROL knob.
       Use the NAV and FX BYP buttons to set up the scene as desired.
 
-Note: All blocks in a preset will be engaged by default in scenes 2­8.
+Note: All blocks in a preset will be engaged by default in scenes 2ï¿½8.
 
 To set the X/Y STATES for a given block in a given scene:
       Select the scene as described above.

@@ -1,3 +1,14 @@
+<!-- mcp-midi-control: source attribution + trimmed extract -->
+Source: Axe-Fx III Owner's Manual by Fractal Audio Systems.
+Copyright (c) Fractal Audio Systems. All rights reserved.
+This file contains selected technical reference content extracted under
+fair-use interoperability research. Marketing, legal, and regulatory
+front-matter / back-matter sections have been removed; the remaining
+content is the technical reference relied on by the MCP MIDI Control
+project for protocol decoding and tool authoring. See
+docs/manuals/README.md for the policy.
+
+---
      Current as of Axe-Fx III Firmware 20.x
 Original, Mark II, Standard and TURBO versions
 
@@ -117,7 +128,7 @@ more of the following measures:
                                                                      iii
 Legal Notices
 
-Fractal Audio Systems Axe-Fx III Owner's Manual. Contents Copyright © 2022. All Rights Reserved.
+Fractal Audio Systems Axe-Fx III Owner's Manual. Contents Copyright ï¿½ 2022. All Rights Reserved.
 No part of this publication may be reproduced in any form without the express written permission of Fractal Audio Systems.
 Fractal Audio, the Fractal Audio Systems logo, Axe-Fx, Humbuster, UltraRes, FullRes, FASLINK are trademarks of Fractal Audio
 Systems. Manufacturer names and product names mentioned herein are trademarks or registered trademarks of their respective
@@ -134,7 +145,7 @@ Important Safety Instructions
 
 1. Obey all warnings on the Axe-Fx III chassis and in this User Guide.
 2. Keep away from sources of heat such as ducts, registers or appliances that produce heat.
-3. Connect only to a standard grounded AC outlet of 100­240V, 47­63 Hz.
+3. Connect only to a standard grounded AC outlet of 100ï¿½240V, 47ï¿½63 Hz.
 4. Keep the power cord in good condition. Do not kink, bend, or pinch.
 5. If the cord becomes damaged, discard and replace it.
 6. If not using your Axe-Fx III for extended periods of time, disconnect from AC power.
@@ -193,7 +204,7 @@ help reduce the noise caused by ground loops.
 
 Better sound quality has been achieved through an audiophile-grade signal path. The difference is heard as a
 lower noise floor, pristine clarity, and USB audio performance that's even better than most dedicated pro audio
-interfaces. As a 24-bit/48k 8×8 interface, the Axe-Fx III allows you to record multiple tracks of processed audio
+interfaces. As a 24-bit/48k 8ï¿½8 interface, the Axe-Fx III allows you to record multiple tracks of processed audio
 at the same time, plus a DI. You can playback computer backing tracks or process incoming signals from the
 computer. The re-amping workflow is improved with independent monitoring of backing tracks and re-processed
 guitar tones while you dial in a sound.
@@ -254,13 +265,13 @@ and a far lower noise floor and THD than previous products.  Improved Pitch bloc
 
  Front panel headphones output.                                        Improved and faster Tuner featuring a new interface.
 
- Front panel LED meter bridge for instant visibility of levels.  8×8 USB Audio with better audio performance
+ Front panel LED meter bridge for instant visibility of levels.  8ï¿½8 USB Audio with better audio performance
                                                                       than most dedicated pro audio interfaces.
  Easy-to-use interface allows intuitive and efficient editing.  Dedicated USB Input block for reamping/processing tracks.
  Stunning color display with 30x the resolution of previous
      products. On the Axe-Fx III Mark II, the display is improved      MIDI-over-USB between Axe-Fx III and a computer is
 
-even further, with enhanced clarity, color, and contrast.             10× faster than the same connection on Axe-Fx II.
+even further, with enhanced clarity, color, and contrast.             10ï¿½ faster than the same connection on Axe-Fx II.
 
  Animated on-screen metering for every                                 MIDI IN, OUT and THRU ports.
 
@@ -272,7 +283,7 @@ block, input, output, and more.                                        Rich MIDI
  1024 Preset memories (512 on non-Mark II version),                    Optional MIDI PC/Bank transmission
      each an entire rig with amp(s), cab(s) and effects.                   when a new preset is loaded.
 
- 14×6 grid layout allows larger presets                                Two on-board PEDAL jacks for expression
+ 14ï¿½6 grid layout allows larger presets                                Two on-board PEDAL jacks for expression
      than Axe-Fx II, AX8, FX8, and FM3.                                    pedals like the Fractal Audio EV-1 and EV-2.
 
  New "Zoom" view shows the entire grid on one page.                    FASLINK 2 connector for connecting up to four of our
@@ -320,7 +331,7 @@ To access the Setup menu:
  Press HOME.
  Push the "E" knob for the SETUP main menu.
  Use the NAV buttons or "A" knob to select a sub-menu and press ENTER to make a selection.
- Use PAGE and NAV buttons to get around the menus. Use VALUE and knobs A­E to make changes.
+ Use PAGE and NAV buttons to get around the menus. Use VALUE and knobs Aï¿½E to make changes.
  Press HOME at any time to return home.
  NOTE: Changes in the SETUP take effect immediately and never need to be stored
 Use these links for instant access to the Setup menu topics in this manual:
@@ -361,15 +372,15 @@ w Connect Output 1 to your mixer, studio     INPUT               OUTPUT
 monitors, audio interface, PA system, full-
 range speakers, power amp inputs, etc.                    Use              Add
                                                         Out 1 L          Out 1 R
-· For a mono rig, use Out 1 Left.
+ï¿½ For a mono rig, use Out 1 Left.
                                                           for              for
-· For stereo, also connect Out 1 Right.                  Mono            Stereo
+ï¿½ For stereo, also connect Out 1 Right.                  Mono            Stereo
 
-· Use XLR outputs to connect to balanced
+ï¿½ Use XLR outputs to connect to balanced
     inputs, or use the 1/4" outputs when
     connecting to unbalanced inputs.
 
-· Use Humbuster cables with 1/4" outputs
+ï¿½ Use Humbuster cables with 1/4" outputs
     to reduce hum from ground loops.
 
 e Turn up the front panel OUT 1 knob and adjust the
@@ -383,8 +394,8 @@ FAQ: WHY FULL RANGE?
 
 A Full-Range Flat Response ("FRFR") system aims to reproduce the entire audio spectrum without any tonal
 coloration. In comparison, most traditional guitar speakers are sonically limited, with tonal coloration and
-limited low and high response. Each speaker cabinet has its own effect on your sound, and a 1×12 open-back
-combo is never going to sound like a 4×12 stack. In comparison, full-range flat-response studio monitors,
+limited low and high response. Each speaker cabinet has its own effect on your sound, and a 1ï¿½12 open-back
+combo is never going to sound like a 4ï¿½12 stack. In comparison, full-range flat-response studio monitors,
 PA speakers, and FRFR speakers designed specifically for guitar are designed to reproduce anything you play
 through them. The output of a fully modeled signal path is in fact closer to what you'd hear in a finished mix
 or recording, so it sounds best when played through a system that is designed for full range. Of course, many
@@ -531,7 +542,7 @@ THE PRESETS DIRECTORY
  You can also access a PRESETS directory:
 
      From the Home page, press PAGE RIGHT until the Presets page is shown.
-     Presets are shown in numerical order. To sort presets alphabetically by name, press the "Sort A­Z" button.
+     Presets are shown in numerical order. To sort presets alphabetically by name, press the "Sort Aï¿½Z" button.
      Use the VALUE wheel and NAV buttons to select any entry.
      The ENTER key loads the selected preset.
      Press HOME to return to the Home page
@@ -558,7 +569,7 @@ Let's review what is happening above. Various blocks have been placed on the gri
 Signal flow begins at the Input block on the left. It then goes to a Wah block. The wah connects to a shunt, which
 has no effect on the sound and is shown only to introduce the idea of how it carries signal from one location to
 another. The shunt is connected to an Amp block (we might set its type to "Plexi 100W High"), which in turn feeds
-a Cab (one of the many "4×12" options, perhaps). This is connected to a Reverb and then to an Output block. In
+a Cab (one of the many "4ï¿½12" options, perhaps). This is connected to a Reverb and then to an Output block. In
 this limited example, only a few blocks are shown on a partial grid. In reality the size of a preset is limited only by
 the grid structure, block inventory, and total processing power ("CPU"). You will find that you can create very large
 virtual rigs with multiple amps, cabs, and effects.
@@ -600,14 +611,14 @@ followed by Chorus and a little Delay, ending up at the Output 1 block.
               DRV  1                                                                                 DLY  1
                    A                                                                                      A
 
-SCENE 1 ­ "Clean": For scene 1, the Drive and Delay blocks are bypassed. We dial in the Compressor, Amp,
+SCENE 1 ï¿½ "Clean": For scene 1, the Drive and Delay blocks are bypassed. We dial in the Compressor, Amp,
 Cab, and Chorus for a classic clean tone. Notice that the amp says "1A". This means we are using Amp 1, set
 to channel A. Let's imagine it as the "ODS-100 Clean" model. We name the scene "Clean".
 
       CMP  1                                                                                 CHO  1  DLY  1
            A                                                                                      A       A
 
-SCENE 2 ­ "Crunch": To create scene 2, we bypass the Compressor, Chorus and Delay and engage the Drive.
+SCENE 2 ï¿½ "Crunch": To create scene 2, we bypass the Compressor, Chorus and Delay and engage the Drive.
 The Amp block is changed from channel A to channel B, which we dial in as a "Euro Blue" crunch model.
 Remember, each channel has a totally independent set of settings, so every amp parameter exactly as we wish
 for this scene: Drive, Treble, Mid, Bass, and many, many more. We then dial in Channel "A" of the drive block
@@ -616,7 +627,7 @@ with a good "screamer" sound by selecting the "TS808 OD" type. Let's name this s
                                                                                              CHO  1
                                                                                                   A
 
-SCENE 3 ­ "Lead": Here's our soaring lead. The Chorus is bypassed. We've changed the compressor to
+SCENE 3 ï¿½ "Lead": Here's our soaring lead. The Chorus is bypassed. We've changed the compressor to
 Channel "B" and dialed it in for sustain. The amp is the same as the "Crunch" scene but Drive changes to "B",
 which we'll make a "Fat Rat". The Delay is on channel "B" dialed in with higher mix and feedback. We name the
 scene "Lead".
@@ -690,7 +701,7 @@ USB OVERVIEW
 USB provides the Axe-Fx III with a host of great features. A 16-core, 500 MHz microcontroller provides 16
 channels of flawless 48kHz USB audio (8 in, 8 out) allowing the Axe-Fx III to be the center of your music
 workstation. The audiophile-grade signal path components and converters provide better audio performance than
-most dedicated USB audio interfaces. With 8×8 channels you can record multiple tracks of processed audio and
+most dedicated USB audio interfaces. With 8ï¿½8 channels you can record multiple tracks of processed audio and
 DI signals, monitor backing tracks, audition stereo re-amps in real-time, and more. A USB audio sound source can
 even be placed on the grid for processing via the dedicated USB Input block.
 USB is also required to use Axe-Edit and Fractal-Bot, the companion software products for the Axe-Fx III.
@@ -728,7 +739,7 @@ global functions. Many factory presets are ready for use with one or more pedals
 TO CONNECT & CALIBRATE AN EXPRESSION PEDAL...
 
 Expression pedals for the Axe-Fx III should have a linear resistance taper and must have a maximum resistance in
-the range of 10­100k. Expression pedals must be used with Tip-Ring-Sleeve (TRS) cables!
+the range of 10ï¿½100k. Expression pedals must be used with Tip-Ring-Sleeve (TRS) cables!
 Connect your expression pedal to the desired jack with a TRS cable, then follow these instructions to calibrate:
  Page to the Pedal page of the I/O menu under SETUP.
  Ensure that Pedal Type is set to "CONTINUOUS".
@@ -820,7 +831,7 @@ THE FRONT PANEL
      A pair of high-strength handles make the unit easy to manage.
 
  Power Switch -- The front panel power switch turns the Axe-Fx III on or off with pop suppression.
- Color Display -- A large 800×480 custom color display has 30x the resolution of previous models. The
+ Color Display -- A large 800ï¿½480 custom color display has 30x the resolution of previous models. The
 
      display has excellent brightness and contrast for high readability even in difficult conditions.
 
@@ -872,7 +883,7 @@ g Status LEDs -- Three LEDs indicate important information. The Tempo LED flashe
      Tempo. The Edited LED lights whenever the current preset has been altered but not saved. The MIDI In LED
      lights while MIDI data is being received at the MIDI Input or via USB.
 
-h Output Level Knobs 1­4 -- These knobs independently control the volumes at the corresponding rear panel
+h Output Level Knobs 1ï¿½4 -- These knobs independently control the volumes at the corresponding rear panel
      outputs. The Output 1 knob simultaneously controls Output 1 XLR jacks and 1/4" jacks, and the headphones
      level. Outputs 3 and 4 are at unity gain when set fully clockwise.
 
@@ -942,10 +953,10 @@ Humbuster Cables are available at http://shop.fractalaudio.com. Learn more on p.
 2# Output 2 L+R (Stereo) -- (2) XLR-Male Jacks (balanced) -- Use these XLR jacks to connect to balanced
      inputs. Use the ground lift switch if necessary to reduce unwanted 60-cycle hum.
 
-2$ Output 3 L+R ­ (Stereo) -- (2) 1/4" Jacks (Humbuster) -- Use these 1/4" unbalanced outputs to connect to
+2$ Output 3 L+R ï¿½ (Stereo) -- (2) 1/4" Jacks (Humbuster) -- Use these 1/4" unbalanced outputs to connect to
      unbalanced inputs, such as those on guitar power amps or other devices.
 
-2% Output 4 L+R ­ (Stereo) -- (2) 1/4" Jacks (Humbuster) -- Use these 1/4" unbalanced outputs to connect to
+2% Output 4 L+R ï¿½ (Stereo) -- (2) 1/4" Jacks (Humbuster) -- Use these 1/4" unbalanced outputs to connect to
      unbalanced inputs, such as those on some guitar power amps or other devices.
      Outputs 3 and 4 are designed for unity gain applications such as the popular "Four-Cable Method" and other
      setups using traditional guitar amps. Set the OUT 3 and OUT 4 Level knobs fully clockwise for unity gain. See
@@ -966,7 +977,7 @@ Humbuster Cables are available at http://shop.fractalaudio.com. Learn more on p.
  NOTE: The FASLINK II port on the Axe-Fx III is designed for our "FC" series of foot controllers and is NOT
      compatible with the FASLINK port on our MFC-101 MIDI foot controller.
 
-2( USB -- This provides the Axe-Fx III with 8×8 USB audio and 2-way MIDI capabilities when connected to a
+2( USB -- This provides the Axe-Fx III with 8ï¿½8 USB audio and 2-way MIDI capabilities when connected to a
      compatible Mac or PC. Drivers are required for Windows. No driver is required for Mac OS X. See Section
      3: USB, on p. 19 for more.
 
@@ -1135,7 +1146,7 @@ USB RE-AMPING
 The Axe-Fx III USB Audio capabilities are perfect for "re-amping", a method in which the raw un-processed DI
 output of a guitar is recorded and then re-processed later through the amp, cab, and effects of your choice.
 Re-amping has many benefits. First, it allows you to record when inspiration strikes, capturing a DI instead of
-obsessing over final tone. Later, you ­ or a mixing engineer ­ can redesign a sound as your track's production
+obsessing over final tone. Later, you ï¿½ or a mixing engineer ï¿½ can redesign a sound as your track's production
 advances. Also, punches and edits made on the DI track are essentially made inaudible by the re-amping process.
 In comparison to other products, the Axe-Fx III allows you to use the unit in the best and most effective re-amping
 workflows, including being able to dial in new tones while simultaneously listening to the track for context.
@@ -1175,7 +1186,7 @@ To prepare for basic re-amping, change two settings on the Axe-Fx III.
      Change Input 1 Source to "DIGITAL".
 
 2. MUTE the "Guitar Reference 1" track.
-3. Change the output of your "DI" track to Axe-Fx III Output 5/6. Set its output level to ­6.0 dB.
+3. Change the output of your "DI" track to Axe-Fx III Output 5/6. Set its output level to ï¿½6.0 dB.
 4. Solo your DI track, then rewind and hit PLAY. You should hear the DI being processed by your Axe-Fx III preset.
 5. Record the re-amp. Create a stereo track. Name this track something like "Guitar Re-Amp 1". Set its inputs to
 
@@ -1677,7 +1688,7 @@ CONNECTIONS
     output levels using the front panel OUT 3  Optional OUTPUT                                                                                                             Optional
     knob with the following considerations:                                                                                                                                for Stereo
                                                for Stereo      1R
-     Outputs 1 and 2 have options for ­10                                                                   OUTPUT INPUT
+     Outputs 1 and 2 have options for ï¿½10                                                                   OUTPUT INPUT
         dbV and +4 dBu in SETUP: I/O: Audio.
                                                                    CORDS78  GAIN                                       VOLUME  CORDS78  GAIN                                           VOLUME
      Outputs 3 and 4 provide unity gain                                                                  B                                                           B                                                                VOL
@@ -1759,14 +1770,14 @@ LOADING PRESETS
 
 Different areas of the Axe-Fx III provide different ways to load presets:
 
-  On the Home page ­ Use the NAV LEFT and NAV RIGHT buttons or turn the VALUE knob.
-  On the "PRESETS" directory page of the HOME menu ­ Select a preset and press ENTER. Presets in the
+  On the Home page ï¿½ Use the NAV LEFT and NAV RIGHT buttons or turn the VALUE knob.
+  On the "PRESETS" directory page of the HOME menu ï¿½ Select a preset and press ENTER. Presets in the
 
-     directory are sorted in numerical order. To re-sort alphabetically, press the SORT A­Z button (v A).
-  FC CONTROLLER ­ The FC Controllers offer a range of Preset functions, plus a dedicated Setlist/
+     directory are sorted in numerical order. To re-sort alphabetically, press the SORT Aï¿½Z button (v A).
+  FC CONTROLLER ï¿½ The FC Controllers offer a range of Preset functions, plus a dedicated Setlist/
 
      Song/Section feature that can load presets/Scenes in custom order during a live performance.
-  MIDI ­ MIDI Bank and Program Changes select presets using the industry-standard
+  MIDI ï¿½ MIDI Bank and Program Changes select presets using the industry-standard
 
      "Controller 0 + PC" method. See "MIDI Reference Tables" on p. 108. MIDI Custom
      PC Mapping is also supported, see "Program Change Mapping" on p. 47.
@@ -1792,13 +1803,13 @@ TUNER       LAYOUT        CONTROLLERS FC PER-PREST  SETUP
 
 THE LAYOUT GRID
 
-The grid is a 14×6 framework used for building presets. The grid is made up of spaces or slots into which blocks
+The grid is a 14ï¿½6 framework used for building presets. The grid is made up of spaces or slots into which blocks
 are inserted to set up signal flow. Cables connect blocks. Grid spaces and cables are stereo, though not every
 block processes audio in stereo.
 
 Access the grid from the Home page by pressing the ENTER button or the LAYOUT Push-knob.
 
-In the default view, the AxeFx III display shows only a 6×6 section of the 14×6 grid. Navigate to off-screen areas
+In the default view, the AxeFx III display shows only a 6ï¿½6 section of the 14ï¿½6 grid. Navigate to off-screen areas
 using the D or E knobs, or the NAV buttons. A bottom scrollbar indicates where you are in the overall left-to-right
 layout. To show the entire grid at once, zoom out with the ZOOM button (Push-knob A).
 
@@ -2242,13 +2253,13 @@ while preset changes are fast, Scene changes are even faster and can be seamless
 CHANGING CHANNELS
 
 Different areas of the Axe-Fx III provide different ways to change Channels:
-  On the GRID ­ Select the desired block and turn the Channel knob (B).
+  On the GRID ï¿½ Select the desired block and turn the Channel knob (B).
      The current Channel is shown above the knob.
-  While EDITING a BLOCK ­ Use the dedicated CHANNEL - and CHANNEL + buttons.
+  While EDITING a BLOCK ï¿½ Use the dedicated CHANNEL - and CHANNEL + buttons.
      The current channel is shown near the top center of every page in the Edit menu.
-  FC CONTROLLER ­ The FC Controllers offer a range of dedicated Scene options, plus a dedicated
+  FC CONTROLLER ï¿½ The FC Controllers offer a range of dedicated Scene options, plus a dedicated
      Setlist/Song/Section feature designed to load Presets/Scenes during a live performance.
-  MIDI ­ MIDI and other Global Controllers such as a connected external footswitch can be
+  MIDI ï¿½ MIDI and other Global Controllers such as a connected external footswitch can be
      used to select Channels. See "Selecting Scenes & Channels Remotely" on p. 46.
   Of course, Axe-Edit can also be used to change channels.
 
@@ -2278,10 +2289,10 @@ channels or full blocks to a LIBRARY so you can access favorite settings with ju
 SELECTING SCENES
 
 Different areas of the Axe-Fx III provide different ways to select a Scene.
-  On the Home page ­ Use the NAV UP/DOWN buttons or turn knob A. The current scene is highlighted.
-  On the GRID ­ Turn the Scene knob (A). The current scene is shown above the knob.
-  FC CONTROLLER ­ The FC Controllers offer a range of dedicated "Scene Select" functions.
-  MIDI ­ MIDI and other Global Controllers such as a connected external footswitch can be
+  On the Home page ï¿½ Use the NAV UP/DOWN buttons or turn knob A. The current scene is highlighted.
+  On the GRID ï¿½ Turn the Scene knob (A). The current scene is shown above the knob.
+  FC CONTROLLER ï¿½ The FC Controllers offer a range of dedicated "Scene Select" functions.
+  MIDI ï¿½ MIDI and other Global Controllers such as a connected external footswitch can be
      used to select scenes. See "Selecting Scenes & Channels Remotely" on p. 46.
   Of course, Axe-Edit can also be used to select Scenes.
 
@@ -2336,7 +2347,7 @@ Scene Select function its own controller in the MIDI/Remote menu under SETUP.
                                                                                                       0 = Scene 1
 The scene is set by the value of the controller (not the controller number itself... see FAQ below).  1 = Scene 2
 Values begin at 0, while Scenes are numbered from 1, so "Value plus one = Scene number"               2 = Scene 3
-(see table 1, right). The series continues, repeating scenes 1­8 across CC values up to 1271.         3 = Scene 4
+(see table 1, right). The series continues, repeating scenes 1ï¿½8 across CC values up to 1271.         3 = Scene 4
                                                                                                       4 = Scene 5
 EXAMPLE: Let's say you want your DAW to select scene 3. Open the MIDI/Remote menu and                 5 = Scene 6
 assign your desired CC# to "Scene Select". Let's say CC#34. Set your DAW to send CC#34 with a         6 = Scene 7
@@ -2350,13 +2361,13 @@ menu under SETUP.                                                               
                                                                                                       1 = Channel B
 The Channel is set by the value of the controller (not the controller number itself... see FAQ        2 = Channel C
 below). Values begin at 0, which is Channel A, and it continues from there. (See table 2, right).     3 = Channel D
-As with Scene Select (above) the series continues, repeating Channels A­D across values to 127.
+As with Scene Select (above) the series continues, repeating Channels Aï¿½D across values to 127.
 
 1  In mathematical terms, that's Scene# = [(CC Value mod 8) +1]
 
                        MIDI CC Number and CC Value... What's the difference?
 
-                           MIDI Control Change messages --aka "CCs"-- have a number (0­127) and a value (0-127).
+                           MIDI Control Change messages --aka "CCs"-- have a number (0ï¿½127) and a value (0-127).
                            The number is like an "ID" specifying which function you want to control. A simple example
    might be a MIDI expression pedal that sends CC#7 which is interpreted as Volume by a device. The Axe-Fx III
    lets you designate CCs for items in a long list found in the MIDI/Remote menu under SETUP.
@@ -2366,7 +2377,7 @@ As with Scene Select (above) the series continues, repeating Channels A­D across
    value and toggle ON for a high one. Other functions might be triggered by any value.
 
    Different types of physical controllers transmit values in different ways. A pedal that rocks continuously from
-   heel-to-toe sends a "stream" of values from 0­127. A switch sends a single value for OFF (typically 0) and
+   heel-to-toe sends a "stream" of values from 0ï¿½127. A switch sends a single value for OFF (typically 0) and
    another for ON (typically 127). Other MIDI controllers offer other options.
 
    As described above, both the CC number and its value are the key to selecting Scenes and Channels via MIDI.
@@ -2939,14 +2950,14 @@ Auto-Engage engages or bypasses a block when the Source of a modifier changes. O
 will quickly find that this capability comfortably eliminates the need for an expression pedal "toe switch,"
 
 Set up Auto-Enage using two parameters on the Modify page:
-   Auto-Engage ­ Determines whether or not the block will automatically engage or bypass. FAST, MEDIUM and
+   Auto-Engage ï¿½ Determines whether or not the block will automatically engage or bypass. FAST, MEDIUM and
    SLOW settings determine how quickly the effect turns ON/OFF once Auto-Engage is triggered. Use SLOW settings
    to "relax" auto-engage, so your effect doesn't switch off too suddenly while you're still using it.
 
       The three POSITION ("POS") options trigger the effect based on OFF VALUE (see below).
       The three SPEED ("SPD") options engage the effect when the controller is moved quickly.
       Set to "OFF" to disable Auto-Engage.
-   Off Value ­ Sets the position threshold that the source must cross for auto-engage to occur. When Off Value is
+   Off Value ï¿½ Sets the position threshold that the source must cross for auto-engage to occur. When Off Value is
    set below 50%, the effect is bypassed when the controller goes below that value. If Off Value is set to 50% or
    higher, the effect is bypassed when the controller goes above that value.
 
@@ -2992,7 +3003,7 @@ ones. Try it on the "TRI" waveform for example.         low notes and a high val
 SEQUENCER                                               SCENE CONTROLLERS
 
 The Step-Sequencer generates control                    The four Scene Controllers provide a way
-patterns by looping through 2­32 "stag-                 to change sound settings from one Scene
+patterns by looping through 2ï¿½32 "stag-                 to change sound settings from one Scene
 es." You set the Value for each stage, the              to another. Think of each Scene Controller
 Number of stages, and the Rate or Tempo. The Run        as a "virtual knob" whose setting can programmed
 switch allows you to start or stop the sequence.        with a different value in every Scene. By assigning
@@ -3127,16 +3138,16 @@ the heel position when not in use.
 The following diagram illustrates how the two sources and their parameters work together.
 
 Source 1                  Operation   Output
-(0­100)                     · Add     limited
-                                      0­100
-          Source 1 Scale  · Subtract
-             (0­100%)     · Multiply          Modifier Parameters
+(0ï¿½100)                     ï¿½ Add     limited
+                                      0ï¿½100
+          Source 1 Scale  ï¿½ Subtract
+             (0ï¿½100%)     ï¿½ Multiply          Modifier Parameters
                                                 (Start, Mid, End,
 Source 2                                                                  Target
-(0­100)                                        Slope, Scale, et al.)  (Ranges from
+(0ï¿½100)                                        Slope, Scale, et al.)  (Ranges from
                                                                       Min to Max)
           Source 2 Scale
-             (0­100%)
+             (0ï¿½100%)
 
                                       64
                                                                                                                                      9 Modifiers
@@ -3232,7 +3243,7 @@ Tempo is used in electronic music for synchronizing different rates and times, w
 across several. Tempo on the Axe-Fx III allows for both internal and external synchronization, providing effects
 with a central BPM clock that can either run autonomously or follow the tempo of a connected device outputting
 MIDI Beat Clock. The AxeFx III does not transmit MIDI Clock itself. The Tempo can be set to any whole number
-value in the range 20­250 BPM. The AxeFx III flashes its current tempo on a front-panel LED.
+value in the range 20ï¿½250 BPM. The AxeFx III flashes its current tempo on a front-panel LED.
 
 THE GLOBAL TEMPO
 
@@ -3335,9 +3346,9 @@ Display Mode       INPUT: The signal is muted at the noise gate. Tails ring out.
 MIXED/ALL FLATS/  Determines whether the tuner shows note names for accidentals as Sharps, Flats, or a
 ALL SHARPS        mix of both.
 Calibration
-430.0 ­ 450.0 Hz  Calibrates the tuner by setting the frequency of A4 (in the octave above middle C).
+430.0 ï¿½ 450.0 Hz  Calibrates the tuner by setting the frequency of A4 (in the octave above middle C).
 Downtune
-0 ­ 4 Semitones   The tuner defaults to A440.
+0 ï¿½ 4 Semitones   The tuner defaults to A440.
                   The Downtune control allows for simplified tuning when tuning down one to four
 Use Offsets       semitones. The Tuner display will read the non-downtuned equivalent note, i.e. if tuning
 OFF/ON            down two semitones, the D will still show E. While Downtune is set to any value other
@@ -3461,7 +3472,7 @@ ON/OFF                    blocks for which the GLOBAL MIX parameter is set to "O
 Display Offset            be enabled on a per-block/per-preset basis and is available on the Mix page of
 0, 1                      the Edit menu for these block types: Chorus, Delay, Flanger, Formant, Multitap,
 Default Scene             Phaser, Pitch, Plex Delay, Reverb, Ring Mod, Rotary, Ten-Tap Delay
-AS SAVED, SCENES 1­8
+AS SAVED, SCENES 1ï¿½8
 Tap Tempo                 Globally raises or lowers the THRESHOLD of the Noise Gate for all Input blocks.
 AVERAGE, LAST TWO         If the THRESHOLD for a given preset is set to "OFF", the global Offset will have
                           no effect. Learn more about the Noise Gate in "The Fractal Audio Blocks Guide"
@@ -3519,7 +3530,7 @@ Note that as of firmware 12, global scales can also be edited, exported, and imp
 PARAMETER            Description
 Custom Scale Number
                      Selects from among the 32 global custom scales available to edit using the 12
-1­32                 parameters which follow.
+1ï¿½32                 parameters which follow.
 ___ SHIFT (+/- 24)
                      These 12 parameters are used to set the shift amount for each of the 12 steps
                      of the chromatic scale. Range is +/-24 semitones (+/- two octaves). To set up
@@ -3560,7 +3571,7 @@ USB Output 7,8 Source         valid 48 kHz data stream must be present at the AE
 USB Output Mapping            Fx III to operate properly.
 
 USB Buffer Size               Specifies the signal transmitted at the SPDIF or AES digital output. Options
-8­256                         include Out 1, Out 2, In 1 or whichever input feeds USB Out 7,8 (see below).
+8ï¿½256                         include Out 1, Out 2, In 1 or whichever input feeds USB Out 7,8 (see below).
 
 Digital Input Source          This determines whether computer USB audio inputs 7 and 8 receive signal
 Input Source (1, 2, 3, 3, 4)  from physical INPUT 1, INPUT 2 or INPUT 3.
@@ -3657,12 +3668,12 @@ I/O: USB/AES PAGE
 
 The USB/AES page of the I/O menu contains parameters to adjust the levels of USB and AES inputs.
 
-USB 1/2, 3/4, 5/6, 7/8 ­ These parameters adjust USB Input levels from -40 to +20 dB. Remember that from the
+USB 1/2, 3/4, 5/6, 7/8 ï¿½ These parameters adjust USB Input levels from -40 to +20 dB. Remember that from the
 perspective of the Axe-Fx, a "USB Input" is used for computer playback; audio is routed from the computer to a
 USB input of the Axe-Fx, and levels can be cut or boosted here. Be careful not to boost overall levels to the point
 of output clipping.
 
-AES/SPDIF ­ This scales the levels of signals from the AES and SPDIF inputs. Recognize that this scaling occurs
+AES/SPDIF ï¿½ This scales the levels of signals from the AES and SPDIF inputs. Recognize that this scaling occurs
 at the output of the input; that is, after the input itself but prior to any processing on the grid.
 
 I/O: PEDAL PAGE
@@ -3718,7 +3729,7 @@ MIDI/REMOTE: GENERAL PAGE
 
 PARAMETER               Description
 MIDI Channel            Sets the channel on which the Axe-Fx III will receive MIDI messages.
-1­16, OMNI              "OMNI" causes the unit to respond to incoming messages on any channel.
+1ï¿½16, OMNI              "OMNI" causes the unit to respond to incoming messages on any channel.
 Display Offset
 0, 1                    (Also appears in the Global menu) Causes presets numbers to begin at 001
                         instead of 000. This only offsets the display, meaning that it does not change
@@ -3740,9 +3751,9 @@ Display Offset
  ON/OFF               traditional preset changes.
 
  Send MIDI PC         This setting determines how MIDI messages set the Bypass State of a block.
- 1­16                 When set to "Value" the bypass state is controlled by the CC value (0­63=OFF,
- OMNI                 64­127=ON). When set to "Toggle" the bypass state toggles whenever the CC
- OFF                  message is received, regardless of the value (0­127).
+ 1ï¿½16                 When set to "Value" the bypass state is controlled by the CC value (0ï¿½63=OFF,
+ OMNI                 64ï¿½127=ON). When set to "Toggle" the bypass state toggles whenever the CC
+ OFF                  message is received, regardless of the value (0ï¿½127).
 
                       This determines whether real-time MIDI SysEx messages for tuner and tempo
                       will appear at the MIDI OUT port.
@@ -3777,8 +3788,8 @@ MIDI PC Offset
                        Adds a specified value to all incoming MIDI Program Change requests before
 PC Mapping             they are processed. This makes it possible, for instance, to address alternate
                        presets in different "registers". You might use the same MIDI messages to
-INITIAL VALUE:         access presets 1­16 for a gig with one guitar, and --by specifying an offset
-External Control 1­16  of +16-- use presets 17­32 for a different guitar without re-programming your
+INITIAL VALUE:         access presets 1ï¿½16 for a gig with one guitar, and --by specifying an offset
+External Control 1ï¿½16  of +16-- use presets 17ï¿½32 for a different guitar without re-programming your
                        controller.
 
                        PC Mapping determines whether incoming MIDI Program Change messages
@@ -3823,8 +3834,8 @@ mapping a controller to one of these functions is the same:
 2. Use the VALUE knob to assign a controller to the function:
  1--127 to assign a MIDI CC#.
  PEDAL 1 or PEDAL 2 to assign a pedal connected to the on-board expression jacks of the Axe-Fx III.
- FC__ PEDAL 1­4 to assign a pedal connected to the corresponding pedal jack of the designated FC controller.
- FC__ SW 1­4 to assign a switch connected to the corresponding switch jack of the designated FC controller.
+ FC__ PEDAL 1ï¿½4 to assign a pedal connected to the corresponding pedal jack of the designated FC controller.
+ FC__ SW 1ï¿½4 to assign a switch connected to the corresponding switch jack of the designated FC controller.
  NONE to remove all assignments from the selected item.
 
 MIDI/REMOTE: CHANNEL PAGE
@@ -3868,7 +3879,7 @@ Output 1 Volume Decrement,
 Output 2 Volume Increment,  0 = Scene 1 2 = Scene 3 4 = Scene 5 6 = Scene 7
 Output 3 Volume Decrement   1 = Scene 2 3 = Scene 4 5 = Scene 6 7 = Scene 8
 
-                            The series continues, cycling through scenes 1­8 for values up to 127 (Scene 8).
+                            The series continues, cycling through scenes 1ï¿½8 for values up to 127 (Scene 8).
 
                             For more, see "Scene Select" on p. 46 or "CC Value to Scene" on p. 112
 
@@ -4212,7 +4223,7 @@ Fractal-Bot automates the backup process. Select the RECEIVE tab and follow the 
 some things to consider when using Fractal-Bot:
  The Axe-Fx III doesn't emphasize this distinction, but its Presets are actually divided into banks of 128. To
 
-    backup all of your presets, backup all of the banks: A (0­127), B (128-255), C (265­383) and D (384­511).
+    backup all of your presets, backup all of the banks: A (0ï¿½127), B (128-255), C (265ï¿½383) and D (384ï¿½511).
  A backup of the SYSTEM includes all of the custom settings in the Setup
 
     menu: Global, I/O, MIDI/Remote, and Tuner settings.
@@ -4527,11 +4538,11 @@ User Cabs -- also know as "Impulse Responses (IRs)" -- may be transferred to the
      Don't confuse the newer ".IR" file format, which is solely used for re-mixing in Cab-Lab (see below).
 2. Using Fractal-Bot or Axe-Edit III, transmit the file to your Axe-Fx III, noting which User Bank and which
     numbered Slot you are sending it to. (Example: User 1, #215.)
-     Fractal-Bot ­ This basic utility can send individual cabs to any location or transmit entire banks. To import
+     Fractal-Bot ï¿½ This basic utility can send individual cabs to any location or transmit entire banks. To import
 
         a single IR, open a Cab block on the grid and set Cab 1 to the Bank and Number you want to transmit a cab
         to. Then send the sysex file to the Axe-Fx III using Fractal-Bot and the unit will save the IR to that location.
-     Axe-Edit III ­ The Axe-Manage Cabs tool allows you to drag and drop user cab files into memory slots.
+     Axe-Edit III ï¿½ The Axe-Manage Cabs tool allows you to drag and drop user cab files into memory slots.
         Don't forget to press SAVE! You can also manage entries already in the memory of the Axe-Fx III with
         operations like copy, paste, rename, and drag-and-drop re-ordering. When you purchase a Cab Pack, this is
         the best and easiest way to load multiple IRs at once into your Axe-Fx III, audition the results, and organize
@@ -4672,13 +4683,13 @@ is very versatile. You might change a connected MIDI-controlled amp, manually op
 sequencer, lighting system, and more.
 Here is a summary of the MIDI Capabilities of a Control Switch:
  Control Switches are placed into an FC Layouts as functions.
- Control Switches 1­6 appear in the list of Modifier sources on the Axe-Fx. The role of a switch
+ Control Switches 1ï¿½6 appear in the list of Modifier sources on the Axe-Fx. The role of a switch
 
     as a modifier source is not compromised if you also use it to transmit MIDI. The same switch can
     simultaneously control the Axe-Fx and a connected device. See Section 9: Modifiers to learn more.
  Each Control Switch has its own global MIDI Payload containing up to four Program
     Change ("PC") or Control Change ("CC) messages on any MIDI Channels, with custom
-    values from 0­127, or disabled ("--") for both the ON and OFF states of the switch.
+    values from 0ï¿½127, or disabled ("--") for both the ON and OFF states of the switch.
  Each MIDI Payload also has a "master switch" allowing it to be enabled or disabled.
 
                                                                         102
@@ -4694,10 +4705,10 @@ SETTING UP THE MIDI PAYLOAD FOR A CONTROL SWITCH:
 
     four commands, with different values for ON and OFF
      For each command, selecting whether you want a Program Change (PC) or Control Change (CC) message.
-     Set the MIDI Channel for that command as desired from 1­16.
+     Set the MIDI Channel for that command as desired from 1ï¿½16.
      If you chose a CC Command, set the CC Number.
      Set the desired Values for when the switch is ON and when it is OFF.
-     You can select values from 0­127, or "--" which means "send nothing."
+     You can select values from 0ï¿½127, or "--" which means "send nothing."
  There is no need to save CS MIDI settings. They take effect immediately.
 
              Remember, Control Switches can be switched manually using a footswitch, or automatically by Scenes.
@@ -4784,7 +4795,7 @@ Q: What is "FRFR"?
 A: FRFR stands for "full-range, flat response." This acronym is used to describe a "neutral"
 
     speaker or speaker system that is designed to reproduce the entire audible spectrum of
-    20 Hz ­ 20kHz without emphasis. Examples of FRFR systems would include high-quality
+    20 Hz ï¿½ 20kHz without emphasis. Examples of FRFR systems would include high-quality
     studio monitors and properly designed PA systems or monitors. Many manufacturers are
     also now offering FRFR systems designed specifically for direct guitar applications.
 
@@ -4851,7 +4862,7 @@ A: Sonically speaking, the main reason to care about effect placement is that a 
     less "classic." It's not surprising then that wah would traditionally be a run as a "pre" effect between
     guitar and amp. The amp's distortion follows the wah. Many other effects fall in this same category.
     A different example is found in overdrive with reverb or delay. In the natural world, reverb and echo occur
-    because of open spaces around your guitar amp ­ like a club or concert hall. These effects would therefore
+    because of open spaces around your guitar amp ï¿½ like a club or concert hall. These effects would therefore
     NOT be heard before a distorted amp, but after it. Recording studios often add these kinds of effects "post",
     i.e. at the console--after the mic has picked up the distorted sound from the guitar amp. If you wanted to
     simulate this natural sounding reverb or delay these effects would likely be run "post." This is not to say that
@@ -5144,7 +5155,7 @@ Sample Rate:48 kHz
 
 Dynamic Range:114 dB
 
-Frequency Response:20 ­ 20kHz, +0 / -1 dB
+Frequency Response:20 ï¿½ 20kHz, +0 / -1 dB
 
 Crosstalk:        < -60 dB over full bandwidth
 
@@ -5190,7 +5201,7 @@ Impedance:35
 
 D/A CONVERSION
 Dynamic Range:114 dB
-Frequency Response:20 ­ 20kHz, +0 / -1 dB
+Frequency Response:20 ï¿½ 20kHz, +0 / -1 dB
 
 DIGITAL I/O
 
@@ -5217,7 +5228,7 @@ PEDAL INTERFACE
 
 Connectors:(2) 1/4" TRS phone jack
 
-Format:            Pedal: 10­100 k max
+Format:            Pedal: 10ï¿½100 k max
 
                    Switch: make/break; momentary or latching
 
@@ -5231,17 +5242,17 @@ Finish:            Powder coated steel chassis with anodized aluminum faceplate
 
 Controls:          12 buttons, 10 knobs (6 with additional "push" functions)
 
-Display:           800×480 high contrast color LCD
+Display:           800ï¿½480 high contrast color LCD
 
-Dimensions: 19.00" W. × 5.16" H. × 11.53" D.
+Dimensions: 19.00" W. ï¿½ 5.16" H. ï¿½ 11.53" D.
 
-                   482.6mm W. × 131.1mm H. × 292.87mm D.
+                   482.6mm W. ï¿½ 131.1mm H. ï¿½ 292.87mm D.
 
                    (including front handles and rear jacks)
 
 Weight:            15 lbs 2.4 oz (6.87 kg)
 
-Input Voltage:90­264 VAC, 47 ­ 63 Hz (universal input)
+Input Voltage:90ï¿½264 VAC, 47 ï¿½ 63 Hz (universal input)
 
 Power Consumption:<40 W
 
@@ -5251,9 +5262,9 @@ Backup Battery Type: CR-2032
 
 ENVIRONMENTAL
 
-Operating Temperature:32 to 122 °F (0 to 50 °C)
+Operating Temperature:32 to 122 ï¿½F (0 to 50 ï¿½C)
 
-Storage Temperature:-22 to 167 °F (-30 to 70 °C)
+Storage Temperature:-22 to 167 ï¿½F (-30 to 70 ï¿½C)
 
 Humidity:          Max. non-condensing
 
@@ -5325,104 +5336,3 @@ Auxiliary Messages Local ON/OFF X   X
                   Reset          X  X
 
                                        115
-Warranty
-
-WARRANTY
-
-Fractal Audio Systems warrants that your new Fractal Audio Systems product shall be free of defects in materials
-and workmanship for a period of one (1) year from the original date of purchase.
-During the warranty period, Fractal Audio Systems shall, at its sole option, either repair or replace any product that
-proves to be defective upon inspection by Fractal Audio Systems.
-Fractal Audio Systems reserves the right to update any unit returned for repair and to change or improve the
-design of the product at any time without notice. Fractal Audio Systems reserves the right to use reconditioned
-parts and assemblies as warranty replacements for authorized repairs. This warranty is extended to the original
-retail purchaser for units purchased directly from Fractal Audio Systems or one of its authorized distributors or
-resellers.
-This is your sole warranty. Fractal Audio Systems does not authorize any third party, including any dealer or sales
-representative, to assume any liability on behalf of Fractal Audio Systems or to make any warranty for Fractal
-Audio Systems. Fractal Audio Systems may, at its option, require proof of original purchase date in the form of a
-dated copy of original authorized dealer's invoice or sales receipt. Service and repairs of Fractal Audio Systems
-products are to be performed only at the Fractal Audio Systems factory or a Fractal Audio Systems authorized
-service center. Fractal Audio Systems may require advanced authorization of repairs to authorized service
-centers. Unauthorized service, repair or modification will void this warranty.
-DISCLAIMER AND LIMITATION OF WARRANTY
-THE FOREGOING WARRANTY IS THE ONLY WARRANTY GIVEN BY FRACTAL AUDIO SYSTEMS AND IS IN LIEU OF
-ALL OTHER WARRANTIES. ALL IMPLIED WARRANTIES, INCLUDING WARRANTIES OF MERCHANTABILITY AND
-FITNESS FOR ANY PARTICULAR PURPOSE, EXCEEDING THE SPECIFIC PROVISIONS OF THIS WARRANTY ARE
-HEREBY DISCLAIMED AND EXCLUDED FROM THIS WARRANTY. UPON EXPIRATION OF THE APPLICABLE EXPRESS
-WARRANTY PERIOD (1 YEAR), FRACTAL AUDIO SYSTEMS SHALL HAVE NO FURTHER WARRANTY OBLIGATION OF
-ANY KIND, EXPRESS OR IMPLIED. FRACTAL AUDIO SYSTEMS SHALL IN NO EVENT BE LIABLE FOR ANY SPECIAL,
-INCIDENTAL OR CONSEQUENTIAL DAMAGES SUFFERED BY THE PURCHASER OR ANY THIRD PARTY, INCLUDING
-WITHOUT LIMITATION, DAMAGES FOR LOSS OF PROFITS OR BUSINESS, OR DAMAGES RESULTING FROM USE OR
-PERFORMANCE OF THE PRODUCT, WHETHER IN CONTRACT OR IN TORT. FRACTAL AUDIO SYSTEMS SHALL NOT
-BE LIABLE FOR ANY EXPENSES, CLAIMS, OR SUITS ARISING OUT OF OR RELATING TO ANY OF THE FOREGOING.
-Some states do not allow the exclusion or limitation of implied warranties so some of the above limitations and
-exclusions may not apply to you. This warranty gives you specific legal rights, and you may also have other rights,
-which vary, from state to state. This warranty only applies to products sold and used in the USA and Canada.
-Fractal Audio Systems shall not be liable for damages or loss resulting from the negligent or intentional acts of
-the shipper or its contracted affiliates. You should contact the shipper for proper claims procedures in the event
-of damage or loss resulting from shipment.
-
-                                                                        116
-                                                                                                                                              EULA
-
-EULA
-
-BY ACCEPTING, INSTALLING OR USING ANY PART OF THIS PRODUCT YOU ARE CONSENTING TO ALL OF THE TERMS AND CONDITIONS OF THIS ENTIRE END USER LICENSE AGREEMENT ("EULA"). IF YOU
-DO NOT AGREE TO ALL THE TERMS AND CONDITIONS OF THIS ENTIRE AGREEMENT, ARE UNABLE OR UNWILLING COMPLY WITH THESE TERMS AND CONDITIONS, YOU MUST DISCONTINUE USE OF THE
-PRODUCT IMMEDIATELY AS YOU HAVE NO AUTHORITY OR LICENSE TO USE THE PRODUCT.
-TERMS AND CONDITIONS
-1) GRANT OF LICENSE FOR PRE INSTALLED OR USER UPGRADED FIRMWARE ("THE SOFTWARE")
-Subject to the terms and conditions set forth herein, Fractal Audio Systems, ("FAS") grants you an individual, personal, non-sub licensable, nonexclusive license to use this product in accordance with the
-applicable end user documentation, if any (the "License"). The user will not, directly or indirectly, reverse engineer, decompile, disassemble or otherwise attempt to discover the source code or underlying
-ideas or algorithms of the Software; modify, translate, or create derivative works based on the Software; or copy (except for archival purposes), rent, lease, distribute, assign, or otherwise transfer rights to the
-Software (except as expressly authorized by this Agreement); remove any proprietary notices, comments, terms and conditions and or labels on or in the Software. As between the parties, you acknowledge
-that FAS and its licensors retain their respective ownership of the Software, any portions or copies thereof, and all rights therein throughout the world. Upon termination of this Agreement for any reason, the
-License and all rights granted to you under this Agreement will terminate and you will cease to use the Software. You may permanently transfer the limited rights of use of the Software granted to you under
-this Agreement only as part of a permanent sale or transfer of the hardware device containing the software, and only if the recipient agrees to be bound by the terms and conditions of this Agreement. You
-acknowledge that you have no rights in or to, and may not transfer or otherwise authorize the use of, any "beta" or "preview" software of FAS and its licensors. THIS LIMITED LICENSE TO USE AND TRANSFER
-THE SOFTWARE IS PROVIDED AS-IS AND IS SUBJECT TO THE RESTRICTIONS, INDEMNITY AND WARRANTY DISCLAIMERS AND LIMITATIONS OF LIABILITY SET FORTH BELOW.
-2) RESTRICTIONS, WARRANTY DISCLAIMERS AND INDEMNITY OBLIGATION AGREED TO BY YOU IN EXCHANGE FOR LIMITED GRANT OF LICENSE.
-YOU WILL ONLY USE THE SOFTWARE FOR LAWFUL PURPOSES AND IN COMPLIANCE WITH ALL APPLICABLE LAWS. YOU HEREBY AGREE TO DEFEND AND INDEMNIFY FAS AND ITS LICENSORS AGAINST ANY
-CLAIM OR ACTION THAT ARISES FROM YOUR USE OF THE SOFTWARE IN AN UNLAWFUL MANNER (INCLUDING, WITHOUT LIMITATION, ANY CLAIM OR ACTION ALLEGING INFRINGEMENT OF ANY PATENT,
-COPYRIGHT, TRADEMARK, TRADE SECRET, OR OTHER INTELLECTUAL PROPERTY; UNFAIR COMPETITION; VIOLATION OF GENERAL BUSINESS LAWS; OR VIOLATION OF ANY OTHER LAWS OR RIGHTS) OR ANY
-OTHER USE OF THE SOFTWARE NOT EXPRESSLY AUTHORIZED PURSUANT TO THIS AGREEMENT.
-3) IMPULSE RESPONSE EXPORT FOR COMMERCIAL USE
-Offering for sale any Impulse Response data (e.g. "Tone Match Export/Save/Dump", "User Cab Export/Save/Dump") created, converted or modified using Fractal Audio Systems hardware and/or software
-requires a commercial use license. Recording studios, consultants, and other commercial entities may use these features in conjunction with work performed for their commercial customers, but the resulting
-data files created may not be offered for sale or gifted to their commercial customers or other third parties without a commercial license from FAS and its licensors where applicable. Contact sales@
-fractalaudio.com to obtain a commercial license.
-4) IMPULSE RESPONSE DATA EXPORT FOR NON-COMMERCIAL USE
-You are free to export Impulse Response data for non-commercial use. This includes producing, converting, or modifying Impulse Response data for yourself, or offering/distributing such data at no charge to
-third parties. Files created without a commercial license cannot be included for free with another product or package that is offered for sale. Contact sales@fractalaudio.com to obtain a commercial license.
-5) SUPPORT
-Subject to the terms hereof, FAS will provide you with e-mail support services for the Software. Under no circumstances will FAS have any obligation to provide you with hard-copy documentation, upgrades,
-enhancements, modifications, or telephone support for the Software.
-6) TERMINATION
-This Agreement is effective until terminated. Either party may terminate this Agreement upon written notice to the other party. FAS may also terminate this Agreement immediately, without prior notice or
-liability, if you breach any of the terms or conditions of this Agreement. All sections of this Agreement which by their nature should survive termination will survive termination, including, without limitation,
-warranty disclaimers and limitations of liability and limitations of use and transfer of the Software.
-7) WARRANTY DISCLAIMER
-The software is provided as is without warranty of any kind. FAS disclaim all warranties, expressed or implied, including but not limited to implied warranties, fitness for a particular purpose, and non-
-infringement. Some states do not allow limitations on how long an implied warranty lasts, so the above limitation may not apply to you.
-8) LIMITATION OF LIABILITY
-NOTWITHSTANDING ANYTHING CONTAINED IN THIS AGREEMENT OR OTHERWISE, YOU AGREE THAT FAS AND ITS LICENSORS WILL NOT BE LIABLE WITH RESPECT TO THE SUBJECT MATTER OF THIS
-AGREEMENT UNDER ANY CONTRACT, NEGLIGENCE, STRICT LIABILITY, INFRINGEMENT OR OTHER LEGAL OR EQUITABLE THEORY FOR ANY INCIDENTAL, CONSEQUENTIAL, EXEMPLARY OR PUNITIVE
-DAMAGES OF ANY KIND. SOME STATES DO NOT ALLOW THE EXCLUSION OR LIMITATION OF INCIDENTAL OR CONSEQUENTIAL DAMAGES, SO THE ABOVE MAY NOT APPLY TO YOU.
-9) EXPORT RESTRICTIONS
-You acknowledge that the Software, or any part thereof, or any process or service that is the direct product of the Software (the foregoing collectively referred to as the "Restricted Components") are of U.S.
-origin. You agree to comply with all applicable international and national laws that apply to these products, including the U.S. Export Administration Regulations, as well as end-user, end-use and destination
-restrictions issued by U.S. and other governments.
-10) MISCELLANEOUS
-The failure of either party to exercise in any respect any right provided for herein will not be deemed a waiver of any further rights hereunder of FAS and or its licensors. If any provision of this Agreement
-is found to be unenforceable or invalid, that provision will be limited or eliminated to the minimum extent necessary so that this Agreement will otherwise remain in full force and effect and enforceable.
-This Agreement will be governed by and construed in accordance with the laws of the state of New Hampshire without regard to the conflict of laws provisions thereof. You agree that this Agreement is the
-complete and exclusive statement of the mutual understanding of the parties and supersedes and cancels all previous written and oral agreements, communications and other understandings relating to the
-subject matter of this Agreement, and that all modifications to this EULA, or any commercial license that you may have obtained from FAS and or its licensors must be in a writing signed by you, FAS and or its
-licensors, where applicable, except as otherwise provided herein. No agency, partnership, joint venture, or employment is created as a result of this Agreement and you do not have any authority of any kind to
-bind FAS and or its licensors in any respect whatsoever. In any action or proceeding to enforce rights under this Agreement, the prevailing party will be entitled to recover costs and attorneys' fees. All notices
-under this Agreement will be in writing and will be deemed to have been duly given when received, if personally delivered; when receipt is electronically confirmed, if transmitted by facsimile or e-mail; the day
-after it is sent, if sent for next day delivery by recognized overnight delivery service; and upon receipt, if sent by certified or registered mail, return receipt requested.
-
-                                                                        117
-
