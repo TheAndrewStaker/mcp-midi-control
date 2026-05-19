@@ -27,6 +27,8 @@ import {
   programChangeBytes,
   sleep,
 } from './shared.js';
+import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 
 export function registerHydrasynthNavigationTools(server: McpServer): void {
 
@@ -44,8 +46,20 @@ server.registerTool('hydra_navigate_to', {
     ),
   },
 }, async ({ slot }) => {
+  let target: ReturnType<typeof parseSlot>;
+  try {
+    target = parseSlot(slot);
+  } catch (err) {
+    return asError(new DispatchError(
+      'bad_location',
+      'Hydrasynth',
+      err instanceof Error ? err.message : String(err),
+      {
+        retry_action: 'Pass slot as "A001".."H128" (letter A..H + patch 1..128).',
+      },
+    ));
+  }
   const conn = ensureMidi();
-  const target = parseSlot(slot);
   const startMs = Date.now();
 
   const observed: Array<{ ms: number; bytes: number[] }> = [];
@@ -101,6 +115,14 @@ server.registerTool('hydra_navigate_to', {
       type: 'text',
       text: lines.join('\n'),
     }],
+    structuredContent: {
+      target_slot: target.display,
+      target_bank: target.bank,
+      target_patch: target.patch,
+      elapsed_ms: elapsedMs,
+      inbound_message_count: observed.length,
+      has_input: conn.hasInput,
+    },
   };
 });
 

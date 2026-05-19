@@ -46,6 +46,8 @@ import {
   recordApplyPatch,
   sleep,
 } from './shared.js';
+import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 
 export function registerHydrasynthPatchTools(server: McpServer): void {
 
@@ -210,8 +212,20 @@ server.registerTool('hydra_apply_init_to', {
     ),
   },
 }, async ({ slot, dance }) => {
+  let target: ReturnType<typeof parseSlot>;
+  try {
+    target = parseSlot(slot);
+  } catch (err) {
+    return asError(new DispatchError(
+      'bad_location',
+      'Hydrasynth',
+      err instanceof Error ? err.message : String(err),
+      {
+        retry_action: 'Pass slot as "A001".."H128" (letter A..H + patch 1..128).',
+      },
+    ));
+  }
   const conn = ensureMidi();
-  const target = parseSlot(slot);
   const danceMode = dance ?? 'none';
   const startMs = Date.now();
 
@@ -303,6 +317,18 @@ server.registerTool('hydra_apply_init_to', {
       type: 'text',
       text: lines.join('\n'),
     }],
+    structuredContent: {
+      target_slot: target.display,
+      target_bank: target.bank,
+      target_patch: target.patch,
+      dance: danceMode,
+      elapsed_ms: elapsedMs,
+      chunk_acks_seen: chunkAcksSeen.size,
+      chunk_acks_total: PATCH_CHUNK_COUNT,
+      header_responses: headerResponses,
+      footer_responses: footerResponses,
+      patch_saved_responses: patchSaveds,
+    },
   };
 });
 
@@ -391,6 +417,8 @@ server.registerTool('hydra_apply_patch', {
     };
   }
 
+  try {
+
   const conn = ensureMidi();
   // In-place workflow: when caller omits slot, default to H128 (the
   // designated scratch slot). Either way, default dance is "both" —
@@ -448,7 +476,12 @@ server.registerTool('hydra_apply_patch', {
   // PASS 2 — resolve each value.
   for (const { name, value } of params) {
     if (typeof value === 'number' && !Number.isFinite(value)) {
-      throw new Error(`hydra_apply_patch: param "${name}" has non-finite value ${value}.`);
+      throw new DispatchError(
+        'value_out_of_range',
+        'Hydrasynth',
+        `hydra_apply_patch: param "${name}" has non-finite value ${value}.`,
+        { retry_action: 'Pass a finite display value (number or enum string).' },
+      );
     }
     const sub = parseFxSubParamName(name);
     if (sub) {
@@ -463,7 +496,16 @@ server.registerTool('hydra_apply_patch', {
         // FX type. Use the generic entry but note the imprecision.
         const entry = findHydraNrpn(name);
         if (!entry) {
-          throw new Error(`hydra_apply_patch: unknown param "${name}".`);
+          const closeMatches = findMatchingNrpns(name, 6).map((h) => h.entry.name);
+          throw new DispatchError(
+            'unknown_param',
+            'Hydrasynth',
+            `hydra_apply_patch: unknown param "${name}".`,
+            {
+              valid_options: closeMatches,
+              retry_action: 'Re-invoke with one verbatim name from valid_options, or call list_params({port:"hydrasynth"}) to see the full catalog.',
+            },
+          );
         }
         let resolved;
         try {
@@ -508,11 +550,16 @@ server.registerTool('hydra_apply_patch', {
 
     const entry = findHydraNrpn(name);
     if (!entry) {
-      const hits = findMatchingNrpns(name, 4);
-      const closest = hits.length > 0
-        ? ` (closest: ${hits.map((h) => h.entry.name).join(', ')})`
-        : '';
-      throw new Error(`hydra_apply_patch: unknown param "${name}"${closest}.`);
+      const hits = findMatchingNrpns(name, 6);
+      throw new DispatchError(
+        'unknown_param',
+        'Hydrasynth',
+        `hydra_apply_patch: unknown param "${name}".`,
+        {
+          valid_options: hits.map((h) => h.entry.name),
+          retry_action: 'Re-invoke with one verbatim name from valid_options, or call list_params({port:"hydrasynth"}) to see the full catalog.',
+        },
+      );
     }
     let resolved;
     try {
@@ -732,7 +779,26 @@ server.registerTool('hydra_apply_patch', {
       type: 'text',
       text: lines.join('\n'),
     }],
+    structuredContent: {
+      target_slot: target.display,
+      target_bank: target.bank,
+      target_patch: target.patch,
+      saved: save === true,
+      overrides_count: params.length,
+      elapsed_ms: elapsedMs,
+      chunk_acks_seen: chunkAcksSeen.size,
+      chunk_acks_total: PATCH_CHUNK_COUNT,
+      header_responses: headerResponses,
+      footer_responses: footerResponses,
+      patch_saved_responses: patchSaveds,
+      suspicious_silence: suspiciousSilence,
+      duplicate_call: isDuplicate,
+    },
   };
+
+  } catch (err) {
+    return asError(err);
+  }
 });
 
 }

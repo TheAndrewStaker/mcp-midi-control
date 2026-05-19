@@ -810,8 +810,13 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
       col = s.slot;
     }
     if (!explicitRouting && row !== 2) {
-      throw new Error(
-        `slot row=${row}: without an explicit routing[] array, Axe-Fx II placement is row-2-only (auto-chain mode wires row 2 left-to-right). Either move every block to row 2, or supply spec.routing for explicit cabling.`,
+      throw new DispatchError(
+        'value_out_of_range',
+        'Fractal Axe-Fx II',
+        `slot row=${row}: without an explicit routing[] array, Axe-Fx II placement is row-2-only (auto-chain mode wires row 2 left-to-right).`,
+        {
+          retry_action: 'Either move every block to row 2 ({row:2,col:N}), or supply spec.routing[] with explicit cabling edges between block ids.',
+        },
       );
     }
 
@@ -835,8 +840,13 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
         else flatCount++;
       }
       if (nestedCount > 0 && flatCount > 0) {
-        throw new Error(
-          `slots[${col ?? row}] (block ${s.block_type}): params mixes flat values and channel-nested objects. Use one shape per slot: flat \`{gain: 6}\` to write to the current channel, or channel-nested \`{X: {gain: 6}}\` to address X/Y explicitly.`,
+        throw new DispatchError(
+          'value_out_of_range',
+          'Fractal Axe-Fx II',
+          `slots[${col ?? row}] (block ${s.block_type}): params mixes flat values and channel-nested objects.`,
+          {
+            retry_action: 'Use one shape per slot: flat `{gain: 6}` to write to the current channel, or channel-nested `{X: {gain: 6}}` to address X/Y explicitly.',
+          },
         );
       }
       if (nestedCount > 0) {
@@ -844,8 +854,14 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
         for (const [chKey, paramMap] of entries) {
           const upper = chKey.trim().toUpperCase();
           if (upper !== 'X' && upper !== 'Y') {
-            throw new Error(
-              `slots[${col ?? row}] (block ${s.block_type}): params has unknown channel key "${chKey}" (valid: X, Y on Axe-Fx II).`,
+            throw new DispatchError(
+              'value_out_of_range',
+              'Fractal Axe-Fx II',
+              `slots[${col ?? row}] (block ${s.block_type}): params has unknown channel key "${chKey}".`,
+              {
+                valid_options: ['X', 'Y'],
+                retry_action: 'Axe-Fx II blocks have two channels: X and Y. AM4 / III A/B/C/D channel keys do not apply here.',
+              },
             );
           }
           const ch = upper as AxeFxIIChannel;
@@ -897,7 +913,12 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
   if (spec.scenes && spec.scenes.length > 0) {
     scenes = spec.scenes.map((sc) => {
       if (!Number.isInteger(sc.scene) || sc.scene < 1 || sc.scene > 8) {
-        throw new Error(`scenes[].scene=${sc.scene} out of range (1..8).`);
+        throw new DispatchError(
+          'value_out_of_range',
+          'Fractal Axe-Fx II',
+          `scenes[].scene=${sc.scene} out of range (1..8).`,
+          { retry_action: 'Axe-Fx II has 8 scenes per preset; pass scene as 1..8.' },
+        );
       }
       // Resolve scene-map block keys from slugs → executor display
       // names (same translation as slots[].block_type above). Without
@@ -912,7 +933,12 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
         ? Object.fromEntries(Object.entries(sc.channels).map(([blk, ch]) => {
             const letter = typeof ch === 'number' ? (ch === 0 ? 'X' : 'Y') : String(ch).toUpperCase();
             if (letter !== 'X' && letter !== 'Y') {
-              throw new Error(`scenes[${sc.scene}].channels.${blk}=${ch} not a valid Axe-Fx II channel (X or Y).`);
+              throw new DispatchError(
+                'value_out_of_range',
+                'Fractal Axe-Fx II',
+                `scenes[${sc.scene}].channels.${blk}=${ch} not a valid Axe-Fx II channel.`,
+                { valid_options: ['X', 'Y'], retry_action: 'Axe-Fx II channels are X or Y only.' },
+              );
             }
             return [resolveSceneKey(blk), letter as 'X' | 'Y'];
           }))
@@ -933,7 +959,12 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
   let scene: number | undefined;
   if (scenes === undefined && spec.landingScene !== undefined) {
     if (!Number.isInteger(spec.landingScene) || spec.landingScene < 1 || spec.landingScene > 8) {
-      throw new Error(`landingScene=${spec.landingScene} out of range (1..8).`);
+      throw new DispatchError(
+        'value_out_of_range',
+        'Fractal Axe-Fx II',
+        `landingScene=${spec.landingScene} out of range (1..8).`,
+        { retry_action: 'Axe-Fx II has 8 scenes; pass landingScene as 1..8.' },
+      );
     }
     scene = spec.landingScene - 1;
   }
@@ -981,10 +1012,20 @@ function encodeParamForApply(
   // on opaque knobs.
   const num = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(num)) {
-    throw new Error(`${blockSlug}.${paramName}: expected a number, got "${value}".`);
+    throw new DispatchError(
+      'value_out_of_range',
+      'Fractal Axe-Fx II',
+      `${blockSlug}.${paramName}: expected a number, got "${value}".`,
+      { retry_action: 'Pass a finite display value (number or enum string). This param lacks a calibrated display range so wire integers 0..65534 are also accepted.' },
+    );
   }
   if (!Number.isInteger(num) || num < 0 || num > 65534) {
-    throw new Error(`${blockSlug}.${paramName}: wire value out of range (0..65534): ${num}`);
+    throw new DispatchError(
+      'value_out_of_range',
+      'Fractal Axe-Fx II',
+      `${blockSlug}.${paramName}: wire value out of range (0..65534): ${num}`,
+      { retry_action: 'Uncalibrated param; pass an integer 0..65534. Call list_params({port:"axe-fx-ii", block:"<block>", name:"<param>"}) to confirm the controlType.' },
+    );
   }
   return num;
 }

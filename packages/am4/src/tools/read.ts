@@ -34,6 +34,8 @@ import {
 
 import { ensureMidi } from '@mcp-midi-control/core/server-shared/connections.js';
 import { READ_RESPONSE_TIMEOUT_MS, sendReadAndParse } from '../shared/readOps.js';
+import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 
 // -- Device-state register addresses (HW-047, Session 43) -------------------
 //
@@ -201,23 +203,26 @@ export function registerReadTools(server: McpServer): void {
     }, async ({ block }) => {
         const blockTypeValue = resolveBlockType(block);
         if (blockTypeValue === undefined) {
-            const known = Object.keys(BLOCK_TYPE_VALUES).join(', ');
-            return {
-                content: [{
-                    type: 'text',
-                    text: `Unknown block "${block}". Known: ${known}.`,
-                }],
-                isError: true,
-            };
+            const known = Object.keys(BLOCK_TYPE_VALUES).filter((k) => k !== 'none');
+            return asError(new DispatchError(
+                'unknown_block',
+                'Fractal AM4',
+                `Unknown block "${block}".`,
+                {
+                    valid_options: known.slice(0, 8),
+                    retry_action: 'Re-invoke with one verbatim block name from valid_options. The unified describe_device({port:"am4"}).blocks lists every block on AM4.',
+                },
+            ));
         }
         if (blockTypeValue === BLOCK_TYPE_VALUES.none) {
-            return {
-                content: [{
-                    type: 'text',
-                    text: `"none" isn't a real block; it represents an empty slot. Pass a real block name like "amp" or "drive".`,
-                }],
-                isError: true,
-            };
+            return asError(new DispatchError(
+                'unknown_block',
+                'Fractal AM4',
+                `"none" isn't a real block; it represents an empty slot.`,
+                {
+                    retry_action: 'Pass a real block name like "amp" or "drive".',
+                },
+            ));
         }
         const conn = ensureMidi();
         try {
@@ -237,6 +242,10 @@ export function registerReadTools(server: McpServer): void {
                     type: 'text',
                     text: `${block} is ${bypassed ? 'bypassed' : 'active'} in the current scene.`,
                 }],
+                structuredContent: {
+                    block,
+                    bypassed,
+                },
             };
         } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);

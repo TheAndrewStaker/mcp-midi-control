@@ -35,6 +35,8 @@ import {
   guardActiveBufferOrSave,
   type OnEditedMode,
 } from './shared.js';
+import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 
 export function registerAxeFxIIPresetTools(server: McpServer): void {
   server.registerTool('axefx2_test_apply', {
@@ -83,7 +85,14 @@ export function registerAxeFxIIPresetTools(server: McpServer): void {
       ops = buildApplyPresetOps(input);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`axefx2_test_apply: ${msg}`);
+      return asError(new DispatchError(
+        'value_out_of_range',
+        'Fractal Axe-Fx II',
+        `axefx2_test_apply: ${msg}`,
+        {
+          retry_action: 'Fix the input shape and re-invoke; or PREFER the unified apply_preset({port:"axe-fx-ii", spec, verify_chain:true}) which validates the whole spec via preflight in one pass.',
+        },
+      ));
     }
 
     const conn = ensureConn();
@@ -125,22 +134,24 @@ export function registerAxeFxIIPresetTools(server: McpServer): void {
         ? `FAIL — apply op got a non-OK ack: "${applyResult.lastNack.summary}" (resultCode=0x${applyResult.lastNack.resultCode.toString(16)}). Chain may also have breaks.`
         : `FAIL — chain has ${chainBreaks.length} broken cable${chainBreaks.length === 1 ? '' : 's'}. Signal won't flow past the first break.`;
 
+    const resultPayload = {
+      ok,
+      verdict,
+      chainBreaks,
+      gridSummary,
+      applyDigest,
+      elapsedMs: applyResult.elapsedMs,
+      ackCount: applyResult.acks,
+      opsTotal: ops.length,
+      bytesTotal: applyResult.totalBytes,
+      lastNack: applyResult.lastNack,
+    };
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({
-          ok,
-          verdict,
-          chainBreaks,
-          gridSummary,
-          applyDigest,
-          elapsedMs: applyResult.elapsedMs,
-          ackCount: applyResult.acks,
-          opsTotal: ops.length,
-          bytesTotal: applyResult.totalBytes,
-          lastNack: applyResult.lastNack,
-        }, null, 2),
+        text: JSON.stringify(resultPayload, null, 2),
       }],
+      structuredContent: resultPayload,
     };
   });
 }

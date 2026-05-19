@@ -228,7 +228,106 @@ async function main(): Promise<void> {
       record('axefx3_set_parameter(bad name) → structured DispatchError', pass, notes);
     }
 
+    // ── AM4: bad block name on get_block_bypass ─────────────────────
+    console.log('\nAM4 — vocabulary retry path');
+    {
+      const r = await client.callTool({
+        name: 'am4_get_block_bypass',
+        arguments: { block: 'NotAnAm4Block' },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const hasValidOptions = /Valid options:/i.test(t);
+      const namesBlock = /Unknown block "NotAnAm4Block"/i.test(t);
+      const pointsAtDescribeDevice = /describe_device\(\{port:"am4"\}\)\.blocks/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`text contains "Valid options:" → ${hasValidOptions}`);
+      notes.push(`text quotes bad input → ${namesBlock}`);
+      notes.push(`text points at describe_device → ${pointsAtDescribeDevice}`);
+      const pass = isErr && hasValidOptions && namesBlock && pointsAtDescribeDevice;
+      record('am4_get_block_bypass(bad name) → structured DispatchError', pass, notes);
+    }
+
+    // ── AM4: "none" block is structurally rejected ──────────────────
+    {
+      const r = await client.callTool({
+        name: 'am4_get_block_bypass',
+        arguments: { block: 'none' },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const explainsNone = /isn't a real block/i.test(t) && /Pass a real block name/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`text explains "none" sentinel → ${explainsNone}`);
+      const pass = isErr && explainsNone;
+      record('am4_get_block_bypass("none") → structured DispatchError', pass, notes);
+    }
+
+    // ── Hydrasynth: bad slot string on navigate_to ──────────────────
+    console.log('\nHydrasynth — slot retry path');
+    {
+      const r = await client.callTool({
+        name: 'hydra_navigate_to',
+        arguments: { slot: 'Z999' },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const pointsAtSlotFormat = /A001.*H128/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`text points at A001..H128 slot format → ${pointsAtSlotFormat}`);
+      const pass = isErr && pointsAtSlotFormat;
+      record('hydra_navigate_to(bad slot) → structured DispatchError', pass, notes);
+    }
+
+    // ── Hydrasynth: bad param name on apply_patch ───────────────────
+    {
+      const r = await client.callTool({
+        name: 'hydra_apply_patch',
+        arguments: {
+          slot: 'H128',
+          dance: 'none',
+          params: [{ name: 'NotARealParam', value: 64 }],
+        },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const namesParam = /unknown param "NotARealParam"/i.test(t);
+      const pointsAtListParams = /list_params\(\{port:"hydrasynth"\}\)/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`text quotes bad input → ${namesParam}`);
+      notes.push(`text points at list_params → ${pointsAtListParams}`);
+      const pass = isErr && namesParam && pointsAtListParams;
+      record('hydra_apply_patch(bad param) → structured DispatchError', pass, notes);
+    }
+
+    // ── Axe-Fx II: bad shape in test_apply ──────────────────────────
+    console.log('\nAxe-Fx II — test_apply validation retry path');
+    {
+      const r = await client.callTool({
+        name: 'axefx2_test_apply',
+        arguments: {
+          blocks: [
+            { block: 'NotARealBlock' },
+          ],
+          on_active_preset_edited: 'discard',
+        },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const pointsAtUnified = /apply_preset\(\{port:"axe-fx-ii", spec, verify_chain:true\}\)/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`text steers to unified apply_preset → ${pointsAtUnified}`);
+      const pass = isErr && pointsAtUnified;
+      record('axefx2_test_apply(bad shape) → steers to unified apply_preset', pass, notes);
+    }
+
     // ── Axe-Fx III: success on valid block (mock transport acks) ────
+    console.log('\nAxe-Fx III — success path (continued)');
     {
       const r = await client.callTool({
         name: 'axefx3_set_parameter',
