@@ -7,9 +7,9 @@ from "no code" to "deep RE work":
    install the server, run a small list of tool calls, and report
    whether the front panel matches the response. Five minutes per
    device, no developer setup. **This is the most valuable
-   contribution right now**, especially for Axe-Fx III owners — see
+   contribution right now**, especially for Axe-Fx III owners. See
    [`docs/community/axefx3-beta-testing.md`](docs/community/axefx3-beta-testing.md)
-   for the III test menu. Same shape works for any device — pick a
+   for the III test menu. Same shape works for any device: pick a
    handful of tool calls, run them, paste the JSON.
 2. **Add a device.** Write a `DeviceDescriptor` for a new piece of MIDI
    gear. The unified tool surface is device-agnostic; adding FM9, FM3,
@@ -23,7 +23,7 @@ from "no code" to "deep RE work":
 
 By submitting a contribution (pull request, patch, issue with a code
 suggestion, or any other form), you agree that your contribution is
-licensed under the project's license — **Apache License 2.0** — as
+licensed under the project's license (**Apache License 2.0**) as
 described in the [`LICENSE`](./LICENSE) file. You also certify that
 you have the right to submit the contribution under that license
 (e.g. it is your original work, or you have permission from the
@@ -32,31 +32,31 @@ copyright holder).
 No separate contributor license agreement (CLA) or developer
 certificate of origin (DCO) sign-off is required at this stage.
 
-## Path 1 — Test and report (no code)
+## Path 1: Test and report (no code)
 
 The simplest contribution. You need:
 
 - A supported device on USB.
-- The release ZIP installed (5 minutes — see project README).
+- The release ZIP installed (5 minutes; see project README).
 - Claude Desktop (or another MCP client) connected.
 
 Run any tool call against your device, paste the JSON response into a
 GitHub issue, and note whether the device's front panel did what the
 response says. That's it.
 
-The Axe-Fx III is the most-wanted target for this right now — the wire
+The Axe-Fx III is the most-wanted target for this right now. The wire
 shapes are decoded from public captures but no III owner has confirmed
 end-to-end. See [`docs/community/axefx3-beta-testing.md`](docs/community/axefx3-beta-testing.md)
 for a concrete 5–30 minute test menu.
 
-## Path 2 — Add a device
+## Path 2: Add a device
 
 The unified tool surface is device-agnostic: adding a new device means
-writing a **`DeviceDescriptor`** — a TypeScript object that describes
+writing a **`DeviceDescriptor`**, a TypeScript object that describes
 the device's capabilities, blocks, and wire adapters. No new MCP tools
 are needed.
 
-### Step 1 — Create a new package
+### Step 1: Create a new package
 
 Copy the Axe-Fx III package as a template:
 
@@ -72,14 +72,14 @@ Key files to update:
 | `package.json` | `name`, `description` |
 | `src/descriptor.ts` | Block roster, capabilities, `port_match` regex, beta-warning banners for unverified ops |
 | `src/midi.ts` | Port-discovery needles, connection helper |
-| `src/device.ts` | No changes needed — it exports `DESCRIPTOR` cleanly |
+| `src/device.ts` | No changes needed; it exports `DESCRIPTOR` cleanly |
 
 `packages/axe-fx-iii/src/descriptor.ts` is the **canonical template**:
 it demonstrates how to ship community-beta ops with a warning banner,
 how to populate `DeviceCapabilities`, how to write a `coerceLocation`
 adapter, and how to structure `agent_guidance`.
 
-### Step 2 — Register the descriptor
+### Step 2: Register the descriptor
 
 In `packages/server-all/src/server/index.ts`:
 
@@ -89,14 +89,14 @@ In `packages/server-all/src/server/index.ts`:
    ```
 2. Call `registerMcpDevice` **before** any device whose `port_match`
    regex would also match your device's port name. Registration order
-   decides which descriptor wins on ambiguous port names — more
+   decides which descriptor wins on ambiguous port names; more
    specific regex first. See `docs/DECISIONS.md` row 40 for the
    rationale.
    ```ts
    registerMcpDevice(YOUR_DESCRIPTOR);  // add before the catch-all
    ```
 
-### Step 3 — Wire the build and typecheck
+### Step 3: Wire the build and typecheck
 
 In the root `package.json`, add your package to:
 
@@ -104,12 +104,12 @@ In the root `package.json`, add your package to:
 - `typecheck` script (add `tsc --noEmit -p packages/<your-device>/tsconfig.json`)
 - `build:<your-device>` script and wire it into the `build` chain
 
-### Step 4 — Add to smoke-server expected-tools list
+### Step 4: Add to smoke-server expected-tools list
 
 If your descriptor registers any device-namespaced tools, add them to
 the expected list in `scripts/smoke-server.ts`.
 
-### Step 5 — Run preflight
+### Step 5: Run preflight
 
 ```
 npm run preflight
@@ -127,7 +127,7 @@ substring-match the OS port name, you'll need a special-case branch in
 `ensureConnection` analogous to the `AXEFX2_LABEL` entry. See
 `docs/DECISIONS.md` row 41.
 
-## Path 3 — Decode a protocol
+## Path 3: Decode a protocol
 
 If you're adding a new MCP wire op (or fixing a misbehaving existing
 op), you'll capture USB MIDI traffic and use those bytes to build a
@@ -153,7 +153,7 @@ byte-exact golden in `scripts/verify-msg.ts`.
 Two approaches, depending on what you need to capture.
 
 **Passive device-side capture** (host can read the device's outbound
-SysEx). Use this for everything the device emits — responses to
+SysEx). Use this for everything the device emits: responses to
 queries, broadcasts, state announcements. This is the byte-exact wire
 format every decoder gets tested against.
 
@@ -165,7 +165,7 @@ npm run capture-midi
 npm run capture-axefx2 -- samples/captured/my-axefx2-capture.syx
 npm run capture-am4    -- samples/captured/my-am4-capture.syx
 
-# Generic — any MIDI device by name substring:
+# Generic; any MIDI device by name substring:
 npm run capture-midi -- hydra samples/captured/foo.syx
 ```
 
@@ -199,11 +199,11 @@ the decode much easier.
 
 ### What goes in `samples/`, what goes in `docs/captures/`
 
-`samples/` is gitignored — that's local scratch for analysis. The
+`samples/` is gitignored; that's local scratch for analysis. The
 project doesn't ship multi-megabyte `.pcapng` files; capture your own
 to decode something new. Tiny canonical `.syx` snippets (a few hundred
 bytes) that demonstrate a specific wire shape can live under
-`docs/captures/` with a companion `.md` decode note — those are the
+`docs/captures/` with a companion `.md` decode note. Those are the
 ones contributors can read alongside the goldens to understand the
 envelope.
 

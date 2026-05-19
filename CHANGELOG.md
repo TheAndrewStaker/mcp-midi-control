@@ -14,7 +14,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Post-announce.** Every merge to `main` bumps the version (semver) and
   adds an entry below.
 
-## [0.1.0] — Unreleased
+## [0.1.0] (Unreleased)
 
 First public release. Hardware-verified MCP server for controlling USB MIDI
 gear from Claude in plain English.
@@ -22,14 +22,14 @@ gear from Claude in plain English.
 ### Added
 
 - **Device support.**
-  - Fractal Audio AM4 — hardware-verified end-to-end. 91% block-parameter
+  - Fractal Audio AM4: hardware-verified end-to-end. 91% block-parameter
     coverage; full preset authoring, scene/channel control, save-to-location.
-  - Fractal Audio Axe-Fx II XL+ (firmware Q8.02) — hardware-verified.
+  - Fractal Audio Axe-Fx II XL+ (firmware Q8.02): hardware-verified.
     Multi-scene preset authoring, 4×12 grid layout, save-to-slot, X/Y
     channel state per block.
-  - ASM Hydrasynth Explorer (firmware 1.5.x) — full NRPN patch dump
+  - ASM Hydrasynth Explorer (firmware 1.5.x): full NRPN patch dump
     workflow + 117-parameter registry.
-  - Fractal Audio Axe-Fx III — community beta. Protocol scaffolded from
+  - Fractal Audio Axe-Fx III: community beta. Protocol scaffolded from
     Fractal's published v1.4 MIDI Implementation PDF; all unified-surface
     operations wired with the byte-verified `fn=0x01 PARAMETER_SETGET`
     envelope (10 public captures). Beta warning banner on every response;
@@ -44,19 +44,19 @@ gear from Claude in plain English.
   `send_pitch_bend`, `send_clock_*`, `list_midi_ports`. Work against any
   USB MIDI device the OS exposes, registered or not.
 - **Device-namespaced tools (~25 tools, `am4_*`, `axefx2_*`, `hydra_*`).**
-  Carry device-unique capabilities the unified contract doesn't cover —
+  Carry device-unique capabilities the tool contract doesn't cover:
   Axe-Fx II grid layout reads, Hydrasynth NRPN patch dump, etc.
 - **Cross-device safe-edit contract** (`docs/SAFE-EDIT-WORKFLOW.md`).
   Three gates enforced consistently across devices:
-  - `on_active_preset_edited` — refuse navigation away from edited buffer
+  - `on_active_preset_edited`: refuse navigation away from edited buffer
     unless caller explicitly discards or saves first. AM4 uses a working-
     buffer fingerprint poll (no push signal exists); Axe-Fx II uses the
     device's state broadcast; Hydrasynth omits this gate (no MIDI-exposed
     dirty signal).
-  - `save_authorized` — apply-and-save tools refuse unless the caller
+  - `save_authorized`: apply-and-save tools refuse unless the caller
     explicitly authorizes the destructive save. Default refusal text
     teaches the agent the retry path.
-  - Multi-preset overwrite scan — `apply_setlist` pre-flights the target
+  - Multi-preset overwrite scan: `apply_setlist` pre-flights the target
     range and surfaces what would be overwritten before writing.
 - **Display-first tool API.** Every tool accepts and returns display
   units (musician-facing values from the device front panel, e.g.
@@ -70,13 +70,13 @@ gear from Claude in plain English.
   server with Claude Desktop. End users need no developer tooling.
 - **Documentation.**
   - `docs/SYSEX-MAP.md`, `docs/SYSEX-MAP-AXE-FX-II.md`,
-    `docs/SYSEX-MAP-AXE-FX-III.md` — per-device wire-protocol decodes
+    `docs/SYSEX-MAP-AXE-FX-III.md`: per-device wire-protocol decodes
     with 🟢/🟡/🔴 confidence legend and capture citations.
-  - `docs/fractal-protocol-decode-status.md` — coverage index; refreshed
+  - `docs/fractal-protocol-decode-status.md`: coverage index; refreshed
     by `npm run coverage-audit` reading code state directly.
-  - `docs/SAFETY-FOR-MUSICIANS.md`, `docs/GETTING-STARTED.md` — plain-
+  - `docs/SAFETY-FOR-MUSICIANS.md`, `docs/GETTING-STARTED.md`: plain-
     English trust model + day-one walkthroughs for non-developer users.
-  - `docs/DECISIONS.md` — append-only architectural decision log.
+  - `docs/DECISIONS.md`: append-only architectural decision log.
 - **License.** Apache-2.0 from day one. Patent grant included to protect
   contributors adding device support against upstream-vendor patent
   claims. Trademark statement in `NOTICE`.
