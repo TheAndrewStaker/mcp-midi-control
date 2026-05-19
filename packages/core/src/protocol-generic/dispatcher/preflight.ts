@@ -44,7 +44,7 @@ import {
   type ValidationInfo,
 } from '../types.js';
 import { resolveParamAlias } from '../cross-device-aliases.js';
-import { findEnumMatch } from '../cross-device-enums.js';
+import { findEnumMatch, resolveEnumAlias } from '../cross-device-enums.js';
 
 /**
  * Compute a small list of closest matches (up to `max` entries) to a
@@ -249,26 +249,48 @@ function validateParamMap(
             original_value: value,
             canonical: enumResult.match,
           });
-        } else if (enumResult.certainty === 'fuzzy' && enumResult.match !== undefined) {
-          // Reject: a fuzzy match could silently change the user's
-          // intent. Surface the top match as `suggested_substitution`
-          // so the agent can retry with a verbatim value if it agrees.
-          errors.push({
-            slot_index: slotIndex,
-            path,
-            error: `${blockKey}.${canonical}: unknown enum value "${value}". Closest match is "${enumResult.match}". Retry with that value if it's what you meant.`,
-            suggestions: enumResult.candidates,
-            suggested_substitution: enumResult.match,
-          });
-          continue;
         } else {
-          errors.push({
-            slot_index: slotIndex,
-            path,
-            error: `${blockKey}.${canonical}: unknown enum value "${value}"`,
-            suggestions: enumResult.candidates.length > 0 ? enumResult.candidates : closest(value, validLabels),
-          });
-          continue;
+          // BK-066 Phase 2: Phase 1 didn't auto-resolve. Before
+          // surfacing a fuzzy-match warning or a hard error, try the
+          // concept-key cross-device table. The agent that learned
+          // II's `"USA IIC+"` and now targets AM4 gets silently
+          // routed to AM4's `"USA MK IIC+"`, with the substitution
+          // logged in `info[]` so the agent learns the host word.
+          const aliasResult = resolveEnumAlias(descriptor.id, blockKey, canonical, value);
+          if (
+            aliasResult.aliasUsed !== undefined &&
+            aliasResult.canonical !== value &&
+            validLabels.includes(aliasResult.canonical)
+          ) {
+            normalizedValue = aliasResult.canonical;
+            info.push({
+              slot_index: slotIndex,
+              path,
+              info: `resolved ${blockKey}.${canonical}="${value}" -> "${aliasResult.canonical}" via cross-device concept-key "${aliasResult.conceptKey}"`,
+              original_value: value,
+              canonical: aliasResult.canonical,
+            });
+          } else if (enumResult.certainty === 'fuzzy' && enumResult.match !== undefined) {
+            // Reject: a fuzzy match could silently change the user's
+            // intent. Surface the top match as `suggested_substitution`
+            // so the agent can retry with a verbatim value if it agrees.
+            errors.push({
+              slot_index: slotIndex,
+              path,
+              error: `${blockKey}.${canonical}: unknown enum value "${value}". Closest match is "${enumResult.match}". Retry with that value if it's what you meant.`,
+              suggestions: enumResult.candidates,
+              suggested_substitution: enumResult.match,
+            });
+            continue;
+          } else {
+            errors.push({
+              slot_index: slotIndex,
+              path,
+              error: `${blockKey}.${canonical}: unknown enum value "${value}"`,
+              suggestions: enumResult.candidates.length > 0 ? enumResult.candidates : closest(value, validLabels),
+            });
+            continue;
+          }
         }
       } else if (typeof value === 'number') {
         if (schema.enum_values[value] === undefined) {

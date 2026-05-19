@@ -87,10 +87,12 @@ export const CROSS_DEVICE_ALIASES: Readonly<
       gain: 'drive',
     }),
     // AM4 amp's main volume is `master`; II canonical is `master_volume`.
+    // AM4 amp's amp-type-enum knob is `type`; II calls it `effect_type`.
     amp: Object.freeze({
       master_volume: 'master',
       output_level: 'master',
       volume: 'master',
+      effect_type: 'type',
     }),
     // AM4 wah's effect-type enum knob is `type`; II is `effect_type`.
     wah: Object.freeze({
@@ -131,8 +133,10 @@ export const CROSS_DEVICE_ALIASES: Readonly<
       drive: 'gain',
     }),
     // II amp's main volume is `master_volume`; AM4 is `master`.
+    // II amp uses `effect_type`; AM4 uses `type`.
     amp: Object.freeze({
       master: 'master_volume',
+      type: 'effect_type',
     }),
     // II uses `effect_type` block-wide; AM4 uses `type`. Accept the
     // AM4 word on the II port so a cross-device agent does not hit
@@ -173,9 +177,12 @@ export const CROSS_DEVICE_ALIASES: Readonly<
       // III's DISTORT_DRIVE display label is "Gain"; accept either.
       drive: 'gain',
     }),
+    // III amp's main volume display label is "Master"; II/AM4 aliases
+    // accepted. III amp's amp-type-enum knob is `type` (matches AM4).
     amp: Object.freeze({
       master_volume: 'master',
       volume: 'master',
+      effect_type: 'type',
     }),
     wah: Object.freeze({
       effect_type: 'type',
