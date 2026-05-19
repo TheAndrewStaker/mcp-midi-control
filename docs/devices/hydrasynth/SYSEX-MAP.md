@@ -11,7 +11,7 @@ via `npm run hydra:gen-nrpn`.
 
 Page references in this file are to the official Owner's Manual
 v2.2.0 located at
-`docs/manuals/Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf`
+`docs/devices/hydrasynth/manuals/Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf`
 (text-extracted alongside as `…_2.2.0.txt`).
 
 Status legend:
@@ -326,7 +326,9 @@ folder.
   confirm the on-device parameter moves. Cheap, builds confidence,
   catches any chart errata.
 - **Hardware verification of the NRPN catalog beyond the params
-  covered by ICONIC-TONES test runs.** The 1175-entry catalog is
+  covered by the iconic-tones test runs** (founder-private
+  portfolio at `docs/_private/HYDRASYNTH-ICONIC-TONES.md`).
+  The 1175-entry catalog is
   derived from edisyn RE; the subset exercised by the
   iconic-tones portfolio is the only part hardware-verified by us
   to date.

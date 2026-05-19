@@ -536,5 +536,5 @@ this path is blocked.
   drop more scrapes into `docs/_private/` and re-run.
 - [`SYSEX-MAP.md`](SYSEX-MAP.md) "Undocumented function bytes seen
   in the wild" section — earlier note on 0x01.
-- `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt` — the
+- `docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt` — the
   official v1.4 PDF that deliberately omits this function.

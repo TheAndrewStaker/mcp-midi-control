@@ -87,8 +87,8 @@ or speculating about wire shapes):
 
 - **AM4** → `docs/devices/am4/SYSEX-MAP.md`
 - **Axe-Fx II** → `docs/devices/axe-fx-ii/SYSEX-MAP.md`
-- **Axe-Fx III** → `docs/devices/axe-fx-iii/SYSEX-MAP.md` (covers Fractal v1.4 PDF; extracted text at `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`) + `docs/devices/axe-fx-iii/preset-format-research.md` (community RE of preset .syx format; Forum thread #159885 archived at `docs/_private/fractal-forum-text.txt`)
-- **Hydrasynth** → `docs/devices/hydrasynth/SYSEX-MAP.md` + `docs/devices/hydrasynth/OVERVIEW.md` for capability landscape; `docs/devices/hydrasynth/preset-format-research.md` for the `.hydra` / `.patch` file format probe; `docs/devices/hydrasynth/ICONIC-TONES.md` for the iconic-tones test portfolio
+- **Axe-Fx III** → `docs/devices/axe-fx-iii/SYSEX-MAP.md` (covers Fractal v1.4 PDF; extracted text at `docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`) + `docs/devices/axe-fx-iii/preset-format-research.md` (community RE of preset .syx format; Forum thread #159885 archived at `docs/_private/fractal-forum-text.txt`)
+- **Hydrasynth** → `docs/devices/hydrasynth/SYSEX-MAP.md` + `docs/devices/hydrasynth/OVERVIEW.md` for capability landscape; `docs/devices/hydrasynth/preset-format-research.md` for the `.hydra` / `.patch` file format probe; `docs/_private/HYDRASYNTH-ICONIC-TONES.md` for the iconic-tones test portfolio
 
 ## Reverse-engineering workflow
 

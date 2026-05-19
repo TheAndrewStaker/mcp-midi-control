@@ -33,7 +33,7 @@ Strongest first.
   STATE_BROADCAST (device→host)" (lines 105-134) and
   `packages/axe-fx-iii/src/setParam.ts` `parseSetGetParameterResponse`
   (lines 300-331, branch at line 314).
-- **v1.4 PDF (`docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt` lines 149-176)
+- **v1.4 PDF (`docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt` lines 149-176)
   explicitly enumerates only TWO documented pushes: tempo down-beat
   (0x10) and tuner (0x11).** Both are gated by the "Send Realtime
   Sysex" global parameter AND — critically — Fractal says: "this data
@@ -173,7 +173,7 @@ That's the minimum hardware-loop closure for this question.
   lines 614-619 (forum 0x21 claim — likely MIDI-Out, not USB).
 - `docs/research/fractal-broadcast-vs-poll-research.md` (the AM4/II methodology
   reference — replicate this script shape on the III).
-- `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt:149-176` ("PUSH DATA" spec).
+- `docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt:149-176` ("PUSH DATA" spec).
 - `packages/axe-fx-ii/src/midi.ts:108-268` (classifier to mirror).
 - `packages/am4/src/bufferFingerprint.ts` + `packages/am4/src/tools/safeEdit.ts`
   (fallback pattern to port if the hardware test refutes the broadcast).

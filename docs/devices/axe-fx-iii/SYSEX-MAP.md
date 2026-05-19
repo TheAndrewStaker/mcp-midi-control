@@ -6,8 +6,8 @@ shapes, check this doc and the underlying text extraction.
 
 ## Spec text extraction (READ THIS FIRST)
 
-- **Local extracted text:** [`docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`](../../manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt) (353 lines).
-- **Original PDF:** [`docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf`](../../manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf), Revision 1.4, "supported in Axe-Fx III firmware 1.13 or greater."
+- **Local extracted text:** [`docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`](../../manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt) (353 lines).
+- **Original PDF:** [`docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf`](../../manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf), Revision 1.4, "supported in Axe-Fx III firmware 1.13 or greater."
 - **Index entry:** [`docs/REFERENCES.md`](../../REFERENCES.md) row "Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf".
 
 The PDF is the **only** public protocol document Fractal ships for

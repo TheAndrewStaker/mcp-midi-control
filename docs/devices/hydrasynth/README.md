@@ -12,7 +12,7 @@ Fractal devices. Code lives in
   architecture cross-references to the Owner's Manual.
 - [`OVERVIEW.md`](./OVERVIEW.md) — capability landscape: what's
   reachable from MIDI, what's MIDI-only, what's panel-only.
-- [`ICONIC-TONES.md`](./ICONIC-TONES.md) — iconic-tones test portfolio
+- [`ICONIC-TONES.md`](../../_private/HYDRASYNTH-ICONIC-TONES.md) — iconic-tones test portfolio
   used during tone-building development.
 - [`preset-format-research.md`](./preset-format-research.md) — research
   on the `.hydra` / `.patch` file format.

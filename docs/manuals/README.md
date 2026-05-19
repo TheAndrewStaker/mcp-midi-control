@@ -1,9 +1,9 @@
-# Manuals — local-only reference set
+# Manuals, local-only reference set
 
-This directory holds copies of Fractal Audio's official documentation and
-a handful of third-party manuals (Hydrasynth). The project consults these
-during reverse-engineering work, design decisions about block / scene /
-parameter semantics, and when authoring user-facing tool descriptions.
+This directory holds **cross-device** vendor documentation (Fractal
+Audio Blocks Guide, MIMIC technology whitepaper). Per-device manuals
+live with the device under
+[`docs/devices/<device>/manuals/`](../devices/).
 
 ## Who this directory is for
 
@@ -34,11 +34,13 @@ a publisher objects to a specific extract, the policy is to drop that
 file (the `.gitignore` entry for the PDF stays; only the `.txt` would be
 removed).
 
-Download each PDF from the publisher's site (links below) and drop it in
-this directory so you can re-generate the `.txt` if needed. Several
-scripts and docs expect these exact filenames.
+Download each PDF from the publisher's site (links below) and drop it
+in the correct location (this directory for cross-device manuals,
+`docs/devices/<device>/manuals/` for per-device ones) so you can
+re-generate the `.txt` if needed. Several scripts and docs expect these
+exact filenames.
 
-## Fractal Audio manuals
+## Cross-device Fractal documentation (lives here)
 
 Drop these in `docs/manuals/`. The PDF is gitignored; the `.txt`
 extraction is committed. Generate the `.txt` once with `pdftotext`
@@ -47,48 +49,37 @@ the repo.
 
 | File | Source | What this project uses it for |
 |------|--------|-------------------------------|
-| `AM4-Owners-Manual.pdf` | [fractalaudio.com/am4-downloads](https://www.fractalaudio.com/am4-downloads/) | AM4 block roster, scene/channel semantics, factory layout |
-| `Axe-Fx-II-Owners-Manual.pdf` | [fractalaudio.com/axe-fx-ii-downloads](https://www.fractalaudio.com/axe-fx-ii-downloads/) | Axe-Fx II block roster, grid behavior, preset model |
-| `Axe-Fx-II-Scenes-Mini-Manual-1.02.pdf` | same source | Scene model on Axe-Fx II (per-scene state: channel + bypass) |
-| `Axe-Fx-II-Tone-Match-Manual.pdf` | same source | Tone Match block semantics |
-| `Axe-Fx-II-ir-capture.pdf` | same source | IR capture workflow |
-| `Axe-Fx_II_XL_MIDI_THRU_Guide.pdf` | same source | MIDI Thru on the XL+ specifically |
-| `Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf` | [fractalaudio.com/downloads/misc](https://www.fractalaudio.com/downloads/misc/Axe-Fx%20III%20MIDI%20for%203rd%20Party%20Devices.pdf) | Axe-Fx III MIDI wire surface. The public protocol spec |
-| `Axe-Fx-III-Owners-Manual.pdf` | [fractalaudio.com/axe-fx-iii-downloads](https://www.fractalaudio.com/axe-fx-iii-downloads/) | III block roster, scene model, footswitch logic. Complements the third-party MIDI spec (which covers wire only) |
-| `Fractal-Audio-Blocks-Guide.pdf` | [fractalaudio.com/downloads](https://www.fractalaudio.com/downloads/) (search "Blocks Guide") | Per-block parameter prose. Cross-device (AM4 / FM3 / FM9 / Axe-Fx III). Most-cited reference in the codebase |
-| `Fractal-Audio-Systems-MIMIC-(tm)-Technology.pdf` | Fractal blog / downloads | Background on the speaker simulation technology |
+| `Fractal-Audio-Blocks-Guide.pdf` | [fractalaudio.com/downloads](https://www.fractalaudio.com/downloads/) (search "Blocks Guide") | Per-block parameter prose. Cross-device (AM4 / FM3 / FM9 / Axe-Fx III). Most-cited reference in the codebase. Feeds `npm run extract-param-descriptions`. |
+| `Fractal-Audio-Systems-MIMIC-(tm)-Technology.pdf` | Fractal blog / downloads | Background on the speaker simulation technology. |
 
-The PDF for the III MIDI spec ships from Fractal with spaces in the
-filename. After download, rename to
-`Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf` so the `pdftotext` command
-below matches and the `.txt` filename stays consistent across the repo.
+## Per-device manuals (live with the device)
 
-## Hydrasynth manuals
+Per-device manuals are co-located with the device's other docs at
+[`docs/devices/<device>/manuals/`](../devices/). Each device folder has
+its own README listing its expected manuals + download URLs.
 
-Drop these in `docs/manuals/`. The PDF is gitignored; the `.txt` (or
-`.xlsx`) extraction is committed.
-
-| File | Source | What this project uses it for |
-|------|--------|-------------------------------|
-| `Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf` | [asmhydrasynth.com/downloads](https://www.asmhydrasynth.com/downloads/) (Hydrasynth Explorer section) | Hydrasynth NRPN catalog, system CC layout, voice architecture |
-| `Hydrasynth_KB_DR_Owners_Manual_2.2.0.pdf` | [asmhydrasynth.com/downloads](https://www.asmhydrasynth.com/downloads/) (Hydrasynth Keyboard / Desktop / Deluxe section) | Keyboard / Desktop / Deluxe manual. Same engine; used to confirm portability of the Hydrasynth tool surface across the line |
-| `Hydrasynth_Single_Factory_Patch_Listing_2.0.xlsx` | Same source | Factory patch names for the discovery flow (the `.xlsx` is the source artefact — committed directly, not generated from a PDF) |
+| Device | Manuals folder |
+|--------|----------------|
+| Fractal AM4 | [`docs/devices/am4/manuals/`](../devices/am4/manuals/) |
+| Fractal Axe-Fx II XL+ | [`docs/devices/axe-fx-ii/manuals/`](../devices/axe-fx-ii/manuals/) |
+| Fractal Axe-Fx III | [`docs/devices/axe-fx-iii/manuals/`](../devices/axe-fx-iii/manuals/) |
+| ASM Hydrasynth | [`docs/devices/hydrasynth/manuals/`](../devices/hydrasynth/manuals/) |
 
 ## Generating the `.txt` extractions
 
 Most consumers in this repo (scripts, agents, doc cross-references)
-expect the `.txt` form, not the PDF. Generate after each PDF download:
+expect the `.txt` form, not the PDF. Generate after each PDF download.
+For cross-device manuals:
 
 ```bash
 cd docs/manuals
-pdftotext -layout "AM4-Owners-Manual.pdf" "AM4-Owners-Manual.txt"
 pdftotext -layout "Fractal-Audio-Blocks-Guide.pdf" "Fractal-Audio-Blocks-Guide.txt"
-pdftotext -layout "Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf" "Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt"
-pdftotext -layout "Axe-Fx-II-Owners-Manual.pdf" "Axe-Fx-II-Owners-Manual.txt"
-pdftotext -layout "Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf" "Hydrasynth_Explorer_Owners_Manual_2.2.0.txt"
-pdftotext -layout "Hydrasynth_KB_DR_Owners_Manual_2.2.0.pdf" "Hydrasynth_KB_DR_Owners_Manual_2.2.0.txt"
-# repeat for each PDF you downloaded
+pdftotext -layout "Fractal-Audio-Systems-MIMIC-(tm)-Technology.pdf" "Fractal-Audio-Systems-MIMIC-(tm)-Technology.txt"
 ```
+
+For per-device manuals, run `pdftotext -layout` in the relevant
+`docs/devices/<device>/manuals/` directory. Filenames inside each
+per-device folder are documented in that folder's README.
 
 On Windows, `pdftotext` ships with Poppler / MSYS2. Any equivalent
 extractor that preserves layout works.
@@ -98,9 +89,9 @@ extractor that preserves layout works.
 Claude Code agents working on this codebase grep the `.txt` files
 directly. Common patterns:
 
-- "What does `amp.bias_x` do on a triode amp?" -> `grep -B 2 -A 8 'bias_x' Fractal-Audio-Blocks-Guide.txt`
-- "What are the AM4's scene-vs-channel semantics?" -> read `AM4-Owners-Manual.txt` sections on Scenes and Channels.
-- "Does the III have per-scene block bypass like the II?" -> grep the III spec, fall back to forum captures if absent.
+- "What does `amp.bias_x` do on a triode amp?": `grep -B 2 -A 8 'bias_x' docs/manuals/Fractal-Audio-Blocks-Guide.txt`
+- "What are the AM4's scene-vs-channel semantics?": read `docs/devices/am4/manuals/AM4-Owners-Manual.txt` sections on Scenes and Channels.
+- "Does the III have per-scene block bypass like the II?": grep `docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`, fall back to forum captures if absent.
 
 When an agent can't answer a knob-semantics question from the `.txt`
 files, that's a real gap worth flagging to the maintainer. Don't burn
@@ -112,7 +103,7 @@ knowledge. End users of the server don't need any of these files
 installed.
 
 The running MCP server bundles a derived
-`packages/core/src/protocol-generic/param-descriptions.json` — a
+`packages/core/src/protocol-generic/param-descriptions.json`: a
 maintainer-time scrape of the Blocks Guide (plus the Owner's Manuals
 where the regex catches more entries) keyed by (device, block, param).
 The unified `list_params` and `get_param` tools surface the prose to
@@ -126,6 +117,7 @@ is idempotent so the regenerated file diffs cleanly.
   manual the codebase actively cites.
 - [`docs/devices/am4/SYSEX-MAP.md`](../devices/am4/SYSEX-MAP.md),
   [`docs/devices/axe-fx-ii/SYSEX-MAP.md`](../devices/axe-fx-ii/SYSEX-MAP.md),
-  and [`docs/devices/axe-fx-iii/SYSEX-MAP.md`](../devices/axe-fx-iii/SYSEX-MAP.md)
+  [`docs/devices/axe-fx-iii/SYSEX-MAP.md`](../devices/axe-fx-iii/SYSEX-MAP.md),
+  [`docs/devices/hydrasynth/SYSEX-MAP.md`](../devices/hydrasynth/SYSEX-MAP.md)
   are the authoritative wire-protocol references; the manuals fill in
   the semantic context behind the wire.

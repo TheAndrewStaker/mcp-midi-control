@@ -31,7 +31,7 @@ will lean pedagogical.
 
 ## Protocol surface
 
-Source: `docs/manuals/Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf`,
+Source: `docs/devices/hydrasynth/manuals/Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf`,
 "MIDI" section pp. 80–83 + "MIDI CC Charts" pp. 94–96. NRPN map
 sourced from `references/nrpn.csv` (vendored from eclab/edisyn,
 Apache-2.0). SysEx encoding sourced from
@@ -125,11 +125,12 @@ reverbtime) carries an `enumValueScale` (×8 for FX types) so that
 
 ## See also
 
-- **`MIDI-MAP.md`** — the CC chart + NRPN-catalog reference in this folder.
-- **`HYDRA-FILE-FORMAT.md`** — the ASM-Manager `.hydra` / `.patch` file
-  format probe findings (1762-byte format, not the same as the SysEx
-  patch payload).
-- **`ICONIC-TONES.md`** — 15 iconic synth tones used as hardware tests
-  + demo portfolio.
-- `references/README.md` (in this folder) — provenance + caveats for
-  the vendored edisyn artefacts.
+- [`SYSEX-MAP.md`](./SYSEX-MAP.md): the CC chart + NRPN-catalog reference.
+- [`preset-format-research.md`](./preset-format-research.md): the
+  ASM-Manager `.hydra` / `.patch` file format probe findings
+  (1762-byte format, distinct from the SysEx patch payload).
+- `docs/_private/HYDRASYNTH-ICONIC-TONES.md`: 15 iconic synth tones
+  used as hardware tests + demo portfolio (founder-private).
+- Vendored edisyn artefacts (`nrpn.csv`, `SysexEncoding.txt`,
+  `SysexPatchFormat.txt`, `ASMHydrasynth.java`) live in the
+  maintainer's local research workspace; not committed.

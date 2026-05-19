@@ -33,7 +33,7 @@ manuals.
 All files below live in `docs/manuals/` unless noted. Plain-text `.txt` extractions
 sit next to each PDF for grep-ability.
 
-### `docs/manuals/AM4-Owners-Manual.pdf` (8.4 MB, extracted to `.txt`, 2956 lines)
+### `docs/devices/am4/manuals/AM4-Owners-Manual.pdf` (8.4 MB, extracted to `.txt`, 2956 lines)
 Primary AM4 user manual from Fractal Audio. The authoritative source for:
 - Hardware controls, footswitch functions, rear-panel I/O.
 - Preset navigation model (A1–Z4, scenes, channels).
@@ -50,7 +50,7 @@ Contains:
 - Channel/modifier/controller architecture.
 - Is the correct source for "what does parameter X do" once you know the TYPE.
 
-### `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf` (220 KB, extracted to `Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`)
+### `docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf` (220 KB, extracted to `Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`)
 The only public SysEx protocol document from Fractal. AM4 is in the same family,
 so this defines the "baseline" command set (bypass 0x0A, channel 0x0B, scene 0x0C,
 patch/scene name query 0x0D/0x0E, status dump 0x13, tempo 0x14). **AM4 has been
