@@ -100,6 +100,39 @@ const AM4_EXAMPLE_SPEC: PresetSpec = {
   landingScene: 1,
 };
 
+/**
+ * Curated top-N first-page knob list per AM4 block.
+ *
+ * Source: AM4-Edit front-panel page-1 controls + `docs/BLOCK-PARAMS.md`
+ * + the loudness corpus. Each list is the daily-use subset a player
+ * adjusts when tone-building, in AM4's canonical spelling. Advanced-page
+ * knobs (GEQ bands, sidechain detail, modifier wiring) live in
+ * `list_params` — not here.
+ *
+ * Cross-device convention: keep amp/drive/reverb/delay/chorus structure
+ * parallel across AM4 / II / III so the agent's intuition transfers.
+ */
+const AM4_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  amp: ['type', 'gain', 'bass', 'mid', 'treble', 'presence', 'master', 'level'],
+  drive: ['type', 'drive', 'tone', 'level', 'mix', 'bass', 'mid', 'treble'],
+  reverb: ['type', 'mix', 'time', 'pre_delay', 'size', 'high_decay'],
+  delay: ['type', 'time', 'feedback', 'mix', 'low_cut', 'high_cut'],
+  chorus: ['type', 'rate', 'depth', 'mix', 'level'],
+  flanger: ['type', 'rate', 'depth', 'feedback', 'mix', 'level'],
+  phaser: ['type', 'rate', 'depth', 'feedback', 'mix', 'level'],
+  wah: ['type', 'min_frequency', 'max_frequency', 'q_resonance', 'wah_control', 'mix'],
+  compressor: ['type', 'threshold', 'ratio', 'attack', 'release', 'mix'],
+  filter: ['type', 'freq', 'q', 'gain', 'mix'],
+  tremolo: ['type', 'rate', 'depth', 'duty', 'shape'],
+  enhancer: ['type', 'width', 'depth', 'level'],
+  gate: ['threshold', 'attack', 'hold', 'release', 'ratio', 'level'],
+  volpan: ['mode', 'volume', 'pan_left', 'pan_right', 'level'],
+  rotary: ['rate', 'low_depth', 'high_depth', 'drive', 'level', 'mic_distance'],
+  ingate: ['threshold', 'attack', 'release', 'ratio', 'level'],
+  geq: ['type', 'level', 'mix'],
+  peq: ['mix'],
+});
+
 export const AM4_DESCRIPTOR: DeviceDescriptor = {
   id: 'am4',
   display_name: 'Fractal AM4',
@@ -134,6 +167,7 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
   reader,
   writer,
   agent_guidance: AM4_AGENT_GUIDANCE,
+  block_params_summary: AM4_BLOCK_PARAMS_SUMMARY,
   findCompatibleTypes,
   example_spec: AM4_EXAMPLE_SPEC,
 };

@@ -858,6 +858,31 @@ export interface DeviceDescriptor {
   agent_guidance?: Readonly<Record<string, string>>;
 
   /**
+   * Curated top-N param list per block — the params a player adjusts daily
+   * (first-page knobs on the hardware). Surfaced through `describe_device`
+   * so the agent can skip the `list_params` round-trip for common cases;
+   * fall back to `list_params(port, block)` for the full universe.
+   *
+   * Curation criteria (per BK-051 discoverability pass):
+   *   1. First-page knobs on the hardware (daily-use knobs).
+   *   2. Display-calibrated (predictable agent behavior).
+   *   3. Cross-device-conceptually-meaningful (intuition transfers).
+   *
+   * Excludes: bypass, channel, internal-state, modifier wiring, master EQ,
+   * advanced page parameters, GEQ bands.
+   *
+   * Each block lists ~5-10 entries IN THAT DEVICE'S CANONICAL SPELLING
+   * (II: `drive.effect_type` / `drive.volume`; AM4: `drive.type` /
+   * `drive.level`). The dispatcher validates each entry exists on the
+   * registered block before surfacing the field (verify-describe-device
+   * golden).
+   *
+   * Optional — devices without a curated summary omit the field; the
+   * agent falls back to `list_params` for every block.
+   */
+  block_params_summary?: Readonly<Record<string, readonly string[]>>;
+
+  /**
    * Optional pure-introspection method: return the subset of `block.type`
    * enum values that expose every listed param. Backs the
    * `find_compatible_types` MCP tool. Devices with structured

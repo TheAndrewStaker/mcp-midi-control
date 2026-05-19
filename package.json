@@ -49,6 +49,7 @@
     "verify-sysex-assembler": "tsx scripts/verify-sysex-assembler.ts",
     "verify-msg": "tsx scripts/verify-msg.ts",
     "verify-describe-inbound": "tsx scripts/verify-describe-inbound.ts",
+    "verify-describe-device": "tsx scripts/verify-describe-device.ts",
     "verify-transpile": "tsx scripts/verify-transpile.ts",
     "verify-enum-lookup": "tsx scripts/verify-enum-lookup.ts",
     "verify-echo": "tsx scripts/verify-echo.ts",

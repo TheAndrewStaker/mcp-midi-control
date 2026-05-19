@@ -1011,6 +1011,40 @@ const writer: DeviceWriter = {
   },
 };
 
+// ── Curated top-N first-page knob list per block ──────────────────
+//
+// Source: AxeEdit III page-1 controls per block. Each list is in the
+// III's canonical spelling (note: III uses `type` not `effect_type`,
+// `master` not `master_volume`, `hicut`/`lowcut` (one word), and
+// `harm1`/`harm2` for pitch voices). Excludes bypass, bypassmode,
+// globalmix, balance, sceneignore (advanced page), and the per-tap
+// multitap_delay params. AMP block omitted — its params catalog isn't
+// mined yet (post-v1.13 firmware addition; see GROUP_TO_FAMILY note).
+
+const AXEFX3_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  drive: ['type', 'drive', 'bass', 'mid', 'treble', 'master', 'presence', 'level'],
+  reverb: ['type', 'mix', 'time', 'predelay', 'size', 'hicut', 'level'],
+  delay: ['type', 'time', 'feed', 'mix', 'locut', 'hicut', 'level'],
+  chorus: ['type', 'rate', 'depth', 'mix', 'level'],
+  flanger: ['type', 'rate', 'depth', 'feedback', 'mix', 'level'],
+  phaser: ['type', 'rate', 'depth', 'feedback', 'mix', 'level'],
+  wah: ['type', 'fstart', 'fstop', 'q', 'control', 'level'],
+  compressor: ['type', 'thresh', 'ratio', 'attack', 'release', 'level', 'mix'],
+  pitch: ['type', 'pitchmode', 'harm1', 'harm2', 'key', 'scale', 'mix', 'level'],
+  cab: ['level', 'pan'],
+  pan_tremolo: ['type', 'rate', 'depth', 'duty', 'mix', 'level'],
+  filter: ['type', 'freq', 'q', 'gain', 'level'],
+  enhancer: ['type', 'width', 'depth', 'level'],
+  gate_expander: ['type', 'thresh', 'attack', 'hold', 'release', 'ratio', 'level'],
+  rotary: ['rate', 'lfdepth', 'hfdepth', 'drive', 'mix', 'level'],
+  volume_pan: ['gain', 'panl', 'panr', 'level'],
+  fuzz: ['type', 'drive', 'tone', 'level', 'mix'],
+  formant: ['mix', 'level'],
+  synth: ['mix', 'level'],
+  ring_modulator: ['mix', 'level'],
+  multitap_delay: ['basetype', 'time1', 'feedback1', 'level1', 'time2', 'feedback2', 'level2'],
+});
+
 // ── Agent guidance ─────────────────────────────────────────────────
 
 const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
@@ -1274,4 +1308,5 @@ export const AXEFX3_DESCRIPTOR: DeviceDescriptor = {
   writer,
   agent_guidance: AXEFX3_AGENT_GUIDANCE,
   example_spec: AXEFX3_EXAMPLE_SPEC,
+  block_params_summary: AXEFX3_BLOCK_PARAMS_SUMMARY,
 };

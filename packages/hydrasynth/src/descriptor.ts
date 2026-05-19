@@ -62,6 +62,48 @@ const HYDRASYNTH_EXAMPLE_SPEC: PresetSpec = {
   ],
 };
 
+/**
+ * Curated top-N first-page knob list per Hydrasynth module.
+ *
+ * Source: front-panel module page ordering on the Explorer + the per-
+ * module sections in `docs/devices/hydrasynth/SECTIONS.md`. Each list
+ * is the daily-use knob set a synth player adjusts (oscillator pitch
+ * + waveform, filter cutoff/res, envelope ADSR, LFO rate/wave, effects
+ * mix/feedback). Excludes modulation-matrix wiring, per-step LFO
+ * sequences, wavescan waveX entries, and warpN morphing knobs (those
+ * live in `list_params`).
+ *
+ * The agent maps "block" -> Hydrasynth's "module" automatically via
+ * `block_aliases.module`, but the param spellings here match each
+ * module's own field names verbatim (no aliasing).
+ */
+const HYDRASYNTH_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  osc1: ['mode', 'type', 'semi', 'cent', 'keytrack', 'wavescan'],
+  osc2: ['mode', 'type', 'semi', 'cent', 'keytrack', 'wavescan'],
+  osc3: ['mode', 'type', 'semi', 'cent', 'keytrack'],
+  mixer: ['osc1_vol', 'osc2_vol', 'osc3_vol', 'noise_vol', 'ring_mod_vol', 'filterrouting'],
+  filter1: ['type', 'cutoff', 'res', 'drive', 'keytrack', 'env1amt'],
+  filter2: ['type', 'cutoff', 'res', 'keytrack', 'env1amt'],
+  amp: ['level', 'velenv', 'lfo2amt'],
+  prefx: ['type', 'preset', 'mix', 'param1', 'param2'],
+  delay: ['type', 'time', 'feedback', 'dry_wet', 'feedtone', 'wet_tone'],
+  reverb: ['type', 'time', 'predelay', 'dry_wet', 'tone', 'hidamp', 'lodamp'],
+  postfx: ['type', 'preset', 'mix', 'param1', 'param2'],
+  lfo1: ['wave', 'rate', 'gain', 'phase', 'smooth'],
+  lfo2: ['wave', 'rate', 'gain', 'phase', 'smooth'],
+  lfo3: ['wave', 'rate', 'gain', 'phase', 'smooth'],
+  lfo4: ['wave', 'rate', 'gain', 'phase', 'smooth'],
+  lfo5: ['wave', 'rate', 'gain', 'phase', 'smooth'],
+  env1: ['attack', 'decay', 'sustain', 'release', 'atkcurve', 'deccurve', 'relcurve'],
+  env2: ['attack', 'decay', 'sustain', 'release', 'atkcurve', 'deccurve', 'relcurve'],
+  env3: ['attack', 'decay', 'sustain', 'release'],
+  env4: ['attack', 'decay', 'sustain', 'release'],
+  env5: ['attack', 'decay', 'sustain', 'release'],
+  arp: ['enable', 'mode', 'division', 'octave', 'octmode', 'gate', 'swing'],
+  voice: ['polyphony', 'glide', 'detune', 'stwidth', 'analogfeel', 'density'],
+  macros: ['macro_1', 'macro_2', 'macro_3', 'macro_4', 'macro_5', 'macro_6', 'macro_7', 'macro_8'],
+});
+
 export const HYDRASYNTH_DESCRIPTOR: DeviceDescriptor = {
   id: 'hydrasynth',
   display_name: 'ASM Hydrasynth Explorer',
@@ -100,4 +142,5 @@ export const HYDRASYNTH_DESCRIPTOR: DeviceDescriptor = {
   writer,
   agent_guidance: HYDRASYNTH_AGENT_GUIDANCE,
   example_spec: HYDRASYNTH_EXAMPLE_SPEC,
+  block_params_summary: HYDRASYNTH_BLOCK_PARAMS_SUMMARY,
 };

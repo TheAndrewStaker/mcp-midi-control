@@ -90,6 +90,39 @@ const AXEFX2_EXAMPLE_SPEC: PresetSpec = {
   landingScene: 1,
 };
 
+/**
+ * Curated top-N first-page knob list per Axe-Fx II block.
+ *
+ * Source: AxeEdit page-1 controls per block. Each list is in the II's
+ * canonical spelling (note: II uses `effect_type` not `type`,
+ * `master_volume` not `master`, `volume` not `level` for drive).
+ * Excludes bypass, balance, bypass_mode, globalmix (advanced page),
+ * and per-tap multidelay parameters.
+ */
+const AXEFX2_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  amp: ['effect_type', 'input_drive', 'bass', 'middle', 'treble', 'presence', 'master_volume', 'level'],
+  drive: ['effect_type', 'gain', 'tone', 'volume', 'mix', 'bass', 'middle', 'treble'],
+  reverb: ['effect_type', 'mix', 'time', 'predelay', 'size', 'high_cut', 'level'],
+  delay: ['effect_type', 'time', 'feedback', 'mix', 'low_cut', 'high_cut', 'level'],
+  chorus: ['effect_type', 'rate', 'depth', 'mix', 'level'],
+  flanger: ['effect_type', 'rate', 'depth', 'feedback', 'mix', 'level'],
+  phaser: ['effect_type', 'rate', 'depth', 'feedback', 'mix', 'level'],
+  wah: ['effect_type', 'freq_min', 'freq_max', 'resonance', 'control', 'level'],
+  compressor: ['effect_type', 'treshold', 'ratio', 'attack', 'release', 'level', 'mix'],
+  pitch: ['effect_type', 'mode', 'voice_1_harmony', 'voice_2_harmony', 'key', 'scale', 'mix', 'level'],
+  cab: ['cab', 'mic', 'low_cut', 'high_cut', 'level', 'proximity'],
+  pantrem: ['effect_type', 'rate', 'depth', 'duty', 'mix', 'level'],
+  filter: ['effect_type', 'frequency', 'q', 'gain', 'level'],
+  enhancer: ['effect_type', 'width', 'depth', 'level'],
+  gateexpander: ['threshold', 'attack', 'hold', 'release', 'ratio', 'level'],
+  rotary: ['rate', 'low_depth', 'hi_depth', 'drive', 'mix', 'level'],
+  volpan: ['volume', 'pan_left', 'pan_right', 'level'],
+  ringmod: ['mix', 'level'],
+  formant: ['mix', 'level'],
+  synth: ['mix', 'level'],
+  multidelay: ['time_1', 'feedback_1', 'level_1', 'time_2', 'feedback_2', 'level_2'],
+});
+
 export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
   id: 'axe-fx-ii',
   display_name: 'Fractal Axe-Fx II XL+',
@@ -124,4 +157,5 @@ export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
   writer,
   agent_guidance: AXEFX2_AGENT_GUIDANCE,
   example_spec: AXEFX2_EXAMPLE_SPEC,
+  block_params_summary: AXEFX2_BLOCK_PARAMS_SUMMARY,
 };

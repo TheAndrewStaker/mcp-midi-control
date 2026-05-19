@@ -19,6 +19,19 @@ export const PORT_DESC =
   'connected ports; call describe_device(port) to confirm capabilities.';
 
 /**
+ * Shared snippet for tools whose description references the curated top-N
+ * knob list on `describe_device.block_params_summary`. Single source so
+ * the wording stays in sync across tools (describe_device tool itself,
+ * list_params, set_param, apply_preset, etc.).
+ */
+export const BLOCK_PARAMS_SUMMARY_HINT =
+  'For the most-commonly-used knobs per block (first-page knobs the player ' +
+  'adjusts daily), read `describe_device(port).block_params_summary` first — ' +
+  'it covers ~80% of tone-building writes in one round-trip. Call ' +
+  '`list_params(port, block)` for the full universe (advanced page params, ' +
+  'GEQ bands, modifier wiring, exhaustive enum tables).';
+
+/**
  * Shape a unified-surface tool result. Returns both:
  *   - `content` — human-readable text (the stringified payload), kept
  *     for back-compat with agents that read text responses verbatim.

@@ -35,6 +35,7 @@ export function describeDevice(port: string): {
   block_types: readonly string[];
   agent_guidance?: DeviceDescriptor['agent_guidance'];
   example_spec?: PresetSpec;
+  block_params_summary?: DeviceDescriptor['block_params_summary'];
 } {
   const desc = requireDevice(port);
   // RegExp objects serialize to `{}` through JSON.stringify, so MCP agents
@@ -54,6 +55,7 @@ export function describeDevice(port: string): {
     block_types: desc.block_types ? Object.keys(desc.block_types) : [],
     agent_guidance: desc.agent_guidance,
     example_spec: desc.example_spec,
+    block_params_summary: desc.block_params_summary,
   };
 }
 
