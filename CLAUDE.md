@@ -411,7 +411,7 @@ do all three of these or the test will run against stale code:**
 1. **`npm run preflight`** — per-package typecheck + goldens pass.
 2. **`npm run build`** — rebuilds every package in dependency order
    (`@mcp-midi-control/core` → `@mcp-midi-control/am4|axe-fx-ii|
-   hydrasynth-explorer` → `@mcp-midi-control/server-all`) and copies
+   hydrasynth` → `@mcp-midi-control/server-all`) and copies
    lineage JSON into `packages/core/dist/fractal-shared/lineage/`.
 3. **Tell the founder to fully quit and relaunch Claude Desktop.** Just
    closing the window keeps the MCP server child alive in the tray — it

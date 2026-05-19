@@ -29,7 +29,7 @@ const CHART_PATH = path.resolve(
 );
 const OUTPUT_PATH = path.resolve(
   __dirname,
-  '../../packages/hydrasynth-explorer/src/params.ts',
+  '../../packages/hydrasynth/src/params.ts',
 );
 
 interface RawEntry {

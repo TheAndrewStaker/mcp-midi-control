@@ -26,7 +26,7 @@
  *   ->  1A 00              Footer
  *   <-  1B 00              Footer Response
  */
-import { connectHydrasynth } from '@mcp-midi-control/hydrasynth-explorer/midi.js';
+import { connectHydrasynth } from '@mcp-midi-control/hydrasynth/midi.js';
 
 const SYSEX_PREFIX = [0xf0, 0x00, 0x20, 0x2b, 0x00, 0x6f];
 const SYSEX_END = 0xf7;

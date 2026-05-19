@@ -124,11 +124,11 @@ Same pattern as AM4:
 - **STAY:** `descriptor/agentGuidance.ts`, `midi.ts`, `device.ts`,
   `tools/*`, the descriptor-registration wrapper.
 
-### `packages/hydrasynth-explorer/src/`
+### `packages/hydrasynth/src/`
 
-Out of scope for `fractal-midi`. Hydrasynth Explorer is the seed of a
-future `asm-midi` package per the same roadmap doc — separate
-extraction, same pattern.
+Out of scope for `fractal-midi`. The Hydrasynth line (Explorer / KB /
+Deluxe / Desktop) is the seed of a future `asm-midi` package per the
+same roadmap doc — separate extraction, same pattern.
 
 ### `packages/server-all/`
 

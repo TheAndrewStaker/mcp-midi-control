@@ -10,10 +10,10 @@
  * Spec-derived rows fill in the param families the test didn't cover
  * (delaywet, reverbwet, mutator*wet, etc.).
  */
-import { resolveNrpnValue, resolveFxAwareValue } from '@mcp-midi-control/hydrasynth-explorer/encoding.js';
-import { findHydraNrpn } from '@mcp-midi-control/hydrasynth-explorer/nrpn.js';
-import { decodeFxNrpnDisplay, decodeNrpnDisplay } from '@mcp-midi-control/hydrasynth-explorer/nrpnDisplay.js';
-import { HYDRASYNTH_ENUMS } from '@mcp-midi-control/hydrasynth-explorer/enums.js';
+import { resolveNrpnValue, resolveFxAwareValue } from '@mcp-midi-control/hydrasynth/encoding.js';
+import { findHydraNrpn } from '@mcp-midi-control/hydrasynth/nrpn.js';
+import { decodeFxNrpnDisplay, decodeNrpnDisplay } from '@mcp-midi-control/hydrasynth/nrpnDisplay.js';
+import { HYDRASYNTH_ENUMS } from '@mcp-midi-control/hydrasynth/enums.js';
 
 interface DisplayCase {
   readonly desc: string;

@@ -119,7 +119,7 @@ packages/axe-fx-iii/src/
                           on write ops pending capture)
   device.ts           ← exports AXEFX3_DESCRIPTOR + midi side-effect
 
-packages/hydrasynth-explorer/src/
+packages/hydrasynth/src/
   descriptor.ts       ← Hydrasynth DeviceDescriptor
   server.ts           ← legacy device-namespaced tools (hydra_*)
 ```
@@ -146,7 +146,7 @@ new device" for the step-by-step.
 Pure TypeScript. No Claude, no MCP. Testable in isolation against
 captured wire bytes via `scripts/verify-msg.ts` and friends.
 
-Per-vendor packages (`packages/axe-fx-ii/`, `packages/hydrasynth-explorer/`)
+Per-vendor packages (`packages/axe-fx-ii/`, `packages/hydrasynth/`)
 follow the same layout — each device's wire layer is self-contained.
 
 ### 5. Intermediate Representation (post-MVP)
@@ -251,7 +251,7 @@ mcp-midi-control/
     am4/            — Fractal AM4 wire layer + DeviceDescriptor
     axe-fx-ii/      — Fractal Axe-Fx II XL+ wire layer + DeviceDescriptor
     axe-fx-iii/     — Fractal Axe-Fx III community-beta descriptor
-    hydrasynth-explorer/ — ASM Hydrasynth Explorer descriptor
+    hydrasynth/     — ASM Hydrasynth descriptor (Explorer / KB / Deluxe / Desktop)
     server-all/     — MCP server entry point (imports all device packages)
   scripts/
     verify-*.ts     — Byte-exact golden verifiers (run without hardware)

@@ -990,7 +990,7 @@ console.log('\nHydrasynth descriptor introspection:');
 
 // Register the Hydrasynth descriptor explicitly here — verify-dispatcher
 // is a stand-alone script that doesn't go through server/index.ts boot.
-const { HYDRASYNTH_DESCRIPTOR } = await import('@mcp-midi-control/hydrasynth-explorer/descriptor.js');
+const { HYDRASYNTH_DESCRIPTOR } = await import('@mcp-midi-control/hydrasynth/descriptor.js');
 registerMcpDevice(HYDRASYNTH_DESCRIPTOR);
 
 const hydraDesc = describeDevice('hydrasynth');

@@ -31,7 +31,7 @@
  *
  * Run standalone for a sanity check (the import.meta.url guard at the
  * bottom spawns its own MCP stdio server with just these tools):
- *   npx tsx src/asm/hydrasynth-explorer/server.ts
+ *   npx tsx packages/hydrasynth/src/server.ts
  *
  * Important: CCs 0/1/7/11/32/64/123 (the "system" category in
  * params.ts) work whether the device's Param TX/RX is set to CC,
@@ -61,7 +61,7 @@ export function registerHydrasynthTools(server: McpServer): void {
 
 // -- Standalone debugging entrypoint --------------------------------------
 //
-// `npx tsx src/asm/hydrasynth-explorer/server.ts` still works for
+// `npx tsx packages/hydrasynth/src/server.ts` still works for
 // one-off testing of the Hydrasynth tools in isolation, without
 // running the full mcp-midi-control server. Production launch path is
 // the main server registering both AM4 and Hydrasynth tools.
@@ -75,7 +75,7 @@ const isDirectInvocation =
 
 if (isDirectInvocation) {
   const standaloneServer = new McpServer({
-    name: 'hydrasynth-explorer-standalone',
+    name: 'hydrasynth-standalone',
     version: '0.1.0',
   });
   registerHydrasynthTools(standaloneServer);

@@ -20,7 +20,7 @@ import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const SOURCE = resolve(ROOT, 'samples', 'hydrasynth', 'init-patch.patch');
-const TARGET = resolve(ROOT, 'packages', 'hydrasynth-explorer', 'src', 'initPatchBuffer.ts');
+const TARGET = resolve(ROOT, 'packages', 'hydrasynth', 'src', 'initPatchBuffer.ts');
 
 const PATCH_BUFFER_SIZE = 2790;
 const FILE_PAYLOAD_SIZE = 2786;

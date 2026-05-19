@@ -84,7 +84,7 @@ this:
 
 The **Save** side of this flow is already implemented in current
 main as `hydra_apply_patch` (see
-`packages/hydrasynth-explorer/src/sysexEnvelope.ts` +
+`packages/hydrasynth/src/sysexEnvelope.ts` +
 `patchEncoder.ts`). The **Request** side (device → host patch dump)
 is specified in `references/SysexEncoding.txt` but not yet wired
 into a tool.
@@ -121,6 +121,6 @@ The Save half of the Request/Save flow is shipped. The remaining work:
 - `docs/devices/hydrasynth-explorer/references/nrpn.csv` — edisyn NRPN map (vendored).
 - `docs/devices/hydrasynth-explorer/references/SysexPatchFormat.txt` — byte-level patch decode (vendored). Applies to the SysEx-Request response, NOT to the `.patch` file.
 - `docs/devices/hydrasynth-explorer/references/SysexEncoding.txt` — envelope + base64 + CRC (vendored). Required for the Request / Save flow.
-- `docs/devices/hydrasynth-explorer/references/ASMHydrasynth.java` — edisyn editor source (vendored). Holds enum tables already extracted to `packages/hydrasynth-explorer/src/enums.ts`; also has reference Java code for the Request/Save flow.
-- `packages/hydrasynth-explorer/src/sysexEnvelope.ts` — envelope codec for the documented Save flow (shipped).
-- `packages/hydrasynth-explorer/src/patchEncoder.ts` — byte-map writer for the patch payload (shipped).
+- `docs/devices/hydrasynth-explorer/references/ASMHydrasynth.java` — edisyn editor source (vendored). Holds enum tables already extracted to `packages/hydrasynth/src/enums.ts`; also has reference Java code for the Request/Save flow.
+- `packages/hydrasynth/src/sysexEnvelope.ts` — envelope codec for the documented Save flow (shipped).
+- `packages/hydrasynth/src/patchEncoder.ts` — byte-map writer for the patch payload (shipped).

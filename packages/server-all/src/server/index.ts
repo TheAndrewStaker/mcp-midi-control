@@ -17,7 +17,7 @@
  *                                       because apply_preset alone is 1633
  *                                       LOC; aggregator at index.ts)
  *   src/fractal/axe-fx-ii/tools.ts    Axe-Fx II tool family (single file)
- *   src/asm/hydrasynth-explorer/server.ts  Hydrasynth tool family
+ *   src/asm/hydrasynth/server.ts      Hydrasynth tool family
  *
  * Adding a new device follows the same shape: put the device's wire layer
  * + tool definitions under `src/<vendor>/<device>/`, export a
@@ -55,7 +55,7 @@ import { registerMidiPrimitiveTools } from './tools/midi-primitives.js';
 import { registerAM4Tools } from '@mcp-midi-control/am4/tools/index.js';
 import { registerAxeFxIITools, describeAxeFxIIPortStatus } from '@mcp-midi-control/axe-fx-ii/tools.js';
 import { registerAxeFxIIITools, describeAxeFxIIIPortStatus } from '@mcp-midi-control/axe-fx-iii/tools.js';
-import { registerHydrasynthTools, describeHydrasynthPortStatus } from '@mcp-midi-control/hydrasynth-explorer/server.js';
+import { registerHydrasynthTools, describeHydrasynthPortStatus } from '@mcp-midi-control/hydrasynth/server.js';
 
 // BK-051 unified tool surface — descriptor registration. The dispatcher
 // resolves a tool call's `port` to a registered descriptor; per-device
@@ -70,7 +70,7 @@ import { registerUnifiedTools } from '@mcp-midi-control/core/protocol-generic/to
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
 import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/axe-fx-iii/device.js';
-import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth-explorer/descriptor.js';
+import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
 
 // -- Server setup -----------------------------------------------------------
 

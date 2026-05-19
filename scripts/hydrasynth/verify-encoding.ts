@@ -18,13 +18,13 @@
  * Run:  npx tsx scripts/hydrasynth/verify-encoding.ts
  *       (or via `npm test`).
  */
-import { findHydraNrpn } from '@mcp-midi-control/hydrasynth-explorer/nrpn.js';
+import { findHydraNrpn } from '@mcp-midi-control/hydrasynth/nrpn.js';
 import {
   resolveNrpnValue,
   nrpnMessagesFor,
   findMatchingNrpns,
-} from '@mcp-midi-control/hydrasynth-explorer/encoding.js';
-import { INIT_PATCH } from '@mcp-midi-control/hydrasynth-explorer/initPatch.js';
+} from '@mcp-midi-control/hydrasynth/encoding.js';
+import { INIT_PATCH } from '@mcp-midi-control/hydrasynth/initPatch.js';
 
 interface Case {
   label: string;

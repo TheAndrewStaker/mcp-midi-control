@@ -1,9 +1,9 @@
-<!-- Provenance: harvested from branch `hydrasynth-explorer` (commit 3d63075 "hydrasynth updates", last touched by 742b763). Source path: docs/devices/hydrasynth-explorer/MIDI-MAP.md. Inline paths updated to current monorepo layout (`src/devices/hydrasynth-explorer/...` → `packages/hydrasynth-explorer/src/...`); content otherwise preserved. -->
+<!-- Provenance: harvested from branch `hydrasynth-explorer` (commit 3d63075 "hydrasynth updates", last touched by 742b763). Source path: docs/devices/hydrasynth-explorer/MIDI-MAP.md. Inline paths updated to current monorepo layout (`src/devices/hydrasynth-explorer/...` → `packages/hydrasynth/src/...`); content otherwise preserved. -->
 
 # Hydrasynth Explorer — MIDI map
 
 Human-readable companion to the auto-generated 1175-NRPN catalog in
-`packages/hydrasynth-explorer/src/nrpn.ts` and 117-CC table embedded
+`packages/hydrasynth/src/nrpn.ts` and 117-CC table embedded
 in the tool descriptions. Use this file to look up a parameter by
 module / number when reading captures or writing new tools; the
 code-side catalog is fed by `references/nrpn.csv` and stays in sync
@@ -227,7 +227,7 @@ parameter — matching the device's on-screen UI where possible.
 ## 4. NRPNs (Param TX/RX = NRPN)
 
 🟢 1175 NRPN parameters are now decoded and live in
-`packages/hydrasynth-explorer/src/nrpn.ts`. The map is generated
+`packages/hydrasynth/src/nrpn.ts`. The map is generated
 from `docs/devices/hydrasynth-explorer/references/nrpn.csv`
 (vendored from eclab/edisyn, Apache-2.0); regenerate via
 `npm run hydra:gen-nrpn`. The manual itself does not publish the
@@ -290,7 +290,7 @@ incoming PC) are independent toggles on MIDI page 11.
 ## 6. SysEx
 
 🟢 Envelope + base64 + CRC-32 wrapping decoded and implemented in
-`packages/hydrasynth-explorer/src/sysexEnvelope.ts`. The encoding
+`packages/hydrasynth/src/sysexEnvelope.ts`. The encoding
 comes from `references/SysexEncoding.txt` (edisyn). Two known
 triggers from the device:
 

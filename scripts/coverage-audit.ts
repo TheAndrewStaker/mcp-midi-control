@@ -367,7 +367,7 @@ const deviceFiles = [
   },
   {
     device: 'Hydrasynth',
-    path: 'packages/hydrasynth-explorer/src/params.ts',
+    path: 'packages/hydrasynth/src/params.ts',
     // Hydra uses object-array entries with `cc:` as the key field.
     signature: /\bcc:\s*\d/g,
   },
