@@ -41,7 +41,10 @@ import {
   type PresetSpec,
   type PresetSlotSpec,
   type ValidationError,
+  type ValidationInfo,
 } from '../types.js';
+import { resolveParamAlias } from '../cross-device-aliases.js';
+import { findEnumMatch } from '../cross-device-enums.js';
 
 /**
  * Compute a small list of closest matches (up to `max` entries) to a
@@ -157,6 +160,21 @@ function classifyParamsShape(
  * push a ValidationError for every unknown name / out-of-range value /
  * unknown enum. Continues past errors so the agent sees every problem
  * at once.
+ *
+ * BK-065 + BK-066 phase 1 additions:
+ *   - Before flagging "unknown param", consult the cross-device alias
+ *     table (`resolveParamAlias`). When an alias substitution happens,
+ *     the canonical name replaces the input and an entry lands in
+ *     `info[]` so the agent learns the host vocabulary.
+ *   - For enum-typed string values, run the four-tier `findEnumMatch`
+ *     cascade. Exact + case/whitespace tiers auto-resolve silently
+ *     (case/whitespace surfaces as info). Fuzzy tier rejects with a
+ *     `suggested_substitution` field so the agent can retry. None tier
+ *     rejects as today.
+ *
+ * The function builds a normalized output map (`normalizedOut`) that
+ * the caller stitches back into a normalized PresetSpec for the
+ * writer. Inputs are never mutated.
  */
 function validateParamMap(
   descriptor: DeviceDescriptor,
@@ -165,17 +183,37 @@ function validateParamMap(
   slotIndex: number,
   map: Record<string, unknown>,
   errors: ValidationError[],
+  info: ValidationInfo[],
+  normalizedOut: Record<string, unknown>,
 ): void {
   const block = descriptor.blocks[blockKey];
   if (block === undefined) return;
   const validNames = Object.keys(block.params);
   for (const [paramName, value] of Object.entries(map)) {
-    const path = `${basePath}.${paramName}`;
-    const canonical = resolveParamKey(descriptor, blockKey, paramName);
+    // First, consult the cross-device alias table. If the agent typed a
+    // foreign device's vocabulary (e.g. `volume` on AM4 drive, where the
+    // canonical is `level`), swap to the canonical before any further
+    // resolution. The original name lands in `info[]` so the agent can
+    // learn the host vocabulary.
+    let effectiveName = paramName;
+    let aliasInfoEntry: ValidationInfo | undefined;
+    const aliasResult = resolveParamAlias(descriptor.id, blockKey, paramName);
+    if (aliasResult.aliasUsed !== undefined && aliasResult.canonical !== paramName) {
+      effectiveName = aliasResult.canonical;
+      aliasInfoEntry = {
+        slot_index: slotIndex,
+        path: `${basePath}.${aliasResult.canonical}`,
+        info: `resolved ${blockKey}.${paramName} -> ${blockKey}.${aliasResult.canonical} via cross-device alias`,
+        alias_used: aliasResult.aliasUsed,
+        canonical: aliasResult.canonical,
+      };
+    }
+    const path = `${basePath}.${effectiveName}`;
+    const canonical = resolveParamKey(descriptor, blockKey, effectiveName);
     if (canonical === undefined) {
       errors.push({
         slot_index: slotIndex,
-        path,
+        path: `${basePath}.${paramName}`,
         error: `unknown param "${paramName}" on ${descriptor.display_name} block "${blockKey}"`,
         suggestions: closest(paramName, validNames),
       });
@@ -191,17 +229,44 @@ function validateParamMap(
       });
       continue;
     }
+    // Track the value that lands in the normalized map. Enum tolerance
+    // may rewrite a string `value` to its canonical casing before the
+    // writer consumes it.
+    let normalizedValue: number | string | boolean = value;
     if (schema.unit === 'enum' && schema.enum_values !== undefined) {
       if (typeof value === 'string') {
         const validLabels = Object.values(schema.enum_values);
-        const lower = value.trim().toLowerCase();
-        const matched = validLabels.some((label) => label.toLowerCase() === lower);
-        if (!matched) {
+        const enumResult = findEnumMatch(value, validLabels);
+        if (enumResult.certainty === 'exact' && enumResult.match !== undefined) {
+          normalizedValue = enumResult.match;
+          // Silent: no info entry. Exact match is the happy path.
+        } else if (enumResult.certainty === 'case_or_space' && enumResult.match !== undefined) {
+          normalizedValue = enumResult.match;
+          info.push({
+            slot_index: slotIndex,
+            path,
+            info: `resolved ${blockKey}.${canonical}="${value}" -> "${enumResult.match}" via case/whitespace-tolerant match`,
+            original_value: value,
+            canonical: enumResult.match,
+          });
+        } else if (enumResult.certainty === 'fuzzy' && enumResult.match !== undefined) {
+          // Reject: a fuzzy match could silently change the user's
+          // intent. Surface the top match as `suggested_substitution`
+          // so the agent can retry with a verbatim value if it agrees.
+          errors.push({
+            slot_index: slotIndex,
+            path,
+            error: `${blockKey}.${canonical}: unknown enum value "${value}". Closest match is "${enumResult.match}". Retry with that value if it's what you meant.`,
+            suggestions: enumResult.candidates,
+            suggested_substitution: enumResult.match,
+          });
+          continue;
+        } else {
           errors.push({
             slot_index: slotIndex,
             path,
             error: `${blockKey}.${canonical}: unknown enum value "${value}"`,
-            suggestions: closest(value, validLabels),
+            suggestions: enumResult.candidates.length > 0 ? enumResult.candidates : closest(value, validLabels),
           });
           continue;
         }
@@ -217,7 +282,7 @@ function validateParamMap(
       }
     }
     try {
-      schema.encode(value as number | string);
+      schema.encode(normalizedValue as number | string);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const suggestions =
@@ -230,6 +295,16 @@ function validateParamMap(
         error: `${blockKey}.${canonical}: ${message}`,
         suggestions,
       });
+      continue;
+    }
+    // Success: write into the normalized map under the canonical name.
+    // If multiple foreign aliases collide on the same canonical (rare;
+    // would mean the agent specified both `volume` and `level` on AM4
+    // drive), the last writer wins, which mirrors the existing
+    // last-key-wins JS behavior for duplicate keys in the source spec.
+    normalizedOut[canonical] = normalizedValue;
+    if (aliasInfoEntry !== undefined) {
+      info.push(aliasInfoEntry);
     }
   }
 }
@@ -294,15 +369,44 @@ function validateSlotRef(
 }
 
 /**
- * Main entry. Returns every problem the walker finds. Empty array means
- * "structurally clean" , `executeApplyPreset` proceeds to type-knob
- * precheck + writer.applyPreset.
+ * Result envelope for the preflight walker. Carries every classified
+ * problem (`errors`), every silent auto-resolution that lands as a
+ * post-success advisory (`info`), and a normalized spec where alias
+ * substitutions + case/whitespace-tolerant enum matches have been
+ * collapsed to the device's canonical vocabulary.
+ *
+ * When `errors.length > 0` the dispatcher returns the validation
+ * response without firing any wire ops; `normalized_spec` reflects
+ * whatever did normalize cleanly, but consumers should not rely on
+ * it in that case.
+ *
+ * When `errors.length === 0` the dispatcher hands `normalized_spec`
+ * (not the original) to the writer, so the writer never has to know
+ * about the alias table or the enum matcher. `info[]` rides through
+ * to `ApplyResult.validation_info` on the success path.
  */
-export function collectApplyPresetErrors(
+export interface PreflightResult {
+  errors: readonly ValidationError[];
+  info: readonly ValidationInfo[];
+  normalized_spec: PresetSpec;
+}
+
+/**
+ * Main entry. Walks the spec and returns the full preflight envelope:
+ * errors, info notices, and a normalized copy of the spec where the
+ * cross-device alias table + tolerant enum matcher have already
+ * collapsed inputs onto the device's canonical vocabulary.
+ *
+ * Pure: the input `spec` is never mutated. The normalized spec is a
+ * shallow copy with `slots[].params` rebuilt onto new objects.
+ */
+export function collectApplyPresetPreflight(
   spec: PresetSpec,
   descriptor: DeviceDescriptor,
-): ValidationError[] {
+): PreflightResult {
   const errors: ValidationError[] = [];
+  const info: ValidationInfo[] = [];
+  const normalizedSlots: PresetSlotSpec[] = [];
   const cap = descriptor.capabilities;
   const channelNames = cap.channel_names ?? [];
   const channelNamesUpper = channelNames.map((c) => c.toUpperCase());
@@ -324,7 +428,27 @@ export function collectApplyPresetErrors(
     const id = slot.id ?? `${slot.block_type.toLowerCase()}${slot.instance !== undefined && slot.instance !== 1 ? `_${slot.instance}` : ''}`;
     slotIds.push(id);
 
-    if (blockKey === undefined) continue;
+    // Start a normalized copy of this slot. Default to passing the
+    // input through unchanged; we'll overwrite `params` when we walk
+    // them, and overwrite `block_type` if the block alias resolved.
+    const normalizedSlot: { -readonly [K in keyof PresetSlotSpec]: PresetSlotSpec[K] } = {
+      slot: slot.slot,
+      block_type: blockKey ?? slot.block_type,
+    };
+    if (slot.bypassed !== undefined) normalizedSlot.bypassed = slot.bypassed;
+    if (slot.id !== undefined) normalizedSlot.id = slot.id;
+    if (slot.instance !== undefined) normalizedSlot.instance = slot.instance;
+
+    if (blockKey === undefined) {
+      // Push the partial normalized entry anyway so slot indexes line
+      // up if the caller later re-walks (e.g. logging). No params copy
+      // because we have no canonical block to validate against.
+      if (slot.params !== undefined) {
+        normalizedSlot.params = slot.params;
+      }
+      normalizedSlots.push(normalizedSlot);
+      continue;
+    }
     const shape = classifyParamsShape(slot.params);
     if (shape.shape === 'mixed') {
       errors.push({
@@ -332,10 +456,24 @@ export function collectApplyPresetErrors(
         path: `slots[${i}].params`,
         error: `params mixes flat values and channel-nested objects. Use one shape per slot: flat for current-channel writes, channel-nested ({X: {...}}) for per-channel.`,
       });
+      if (slot.params !== undefined) normalizedSlot.params = slot.params;
+      normalizedSlots.push(normalizedSlot);
       continue;
     }
     if (shape.shape === 'flat') {
-      validateParamMap(descriptor, blockKey, `slots[${i}].params`, i, slot.params as Record<string, unknown>, errors);
+      const normalizedFlat: Record<string, unknown> = {};
+      validateParamMap(
+        descriptor,
+        blockKey,
+        `slots[${i}].params`,
+        i,
+        slot.params as Record<string, unknown>,
+        errors,
+        info,
+        normalizedFlat,
+      );
+      normalizedSlot.params = normalizedFlat as PresetSlotSpec['params'];
+      normalizedSlots.push(normalizedSlot);
       continue;
     }
     if (shape.shape === 'nested') {
@@ -347,8 +485,11 @@ export function collectApplyPresetErrors(
           path: `slots[${i}].params`,
           error: `block "${blockKey}" does not expose channels on ${descriptor.display_name} , use a flat params object instead of nested {X: {...}}.`,
         });
+        if (slot.params !== undefined) normalizedSlot.params = slot.params;
+        normalizedSlots.push(normalizedSlot);
         continue;
       }
+      const normalizedNested: Record<string, Record<string, unknown>> = {};
       for (const [chKey, paramMap] of shape.entries) {
         const upperCh = chKey.trim().toUpperCase();
         if (channelNamesUpper.length > 0 && !channelNamesUpper.includes(upperCh)) {
@@ -361,6 +502,7 @@ export function collectApplyPresetErrors(
           continue;
         }
         if (paramMap !== null && typeof paramMap === 'object' && !Array.isArray(paramMap)) {
+          const innerNormalized: Record<string, unknown> = {};
           validateParamMap(
             descriptor,
             blockKey,
@@ -368,10 +510,18 @@ export function collectApplyPresetErrors(
             i,
             paramMap as Record<string, unknown>,
             errors,
+            info,
+            innerNormalized,
           );
+          normalizedNested[chKey] = innerNormalized;
         }
       }
+      normalizedSlot.params = normalizedNested as PresetSlotSpec['params'];
+      normalizedSlots.push(normalizedSlot);
       void block;
+    } else {
+      // shape: 'empty', pass through unchanged.
+      normalizedSlots.push(normalizedSlot);
     }
   }
 
@@ -475,5 +625,30 @@ export function collectApplyPresetErrors(
     }
   }
 
-  return errors;
+  // Stitch the normalized spec. We only rewrote `slots[].block_type`
+  // (when a block alias resolved) and `slots[].params` (alias +
+  // enum-tolerance substitutions). Scenes, routing, name, and
+  // landingScene pass through verbatim.
+  const normalized_spec: PresetSpec = {
+    slots: normalizedSlots,
+    ...(spec.scenes !== undefined ? { scenes: spec.scenes } : {}),
+    ...(spec.name !== undefined ? { name: spec.name } : {}),
+    ...(spec.landingScene !== undefined ? { landingScene: spec.landingScene } : {}),
+    ...(spec.routing !== undefined ? { routing: spec.routing } : {}),
+  };
+
+  return { errors, info, normalized_spec };
+}
+
+/**
+ * Legacy entry point. Pre-BK-065 / BK-066 callers wanted just the
+ * errors array; goldens and external tools still import this shape.
+ * Wraps `collectApplyPresetPreflight` and returns only the errors.
+ */
+export function collectApplyPresetErrors(
+  spec: PresetSpec,
+  descriptor: DeviceDescriptor,
+): ValidationError[] {
+  const result = collectApplyPresetPreflight(spec, descriptor);
+  return [...result.errors];
 }

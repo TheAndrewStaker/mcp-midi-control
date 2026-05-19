@@ -405,6 +405,14 @@ export interface ApplyResult {
    * spec in a single follow-up call.
    */
   validation_errors?: readonly ValidationError[];
+  /**
+   * BK-065 + BK-066 phase 1: informational notices from the preflight
+   * walker for silent auto-resolutions (cross-device param aliases and
+   * case/whitespace-tolerant enum matches). Surfaced on the success
+   * path (`ok: true`) so the agent can learn the canonical vocabulary
+   * for next time. Absent or empty when no resolutions occurred.
+   */
+  validation_info?: readonly ValidationInfo[];
 }
 
 /**
@@ -429,6 +437,52 @@ export interface ValidationError {
   error: string;
   /** Up to ~5 closest valid names / values for the agent to retry with. */
   suggestions?: readonly string[];
+  /**
+   * BK-066 phase 1: when a fuzzy enum match was found but rejected
+   * (certainty: 'fuzzy'), this is the single best candidate the
+   * agent can retry with verbatim. Distinct from `suggestions[]`,
+   * which carries the top-3 list; `suggested_substitution` is the
+   * dispatcher's "did you mean exactly this?" answer.
+   */
+  suggested_substitution?: string;
+}
+
+/**
+ * BK-065 + BK-066 phase 1: informational notice from the preflight
+ * walker. Mirrors `ValidationError` in shape but is NOT a failure
+ * the agent must retry; instead it records a silent auto-resolution
+ * the dispatcher made on the agent's behalf (an alias substitution
+ * or a case/whitespace-tolerant enum match). Surfacing these so the
+ * agent can learn the canonical vocabulary on the next call.
+ */
+export interface ValidationInfo {
+  /** Index into `spec.slots[]` when the notice is slot-scoped. */
+  slot_index?: number;
+  /** Index into `spec.scenes[]` when the notice is scene-scoped. */
+  scene_index?: number;
+  /**
+   * Dot-path into the spec where the resolution happened, e.g.
+   * "slots[2].params.Y.volume" (alias) or
+   * "slots[0].params.A.type" (case/whitespace).
+   */
+  path: string;
+  /** Human-readable message describing the resolution. */
+  info: string;
+  /**
+   * When the resolution was a cross-device param alias, the original
+   * foreign-vocabulary name the agent typed. The canonical name is
+   * already reflected on the path; this lets the agent grep "I sent
+   * X, the dispatcher used Y" without parsing the message.
+   */
+  alias_used?: string;
+  /**
+   * When the resolution was a case/whitespace-tolerant enum match,
+   * the original value the agent typed. The canonical value the
+   * writer received is in `info`.
+   */
+  original_value?: string;
+  /** The canonical name/value the dispatcher used downstream. */
+  canonical?: string;
 }
 
 /**
