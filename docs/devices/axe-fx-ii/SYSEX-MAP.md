@@ -6,13 +6,14 @@
 > Fractal Audio Wiki and pending hardware verification.
 >
 > **Sister docs:**
-> - `docs/SYSEX-MAP.md` — AM4-resolved protocol map (deepest current
->   coverage; many AM4 findings transfer to Axe-Fx II since both use
->   the same envelope and checksum scheme).
-> - `docs/axe-fx-ii-component-catalog.md` — Axe-Edit `<EditorControl>`
->   catalog (UI structure, type-applicability gates) generated from
->   the JUCE BinaryData ZIP.
-> - `docs/MULTI-DEVICE-ROADMAP.md` — overall multi-device strategy.
+> - [`docs/devices/am4/SYSEX-MAP.md`](../am4/SYSEX-MAP.md) — AM4-resolved
+>   protocol map (deepest current coverage; many AM4 findings transfer
+>   to Axe-Fx II since both use the same envelope and checksum scheme).
+> - [`component-catalog.md`](component-catalog.md) — Axe-Edit
+>   `<EditorControl>` catalog (UI structure, type-applicability gates)
+>   generated from the JUCE BinaryData ZIP.
+> - [`docs/MULTI-DEVICE-ROADMAP.md`](../../MULTI-DEVICE-ROADMAP.md) —
+>   overall multi-device strategy.
 
 ---
 
@@ -20,7 +21,7 @@
 
 - 🟢 **CONFIRMED** — Documented for the Axe-Fx II family on the
   Fractal Audio wiki (`wiki.fractalaudio.com/wiki/MIDI_SysEx`),
-  cross-checked against `docs/SYSEX-MAP.md`, or verified by inspecting
+  cross-checked against [`docs/devices/am4/SYSEX-MAP.md`](../am4/SYSEX-MAP.md), or verified by inspecting
   real wire bytes in the cached factory bank export. Safe to use.
 - 🟡 **WIKI-DOCUMENTED, NOT YET HARDWARE-VERIFIED** — Wiki spec exists
   but we haven't yet captured live Axe-Fx II ↔ Axe-Edit traffic to
@@ -50,7 +51,7 @@ header — Axe-Edit's internal numbering for the three Axe-Fx II
 generations using the same model byte values.
 
 Family wire shape (envelope + checksum) is identical to AM4. See
-`docs/SYSEX-MAP.md` §2 (Envelope Format) and §3 (Checksum Algorithm).
+[`docs/devices/am4/SYSEX-MAP.md`](../am4/SYSEX-MAP.md) §2 (Envelope Format) and §3 (Checksum Algorithm).
 
 ## 2. Source documents and where each fact comes from
 
@@ -60,7 +61,7 @@ Family wire shape (envelope + checksum) is identical to AM4. See
 | Fractal Audio Wiki — `Axe-Fx_SysEx_Documentation` (gen1) | `https://wiki.fractalaudio.com/gen1/index.php?title=Axe-Fx_SysEx_Documentation` | Original Axe-Fx Standard / Ultra protocol — direct ancestor. **Cached at `docs/_private/wiki-cache/axe-fx-gen1-sysex-documentation.html`.** Useful for understanding the function-ID space evolution. |
 | Axe-Fx II Owner's Manual (Q7.0) | `docs/manuals/Axe-Fx-II-Owners-Manual.{pdf,txt}` | Hardware-anchored facts: SysEx ID `00 01 74` (cannot be changed), preset count (768 on XL/XL+, 384 on Mark I/II), 8 scenes, MIDI Implementation Chart at §17.3. |
 | Factory bank export (Quantum 8.02) | `samples/factory/Axe-Fx-II_XL+_Bank-{A,B,C}_Q8p02.syx` | **Wire-canonical preset binary on the founder's hardware.** Three banks × 128 presets × 66 messages each = 8448 SysEx messages per bank. Used for 0x77/0x78/0x79 envelope validation Session 53. |
-| Axe-Edit `__block_layout.xml` | `samples/captured/decoded/binarydata/axe-edit-extracted/__block_layout.xml` | UI-side: 39 block types, 2482 editor rows, 1035 unique parameter names, 160 type-applicability gates. Catalogued in `docs/axe-fx-ii-component-catalog.md`. **Does not contain wire IDs** — for those, use the wiki tables. |
+| Axe-Edit `__block_layout.xml` | `samples/captured/decoded/binarydata/axe-edit-extracted/__block_layout.xml` | UI-side: 39 block types, 2482 editor rows, 1035 unique parameter names, 160 type-applicability gates. Catalogued in [`component-catalog.md`](component-catalog.md). **Does not contain wire IDs** — for those, use the wiki tables. |
 
 ## 3. SysEx envelope 🟢
 
@@ -136,7 +137,7 @@ verification status against the founder's XL+ where applicable:
 
 (0x77 / 0x78 / 0x79 are not documented in the wiki's main function-ID
 table — they live under "MIDI SysEx: Importing/Exporting Presets" which
-the wiki section is mostly empty. AM4's `docs/SYSEX-MAP.md §10b`
+the wiki section is mostly empty. AM4's [`docs/devices/am4/SYSEX-MAP.md`](../am4/SYSEX-MAP.md) §10b
 decoded the same three bytes for AM4. Today's bank-file inspection
 confirms identical envelope shape on Axe-Fx II XL+ Q8.02.)
 
@@ -536,4 +537,4 @@ Hardware-blocked:
   the wire actually persist on Axe-Fx II XL+? AM4 confirmed yes via
   Session 51; XL+ is unverified.
 
-See `docs/_private/HARDWARE-TASKS.md` for the queue.
+See the project's local hardware-tasks queue for the work order.

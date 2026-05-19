@@ -29,7 +29,7 @@ export {
 
 // ── Dirty-state classification — DEVICE-SOURCED + outbound belt-and-suspenders
 //
-// Per `docs/axefx3-dirty-state-research.md`, the III emits a STATE_BROADCAST
+// Per `docs/devices/axe-fx-iii/dirty-state-research.md`, the III emits a STATE_BROADCAST
 // frame on USB whenever the working buffer is edited: `fn=0x01` with
 // sub-action `04 01` at payload pos 0..1. Five byte-decoded captures
 // (Mountain Utilities forum + FC-12) confirm the wire shape; the parser

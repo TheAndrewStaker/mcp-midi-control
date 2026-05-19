@@ -220,7 +220,7 @@ const cases: { label: string; built: number[]; expected: string }[] = [
   // sliding-window packed (5 wire bytes for 4 raw bytes). Decoded byte-
   // exact from `samples/captured/session-46-am4edit-launch-device-connected.midi-events.txt`
   // (the 104-message OUT loop AM4-Edit fires on attach / "Refresh Preset
-  // Names" click). See SYSEX-MAP §6m and `docs/preset-read-research.md`.
+  // Names" click). See SYSEX-MAP §6m and `docs/devices/am4/preset-read-research.md`.
   {
     label: 'buildGetPresetName(0) — matches session-46 launch capture frame 45 (A01)',
     built: buildGetPresetName(0),
@@ -242,7 +242,7 @@ const cases: { label: string; built: number[]; expected: string }[] = [
   // `samples/captured/session-51-export-preset.tshark.txt`. The two 0x7F
   // bytes are the active-buffer sentinel; the trailing 0x00 is constant.
   // Response is the canonical 6-message 0x77/0x78/0x79 stream (12,352 B).
-  // See SYSEX-MAP §6o and `docs/preset-dump-request-research.md`.
+  // See SYSEX-MAP §6o and `docs/devices/am4/preset-dump-request-research.md`.
   {
     label: 'buildRequestActiveBufferDump() — matches session-51 export-preset capture (active buffer)',
     built: buildRequestActiveBufferDump(),

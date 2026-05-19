@@ -69,8 +69,8 @@ gear from Claude in plain English.
   prebuilt native MIDI binary, and a `setup.cmd` that registers the
   server with Claude Desktop. End users need no developer tooling.
 - **Documentation.**
-  - `docs/SYSEX-MAP.md`, `docs/SYSEX-MAP-AXE-FX-II.md`,
-    `docs/SYSEX-MAP-AXE-FX-III.md`: per-device wire-protocol decodes
+  - `docs/devices/<am4|axe-fx-ii|axe-fx-iii|hydrasynth>/SYSEX-MAP.md`:
+    per-device wire-protocol decodes
     with 🟢/🟡/🔴 confidence legend and capture citations.
   - `docs/fractal-protocol-decode-status.md`: coverage index; refreshed
     by `npm run coverage-audit` reading code state directly.

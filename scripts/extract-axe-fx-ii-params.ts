@@ -28,7 +28,7 @@
 // Quantum 8.02" but we have not yet captured live Axe-Edit ↔ device
 // SysEx to verify the wiki spec holds on the founder's current
 // firmware. Every entry stays 🟡 wiki-documented until HW-074 lands.
-// See `docs/SYSEX-MAP-AXE-FX-II.md` for the current state.
+// See `docs/devices/axe-fx-ii/SYSEX-MAP.md` for the current state.
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';

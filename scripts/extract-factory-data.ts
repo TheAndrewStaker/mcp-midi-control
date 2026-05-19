@@ -9,7 +9,7 @@
  * that changes factory presets — uncommon.
  *
  * Why this exists. The factory bank file's chunk binary is ~95%
- * not-decoded (see `docs/preset-binary-format-research.md` §3.4):
+ * not-decoded (see `docs/devices/am4/preset-binary-format-research.md` §3.4):
  * only the 96-byte block-layout table at chunk1 0x00E-0x6D is
  * cleartext, and the byte0/byte1 → block_type mapping isn't pinned
  * yet. Names live entirely in the disputed region. So the practical
@@ -282,7 +282,7 @@ async function main(): Promise<number> {
     note:
       'Tier 2 = preset names + 4-slot block layouts. Per-channel params, ' +
       'scenes, and channel assignments are not in this tier; see ' +
-      'docs/preset-binary-format-research.md §6 for the path forward.',
+      'docs/devices/am4/preset-binary-format-research.md §6 for the path forward.',
     presets,
   };
   writeFileSync(OUTPUT_PATH, JSON.stringify(output, null, 2) + '\n', 'utf8');

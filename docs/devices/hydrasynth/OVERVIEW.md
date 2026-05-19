@@ -31,7 +31,7 @@ will lean pedagogical.
 
 ## Protocol surface
 
-Source: `docs/manuals/other-gear/Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf`,
+Source: `docs/manuals/Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf`,
 "MIDI" section pp. 80–83 + "MIDI CC Charts" pp. 94–96. NRPN map
 sourced from `references/nrpn.csv` (vendored from eclab/edisyn,
 Apache-2.0). SysEx encoding sourced from

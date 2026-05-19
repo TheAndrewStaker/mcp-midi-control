@@ -558,10 +558,10 @@ function main(): void {
   lines.push(" * 🟢 SET wire shape byte-verified Session 97 against 10 public");
   lines.push(" * captures: `fn=0x01` + sub-action `09 00` (typed-input), 23-byte");
   lines.push(" * envelope. NOT the pre-Session-97 `fn=0x02` II-port. Capture");
-  lines.push(" * corpus + field layout: `docs/axefx3-set-parameter-captures.md`.");
+  lines.push(" * corpus + field layout: `docs/devices/axe-fx-iii/set-parameter-captures.md`.");
   lines.push(" * 🟡 GET response shape still unverified — the `04 01`");
   lines.push(" * STATE_BROADCAST appears to be an AxeEdit-driven heartbeat poll,");
-  lines.push(" * NOT a sync SET echo. See `docs/SYSEX-MAP-AXE-FX-III.md` §0x01.");
+  lines.push(" * NOT a sync SET echo. See `docs/devices/axe-fx-iii/SYSEX-MAP.md` §0x01.");
   lines.push(" */");
   lines.push("");
   lines.push("// ── Types ──────────────────────────────────────────────────────────");

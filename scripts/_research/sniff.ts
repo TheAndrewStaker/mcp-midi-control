@@ -53,7 +53,7 @@ function parseAscii(bytes: number[]): string {
     .join('');
 }
 
-// Axe-Fx III / AM4 3rd-party function ID map (see docs/SYSEX-MAP.md).
+// Axe-Fx III / AM4 3rd-party function ID map (see docs/devices/am4/SYSEX-MAP.md).
 // `0x01` is the internal editor-session stream used by AM4-Edit and is NOT
 // in the public spec — included here for decoding AM4-Edit traffic.
 const FN_NAMES: Record<number, string> = {

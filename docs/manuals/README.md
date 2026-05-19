@@ -26,17 +26,16 @@ PDFs from Fractal Audio are copyrighted by Fractal Audio Systems. PDFs
 from ASM (Hydrasynth) are copyrighted by Ashun Sound Machines. **None of
 the PDFs are committed to the repo.**
 
-The `.txt` extractions ARE committed (both top-level Fractal docs and
-the `other-gear/` set). They're derivative reference material used for
-interoperability research; treating them as fair-use development assets
-makes the repo grep-able for both contributors and Claude Code agents
-without forcing every clone to re-run `pdftotext`. If a publisher
-objects to a specific extract, the policy is to drop that file (the
-`.gitignore` entry for the PDF stays; only the `.txt` would be
+The `.txt` extractions ARE committed. They're derivative reference
+material used for interoperability research; treating them as fair-use
+development assets makes the repo grep-able for both contributors and
+Claude Code agents without forcing every clone to re-run `pdftotext`. If
+a publisher objects to a specific extract, the policy is to drop that
+file (the `.gitignore` entry for the PDF stays; only the `.txt` would be
 removed).
 
 Download each PDF from the publisher's site (links below) and drop it in
-the named location so you can re-generate the `.txt` if needed. Several
+this directory so you can re-generate the `.txt` if needed. Several
 scripts and docs expect these exact filenames.
 
 ## Fractal Audio manuals
@@ -54,21 +53,26 @@ the repo.
 | `Axe-Fx-II-Tone-Match-Manual.pdf` | same source | Tone Match block semantics |
 | `Axe-Fx-II-ir-capture.pdf` | same source | IR capture workflow |
 | `Axe-Fx_II_XL_MIDI_THRU_Guide.pdf` | same source | MIDI Thru on the XL+ specifically |
-| `Axe-Fx III MIDI for 3rd Party Devices.pdf` | [fractalaudio.com/downloads/misc](https://www.fractalaudio.com/downloads/misc/Axe-Fx%20III%20MIDI%20for%203rd%20Party%20Devices.pdf) | Axe-Fx III MIDI wire surface. The public protocol spec |
+| `Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf` | [fractalaudio.com/downloads/misc](https://www.fractalaudio.com/downloads/misc/Axe-Fx%20III%20MIDI%20for%203rd%20Party%20Devices.pdf) | Axe-Fx III MIDI wire surface. The public protocol spec |
 | `Axe-Fx-III-Owners-Manual.pdf` | [fractalaudio.com/axe-fx-iii-downloads](https://www.fractalaudio.com/axe-fx-iii-downloads/) | III block roster, scene model, footswitch logic. Complements the third-party MIDI spec (which covers wire only) |
 | `Fractal-Audio-Blocks-Guide.pdf` | [fractalaudio.com/downloads](https://www.fractalaudio.com/downloads/) (search "Blocks Guide") | Per-block parameter prose. Cross-device (AM4 / FM3 / FM9 / Axe-Fx III). Most-cited reference in the codebase |
 | `Fractal-Audio-Systems-MIMIC-(tm)-Technology.pdf` | Fractal blog / downloads | Background on the speaker simulation technology |
 
-## Other-manufacturer manuals (`other-gear/`)
+The PDF for the III MIDI spec ships from Fractal with spaces in the
+filename. After download, rename to
+`Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf` so the `pdftotext` command
+below matches and the `.txt` filename stays consistent across the repo.
 
-Short `.txt` extractions of relevant third-party device manuals. PDFs are
-gitignored; `.txt` files are committed.
+## Hydrasynth manuals
 
-| File | What this project uses it for |
-|------|-------------------------------|
-| `Hydrasynth_Explorer_Owners_Manual_2.2.0.txt` | Hydrasynth NRPN catalog, system CC layout, voice architecture |
-| `Hydrasynth_KB_DR_Owners_Manual_2.2.0.pdf` (PDF only) | Keyboard / Desktop / Deluxe manual. Same engine; used to confirm portability of the Hydrasynth tool surface across the line |
-| `Hydrasynth_Single_Factory_Patch_Listing_2.0.xlsx` | Factory patch names for the discovery flow |
+Drop these in `docs/manuals/`. The PDF is gitignored; the `.txt` (or
+`.xlsx`) extraction is committed.
+
+| File | Source | What this project uses it for |
+|------|--------|-------------------------------|
+| `Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf` | [asmhydrasynth.com/downloads](https://www.asmhydrasynth.com/downloads/) (Hydrasynth Explorer section) | Hydrasynth NRPN catalog, system CC layout, voice architecture |
+| `Hydrasynth_KB_DR_Owners_Manual_2.2.0.pdf` | [asmhydrasynth.com/downloads](https://www.asmhydrasynth.com/downloads/) (Hydrasynth Keyboard / Desktop / Deluxe section) | Keyboard / Desktop / Deluxe manual. Same engine; used to confirm portability of the Hydrasynth tool surface across the line |
+| `Hydrasynth_Single_Factory_Patch_Listing_2.0.xlsx` | Same source | Factory patch names for the discovery flow (the `.xlsx` is the source artefact — committed directly, not generated from a PDF) |
 
 ## Generating the `.txt` extractions
 
@@ -79,8 +83,10 @@ expect the `.txt` form, not the PDF. Generate after each PDF download:
 cd docs/manuals
 pdftotext -layout "AM4-Owners-Manual.pdf" "AM4-Owners-Manual.txt"
 pdftotext -layout "Fractal-Audio-Blocks-Guide.pdf" "Fractal-Audio-Blocks-Guide.txt"
-pdftotext -layout "Axe-Fx III MIDI for 3rd Party Devices.pdf" "AxeFx3-MIDI-3rdParty.txt"
+pdftotext -layout "Axe-Fx-III-MIDI-for-3rd-Party-Devices.pdf" "Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt"
 pdftotext -layout "Axe-Fx-II-Owners-Manual.pdf" "Axe-Fx-II-Owners-Manual.txt"
+pdftotext -layout "Hydrasynth_Explorer_Owners_Manual_2.2.0.pdf" "Hydrasynth_Explorer_Owners_Manual_2.2.0.txt"
+pdftotext -layout "Hydrasynth_KB_DR_Owners_Manual_2.2.0.pdf" "Hydrasynth_KB_DR_Owners_Manual_2.2.0.txt"
 # repeat for each PDF you downloaded
 ```
 
@@ -118,7 +124,8 @@ is idempotent so the regenerated file diffs cleanly.
 
 - [`docs/REFERENCES.md`](../REFERENCES.md) lists which sections of each
   manual the codebase actively cites.
-- [`docs/SYSEX-MAP.md`](../SYSEX-MAP.md), [`docs/SYSEX-MAP-AXE-FX-II.md`](../SYSEX-MAP-AXE-FX-II.md),
-  and [`docs/SYSEX-MAP-AXE-FX-III.md`](../SYSEX-MAP-AXE-FX-III.md) are
-  the authoritative wire-protocol references; the manuals fill in the
-  semantic context behind the wire.
+- [`docs/devices/am4/SYSEX-MAP.md`](../devices/am4/SYSEX-MAP.md),
+  [`docs/devices/axe-fx-ii/SYSEX-MAP.md`](../devices/axe-fx-ii/SYSEX-MAP.md),
+  and [`docs/devices/axe-fx-iii/SYSEX-MAP.md`](../devices/axe-fx-iii/SYSEX-MAP.md)
+  are the authoritative wire-protocol references; the manuals fill in
+  the semantic context behind the wire.

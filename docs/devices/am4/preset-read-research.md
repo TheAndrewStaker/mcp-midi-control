@@ -530,5 +530,5 @@ Existing reference files used:
 > Refresh button + a single Node.js-built single-location read against
 > a non-active preset would close the loop. Tool implementation:
 > `am4_get_preset_name(location)` + `am4_scan_locations({ from, to })`
-> per `docs/preset-read-research.md` §7. Ready to hand off to Claude
+> per this doc §7. Ready to hand off to Claude
 > for code changes; no further hardware investigation needed.

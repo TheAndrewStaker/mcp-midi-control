@@ -4,7 +4,7 @@
  * 🟢 SET wire shape byte-verified against 10 public captures spanning
  * two effect blocks (Drive 1/2, Delay 1) and two sub-action codes
  * (`09 00` typed-input + `52 00` mouse-drag). See
- * `docs/axefx3-set-parameter-captures.md` for the captured frames and
+ * `docs/devices/axe-fx-iii/set-parameter-captures.md` for the captured frames and
  * `../setParam.ts` on `FN_PARAMETER_SETGET` for the evidence chain.
  *
  * 🟡 GET wire shape is hypothesis-only — no public captures of a
@@ -71,7 +71,7 @@ const SET_VERIFIED_BANNER = [
   'omits parameter writes from the third-party MIDI document. Wire shape',
   'is byte-verified against 10 public AxeEdit III captures spanning two',
   'effect blocks (Drive 1/2 boost, Delay 1 TIME) and two sub-actions',
-  '(typed-input + mouse-drag). See docs/axefx3-set-parameter-captures.md',
+  '(typed-input + mouse-drag). See docs/devices/axe-fx-iii/set-parameter-captures.md',
   'for the captured frames. If the device rejects the write you\'ll see',
   'a 0x64 MULTIPURPOSE_RESPONSE in the reply.',
 ].join('\n');

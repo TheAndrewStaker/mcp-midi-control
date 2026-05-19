@@ -7,7 +7,7 @@
 >    Regenerate via `scripts/ghidra/run-am4-paramnames.cmd`; output lands in
 >    `samples/captured/decoded/ghidra-am4-paramnames.json` (gitignored).
 >    See `docs/ghidra-mining-workflow.md` for the recipe and
->    `docs/SYSEX-MAP.md` §6p for the wire mapping (pidLow=block,
+>    `docs/devices/am4/SYSEX-MAP.md` §6p for the wire mapping (pidLow=block,
 >    pidHigh=paramId). Get a coverage report via
 >    `scripts/_research/am4-catalog-coverage-report.ts`.
 > 2. **Fractal Audio Wiki** (scraped 2026-04-14 via `scripts/scrape-wiki.ts P0`)

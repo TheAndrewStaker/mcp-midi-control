@@ -5,7 +5,7 @@
  * `scripts/capture-midi-passive.ts`, finds every Axe-Fx II state-broadcast
  * triple (function bytes 0x74 header → N×0x75 chunks → 0x76 footer), and
  * decodes the 16-bit values per the wire format documented in
- * `docs/axefx2-state-broadcast-decode-research.md`.
+ * `docs/devices/axe-fx-ii/state-broadcast-decode-research.md`.
  *
  * For each triple, prints:
  *   - target_id (matches `blockTypes.ts` effect IDs — 106 = AMP 1, etc.)

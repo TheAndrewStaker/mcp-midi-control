@@ -35,7 +35,7 @@ These approaches have been ruled out by hardware testing:
   `midiOutGetDevCaps`. The editor's port picker never sees the bridge, so
   no traffic flows through it. This is intentional editor behaviour, not
   a bug, and applies to AxeEdit / AM4-Edit / FM9-Edit. See
-  `docs/axe-fx-ii-community-re-methodology.md` for the full history.
+  [`docs/devices/axe-fx-ii/community-re-methodology.md`](../devices/axe-fx-ii/community-re-methodology.md) for the full history.
 
 - **WinDbg / Frida trap-after-launch** on the editor process to dump
   outgoing buffers. The stack frame at the point of the WinMM call is too
@@ -145,7 +145,7 @@ can reproduce the capture and check the bytes.
 ## See also
 
 - `CONTRIBUTING.md`: the contributor-facing top-level capture intro.
-- `docs/axe-fx-ii-community-re-methodology.md`: full survey of capture
+- [`docs/devices/axe-fx-ii/community-re-methodology.md`](../devices/axe-fx-ii/community-re-methodology.md): full survey of capture
   techniques in the public Fractal RE corpus, including why this
   project chose USBPcap over virtual-MIDI-bridge approaches.
 - `docs/capture-guides/juce-binarydata-extraction.md`: a complementary

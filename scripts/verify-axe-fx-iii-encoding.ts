@@ -5,7 +5,7 @@
  * No hardware required. The Axe-Fx III project ships without a
  * maintainer who owns the device, so this script is the project's
  * only protection against the builders drifting away from
- * `docs/manuals/AxeFx3-MIDI-3rdParty.txt`.
+ * `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`.
  *
  * Each expected hex string is computed by hand from the spec
  * envelope `F0 00 01 74 10 [fn] [payload...] [cs] F7` with checksum
@@ -194,8 +194,8 @@ check('buildGetTempo()', buildGetTempo(),
 // effect blocks and two sub-action codes. See:
 //   - `packages/axe-fx-iii/src/setParam.ts` FN_PARAMETER_SETGET doc-
 //     comment for the evidence chain.
-//   - `docs/axefx3-set-parameter-captures.md` for the captured frames.
-//   - `docs/axefx3-fn01-decode.md` for the field-layout table.
+//   - `docs/devices/axe-fx-iii/set-parameter-captures.md` for the captured frames.
+//   - `docs/devices/axe-fx-iii/fn01-decode.md` for the field-layout table.
 //
 // Session 97 (2026-05-18) pivot: replaced the wrong fn=0x02 II-port
 // envelope with the byte-verified fn=0x01 + sub-action 09 00 (typed-
@@ -239,7 +239,7 @@ check('buildSetParameterBypass(66, true) — Reverb 1 bypass via fn=0x01 path',
   buildSetParameterBypass(66, true),
   'f000017410' + '01' + '0900' + '4200' + '7f01' + '000000' + '010000' + '000000' + '20' + 'f7');
 
-// ── Public-capture goldens (byte-exact, from docs/axefx3-set-parameter-captures.md) ─────
+// ── Public-capture goldens (byte-exact, from docs/devices/axe-fx-iii/set-parameter-captures.md) ─────
 // These lock isSetGetParameterResponse + parseSetGetParameterResponse
 // against the real wire frames AxeEdit III emits to a real Axe-Fx III.
 
@@ -484,7 +484,7 @@ console.log('\nresponse predicates + parsers:');
 // 0x64 MULTIPURPOSE_RESPONSE: community-captured wire shape
 //   F0 00 01 74 10 64 0E 00 7F F7
 // echoed_fn=0x0E (QUERY_SCENE_NAME), result_code=0x00 (general / checksum).
-// This is the exact byte sequence in docs/axefx3-fn01-decode.md §0x64.
+// This is the exact byte sequence in docs/devices/axe-fx-iii/fn01-decode.md §0x64.
 console.log('\nmultipurpose_response (function 0x64):');
 {
   const captured = asBytes('f000017410' + '64' + '0e00' + '7f' + 'f7');

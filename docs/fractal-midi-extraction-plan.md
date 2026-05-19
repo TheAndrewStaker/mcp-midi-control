@@ -37,8 +37,8 @@ already names it `fractal-midi`. **`fractal-midi` wins** for three
 reasons:
 
 1. Already documented across the project as the target name (would have
-   to flip MULTI-DEVICE-ROADMAP + DECISIONS + the launch-post plan if
-   we changed it).
+   to flip MULTI-DEVICE-ROADMAP + DECISIONS + the project announcement
+   if we changed it).
 2. Search/discovery — guitarists and tool authors search "fractal midi
    library," not "fractal protocol library."
 3. Consistent with the planned siblings (`asm-midi`, `roland-midi`) per
@@ -189,7 +189,8 @@ make the resulting `fractal-midi` lower-quality than it should be.
   XML mining + universal-fallback work (Session 93 next-session
   candidates) to land?
 - **Recommendation:** ship II as headline, AM4 as second, III as
-  experimental — same posture the launch post already takes. III's
+  experimental — same posture the project announcement already
+  takes. III's
   catalog (2017 names) is itself the headline win even with sparse
   calibration.
 

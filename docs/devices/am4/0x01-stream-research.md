@@ -158,5 +158,5 @@ different protocol architectures from the same vendor, reflecting
 - `samples/captured/session-59-am4-*.syx` (gitignored, ~21K messages)
 - Capture script: `scripts/capture-midi-passive.ts`
 - Wire format origin: `docs/_private/SESSIONS.md` Session 04 (2026-04-14)
-- Existing AM4 protocol reference: `docs/SYSEX-MAP.md`
+- Existing AM4 protocol reference: [`SYSEX-MAP.md`](SYSEX-MAP.md)
 - Cross-device comparison: `docs/_private/AM4-VS-AXEFX2-BROADCAST-BEHAVIOR.md`

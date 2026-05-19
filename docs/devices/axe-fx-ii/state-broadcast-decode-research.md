@@ -326,8 +326,8 @@ Fractal product line feasible from a single decode framework.
 - Capture file: `samples/captured/session-58-axefx2-grid-move.syx`
   (gitignored).
 - Capture methodology: `scripts/capture-midi-passive.ts`.
-- Triple identification: HW-085 outcome (`docs/_private/HARDWARE-
-  TASKS-AXEFX2.md`).
-- AM4 dump format precedent: `docs/SYSEX-MAP.md` §10b (PRESET DUMP).
+- Triple identification: HW-085 outcome (local hardware-tasks queue
+  for Axe-Fx II).
+- AM4 dump format precedent: [`../am4/SYSEX-MAP.md`](../am4/SYSEX-MAP.md) §10b (PRESET DUMP).
 - Wiki documentation: NONE — this triple is not documented in the
   Fractal wiki for Axe-Fx II. **First public decode.**

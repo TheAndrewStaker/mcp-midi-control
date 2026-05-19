@@ -624,10 +624,10 @@ dependency in `packages/server-all/package.json`. The unified tool
 surface (`set_param`, `apply_preset`, etc.) automatically dispatches
 to your device once the descriptor is registered. No new tools needed.
 
-- [`docs/03-ARCHITECTURE.md`](./docs/03-ARCHITECTURE.md): system overview
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md): system overview
   + per-layer responsibilities.
-- [`docs/SYSEX-MAP.md`](./docs/SYSEX-MAP.md): AM4 wire protocol reference.
-- [`docs/SYSEX-MAP-AXE-FX-II.md`](./docs/SYSEX-MAP-AXE-FX-II.md):
+- [`docs/devices/am4/SYSEX-MAP.md`](./docs/devices/am4/SYSEX-MAP.md): AM4 wire protocol reference.
+- [`docs/devices/axe-fx-ii/SYSEX-MAP.md`](./docs/devices/axe-fx-ii/SYSEX-MAP.md):
   Axe-Fx II wire protocol reference.
 - [`docs/DECISIONS.md`](./docs/DECISIONS.md): non-obvious architectural
   + library choices, with rationale and rejected alternatives.

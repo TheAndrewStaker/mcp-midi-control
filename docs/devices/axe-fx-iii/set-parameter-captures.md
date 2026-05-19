@@ -16,7 +16,7 @@ in [`axefx3-fn01-decode.md`](axefx3-fn01-decode.md).
 
 ### Source A — FC-12 footswitch sending Drive 1/2 boost ON/OFF
 
-Originally archived in `docs/axefx3-fn01-decode.md` from a Fractal
+Originally archived in [`fn01-decode.md`](fn01-decode.md) from a Fractal
 Forum scrape (Session 79 era). Sub-action `52 00` (mouse-drag form;
 the FC-12 emits this shape for binary toggles). Effect IDs 58/59
 = `ID_DISTORT1` / `ID_DISTORT2` per v1.4 Appendix 1.
@@ -94,7 +94,7 @@ opcode users invoke through AxeEdit III.
 ## Provenance
 
 - **Source A.** Original archive: `docs/_private/fractal-forum-text.txt`
-  (gitignored), referenced from `docs/axefx3-fn01-decode.md`. Forum
+  (gitignored), referenced from [`fn01-decode.md`](fn01-decode.md). Forum
   thread + post URL not retained in the local archive; provenance is
   the Session 79 decode commit.
 - **Source B.** Web research (Session 97, 2026-05-18). Mountain

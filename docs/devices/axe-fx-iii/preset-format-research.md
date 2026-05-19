@@ -259,8 +259,8 @@ content-hash field.
    param control — those are separate wire paths. **The III's
    per-block param-write opcode was decoded Session 97** to `fn=0x01`
    + sub-action `09 00` (typed-input), byte-verified against 10
-   public captures. See `docs/SYSEX-MAP-AXE-FX-III.md §0x01
-   PARAMETER_SETGET` and `docs/axefx3-set-parameter-captures.md`.
+   public captures. See [`SYSEX-MAP.md`](SYSEX-MAP.md) §0x01
+   PARAMETER_SETGET and [`set-parameter-captures.md`](set-parameter-captures.md).
    The hypothesis-probe script (`scripts/_research/probe-axefx3-
    setparam-hypothesis.ts`) was retired in the same session since
    the captures resolved the H1..H5 tree without needing the live

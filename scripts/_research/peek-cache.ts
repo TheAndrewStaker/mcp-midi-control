@@ -5,7 +5,7 @@
  *   %APPDATA%\Fractal Audio\AM4-Edit\effectDefinitions_15_2p0.cache
  *
  * Where:
- *   15 = AM4 model byte (matches docs/SYSEX-MAP.md)
+ *   15 = AM4 model byte (matches docs/devices/am4/SYSEX-MAP.md)
  *   2p0 = current AM4 firmware version
  *
  * Session 09 finding: AM4-Edit queries the AM4 firmware for parameter
