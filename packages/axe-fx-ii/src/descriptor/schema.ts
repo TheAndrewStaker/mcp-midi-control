@@ -32,6 +32,45 @@ import { AXE_FX_II_BLOCKS, type AxeFxIIBlock } from 'fractal-midi/axe-fx-ii';
 import { displayToWire, wireToDisplay } from 'fractal-midi/axe-fx-ii';
 import { PARAM_ALIASES_AXEFX2 } from 'fractal-midi/axe-fx-ii';
 
+import { getCalibration, type CalibrationEntry } from '../calibration.js';
+
+// ── Calibration resolution ───────────────────────────────────────────
+//
+// The codec catalog (`fractal-midi/axe-fx-ii` KNOWN_PARAMS) carries
+// `displayMin`/`displayMax`/`displayScale` for the subset of params the
+// Fractal wiki documents (~54 of 1126). For every other knob the
+// `calibration.ts` overlay supplies a defensible display range with
+// `provenance` evidence — AM4-shared, editor-observed, or
+// fractal-convention. Catalog values always win; the overlay is a
+// pure fallback. This keeps the codec layer's hardware-verified
+// calibrations sacred while closing the display-first gap for the
+// uncalibrated tail (Session 98 root-cause class).
+
+interface ResolvedCalibration {
+  readonly displayMin: number;
+  readonly displayMax: number;
+  readonly displayScale?: 'linear' | 'log10';
+}
+
+function resolveCalibration(param: AxeFxIIParam): ResolvedCalibration | undefined {
+  if (param.displayMin !== undefined && param.displayMax !== undefined) {
+    return {
+      displayMin: param.displayMin,
+      displayMax: param.displayMax,
+      displayScale: param.displayScale,
+    };
+  }
+  const overlay: CalibrationEntry | undefined = getCalibration(param.block, param.name);
+  if (overlay !== undefined) {
+    return {
+      displayMin: overlay.displayMin,
+      displayMax: overlay.displayMax,
+      displayScale: overlay.displayScale,
+    };
+  }
+  return undefined;
+}
+
 // ── Encode / Decode closures ────────────────────────────────────────
 //
 // Axe-Fx II params are addressed by (effectId, paramId) where paramId
@@ -98,17 +137,16 @@ export function makeEncode(param: AxeFxIIParam): ParamSchema['encode'] {
     if (!Number.isFinite(num)) {
       throw new Error(`Expected a number for ${param.block}.${param.name}, got "${value}"`);
     }
-    const hasCalibration = param.displayMin !== undefined && param.displayMax !== undefined;
-    if (hasCalibration) {
-      const min = param.displayMin as number;
-      const max = param.displayMax as number;
+    const cal = resolveCalibration(param);
+    if (cal !== undefined) {
+      const { displayMin: min, displayMax: max, displayScale } = cal;
       if (num < min || num > max) {
         throw new Error(`${param.block}.${param.name} out of range [${min}..${max}]: ${num}`);
       }
       return displayToWire(num, {
         displayMin: min,
         displayMax: max,
-        displayScale: param.displayScale,
+        displayScale,
       });
     }
     if (!Number.isInteger(num) || num < 0 || num > 65534) {
@@ -129,12 +167,12 @@ export function makeDecode(param: AxeFxIIParam): ParamSchema['decode'] {
     if (param.controlType === 'switch') {
       return wire ? 'on' : 'off';
     }
-    const hasCalibration = param.displayMin !== undefined && param.displayMax !== undefined;
-    if (hasCalibration) {
+    const cal = resolveCalibration(param);
+    if (cal !== undefined) {
       return wireToDisplay(wire, {
-        displayMin: param.displayMin as number,
-        displayMax: param.displayMax as number,
-        displayScale: param.displayScale,
+        displayMin: cal.displayMin,
+        displayMax: cal.displayMax,
+        displayScale: cal.displayScale,
       });
     }
     return wire;
@@ -146,21 +184,20 @@ export function makeDecode(param: AxeFxIIParam): ParamSchema['decode'] {
 function unitFor(param: AxeFxIIParam): string {
   if (param.controlType === 'select') return 'enum';
   if (param.controlType === 'switch') return 'bool';
-  const hasCalibration = param.displayMin !== undefined && param.displayMax !== undefined;
+  const cal = resolveCalibration(param);
   if (param.controlType === 'knob') {
-    if (!hasCalibration) return 'opaque';
-    const min = param.displayMin as number;
-    const max = param.displayMax as number;
+    if (cal === undefined) return 'opaque';
+    const { displayMin: min, displayMax: max, displayScale } = cal;
     // Frequency knobs are log10 — surface as 'hz' so the LLM sees the
     // device's unit. Linear ranges fall through to generic shapes.
-    if (param.displayScale === 'log10') return 'hz';
+    if (displayScale === 'log10') return 'hz';
     if (min === 0 && max === 10) return 'knob';            // amp 0..10
     if (min === -100 && max === 100) return 'bipolar_percent';
     if (min === 0 && max === 100) return 'percent';
     return 'knob';
   }
   if (param.controlType === 'unknown') {
-    if (!hasCalibration) return 'opaque';
+    if (cal === undefined) return 'opaque';
     return 'count';
   }
   return 'opaque';
@@ -189,11 +226,12 @@ export function buildBlocks(): Record<string, BlockSchema> {
     const block = param.block;
     const name = param.name;
     blocks[block] ??= { params: {}, aliases: {}, groupCode: param.groupCode.toUpperCase() };
+    const cal = resolveCalibration(param);
     blocks[block].params[name] = {
       display_name: param.xmlLabel ?? param.wikiName ?? name,
       unit: unitFor(param),
-      display_min: param.controlType === 'select' || param.controlType === 'switch' ? undefined : param.displayMin,
-      display_max: param.controlType === 'select' || param.controlType === 'switch' ? undefined : param.displayMax,
+      display_min: param.controlType === 'select' || param.controlType === 'switch' ? undefined : cal?.displayMin,
+      display_max: param.controlType === 'select' || param.controlType === 'switch' ? undefined : cal?.displayMax,
       enum_values: param.enumValues,
       encode: makeEncode(param),
       decode: makeDecode(param),
