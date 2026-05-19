@@ -140,7 +140,7 @@ function specToApplyInput(spec: PresetSpec): ApplyPresetInput {
     throw new DispatchError(
       'capability_not_supported',
       'Fractal AM4',
-      `apply_preset on Fractal AM4 does not accept routing edges — AM4 routes implicitly by slot order (slots 1→2→3→4). Drop the routing array, or pick a grid device (Axe-Fx II) for parallel chains / wet-dry splits.`,
+      `apply_preset on Fractal AM4 does not accept routing edges; AM4 routes implicitly by slot order (slots 1→2→3→4). Drop the routing array, or pick a grid device (Axe-Fx II) for parallel chains / wet-dry splits.`,
     );
   }
   const slots: ApplyPresetSlotInput[] = spec.slots.map((s, slotIdx) => {
@@ -148,7 +148,7 @@ function specToApplyInput(spec: PresetSpec): ApplyPresetInput {
       throw new DispatchError(
         'capability_not_supported',
         'Fractal AM4',
-        `apply_preset on Fractal AM4 uses linear slots — pass slot as a 1..4 integer, not {row,col}.`,
+        `apply_preset on Fractal AM4 uses linear slots: pass slot as a 1..4 integer, not {row,col}.`,
       );
     }
     // v0.4: AM4 has one instance of each block type. Reject anything
@@ -158,7 +158,7 @@ function specToApplyInput(spec: PresetSpec): ApplyPresetInput {
       throw new DispatchError(
         'capability_not_supported',
         'Fractal AM4',
-        `apply_preset on Fractal AM4 has one instance per block type (instance=${s.instance} requested for ${s.block_type}). Drop the instance field — AM4 doesn't expose Amp 1 / Amp 2 / etc.`,
+        `apply_preset on Fractal AM4 has one instance per block type (instance=${s.instance} requested for ${s.block_type}). Drop the instance field; AM4 doesn't expose Amp 1 / Amp 2 / etc.`,
       );
     }
 
@@ -352,7 +352,7 @@ export const writer: DeviceWriter = {
       channel: channelName,
       warning: result.acked
         ? undefined
-        : `No ack within timeout — typically a stale MIDI handle or the block isn't placed. Try reconnect_midi or check the layout.`,
+        : `No ack within timeout; typically a stale MIDI handle or the block isn't placed. Try reconnect_midi or check the layout.`,
     };
   },
 
@@ -403,7 +403,7 @@ export const writer: DeviceWriter = {
               `Skipped (does not apply): ${op.block}.${op.name} is not exposed on ` +
               `${op.block}.type wire ${activeIndex}. The device would silently no-op ` +
               `this write (or, on some types, the register is reused for a different ` +
-              `param — e.g. amp.master writes to amp.gain on amps without a master ` +
+              `param: e.g. amp.master writes to amp.gain on amps without a master ` +
               `knob). Report this to the user as "not applied" and skip in the next ` +
               `iteration. Call list_params(${op.block}) to see which knobs apply on ` +
               `the current type.`,
@@ -467,7 +467,7 @@ export const writer: DeviceWriter = {
         : undefined,
       warning: result.acked
         ? undefined
-        : 'No write-echo within timeout — verify on the AM4 display.',
+        : 'No write-echo within timeout; verify on the AM4 display.',
     };
   },
 
@@ -483,7 +483,7 @@ export const writer: DeviceWriter = {
           op: 'save_preset',
           target: formatLocationDisplay(locationIndex),
           acked: false,
-          warning: `Rename to "${name}" didn't ack — save skipped to avoid persisting the old name.`,
+          warning: `Rename to "${name}" didn't ack; save skipped to avoid persisting the old name.`,
         };
       }
     }
@@ -495,7 +495,7 @@ export const writer: DeviceWriter = {
         target: formatLocationDisplay(locationIndex),
         acked: false,
         warning:
-          `Save to ${formatLocationDisplay(locationIndex)} sent but no ack — verify by loading another location and coming back.`,
+          `Save to ${formatLocationDisplay(locationIndex)} sent but no ack; verify by loading another location and coming back.`,
       };
     }
 
@@ -534,11 +534,11 @@ export const writer: DeviceWriter = {
       target: `scene:${scene}`,
       acked: result.acked,
       info: result.acked
-        ? 'Channel cache cleared — the new scene may point each block at a different channel.'
+        ? 'Channel cache cleared; the new scene may point each block at a different channel.'
         : undefined,
       warning: result.acked
         ? undefined
-        : 'No write-echo within timeout — verify on the AM4 display.',
+        : 'No write-echo within timeout; verify on the AM4 display.',
     };
   },
 
@@ -580,7 +580,7 @@ export const writer: DeviceWriter = {
         : undefined,
       warning: result.acked
         ? undefined
-        : `No write-echo within timeout — verify on the AM4 display.`,
+        : `No write-echo within timeout; verify on the AM4 display.`,
     };
   },
 
@@ -607,7 +607,7 @@ export const writer: DeviceWriter = {
         : undefined,
       warning: result.acked
         ? undefined
-        : `No write-echo within timeout — verify on the AM4 display.`,
+        : `No write-echo within timeout; verify on the AM4 display.`,
     };
   },
 
@@ -647,7 +647,7 @@ export const writer: DeviceWriter = {
         }
         const auditionNote = result.saved
           ? undefined
-          : `Auditioning at ${formatLocationDisplay(locationIndex)} — working buffer only, not saved. ` +
+          : `Auditioning at ${formatLocationDisplay(locationIndex)}, working buffer only, not saved. ` +
             `Reversible by switching presets. Call save_preset({port:'am4', location:'${formatLocationDisplay(locationIndex)}'}) ` +
             `when the user explicitly asks to save / keep / persist.`;
         const skipNote = formatSkippedNote(result.skipped);
@@ -694,7 +694,7 @@ export const writer: DeviceWriter = {
       capture.unsubscribe();
     }
     const ackNote = wireResult.unacked > 0
-      ? `${wireResult.unacked} of ${wireResult.totalWrites} writes did not ack within timeout — verify on the AM4 display or call reconnect_midi.`
+      ? `${wireResult.unacked} of ${wireResult.totalWrites} writes did not ack within timeout; verify on the AM4 display or call reconnect_midi.`
       : undefined;
     const skipNote = formatSkippedNote(skipped);
     const warning = [ackNote, skipNote].filter((s) => s !== undefined).join(' ');
@@ -878,7 +878,7 @@ export const writer: DeviceWriter = {
           return {
             ok: false,
             location: formatLocationDisplay(locationIndex),
-            message: `verification failure: post-restore name at ${formatLocationDisplay(locationIndex)} is <EMPTY>. Factory presets are never empty — the restore did not land.`,
+            message: `verification failure: post-restore name at ${formatLocationDisplay(locationIndex)} is <EMPTY>. Factory presets are never empty; the restore did not land.`,
             wallTimeMs: Date.now() - startMs,
             verified: false,
             preRestoreName,
@@ -907,7 +907,7 @@ export const writer: DeviceWriter = {
       ok: true,
       location: formatLocationDisplay(locationIndex),
       message: verified === false
-        ? `verification soft warning: pre="${preRestoreName}" equals post="${postRestoreName}" — either already factory or restore didn't land.`
+        ? `verification soft warning: pre="${preRestoreName}" equals post="${postRestoreName}"; either already factory or restore didn't land.`
         : `verified: pre="${preRestoreName}" → post="${postRestoreName}".`,
       wallTimeMs: Date.now() - startMs,
       verified,
@@ -1029,7 +1029,7 @@ export const writer: DeviceWriter = {
       throw new DispatchError(
         'capability_not_supported',
         'Fractal AM4',
-        'rename(target="preset") needs a location on Fractal AM4 — use save_preset(location, name) to rename + persist, or am4_set_preset_name with an explicit location.',
+        'rename(target="preset") needs a location on Fractal AM4. Use save_preset(location, name) to rename + persist, or am4_set_preset_name with an explicit location.',
         { retry_action: 'Call save_preset(port, location, name).' },
       );
     }
@@ -1053,7 +1053,7 @@ export const writer: DeviceWriter = {
         : undefined,
       warning: result.acked
         ? undefined
-        : `Scene rename sent but no ack — verify on the AM4 display.`,
+        : `Scene rename sent but no ack; verify on the AM4 display.`,
     };
   },
 

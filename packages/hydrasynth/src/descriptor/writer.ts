@@ -109,7 +109,7 @@ function resolveNrpn(block: string, paramName: string): HydrasynthNrpn {
     throw new DispatchError(
       'capability_not_supported',
       DEVICE_LABEL,
-      `Parameter '${block}.${paramName}' exists on the CC chart but isn't in the NRPN table — use the legacy hydra_set_param tool to send it as a raw CC.`,
+      `Parameter '${block}.${paramName}' exists on the CC chart but isn't in the NRPN table; use the hydra_set_param tool to send it as a raw CC.`,
     );
   }
   throw new DispatchError(

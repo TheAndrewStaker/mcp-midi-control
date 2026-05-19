@@ -267,7 +267,7 @@ export const writer: DeviceWriter = {
       display_value: display,
       acked: true,
       channel: channelWire,
-      warning: 'Axe-Fx II SET is fire-and-forget — verify by audible/visible response on the device.',
+      warning: 'Axe-Fx II SET is fire-and-forget; verify by audible/visible response on the device.',
     };
   },
 
@@ -349,7 +349,7 @@ export const writer: DeviceWriter = {
           : undefined,
         warning: parsed.ok
           ? undefined
-          : `Device returned result code 0x${parsed.resultCode.toString(16)} — save likely rejected.`,
+          : `Device returned result code 0x${parsed.resultCode.toString(16)}; save likely rejected.`,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -357,7 +357,7 @@ export const writer: DeviceWriter = {
         op: 'save_preset',
         target: String(slot),
         acked: false,
-        warning: `No STORE_PRESET ack within ${STORE_RESPONSE_TIMEOUT_MS}ms — ${msg}. Save state unknown; verify on the device.`,
+        warning: `No STORE_PRESET ack within ${STORE_RESPONSE_TIMEOUT_MS}ms: ${msg}. Save state unknown; verify on the device.`,
       };
     }
   },
@@ -386,7 +386,7 @@ export const writer: DeviceWriter = {
       throw new DispatchError(
         'bad_location',
         DEVICE_LABEL,
-        `set_block on Fractal Axe-Fx II uses grid coordinates — pass slot as { row: 1..4, col: 1..12 }, not a single integer.`,
+        `set_block on Fractal Axe-Fx II uses grid coordinates: pass slot as { row: 1..4, col: 1..12 }, not a single integer.`,
         { retry_action: 'Pass slot: { row, col }.' },
       );
     }
@@ -421,18 +421,18 @@ export const writer: DeviceWriter = {
         target: `r${row}c${col}=${blockName}`,
         acked: parsed.ok,
         info: parsed.ok
-          ? `Placed ${blockName} at row ${row}, col ${col}. Note: this write does NOT propagate routing — downstream cells' input masks still point at the previous occupant's position.`
+          ? `Placed ${blockName} at row ${row}, col ${col}. Note: this write does NOT propagate routing; downstream cells' input masks still point at the previous occupant's position.`
           : undefined,
         warning: parsed.ok
           ? undefined
-          : `Device returned result code 0x${parsed.resultCode.toString(16)} — placement rejected.`,
+          : `Device returned result code 0x${parsed.resultCode.toString(16)}; placement rejected.`,
       };
     } catch (err) {
       return {
         op: 'set_block',
         target: `r${row}c${col}`,
         acked: false,
-        warning: `No SET_GRID_CELL ack within ${GRID_CELL_RESPONSE_TIMEOUT_MS}ms — ${err instanceof Error ? err.message : String(err)}.`,
+        warning: `No SET_GRID_CELL ack within ${GRID_CELL_RESPONSE_TIMEOUT_MS}ms: ${err instanceof Error ? err.message : String(err)}.`,
       };
     }
   },
@@ -451,7 +451,7 @@ export const writer: DeviceWriter = {
       op: 'set_bypass',
       target: `${block.name}:${bypassed ? 'bypassed' : 'engaged'}`,
       acked: true,
-      info: `${block.name} set to ${bypassed ? 'BYPASSED' : 'ENGAGED'}. Axe-Fx II SET is fire-and-forget — verify on the device.`,
+      info: `${block.name} set to ${bypassed ? 'BYPASSED' : 'ENGAGED'}. Axe-Fx II SET is fire-and-forget; verify on the device.`,
     };
   },
 
@@ -504,9 +504,9 @@ export const writer: DeviceWriter = {
             }
           : undefined,
         warning: !result.ok && !result.lastNack
-          ? `STORE_PRESET did not ack within ${STORE_RESPONSE_TIMEOUT_MS}ms — save state unknown.`
+          ? `STORE_PRESET did not ack within ${STORE_RESPONSE_TIMEOUT_MS}ms; save state unknown.`
           : !shouldSave && result.ok
-          ? `Auditioning at display slot ${slot} — working buffer only, not saved. ` +
+          ? `Auditioning at display slot ${slot}, working buffer only, not saved. ` +
             `Reversible by switching presets. Call save_preset({port:'axe-fx-ii', location:${slot}}) ` +
             `when the user explicitly asks to save / keep / persist.`
           : undefined,
@@ -558,7 +558,7 @@ export const writer: DeviceWriter = {
         if (c.col > 1 && c.routingFlags === 0) {
           breaks.push({
             slot_ref: { row: c.row, col: c.col },
-            reason: `block id ${c.blockId} placed at row ${c.row} col ${c.col} has routing_mask=0 — signal does not flow through this cell.`,
+            reason: `block id ${c.blockId} placed at row ${c.row} col ${c.col} has routing_mask=0; signal does not flow through this cell.`,
           });
         }
       }
@@ -574,8 +574,8 @@ export const writer: DeviceWriter = {
       ok: breaks.length === 0,
       breaks,
       summary: breaks.length === 0
-        ? `verify_chain: chain intact — every placed block on row 2 has live routing.`
-        : `verify_chain: ${breaks.length} broken cable${breaks.length === 1 ? '' : 's'} on row 2 — signal will not flow past col ${breaks[0].slot_ref && typeof breaks[0].slot_ref === 'object' ? (breaks[0].slot_ref as { col: number }).col : '?'}.`,
+        ? `verify_chain: chain intact; every placed block on row 2 has live routing.`
+        : `verify_chain: ${breaks.length} broken cable${breaks.length === 1 ? '' : 's'} on row 2; signal will not flow past col ${breaks[0].slot_ref && typeof breaks[0].slot_ref === 'object' ? (breaks[0].slot_ref as { col: number }).col : '?'}.`,
       extra_round_trips: 1,
     };
   },
@@ -669,10 +669,10 @@ export const writer: DeviceWriter = {
             const ack = await ackPromise;
             const liveName = parseGetPresetNameResponse(ack);
             if (liveName !== entry.name) {
-              verifyError = `verify: preset name mismatch — wrote "${entry.name}", device reports "${liveName}".`;
+              verifyError = `verify: preset name mismatch. Wrote "${entry.name}", device reports "${liveName}".`;
             }
           } catch (err) {
-            verifyError = `verify: GET_PRESET_NAME failed — ${err instanceof Error ? err.message : String(err)}`;
+            verifyError = `verify: GET_PRESET_NAME failed: ${err instanceof Error ? err.message : String(err)}`;
           }
         }
 
@@ -747,7 +747,7 @@ export const writer: DeviceWriter = {
     throw new DispatchError(
       'capability_not_supported',
       DEVICE_LABEL,
-      `rename target '${target}' is not supported on Fractal Axe-Fx II — scene-name writes have no decoded SysEx envelope on this device. Only target='preset' is implemented.`,
+      `rename target '${target}' is not supported on Fractal Axe-Fx II; scene-name writes have no decoded SysEx envelope on this device. Only target='preset' is implemented.`,
     );
   },
 

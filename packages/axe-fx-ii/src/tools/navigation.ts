@@ -108,7 +108,7 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
       content: [{
         type: 'text',
         text:
-          `Active preset: display slot ${displaySlot} (wire ${presetNumber}).\n` +
+          `Active preset: display slot ${displaySlot}.\n` +
           `Sent (${reqBytes.length}B): ${toHex(reqBytes)}\n` +
           `Recv (${response.length}B): ${toHex(response)}\n`,
       }],

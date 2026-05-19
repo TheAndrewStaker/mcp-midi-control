@@ -79,7 +79,7 @@ export function registerReadTools(server: McpServer): void {
                             `Slot-${position} read failed: ${reason}. ` +
                             `Stopped after reading ${slots.length}/4 slots. ` +
                             `If this is the first failed read in a while, the MIDI handle ` +
-                            `may be stale — call reconnect_midi and retry.`,
+                            `may be stale; call reconnect_midi and retry.`,
                     }],
                     isError: true,
                 };
@@ -127,7 +127,7 @@ export function registerReadTools(server: McpServer): void {
             return {
                 content: [{
                     type: 'text',
-                    text: `Active scene: ${sceneIndex + 1} (wire index ${sceneIndex})`,
+                    text: `Active scene: ${sceneIndex + 1}`,
                 }],
             };
         } catch (err) {
@@ -135,7 +135,7 @@ export function registerReadTools(server: McpServer): void {
             return {
                 content: [{
                     type: 'text',
-                    text: `Active-scene read failed: ${reason}. If this is the first failed read in a while, the MIDI handle may be stale — call reconnect_midi.`,
+                    text: `Active-scene read failed: ${reason}. If this is the first failed read in a while, the MIDI handle may be stale; call reconnect_midi.`,
                 }],
                 isError: true,
             };
@@ -165,7 +165,7 @@ export function registerReadTools(server: McpServer): void {
             return {
                 content: [{
                     type: 'text',
-                    text: `Active preset location: ${code} (wire index ${locationIndex})`,
+                    text: `Active preset location: ${code}`,
                 }],
             };
         } catch (err) {
@@ -173,7 +173,7 @@ export function registerReadTools(server: McpServer): void {
             return {
                 content: [{
                     type: 'text',
-                    text: `Active-location read failed: ${reason}. If this is the first failed read in a while, the MIDI handle may be stale — call reconnect_midi.`,
+                    text: `Active-location read failed: ${reason}. If this is the first failed read in a while, the MIDI handle may be stale; call reconnect_midi.`,
                 }],
                 isError: true,
             };
@@ -214,7 +214,7 @@ export function registerReadTools(server: McpServer): void {
             return {
                 content: [{
                     type: 'text',
-                    text: `"none" isn't a real block — it represents an empty slot. Pass a real block name like "amp" or "drive".`,
+                    text: `"none" isn't a real block; it represents an empty slot. Pass a real block name like "amp" or "drive".`,
                 }],
                 isError: true,
             };
@@ -243,7 +243,7 @@ export function registerReadTools(server: McpServer): void {
             return {
                 content: [{
                     type: 'text',
-                    text: `Bypass read for ${block} failed: ${reason}. If this is the first failed read in a while, the MIDI handle may be stale — call reconnect_midi.`,
+                    text: `Bypass read for ${block} failed: ${reason}. If this is the first failed read in a while, the MIDI handle may be stale; call reconnect_midi.`,
                 }],
                 isError: true,
             };

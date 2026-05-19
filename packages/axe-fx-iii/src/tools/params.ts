@@ -79,6 +79,7 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
   server.registerTool('axefx3_set_parameter', {
     description: [
       'Write a raw 16-bit wire value to one paramId on one block on the Axe-Fx III. Targets the active scene only.',
+      'EXCEPTION TO DISPLAY-FIRST CONTRACT: the Axe-Fx III ships without a published display calibration, so this tool exposes raw wire 0..65534 directly. AM4 and Axe-Fx II tools accept display units (knob 0..10, dB, %); do NOT generalise this raw-wire convention to those devices. When the III gets its calibration, this tool will switch to display units behind the same name.',
       SET_VERIFIED_BANNER,
       '- value: raw 0..65534. The III publishes no per-param display calibration, so display<->wire is the caller\'s responsibility.',
       '- param_id: see the param-name catalog shipped with the package for paramId -> symbolic-name tables per effect family.',
