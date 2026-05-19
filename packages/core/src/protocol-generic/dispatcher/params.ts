@@ -7,6 +7,7 @@
  * delegate to descriptor.writer / descriptor.reader.
  */
 
+import { getParamDescription } from '../param-descriptions.js';
 import {
   DispatchError,
   type BatchReadResult,
@@ -61,23 +62,35 @@ export async function executeSetParam(args: {
 /**
  * Full lifecycle for `get_param`. Same shape as executeSetParam but
  * routes to descriptor.reader.getParam.
+ *
+ * When `include_description: true` is passed, the response carries an
+ * extra `description` field with the verbatim Blocks Guide / Owner's
+ * Manual excerpt for the param (when one is on file). Omitted when
+ * the extractor didn't have a clean (block, param) join — never an
+ * empty string — so the agent doesn't render "Description: " with
+ * nothing after it.
  */
 export async function executeGetParam(args: {
   port: string;
   block: string;
   name: string;
   channel?: string | number;
-}): Promise<ReadResult & { device: string; aliased_param_from?: string }> {
+  include_description?: boolean;
+}): Promise<ReadResult & { device: string; aliased_param_from?: string; description?: string }> {
   const descriptor = requireDevice(args.port);
   const canonical_block = resolveBlockName(descriptor, args.block);
   const { name: canonical_name, aliased_from } = resolveParamName(descriptor, canonical_block, args.name);
   const channel = resolveChannel(descriptor, canonical_block, args.channel);
   const ctx = openCtx(descriptor);
   const result = await descriptor.reader.getParam(ctx, canonical_block, canonical_name, channel);
+  const description = args.include_description
+    ? getParamDescription(args.port, canonical_block, canonical_name)
+    : undefined;
   return {
     ...result,
     device: descriptor.display_name,
     aliased_param_from: aliased_from,
+    description,
   };
 }
 

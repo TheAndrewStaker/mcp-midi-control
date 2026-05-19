@@ -1,0 +1,544 @@
+{
+  "am4": {
+    "amp": {
+      "bright_cap": "Sets the value of a virtual capacitor to determine the sonic effect of the Bright switch. Increasing this will make the preamp brighter and vice versa.",
+      "cab1_high_cut": "This filter is actually placed between the preamp and the power amp, so it has a more dramatic effect than an EQ that might be placed before preamp distortion.",
+      "cab2_high_cut": "This filter is actually placed between the preamp and the power amp, so it has a more dramatic effect than an EQ that might be placed before preamp distortion.",
+      "cab2_low_cut": "This removes bass frequencies at the input for a classic way to tighten an amp.",
+      "cab_1_low_cut": "This removes bass frequencies at the input for a classic way to tighten an amp.",
+      "cab_master_high_cut": "This filter is actually placed between the preamp and the power amp, so it has a more dramatic effect than an EQ that might be placed before preamp distortion.",
+      "cathode_follower_compression": "Determines the amount of compression in the virtual cathode follower. This parameter interacts with the other parameters listed below.",
+      "compressor_clarity": "Used in conjunction with the other Output Compression parameters, this adjusts the bass response of the compressor and can be used to add clarity to the low end.",
+      "compressor_threshold": "Sets the threshold of Output Compression. A lower value causes compression to occur for quieter signals.",
+      "compressor_type": "Sets the type of Output Compression.",
+      "cut_switch": "Reduces the amount of low frequencies coming into the amp simulation. This can be used to \"tighten\" the tone or to reduce low-end \"flub\".",
+      "definition": "This control is a basic \"tilt EQ\" which adds highs/cuts lows, or vice versa.",
+      "depth": "Boosts low frequencies from the virtual power amp by varying the negative feedback frequency response. It is set by default to an appropriate value when the amp type is selected, but this setting may be overridden.",
+      "depth_freq": "This multiplier alters the center frequency of the Depth control.",
+      "gain": "(Previously \"Input Drive\") This sets the amount of preamp gain/distortion. Used in conjunction with the Master Volume, Gain determines whether the sound will be clean, broken up, overdriven, or fully distorted. For amps that have no Master Volume, Gain functions as the amp's volume control.",
+      "gain_monitor": "(Previously \"Input Drive\") This sets the amount of preamp gain/distortion. Used in conjunction with the Master Volume, Gain determines whether the sound will be clean, broken up, overdriven, or fully distorted. For amps that have no Master Volume, Gain functions as the amp's volume control.",
+      "geq_band_4": "Adjusts the high end of the virtual power amp by varying the negative feedback frequency response.",
+      "grid_bias": "This is Power Tube Grid Bias from the Power Amp page.",
+      "high_cut": "This filter is actually placed between the preamp and the power amp, so it has a more dramatic effect than an EQ that might be placed before preamp distortion.",
+      "high_treble": "Think of this as an extra tone control. Use it to add \"zing\" or tame harsh highs.",
+      "input_eq_gain": "(Previously \"Input Drive\") This sets the amount of preamp gain/distortion. Used in conjunction with the Master Volume, Gain determines whether the sound will be clean, broken up, overdriven, or fully distorted. For amps that have no Master Volume, Gain functions as the amp's volume control.",
+      "input_select": "The Amp block processes audio in mono only. This control determines how an incoming stereo signal will be processed. You can set it to accept \"LEFT\" only or \"RIGHT\" only, or \"SUM L+R\" (the default setting).",
+      "input_trim": "This control allows you to modify any model to have more or less gain than would be possible with the regular controls. This is different from the Gain in that it does NOT interact with the surrounding circuitry to change frequency response. In other words, use Input Trim to adjust gain without also changing tone.",
+      "level": "A duplicate control, placed for convenience.",
+      "low_cut": "This removes bass frequencies at the input for a classic way to tighten an amp.",
+      "master_bias_excursion": "This scales all of the other bias excursion parameters in the amp block. The default value is usually 100%, but there are some with values of 0%, depending on the amp type and design.",
+      "master_low_cut": "This removes bass frequencies at the input for a classic way to tighten an amp.",
+      "master_vol_cap": "Sets the value of the bright cap across the Master Volume control.",
+      "master_vol_location": "Sets the location of the Master Volume control. Most amps have the Master Volume before the phase inverter (\"Pre PI\"). On some amps (like the \"Class-A\" types) the Master Volume comes after the phase inverter (\"PI\"). A third option, \"pre-triode,\" is the default for \"Hipower\" amp types.",
+      "master_vol_trim": "Allows you to adjust the range of Master Volume. Increasing the value above 1.0 will cause more gain in the virtual power amp and vice versa.",
+      "output_mode": "The default value, \"FRFR\", is designed for use while using \"Full Range/Flat Response\" monitors, or while recording. The \"Solid State Power Amp + Cab\" (\"SS PWR AMP +CAB\") mode is intended for use while using a solid-state power amp and conventional guitar cab. In this mode speaker compression modeling behaves differently, relying on the speaker for compression while still simulating the interaction with the power amp.",
+      "overdrive": "Available only on certain amp models, this adjusts the overdrive gain stage. Amps with Overdrive will not display Input Trim (above) on the Tone page, but this can still be found on the Advanced page. (This knob is sometimes labeled \"Ratio\" or \"Lead Master\".)",
+      "pi_bias_excursion": "Controls how much the virtual phase inverter bias shifts when overdriven.",
+      "power_amp_modeling": "(On/Off) Defeats power amp simulation in the amp block, allowing the use of a real tube power amp without globally disabling Power Amp Modeling in SETUP : Global : Config.",
+      "power_tube_bias_excursion": "Not to be confused with Bias Excursion on the Power Amp page, this is a separate parameter for the preamp. The higher the value, the more the bias shifts when the virtual tubes are overdriven.",
+      "preamp_bias": "This adjusts the bias point of the last triode stage. This is the most important stage in the feel and texture of distortion, as it controls the ratio of even/odd harmonics. Values around zero will produce mostly odd harmonics. As you deviate from zero you'll produce less odd and more even. Odd harmonics give clarity and a more aggressive, open tone but this can be cold and harsh. Adding even harmonics gives a warmer sound but",
+      "preamp_bias_excursion": "Not to be confused with Bias Excursion on the Power Amp page, this is a separate parameter for the preamp. The higher the value, the more the bias shifts when the virtual tubes are overdriven.",
+      "preamp_sag": "Turning this ON causes the amp block to behave like an integrated tube head or combo amp.",
+      "preamp_tube_type": "Changes the characteristics of the virtual preamp tubes, based on real world examples.",
+      "presence": "Adjusts the high end of the virtual power amp by varying the negative feedback frequency response.",
+      "presence_freq": "This multiplier alters the center frequency of the Presence control.",
+      "saturation_drive": "Controls the amount of saturation (see above). The default value differs for each model.",
+      "supply_sag": "This controls dynamics in the virtual power amp. Higher settings simulate higher power supply impedance for more tube plate voltage \"droop\" and a compressed feel.",
+      "variac": "This sets the relative AC line voltage into the amp simulation. A Variac changes the volume of an amp dramatically, but our virtual variac compensates for this."
+    },
+    "chorus": {
+      "auto_depth": "Scales Depth to create a consistent sound at any Rate. This control simplifies dialing in \"musical\" results. For precise control or wild sounds, you may wish to turn it off.",
+      "delay_time": "Adjusts the minimum delay time from 0.01,50.0 ms. Lower values create a more singular sound, while higher settings approach a fast \"slapback\" delay effect.",
+      "depth": "Sets the amount of delay modulation, which determines the amount of detune heard from each voice.",
+      "drive": "This control allows you to simulate the gentle distortion produced by overdriving an \"analog bucket brigade\" delay chip of the type used in many vintage chorus effects. Set to zero for \"pristine clean.\"",
+      "high_cut": "Adjusts the cutoff frequency of a low-pass filter at the output of the processed signal. Decreasing this value creates a darker chorus effect reminiscent of an age when typical effects were unable to reproduce the full frequency spectrum. Lower this to achieve those sounds some might call \"warm.\"",
+      "lfo_depth_2": "Controls stereo width by setting the pan position of the effect from hard-panned (100%) to dead mono (0%) , and beyond, with psychoacoustic effects increasing the apparent width from ,200% to +200%.",
+      "lfo_freq": "Adjusts the cutoff frequency of a high-pass filter at the output of the processed signal. This control removes bass frequencies and can be useful to create chorus effects designed for bass guitar.",
+      "lfo_phase_pct": "When the Dual Delay type is selected, this scales the time for the right chorus.",
+      "lfo_type": "Sets the \"shape\" of the modulation. Sine and Triangle are the most commonly used waveforms.",
+      "low_cut": "Adjusts the cutoff frequency of a high-pass filter at the output of the processed signal. This control removes bass frequencies and can be useful to create chorus effects designed for bass guitar.",
+      "mix": "Sets wet and dry levels. 50% produces a classic effect. Set to 100% for pure wet or vibrato effects.",
+      "number_of_voices": "Sets the number of delay lines. Increasing voices increases the fullness of the effect. Use two voices for a vintage chorus, or use up to eight for a lush, multi-layered ensemble.",
+      "phase_reverse": "Allows left, right or both channels of the effect to be phase-inverted.",
+      "rate": "Controls the speed at which the chorus oscillates. Use low settings with higher depths for slow- moving sounds. Increase the rate and depth for vibrato effects. When shown in parentheses, Rate is being set automatically by the Tempo parameter. Set Rate fully counterclockwise to sync to the LFO1 Controller. (See your Owner's Manual for more on the LFO1 Modifier Source.)",
+      "stereo_spread": "Controls stereo width by setting the pan position of the effect from hard-panned (100%) to dead mono (0%) , and beyond, with psychoacoustic effects increasing the apparent width from ,200% to +200%.",
+      "tempo": "Sets the Rate in rhythmic relation to the tempo. For example, if Tempo is set to \"1/4\" and the Tempo is 120 BPM, the rate will automatically be set to 2 Hz (BPM/60 = Hz). To ignore tempo, set to \"NONE\".",
+      "type": "Make a selection using the VALUE or NAV buttons with no need to press ENTER. This control instantly sets other parameters for different useful sound settings. Types include: Digital Mono, Digital Stereo, Analog Mono, Analog Stereo, Japan CE-2, Warm Stereo, 80'S Style, Triangle Chorus, 8-Voice Stereo, Vintage Tape, Dimension (1/2/3), 4-Voice Analog, 8-Voice Analog, Stereo Tri-Chorus, and Dual Chorus.",
+      "width": "Widens the sound, creating a difference between left and right delay times by scaling the right time downwards from the value set (see Delay Time, above) toward 1 ms as Width goes from 0,100%."
+    },
+    "compressor": {
+      "attack_time": "This sets how fast the compressor changes the volume when compression is applied.",
+      "auto_attack_release": "(Not available on all types) With this turned on, the compressor responds to faster transients with faster times. This can help eliminate unwanted pumping and can also be useful when the material you are playing requires a range of attack/release approaches.",
+      "auto_makeup": "When turned ON, this increases the output level to maintain perceived loudness at the compressor's current threshold and ratio settings.",
+      "compression": "Similar to Ratio, above, this determines how much compression occurs.",
+      "detector_type": "Selects whether the compressor will use RMS (\"Root Mean Square\"), PEAK, or RMS+PEAK detection. RMS is \"smooth\" and generally used to even out the level of the program material over longer time periods. Peak detection, commonly used with guitar, is useful for aggressive punches or fast limiting. RMS+ Peak combines attributes of both: the speed of a peak and the smoothness of RMS.",
+      "dynamics": "(When Type is set to Dynamics Processor, this parameter replaces Ratio or Compression.) When set below zero, compression occurs and dynamics are de-emphasized. When set above zero, expansion occurs and dynamics are exaggerated. Expansion is basically the inverse of compression. Rather than making loud signals quieter, it makes quiet signals quieter, as any signal below the threshold is reduced.",
+      "knee_type": "The knee control \"softens\" the threshold, so compression engages gradually as signals approach the threshold. With high ratios, a hard knee may produce abrupt changes. A soft knee produces a more \"transparent\" effect. The effect of the knee can be seen on the graph shown for our Studio compressor types.",
+      "look_ahead_time": "Even with the fastest attack times, a compressor can still miss the fastest transients. The Look Ahead control uses a short audio delay on the gain control stage so the detector can in effect simulate seeing into the future: it remains in real time while the audio signal is shifted into the past. Note that this control introduces an actual delay, increasing latency in the overall output signal (wet AND dry). In fact, some have",
+      "mix": "Sets the ratio of wet (compressed) and dry (unprocessed) sounds. This would normally be set to 100% but lower settings allow parallel compression, also known as \"New York\" compression.",
+      "release": "Sets how quickly the output returns towards normal once compression is no longer triggered.",
+      "release_time": "Sets how quickly the output returns towards normal once compression is no longer triggered.",
+      "sidechain_source": "determines which signal is used to feed the compressor's detector. \"BLOCK L+R\" is the normal setting which selects the compressor's input (sum of all rows feeding the block). You can also use the input from a designated row, or any of the physical input jacks. The \"BLOCK L\" and \"BLOCK R\" options are useful when the compressor follows an effect with one side out of phase (delay, chorus, enhancer). Remember that the",
+      "threshold": "For downward compressors (most types) this sets the level above which automatic volume reduction will happen. When the input exceeds the threshold, the compressor reduces the output. For upward compressors (Studio 1 and Studio 2) the threshold is the level below which levels will be increase.",
+      "threshold_thresh2": "For downward compressors (most types) this sets the level above which automatic volume reduction will happen. When the input exceeds the threshold, the compressor reduces the output. For upward compressors (Studio 1 and Studio 2) the threshold is the level below which levels will be increase.",
+      "type": "A range of popular and useful Compressor types are included."
+    },
+    "delay": {
+      "bit_reduction": "This control makes it possible to create the lo-fi sounds of vintage digital delays. The number shown is the number of bits to be subtracted from 24-bit full scale. To create a 16-bit delay, for example, set Bit Reduction to \"8\" (24 , 8 = 16). Bit Reduction is often used with high-frequency roll-off.",
+      "compander_time": "Sets the time of the delay in milliseconds. When shown in parentheses, its value is being set automatically by the Tempo parameter (see below). Set Tempo to \"NONE\" to regain manual control.",
+      "crossfade_time": "This extends recording outside of the time window, so backward snippets can overlap briefly and crossfade to create a more smoothly continuous performance.",
+      "ducker_release": "Sets how long it takes for the delay signal to return to normal when the input goes back below the threshold. A short value here causes the ducked echoes to return to full volume very quickly. Longer times cause the levels to swell back more gradually.",
+      "ducker_threshold": "Sets the trigger level of the ducker. If the input signal exceeds this value, the delayed signal will be reduced by the amount set with the Attenuation control.",
+      "echo_pan": "Positions the echo in the stereo output of the Delay block. Note that this is different than the Balance control, which acts on both wet and dry signals.",
+      "feedback": "Sets the amount of delay feedback (a.k.a. regeneration) to determine the number of repeats.",
+      "lfo_phase": "Sets the LFO phase offset for the right delay line. This has no effect on Mono delays (including Reverse, Tape, etc.).",
+      "lfo_phase_2": "Sets the LFO phase offset for the right delay line. This has no effect on Mono delays (including Reverse, Tape, etc.).",
+      "lfo_phase_4": "Sets the LFO phase offset for the right delay line. This has no effect on Mono delays (including Reverse, Tape, etc.).",
+      "lfo_rate": "Sets the delay time modulation speed. When shown in parentheses, it is being set automatically by a Tempo parameter (see below). Set the Tempo to \"NONE\" for manual control.",
+      "lo_fi_drive": "Determines the amount of distortion in the delay path. Use this to simulate the way cascading feedback overloads a tape or analog delay.",
+      "lr_time_ratio": "Sets the right channel time as a percentage of the left. 100% results in both channels having equal delay time. Settings just below 100% will widen the echo sound, while ratios corresponding to whole number relationships like 7:8 (87.5%), 3:4 (75%) or 1:2 (50%) will create syncopated rhythm.",
+      "master_feedback": "Scales any and all feedback parameters. Note that the range of this control is 0,200%, making it possible (easy, in fact) to overload the feedback loop.",
+      "motor_speed": "Sets the speed of the tape motor from 50% to 200%. This parameter can be modified in real time, making it possible to \"time warp\" delay playback.",
+      "phase_reverse": "Allows the \"LEFT\", \"RIGHT\", or \"BOTH\" delay line outputs to be phase inverted.",
+      "repeat_stack_hold": "Use this for Looper-like behavior. Setting the switch to HOLD defeats the inputs and captures the current loop. The STACK option captures the loop but leaves the input to the delay open so you can layer additional material while the repeats continue.",
+      "right_post_delay": "Widens the sound of a mono echo by adding 0,100ms of delay at the right (wet) output.",
+      "run": "When this is turned ON, reverse playback runs and backward audio is produced. Turning this OFF mutes playback, but recording continues in the background. This switch can be remotely operated with a modifier (such as a footswitch or the Envelope controller) to stop and start playback automatically.",
+      "sweep_phase": "Adjusts the phase of the right outputs of the LFO. Set above zero for stereo effects.",
+      "sweep_rate": "Sets the speed of the sweeps.",
+      "tempo": "Syncs the Time parameter (see above) in rhythmic relation to the tempo. For example, if the tempo is 120 BPM, and Tempo is \"1/4\" (one echo per beat), time will be 500 ms. To ignore the tempo, set to \"NONE.\"",
+      "time": "Sets the time of the delay in milliseconds. When shown in parentheses, its value is being set automatically by the Tempo parameter (see below). Set Tempo to \"NONE\" to regain manual control.",
+      "trigger_restart": "The Reverse Delay records audio for a duration determined by the Time parameter. While one clip is being recorded, the previous one is played back in reverse. This process runs continuously in the background, meaning the start and end of reversed phrases might not align with the moment you begin playing, even if the recording time is synced to tempo. This parameter helps you gain control over this process. When",
+      "type": "This control sets various parameters of the Delay block to achieve popular delay effects instantly. See the table below for a listing of available types. Make a selection using VALUE or NAV with no need to press ENTER."
+    },
+    "drive": {
+      "bias": "Sets the bias point for the clipping circuit. Varying this setting controls the relative amount of even and odd harmonics. Set very high or very low for a unique \"sputtering\" effect. Use caution, as setting this too high or too low with certain clipper types can render the block inaudible.",
+      "bit_reduce": "Creates digital distortion by reducing the resolution of the audio signal. The number shown is the number of bits that will be subtracted from 24-bit full scale. To create 4-bit audio, for example, set Bit Reduce to \"20.\" Yes, it is supposed to sound really gritty and nasty!",
+      "clip_type": "Controls the type of clipping circuit used, based on accurate models of analog components: 4558/ Diode, FET, Full Wave Rectifier, Germanium, Hard, HV Tube, LED, LV Tube, Op-Amp, Silicon, Soft Variable, Null.",
+      "drive": "Determines the overall distortion amount.",
+      "dry_level": "While the Drive block has a mix control, it would be rare to use it at a setting of less than 100%.",
+      "high_cut": "Controls the frequency of the output lowpass filter. Lower this for a darker sound.",
+      "level": "Sets mid boost or cut (,12 dB). Mid Frequency is also adjustable.",
+      "low_cut": "Controls the frequency of a highpass filter at the input. Increase this to tighten or remove \"flub\".",
+      "mid": "Sets mid boost or cut (,12 dB). Mid Frequency is also adjustable.",
+      "slew_rate": "Limits the large-signal frequency response. Turning up this control simulates the limited high- frequency response inherent in drive pedals using early op-amps.",
+      "type": "This selects from different models. Select using VALUE or NAV buttons with no need to press ENTER."
+    },
+    "enhancer": {
+      "balance": "This changes the relative volumes of the left or right outputs. Sometimes the Classic type causes the Haas effect, which creates a perceived shift in pan away from the delayed side. The Balance control may be used to compensate for this.",
+      "depth": "Determines how far to the left and right opposing frequency bands will be spread.",
+      "type": "Select using the VALUE or NAV buttons with no need to press ENTER.",
+      "width": "Determines the character of the effect, shaping the degree of separation."
+    },
+    "filter": {
+      "freq": "Sets the center frequency of the filter.",
+      "frequency": "Sets the center frequency of the filter.",
+      "gain": "Sets the gain at the center frequency for the shelving and peaking filter types.",
+      "order": "Selects different filter slopes. 2nd = 12 dB per octave, 4th = 24 dB per octave. A 4th order filter is steeper and more extreme or \"squelchy\".",
+      "order_2": "Selects different filter slopes. 2nd = 12 dB per octave, 4th = 24 dB per octave. A 4th order filter is steeper and more extreme or \"squelchy\".",
+      "phase_invert": "Controls the phase of the output signal with options for \"NONE\", \"LEFT\", \"RIGHT\", \"BOTH\".",
+      "q": "Sets the \"Q\" of the filter. Higher values give sharper responses.",
+      "type": "This selects from different filter types using VALUE or NAV buttons with no need to press ENTER:"
+    },
+    "flanger": {
+      "auto_depth": "Scales Depth to create a consistent sound at any Rate. This control simplifies dialing in the sweet spot, but for precise control or wild sounds you may wish to turn it off.",
+      "bass_focus": "This cuts the bass in the wet path but compensates the dry path so the overall sound is flatter.",
+      "depth": "Sets modulation depth. Higher depths increase the range or magnitude of the sweep. When Depth is at minimum, the Flanger is controlled entirely by the Manual control. When Depth is at maximum the delay time is controlled solely by the LFO.",
+      "drive": "This control allows you to simulate the soft distortion produced by overdriving an analog \"bucket brigade\" delay chip of the type used in many vintage flanger effects. Set to zero for \"pristine clean.\"",
+      "dry_delay": "When Through Zero (above) is engaged, this allows shifting the cancellation point from the center of the waveform to the edge or anywhere in between.",
+      "feedback": "This is the crucial \"regeneration\" control discussed above. Feedback sets the amount of wet signal fed back to the input of the flanger. Extreme values give the flanger a more intense quality as it produces sharp singing resonances or clanging metallic overtones.",
+      "lfo_type": "Sets the shape of the modulation LFO waveform.",
+      "manual": "Flanging is created using a very short delay. The Manual parameter adjusts the time (from 0.01 to 10.00ms) so you can sweep the Flanger by hand. To manually control the flanging set Depth to zero. The sensitivity of the Manual control is inversely proportional to Depth and the Manual control is disabled when Depth is at maximum.",
+      "phase_reverse": "Controls the phase of the wet output signal. Either one or both channels can be inverted.",
+      "rate": "Sets the frequency of the LFO (Low Frequency Oscillator) which varies delay time to create the flanger's characteristic sweep. Use low rate and high depth for slow-moving sounds. Increase the rate for vibrato effects.",
+      "stereo_spread": "Controls stereo width by setting the pan position of the effect from hard-panned (100%) to dead mono (0%) , and beyond, with psychoacoustic effects increasing the apparent width from ,200% to +200%.",
+      "tempo": "Locks the rate in rhythmic relation to the tempo. For example, if the tempo is set to \"1/4\" and the tempo is 120 BPM, the rate will automatically be set to 2 Hz (BPM/60 = Hz). Set Tempo to \"NONE\" for manual control.",
+      "thru_zero": "The Thru Zero switch in the Flanger Block has three modes. Select \"Off\" for normal flanger operation. Select \"Auto\" to sweep the flanger forward and back thru the zero point, with Depth and Manual set as desired (adjust Dry Delay to tune the position of the mid-point). Select \"Manual\" if you want to use the Manual control to simulate the process of tape flanging by hand, with the Minimum position of Manual being zero. For the",
+      "type": "This control instantly sets other Flanger parameters for useful sound settings. Make a selection using VALUE or NAV buttons with no need to press ENTER. Types include: Analog Mono, Analog Stereo, BBF-2, Binary Flange, Cancel Flange, Count of Flanging, `Cuda Flange, D/AD 185, Deluxe Mystery, Digital Mono, Digital Stereo, Electric Mystery, FAS Flanger, Harmonoflange, Hemisflange, Lofty Flange, Manual Thru-Zero Flanger, Melodic"
+    },
+    "gate": {
+      "attack": "determines how long it takes for the gate to open when level exceeds the threshold. You'll typically want this set low so the attack of your first note can punch through naturally. Set high for a \"slow gear\" effect.",
+      "attenuation": "(\"Gate\" Types) Sets how much quieter the signal will be in dB when the gate is closed.",
+      "detector_type": "Selects whether the gate will use PEAK or the smoother RMS detection.",
+      "hold": "(Certain types only) sets how long the Gate/Expander holds the gate open when threshold is exceeded.",
+      "release": "determines how long it takes for the gate to close after signal falls below the threshold. Use a slow setting for a gradual decay or to prevent your sustained notes from being gated abruptly. Use a fast setting to have the gate close quickly, stopping noise even between individual notes.",
+      "threshold": "This determines how quiet the signal must be before expansion or gating occurs. When input level is lower than the threshold, the expander reduces output volume based on the Ratio or Attenuation setting.",
+      "type": "Offers Classic Expander, Classic Gate, Modern Expander, Modern Gate types. The \"classics\" work like vintage types. \"Modern Gate\" results in a slower feeling attack, and can be used both for traditional gating or special effects \"swells\". The \"Modern Expander\" uses a novel approach to the envelope detector resulting in improved ballistics compared to traditional analog expanders."
+    },
+    "phaser": {
+      "depth": "Set higher for more dramatic phasing effects. Set to 0 for manual control.",
+      "feedback": "Feedback, known on some phasers as \"regeneration\" or \"resonance,\" controls how pronounced the peaks and notches are. This control is largely responsible for the iconic sound we associate with a Phaser.",
+      "feedback_point": "This directs feedback to any point in the phase shifter chain. A value of `0' indicates prior to the beginning of the phase shifter chain. A value of `1' indicates the first stage and so on. Both positive and negative values of feedback are allowed. When adding feedback experiment with the Mix value. Increasing the Mix can achieve rich, hybrid vibrato/phase sounds.",
+      "lfo_type": "Selects the \"shape\" of the LFO, determining how the sweep changes over time.",
+      "manual": "Manually sweeps the phaser from the lowest to the highest point of its cycle. When Depth is at minimum the phase effect is controlled only by Manual. When Depth at maximum, Manual has no effect.",
+      "order": "Sets the number of phase shifting circuits, or \"stages\", in increments of two. Different settings sound distinctly different. For a more pronounced effect, increase the order.",
+      "rate": "Sets the frequency of the LFO (\"Low Frequency Oscillator\") that creates the sweep. When shown in parentheses, Rate is being controlled by the Tempo parameter (see below). Set Tempo to \"NONE\" for manual control. Set fully counterclockwise to sync to the LFO1 controller source (see your Owner's Manual).",
+      "tempo": "Synchronizes the rate of the Phaser LFO in rhythmic relation to the Tempo. For example, if the Tempo is 120 BPM, and Tempo is set to a \"1/4,\" the LFO rate will be 2 Hz (120 BPM / 60 seconds = 2).",
+      "tone": "A simple tone control (wet only).",
+      "type": "Sets other parameters for different useful sound settings. Types include: Digital Mono, Digital Stereo, Script 45, Script 90, Block 90, Classic Vibe, Stereo 8-Stage, Barberpole, Stripe 90, Naughty Rock, FAS Vibe, Treadle Phaser, Virtuoso Phaser, Borg Phaser, Ultra-Super-Mega Phaser, and Mutated Twin-Phaser.",
+      "vcr_curve": "Sets other parameters for different useful sound settings. Types include: Digital Mono, Digital Stereo, Script 45, Script 90, Block 90, Classic Vibe, Stereo 8-Stage, Barberpole, Stripe 90, Naughty Rock, FAS Vibe, Treadle Phaser, Virtuoso Phaser, Borg Phaser, Ultra-Super-Mega Phaser, and Mutated Twin-Phaser."
+    },
+    "reverb": {
+      "early_decay": "This parameter controls the decay rate of the early reflections. (Higher value = faster decay.)",
+      "early_diffusion": "This sets the amount of diffusion in the early reflections. Higher values result in less distinct echoes. Lower values result in clear, distinct reflections.",
+      "early_level": "Adjusts the relative level of the early reflections (has no effect for \"Spring \"types.)",
+      "late_input_mix": "this routes the early reflections to the input of the late reverb \"tail\" generator. It uses a proprietary decorrelation technique which eliminates the metallic qualities common in other products.",
+      "late_level": "Adjusts the relative level of the reverb tail.",
+      "lfo_phase": "Determines how modulation is applied to the right side of the reverb with respect to the left.",
+      "pitch_direction": "This determines whether the shifted segments are played back forward or reverse.",
+      "pitch_feedback": "Adds feedback for pitch regeneration effects. See the warning below.",
+      "pitch_mix": "This sets the mix of the pitch shifter within the reverb.",
+      "pitch_position": "This sets the location of the shifters within the reverb algorithm. INPUT places them at the block input, prior to any reverb processing. MATRIX locates the shifters inside the reverb matrix. FEEDBACK locates the shifters in the matrix feedback loop.",
+      "quality": "These options provide different ways to balance reverb complexity and CPU utilization. \"NORMAL\" provides excellent quality suitable for most guitar reverb needs, but conserves CPU power. \"HIGH\" provides an even smoother and more natural reverb at increased CPU cost, while \"ULTRA-HIGH\" takes this one step further.",
+      "size": "Sets the size of the space or spring. This controls the length of time it takes for an echo to bounce between virtual surfaces. Higher settings increase the echo time and the delay before the reverb starts. Large values can make the reverb more \"grainy\" as the time between the individual repeats increases. Lower settings smooth out the reverb, but very small values will create a metallic sound. As the size increases, the reverb will",
+      "splice_time": "Pitch shifting breaks a signal into individual granules of audio. These are manipulated individually and then \"spliced\" back together. This parameter sets the splice length in milliseconds.",
+      "spring_tone": "This determines the tonal color of the virtual springs. Lower values create a darker tone.",
+      "stack_hold": "Use this to create \"infinite\" reverbs. Setting the switch to HOLD defeats the inputs and causes the current tail to continue indefinitely. The STACK option holds the tail but leaves the input open so you can layer additional material while the sound continues.",
+      "stereo_spread": "Controls stereo width by setting the pan position of the effect from hard-panned (100%) to dead mono (0%) , and beyond, with psychoacoustic effects increasing the apparent width from ,200% to +200%.",
+      "time": "Sets the decay time. This is the amount of time it takes for the reverb to vanish beyond the point of perception. This is also known as the \"t60\" time, referring to the amount of time required for the reverb to decay to 0.001 of its initial value (-60 dB).",
+      "type": "Make a selection using the VALUE or NAV buttons with no need to press ENTER. There are dozens of reverb types including Halls, Chambers, Rooms, Cathedrals, Studios, Plates, Springs, and many more.",
+      "voice_balance": "Allows you to blend different amounts of Voice 1 and Voice 2."
+    },
+    "rotary": {
+      "drive": "Give your virtual rotary speaker the grit and grind of the classic with this overdrive control.",
+      "low_depth": "Sets the modulation depth of the drum. Higher settings provide a more pronounced throb.",
+      "low_rate_multiplier": "Adjusts the speed of drum compared to the rotor.",
+      "mic_distance": "These set the distance of the virtual mics.",
+      "rate": "Controls the spin rate for both the drum and rotor. Assign a modifier for real-time control. You can even set the rate to 0.0 to \"park\" the rotary. To make the drum spin more slowly, as it might in a real rotary, adjust Low Rate Multiplier (below). When shown in parenthesis, it is being controlled by the tempo (below).",
+      "rotor_length": "Adjusts the length of the virtual high-frequency horn. Larger values increase the amount of Doppler shift and result in a more intense effect.",
+      "stereo_spread": "Controls stereo width by setting the pan position of the effect from hard-panned (100%) to dead mono (0%) , and beyond, with psychoacoustic effects increasing the apparent width from ,200% to +200%.",
+      "tempo": "Locks the rate in rhythmic relation to the Tempo. Set to \"NONE\" for manual rate control."
+    },
+    "tremolo": {
+      "rate": "Sets the frequency of the LFO that controls the effect. When shown in parentheses, rate is being set automatically by the Tempo parameter (see below). Set Tempo to \"NONE\" for manual control. Set fully counterclockwise to sync to the LFO1 controller source (see your Owner's Manual).",
+      "tempo": "Synchronizes the rate of the LFO in rhythmic relation to the Tempo. For example, if the Tempo is 120 BPM, and Tempo is set to a \"1/4,\" the LFO rate will be 2 Hz (120 BPM / 60 seconds = 2).",
+      "type": "Chooses between Tremolo, Panner, Bias Trem, Harmonic Trem and Optical Trem effects."
+    },
+    "wah": {
+      "control_taper": "Defines the sweep or feel of the wah with selections representing various potentiometer tapers.",
+      "drive": "This simulates overdriving the circuit of the wah pedal.",
+      "fat": "This is actually a mix control, adding dry signal to the wah for up to 50/50 wet/dry mix.",
+      "inductor_bias": "This adjusts the DC offset of the virtual inductor which interacts with the Drive parameter to replicate the subtle (and awesome) sound of some of the most coveted wah pedals.",
+      "low_cut_frequency": "Applies a highpass filter, as created by the internal coupling capacitor of a real wah pedal.",
+      "max_frequency": "Sets the frequency of the filter when the frequency control is at its highest value.",
+      "maximum_frequency": "Sets the frequency of the filter when the frequency control is at its highest value.",
+      "min_frequency": "Sets the frequency of the filter when the frequency control is at its lowest value. This can be adjusted to match the range of your instrument or preference.",
+      "minimum_frequency": "Sets the frequency of the filter when the frequency control is at its lowest value. This can be adjusted to match the range of your instrument or preference.",
+      "q_tracking": "Some classic wah pedals become less resonant as you push the pedal down. This control mimics that effect, so that as frequency is increased, the resonance decreases, becoming less \"peaky\" and harsh.",
+      "type": "Selects between different wah types based on classic vintage and cutting edge modern designs.",
+      "wah_control": "Sets the position of the wah. Normally you would assign this parameter to a pedal for real-time control, but you can also set it to an LFO or \"park\" it manually (so you can play the guitar on the MTV)."
+    }
+  },
+  "axe-fx-ii": {
+    "amp": {
+      "bias_excursion": "Not to be confused with Bias Excursion on the Power Amp page, this is a separate parameter for the preamp. The higher the value, the more the bias shifts when the virtual tubes are overdriven.",
+      "bright_cap": "Sets the value of a virtual capacitor to determine the sonic effect of the Bright switch. Increasing this will make the preamp brighter and vice versa.",
+      "bright_switch": "Many amplifiers contain a \"treble peaker\" with a pull or toggle switch, or sometimes hard-wired.",
+      "definition": "This control is a basic \"tilt EQ\" which adds highs/cuts lows, or vice versa.",
+      "depth": "Boosts low frequencies from the virtual power amp by varying the negative feedback frequency response. It is set by default to an appropriate value when the amp type is selected, but this setting may be overridden.",
+      "depth_freq": "This multiplier alters the center frequency of the Depth control.",
+      "input_select": "The Amp block processes audio in mono only. This control determines how an incoming stereo signal will be processed. You can set it to accept \"LEFT\" only or \"RIGHT\" only, or \"SUM L+R\" (the default setting).",
+      "input_trim": "This control allows you to modify any model to have more or less gain than would be possible with the regular controls. This is different from the Gain in that it does NOT interact with the surrounding circuitry to change frequency response. In other words, use Input Trim to adjust gain without also changing tone.",
+      "level": "A duplicate control, placed for convenience.",
+      "master_volume": "The \"almighty\" Master Volume is a very important control. It determines the distortion and dynamics characteristics of the virtual power amp, and its setting can dramatically change the amp's sound.",
+      "overdrive": "Available only on certain amp models, this adjusts the overdrive gain stage. Amps with Overdrive will not display Input Trim (above) on the Tone page, but this can still be found on the Advanced page. (This knob is sometimes labeled \"Ratio\" or \"Lead Master\".)",
+      "preamp_bias": "This adjusts the bias point of the last triode stage. This is the most important stage in the feel and texture of distortion, as it controls the ratio of even/odd harmonics. Values around zero will produce mostly odd harmonics. As you deviate from zero you'll produce less odd and more even. Odd harmonics give clarity and a more aggressive, open tone but this can be cold and harsh. Adding even harmonics gives a warmer sound but",
+      "preamp_sag": "Turning this ON causes the amp block to behave like an integrated tube head or combo amp.",
+      "presence": "Adjusts the high end of the virtual power amp by varying the negative feedback frequency response.",
+      "presence_freq": "This multiplier alters the center frequency of the Presence control.",
+      "presence_shift": "Models the pull shift \"Lead Presence\" found on some amp models (e.g. certain \"USA\" types).",
+      "saturation_drive": "Controls the amount of saturation (see above). The default value differs for each model.",
+      "speaker_drive": "This simulates distortion and gentle compression caused by pushing a speaker too far. It interacts with the Master Volume which determines how hard the actual power amp is pushing. Try this parameter for recreating the edge-of-breakup tones produced by an old, well-played amp.",
+      "supply_sag": "This controls dynamics in the virtual power amp. Higher settings simulate higher power supply impedance for more tube plate voltage \"droop\" and a compressed feel.",
+      "variac": "This sets the relative AC line voltage into the amp simulation. A Variac changes the volume of an amp dramatically, but our virtual variac compensates for this."
+    },
+    "cab": {
+      "drive": "Sets the overall gain of the simulated preamp. Increase for more drive. A VU meter below the knob shows the level into the virtual preamp. As you turn it up and the VU meter approaches or exceeds the 0 dB marker, you will begin to overdrive the preamp.",
+      "level": "It is crucial to understand how Level controls work in the Cab block. Unlike direct volume controls, they",
+      "mic_spacing": "The room simulator captures early reflections using a stereo pair of virtual microphones. This sets the distance between the mics, changing the sound of the space from narrow to wide as you increase the value.",
+      "preamp_mode": "Choose between \"HIGH QUALITY\" and \"ECONOMY\" modes which use more or less CPU.",
+      "preamp_type": "Selects from various preamp types, each with their own drive characteristics. Options include: Tube, Bipolar, FET 1, FET 2, Transformer, Tape 70us, Tape 50us, Tape 35us, Vintage, Modern, Exciter. Set to \"NONE\" to bypass the virtual preamp completely, saving some CPU.",
+      "saturation": "This controls the ratio of even/odd harmonics in mic preamp distortion."
+    },
+    "chorus": {
+      "auto_depth": "Scales Depth to create a consistent sound at any Rate. This control simplifies dialing in \"musical\" results. For precise control or wild sounds, you may wish to turn it off.",
+      "delay_time": "Adjusts the minimum delay time from 0.01,50.0 ms. Lower values create a more singular sound, while higher settings approach a fast \"slapback\" delay effect.",
+      "depth": "Sets the amount of delay modulation, which determines the amount of detune heard from each voice.",
+      "drive": "This control allows you to simulate the gentle distortion produced by overdriving an \"analog bucket brigade\" delay chip of the type used in many vintage chorus effects. Set to zero for \"pristine clean.\"",
+      "high_cut": "Adjusts the cutoff frequency of a low-pass filter at the output of the processed signal. Decreasing this value creates a darker chorus effect reminiscent of an age when typical effects were unable to reproduce the full frequency spectrum. Lower this to achieve those sounds some might call \"warm.\"",
+      "lfo_phase": "Adjusts the phase differential between left and right voices, shifting the detune effects for less or more apparent difference between opposing voices.",
+      "lfo_type": "Sets the \"shape\" of the modulation. Sine and Triangle are the most commonly used waveforms.",
+      "low_cut": "Adjusts the cutoff frequency of a high-pass filter at the output of the processed signal. This control removes bass frequencies and can be useful to create chorus effects designed for bass guitar.",
+      "mix": "Sets wet and dry levels. 50% produces a classic effect. Set to 100% for pure wet or vibrato effects.",
+      "phase_reverse": "Allows left, right or both channels of the effect to be phase-inverted.",
+      "rate": "Controls the speed at which the chorus oscillates. Use low settings with higher depths for slow- moving sounds. Increase the rate and depth for vibrato effects. When shown in parentheses, Rate is being set automatically by the Tempo parameter. Set Rate fully counterclockwise to sync to the LFO1 Controller. (See your Owner's Manual for more on the LFO1 Modifier Source.)",
+      "tempo": "Sets the Rate in rhythmic relation to the tempo. For example, if Tempo is set to \"1/4\" and the Tempo is 120 BPM, the rate will automatically be set to 2 Hz (BPM/60 = Hz). To ignore tempo, set to \"NONE\".",
+      "width": "Widens the sound, creating a difference between left and right delay times by scaling the right time downwards from the value set (see Delay Time, above) toward 1 ms as Width goes from 0,100%."
+    },
+    "compressor": {
+      "dynamics": "(When Type is set to Dynamics Processor, this parameter replaces Ratio or Compression.) When set below zero, compression occurs and dynamics are de-emphasized. When set above zero, expansion occurs and dynamics are exaggerated. Expansion is basically the inverse of compression. Rather than making loud signals quieter, it makes quiet signals quieter, as any signal below the threshold is reduced.",
+      "mix": "Sets the ratio of wet (compressed) and dry (unprocessed) sounds. This would normally be set to 100% but lower settings allow parallel compression, also known as \"New York\" compression."
+    },
+    "delay": {
+      "bit_reduction": "This control makes it possible to create the lo-fi sounds of vintage digital delays. The number shown is the number of bits to be subtracted from 24-bit full scale. To create a 16-bit delay, for example, set Bit Reduction to \"8\" (24 , 8 = 16). Bit Reduction is often used with high-frequency roll-off.",
+      "drive": "Determines the amount of distortion in the delay path. Use this to simulate the way cascading feedback overloads a tape or analog delay.",
+      "echo_pan": "Positions the echo in the stereo output of the Delay block. Note that this is different than the Balance control, which acts on both wet and dry signals.",
+      "feedback": "Sets the amount of delay feedback (a.k.a. regeneration) to determine the number of repeats.",
+      "lfo1_depth": "Sets the depth of modulation. For LFO 1 and 2, this is scaled by LFO Depth Range (above).",
+      "master_feedback": "Scales any and all feedback parameters. Note that the range of this control is 0,200%, making it possible (easy, in fact) to overload the feedback loop.",
+      "motor_speed": "Sets the speed of the tape motor from 50% to 200%. This parameter can be modified in real time, making it possible to \"time warp\" delay playback.",
+      "phase_reverse": "Allows the \"LEFT\", \"RIGHT\", or \"BOTH\" delay line outputs to be phase inverted.",
+      "resonance": "Sets the resonance of the filter. Some might describe this as the \"intensity\" control.",
+      "right_post_delay": "Widens the sound of a mono echo by adding 0,100ms of delay at the right (wet) output.",
+      "run": "When this is turned ON, reverse playback runs and backward audio is produced. Turning this OFF mutes playback, but recording continues in the background. This switch can be remotely operated with a modifier (such as a footswitch or the Envelope controller) to stop and start playback automatically.",
+      "spread": "Where offered this operates as a master pan control.",
+      "sweep_phase": "Adjusts the phase of the right outputs of the LFO. Set above zero for stereo effects.",
+      "sweep_rate": "Sets the speed of the sweeps.",
+      "sweep_tempo": "Locks the Sweep Rate parameter in rhythmic relation to the Tempo.",
+      "sweep_type": "Sets the waveform of the LFO that controls the sweeps.",
+      "tempo": "Syncs the Time parameter (see above) in rhythmic relation to the tempo. For example, if the tempo is 120 BPM, and Tempo is \"1/4\" (one echo per beat), time will be 500 ms. To ignore the tempo, set to \"NONE.\"",
+      "time": "Sets the time of the delay in milliseconds. When shown in parentheses, its value is being set automatically by the Tempo parameter (see below). Set Tempo to \"NONE\" to regain manual control.",
+      "trigger_restart": "The Reverse Delay records audio for a duration determined by the Time parameter. While one clip is being recorded, the previous one is played back in reverse. This process runs continuously in the background, meaning the start and end of reversed phrases might not align with the moment you begin playing, even if the recording time is synced to tempo. This parameter helps you gain control over this process. When"
+    },
+    "drive": {
+      "bias": "Sets the bias point for the clipping circuit. Varying this setting controls the relative amount of even and odd harmonics. Set very high or very low for a unique \"sputtering\" effect. Use caution, as setting this too high or too low with certain clipper types can render the block inaudible.",
+      "bit_reduce": "Creates digital distortion by reducing the resolution of the audio signal. The number shown is the number of bits that will be subtracted from 24-bit full scale. To create 4-bit audio, for example, set Bit Reduce to \"20.\" Yes, it is supposed to sound really gritty and nasty!",
+      "clip_type": "Controls the type of clipping circuit used, based on accurate models of analog components: 4558/ Diode, FET, Full Wave Rectifier, Germanium, Hard, HV Tube, LED, LV Tube, Op-Amp, Silicon, Soft Variable, Null.",
+      "clipshape": "The \"VARIABLE\" clip type (above) allows you to dial in a custom clip shape. Low values give a smooth, focused tone while high values give a harder, brasher sound.",
+      "sample_rate": "Another nasty lo-fi distortion control, Sample Rate reduction creates intentional aliasing effects."
+    },
+    "enhancer": {
+      "balance": "This changes the relative volumes of the left or right outputs. Sometimes the Classic type causes the Haas effect, which creates a perceived shift in pan away from the delayed side. The Balance control may be used to compensate for this.",
+      "depth": "Determines how far to the left and right opposing frequency bands will be spread.",
+      "invert": "Allows phase inversion of the left or right channel (or both). Use in conjunction with the width control to adjust apparent widening.",
+      "width": "Determines the character of the effect, shaping the degree of separation."
+    },
+    "filter": {
+      "frequency": "Sets the center frequency of the filter.",
+      "gain": "Sets the gain at the center frequency for the shelving and peaking filter types.",
+      "order": "Selects different filter slopes. 2nd = 12 dB per octave, 4th = 24 dB per octave. A 4th order filter is steeper and more extreme or \"squelchy\".",
+      "q": "Sets the \"Q\" of the filter. Higher values give sharper responses."
+    },
+    "flanger": {
+      "auto_depth": "Scales Depth to create a consistent sound at any Rate. This control simplifies dialing in the sweet spot, but for precise control or wild sounds you may wish to turn it off.",
+      "depth": "Sets modulation depth. Higher depths increase the range or magnitude of the sweep. When Depth is at minimum, the Flanger is controlled entirely by the Manual control. When Depth is at maximum the delay time is controlled solely by the LFO.",
+      "drive": "This control allows you to simulate the soft distortion produced by overdriving an analog \"bucket brigade\" delay chip of the type used in many vintage flanger effects. Set to zero for \"pristine clean.\"",
+      "feedback": "This is the crucial \"regeneration\" control discussed above. Feedback sets the amount of wet signal fed back to the input of the flanger. Extreme values give the flanger a more intense quality as it produces sharp singing resonances or clanging metallic overtones.",
+      "lfo_phase": "Adjusts the phase difference between the left and right LFO waveforms. For maximum stereo spread, set this to 180 degrees. For mono flanging, set this to zero.",
+      "lfo_type": "Sets the shape of the modulation LFO waveform.",
+      "lforeset": "This allows you to force the flanger to start from a fixed point in its sweep cycle when you engage the effect. With the default value of \"OFF\" the LFO will cycle freely, even when the effect is off.",
+      "phase_reverse": "Controls the phase of the wet output signal. Either one or both channels can be inverted.",
+      "rate": "Sets the frequency of the LFO (Low Frequency Oscillator) which varies delay time to create the flanger's characteristic sweep. Use low rate and high depth for slow-moving sounds. Increase the rate for vibrato effects.",
+      "tempo": "Locks the rate in rhythmic relation to the tempo. For example, if the tempo is set to \"1/4\" and the tempo is 120 BPM, the rate will automatically be set to 2 Hz (BPM/60 = Hz). Set Tempo to \"NONE\" for manual control.",
+      "thru_zero": "The Thru Zero switch in the Flanger Block has three modes. Select \"Off\" for normal flanger operation. Select \"Auto\" to sweep the flanger forward and back thru the zero point, with Depth and Manual set as desired (adjust Dry Delay to tune the position of the mid-point). Select \"Manual\" if you want to use the Manual control to simulate the process of tape flanging by hand, with the Minimum position of Manual being zero. For the"
+    },
+    "formant": {
+      "control": "This controls morphing between the three vowel sounds. The start vowel is generated with the knob counterclockwise, the mid vowel at 12 o'clock, and the end vowel at fully clockwise. You can assign this to an LFO, an expression pedal, or other modifier sources. See your Owner's Manual for more on Modifiers.",
+      "resonance": "Sets the resonance of the filters. Higher resonance yields a more dramatic ERR as in Bert effect."
+    },
+    "looper": {
+      "once": "Pressing Once during playback causes the Looper stop automatically when it reaches the end of the loop.",
+      "play": "This starts and stops playback. If the looper is recording or overdubbing when you press Play, recording or overdubbing stops and playback continues.",
+      "record": "If the looper is stopped and you press Record, recording begins. If the looper is playing, the Record button normally toggles OVERDUB on or off, but you can change this to PLAY or STOP using the Record 2nd Press parameter on the CONFIG page.",
+      "reverse": "This toggles the direction of playback.",
+      "threshold": "Threshold recording causes the looper to start recording automatically when you begin playing.",
+      "undo": "This undoes the last pass of recording or overdubbing. Pressing Undo when the loop is stopped erases all loop data. Pressing Undo during playback undoes the last recorded layer. Pressing Undo again during playback restores the undone layer."
+    },
+    "megatap": {
+      "master_level": "Controls the overall level of the delay.",
+      "numtaps": "Sets the number of taps from 1 to 128 (64 on the FM9/FM3). Taps are distributed between the dry signal and the last tap, whose position is set by the Delay Time parameter (above). The three examples below shows how the density of echoes changes at a given delay time (1000ms) with 2 taps, 6 taps and 24 taps.",
+      "random": "This scatters the positions of the individual taps along the time line.",
+      "timealpha": "Sets the rate of time change across the taps."
+    },
+    "phaser": {
+      "depth": "Set higher for more dramatic phasing effects. Set to 0 for manual control.",
+      "feedback": "Feedback, known on some phasers as \"regeneration\" or \"resonance,\" controls how pronounced the peaks and notches are. This control is largely responsible for the iconic sound we associate with a Phaser.",
+      "filter_q": "Unique to the Barberpole type. Together with Feedback, it controls the intensity of the effect.",
+      "lfo_phase": "Sets the phase difference of the right waveform of the Phaser LFO. Values greater than 0, produce stereo phasing. A setting of 180, reproduces the legendary \"reverse sync\" setting of the classic 70s \"Bi,Phase\" (which incidentally was a 6th order phaser in this mode).",
+      "lfo_type": "Selects the \"shape\" of the LFO, determining how the sweep changes over time.",
+      "order": "Sets the number of phase shifting circuits, or \"stages\", in increments of two. Different settings sound distinctly different. For a more pronounced effect, increase the order.",
+      "rate": "Sets the frequency of the LFO (\"Low Frequency Oscillator\") that creates the sweep. When shown in parentheses, Rate is being controlled by the Tempo parameter (see below). Set Tempo to \"NONE\" for manual control. Set fully counterclockwise to sync to the LFO1 controller source (see your Owner's Manual).",
+      "tempo": "Synchronizes the rate of the Phaser LFO in rhythmic relation to the Tempo. For example, if the Tempo is 120 BPM, and Tempo is set to a \"1/4,\" the LFO rate will be 2 Hz (120 BPM / 60 seconds = 2).",
+      "tone": "A simple tone control (wet only)."
+    },
+    "pitch": {
+      "feedback_type": "Selects the type of feedback. \"DUAL\" sends the individual voices back to their respective delay lines. \"BOTH\" mixes the voices and sends them back to both delay lines. \"PING-PONG\" sends each voice to the opposite delay line.",
+      "glide_time": "sets the rate at which the harmony shifts from the one pitch to another as new notes are played.",
+      "input_mode": "The Pitch block normally sums input signals to mono before processing. All Detune and Shift types allow stereo pitch shifting: Dual Detune, Dual Chromatic: In Dual types, when Input Mode is set to \"STEREO\"",
+      "key": "Sets the key for the harmony.",
+      "learn": "While learn is \"ON\", the Key parameter will automatically change to whatever single note you play.",
+      "master_delay": "Scales Delay Time amounts for all voices.",
+      "master_feedback": "Scales the feedback settings for all voice delay lines.",
+      "master_level": "Scales the output levels of all voices.",
+      "master_pan": "Scales all voice pan amounts, essentially acting as a \"width\" or \"spread\" control. Negative values reverse pan positions in left and right channels.",
+      "master_pitch": "Scales shift amounts for all voices. Does not scale detune values.",
+      "scale": "Sets the scale or mode into which notes will be shifted. A table of Scale Types is provided on p. 72."
+    },
+    "resonator": {
+      "inputmode": "Selects between \"MONO\", where left and right input signals are summed to all four resonators (as illustrated above) and \"STEREO\", in which the left input channel feeds resonators 1+2 and the right feeds 3+4.",
+      "masterlvl": "Scales all the output levels.",
+      "masterpan": "Scales all the output pans. Use negative values to reverse the stereo image.",
+      "masterq": "Scales the Q of all four bandpass filters.",
+      "mode": "The Resonator can operate in one of two modes."
+    },
+    "reverb": {
+      "early_decay": "This parameter controls the decay rate of the early reflections. (Higher value = faster decay.)",
+      "early_diffusion": "This sets the amount of diffusion in the early reflections. Higher values result in less distinct echoes. Lower values result in clear, distinct reflections.",
+      "early_level": "Adjusts the relative level of the early reflections (has no effect for \"Spring \"types.)",
+      "earlysend": "this routes the early reflections to the input of the late reverb \"tail\" generator. It uses a proprietary decorrelation technique which eliminates the metallic qualities common in other products.",
+      "echo_density": "Controls the density of the reverb tail. Higher values give a smoother sound. Lower values allow the individual repeats to be more easily discerned. This determines the overall smoothness of the tail. High settings for Size will also make the individual echoes more apparent, as will lower settings for the various Diffusion parameters.",
+      "late_level": "Adjusts the relative level of the reverb tail.",
+      "mic_spacing": "Sets the stereo width of early reflections by simulating mic separation in the virtual space.",
+      "predelay": "Adds extra delay before the reverb starts. The Size control (see below) automatically imparts a certain amount of delay before the reverb starts. Use this control to add more delay if desired. For example, if the Size is low, the reverb will start almost immediately. You can use this control to add some delay before the reverb starts but keep the small-sounding size. See also the \"Advanced\" page parameters that can be used to add extra",
+      "quality": "These options provide different ways to balance reverb complexity and CPU utilization. \"NORMAL\" provides excellent quality suitable for most guitar reverb needs, but conserves CPU power. \"HIGH\" provides an even smoother and more natural reverb at increased CPU cost, while \"ULTRA-HIGH\" takes this one step further.",
+      "size": "Sets the size of the space or spring. This controls the length of time it takes for an echo to bounce between virtual surfaces. Higher settings increase the echo time and the delay before the reverb starts. Large values can make the reverb more \"grainy\" as the time between the individual repeats increases. Lower settings smooth out the reverb, but very small values will create a metallic sound. As the size increases, the reverb will",
+      "spring_drive": "This allows overdriving the spring reverb circuit.",
+      "spring_tone": "This determines the tonal color of the virtual springs. Lower values create a darker tone.",
+      "time": "Sets the decay time. This is the amount of time it takes for the reverb to vanish beyond the point of perception. This is also known as the \"t60\" time, referring to the amount of time required for the reverb to decay to 0.001 of its initial value (-60 dB).",
+      "wall_diffusion": "Controls how quickly the reverb tail's density builds. Lower values makes discrete echoes last longer. Higher values cause the echo density to build rapidly for a more \"washy\" effect."
+    },
+    "rotary": {
+      "drive": "Give your virtual rotary speaker the grit and grind of the classic with this overdrive control.",
+      "hi_depth": "Sets the modulation depth of the rotor. To simulate a drum-only cabinet, reduce this value fully.",
+      "hi_level": "Sets the output level of the rotor. Use this to balance the level between the drum and rotor.",
+      "low_depth": "Sets the modulation depth of the drum. Higher settings provide a more pronounced throb.",
+      "mic_distance": "These set the distance of the virtual mics.",
+      "rate": "Controls the spin rate for both the drum and rotor. Assign a modifier for real-time control. You can even set the rate to 0.0 to \"park\" the rotary. To make the drum spin more slowly, as it might in a real rotary, adjust Low Rate Multiplier (below). When shown in parenthesis, it is being controlled by the tempo (below).",
+      "rotor_length": "Adjusts the length of the virtual high-frequency horn. Larger values increase the amount of Doppler shift and result in a more intense effect.",
+      "stereo_spread": "Controls stereo width by setting the pan position of the effect from hard-panned (100%) to dead mono (0%) , and beyond, with psychoacoustic effects increasing the apparent width from ,200% to +200%.",
+      "tempo": "Locks the rate in rhythmic relation to the Tempo. Set to \"NONE\" for manual rate control."
+    },
+    "synth": {
+      "level": "Each voice also has its own level control, located on the Mix page."
+    },
+    "vocoder": {
+      "attack": "Sets attack filter time for the envelope followers.",
+      "freeze": "This locks the output of the envelope followers to hold the vocal formant.",
+      "masterlvl": "Sets the master level for all the synthesis filter outputs.",
+      "masterpan": "Sets master panning for all the synthesis filter outputs. Individual control of the filter output levels and panning is provided on dedicated menu pages. You can use these controls to fine-tune the filter bank response and control the panning of the filter outputs."
+    },
+    "wah": {
+      "drive": "This simulates overdriving the circuit of the wah pedal.",
+      "fat": "This is actually a mix control, adding dry signal to the wah for up to 50/50 wet/dry mix."
+    }
+  },
+  "axe-fx-iii": {
+    "cab": {
+      "drive": "Sets the overall gain of the simulated preamp. Increase for more drive. A VU meter below the knob shows the level into the virtual preamp. As you turn it up and the VU meter approaches or exceeds the 0 dB marker, you will begin to overdrive the preamp.",
+      "level": "It is crucial to understand how Level controls work in the Cab block. Unlike direct volume controls, they",
+      "pan": "Sets where a given IR will be heard in the stereo field."
+    },
+    "chorus": {
+      "depth": "Sets the amount of delay modulation, which determines the amount of detune heard from each voice.",
+      "drive": "This control allows you to simulate the gentle distortion produced by overdriving an \"analog bucket brigade\" delay chip of the type used in many vintage chorus effects. Set to zero for \"pristine clean.\"",
+      "mix": "Sets wet and dry levels. 50% produces a classic effect. Set to 100% for pure wet or vibrato effects.",
+      "rate": "Controls the speed at which the chorus oscillates. Use low settings with higher depths for slow- moving sounds. Increase the rate and depth for vibrato effects. When shown in parentheses, Rate is being set automatically by the Tempo parameter. Set Rate fully counterclockwise to sync to the LFO1 Controller. (See your Owner's Manual for more on the LFO1 Modifier Source.)",
+      "tempo": "Sets the Rate in rhythmic relation to the tempo. For example, if Tempo is set to \"1/4\" and the Tempo is 120 BPM, the rate will automatically be set to 2 Hz (BPM/60 = Hz). To ignore tempo, set to \"NONE\".",
+      "type": "Make a selection using the VALUE or NAV buttons with no need to press ENTER. This control instantly sets other parameters for different useful sound settings. Types include: Digital Mono, Digital Stereo, Analog Mono, Analog Stereo, Japan CE-2, Warm Stereo, 80'S Style, Triangle Chorus, 8-Voice Stereo, Vintage Tape, Dimension (1/2/3), 4-Voice Analog, 8-Voice Analog, Stereo Tri-Chorus, and Dual Chorus.",
+      "width": "Widens the sound, creating a difference between left and right delay times by scaling the right time downwards from the value set (see Delay Time, above) toward 1 ms as Width goes from 0,100%."
+    },
+    "compressor": {
+      "dynamics": "(When Type is set to Dynamics Processor, this parameter replaces Ratio or Compression.) When set below zero, compression occurs and dynamics are de-emphasized. When set above zero, expansion occurs and dynamics are exaggerated. Expansion is basically the inverse of compression. Rather than making loud signals quieter, it makes quiet signals quieter, as any signal below the threshold is reduced.",
+      "mix": "Sets the ratio of wet (compressed) and dry (unprocessed) sounds. This would normally be set to 100% but lower settings allow parallel compression, also known as \"New York\" compression.",
+      "type": "A range of popular and useful Compressor types are included."
+    },
+    "delay": {
+      "drive": "Determines the amount of distortion in the delay path. Use this to simulate the way cascading feedback overloads a tape or analog delay.",
+      "run": "When this is turned ON, reverse playback runs and backward audio is produced. Turning this OFF mutes playback, but recording continues in the background. This switch can be remotely operated with a modifier (such as a footswitch or the Envelope controller) to stop and start playback automatically.",
+      "spread": "Where offered this operates as a master pan control.",
+      "tempo": "Syncs the Time parameter (see above) in rhythmic relation to the tempo. For example, if the tempo is 120 BPM, and Tempo is \"1/4\" (one echo per beat), time will be 500 ms. To ignore the tempo, set to \"NONE.\"",
+      "time": "Sets the time of the delay in milliseconds. When shown in parentheses, its value is being set automatically by the Tempo parameter (see below). Set Tempo to \"NONE\" to regain manual control.",
+      "type": "This control sets various parameters of the Delay block to achieve popular delay effects instantly. See the table below for a listing of available types. Make a selection using VALUE or NAV with no need to press ENTER."
+    },
+    "drive": {
+      "bias": "Sets the bias point for the clipping circuit. Varying this setting controls the relative amount of even and odd harmonics. Set very high or very low for a unique \"sputtering\" effect. Use caution, as setting this too high or too low with certain clipper types can render the block inaudible.",
+      "drive": "Determines the overall distortion amount.",
+      "mid": "Sets mid boost or cut (,12 dB). Mid Frequency is also adjustable.",
+      "type": "This selects from different models. Select using VALUE or NAV buttons with no need to press ENTER."
+    },
+    "enhancer": {
+      "depth": "Determines how far to the left and right opposing frequency bands will be spread.",
+      "type": "Select using the VALUE or NAV buttons with no need to press ENTER.",
+      "width": "Determines the character of the effect, shaping the degree of separation."
+    },
+    "filter": {
+      "gain": "Sets the gain at the center frequency for the shelving and peaking filter types.",
+      "order": "Selects different filter slopes. 2nd = 12 dB per octave, 4th = 24 dB per octave. A 4th order filter is steeper and more extreme or \"squelchy\".",
+      "q": "Sets the \"Q\" of the filter. Higher values give sharper responses.",
+      "type": "This selects from different filter types using VALUE or NAV buttons with no need to press ENTER:"
+    },
+    "flanger": {
+      "depth": "Sets modulation depth. Higher depths increase the range or magnitude of the sweep. When Depth is at minimum, the Flanger is controlled entirely by the Manual control. When Depth is at maximum the delay time is controlled solely by the LFO.",
+      "drive": "This control allows you to simulate the soft distortion produced by overdriving an analog \"bucket brigade\" delay chip of the type used in many vintage flanger effects. Set to zero for \"pristine clean.\"",
+      "feedback": "This is the crucial \"regeneration\" control discussed above. Feedback sets the amount of wet signal fed back to the input of the flanger. Extreme values give the flanger a more intense quality as it produces sharp singing resonances or clanging metallic overtones.",
+      "manual": "Flanging is created using a very short delay. The Manual parameter adjusts the time (from 0.01 to 10.00ms) so you can sweep the Flanger by hand. To manually control the flanging set Depth to zero. The sensitivity of the Manual control is inversely proportional to Depth and the Manual control is disabled when Depth is at maximum.",
+      "rate": "Sets the frequency of the LFO (Low Frequency Oscillator) which varies delay time to create the flanger's characteristic sweep. Use low rate and high depth for slow-moving sounds. Increase the rate for vibrato effects.",
+      "tempo": "Locks the rate in rhythmic relation to the tempo. For example, if the tempo is set to \"1/4\" and the tempo is 120 BPM, the rate will automatically be set to 2 Hz (BPM/60 = Hz). Set Tempo to \"NONE\" for manual control.",
+      "type": "This control instantly sets other Flanger parameters for useful sound settings. Make a selection using VALUE or NAV buttons with no need to press ENTER. Types include: Analog Mono, Analog Stereo, BBF-2, Binary Flange, Cancel Flange, Count of Flanging, `Cuda Flange, D/AD 185, Deluxe Mystery, Digital Mono, Digital Stereo, Electric Mystery, FAS Flanger, Harmonoflange, Hemisflange, Lofty Flange, Manual Thru-Zero Flanger, Melodic"
+    },
+    "looper": {
+      "once": "Pressing Once during playback causes the Looper stop automatically when it reaches the end of the loop.",
+      "play": "This starts and stops playback. If the looper is recording or overdubbing when you press Play, recording or overdubbing stops and playback continues.",
+      "record": "If the looper is stopped and you press Record, recording begins. If the looper is playing, the Record button normally toggles OVERDUB on or off, but you can change this to PLAY or STOP using the Record 2nd Press parameter on the CONFIG page.",
+      "reverse": "This toggles the direction of playback.",
+      "undo": "This undoes the last pass of recording or overdubbing. Pressing Undo when the loop is stopped erases all loop data. Pressing Undo during playback undoes the last recorded layer. Pressing Undo again during playback restores the undone layer."
+    },
+    "multiband_compressor": {
+      "level": "Sets the output level of the selected band."
+    },
+    "phaser": {
+      "depth": "Set higher for more dramatic phasing effects. Set to 0 for manual control.",
+      "feedback": "Feedback, known on some phasers as \"regeneration\" or \"resonance,\" controls how pronounced the peaks and notches are. This control is largely responsible for the iconic sound we associate with a Phaser.",
+      "manual": "Manually sweeps the phaser from the lowest to the highest point of its cycle. When Depth is at minimum the phase effect is controlled only by Manual. When Depth at maximum, Manual has no effect.",
+      "order": "Sets the number of phase shifting circuits, or \"stages\", in increments of two. Different settings sound distinctly different. For a more pronounced effect, increase the order.",
+      "rate": "Sets the frequency of the LFO (\"Low Frequency Oscillator\") that creates the sweep. When shown in parentheses, Rate is being controlled by the Tempo parameter (see below). Set Tempo to \"NONE\" for manual control. Set fully counterclockwise to sync to the LFO1 controller source (see your Owner's Manual).",
+      "tempo": "Synchronizes the rate of the Phaser LFO in rhythmic relation to the Tempo. For example, if the Tempo is 120 BPM, and Tempo is set to a \"1/4,\" the LFO rate will be 2 Hz (120 BPM / 60 seconds = 2).",
+      "tone": "A simple tone control (wet only).",
+      "type": "Sets other parameters for different useful sound settings. Types include: Digital Mono, Digital Stereo, Script 45, Script 90, Block 90, Classic Vibe, Stereo 8-Stage, Barberpole, Stripe 90, Naughty Rock, FAS Vibe, Treadle Phaser, Virtuoso Phaser, Borg Phaser, Ultra-Super-Mega Phaser, and Mutated Twin-Phaser."
+    },
+    "pitch": {
+      "direction": "Determines whether \"granules\" of audio are played back forward or reversed. To understand how",
+      "key": "Sets the key for the harmony.",
+      "learn": "While learn is \"ON\", the Key parameter will automatically change to whatever single note you play.",
+      "scale": "Sets the scale or mode into which notes will be shifted. A table of Scale Types is provided on p. 72.",
+      "temperament": "Switches between \"Equal\" and \"Just\" temperaments. Just temperament, while technically slightly out of tune compared to the fretted notes, uses \"pure\" ratios defined by the harmonic overtone series and can be used for \"sweeter\" harmonies, especially when followed by distortion.",
+      "tonic": "This parameter has no effect on how the scale will sound in actual use but instead allows you to see an example of your custom scale transposed to any key. Change this to whatever makes it easiest for you to dial in the custom notes. Remember: what matters when dialing in a scale is the intervals between the notes.",
+      "tracking": "This control allows fine-tuning of the pitch shifter \"splice length.\" For large shifts, adjustments can help improve the quality of the shifted note.",
+      "type": "Make a selection using the VALUE or NAV buttons with no need to press ENTER."
+    },
+    "plex_delay": {
+      "diffusion": "This sets the level of cross-feedback in the delay matrix, contributing to density and smoothness.",
+      "direction": "Determines whether granules or \"snippets\" of audio in the pitch shifter are played back in forward or reverse direction. To understand reverse granules, imagine a sentence whose individual letters have been reversed but are still in the correct left-to-right order (see below). All snippets are the same length."
+    },
+    "resonator": {
+      "mode": "The Resonator can operate in one of two modes."
+    },
+    "reverb": {
+      "predelay": "Adds extra delay before the reverb starts. The Size control (see below) automatically imparts a certain amount of delay before the reverb starts. Use this control to add more delay if desired. For example, if the Size is low, the reverb will start almost immediately. You can use this control to add some delay before the reverb starts but keep the small-sounding size. See also the \"Advanced\" page parameters that can be used to add extra",
+      "quality": "These options provide different ways to balance reverb complexity and CPU utilization. \"NORMAL\" provides excellent quality suitable for most guitar reverb needs, but conserves CPU power. \"HIGH\" provides an even smoother and more natural reverb at increased CPU cost, while \"ULTRA-HIGH\" takes this one step further.",
+      "size": "Sets the size of the space or spring. This controls the length of time it takes for an echo to bounce between virtual surfaces. Higher settings increase the echo time and the delay before the reverb starts. Large values can make the reverb more \"grainy\" as the time between the individual repeats increases. Lower settings smooth out the reverb, but very small values will create a metallic sound. As the size increases, the reverb will",
+      "time": "Sets the decay time. This is the amount of time it takes for the reverb to vanish beyond the point of perception. This is also known as the \"t60\" time, referring to the amount of time required for the reverb to decay to 0.001 of its initial value (-60 dB).",
+      "type": "Make a selection using the VALUE or NAV buttons with no need to press ENTER. There are dozens of reverb types including Halls, Chambers, Rooms, Cathedrals, Studios, Plates, Springs, and many more."
+    },
+    "ring_modulator": {
+      "type": "Selects between Classic and two different Single Sideband types."
+    },
+    "rotary": {
+      "drive": "Give your virtual rotary speaker the grit and grind of the classic with this overdrive control.",
+      "rate": "Controls the spin rate for both the drum and rotor. Assign a modifier for real-time control. You can even set the rate to 0.0 to \"park\" the rotary. To make the drum spin more slowly, as it might in a real rotary, adjust Low Rate Multiplier (below). When shown in parenthesis, it is being controlled by the tempo (below).",
+      "tempo": "Locks the rate in rhythmic relation to the Tempo. Set to \"NONE\" for manual rate control."
+    },
+    "synth": {
+      "level": "Each voice also has its own level control, located on the Mix page.",
+      "pan": "Controls the panning of the oscillator."
+    },
+    "vocoder": {
+      "attack": "Sets attack filter time for the envelope followers.",
+      "freeze": "This locks the output of the envelope followers to hold the vocal formant."
+    },
+    "wah": {
+      "drive": "This simulates overdriving the circuit of the wah pedal.",
+      "type": "Selects between different wah types based on classic vintage and cutting edge modern designs."
+    }
+  },
+  "hydrasynth": {}
+}

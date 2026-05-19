@@ -6,6 +6,7 @@
  * MCP tools.
  */
 
+import { getParamDescription } from '../param-descriptions.js';
 import {
   DispatchError,
   type CompatibleTypesResult,
@@ -90,12 +91,25 @@ export interface ListParamsEntry {
    * silently no-ops on the device.
    */
   applies_only_when?: string;
+  /**
+   * Verbatim Blocks Guide / Owner's Manual excerpt describing this
+   * param. Present only when the caller passed
+   * `include_descriptions: true` AND the maintainer-time extractor
+   * produced a clean (block, param) join. Absent (not empty string)
+   * otherwise so the agent's JSON parser doesn't render
+   * "Description: " with nothing after it.
+   *
+   * Source: `packages/core/src/protocol-generic/param-descriptions.json`,
+   * derived by `scripts/extract-param-descriptions.ts`.
+   */
+  description?: string;
 }
 
 export function listParams(args: {
   port: string;
   block?: string | readonly string[];
   name?: string | readonly string[];
+  include_descriptions?: boolean;
 }): {
   device: string;
   blocks: readonly string[];
@@ -155,6 +169,9 @@ export function listParams(args: {
       const aliasList = aliasReverse[name];
       const includeEnum =
         wantNames !== undefined && param.enum_values !== undefined;
+      const description = args.include_descriptions
+        ? getParamDescription(args.port, block, name)
+        : undefined;
       entries.push({
         block,
         name,
@@ -167,6 +184,7 @@ export function listParams(args: {
         host_label: param.host_label,
         parameter_name: param.parameter_name,
         applies_only_when: param.applies_only_when,
+        description,
       });
     }
   }

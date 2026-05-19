@@ -38,6 +38,12 @@ export function registerParamTools(server: McpServer): void {
       'drive / reverb / delay; Axe-Fx II X/Y blocks), pass `channel` to',
       'target a specific A/B/C/D (or X/Y). Without `channel`, reads',
       'whichever channel is currently active on that block.',
+      'OPTIONAL PROSE: pass `include_description: true` to attach a',
+      '`description` field (verbatim Blocks Guide / Owner\'s Manual',
+      'excerpt) to the response when one is on file. Default false to',
+      'keep the response low-bandwidth; turn on when answering the',
+      'user\'s "what does X do" or disambiguating two similarly-named',
+      'knobs. Params without a prose entry omit the field entirely.',
       'One wire round-trip, < 200 ms on healthy MIDI.',
     ].join(' '),
     inputSchema: {
@@ -47,10 +53,13 @@ export function registerParamTools(server: McpServer): void {
       channel: z.union([z.string(), z.number()]).optional().describe(
         'Optional channel selector. Only valid for channel-bearing blocks; see describe_device.capabilities.channel_blocks.',
       ),
+      include_description: z.boolean().optional().describe(
+        'When true, the response carries a `description` field (verbatim Blocks Guide / Owner\'s Manual excerpt). Default false.',
+      ),
     },
-  }, async ({ port, block, name, channel }) => {
+  }, async ({ port, block, name, channel, include_description }) => {
     try {
-      const result = await executeGetParam({ port, block, name, channel });
+      const result = await executeGetParam({ port, block, name, channel, include_description });
       return asText(result);
     } catch (err) {
       return asError(err);

@@ -60,6 +60,12 @@ export function registerDiscoveryTools(server: McpServer): void {
       '["effect_type", "key", "scale", "voice_1_harmony"]` to pull every',
       'enum table you need for the pitch block in one call. Beats the',
       'one-call-per-enum loop that costs ~50 ms per round-trip.',
+      'OPTIONAL PROSE: pass `include_descriptions: true` to attach a',
+      '`description` field (verbatim Blocks Guide / Owner\'s Manual',
+      'excerpt) to each param entry where one is on file. Default false',
+      'to keep the response low-bandwidth; turn on when the user asks',
+      '"what does X do" or you need to pick between similarly-named',
+      'knobs. Params without a prose entry omit the field entirely.',
       'Pure introspection — no MIDI I/O.',
     ].join(' '),
     inputSchema: {
@@ -70,10 +76,13 @@ export function registerDiscoveryTools(server: McpServer): void {
       name: z.union([z.string(), z.array(z.string()).min(1)]).optional().describe(
         'Optional param-name filter (requires `block`). Single string OR array. For enum params, returns the full enum table for each matching name — pass an array to fetch every enum dropdown in one call instead of N sequential calls.',
       ),
+      include_descriptions: z.boolean().optional().describe(
+        'When true, each param entry carries a `description` field (verbatim Blocks Guide / Owner\'s Manual excerpt). Default false; turn on when you need prose to disambiguate similarly-named knobs or answer the user\'s "what does X do" question.',
+      ),
     },
-  }, async ({ port, block, name }) => {
+  }, async ({ port, block, name, include_descriptions }) => {
     try {
-      return asText(listParams({ port, block, name }));
+      return asText(listParams({ port, block, name, include_descriptions }));
     } catch (err) {
       return asError(err);
     }

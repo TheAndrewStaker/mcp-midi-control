@@ -105,6 +105,15 @@ talks to the running MCP server) has the Blocks Guide loaded as project
 knowledge. End users of the server don't need any of these files
 installed.
 
+The running MCP server bundles a derived
+`packages/core/src/protocol-generic/param-descriptions.json` — a
+maintainer-time scrape of the Blocks Guide (plus the Owner's Manuals
+where the regex catches more entries) keyed by (device, block, param).
+The unified `list_params` and `get_param` tools surface the prose to
+the agent on demand via the `include_descriptions` / `include_description`
+flags. Regenerate with `npm run extract-param-descriptions`; the script
+is idempotent so the regenerated file diffs cleanly.
+
 ## See also
 
 - [`docs/REFERENCES.md`](../REFERENCES.md) lists which sections of each
