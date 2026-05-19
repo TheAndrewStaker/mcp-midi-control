@@ -1,0 +1,355 @@
+{
+  "_source": "BK-064 sub-deliverable 1. Per-amp master sweet-spot + relative-loudness corpus. Hand-curated from the Fractal-Audio-Blocks-Guide power-amp section, per-amp lineage records in fractal-midi shared/lineage, and community priors (Fractal Forum 'amp loudness' / 'master volume sweet spots' threads). See docs/loudness-data-methodology.md for full sourcing and precision discipline.",
+  "_referenceAmp": "Double Verb Normal",
+  "_referenceAmpRationale": "Fender Twin Reverb (Double Verb in AM4 naming) is the canonical clean reference platform in guitar audio. 85W master-volume design with broad clean headroom. master=6.0 is the historical 'gig unity' setting cited across the Fractal Wiki and community threads.",
+  "_referenceDrive": "T808 OD",
+  "_referenceDriveRationale": "Ibanez TS-808 Tube Screamer is the de facto pedal-board reference. Blocks Guide and forum consensus put it at ~+6 dB perceived gain at drive.level=7 (default mid-position).",
+  "_precision": "Plus or minus 3 dB. Suitable for agent leveling guidance, not mixing.",
+  "_extractedAt": "2026-05-18",
+  "amps": {
+    "Double Verb Normal": {
+      "master_sweet_spot_display": 6.0,
+      "relative_loudness_dB": 0,
+      "notes": "Reference amp for this table. Fender Twin Reverb 85W blackface. Clean-headroom platform; master=6 is gig-unity per forum consensus."
+    },
+    "Double Verb Vibrato": {
+      "master_sweet_spot_display": 6.0,
+      "relative_loudness_dB": 0,
+      "notes": "Twin Reverb vibrato channel. Same power section, same unity setting as Double Verb Normal."
+    },
+    "Deluxe Verb Vibrato": {
+      "master_sweet_spot_display": 5.5,
+      "relative_loudness_dB": -3,
+      "notes": "Fender Deluxe Reverb 22W. Smaller power section than Twin, breaks up earlier; gig-unity around master 5-6."
+    },
+    "Princetone Reverb": {
+      "master_sweet_spot_display": 5.0,
+      "relative_loudness_dB": -6,
+      "notes": "Fender Princeton Reverb 12W. Half the headroom of a Deluxe; runs hotter at lower master settings."
+    },
+    "5F1 Tweed Champlifier": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": -8,
+      "notes": "5F1 Tweed Champ has no master volume control (real-circuit model). Master is locked to 10.0 by design (per Blocks Guide page 9: non-master amps auto-set master to 10). 5W single-ended; quiet platform."
+    },
+    "Supertweed": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": 1,
+      "notes": "Tweed Bassman-derived. Non-master amp, locked at 10; loud platform (4x10 design, ~50W)."
+    },
+    "59 Bassguy Normal": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": 2,
+      "notes": "Tweed Bassman 5F6-A reissue. Non-master amp (no master knob on the real amp). Gain knob acts as volume; very loud platform."
+    },
+    "Deluxe Tweed": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": -3,
+      "notes": "Tweed Deluxe (5E3 / 5C3 era). Non-master amp; 15W. Famously breaks up early."
+    },
+    "Class-A 30W": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": -2,
+      "notes": "Vox AC30 model. No master volume on the real amp; master is locked to 10. Class-A power section runs loud for its 30W rating."
+    },
+    "Class-A 30W TB": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": -2,
+      "notes": "Vox AC30 Top Boost. No master volume; same loud-Class-A behavior as the base AC30 model."
+    },
+    "Class-A 15W TB": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": -5,
+      "notes": "Vox AC15 TB. Half the power of the AC30; quieter platform. No master knob on the real amp."
+    },
+    "1959SLP Normal": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": 4,
+      "notes": "Marshall 1959 Super Lead Plexi 100W reissue. Non-master amp; classic four-input Plexi. Very loud at unity; gain-staged via input drive instead of master."
+    },
+    "1959SLP Treble": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": 4,
+      "notes": "1959SLP treble channel. Same power section as Normal channel; treble-shifted voicing."
+    },
+    "Plexi 100W High": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": 4,
+      "notes": "Marshall Plexi 100W (1959-derived). Non-master amp. Fractal's reference is a '69 SLP."
+    },
+    "Plexi 50W Normal": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": 2,
+      "notes": "Marshall Plexi 50W (1987). Non-master amp; half the power of the 100W, still loud at unity."
+    },
+    "Brit JM45": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": 0,
+      "notes": "Marshall JTM45. Non-master amp. ~30W KT66 platform; cleaner and quieter than Plexi but still loud per watt."
+    },
+    "Brit Super": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": 2,
+      "notes": "Marshall Super Lead. Non-master amp; 100W EL34 design similar to Plexi."
+    },
+    "Brit 800 2204 High": {
+      "master_sweet_spot_display": 4.0,
+      "relative_loudness_dB": 0,
+      "notes": "Marshall JCM800 2204 (50W master volume amp). Pre-gain distortion design; master 4 is the classic 'club gig' unity. Cranking master past 6 gets harsh per Blocks Guide note on Negative Feedback."
+    },
+    "Brit 800 2203 High": {
+      "master_sweet_spot_display": 4.0,
+      "relative_loudness_dB": 2,
+      "notes": "Marshall JCM800 2203 (100W master volume). Hotter than the 2204 due to 100W power section."
+    },
+    "Brit Silver": {
+      "master_sweet_spot_display": 5.0,
+      "relative_loudness_dB": 1,
+      "notes": "Marshall Silver Jubilee. Master volume design; sits between 800 and modern voicings."
+    },
+    "BRIT JVM OD1 ORANGE": {
+      "master_sweet_spot_display": 4.0,
+      "relative_loudness_dB": 1,
+      "notes": "Marshall JVM OD1 orange channel. Modern master-volume Marshall; crunch territory at master 4."
+    },
+    "Hipower Normal": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": 5,
+      "notes": "Hiwatt DR103 100W. Non-master amp; famously loud and clean for its 100W rating. Townshend / Pink Floyd platform."
+    },
+    "Citrus A30 Clean": {
+      "master_sweet_spot_display": 6.0,
+      "relative_loudness_dB": 0,
+      "notes": "Orange AD30HTC clean channel. Master volume design; mid-range clean headroom."
+    },
+    "Citrus RV50": {
+      "master_sweet_spot_display": 3.5,
+      "relative_loudness_dB": 0,
+      "notes": "Orange Rockerverb 50 MKII dirty channel. Master volume amp; classic high-gain platform sits around master 3-4."
+    },
+    "Citrus Terrier": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": -3,
+      "notes": "Orange Tiny Terror. Master volume amp but small (15W); compressed and loud per watt. Often run with master high."
+    },
+    "USA Pre Clean": {
+      "master_sweet_spot_display": 6.0,
+      "relative_loudness_dB": -2,
+      "notes": "Mesa Studio Preamp clean channel. Preamp model (no real power amp); master scales the preamp output. Cleaner headroom than the lead channels."
+    },
+    "USA MK IIC+": {
+      "master_sweet_spot_display": 3.0,
+      "relative_loudness_dB": -2,
+      "notes": "Mesa Mark IIC+ lead channel. Famously hot preamp; master 2-3 is the classic Metallica / Petrucci unity. Gets shrill past 4."
+    },
+    "USA MK IV Rhythm 1": {
+      "master_sweet_spot_display": 4.5,
+      "relative_loudness_dB": -2,
+      "notes": "Mesa Mark IV rhythm 1 channel. Cleaner than IIC+ lead; master sits higher."
+    },
+    "Recto2 Red Modern": {
+      "master_sweet_spot_display": 2.5,
+      "relative_loudness_dB": 1,
+      "notes": "Mesa Dual Rectifier 2-channel red modern. Very hot preamp; master 2-3 is the touring norm. Cranking master compresses heavily."
+    },
+    "Recto2 Orange Modern": {
+      "master_sweet_spot_display": 3.0,
+      "relative_loudness_dB": 0,
+      "notes": "Mesa Dual Rectifier orange channel modern. Lower-gain rhythm voicing; master around 3."
+    },
+    "PVH 6160+ Lead": {
+      "master_sweet_spot_display": 2.5,
+      "relative_loudness_dB": 0,
+      "notes": "Peavey 6160+ / EVH 5150-iii lead channel. Hot preamp design; master 2-3 is gig unity. Extremely loud above 4."
+    },
+    "FAS 6160": {
+      "master_sweet_spot_display": 2.5,
+      "relative_loudness_dB": 0,
+      "notes": "Fractal-original 5150-class voicing. Same hot-preamp class as PVH 6160; same master sweet spot."
+    },
+    "FRIEDMAN BE V2": {
+      "master_sweet_spot_display": 3.0,
+      "relative_loudness_dB": 1,
+      "notes": "Friedman BE (Brown Eye) V2. Modded-Marshall lineage; master 3 is the classic gig setting per Friedman community."
+    },
+    "FRIEDMAN HBE V2": {
+      "master_sweet_spot_display": 3.0,
+      "relative_loudness_dB": 2,
+      "notes": "Friedman HBE (Hairy Brown Eye) V2. Hotter than BE; slightly louder at the same master setting."
+    },
+    "Friedman Small Box": {
+      "master_sweet_spot_display": 3.5,
+      "relative_loudness_dB": 0,
+      "notes": "Friedman Smallbox 50. Lower-gain master-volume amp; runs slightly cleaner than BE / HBE."
+    },
+    "Dirty Shirley 1": {
+      "master_sweet_spot_display": 4.0,
+      "relative_loudness_dB": 0,
+      "notes": "Friedman Dirty Shirley 40W. Master-volume amp; classic rock platform sits around master 4."
+    },
+    "Solo 100 Lead": {
+      "master_sweet_spot_display": 3.0,
+      "relative_loudness_dB": 1,
+      "notes": "Soldano SLO-100 lead channel. High-gain master-volume amp; SLO master is famously sensitive past 3."
+    },
+    "DIZZY V4 BLUE 2": {
+      "master_sweet_spot_display": 3.0,
+      "relative_loudness_dB": 2,
+      "notes": "Diezel VH4 channel 2 (blue / crunch). Master-volume amp; the VH4 is loud per setting and runs hot above 4."
+    },
+    "Energyball": {
+      "master_sweet_spot_display": 3.0,
+      "relative_loudness_dB": 3,
+      "notes": "Engl Powerball voicing. High-power high-gain modern amp; very loud at unity master."
+    },
+    "Euro Red": {
+      "master_sweet_spot_display": 3.0,
+      "relative_loudness_dB": 1,
+      "notes": "Bogner Ecstasy red channel (20th Anniversary). Master-volume amp; classic Bogner master sits 3-4."
+    },
+    "Euro Uber": {
+      "master_sweet_spot_display": 3.0,
+      "relative_loudness_dB": 2,
+      "notes": "Bogner Uberschall. Very hot high-gain amp; master 3 is gig norm, harsh above 5."
+    },
+    "ODS-100 Ford": {
+      "master_sweet_spot_display": 4.0,
+      "relative_loudness_dB": -1,
+      "notes": "Dumble Overdrive Special 100W (Robben Ford voicing). Master-volume amp with a wide clean-to-dirty range; master 4 is typical unity for OD."
+    }
+  },
+  "drives": {
+    "T808 OD": {
+      "boost_response_dB": 6,
+      "notes": "Reference drive for this table. Ibanez TS-808 Tube Screamer; mid-hump-boost circuit. Adds ~6 dB at drive.level=7 per Blocks Guide drive section and Fractal Forum consensus."
+    },
+    "T808 Mod": {
+      "boost_response_dB": 6,
+      "notes": "Modded TS-808 voicing. Similar boost response to stock 808."
+    },
+    "Maxoff 808": {
+      "boost_response_dB": 6,
+      "notes": "Maxon OD-808 (original-spec Tube Screamer). Same level response as T808."
+    },
+    "Valve Screamer VS9": {
+      "boost_response_dB": 6,
+      "notes": "Ibanez TS-9. Slightly brighter than the 808 but similar level response. Forum-cited identical perceived boost."
+    },
+    "TS9DX Hot": {
+      "boost_response_dB": 8,
+      "notes": "Ibanez TS9DX in hot mode. Higher gain and output than stock TS-9; adds ~8 dB at unity level."
+    },
+    "TS9DX +": {
+      "boost_response_dB": 7,
+      "notes": "Ibanez TS9DX in plus mode. Between stock TS-9 and hot mode for level."
+    },
+    "Klone Chiron": {
+      "boost_response_dB": 4,
+      "notes": "Klon Centaur / KTR clone. Transparent boost design; adds ~3-4 dB at drive.level=7. Pedal-builder consensus calls Klon perceived loudness change subtle."
+    },
+    "Eternal Love": {
+      "boost_response_dB": 4,
+      "notes": "Lovepedal Eternity. Klon-style transparent boost; similar low boost response to Klone."
+    },
+    "Zen Master": {
+      "boost_response_dB": 4,
+      "notes": "Hermida Zendrive. Smooth low-gain overdrive; ~4 dB perceived boost at typical settings."
+    },
+    "Sunrise Splendor": {
+      "boost_response_dB": 5,
+      "notes": "JHS Morning Glory derivative. Transparent OD; ~5 dB perceived boost."
+    },
+    "Jam Ray": {
+      "boost_response_dB": 4,
+      "notes": "Vemuram Jan Ray. Klon-adjacent transparent boost; low boost response."
+    },
+    "Rat Distortion": {
+      "boost_response_dB": 9,
+      "notes": "ProCo RAT. Heavy LM308-based distortion; significantly louder than the Tube Screamer family. Forum-cited ~9 dB."
+    },
+    "Fat Rat": {
+      "boost_response_dB": 9,
+      "notes": "Modded RAT with LED clipping. Similar output to stock RAT."
+    },
+    "PI Fuzz": {
+      "boost_response_dB": 10,
+      "notes": "Electro-Harmonix Big Muff Pi. Sustaining fuzz with high output; one of the loudest drive pedals on the board. Forum-cited 10+ dB."
+    },
+    "PI FUZZ - RAM'S HEAD": {
+      "boost_response_dB": 10,
+      "notes": "70s Big Muff Pi Ram's Head reissue. Similar high-output behavior to modern Big Muff."
+    },
+    "PI FUZZ - TRIANGLE": {
+      "boost_response_dB": 10,
+      "notes": "Triangle-era Big Muff Pi. High-output fuzz; same class as the other Big Muff variants."
+    },
+    "DS1 Distortion": {
+      "boost_response_dB": 8,
+      "notes": "Boss DS-1. Hotter and more distorted than TS-808; +8 dB perceived at typical settings."
+    },
+    "Super OD": {
+      "boost_response_dB": 6,
+      "notes": "Boss SD-1 Super Overdrive. Tube-Screamer-adjacent voicing with asymmetric clipping; similar +6 dB perceived boost."
+    },
+    "OD-One Overdrive": {
+      "boost_response_dB": 5,
+      "notes": "Boss OD-1. The original Boss overdrive; slightly lower output than SD-1 / TS-808."
+    },
+    "Blues OD": {
+      "boost_response_dB": 5,
+      "notes": "Marshall Bluesbreaker Mk1. Low-gain transparent overdrive; ~5 dB perceived boost."
+    },
+    "BB Pre": {
+      "boost_response_dB": 6,
+      "notes": "Xotic BB Preamp. Tube Screamer family with a JFET-buffered output; ~6 dB at unity."
+    },
+    "COMPULSION DISTORTION HP": {
+      "boost_response_dB": 7,
+      "notes": "Fulltone OCD high-peak (HP) mode. Higher output than tube screamer family; ~7 dB perceived."
+    },
+    "COMPULSION DISTORTION LP": {
+      "boost_response_dB": 6,
+      "notes": "Fulltone OCD low-peak (LP) mode. Slightly lower output than HP mode."
+    },
+    "FAS Boost": {
+      "boost_response_dB": 6,
+      "notes": "Fractal-original clean boost. Designed for unity-or-louder front-of-amp use; ~+6 dB at level=7."
+    },
+    "Micro Boost": {
+      "boost_response_dB": 6,
+      "notes": "MXR Micro Amp clone. Transparent clean boost; ~6 dB perceived."
+    },
+    "Face Fuzz": {
+      "boost_response_dB": 7,
+      "notes": "Dallas Arbiter Fuzz Face. Germanium fuzz; output depends heavily on input impedance but +7 dB is a fair average at typical settings."
+    },
+    "Bender Fuzz": {
+      "boost_response_dB": 7,
+      "notes": "Tone Bender / Vox Tone Bender. Similar output class to Fuzz Face."
+    },
+    "M-Zone Distortion": {
+      "boost_response_dB": 8,
+      "notes": "Boss Metal Zone. Heavy mid-scooped distortion; high output; ~8 dB perceived."
+    },
+    "Angry Chuck": {
+      "boost_response_dB": 6,
+      "notes": "Friedman Angry Charlie. JCM800-in-a-box style drive; ~6 dB perceived boost."
+    },
+    "OD 250": {
+      "boost_response_dB": 7,
+      "notes": "DOD 250 / MXR Distortion+. Hot op-amp distortion; ~7 dB perceived."
+    },
+    "Treble Boost": {
+      "boost_response_dB": 5,
+      "notes": "Dallas Rangemaster / silicon treble booster. Treble-shifted boost; ~5 dB perceived but voiced for treble bite."
+    },
+    "Griddle Cake": {
+      "boost_response_dB": 5,
+      "notes": "Crowther Hot Cake. Low-gain transparent OD; ~5 dB perceived."
+    },
+    "MCMLXXXI DRV": {
+      "boost_response_dB": 5,
+      "notes": "1981 Inventions DRV. Modern transparent low-gain OD; ~5 dB perceived."
+    }
+  }
+}
