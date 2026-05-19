@@ -24,6 +24,7 @@ import type {
   ScannedLocation,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
 
 import {
   AXE_FX_II_BLOCKS,
@@ -54,6 +55,7 @@ import {
   type AxeFxIILineageBlock,
 } from '../lineageLookup.js';
 import { findParamFuzzy } from 'fractal-midi/axe-fx-ii';
+import { getCalibration } from '../calibration.js';
 
 import { findBlockBySlug, parseAxeFxIILocation } from './schema.js';
 
@@ -82,24 +84,62 @@ function resolveBlockOrThrow(slugOrName: string): AxeFxIIBlock {
   );
 }
 
+/**
+ * Enumerate valid param names on a block by walking `KNOWN_PARAMS`
+ * and filtering on `groupCode`. Mirrors writer.ts; kept duplicate
+ * here so this file doesn't grow a `../descriptor/writer.js` import
+ * cycle.
+ */
+function listParamNamesForBlock(block: AxeFxIIBlock): string[] {
+  const out: string[] = [];
+  for (const key of Object.keys(KNOWN_PARAMS)) {
+    const p = KNOWN_PARAMS[key as keyof typeof KNOWN_PARAMS] as AxeFxIIParam;
+    if (p.groupCode === block.groupCode && !out.includes(p.name)) {
+      out.push(p.name);
+    }
+  }
+  return out;
+}
+
 function findParamOrThrow(block: AxeFxIIBlock, name: string): AxeFxIIParam {
   const p = findParamFuzzy(block, name);
   if (p) return p;
   throw new DispatchError(
     'unknown_param',
     DEVICE_LABEL,
-    `Parameter '${block.name}.${name}' (group ${block.groupCode}) is not registered on Fractal Axe-Fx II. ` +
-    `Common amp names: input_drive (gain), master_volume (master), bass, middle, treble, presence. ` +
-    `Fuzzy matching accepts AxeEdit display labels too — try "Input Drive", "Master Volume", etc.`,
+    formatUnknownParamError({
+      deviceName: DEVICE_LABEL,
+      block: block.name,
+      badParam: name,
+      knownNames: listParamNamesForBlock(block),
+    }),
   );
 }
 
 function unitFor(param: AxeFxIIParam): string {
   if (param.controlType === 'select') return 'enum';
   if (param.controlType === 'switch') return 'bool';
-  const hasCalibration = param.displayMin !== undefined && param.displayMax !== undefined;
-  if (!hasCalibration) return 'opaque';
-  if (param.displayScale === 'log10') return 'hz';
+  // Resolve calibration the same way schema.ts/writer.ts do — catalog
+  // first, calibration.ts overlay second. Without the overlay check,
+  // unitFor reports 'opaque' for params that ARE calibrated via
+  // AM4_SHARED / EDITOR_OBSERVED / SUFFIX_RULES, misleading the agent.
+  let displayMin: number | undefined;
+  let displayMax: number | undefined;
+  let displayScale: 'linear' | 'log10' | undefined;
+  if (param.displayMin !== undefined && param.displayMax !== undefined) {
+    displayMin = param.displayMin;
+    displayMax = param.displayMax;
+    displayScale = param.displayScale;
+  } else {
+    const overlay = getCalibration(param.block, param.name);
+    if (overlay !== undefined) {
+      displayMin = overlay.displayMin;
+      displayMax = overlay.displayMax;
+      displayScale = overlay.displayScale;
+    }
+  }
+  if (displayMin === undefined || displayMax === undefined) return 'opaque';
+  if (displayScale === 'log10') return 'hz';
   return 'knob';
 }
 
@@ -158,15 +198,30 @@ export const reader: DeviceReader = {
       display = param.enumValues?.[wire] ?? parsed.label ?? wire;
     } else if (param.controlType === 'switch') {
       display = wire ? 'on' : 'off';
-    } else if (param.displayMin !== undefined && param.displayMax !== undefined) {
-      display = wireToDisplay(wire, {
-        displayMin: param.displayMin,
-        displayMax: param.displayMax,
-        displayScale: param.displayScale,
-      });
     } else {
-      // Fall back to the device's own label string when uncalibrated.
-      display = parsed.label || wire;
+      // Calibration resolution matches schema.ts/writer.ts: codec
+      // catalog first, calibration.ts overlay second.
+      let displayMin: number | undefined;
+      let displayMax: number | undefined;
+      let displayScale: 'linear' | 'log10' | undefined;
+      if (param.displayMin !== undefined && param.displayMax !== undefined) {
+        displayMin = param.displayMin;
+        displayMax = param.displayMax;
+        displayScale = param.displayScale;
+      } else {
+        const overlay = getCalibration(param.block, param.name);
+        if (overlay !== undefined) {
+          displayMin = overlay.displayMin;
+          displayMax = overlay.displayMax;
+          displayScale = overlay.displayScale;
+        }
+      }
+      if (displayMin !== undefined && displayMax !== undefined) {
+        display = wireToDisplay(wire, { displayMin, displayMax, displayScale });
+      } else {
+        // Fall back to the device's own label string when uncalibrated.
+        display = parsed.label || wire;
+      }
     }
     return {
       block: blockSlug,

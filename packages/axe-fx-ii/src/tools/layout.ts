@@ -138,8 +138,7 @@ export function registerAxeFxIILayoutTools(server: McpServer): void {
       '  versions of this tool documented an "auto-route on row 2"',
       '  behavior; that was inherited wiring from pre-existing presets,',
       '  not device behavior. Fresh-empty cells start unwired regardless',
-      '  of row. (Session 70/71 hardware investigation; SYSEX-MAP-AXE-',
-      '  FX-II.md § 5c.)',
+      '  of row. (Hardware-verified; see SYSEX-MAP-AXE-FX-II.md § 5c.)',
       '',
       'RECOMMENDED USAGE PATTERNS:',
       '  - Building a preset from scratch: use `axefx2_apply_preset_at`',
@@ -310,7 +309,7 @@ export function registerAxeFxIILayoutTools(server: McpServer): void {
       '    block AND wires every cable. Use this single-cable tool for',
       '    incremental tweaks to an existing layout.',
       '',
-      'Status: 🟢 hardware-decoded on Q8.02 XL+ (Session 70, 2026-05-13).',
+      'Status: hardware-decoded on Q8.02 XL+ (2026-05-13).',
       'Wire format byte-exact against AxeEdit\'s outbound capture.',
     ].join('\n'),
     inputSchema: {

@@ -268,7 +268,7 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
     name: 'whammy_expression',
     description:
       'Expression-pedal whammy: full octave-down to octave-up sweep. ' +
-      'Requires a modifier on pitch.control / PITCH_CTRL (BK-063).',
+      'Requires a modifier on pitch.control / PITCH_CTRL.',
     applicable_devices: ['axe-fx-ii', 'axe-fx-iii'] as const,
     params_per_device: {
       'axe-fx-ii': {

@@ -48,8 +48,8 @@ export const AM4_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
     'U1. Plan for this latency cost up front: a "copy U1 and modify it"',
     'workflow needs one switch_preset before any read sequence.',
     'Hardware constraint (no read-arbitrary-preset SysEx exists), not a',
-    'tool limitation we can remove. Captured Session 74 — there is no',
-    'wire path for indirect preset reads, period.',
+    'tool limitation we can remove. There is no wire path for indirect',
+    'preset reads, period.',
   ].join(' '),
 
   volume_language: [
@@ -338,21 +338,21 @@ export const AM4_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
   ].join(' '),
 
   write_safety_locations: [
-    'Any A01..Z04 preset location is accepted for save (the historical',
-    'Z04-only hard-gate was lifted Session 49; saves to inactive locations',
-    'are a real workflow, HW-064). Agents must still treat saves as',
+    'Any A01..Z04 preset location is accepted for save. Saves to inactive',
+    'locations are a real workflow (the user often builds multiple presets',
+    'per session from one working buffer). Agents must still treat saves as',
     'destructive: confirm before overwriting non-empty locations. "save to',
     'A01" without context is suspicious and worth a single-sentence "are',
-    'you sure? A01 currently has X" before proceeding. The user\'s scratch',
-    'slot for try-it-out tone work is "Z04" by convention.',
+    'you sure? A01 currently has X" before proceeding. The conventional',
+    'scratch slot for try-it-out tone work is "Z04".',
   ].join(' '),
 
   rename_persistence: [
     'Rename writes target the working buffer only. The new name does NOT',
     'persist across preset loads on its own — pair the rename with a save',
     '(apply_preset with target_location, or save_preset) to persist.',
-    'Confirmed HW-002 (2026-04-19): rename alone is lost when a different',
-    'preset is loaded; rename + save persists correctly.',
+    'Rename alone is lost when a different preset is loaded; rename + save',
+    'persists correctly (hardware-verified 2026-04-19).',
   ].join(' '),
 
   apply_preset_fresh_vs_tweak: [

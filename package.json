@@ -41,6 +41,7 @@
     "verify-recipe-tables": "tsx scripts/verify-recipe-tables.ts",
     "verify-auto-wah-recipes": "tsx scripts/verify-auto-wah-recipes.ts",
     "verify-axe-fx-ii-display-units": "tsx scripts/verify-axe-fx-ii-display-units.ts",
+    "verify-axe-fx-ii-calibration": "tsx scripts/verify-axe-fx-ii-calibration.ts",
     "verify-dispatcher": "tsx scripts/verify-dispatcher.ts",
     "build-type-knobs": "tsx scripts/build-type-knobs.ts",
     "verify-pack": "tsx scripts/verify-pack.ts",
@@ -64,6 +65,7 @@
     "verify-lineage-resources": "tsx scripts/verify-lineage-resources.ts",
     "coverage-audit": "tsx scripts/coverage-audit.ts",
     "coverage-cross-ref-audit": "tsx scripts/_research/coverage-cross-ref-audit.ts",
+    "verify-no-internal-refs": "tsx scripts/verify-no-internal-refs.ts",
     "write-test": "tsx scripts/_research/write-test.ts",
     "server": "tsx packages/server-all/src/server/index.ts",
     "build:core": "npm run build --workspace=@mcp-midi-control/core",
@@ -104,7 +106,7 @@
     "hydra:verify-nrpn-display": "tsx scripts/hydrasynth/verify-nrpn-display.ts",
     "test:codec": "npm run verify-pack && npm run verify-sysex-assembler && npm run verify-msg && npm run verify-describe-inbound && npm run verify-transpile && npm run verify-enum-lookup && npm run verify-echo && npm run verify-cache-params && npm run verify-preset-dump && npm run verify-safety",
     "test:cross-device": "npm run verify-cross-device-aliases && npm run verify-cross-device-enums && npm run verify-port-preset && npm run verify-recipe-tables && npm run verify-auto-wah-recipes && npm run verify-scene-leveling && npm run verify-loudness-lookup && npm run verify-verify-chain && npm run verify-apply-preflight && npm run verify-param-descriptions && npm run verify-dispatcher",
-    "test:axe-fx-ii": "npm run verify-axe-fx-ii-encoding && npm run verify-axe-fx-ii-param-lookup && npm run verify-axe-fx-ii-lineage && npm run verify-axe-fx-ii-routing && npm run verify-axe-fx-ii-display-units",
+    "test:axe-fx-ii": "npm run verify-axe-fx-ii-encoding && npm run verify-axe-fx-ii-param-lookup && npm run verify-axe-fx-ii-lineage && npm run verify-axe-fx-ii-routing && npm run verify-axe-fx-ii-display-units && npm run verify-axe-fx-ii-calibration",
     "test:axe-fx-iii": "npm run verify-axe-fx-iii-encoding",
     "test:hydra": "npm run hydra:verify-encoding && npm run hydra:verify-sysex-envelope && npm run hydra:verify-sysex-patch && npm run hydra:verify-init-buffer && npm run hydra:test-patch-name && npm run hydra:verify-enum-mapping && npm run hydra:verify-nrpn-display",
     "test:server": "npm run smoke-server && npm run build && npm run verify-lineage-resources",
@@ -112,7 +114,7 @@
     "test:jest": "jest --testPathIgnorePatterns=integration",
     "test:jest:all": "jest",
     "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/am4/tsconfig.json && tsc --noEmit -p packages/axe-fx-ii/tsconfig.json && tsc --noEmit -p packages/axe-fx-iii/tsconfig.json && tsc --noEmit -p packages/hydrasynth/tsconfig.json && tsc --noEmit -p packages/server-all/tsconfig.json",
-    "preflight": "npm run typecheck && npm test && npm run coverage-audit && npm run coverage-cross-ref-audit",
+    "preflight": "npm run typecheck && npm test && npm run verify-no-internal-refs && npm run coverage-audit && npm run coverage-cross-ref-audit",
     "release-gate": "npm run preflight && npm run launch-verify && npm run agent-sweep"
   },
   "devDependencies": {

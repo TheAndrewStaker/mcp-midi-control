@@ -49,6 +49,7 @@ import type {
   WriteResult,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
 
 import {
   AXE_FX_II_BLOCKS,
@@ -91,6 +92,7 @@ import {
 } from '../tools/applyExecutor.js';
 import { findParamFuzzy } from 'fractal-midi/axe-fx-ii';
 import { guardActiveBufferOrSave } from '../tools/shared.js';
+import { getCalibration } from '../calibration.js';
 
 import { findBlockBySlug, parseAxeFxIILocation } from './schema.js';
 
@@ -129,13 +131,35 @@ function resolveBlockOrThrow(slugOrName: string): AxeFxIIBlock {
   );
 }
 
+/**
+ * Enumerate valid param names on a block by walking `KNOWN_PARAMS`
+ * and filtering on `groupCode`. Used by the shared unknown-param
+ * error formatter so the error string lists every valid knob name
+ * for the block, ordered by closeness to the bad input.
+ */
+function listParamNamesForBlock(block: AxeFxIIBlock): string[] {
+  const out: string[] = [];
+  for (const key of Object.keys(KNOWN_PARAMS)) {
+    const p = KNOWN_PARAMS[key as keyof typeof KNOWN_PARAMS] as AxeFxIIParam;
+    if (p.groupCode === block.groupCode && !out.includes(p.name)) {
+      out.push(p.name);
+    }
+  }
+  return out;
+}
+
 function findParamOrThrow(block: AxeFxIIBlock, name: string): AxeFxIIParam {
   const p = findParamByName(block, name);
   if (p) return p;
   throw new DispatchError(
     'unknown_param',
     DEVICE_LABEL,
-    `Parameter '${block.name}.${name}' (group ${block.groupCode}) is not registered on Fractal Axe-Fx II.`,
+    formatUnknownParamError({
+      deviceName: DEVICE_LABEL,
+      block: block.name,
+      badParam: name,
+      knownNames: listParamNamesForBlock(block),
+    }),
   );
 }
 
@@ -227,20 +251,37 @@ export const writer: DeviceWriter = {
     // Axe-Fx II SET is fire-and-forget — no wire ack. We surface
     // acked: true to match the AM4 descriptor's success shape and let
     // the warning carry the no-ack semantics.
-    const hasCalibration = param.displayMin !== undefined && param.displayMax !== undefined;
+    //
+    // Reverse-display calibration matches encodeParamForApply: codec
+    // catalog first, calibration.ts overlay second. Without this the
+    // display_value field returns the wire integer for overlay-only
+    // calibrated knobs (drive.volume, drive.tone, etc).
     let display: number | string;
     if (param.controlType === 'select') {
       display = param.enumValues?.[wireValue] ?? wireValue;
     } else if (param.controlType === 'switch') {
       display = wireValue ? 'on' : 'off';
-    } else if (hasCalibration) {
-      display = wireToDisplay(wireValue, {
-        displayMin: param.displayMin as number,
-        displayMax: param.displayMax as number,
-        displayScale: param.displayScale,
-      });
     } else {
-      display = wireValue;
+      let displayMin: number | undefined;
+      let displayMax: number | undefined;
+      let displayScale: 'linear' | 'log10' | undefined;
+      if (param.displayMin !== undefined && param.displayMax !== undefined) {
+        displayMin = param.displayMin;
+        displayMax = param.displayMax;
+        displayScale = param.displayScale;
+      } else {
+        const overlay = getCalibration(param.block, param.name);
+        if (overlay !== undefined) {
+          displayMin = overlay.displayMin;
+          displayMax = overlay.displayMax;
+          displayScale = overlay.displayScale;
+        }
+      }
+      if (displayMin !== undefined && displayMax !== undefined) {
+        display = wireToDisplay(wireValue, { displayMin, displayMax, displayScale });
+      } else {
+        display = wireValue;
+      }
     }
     return {
       op: 'set_param',
@@ -941,10 +982,21 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
 
 /**
  * Pre-encode a single param value for the apply path. Mirrors what the
- * descriptor's `params[name].encode` does — duplicated here so the
- * apply translator doesn't need a back-reference to the descriptor
- * (which would create a circular import). Falls back to wire pass-
- * through for params without calibration.
+ * descriptor's `params[name].encode` does so apply_preset and set_param
+ * share one display-first source of truth. When a param has either
+ * (a) catalog-supplied displayMin/displayMax (fractal-midi codec) or
+ * (b) overlay calibration via `getCalibration` (AM4_SHARED,
+ * EDITOR_OBSERVED, SUFFIX_RULES), the apply path now honors it just
+ * like set_param does — Session 100+ fix for the bug where
+ * `drive.volume: 4` passed through as wire 4 (effectively muted).
+ *
+ * Falls back to wire pass-through only when no calibration is
+ * available from either source.
+ *
+ * Cannot delegate to `descriptor.blocks[block].params[name].encode`
+ * directly because that would create a circular import through
+ * descriptor.ts → writer.ts. Instead we duplicate the schema's
+ * `resolveCalibration` priority (param → overlay) here.
  */
 function encodeParamForApply(
   blockSlug: string,
@@ -975,12 +1027,35 @@ function encodeParamForApply(
   if (!Number.isFinite(num)) {
     throw new Error(`${blockSlug}.${paramName}: expected a number, got "${value}".`);
   }
-  const hasCalibration = param.displayMin !== undefined && param.displayMax !== undefined;
-  if (hasCalibration) {
+  // Resolve calibration: codec catalog first, then calibration.ts
+  // overlay (AM4_SHARED / EDITOR_OBSERVED / SUFFIX_RULES). Matches
+  // schema.ts:resolveCalibration so set_param and apply_preset share
+  // one calibration source.
+  let displayMin: number | undefined;
+  let displayMax: number | undefined;
+  let displayScale: 'linear' | 'log10' | undefined;
+  if (param.displayMin !== undefined && param.displayMax !== undefined) {
+    displayMin = param.displayMin;
+    displayMax = param.displayMax;
+    displayScale = param.displayScale;
+  } else {
+    const overlay = getCalibration(param.block, param.name);
+    if (overlay !== undefined) {
+      displayMin = overlay.displayMin;
+      displayMax = overlay.displayMax;
+      displayScale = overlay.displayScale;
+    }
+  }
+  if (displayMin !== undefined && displayMax !== undefined) {
+    if (num < displayMin || num > displayMax) {
+      throw new Error(
+        `${blockSlug}.${paramName} out of range [${displayMin}..${displayMax}]: ${num}`,
+      );
+    }
     return displayToWire(num, {
-      displayMin: param.displayMin as number,
-      displayMax: param.displayMax as number,
-      displayScale: param.displayScale,
+      displayMin,
+      displayMax,
+      displayScale,
     });
   }
   if (!Number.isInteger(num) || num < 0 || num > 65534) {

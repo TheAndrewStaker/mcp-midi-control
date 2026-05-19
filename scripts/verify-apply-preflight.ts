@@ -18,6 +18,7 @@ import {
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/axe-fx-iii/descriptor.js';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -350,6 +351,221 @@ check(
   'legacy shim returns 0 errors for the alias-only spec',
   errs11.length === 0,
   errs11.map((e) => `${e.path}: ${e.error}`).join(' | '),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Case 12: II grid device accepts bare-int slot shorthand. The
+// presetSlotShape zod schema documents slot=N as shorthand for
+// {row:2, col:N}; preflight should silently coerce instead of
+// erroring "grid device, pass slot as {row, col}…". An info[] entry
+// names the coercion so the agent learns the long form.
+// ─────────────────────────────────────────────────────────────────
+console.log('\nCase 12: Axe-Fx II auto-coerces bare-int slot=N -> {row:2, col:N}');
+
+const iiBareIntSlot: PresetSpec = {
+  slots: [{ slot: 3 as unknown as { row: number; col: number }, block_type: 'amp' }],
+};
+const preflight12 = collectApplyPresetPreflight(iiBareIntSlot, AXEFX2_DESCRIPTOR);
+check(
+  'bare-int slot on grid device returns 0 errors',
+  preflight12.errors.length === 0,
+  preflight12.errors.map((e) => `${e.path}: ${e.error}`).join(' | '),
+);
+check(
+  'bare-int slot on grid device surfaces info[] entry advising the coercion',
+  preflight12.info.some(
+    (i) => i.path === 'slots[0].slot' && /coerced shorthand/i.test(i.info),
+  ),
+  JSON.stringify(preflight12.info),
+);
+const coercedSlot12 = preflight12.normalized_spec.slots[0]?.slot;
+check(
+  'normalized spec carries {row: 2, col: 3}',
+  typeof coercedSlot12 === 'object'
+    && coercedSlot12 !== null
+    && (coercedSlot12 as { row: number; col: number }).row === 2
+    && (coercedSlot12 as { row: number; col: number }).col === 3,
+  JSON.stringify(coercedSlot12),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Case 13: II unknown param uses the AM4-style canonical format.
+// Format must:
+//   - cite the slot context (row/col + block_type)
+//   - cite "block_type" not "GROUP CODE"
+//   - list known params for the block
+//   - surface a top-3 "Did you mean…?" line for close candidates
+// ─────────────────────────────────────────────────────────────────
+console.log('\nCase 13: Axe-Fx II unknown param uses AM4-style canonical format');
+
+const iiUnknownParam: PresetSpec = {
+  slots: [
+    {
+      slot: { row: 2, col: 1 },
+      block_type: 'drive',
+      // `wibblewam` is not an II drive param and is not in any
+      // cross-device alias table; should hit the unknown-param path.
+      params: { X: { wibblewam: 5 } },
+    },
+  ],
+};
+const preflight13 = collectApplyPresetPreflight(iiUnknownParam, AXEFX2_DESCRIPTOR);
+const drive13Err = preflight13.errors.find((e) => /wibblewam/i.test(e.path));
+check(
+  'II unknown param produces an error',
+  drive13Err !== undefined,
+  preflight13.errors.map((e) => `${e.path}: ${e.error}`).join(' | '),
+);
+check(
+  'II error names slot context "(row 2 col 1, drive)"',
+  drive13Err !== undefined && /row 2 col 1, drive/i.test(drive13Err.error),
+  drive13Err?.error,
+);
+check(
+  'II error contains "unknown param" + the bad name',
+  drive13Err !== undefined
+    && /unknown param "wibblewam"/.test(drive13Err.error),
+  drive13Err?.error,
+);
+check(
+  'II error lists "Known params for drive: ..."',
+  drive13Err !== undefined && /Known params for drive:/i.test(drive13Err.error),
+  drive13Err?.error,
+);
+// A "Did you mean" suffix only appears when at least one candidate
+// sits within Levenshtein distance 3 of the bad input. "wibblewam"
+// is far from every II drive param name, so the suffix may be absent
+// here — accept either presence or absence on this case.
+check(
+  'II error message is structured (slot + block + unknown param + known list)',
+  drive13Err !== undefined,
+  drive13Err?.error,
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Case 14: AM4 unknown enum value surfaces "Did you mean…?" line.
+// Format must:
+//   - cite the slot context (position + block_type)
+//   - cite "<block>.<param>: unknown enum value …"
+//   - list candidates ordered by closeness
+//   - surface a top-3 "Did you mean…?" line for close candidates
+// ─────────────────────────────────────────────────────────────────
+console.log('\nCase 14: AM4 unknown enum value uses AM4-style canonical format with "Did you mean"');
+
+const am4EnumTypo: PresetSpec = {
+  // Use a small typo of an exact catalog entry so the unknown-enum
+  // formatter's "Did you mean…?" suffix fires (top-3 within
+  // Levenshtein distance ≤ 3). "Plxi 2204" misses "Plexi 2204" by a
+  // single insertion (distance 1) — solidly within the suffix
+  // threshold. The four-tier matcher classifies this as `fuzzy` (≤2),
+  // routes through the suggested_substitution branch, AND the
+  // formatter also appends a "Did you mean" line.
+  slots: [{ slot: 1, block_type: 'amp', params: { A: { type: 'Plxi 2204' } } }],
+};
+const preflight14 = collectApplyPresetPreflight(am4EnumTypo, AM4_DESCRIPTOR);
+const enum14Err = preflight14.errors.find((e) => /amp\.type/i.test(e.path) || /amp\.type/i.test(e.error));
+check(
+  'AM4 unknown enum produces an error',
+  enum14Err !== undefined,
+  preflight14.errors.map((e) => `${e.path}: ${e.error}`).join(' | '),
+);
+check(
+  'AM4 enum error cites slot context "(position 1, amp)"',
+  enum14Err !== undefined && /position 1, amp/i.test(enum14Err.error),
+  enum14Err?.error,
+);
+check(
+  'AM4 enum error says "amp.type: unknown enum value"',
+  enum14Err !== undefined
+    && /amp\.type: unknown enum value/i.test(enum14Err.error),
+  enum14Err?.error,
+);
+check(
+  'AM4 enum error lists Candidates: ...',
+  enum14Err !== undefined && /Candidates:/i.test(enum14Err.error),
+  enum14Err?.error,
+);
+check(
+  'AM4 enum error surfaces a closest-match hint ("Did you mean…" or "Closest match…")',
+  enum14Err !== undefined && /(Did you mean:|Closest match is)/i.test(enum14Err.error),
+  enum14Err?.error,
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Case 13b: II close-typo unknown param surfaces "Did you mean".
+// "voluem" → typo of "volume" (distance 2) on II drive should
+// produce both the canonical "Known params: …" line AND a top-3
+// "Did you mean: volume?" suffix via the shared formatter.
+// ─────────────────────────────────────────────────────────────────
+console.log('\nCase 13b: Axe-Fx II close-typo unknown param surfaces "Did you mean"');
+
+const iiCloseTypo: PresetSpec = {
+  slots: [
+    {
+      slot: { row: 2, col: 1 },
+      block_type: 'drive',
+      params: { X: { voluem: 5 } },
+    },
+  ],
+};
+const preflight13b = collectApplyPresetPreflight(iiCloseTypo, AXEFX2_DESCRIPTOR);
+const drive13bErr = preflight13b.errors.find((e) => /voluem/i.test(e.path));
+check(
+  'II close-typo unknown param produces an error',
+  drive13bErr !== undefined,
+  preflight13b.errors.map((e) => `${e.path}: ${e.error}`).join(' | '),
+);
+check(
+  'II close-typo error surfaces "Did you mean: ..." with a candidate',
+  drive13bErr !== undefined && /Did you mean:.*volume/i.test(drive13bErr.error),
+  drive13bErr?.error,
+);
+check(
+  'II close-typo error carries suggestions[] for the agent to retry',
+  drive13bErr !== undefined && (drive13bErr.suggestions?.length ?? 0) > 0,
+  drive13bErr ? JSON.stringify(drive13bErr.suggestions) : 'no error',
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Case 15: III unknown param matches the AM4-style format. III uses
+// the same shared formatter through resolveParamOrThrow / the
+// dispatcher preflight walker.
+// ─────────────────────────────────────────────────────────────────
+console.log('\nCase 15: Axe-Fx III unknown param uses AM4-style canonical format');
+
+const iiiUnknownParam: PresetSpec = {
+  slots: [
+    {
+      slot: { row: 2, col: 1 },
+      block_type: 'drive',
+      // `wibblewam` is not a III drive param and not in any cross-
+      // device alias table; should hit the unknown-param path.
+      params: { wibblewam: 5 },
+    },
+  ],
+};
+const preflight15 = collectApplyPresetPreflight(iiiUnknownParam, AXEFX3_DESCRIPTOR);
+const iii15Err = preflight15.errors.find((e) => /wibblewam/i.test(e.path));
+check(
+  'III unknown param produces an error',
+  iii15Err !== undefined,
+  preflight15.errors.map((e) => `${e.path}: ${e.error}`).join(' | '),
+);
+check(
+  'III error names slot context "(row 2 col 1, drive)"',
+  iii15Err !== undefined && /row 2 col 1, drive/i.test(iii15Err.error),
+  iii15Err?.error,
+);
+check(
+  'III error contains "unknown param" + the bad name',
+  iii15Err !== undefined
+    && /unknown param "wibblewam"/.test(iii15Err.error),
+  iii15Err?.error,
+);
+check(
+  'III error lists "Known params for drive: ..."',
+  iii15Err !== undefined && /Known params for drive:/i.test(iii15Err.error),
+  iii15Err?.error,
 );
 
 console.log('');

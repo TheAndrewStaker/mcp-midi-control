@@ -49,7 +49,8 @@ import {
     CHANNEL_BLOCKS,
 } from '../shared/channels.js';
 import { checkApplicability } from 'fractal-midi/am4';
-import { EnumAmbiguityError, resolveValue, suggestParamName } from 'fractal-midi/am4';
+import { EnumAmbiguityError, resolveValue } from 'fractal-midi/am4';
+import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
 import { sendAndAwaitAck } from '../shared/wireOps.js';
 import {
     buildSaveToLocation,
@@ -189,16 +190,21 @@ export function prepareApplyPresetWrites(
         } else if (PARAM_ALIASES[literalKey] !== undefined && PARAM_ALIASES[literalKey] in KNOWN_PARAMS) {
             key = PARAM_ALIASES[literalKey] as ParamKey;
         } else {
-            const suggestion = suggestParamName(canonicalBlock, paramName);
-            if (suggestion !== undefined) {
-                throw new Error(
-                    `${at}: unknown param "${paramName}" for block "${canonicalBlock}" — did you mean "${suggestion}"?`,
-                );
-            }
-            const sameBlock = Object.keys(KNOWN_PARAMS).filter((k) => k.startsWith(`${canonicalBlock}.`));
+            // Surface the AM4-style canonical "unknown param" message via
+            // the shared formatter so II / III / Hydra produce the same
+            // shape. The bare names (without the "block." prefix) match
+            // what the agent passes as `paramName`, and the formatter
+            // ranks them by closeness so the closest candidates lead.
+            const sameBlockKeys = Object.keys(KNOWN_PARAMS).filter((k) => k.startsWith(`${canonicalBlock}.`));
+            const knownNames = sameBlockKeys.map((k) => k.slice(canonicalBlock.length + 1));
             throw new Error(
-                `${at}: unknown param "${paramName}" for block "${canonicalBlock}". ` +
-                (sameBlock.length ? `Known params for ${canonicalBlock}: ${sameBlock.join(', ')}.` : `No params registered for ${canonicalBlock} yet.`),
+                formatUnknownParamError({
+                    slotContext: at,
+                    deviceName: 'Fractal AM4',
+                    block: canonicalBlock,
+                    badParam: paramName,
+                    knownNames,
+                }),
             );
         }
         const param: Param = KNOWN_PARAMS[key];

@@ -44,10 +44,38 @@ import type {
   WriteResult,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
 
-import { findHydraNrpn, type HydrasynthNrpn } from '../nrpn.js';
+import { findHydraNrpn, HYDRASYNTH_NRPNS, type HydrasynthNrpn } from '../nrpn.js';
 import { nrpnMessagesFor, resolveNrpnValue } from '../encoding.js';
 import { HYDRASYNTH_PARAMS_BY_ID } from '../params.js';
+
+/**
+ * Enumerate Hydrasynth param names belonging to a given module
+ * prefix. The NRPN catalog stores entries as smushed names
+ * (`osc1mode`, `osc1semi`). When the agent calls `set_param('osc1',
+ * 'mode')` we strip the leading module prefix to surface a friendly
+ * "Known params for osc1: mode, semi, …" line.
+ */
+function listParamNamesForHydraBlock(block: string): string[] {
+  const out: string[] = [];
+  const lc = block.toLowerCase();
+  for (const e of HYDRASYNTH_NRPNS) {
+    const n = e.name;
+    if (n.toLowerCase().startsWith(lc) && n.length > lc.length) {
+      const tail = n.slice(lc.length);
+      if (!out.includes(tail)) out.push(tail);
+    }
+  }
+  // CC-chart entries use dotted form (`block.param`).
+  for (const k of HYDRASYNTH_PARAMS_BY_ID.keys()) {
+    if (k.startsWith(`${lc}.`)) {
+      const tail = k.slice(lc.length + 1);
+      if (!out.includes(tail)) out.push(tail);
+    }
+  }
+  return out;
+}
 
 import { parseHydrasynthLocation } from './schema.js';
 
@@ -87,7 +115,13 @@ function resolveNrpn(block: string, paramName: string): HydrasynthNrpn {
   throw new DispatchError(
     'unknown_param',
     DEVICE_LABEL,
-    `Parameter '${block}.${paramName}' is not registered on ASM Hydrasynth Explorer. Call list_params(port='hydrasynth', block='${block}') for the valid set; or use the legacy hydra_set_engine_param tool which accepts the full NRPN namespace.`,
+    formatUnknownParamError({
+      deviceName: DEVICE_LABEL,
+      block,
+      badParam: paramName,
+      knownNames: listParamNamesForHydraBlock(block),
+    }) +
+      ` Or use the legacy hydra_set_engine_param tool which accepts the full NRPN namespace.`,
   );
 }
 

@@ -19,6 +19,10 @@ import {
 } from '../types.js';
 
 import { requireDevice } from './core.js';
+import {
+  formatUnknownEnumError,
+  formatUnknownParamError,
+} from './errorFormat.js';
 
 // ── Step 3a: block-name normalization ───────────────────────────────
 
@@ -92,9 +96,12 @@ export function resolveParamName(
   throw new DispatchError(
     'unknown_param',
     descriptor.display_name,
-    suggestion
-      ? `Parameter '${block}.${input}' is not valid on ${descriptor.display_name} — did you mean '${block}.${suggestion}'?`
-      : `Parameter '${block}.${input}' is not valid on ${descriptor.display_name}. Known params for ${block}: ${valid.slice(0, 8).join(', ')}${valid.length > 8 ? `… (${valid.length} total — call list_params for the full list)` : ''}.`,
+    formatUnknownParamError({
+      deviceName: descriptor.display_name,
+      block,
+      badParam: input,
+      knownNames: valid,
+    }),
     details,
   );
 }
@@ -184,10 +191,17 @@ export function encodeValue(
 ): number {
   const schema = descriptor.blocks[block]?.params[name];
   if (schema === undefined) {
+    const blockSchema = descriptor.blocks[block];
+    const knownNames = blockSchema !== undefined ? Object.keys(blockSchema.params) : [];
     throw new DispatchError(
       'unknown_param',
       descriptor.display_name,
-      `Parameter '${block}.${name}' is not registered on ${descriptor.display_name}.`,
+      formatUnknownParamError({
+        deviceName: descriptor.display_name,
+        block,
+        badParam: name,
+        knownNames,
+      }),
     );
   }
   try {
@@ -209,6 +223,26 @@ export function encodeValue(
       && (err as { candidates: unknown[] }).candidates.every((x) => typeof x === 'string')
         ? (err as { candidates: string[] }).candidates
         : undefined;
+    // For unknown enum values, escalate to the AM4-style unified
+    // formatter so the message lists candidates ordered by closeness
+    // and supplies a top-3 "did you mean…?" line. Out-of-range numeric
+    // values use the encoder's own range-formatted message verbatim.
+    if (code === 'unknown_enum_value' && schema.unit === 'enum' && typeof value === 'string') {
+      const validValues = schema.enum_values !== undefined
+        ? Object.values(schema.enum_values)
+        : (candidates ?? []);
+      throw new DispatchError(
+        code,
+        descriptor.display_name,
+        formatUnknownEnumError({
+          block,
+          paramName: name,
+          badValue: value,
+          validValues,
+        }),
+        candidates !== undefined ? { valid_options: candidates } : undefined,
+      );
+    }
     throw new DispatchError(
       code,
       descriptor.display_name,

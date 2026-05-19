@@ -54,7 +54,7 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
       'envelope. Working-buffer scope: this returns the working buffer\'s',
       'name, which after a save-to-slot equals the persisted slot name.',
       '',
-      'Status: 🟢 hardware-verified on Q8.02 XL+ (HW-080, 2026-05-10).',
+      'Status: hardware-verified on Q8.02 XL+ (2026-05-10).',
     ].join('\n'),
     inputSchema: {},
   }, async () => {
@@ -149,7 +149,7 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
       '',
       'NO-ACK PROTOCOL. Verify by the device\'s response.',
       '',
-      'Status: 🟢 hardware-verified on Q8.02 (2026-05-11, HW-098).',
+      'Status: hardware-verified on Q8.02 (2026-05-11).',
     ].join('\n'),
     inputSchema: {
       block: z.union([z.string(), z.number()]).describe(

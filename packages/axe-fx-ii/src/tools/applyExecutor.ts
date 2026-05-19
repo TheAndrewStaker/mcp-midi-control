@@ -33,6 +33,26 @@ import {
 } from 'fractal-midi/axe-fx-ii';
 
 import { GET_RESPONSE_TIMEOUT_MS, findBlock, findParam } from './shared.js';
+import { getCalibration } from '../calibration.js';
+import { KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/axe-fx-ii';
+import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
+
+/**
+ * Enumerate valid param names on a block by walking `KNOWN_PARAMS`
+ * and filtering on `groupCode`. Used to seed the shared
+ * "unknown param" error formatter so the message lists every valid
+ * knob name for the block, ordered by closeness to the bad input.
+ */
+function listParamNamesForBlockGroup(groupCode: string): string[] {
+  const out: string[] = [];
+  for (const key of Object.keys(KNOWN_PARAMS)) {
+    const p = KNOWN_PARAMS[key as keyof typeof KNOWN_PARAMS] as AxeFxIIParam;
+    if (p.groupCode === groupCode && !out.includes(p.name)) {
+      out.push(p.name);
+    }
+  }
+  return out;
+}
 
 /**
  * Minimal connection contract used by the executor — both
@@ -360,11 +380,12 @@ export function buildApplyPresetAtOps(
     const param = findParam(r.target, paramName);
     if (!param) {
       throw new Error(
-        `unknown param "${paramName}" for ${r.target.name} ` +
-        `(group ${r.target.groupCode}). ` +
-        (r.target.groupCode === 'AMP'
-          ? `Common amp param names: input_drive (the gain knob, 0..10), master_volume (the master knob, 0..10), bass, middle, treble, presence. "gain"/"master"/"mid" also accepted as aliases.`
-          : `Call axefx2_list_params for the full set.`),
+        formatUnknownParamError({
+          deviceName: 'Fractal Axe-Fx II',
+          block: r.target.name,
+          badParam: paramName,
+          knownNames: listParamNamesForBlockGroup(r.target.groupCode),
+        }),
       );
     }
     let wire: number;
@@ -379,13 +400,34 @@ export function buildApplyPresetAtOps(
       wire = value;
       modeNote = `wire ${wire}`;
     } else {
-      const hasCalibration = param.displayMin !== undefined && param.displayMax !== undefined;
-      const useDisplay = hasCalibration && value <= (param.displayMax ?? 0);
+      // Resolve calibration: codec catalog first, calibration.ts
+      // overlay (AM4_SHARED / EDITOR_OBSERVED / SUFFIX_RULES) second.
+      // Without overlay coverage here, the legacy auto-detect path
+      // sends display values straight through as wire integers for any
+      // param that the codec catalog leaves uncalibrated — the same
+      // class of bug that hit the descriptor writer pre-Session 100.
+      let displayMin: number | undefined;
+      let displayMax: number | undefined;
+      let displayScale: 'linear' | 'log10' | undefined;
+      if (param.displayMin !== undefined && param.displayMax !== undefined) {
+        displayMin = param.displayMin;
+        displayMax = param.displayMax;
+        displayScale = param.displayScale;
+      } else {
+        const overlay = getCalibration(param.block, param.name);
+        if (overlay !== undefined) {
+          displayMin = overlay.displayMin;
+          displayMax = overlay.displayMax;
+          displayScale = overlay.displayScale;
+        }
+      }
+      const hasCalibration = displayMin !== undefined && displayMax !== undefined;
+      const useDisplay = hasCalibration && value <= (displayMax as number);
       if (useDisplay) {
         wire = displayToWire(value, {
-          displayMin: param.displayMin as number,
-          displayMax: param.displayMax as number,
-          displayScale: param.displayScale,
+          displayMin: displayMin as number,
+          displayMax: displayMax as number,
+          displayScale,
         });
         modeNote = `${value} → wire ${wire}`;
       } else {

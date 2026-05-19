@@ -67,28 +67,26 @@ const BLOCK_INPUT_DESCRIPTION = [
 ].join('\n');
 
 const SET_VERIFIED_BANNER = [
-  '0x01 PARAMETER_SETGET is NOT in the v1.4 spec — Fractal deliberately',
-  'omits parameter writes from the third-party MIDI document. Wire shape',
-  'is byte-verified against 10 public AxeEdit III captures spanning two',
-  'effect blocks (Drive 1/2 boost, Delay 1 TIME) and two sub-actions',
-  '(typed-input + mouse-drag). See docs/devices/axe-fx-iii/set-parameter-captures.md',
-  'for the captured frames. If the device rejects the write you\'ll see',
-  'a 0x64 MULTIPURPOSE_RESPONSE in the reply.',
+  'Parameter SET is NOT in the published Fractal third-party MIDI spec —',
+  'Fractal deliberately omits parameter writes from that document. The',
+  'wire shape used here is byte-verified against public AxeEdit III',
+  'captures spanning two effect blocks and two sub-actions (typed-input',
+  '+ mouse-drag). If the device rejects the write, the reply carries an',
+  'error code; surface it verbatim to the user.',
 ].join('\n');
 
 const GET_HYPOTHESIS_BANNER = [
-  '⚠ GET is hypothesis-only — no captured III device-emitted SET response',
-  'exists on the open web. The wire shape mirrors SET with the value field',
-  'zeroed. Session 97 research (Fractal Forum thread #203336) revealed',
-  'the III\'s `04 01` STATE_BROADCAST traffic is an AxeEdit-driven heartbeat',
-  'poll, NOT a device-initiated push-on-edit. A bare III with no editor',
-  'running will likely produce NO inbound `04 01` frames at all — so a',
-  '250 ms timeout from this tool is the EXPECTED outcome on bare hardware,',
-  'not a tool error. Fallback strategies: (1) hold the SET value',
-  'optimistically and skip read-back; (2) use 0x13 STATUS_DUMP for the',
-  'bypass+channel state surface that v1.4 actually documents; (3) if a',
-  'user is running AxeEdit III alongside, listen for the heartbeat-poll',
-  'broadcasts on idle.',
+  'GET is hypothesis-only — no captured Axe-Fx III device-emitted SET',
+  'response exists on the open web. The wire shape mirrors SET with the',
+  'value field zeroed. Open-web research suggests the device\'s state-',
+  'broadcast traffic is an editor-driven heartbeat poll, not a device-',
+  'initiated push-on-edit. A bare Axe-Fx III with no editor running will',
+  'likely produce NO inbound state-broadcast frames at all — so a 250 ms',
+  'timeout from this tool is the EXPECTED outcome on bare hardware, not',
+  'a tool error. Fallback strategies: (1) hold the SET value',
+  'optimistically and skip read-back; (2) use the documented status-dump',
+  'surface for bypass+channel state; (3) if a user is running AxeEdit III',
+  'alongside, listen for the heartbeat-poll broadcasts on idle.',
 ].join('\n');
 
 export function registerAxeFxIIIParamTools(server: McpServer): void {
@@ -104,9 +102,9 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
       'Envelope (23 bytes):',
       '  09 00     = sub-action: typed-input SET (clean, drag-context zero)',
       '  id id     = 14-bit effect ID per v1.4 Appendix 1 (LS-first)',
-      '  pid pid   = 14-bit paramId (LS-first) — see Ghidra catalog at',
-      '              samples/captured/decoded/ghidra-axeedit3-paramnames.json',
-      '              for the paramId→symbolic-name table per effect family.',
+      '  pid pid   = 14-bit paramId (LS-first) — see the param-name catalog',
+      '              shipped with the package for the paramId→symbolic-name',
+      '              table per effect family.',
       '  00 00 00  = drag-context bytes (zero for typed input)',
       '  v0 v1 v2  = 16-bit value (0..65534) packed into 3 septets:',
       '              v0 = bits 6..0, v1 = bits 13..7, v2 = bits 15..14',
@@ -123,8 +121,8 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
     inputSchema: {
       block: z.string().describe(BLOCK_INPUT_DESCRIPTION),
       param_id: z.number().int().min(0).max(0x3fff).describe(
-        'Parameter ID within the block (0..16383). See the Ghidra catalog ' +
-        'for the paramId→symbolic-name table.',
+        'Parameter ID within the block (0..16383). See the param-name catalog ' +
+        'shipped with the package for the paramId→symbolic-name table.',
       ),
       value: z.number().int().min(0).max(65534).describe(
         'Raw 16-bit wire value (0..65534). Display→wire conversion is the ' +

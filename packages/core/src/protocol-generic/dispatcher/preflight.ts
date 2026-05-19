@@ -45,49 +45,23 @@ import {
 } from '../types.js';
 import { resolveParamAlias } from '../cross-device-aliases.js';
 import { findEnumMatch, resolveEnumAlias } from '../cross-device-enums.js';
+import {
+  formatUnknownEnumError,
+  formatUnknownParamError,
+  topClosest,
+} from './errorFormat.js';
 
 /**
  * Compute a small list of closest matches (up to `max` entries) to a
  * given input string. Used for the `suggestions[]` field on errors so
  * agents can pick a verbatim retry value.
  *
- * Algorithm: case-insensitive Levenshtein distance ≤ 3 OR
- * case-insensitive substring containment; rank by distance.
+ * Wraps the shared `topClosest` helper in errorFormat.ts so the
+ * preflight walker and per-device error sites rank candidates the
+ * same way.
  */
 function closest(input: string, options: readonly string[], max = 5): string[] {
-  if (options.length === 0) return [];
-  const i = input.trim().toLowerCase();
-  type Scored = { value: string; score: number };
-  const scored: Scored[] = [];
-  for (const o of options) {
-    const lo = o.trim().toLowerCase();
-    if (lo === i) continue;
-    const d = levenshtein(i, lo);
-    const contains = lo.includes(i) || i.includes(lo);
-    let score = d;
-    if (contains) score = Math.min(score, 1);
-    if (score <= 3) scored.push({ value: o, score });
-  }
-  scored.sort((a, b) => a.score - b.score);
-  return scored.slice(0, max).map((s) => s.value);
-}
-
-function levenshtein(a: string, b: string): number {
-  if (a === b) return 0;
-  if (a.length === 0) return b.length;
-  if (b.length === 0) return a.length;
-  const prev = new Array(b.length + 1);
-  const curr = new Array(b.length + 1);
-  for (let j = 0; j <= b.length; j++) prev[j] = j;
-  for (let i = 1; i <= a.length; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
-      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
-    }
-    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
-  }
-  return prev[b.length];
+  return topClosest(input, options, max);
 }
 
 /**
@@ -181,6 +155,7 @@ function validateParamMap(
   blockKey: string,
   basePath: string,
   slotIndex: number,
+  slotContext: string,
   map: Record<string, unknown>,
   errors: ValidationError[],
   info: ValidationInfo[],
@@ -214,7 +189,13 @@ function validateParamMap(
       errors.push({
         slot_index: slotIndex,
         path: `${basePath}.${paramName}`,
-        error: `unknown param "${paramName}" on ${descriptor.display_name} block "${blockKey}"`,
+        error: formatUnknownParamError({
+          slotContext,
+          deviceName: descriptor.display_name,
+          block: blockKey,
+          badParam: paramName,
+          knownNames: validNames,
+        }),
         suggestions: closest(paramName, validNames),
       });
       continue;
@@ -277,8 +258,19 @@ function validateParamMap(
             errors.push({
               slot_index: slotIndex,
               path,
-              error: `${blockKey}.${canonical}: unknown enum value "${value}". Closest match is "${enumResult.match}". Retry with that value if it's what you meant.`,
-              suggestions: enumResult.candidates,
+              error:
+                formatUnknownEnumError({
+                  slotContext,
+                  block: blockKey,
+                  paramName: canonical,
+                  badValue: value,
+                  validValues: validLabels,
+                }) +
+                ` Closest match is "${enumResult.match}" — retry with that value if it's what you meant.`,
+              suggestions:
+                enumResult.candidates.length > 0
+                  ? enumResult.candidates
+                  : closest(value, validLabels),
               suggested_substitution: enumResult.match,
             });
             continue;
@@ -286,8 +278,17 @@ function validateParamMap(
             errors.push({
               slot_index: slotIndex,
               path,
-              error: `${blockKey}.${canonical}: unknown enum value "${value}"`,
-              suggestions: enumResult.candidates.length > 0 ? enumResult.candidates : closest(value, validLabels),
+              error: formatUnknownEnumError({
+                slotContext,
+                block: blockKey,
+                paramName: canonical,
+                badValue: value,
+                validValues: validLabels,
+              }),
+              suggestions:
+                enumResult.candidates.length > 0
+                  ? enumResult.candidates
+                  : closest(value, validLabels),
             });
             continue;
           }
@@ -335,13 +336,21 @@ function validateParamMap(
  * Validate a slot ref against `capabilities.slot_model`. Errors when the
  * shape (number vs `{row,col}`) doesn't match, or when an out-of-range
  * row/col/index is supplied.
+ *
+ * Returns a (possibly normalized) slot ref. On grid devices, if the
+ * caller passed a bare integer N, we silently coerce it to
+ * `{row: 2, col: N}` (row 2 is the conventional signal-chain row on
+ * II/III) and surface an `info[]` entry advising the agent of the
+ * shorthand. The presetSlotShape zod schema documents that shorthand
+ * as accepted, so preflight should match.
  */
 function validateSlotRef(
   descriptor: DeviceDescriptor,
   slotIndex: number,
   slot: PresetSlotSpec['slot'],
   errors: ValidationError[],
-): void {
+  info: ValidationInfo[],
+): PresetSlotSpec['slot'] {
   const cap = descriptor.capabilities;
   if (cap.slot_model === 'linear') {
     if (typeof slot !== 'number') {
@@ -350,7 +359,7 @@ function validateSlotRef(
         path: `slots[${slotIndex}].slot`,
         error: `${descriptor.display_name} is a linear-slot device , pass slot as a 1-based integer, not {row, col}.`,
       });
-      return;
+      return slot;
     }
     if (!Number.isInteger(slot) || slot < 1 || (cap.slot_count !== undefined && slot > cap.slot_count)) {
       errors.push({
@@ -359,18 +368,36 @@ function validateSlotRef(
         error: `slot ${slot} out of range on ${descriptor.display_name} (valid: 1..${cap.slot_count ?? '?'})`,
       });
     }
-    return;
+    return slot;
   }
   if (cap.slot_model === 'grid') {
-    if (typeof slot !== 'object' || slot === null) {
+    // BK-XXX: auto-coerce bare-int shorthand to {row:2, col:N}. The
+    // presetSlotShape zod schema documents this shorthand as accepted,
+    // so the preflight walker must coerce rather than reject. Row 2
+    // is the conventional audio-chain row on every grid Fractal
+    // device (II / III); cells on row 1/3/4 require the long form.
+    let normalized: PresetSlotSpec['slot'] = slot;
+    if (typeof slot === 'number') {
+      const coercedCol = slot;
+      const coerced = { row: 2, col: coercedCol };
+      info.push({
+        slot_index: slotIndex,
+        path: `slots[${slotIndex}].slot`,
+        info: `coerced shorthand slot=${coercedCol} -> {row: 2, col: ${coercedCol}} on ${descriptor.display_name} (row 2 is the audio-chain row; pass {row, col} explicitly to target other rows)`,
+        original_value: String(coercedCol),
+        canonical: `{row: 2, col: ${coercedCol}}`,
+      });
+      normalized = coerced;
+    } else if (typeof slot !== 'object' || slot === null) {
       errors.push({
         slot_index: slotIndex,
         path: `slots[${slotIndex}].slot`,
-        error: `${descriptor.display_name} is a grid device , pass slot as {row, col}, not a single integer.`,
+        error: `${descriptor.display_name} is a grid device , pass slot as {row, col} or as a single integer shorthand for {row: 2, col: N}.`,
       });
-      return;
+      return slot;
     }
-    const { row, col } = slot;
+    const ref = normalized as { row: number; col: number };
+    const { row, col } = ref;
     const rows = cap.grid?.rows;
     const cols = cap.grid?.cols;
     if (!Number.isInteger(row) || row < 1 || (rows !== undefined && row > rows)) {
@@ -387,7 +414,9 @@ function validateSlotRef(
         error: `col ${col} out of range (valid: 1..${cols ?? '?'})`,
       });
     }
+    return normalized;
   }
+  return slot;
 }
 
 /**
@@ -437,7 +466,7 @@ export function collectApplyPresetPreflight(
   const slotIds: string[] = [];
   for (let i = 0; i < spec.slots.length; i++) {
     const slot = spec.slots[i];
-    validateSlotRef(descriptor, i, slot.slot, errors);
+    const normalizedSlotRef = validateSlotRef(descriptor, i, slot.slot, errors, info);
     const blockKey = resolveBlockKey(descriptor, slot.block_type);
     if (blockKey === undefined) {
       errors.push({
@@ -450,11 +479,32 @@ export function collectApplyPresetPreflight(
     const id = slot.id ?? `${slot.block_type.toLowerCase()}${slot.instance !== undefined && slot.instance !== 1 ? `_${slot.instance}` : ''}`;
     slotIds.push(id);
 
+    // AM4-style slot context used by the shared unknown-param /
+    // unknown-enum formatter. Mirrors the format applyExecutor.ts
+    // produces for AM4 single-write errors so every device reports
+    // unknown-param errors with the same shape. Linear devices use
+    // "(position N, block)"; grid devices use "(row R col C, block)".
+    const slotContext = (() => {
+      const blockLabel = blockKey ?? slot.block_type;
+      if (typeof normalizedSlotRef === 'number') {
+        return `slots[${i}] (position ${normalizedSlotRef}, ${blockLabel})`;
+      }
+      if (
+        typeof normalizedSlotRef === 'object'
+        && normalizedSlotRef !== null
+        && 'row' in normalizedSlotRef
+      ) {
+        const ref = normalizedSlotRef as { row: number; col: number };
+        return `slots[${i}] (row ${ref.row} col ${ref.col}, ${blockLabel})`;
+      }
+      return `slots[${i}] (${blockLabel})`;
+    })();
+
     // Start a normalized copy of this slot. Default to passing the
     // input through unchanged; we'll overwrite `params` when we walk
     // them, and overwrite `block_type` if the block alias resolved.
     const normalizedSlot: { -readonly [K in keyof PresetSlotSpec]: PresetSlotSpec[K] } = {
-      slot: slot.slot,
+      slot: normalizedSlotRef,
       block_type: blockKey ?? slot.block_type,
     };
     if (slot.bypassed !== undefined) normalizedSlot.bypassed = slot.bypassed;
@@ -489,6 +539,7 @@ export function collectApplyPresetPreflight(
         blockKey,
         `slots[${i}].params`,
         i,
+        slotContext,
         slot.params as Record<string, unknown>,
         errors,
         info,
@@ -530,6 +581,7 @@ export function collectApplyPresetPreflight(
             blockKey,
             `slots[${i}].params.${chKey}`,
             i,
+            `${slotContext} channels.${chKey}`,
             paramMap as Record<string, unknown>,
             errors,
             info,

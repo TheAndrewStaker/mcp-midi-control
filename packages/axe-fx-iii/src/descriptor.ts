@@ -78,6 +78,7 @@ import type {
   ApplyPresetOptions,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
 
 import {
   AXE_FX_III_BLOCKS,
@@ -116,13 +117,12 @@ const GET_RESPONSE_TIMEOUT_MS = 800;
  * agent surfaces this to the user so they can confirm by ear / by panel.
  */
 const BETA_WARNING = [
-  '🟡 axe-fx-iii community beta — 0x02 SET/GET_PARAMETER is NOT in the',
-  'v1.4 III spec; the wire shape was ported from the Axe-Fx II encoder',
-  '(II uses model byte 0x03, III uses 0x10) per community evidence that',
-  'III firmware still honors the opcode. UNVERIFIED on real III hardware.',
-  'Please confirm the audible/visible response on the device, and if the',
-  'op silently no-ops, run axefx3_probe_sysex to confirm the device emitted',
-  'a 0x64 MULTIPURPOSE_RESPONSE rejection vs. accepting the write.',
+  'axe-fx-iii community beta. The parameter SET/GET path is not in the',
+  'published Axe-Fx III third-party MIDI spec; the wire shape is ported',
+  'from the Axe-Fx II and is unverified on Axe-Fx III hardware. Please',
+  'confirm the audible/visible response on the device. If the op silently',
+  'no-ops, run axefx3_probe_sysex to see whether the device emitted a',
+  'rejection frame vs. accepting the write.',
 ].join(' ');
 
 function notInSpec(op: string, gap: string): DispatchError {
@@ -380,11 +380,25 @@ function resolveParamOrThrow(slug: string, name: string): {
       return { family, param: p };
     }
   }
+  // Gather every valid param name for this block so the shared
+  // formatter can produce an AM4-style "Known params: ... Did you
+  // mean: ..." message — matches the format AM4 has used all along.
+  const knownNames: string[] = [];
+  for (const p of catalogEntries) {
+    if (p.paramId < 0x3fff) {
+      const stripped = stripFamilyPrefix(family, p.name);
+      if (!knownNames.includes(stripped)) knownNames.push(stripped);
+    }
+  }
   throw new DispatchError(
     'unknown_param',
     DEVICE_LABEL,
-    `Parameter '${slug}.${name}' is not in the III catalog (family ${family}). ` +
-      `Call list_params(port='axe-fx-iii', block='${slug}') for the full per-block param list.`,
+    formatUnknownParamError({
+      deviceName: DEVICE_LABEL,
+      block: slug,
+      badParam: name,
+      knownNames,
+    }) + ` (family ${family})`,
   );
 }
 
@@ -1022,57 +1036,28 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
   ].join('\n'),
 
   beta_status: [
-    '🟡 BETA / HARDWARE VERIFICATION NEEDED.',
+    'BETA / HARDWARE VERIFICATION NEEDED.',
     '',
-    'The Axe-Fx III protocol layer has no project maintainer who owns an',
-    'Axe-Fx III. Everything below is either documented in the v1.4 PDF or',
-    'inferred from the Axe-Fx II family conventions and Ghidra-mined',
-    'param tables from the AxeEdit III binary.',
+    'The Axe-Fx III protocol layer is partly community-derived. Some',
+    'operations are documented in the Fractal third-party MIDI spec;',
+    'others are ported from the Axe-Fx II family with the III model',
+    'byte. When an op is rejected, the device returns an error frame',
+    'with a named result code — report it verbatim to the user so they',
+    'can confirm by ear / by panel.',
     '',
-    'NO unified-surface op refuses on the III — every op attempts a wire',
-    'send and surfaces rejections (0x64 MULTIPURPOSE_RESPONSE) inline so',
-    'an III owner can exercise the full surface and report results.',
+    'No unified-surface op refuses outright. Every op attempts a wire',
+    'send and surfaces device rejections inline so an Axe-Fx III owner',
+    'can exercise the full surface and report results.',
     '',
-    'What is wired up:',
-    '  🟢 SPEC-DOCUMENTED (v1.4 PDF — most likely to land cleanly):',
-    '  - set_bypass / get_bypass per block (function 0x0A)',
-    '  - set_channel / get_channel (channels A/B/C/D, function 0x0B)',
-    '  - switch_scene (1..8) / get_active_scene (function 0x0C)',
-    '  - get_preset_name (function 0x0D — returns number + 32-char name)',
-    '  - get_scene_name (function 0x0E)',
-    '  - status_dump (function 0x13 — per-block bypass / channel snapshot)',
-    '  - tempo: tap, set BPM, get BPM (functions 0x10 / 0x14)',
-    '  - tuner: on/off (function 0x11)',
-    '  - switch_preset (MIDI Program Change + Bank Select — channel 1)',
+    'When a write is acked, tell the user what you wrote AND ask them',
+    'to confirm the audible / visible response on the device. Their',
+    'confirmation is the verification path. Example: "I set pitch.harm1',
+    'to wire 27 — can you confirm the harmony interval changed on the',
+    'front panel?"',
     '',
-    '  🟡 PORTED FROM AXE-FX II (II encoder w/ III model byte — UNVERIFIED):',
-    '  - set_param / get_param / set_params / get_params via 0x02',
-    '    SET_PARAMETER (II-derived wire shape; III firmware code path',
-    '    confirmed present, but rejection vs. accept is unverified)',
-    '  - save_preset via 0x1D STORE_PRESET (10-byte envelope, no preset',
-    '    payload — just "persist working buffer to slot N"). III may need',
-    '    its native 0x77/0x78/0x79 envelope instead (not yet implemented).',
-    '  - rename via 0x09 SET_PRESET_NAME (32-char ASCII, working buffer)',
-    '  - set_block via 0x05 SET_GRID_CELL (block-type swap at grid cell)',
-    '  - apply_preset composes set_block + set_param across PresetSpec.slots,',
-    '    optionally rename + save at the end',
-    '',
-    'On any rejection (0x64 MULTIPURPOSE_RESPONSE) the response surfaces:',
-    '  - `acked: false`',
-    '  - `warning` with the named error code (e.g. "message not recognized",',
-    '    "invalid parameter ID", "DSP overload")',
-    'When you see a rejection, tell the user verbatim — that\'s data we',
-    "need to close the protocol gap. Don't paper over it.",
-    '',
-    'When a write IS acked, tell the user what you wrote AND ask them to',
-    'confirm the audible / visible response on the device. Their',
-    'confirmation IS our verification pipeline until a maintainer captures',
-    'the III protocol end-to-end. Examples: "I set pitch.harm1 to wire 27 —',
-    'can you confirm the harmony interval changed on the front panel?"',
-    '',
-    'Help wanted: see docs/_private/HARDWARE-TASKS-AXEFX3.md. If you',
-    'discover an op the III rejects, file an issue with the bytes you sent',
-    'plus the 0x64 frame the device returned.',
+    'If the device rejects an op, surface the named error code verbatim',
+    '(e.g. "message not recognized", "invalid parameter ID", "DSP',
+    'overload"). Do not paper over rejections.',
   ].join('\n'),
   channels: [
     'Axe-Fx III channel names: A, B, C, D (4 channels per block — same as',

@@ -19,6 +19,27 @@ echo MCP MIDI Control v0.1.0 -setup
 echo Install location: %INSTALL_DIR%
 echo.
 
+rem Fast-fail diagnostic: if the helper PS1 isn't where we expect, the
+rem extraction is broken and the user needs to know BEFORE PowerShell
+rem prints its own less-friendly "file not found" error. The most common
+rem cause is a nested folder created by Windows Explorer when the ZIP's
+rem top-level dir name matches the chosen extract destination.
+if not exist "%INSTALL_DIR%\install\merge-mcp-config.ps1" (
+    echo SETUP FAILED -installer helper script not found.
+    echo.
+    echo Expected:
+    echo   %INSTALL_DIR%\install\merge-mcp-config.ps1
+    echo.
+    echo This usually means your ZIP tool extracted into a nested folder.
+    echo Check whether there is a "mcp-midi-control-v0.1.0" folder INSIDE
+    echo your install directory. If so, either:
+    echo   - move its contents up one level, or
+    echo   - re-run setup.cmd from inside that nested folder.
+    echo.
+    pause
+    exit /b 1
+)
+
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_DIR%\install\merge-mcp-config.ps1" -InstallDir "%INSTALL_DIR%"
 if errorlevel 1 (
     echo.
