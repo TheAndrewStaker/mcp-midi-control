@@ -27,7 +27,7 @@
  *   npm run build:installer -- --clean   # also wipe build/node-cache
  *
  * Why bundle Node + node_modules instead of using `pkg`/`nexe`/SEA:
- *   See docs/DECISIONS.md packager row. The native node-midi `.node`
+ *   See docs/_private/DECISIONS.md packager row. The native node-midi `.node`
  *   addon is friendliest with file-on-disk distribution; single-binary
  *   tools handle native addons via fragile runtime extraction.
  */

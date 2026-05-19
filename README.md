@@ -629,7 +629,7 @@ to your device once the descriptor is registered. No new tools needed.
 - [`docs/devices/am4/SYSEX-MAP.md`](./docs/devices/am4/SYSEX-MAP.md): AM4 wire protocol reference.
 - [`docs/devices/axe-fx-ii/SYSEX-MAP.md`](./docs/devices/axe-fx-ii/SYSEX-MAP.md):
   Axe-Fx II wire protocol reference.
-- [`docs/DECISIONS.md`](./docs/DECISIONS.md): non-obvious architectural
+- [`docs/_private/DECISIONS.md`](./docs/_private/DECISIONS.md): non-obvious architectural
   + library choices, with rationale and rejected alternatives.
 
 ---

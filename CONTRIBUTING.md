@@ -102,7 +102,7 @@ In `packages/server-all/src/server/index.ts`:
 2. Call `registerMcpDevice` **before** any device whose `port_match`
    regex would also match your device's port name. Registration order
    decides which descriptor wins on ambiguous port names; more
-   specific regex first. See `docs/DECISIONS.md` row 40 for the
+   specific regex first. See `docs/_private/DECISIONS.md` row 40 for the
    rationale.
    ```ts
    registerMcpDevice(YOUR_DESCRIPTOR);  // add before the catch-all
@@ -137,7 +137,7 @@ The `connection_label` on each descriptor must match the string that
 to look up the connector factory. If your device's label doesn't
 substring-match the OS port name, you'll need a special-case branch in
 `ensureConnection` analogous to the `AXEFX2_LABEL` entry. See
-`docs/DECISIONS.md` row 41.
+`docs/_private/DECISIONS.md` row 41.
 
 ## Path 3: Decode a protocol
 

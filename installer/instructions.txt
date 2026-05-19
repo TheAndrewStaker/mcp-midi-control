@@ -3,8 +3,32 @@ MCP MIDI Control v0.1.0
 
 A local MCP server that lets Claude Desktop talk to your USB MIDI
 gear over plain English. First-class support for the Fractal AM4,
-Fractal Axe-Fx II XL+, and ASM Hydrasynth Explorer. Generic MIDI
-primitives work against any USB MIDI device the OS exposes.
+Fractal Axe-Fx II XL+, Fractal Axe-Fx III, and ASM Hydrasynth
+Explorer. Generic MIDI primitives work against any USB MIDI device
+the OS exposes.
+
+BEFORE FIRST USE: INSTALL THE USB DRIVER FOR YOUR DEVICE
+--------------------------------------------------------
+
+Windows will not enumerate your Fractal device as a MIDI port (and
+the MCP server will not see it) until the right driver is installed.
+Do this first.
+
+  Fractal AM4:        https://www.fractalaudio.com/am4-downloads/
+  Fractal Axe-Fx II:  https://www.fractalaudio.com/axe-fx-ii-downloads/
+  Fractal Axe-Fx III: class-compliant USB MIDI, no driver needed
+  ASM Hydrasynth:     class-compliant USB MIDI, no driver needed
+
+Class-compliant devices use the Windows built-in USB-MIDI driver and
+work as soon as you plug them in. Fractal AM4 and Axe-Fx II require
+the manufacturer's driver, downloaded from the links above. Install
+as administrator, follow the installer's prompts, then plug in the
+device with the unit powered on.
+
+Without the device's driver, you can still use the generic-MIDI
+tools (send_cc, send_sysex, etc.) against any other class-compliant
+MIDI gear, but the Fractal-specific tool calls will report the
+device as not detected.
 
 INSTALL (3 steps)
 -----------------
@@ -56,11 +80,14 @@ REQUIREMENTS
 ------------
 
 - Windows 10 or 11.
-- At least one supported device connected by USB:
-  * Fractal AM4 -driver: https://www.fractalaudio.com/am4-downloads/
-  * Fractal Axe-Fx II XL+ -uses the Fractal USB driver (same family)
-  * ASM Hydrasynth Explorer -class-compliant USB MIDI, no driver needed
-  (Unsupported devices still reachable through the generic-MIDI tools.)
+- At least one supported device connected by USB. Driver URLs are
+  listed under "BEFORE FIRST USE" at the top of this file. Quick
+  recap:
+    * Fractal AM4:        needs Fractal's USB driver
+    * Fractal Axe-Fx II:  needs Fractal's USB driver
+    * Fractal Axe-Fx III: class-compliant, no driver
+    * ASM Hydrasynth:     class-compliant, no driver
+  (Unsupported devices are still reachable via generic-MIDI tools.)
 - Claude Desktop installed: https://claude.ai/download
 
 UNINSTALL
@@ -115,4 +142,4 @@ LINKS
 
 - Source + issues: https://github.com/TheAndrewStaker/mcp-midi-control
 - Safety guide:    https://github.com/TheAndrewStaker/mcp-midi-control/blob/main/docs/SAFETY-FOR-MUSICIANS.md
-- Forum thread:    [filled in at release time]
+- Forum thread:    [link goes in the launch post]

@@ -4,8 +4,8 @@
  *
  * Invoked by `installer/verify-midi.cmd` after the user runs setup.cmd.
  * Asks node-midi directly which ports the OS is exposing, classifies
- * each by supported-device family (AM4 / Axe-Fx II / Hydrasynth), and
- * prints a human-readable report.
+ * each by supported-device family (AM4 / Axe-Fx II / Axe-Fx III /
+ * Hydrasynth), and prints a human-readable report.
  *
  * Bypasses Claude Desktop entirely — useful when the AM4 tools don't
  * appear in Claude and the user can't tell whether the problem is on
@@ -32,13 +32,21 @@ const FAMILIES: DeviceFamily[] = [
   },
   {
     label: 'Fractal Axe-Fx II',
-    needles: ['axe-fx', 'axefx'],
-    driverNote: 'Axe-Fx II driver ships with AxeEdit III',
+    needles: ['axe-fx ii', 'axefx ii', 'axe-fx2', 'axefx2'],
+    driverNote:
+      'Axe-Fx II driver: https://www.fractalaudio.com/axe-fx-ii-downloads/',
+  },
+  {
+    label: 'Fractal Axe-Fx III',
+    needles: ['axe-fx iii', 'axefx iii', 'axe-fx3', 'axefx3'],
+    driverNote:
+      'Axe-Fx III is class-compliant USB MIDI; no driver needed.',
   },
   {
     label: 'ASM Hydrasynth',
     needles: ['hydrasynth', 'asm hydra'],
-    driverNote: 'Hydrasynth uses the class-compliant Windows USB-MIDI driver',
+    driverNote:
+      'Hydrasynth is class-compliant USB MIDI; no driver needed.',
   },
 ];
 

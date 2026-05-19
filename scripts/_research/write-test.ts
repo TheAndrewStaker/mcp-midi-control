@@ -4,7 +4,7 @@
  * This is the first script that WRITES to the AM4 (every prior script was
  * read-only). Writes here only modify the AM4's working buffer, not any
  * stored preset location — so no Z04 backup is needed (the value reverts on preset
- * change or power cycle). See docs/DECISIONS.md "write safety".
+ * change or power cycle). See docs/_private/DECISIONS.md "write safety".
  *
  * What it does:
  *   1. Opens the AM4 over USB-MIDI.

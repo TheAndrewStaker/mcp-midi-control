@@ -8,9 +8,9 @@ setlocal
 rem MCP MIDI Control v0.1.0 -post-install MIDI device check.
 rem
 rem Asks the OS what MIDI devices it can see and reports whether the
-rem AM4, Axe-Fx II, or Hydrasynth is visible. Bypasses Claude Desktop
-rem entirely, so if the tools "don't appear" in Claude you can use
-rem this to confirm whether the device is reachable at all.
+rem AM4, Axe-Fx II, Axe-Fx III, or Hydrasynth is visible. Bypasses
+rem Claude Desktop entirely, so if the tools "don't appear" in Claude
+rem you can use this to confirm whether the device is reachable at all.
 rem
 rem Run after setup.cmd, before opening Claude Desktop.
 

@@ -41,13 +41,12 @@ device's file (NOT the index) with detailed steps the founder can
 follow without re-reading the backlog.
 
 `docs/_private/` is the founder's operational scratch (gitignored,
-local-only): STATE, HARDWARE-TASKS, SESSIONS log, BACKLOG, HW-NNN test
-plans, marketing drafts, internal data dumps. The committed `docs/`
-files (`devices/<device>/SYSEX-MAP.md`, `BLOCK-PARAMS.md`,
-`DECISIONS.md`, `ARCHITECTURE.md`, `*-research.md`, `capture-guides/`,
-etc.) are the
-OSS public good — protocol RE, architecture, decision log, research
-artefacts — and DO ship in the repo.
+local-only): STATE, HARDWARE-TASKS, SESSIONS log, BACKLOG, DECISIONS
+log, HW-NNN test plans, marketing drafts, internal data dumps. The
+committed `docs/` files (`devices/<device>/SYSEX-MAP.md`,
+`BLOCK-PARAMS.md`, `ARCHITECTURE.md`, `*-research.md`,
+`capture-guides/`, etc.) are the OSS public good (protocol RE,
+architecture, research artefacts) and DO ship in the repo.
 
 > Phase 0 (feasibility) completed 2026-04-14. Phase 1 (protocol RE) is in
 > progress — USB capture of AM4-Edit's outgoing traffic is the current
@@ -70,10 +69,10 @@ install, and distribution decision prioritizes the non-technical user.
 The MVP ships as a Windows ZIP that bundles Node + a prebuilt native MIDI
 binary and runs `setup.cmd` to register the server with Claude Desktop;
 users never install Node, a C++ toolchain, or edit JSON. See
-`docs/DECISIONS.md` for the full reasoning and rejected alternatives.
+`docs/_private/DECISIONS.md` for the full reasoning and rejected alternatives.
 
 ## Decision Log
-Non-obvious architectural and library choices live in `docs/DECISIONS.md`.
+Non-obvious architectural and library choices live in `docs/_private/DECISIONS.md`.
 Read it before proposing changes to: the MIDI library, module system,
 TypeScript runner, distribution model, or wiki-scrape workflow.
 
@@ -318,7 +317,7 @@ Display ↔ wire coercion happens once at the tool boundary via
 `resolveValue` / `resolveEnumValue` (`src/server/shared/paramHelpers.ts`,
 `src/fractal/am4/params.ts`). Everything below the tool layer takes
 wire and is type-checked against it. Rationale + rejected
-alternatives: `docs/DECISIONS.md` (2026-04-28 entry).
+alternatives: `docs/_private/DECISIONS.md` (2026-04-28 entry).
 
 ## Performance budget
 
@@ -442,7 +441,7 @@ Cheaper than discovering drift later.
 | `docs/_private/04-BACKLOG.md` | A new backlog item is identified, an existing item ships / re-scopes / is superseded, or a cross-reference between items is worth recording. |
 | `docs/devices/<device>/SYSEX-MAP.md` | A new protocol decode is confirmed against captured bytes. Include the concrete capture reference and byte-exact example. (Public — protocol RE is the OSS public good.) |
 | `docs/_private/SESSIONS.md` | A session produces a substantive finding worth a chronological entry (decodes, major tool changes, hardware-verified behavior). STATE.md is the summary; SESSIONS.md is the log. |
-| `docs/DECISIONS.md` | A non-obvious architectural or library choice is made. (Public — committed for OSS contributors.) |
+| `docs/_private/DECISIONS.md` | A non-obvious architectural or library choice is made. (Founder-private; gitignored. Useful to Claude Code agents working locally; not surfaced to OSS contributors.) |
 
 **Session-wrap check.** Before declaring work complete, walk the table
 above and update whichever rows apply to what changed. A one-line

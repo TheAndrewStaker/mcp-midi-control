@@ -76,7 +76,7 @@ gear from Claude in plain English.
     by `npm run coverage-audit` reading code state directly.
   - `docs/SAFETY-FOR-MUSICIANS.md`, `docs/GETTING-STARTED.md`: plain-
     English trust model + day-one walkthroughs for non-developer users.
-  - `docs/DECISIONS.md`: append-only architectural decision log.
+  - `docs/_private/DECISIONS.md`: append-only architectural decision log.
 - **License.** Apache-2.0 from day one. Patent grant included to protect
   contributors adding device support against upstream-vendor patent
   claims. Trademark statement in `NOTICE`.

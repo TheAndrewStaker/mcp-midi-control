@@ -209,7 +209,7 @@ qualitative tags (genre, era, mood adjectives) are deliberately omitted to
 avoid hallucination risk; any record without a Fractal source has its
 field populated via `flags: ['VERIFY: ...']` and no `inspiredBy`.
 
-### `docs/DECISIONS.md`
+### `docs/_private/DECISIONS.md`
 Architectural and scope decisions with rationale. Read before proposing changes
 to: MIDI library choice, module system, distribution model, MVP scope, or
 write-safety protocol.

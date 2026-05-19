@@ -145,7 +145,7 @@ turn to update them, or leave them for a post-merge consolidation pass:
 - `docs/_private/STATE.md` — session orientation; whichever session
   closes the bigger finding writes the update.
 - `docs/_private/SESSIONS.md` — chronological log; same rule.
-- `docs/DECISIONS.md` — non-obvious choices; the session that made the
+- `docs/_private/DECISIONS.md` — non-obvious choices; the session that made the
   choice owns the entry.
 - `MEMORY.md` / `~/.claude/projects/.../memory/` — auto-memory is
   per-machine, not per-worktree, so concurrent writes race.

@@ -6,7 +6,7 @@ release ZIP.
 ## Distribution shape: ZIP + `setup.cmd`
 
 The release is a ZIP that users download, extract, and run `setup.cmd`
-from. See `docs/DECISIONS.md` for the rationale.
+from. See `docs/_private/DECISIONS.md` for the rationale.
 
 ## Files
 
