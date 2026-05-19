@@ -19,18 +19,30 @@ from "no code" to "deep RE work":
    the envelope, and add a byte-exact golden. See
    [Capturing MIDI traffic](#capturing-midi-traffic) below.
 
-## License
+## License and contributor grant
 
 By submitting a contribution (pull request, patch, issue with a code
-suggestion, or any other form), you agree that your contribution is
-licensed under the project's license (**Apache License 2.0**) as
-described in the [`LICENSE`](./LICENSE) file. You also certify that
-you have the right to submit the contribution under that license
-(e.g. it is your original work, or you have permission from the
-copyright holder).
+suggestion, or any other form), you agree to the following:
 
-No separate contributor license agreement (CLA) or developer
-certificate of origin (DCO) sign-off is required at this stage.
+1. Your contribution is licensed under the project's primary license
+   (**Apache License 2.0**) as described in the [`LICENSE`](./LICENSE)
+   file. Users of the project receive all the freedoms Apache 2.0
+   guarantees.
+2. You also grant the project maintainer a perpetual, worldwide,
+   non-exclusive, royalty-free, irrevocable license to use, modify,
+   sublicense, and **relicense your contribution under any terms the
+   maintainer chooses**, in addition to (and without affecting) the
+   Apache 2.0 grant above. This keeps the option open for the project
+   to ship under a different license alongside Apache 2.0 in the
+   future (for example, a commercial license for proprietary
+   integrations) without having to coordinate with every prior
+   contributor.
+3. You certify that you have the right to submit the contribution
+   under these terms (e.g. it is your original work, or you have
+   permission from the copyright holder).
+
+No separate signature ceremony is required. Opening a pull request
+or submitting a patch counts as agreement.
 
 ## Path 1: Test and report (no code)
 
