@@ -703,9 +703,12 @@ export const writer: DeviceWriter = {
 // MVP simplifications (Section 6, Q1 + Q6 + Q7 of the descriptor plan):
 //   - Single-instance addressing — every `block_type` resolves to
 //     instance 1 of that group (no `amp_1` / `amp_2` discrimination).
-//   - Channel walk in `slots[].params` honors the FIRST channel only
-//     when a slot supplies multiple (X then Y). The executor processes
-//     each block once with a single optional channel switch.
+//
+// BK-058 (Session 99): channel-nested params (`{X: {gain: 6}, Y: {gain: 8}}`)
+// flow through to the executor as `paramsByChannel` so every channel's
+// writes land on the wire. AM4's same-shape executor already did this;
+// II previously honored only the first channel and silently dropped the
+// rest (smoking gun in Session 98 Enter Sandman test).
 //
 // Multi-scene authoring + landingScene restored v0.3 parity audit
 // (Session 68 / HW-106 — switch-write-switch-back walk maps each
@@ -747,13 +750,16 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
 
     let channel: AxeFxIIChannel | undefined;
     let params: Record<string, number> | undefined;
+    let paramsByChannel:
+      | Partial<Record<AxeFxIIChannel, Record<string, number>>>
+      | undefined;
     if (s.params) {
       // PresetSpec.params accepts two shapes (unified schema): flat
       // `{gain: 6}` (writes land on the currently-active channel) or
       // channel-nested `{X: {gain: 6}, Y: {gain: 8}}`. Axe-Fx II has
-      // X/Y on every block, so flat = current-channel-write; nested =
-      // pick first present channel (X preferred). If both X and Y are
-      // supplied, the executor doesn't currently walk both — honor X.
+      // X/Y on every block; flat = current-channel-write; nested = the
+      // executor walks every supplied channel, switching channel and
+      // writing that channel's params for each entry (BK-058).
       const entries = Object.entries(s.params as Record<string, unknown>);
       let nestedCount = 0;
       let flatCount = 0;
@@ -767,16 +773,23 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
         );
       }
       if (nestedCount > 0) {
-        const keys = entries.map(([k]) => k);
-        const preferred = keys.includes('X') ? 'X' : (keys.includes('Y') ? 'Y' : keys[0]);
-        channel = preferred === 'X' || preferred === 'Y' ? (preferred as AxeFxIIChannel) : undefined;
-        const paramMap = entries.find(([k]) => k === preferred)?.[1] as Record<string, number | string>;
-        params = {};
-        for (const [k, v] of Object.entries(paramMap)) {
-          // Values are still display units here; descriptor's encode
-          // closure runs them through display→wire BEFORE we hand off to
-          // the executor with {wire: true}.
-          params[k] = encodeParamForApply(s.block_type, k, v);
+        paramsByChannel = {};
+        for (const [chKey, paramMap] of entries) {
+          const upper = chKey.trim().toUpperCase();
+          if (upper !== 'X' && upper !== 'Y') {
+            throw new Error(
+              `slots[${col ?? row}] (block ${s.block_type}): params has unknown channel key "${chKey}" (valid: X, Y on Axe-Fx II).`,
+            );
+          }
+          const ch = upper as AxeFxIIChannel;
+          const encoded: Record<string, number> = {};
+          for (const [k, v] of Object.entries(paramMap as Record<string, number | string>)) {
+            // Values are still display units here; encodeParamForApply
+            // runs them through display→wire BEFORE we hand off to the
+            // executor with {wire: true}.
+            encoded[k] = encodeParamForApply(s.block_type, k, v);
+          }
+          paramsByChannel[ch] = encoded;
         }
       } else if (flatCount > 0) {
         params = {};
@@ -800,6 +813,7 @@ function translateSpec(spec: PresetSpec): ApplyPresetInput {
       bypass: s.bypassed,
       channel,
       params,
+      paramsByChannel,
       // v0.4: thread id / row / col through. Auto-id derives from the
       // block_type slug when the caller didn't supply one.
       id: s.id ?? `${s.block_type.toLowerCase()}${s.instance !== undefined && s.instance !== 1 ? `_${s.instance}` : ''}`,

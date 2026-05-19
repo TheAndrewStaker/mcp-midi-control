@@ -276,6 +276,129 @@ check(
   `got ${shuntCableEdges.length} cables`,
 );
 
+// ─────────────────────────────────────────────────────────────────
+// Case 6 (BK-058): channel-Y executor walks every channel.
+//
+// Session 99 hardware test smoking-gun: agent sent an apply_preset
+// payload with channel-nested params for X and Y on Amp 1; only X
+// landed on the wire, Y was silently dropped. AM4's same-shape
+// executor handles every channel; this regression case asserts II
+// now matches that behavior.
+//
+// Payload shape (encoded wire values; the descriptor's encode closure
+// is what runs in production — here we use {wire: true} to skip it):
+//   block: Amp 1 (id 106) at row 2 col 1
+//   paramsByChannel:
+//     X: {paramId 1 → 1000, paramId 2 → 2000}
+//     Y: {paramId 1 → 3000, paramId 2 → 4000}
+//
+// Expected ops (in this order):
+//   1× place_block (Amp 1)
+//   1× channel = X
+//   2× param writes for X
+//   1× channel = Y
+//   2× param writes for Y
+//
+// The block + cells + cables ops outside the per-channel walk are not
+// the subject of this case; we just assert the per-channel emission.
+// ─────────────────────────────────────────────────────────────────
+console.log('\nCase 6: BK-058 channel-Y executor walk');
+
+// Use real AMP param names so findParam(target, name) resolves. The
+// canonical names live in fractal-midi/axe-fx-ii's amp param table;
+// any two valid names work for this shape assertion.
+const channelY: ApplyPresetAtInput = {
+  preset_number: 600,
+  blocks: [
+    {
+      block: 'Amp 1',
+      paramsByChannel: {
+        X: { input_drive: 16000, master_volume: 20000 },
+        Y: { input_drive: 32000, master_volume: 48000 },
+      },
+    },
+  ],
+};
+
+const channelYOps = buildApplyPresetAtOps(channelY, { wire: true });
+
+const channelOps = channelYOps.filter((o) => o.kind === 'channel');
+const paramOps = channelYOps.filter((o) => o.kind === 'param');
+
+check(
+  'paramsByChannel emits one channel-switch per supplied channel',
+  channelOps.length === 2,
+  `expected 2 channel ops (X + Y), got ${channelOps.length}`,
+);
+
+check(
+  'channel ops are ordered X then Y (insertion order)',
+  channelOps.length === 2 &&
+    /channel=X/.test(channelOps[0].summary) &&
+    /channel=Y/.test(channelOps[1].summary),
+  channelOps.map((o) => o.summary).join(' | '),
+);
+
+check(
+  'every channel\'s params are emitted (2 + 2 = 4 param ops)',
+  paramOps.length === 4,
+  `expected 4 param ops, got ${paramOps.length}: ${paramOps.map((o) => o.summary).join(' | ')}`,
+);
+
+check(
+  'X param ops appear before Y channel switch',
+  (() => {
+    const channelYIdx = channelYOps.findIndex((o) => o.kind === 'channel' && /channel=Y/.test(o.summary));
+    const xParamIdxs = channelYOps
+      .map((o, i) => (o.kind === 'param' && /\[X\]/.test(o.summary) ? i : -1))
+      .filter((i) => i !== -1);
+    return xParamIdxs.length === 2 && xParamIdxs.every((i) => i < channelYIdx);
+  })(),
+  'expected both X param ops before the Y channel switch',
+);
+
+check(
+  'Y param ops appear after Y channel switch',
+  (() => {
+    const channelYIdx = channelYOps.findIndex((o) => o.kind === 'channel' && /channel=Y/.test(o.summary));
+    const yParamIdxs = channelYOps
+      .map((o, i) => (o.kind === 'param' && /\[Y\]/.test(o.summary) ? i : -1))
+      .filter((i) => i !== -1);
+    return yParamIdxs.length === 2 && yParamIdxs.every((i) => i > channelYIdx);
+  })(),
+  'expected both Y param ops after the Y channel switch',
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Case 7 (BK-058): mixing flat + paramsByChannel on same block is rejected.
+// ─────────────────────────────────────────────────────────────────
+console.log('\nCase 7: paramsByChannel + flat params rejected on same block');
+
+const mixedShape: ApplyPresetAtInput = {
+  preset_number: 600,
+  blocks: [
+    {
+      block: 'Amp 1',
+      params: { input_drive: 1000 },
+      paramsByChannel: { X: { master_volume: 2000 } },
+    },
+  ],
+};
+
+let mixedRejected = false;
+let mixedError = '';
+try {
+  buildApplyPresetAtOps(mixedShape, { wire: true });
+} catch (err) {
+  mixedRejected = true;
+  mixedError = (err as Error).message;
+}
+check(
+  'mixed flat + paramsByChannel throws at build time',
+  mixedRejected && /mutually exclusive|paramsByChannel/i.test(mixedError),
+  mixedRejected ? mixedError.slice(0, 100) : 'no error thrown',
+);
+
 console.log('');
 if (failed > 0) {
   console.error(`✗ ${failed} check(s) FAILED.`);

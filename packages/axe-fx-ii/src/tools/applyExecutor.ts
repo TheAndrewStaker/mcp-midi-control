@@ -67,6 +67,16 @@ export interface ApplyPresetAtBlockEntry {
   channel?: 'X' | 'Y';
   params?: Record<string, number>;
   /**
+   * BK-058: per-channel param writes for blocks with X/Y splits. When
+   * present, the executor emits a channel-switch op + the channel's
+   * params for each channel listed, in iteration order. Single-channel
+   * callers continue to use the flat `params` + optional `channel`
+   * shape above; the two shapes are mutually exclusive per block (the
+   * translator picks `paramsByChannel` whenever the unified
+   * PresetSpec slot uses channel-nested params).
+   */
+  paramsByChannel?: Partial<Record<'X' | 'Y', Record<string, number>>>;
+  /**
    * v0.4: stable identifier for this block within the preset. Routing
    * edges reference blocks by id. When omitted, auto-derived as
    * `<block_lower>_<instance?? 1>` (e.g. amp_1, drive_2).
@@ -187,6 +197,7 @@ export function buildApplyPresetAtOps(
     bypass?: boolean;
     channel?: AxeFxIIChannel;
     params?: Record<string, number>;
+    paramsByChannel?: Partial<Record<AxeFxIIChannel, Record<string, number>>>;
     id: string;
     row: number;
     col: number;
@@ -278,11 +289,41 @@ export function buildApplyPresetAtOps(
     }
     idsSeen.add(id);
 
+    // BK-058: multi-channel param writes (X+Y). When the unified-surface
+    // translator supplies `paramsByChannel`, the executor walks each
+    // entry to emit a channel-switch + that channel's params in order.
+    // Mutually exclusive with the flat `channel`+`params` shape; the
+    // translator picks one based on PresetSpec.params being flat vs
+    // channel-nested.
+    let paramsByChannel:
+      | Partial<Record<AxeFxIIChannel, Record<string, number>>>
+      | undefined;
+    if (b.paramsByChannel !== undefined) {
+      if (b.params !== undefined || b.channel !== undefined) {
+        throw new Error(
+          `blocks[${i}] (${target.name}): paramsByChannel is mutually exclusive with the flat params/channel shape. Pick one per block.`,
+        );
+      }
+      paramsByChannel = {};
+      for (const [chKey, paramMap] of Object.entries(b.paramsByChannel)) {
+        const ch = chKey as AxeFxIIChannel;
+        if (ch !== 'X' && ch !== 'Y') {
+          throw new Error(
+            `blocks[${i}] (${target.name}): paramsByChannel has unknown channel "${chKey}" (valid: X, Y).`,
+          );
+        }
+        if (paramMap !== undefined) {
+          paramsByChannel[ch] = paramMap;
+        }
+      }
+    }
+
     resolved.push({
       target,
       bypass: b.bypass,
       channel: b.channel as AxeFxIIChannel | undefined,
       params: b.params as Record<string, number> | undefined,
+      paramsByChannel,
       id,
       row,
       col,
@@ -295,62 +336,91 @@ export function buildApplyPresetAtOps(
   for (const r of resolved) placedCells.add(`${r.row},${r.col}`);
 
   // 2. Pre-validate every param + value.
+  //
+  // BK-058: `channel` is set when the param write belongs to a specific
+  // channel from `paramsByChannel`. Single-channel writes (legacy
+  // `params` field) leave it undefined and emit alongside the block's
+  // optional top-level `channel` switch op (existing behavior).
   interface PendingParamWrite {
     blockIdx: number;
     paramName: string;
     paramId: number;
     wire: number;
     modeNote: string;
+    channel?: AxeFxIIChannel;
   }
   const pendingParams: PendingParamWrite[] = [];
-  for (let i = 0; i < resolved.length; i++) {
-    const r = resolved[i];
-    if (!r.params) continue;
-    for (const [paramName, value] of Object.entries(r.params)) {
-      const param = findParam(r.target, paramName);
-      if (!param) {
+  function validateParam(
+    blockIdx: number,
+    r: ResolvedEntry,
+    paramName: string,
+    value: number,
+    channel: AxeFxIIChannel | undefined,
+  ): void {
+    const param = findParam(r.target, paramName);
+    if (!param) {
+      throw new Error(
+        `unknown param "${paramName}" for ${r.target.name} ` +
+        `(group ${r.target.groupCode}). ` +
+        (r.target.groupCode === 'AMP'
+          ? `Common amp param names: input_drive (the gain knob, 0..10), master_volume (the master knob, 0..10), bass, middle, treble, presence. "gain"/"master"/"mid" also accepted as aliases.`
+          : `Call axefx2_list_params for the full set.`),
+      );
+    }
+    let wire: number;
+    let modeNote: string;
+    if (wireMode) {
+      if (!Number.isInteger(value) || value < 0 || value > 65534) {
         throw new Error(
-          `unknown param "${paramName}" for ${r.target.name} ` +
-          `(group ${r.target.groupCode}). ` +
-          (r.target.groupCode === 'AMP'
-            ? `Common amp param names: input_drive (the gain knob, 0..10), master_volume (the master knob, 0..10), bass, middle, treble, presence. "gain"/"master"/"mid" also accepted as aliases.`
-            : `Call axefx2_list_params for the full set.`),
+          `wire value out of range for ${r.target.name}.${paramName}: ${value} ` +
+          `(wire mode expects 0..65534 integer).`,
         );
       }
-      let wire: number;
-      let modeNote: string;
-      if (wireMode) {
-        // Descriptor-supplied path: schema.encode already converted display → wire.
+      wire = value;
+      modeNote = `wire ${wire}`;
+    } else {
+      const hasCalibration = param.displayMin !== undefined && param.displayMax !== undefined;
+      const useDisplay = hasCalibration && value <= (param.displayMax ?? 0);
+      if (useDisplay) {
+        wire = displayToWire(value, {
+          displayMin: param.displayMin as number,
+          displayMax: param.displayMax as number,
+          displayScale: param.displayScale,
+        });
+        modeNote = `${value} → wire ${wire}`;
+      } else {
         if (!Number.isInteger(value) || value < 0 || value > 65534) {
           throw new Error(
             `wire value out of range for ${r.target.name}.${paramName}: ${value} ` +
-            `(wire mode expects 0..65534 integer).`,
+            `(valid 0..65534, or display value if param is calibrated).`,
           );
         }
         wire = value;
         modeNote = `wire ${wire}`;
-      } else {
-        const hasCalibration = param.displayMin !== undefined && param.displayMax !== undefined;
-        const useDisplay = hasCalibration && value <= (param.displayMax ?? 0);
-        if (useDisplay) {
-          wire = displayToWire(value, {
-            displayMin: param.displayMin as number,
-            displayMax: param.displayMax as number,
-            displayScale: param.displayScale,
-          });
-          modeNote = `${value} → wire ${wire}`;
-        } else {
-          if (!Number.isInteger(value) || value < 0 || value > 65534) {
-            throw new Error(
-              `wire value out of range for ${r.target.name}.${paramName}: ${value} ` +
-              `(valid 0..65534, or display value if param is calibrated).`,
-            );
-          }
-          wire = value;
-          modeNote = `wire ${wire}`;
+      }
+    }
+    pendingParams.push({ blockIdx, paramName, paramId: param.paramId, wire, modeNote, channel });
+  }
+  for (let i = 0; i < resolved.length; i++) {
+    const r = resolved[i];
+    if (r.paramsByChannel) {
+      for (const [chKey, paramMap] of Object.entries(r.paramsByChannel)) {
+        const ch = chKey as AxeFxIIChannel;
+        if (!paramMap) continue;
+        if (!r.target.canBypass) {
+          throw new Error(
+            `${r.target.name}: paramsByChannel specifies channel ${ch} but this block does not expose X/Y channels on Axe-Fx II.`,
+          );
+        }
+        for (const [paramName, value] of Object.entries(paramMap)) {
+          validateParam(i, r, paramName, value, ch);
         }
       }
-      pendingParams.push({ blockIdx: i, paramName, paramId: param.paramId, wire, modeNote });
+      continue;
+    }
+    if (!r.params) continue;
+    for (const [paramName, value] of Object.entries(r.params)) {
+      validateParam(i, r, paramName, value, undefined);
     }
   }
 
@@ -541,19 +611,45 @@ export function buildApplyPresetAtOps(
         summary: `${r.target.name}: bypass=${r.bypass ? 'BYPASSED' : 'ENGAGED'}`,
       });
     }
-    if (r.channel !== undefined) {
-      ops.push({
-        kind: 'channel',
-        bytes: buildSetBlockChannel(r.target.id, r.channel),
-        summary: `${r.target.name}: channel=${r.channel}`,
-      });
-    }
-    for (const pp of pendingParams.filter((p) => p.blockIdx === i)) {
-      ops.push({
-        kind: 'param',
-        bytes: buildSetBlockParameterValue({ effectId: r.target.id, paramId: pp.paramId }, pp.wire),
-        summary: `${r.target.name}.${pp.paramName} = ${pp.modeNote}`,
-      });
+    if (r.paramsByChannel !== undefined) {
+      // BK-058: walk every channel in iteration order. Each channel emits
+      // its own channel-switch op followed by every param targeted at
+      // that channel. AM4's executor handles all 4 channels this way; II
+      // previously dropped everything but the first channel.
+      const channelsInOrder: AxeFxIIChannel[] = [];
+      for (const chKey of Object.keys(r.paramsByChannel)) {
+        const ch = chKey as AxeFxIIChannel;
+        if (ch === 'X' || ch === 'Y') channelsInOrder.push(ch);
+      }
+      for (const ch of channelsInOrder) {
+        ops.push({
+          kind: 'channel',
+          bytes: buildSetBlockChannel(r.target.id, ch),
+          summary: `${r.target.name}: channel=${ch}`,
+        });
+        for (const pp of pendingParams.filter((p) => p.blockIdx === i && p.channel === ch)) {
+          ops.push({
+            kind: 'param',
+            bytes: buildSetBlockParameterValue({ effectId: r.target.id, paramId: pp.paramId }, pp.wire),
+            summary: `${r.target.name}.${pp.paramName} [${ch}] = ${pp.modeNote}`,
+          });
+        }
+      }
+    } else {
+      if (r.channel !== undefined) {
+        ops.push({
+          kind: 'channel',
+          bytes: buildSetBlockChannel(r.target.id, r.channel),
+          summary: `${r.target.name}: channel=${r.channel}`,
+        });
+      }
+      for (const pp of pendingParams.filter((p) => p.blockIdx === i)) {
+        ops.push({
+          kind: 'param',
+          bytes: buildSetBlockParameterValue({ effectId: r.target.id, paramId: pp.paramId }, pp.wire),
+          summary: `${r.target.name}.${pp.paramName} = ${pp.modeNote}`,
+        });
+      }
     }
   }
 
