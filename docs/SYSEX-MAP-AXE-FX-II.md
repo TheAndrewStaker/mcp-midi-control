@@ -301,8 +301,7 @@ dstCol, connect})` in `src/fractal/axe-fx-ii/setParam.ts`. The
 applyExecutor uses it to wire EVERY adjacent pair in row 2, both
 between content blocks (cols 1→2, 2→3, ..., N-1→N) AND through the
 shunt-chain extension (cols N→N+1 through 11→12). Closes the
-silent-preset bug (HW-105) that was the v0.1.0 Axe-Fx II MVP ship
-gate.
+silent-preset bug (HW-105) that was the Axe-Fx II MVP ship gate.
 
 **Content blocks do NOT auto-route on fn 0x05 placement.** Session 70
 slot-601 hardware test (2026-05-13) proved this empirically: Comp /

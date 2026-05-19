@@ -11,8 +11,8 @@ guitar amp modeler over USB/MIDI via natural language conversation.
 ## Current Phase
 See **`docs/_private/STATE.md`** first. It names the current phase, the
 single next action, and recent findings — start every session there.
-`STATE.md` is kept current; the numbered plan docs (`01-PROJECT-VISION.md`,
-`03-ARCHITECTURE.md`) are longer-lived reference.
+`STATE.md` is kept current; the longer-lived reference docs are
+`docs/PROJECT-VISION.md` and `docs/ARCHITECTURE.md`.
 
 **Then run `npm run coverage-audit`.** It auto-snapshots Ghidra-catalog
 coverage vs `params.ts` vs `verify-msg.ts` goldens, plus per-device
@@ -44,7 +44,7 @@ follow without re-reading the backlog.
 local-only): STATE, HARDWARE-TASKS, SESSIONS log, BACKLOG, HW-NNN test
 plans, marketing drafts, internal data dumps. The committed `docs/`
 files (`SYSEX-MAP.md`, `BLOCK-PARAMS.md`, `DECISIONS.md`,
-`03-ARCHITECTURE.md`, `*-research.md`, `capture-guides/`, etc.) are the
+`ARCHITECTURE.md`, `*-research.md`, `capture-guides/`, etc.) are the
 OSS public good — protocol RE, architecture, decision log, research
 artefacts — and DO ship in the repo.
 

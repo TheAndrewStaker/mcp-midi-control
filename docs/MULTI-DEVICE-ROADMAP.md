@@ -403,7 +403,7 @@ the broader MIDI / tools community who don't care about MCP specifically.
   Explorer)
 - [`docs/DECISIONS.md`](DECISIONS.md) — vendor-neutral name decision,
   ESM choice, distribution model, workspace-split rationale
-- [`docs/03-ARCHITECTURE.md`](03-ARCHITECTURE.md) — current workspace
+- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md): current workspace
   architecture (kept in sync with code)
 - [`docs/SAFE-EDIT-WORKFLOW.md`](SAFE-EDIT-WORKFLOW.md) — cross-device
   safe-edit contract that every device package implements

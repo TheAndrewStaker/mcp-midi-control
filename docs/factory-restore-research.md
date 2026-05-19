@@ -219,7 +219,7 @@ location.
 ### Three candidate approaches
 
 - **(a) Demask + content hash.** Strongest signal; needs BK-036 done.
-  Out of scope for v0.1.0.
+  Out of current scope.
 - **(b) Cleartext-field comparison.** Compare only fields known to be
   readable plaintext via separate SysEx reads: preset name, block
   layout (`pidLow=0x00CE pidHigh=0x000F..0x0012`), per-block channel +
@@ -233,7 +233,7 @@ location.
   fingerprints client-side too. No evidence of an AM4-exposed dirty
   bit; (c) not feasible without further RE.
 
-### Recommended for v0.1.0: approach (b)
+### Recommended: approach (b)
 
 Cheap, doesn't depend on cracking the mask, precise enough for the
 warning use case. "False positives" (rename a factory preset →
@@ -248,7 +248,7 @@ count as customised.
   agent narrate severity ("name only" vs "layout differs").
 - **Bank source:** reuse the cached `parsePresetBank` result from
   §6's startup load. No new file I/O.
-- **Comparison fields (v0.1.0):** preset name (string equality); slot
+- **Comparison fields:** preset name (string equality); slot
   layout (sequence of 4 block-type ints from `pidHigh=0x000F..0x0012`
   reads); per-slot channel + bypass state. Each field is a separate
   device read; total ≈ 6-8 wire round-trips (~300-400 ms).

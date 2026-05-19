@@ -20,8 +20,8 @@ is now exposed as an MCP tool: `am4_request_active_buffer_dump()`.
 - **MCP tool:** `am4_request_active_buffer_dump()` registered in
   `src/fractal/am4/tools/navigation.ts`. Non-destructive (no working-buffer mutation,
   active location preserved, no audible side effect). Surfaces the
-  raw masked dump bytes for the BK-036 probe series; v0.1.0 does not
-  decode chunk content.
+  raw masked dump bytes for the BK-036 probe series. Chunk content
+  is not decoded.
 - **Goldens:** byte-exact build golden in `scripts/verify-msg.ts`
   (`buildRequestActiveBufferDump() — matches session-51 export-preset
   capture`).

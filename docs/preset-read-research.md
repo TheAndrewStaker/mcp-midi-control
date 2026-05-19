@@ -5,7 +5,7 @@ sample of all 104 names round-tripped from a captured AM4-Edit launch
 session.
 
 **Author:** research sub-agent, 2026-05-07.
-**Tracked as:** HW-070 (`docs/HARDWARE-TASKS.md`), v0.1.0 launch queue.
+**Tracked as:** HW-070 (`docs/HARDWARE-TASKS.md`).
 **Tools unblocked:** `am4_get_preset_name(location)`, `am4_scan_locations({ from, to })`.
 
 The command is a new READ action (`0x0012`) on the existing

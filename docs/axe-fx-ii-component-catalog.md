@@ -405,8 +405,7 @@ For each block type, the catalog reports:
 ## Next-step inputs for protocol implementation
 
 This catalog is the discovery artefact, not the wire-protocol map.
-To stand up Axe-Fx II as a verified MCP device per the v0.1.0 scope,
-the next inputs are:
+To stand up Axe-Fx II as a verified MCP device, the next inputs are:
 
 1. **Wire-format confirmation.** Axe-Fx II is expected to share the
    Fractal SysEx envelope (`F0 00 01 74 <model> ...`) and XOR
@@ -428,5 +427,5 @@ the next inputs are:
    `MainPage`). Confirmed in the device.ts stub from the
    Axe-Fx-II-Scenes-Mini-Manual.
 
-See `docs/MULTI-DEVICE-ROADMAP.md` for the v0.1.0 scope plan and
+See `docs/MULTI-DEVICE-ROADMAP.md` for the scope plan and
 `src/fractal/axe-fx-ii/device.ts` for the current stub.

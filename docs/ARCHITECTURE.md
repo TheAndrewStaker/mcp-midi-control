@@ -1,4 +1,4 @@
-# Architecture — MCP MIDI Control
+# Architecture: MCP MIDI Control
 
 ## System Overview
 
@@ -10,24 +10,24 @@
                        │ MCP protocol (stdio)
 ┌──────────────────────▼──────────────────────────────┐
 │  MCP Server  (Node.js / TypeScript)                 │
-│  — Tool definitions                                 │
-│  — Tone research context                            │
-│  — Preset safety logic                              │
-│  — Slot management                                  │
+│  - Tool definitions                                 │
+│  - Tone research context                            │
+│  - Preset safety logic                              │
+│  - Slot management                                  │
 └──────────────────────┬──────────────────────────────┘
                        │ TypeScript function calls
 ┌──────────────────────▼──────────────────────────────┐
 │  AM4 Protocol Layer  (TypeScript)                   │
-│  — SysEx encoder/decoder                           │
-│  — Checksum calculation                            │
-│  — Block parameter maps                            │
-│  — Preset/scene binary format                      │
+│  - SysEx encoder/decoder                           │
+│  - Checksum calculation                            │
+│  - Block parameter maps                            │
+│  - Preset/scene binary format                      │
 └──────────────────────┬──────────────────────────────┘
                        │ node-midi
 ┌──────────────────────▼──────────────────────────────┐
 │  USB/MIDI Transport                                 │
-│  — Fractal AM4 USB driver (Windows)                │
-│  — node-midi input/output ports                    │
+│  - Fractal AM4 USB driver (Windows)                │
+│  - node-midi input/output ports                    │
 └──────────────────────┬──────────────────────────────┘
                        │ USB cable
 ┌──────────────────────▼──────────────────────────────┐
@@ -115,7 +115,7 @@ packages/axe-fx-ii/src/
   tools.ts            ← legacy device-namespaced tools (axefx2_*)
 
 packages/axe-fx-iii/src/
-  descriptor.ts       ← Axe-Fx III descriptor (community beta — betaRefusals
+  descriptor.ts       ← Axe-Fx III descriptor (community beta, betaRefusals
                           on write ops pending capture)
   device.ts           ← exports AXEFX3_DESCRIPTOR + midi side-effect
 
@@ -135,7 +135,7 @@ new device" for the step-by-step.
 - `apply_preset(target_location)` defaults to `save_authorized: false`
   (audition-at-target). Requires explicit `save_authorized: true` plus
   user save-intent language to persist.
-- `on_active_preset_edited` guard on every navigation tool — refuses
+- `on_active_preset_edited` guard on every navigation tool refuses
   before losing unsaved edits, offers save/discard/cancel.
 - Pre-overwrite scan: `apply_setlist` pre-flight-scans the target range
   before any write.
@@ -147,7 +147,7 @@ Pure TypeScript. No Claude, no MCP. Testable in isolation against
 captured wire bytes via `scripts/verify-msg.ts` and friends.
 
 Per-vendor packages (`packages/axe-fx-ii/`, `packages/hydrasynth/`)
-follow the same layout — each device's wire layer is self-contained.
+follow the same layout. Each device's wire layer is self-contained.
 
 ### 5. Intermediate Representation (post-MVP)
 Device-agnostic preset format. Claude builds this; encoder converts it to SysEx.
@@ -164,7 +164,7 @@ interface AM4Preset {
     slot3: Block | null;
     slot4: Block | null;
   };
-  scenes: [Scene, Scene, Scene, Scene];  // exactly 4 scenes (index 0–3 in SysEx, displayed 1–4 on hardware)
+  scenes: [Scene, Scene, Scene, Scene];  // exactly 4 scenes (index 0..3 in SysEx, displayed 1..4 on hardware)
 }
 
 interface Scene {
@@ -204,9 +204,9 @@ Slots:  01 through 04 per bank (4 slots each)
 Total:  104 preset slots
 
 Examples:
-  A01 — Bank A, slot 1 (first factory preset)
-  Z04 — Bank Z, slot 4 (last slot, #104)
-  M02 — Bank M, slot 2
+  A01: Bank A, slot 1 (first factory preset)
+  Z04: Bank Z, slot 4 (last slot, #104)
+  M02: Bank M, slot 2
 
 Flat index mapping (for internal use):
   index = (bankIndex * 4) + (slotNumber - 1)
@@ -225,8 +225,8 @@ Flat index mapping (for internal use):
 │  2. Check against factory preset checksum table     │
 │     → Factory: show "slot contains factory preset"  │
 │     → Unknown/custom: show "slot contains           │
-│       user preset — backup recommended"             │
-│     → Empty: show "slot is empty — safe to write"   │
+│       user preset, backup recommended"              │
+│     → Empty: show "slot is empty, safe to write"    │
 │                                                     │
 │  3. Present compact confirmation summary:           │
 │     Writing: AMBER 311                              │
@@ -245,60 +245,60 @@ Flat index mapping (for internal use):
 ```
 mcp-midi-control/
   packages/
-    core/           — Cross-device foundation (MidiConnection, unified
+    core/           Cross-device foundation (MidiConnection, unified
                        dispatcher, DeviceDescriptor types, server-shared
                        helpers, fractal-shared lineage data)
-    am4/            — Fractal AM4 wire layer + DeviceDescriptor
-    axe-fx-ii/      — Fractal Axe-Fx II XL+ wire layer + DeviceDescriptor
-    axe-fx-iii/     — Fractal Axe-Fx III community-beta descriptor
-    hydrasynth/     — ASM Hydrasynth descriptor (Explorer / KB / Deluxe / Desktop)
-    server-all/     — MCP server entry point (imports all device packages)
+    am4/            Fractal AM4 wire layer + DeviceDescriptor
+    axe-fx-ii/      Fractal Axe-Fx II XL+ wire layer + DeviceDescriptor
+    axe-fx-iii/     Fractal Axe-Fx III community-beta descriptor
+    hydrasynth/     ASM Hydrasynth descriptor (Explorer / KB / Deluxe / Desktop)
+    server-all/     MCP server entry point (imports all device packages)
   scripts/
-    verify-*.ts     — Byte-exact golden verifiers (run without hardware)
-    mcp-*.ts        — Hardware integration test harnesses
-    capture-*.ts    — Passive MIDI capture utilities
-    launch-verification.ts — Full end-to-end smoke test (requires hardware)
-  samples/          — Local-only debug scratch (entire dir gitignored)
-    factory/        — Factory .syx preset files
-    captured/       — USB / MIDI-OX captured traffic sessions
+    verify-*.ts     Byte-exact golden verifiers (run without hardware)
+    mcp-*.ts        Hardware integration test harnesses
+    capture-*.ts    Passive MIDI capture utilities
+    launch-verification.ts: Full end-to-end smoke test (requires hardware)
+  samples/          Local-only debug scratch (entire dir gitignored)
+    factory/        Factory .syx preset files
+    captured/       USB / MIDI-OX captured traffic sessions
   docs/
-    SYSEX-MAP.md    — Reverse-engineered SysEx reference (public)
-    BLOCK-PARAMS.md — AM4 block parameter tables
-    SAFE-EDIT-WORKFLOW.md — Cross-device safe-edit contract
-    community/      — Contributor guides (device capture workflows)
-    _private/       — Operational scratch (gitignored): STATE.md,
+    SYSEX-MAP.md    Reverse-engineered SysEx reference (public)
+    BLOCK-PARAMS.md AM4 block parameter tables
+    SAFE-EDIT-WORKFLOW.md Cross-device safe-edit contract
+    community/      Contributor guides (device capture workflows)
+    _private/       Operational scratch (gitignored): STATE.md,
                        SESSIONS.md, HARDWARE-TASKS-*.md, BACKLOG.md
-  CLAUDE.md         — Context file for Claude Code
-  CONTRIBUTING.md   — Contributor guide
-  package.json      — npm workspace root
-  tsconfig.json     — Root path mappings for tsx script resolution
+  CLAUDE.md         Context file for Claude Code
+  CONTRIBUTING.md   Contributor guide
+  package.json      npm workspace root
+  tsconfig.json     Root path mappings for tsx script resolution
 ```
 
 ---
 
 ## Development Phases
 
-### Phase 0 — Feasibility Scripts
-`scripts/probe.ts` — proves USB MIDI communication works
-`scripts/sniff.ts` — captures AM4-Edit traffic for analysis
+### Phase 0: Feasibility Scripts
+`scripts/probe.ts` proves USB MIDI communication works.
+`scripts/sniff.ts` captures AM4-Edit traffic for analysis.
 No MCP yet. Pure Node.js CLI.
 
-### Phase 1 — Protocol Layer
+### Phase 1: Protocol Layer
 Build encoder/decoder from sniffed data.
 `scripts/diff-syx.ts` and `scripts/annotate.ts` support this.
 Full unit test coverage of round-trips before moving on.
 
-### Phase 2 — MCP Server MVP
+### Phase 2: MCP Server MVP
 Wire protocol layer to MCP tools.
 Test with Claude Desktop using `claude_desktop_config.json`.
 Goal: "set amp to Plexi, gain 6" works end to end.
 
-### Phase 3 — Intelligence Layer
+### Phase 3: Intelligence Layer
 Add block reference knowledge to Claude project.
 Famous tone research capability.
 Iterative refinement loop.
 
-### Phase 4 — Library Management
+### Phase 4: Library Management
 Backup/restore system.
 Setlist concept.
 Slot safety enforcement.
