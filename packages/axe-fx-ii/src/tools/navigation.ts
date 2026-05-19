@@ -40,6 +40,7 @@ import {
   findBlock,
   toHex,
 } from './shared.js';
+import { asError, asText } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 
 export function registerAxeFxIINavigationTools(server: McpServer): void {
 
@@ -132,20 +133,30 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
       ),
     },
   }, async ({ block, channel }) => {
-    const target = findBlock(block);
-    const bytes = buildSetBlockChannel(target.id, channel as AxeFxIIChannel);
-    const c = ensureConn();
-    c.send(bytes);
-    return {
-      content: [{
-        type: 'text',
-        text:
-          `Sent SET_BLOCK_CHANNEL → ${target.name} (${target.groupCode}, ` +
-          `effectId ${target.id}) channel=${channel}.\n` +
-          `Wrote ${bytes.length} bytes: ${toHex(bytes)}\n` +
-          `\n${NO_ACK_NOTE}`,
-      }],
-    };
+    try {
+      const target = findBlock(block);
+      const bytes = buildSetBlockChannel(target.id, channel as AxeFxIIChannel);
+      const c = ensureConn();
+      c.send(bytes);
+      return {
+        content: [{
+          type: 'text',
+          text:
+            `Sent SET_BLOCK_CHANNEL → ${target.name} (${target.groupCode}, ` +
+            `effectId ${target.id}) channel=${channel}.\n` +
+            `Wrote ${bytes.length} bytes: ${toHex(bytes)}\n` +
+            `\n${NO_ACK_NOTE}`,
+        }],
+        structuredContent: {
+          block: target.name,
+          group_code: target.groupCode,
+          effect_id: target.id,
+          channel,
+        },
+      };
+    } catch (err) {
+      return asError(err);
+    }
   });
 
 
@@ -159,7 +170,12 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
       ),
     },
   }, async ({ block }) => {
-    const target = findBlock(block);
+    let target;
+    try {
+      target = findBlock(block);
+    } catch (err) {
+      return asError(err);
+    }
     const reqBytes = buildGetBlockChannel(target.id);
     const c = ensureConn();
     const responsePromise = c.receiveSysExMatching(
@@ -172,10 +188,10 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
       response = await responsePromise;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(
+      return asError(new Error(
         `axefx2_get_block_channel failed: ${msg}\n` +
         `Sent ${reqBytes.length} bytes: ${toHex(reqBytes)}`,
-      );
+      ));
     }
     const chan = parseGetBlockChannelResponse(response);
     return {
@@ -186,6 +202,12 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
           `Sent (${reqBytes.length}B): ${toHex(reqBytes)}\n` +
           `Recv (${response.length}B): ${toHex(response)}\n`,
       }],
+      structuredContent: {
+        block: target.name,
+        group_code: target.groupCode,
+        effect_id: target.id,
+        channel: chan,
+      },
     };
   });
 }

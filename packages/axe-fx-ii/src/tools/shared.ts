@@ -38,6 +38,7 @@ import {
   type DirtyGuardResult as SharedDirtyGuardResult,
   type OnEditedMode as SharedOnEditedMode,
 } from '@mcp-midi-control/core/server-shared/safeEdit.js';
+import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 export const AXEFX_DIRTY_LABEL = 'axe-fx-ii';
 
@@ -124,10 +125,16 @@ export function findParam(target: AxeFxIIBlock, name: string): AxeFxIIParam | un
 export function findBlock(input: string | number): AxeFxIIBlock {
   const resolved = resolveBlock(input);
   if (!resolved) {
-    const sample = AXE_FX_II_BLOCKS.slice(0, 6).map((b) => `"${b.name}"`).join(', ');
-    throw new Error(
-      `Unknown block "${input}". Pass either an effectId (e.g. 106) or a display name like "Amp 1" / "Reverb 1" / "Delay 1". ` +
-      `Sample valid names: ${sample}, ... call axefx2_list_block_types for the full list.`,
+    const sampleNames = AXE_FX_II_BLOCKS.slice(0, 8).map((b) => b.name);
+    throw new DispatchError(
+      'unknown_block',
+      'Fractal Axe-Fx II',
+      `Unknown block "${input}". Pass either an effectId (e.g. 106) or a display name like "Amp 1" / "Reverb 1" / "Delay 1".`,
+      {
+        valid_options: sampleNames,
+        valid_options_tool: 'axefx2_list_block_types',
+        retry_action: 'Re-invoke with one verbatim name from the valid_options list or call axefx2_list_block_types for the complete catalog.',
+      },
     );
   }
   return resolved;

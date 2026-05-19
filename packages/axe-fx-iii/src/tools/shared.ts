@@ -22,7 +22,9 @@ import {
   isQueryPatchNameResponse,
   parseMultipurposeResponse,
   parseQueryPatchNameResponse,
+  resolveEffectId as fmResolveEffectId,
 } from 'fractal-midi/axe-fx-iii';
+import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { connectAxeFxIII, type MidiConnection } from '../midi.js';
 import { isDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 import { AXEFX3_LABEL } from '@mcp-midi-control/core/server-shared/connections.js';
@@ -108,6 +110,29 @@ export function resetAxeFxIIIConnection(): {
 
 export function toHex(bytes: readonly number[]): string {
   return bytes.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+}
+
+/**
+ * Block-name resolver that rewraps the underlying `fractal-midi` throw as a
+ * `DispatchError` so the MCP tool callback's `asError(err)` formats the
+ * agent retry hints inline (valid_options_tool, retry_action).
+ *
+ * Use this everywhere a tool callback resolves a user-supplied block name.
+ */
+export function resolveBlockOrThrow(blockName: string): number {
+  try {
+    return fmResolveEffectId(blockName);
+  } catch (err) {
+    throw new DispatchError(
+      'unknown_block',
+      'Fractal Axe-Fx III',
+      err instanceof Error ? err.message : String(err),
+      {
+        valid_options_tool: 'axefx3_list_blocks',
+        retry_action: 'Call axefx3_list_blocks to see every addressable block, then re-invoke with one verbatim name. Block names like "Reverb 1" / "Drive 2" or 3-letter group codes like "REV" both resolve.',
+      },
+    );
+  }
 }
 
 // -- 0x64 MULTIPURPOSE_RESPONSE error-channel listener --------------------

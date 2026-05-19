@@ -18,7 +18,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 
-import { resolveEffectId } from 'fractal-midi/axe-fx-iii';
 import {
   buildGetBypass,
   buildSetChannel,
@@ -35,9 +34,11 @@ import {
   NO_ACK_NOTE,
   ensureConn,
   formatMultipurposeError,
+  resolveBlockOrThrow,
   sendAndWatchForError,
   toHex,
 } from './shared.js';
+import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 
 const BLOCK_INPUT_DESCRIPTION = [
   'Block reference. Accepts:',
@@ -63,7 +64,12 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
       block: z.string().describe(BLOCK_INPUT_DESCRIPTION),
     },
   }, async ({ block }) => {
-    const effectId = resolveEffectId(block);
+    let effectId: number;
+    try {
+      effectId = resolveBlockOrThrow(block);
+    } catch (err) {
+      return asError(err);
+    }
     const reqBytes = buildGetBypass(effectId);
     const c = ensureConn();
     const responsePromise = c.receiveSysExMatching(
@@ -76,10 +82,10 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
       response = await responsePromise;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(
+      return asError(new Error(
         `axefx3_get_bypass(${block}) failed: ${msg}\n` +
         `Sent ${reqBytes.length} bytes: ${toHex(reqBytes)}`,
-      );
+      ));
     }
     const parsed = parseBypassResponse(response);
     return {
@@ -92,6 +98,11 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
           `Recv (${response.length}B): ${toHex(response)}\n` +
           `\n${BETA_NOTE}`,
       }],
+      structuredContent: {
+        block,
+        effect_id: parsed.effectId,
+        bypassed: parsed.bypassed,
+      },
     };
   });
 
@@ -109,7 +120,12 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
       ),
     },
   }, async ({ block, channel }) => {
-    const effectId = resolveEffectId(block);
+    let effectId: number;
+    try {
+      effectId = resolveBlockOrThrow(block);
+    } catch (err) {
+      return asError(err);
+    }
     const wireChannel = CHANNEL_VALUES[channel];
     const bytes = buildSetChannel(effectId, wireChannel);
     const c = ensureConn();
@@ -127,6 +143,14 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
           errorBlock +
           `\n${NO_ACK_NOTE}\n\n${BETA_NOTE}`,
       }],
+      structuredContent: {
+        block,
+        effect_id: effectId,
+        channel,
+        wire_channel: wireChannel,
+        rejected: errorReport !== undefined,
+        ...(errorReport ? { error_result_code: errorReport.resultCode } : {}),
+      },
     };
   });
 
@@ -140,7 +164,12 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
       block: z.string().describe(BLOCK_INPUT_DESCRIPTION),
     },
   }, async ({ block }) => {
-    const effectId = resolveEffectId(block);
+    let effectId: number;
+    try {
+      effectId = resolveBlockOrThrow(block);
+    } catch (err) {
+      return asError(err);
+    }
     const reqBytes = buildGetChannel(effectId);
     const c = ensureConn();
     const responsePromise = c.receiveSysExMatching(
@@ -153,10 +182,10 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
       response = await responsePromise;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(
+      return asError(new Error(
         `axefx3_get_channel(${block}) failed: ${msg}\n` +
         `Sent ${reqBytes.length} bytes: ${toHex(reqBytes)}`,
-      );
+      ));
     }
     const parsed = parseChannelResponse(response);
     const channelName = ['A', 'B', 'C', 'D'][parsed.channel] ?? `(unknown wire ${parsed.channel})`;
@@ -169,6 +198,12 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
           `Recv (${response.length}B): ${toHex(response)}\n` +
           `\n${BETA_NOTE}`,
       }],
+      structuredContent: {
+        block,
+        effect_id: parsed.effectId,
+        channel: channelName,
+        wire_channel: parsed.channel,
+      },
     };
   });
 

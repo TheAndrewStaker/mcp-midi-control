@@ -35,7 +35,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 
-import { resolveEffectId } from 'fractal-midi/axe-fx-iii';
 import {
   buildSetParameter,
   buildGetParameter,
@@ -50,10 +49,12 @@ import {
   NO_ACK_NOTE,
   ensureConn,
   formatMultipurposeError,
+  resolveBlockOrThrow,
   sendAndWatchForError,
   toHex,
 } from './shared.js';
 import { markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
+import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 
 const BLOCK_INPUT_DESCRIPTION = [
   'Block reference. Accepts:',
@@ -98,11 +99,16 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
       ),
     },
   }, async ({ block, param_id, value }) => {
-    const effectId = resolveEffectId(block);
+    let effectId: number;
+    try {
+      effectId = resolveBlockOrThrow(block);
+    } catch (err) {
+      return asError(err);
+    }
     const bytes = buildSetParameter(effectId, param_id, value);
     const c = ensureConn();
     const errorReport = await sendAndWatchForError(c, bytes);
-    // Call-site SET/GET discrimination — see EDIT_FUNCTIONS_III comment
+    // Call-site SET/GET discrimination, see EDIT_FUNCTIONS_III comment
     // in midi.ts. fn=0x01 is dual-purpose with no byte-level discriminator,
     // so SET handlers mark dirty explicitly; GET handlers don't.
     markDirty(AXEFX3_DIRTY_LABEL);
@@ -119,6 +125,14 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
           errorBlock +
           `\n${NO_ACK_NOTE}\n\n${BETA_NOTE}`,
       }],
+      structuredContent: {
+        block,
+        effect_id: effectId,
+        param_id,
+        value,
+        rejected: errorReport !== undefined,
+        ...(errorReport ? { error_result_code: errorReport.resultCode } : {}),
+      },
     };
   });
 
@@ -135,7 +149,12 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
       ),
     },
   }, async ({ block, param_id }) => {
-    const effectId = resolveEffectId(block);
+    let effectId: number;
+    try {
+      effectId = resolveBlockOrThrow(block);
+    } catch (err) {
+      return asError(err);
+    }
     const reqBytes = buildGetParameter(effectId, param_id);
     const c = ensureConn();
     const responsePromise = c.receiveSysExMatching(
@@ -148,12 +167,12 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
       response = await responsePromise;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(
+      return asError(new Error(
         `axefx3_get_parameter(${block}, paramId=${param_id}) failed: ${msg}\n` +
         `Sent ${reqBytes.length} bytes: ${toHex(reqBytes)}\n` +
         `\nLikely cause: device doesn't honor 0x02 SET_PARAMETER on this firmware. ` +
         `If a 0x64 frame arrived but didn't match the predicate, run axefx3_probe_sysex with the same payload to see the raw bytes.`,
-      );
+      ));
     }
     const parsed = parseSetGetParameterResponse(response);
     return {
@@ -166,6 +185,12 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
           `Recv (${response.length}B): ${toHex(response)}\n` +
           `\n${BETA_NOTE}`,
       }],
+      structuredContent: {
+        block,
+        effect_id: parsed.effectId,
+        param_id: parsed.paramId,
+        value: parsed.value,
+      },
     };
   });
 }

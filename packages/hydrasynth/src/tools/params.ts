@@ -22,6 +22,8 @@ import {
   ccBytes,
   ensureMidi,
 } from './shared.js';
+import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 
 export function registerHydrasynthParamTools(server: McpServer): void {
 
@@ -47,22 +49,40 @@ server.registerTool('hydra_set_param', {
     const suggestions = HYDRASYNTH_PARAMS
       .filter((p) => p.category === 'system')
       .map((p) => p.id);
-    throw new Error(
-      `Unknown parameter id "${id}". hydra_set_param only handles System CCs. Available ids: ${suggestions.join(', ')}. For engine parameters use set_param({port:"hydrasynth", block, name, value}).`,
-    );
+    return asError(new DispatchError(
+      'unknown_param',
+      'Hydrasynth',
+      `Unknown parameter id "${id}". hydra_set_param only handles System CCs.`,
+      {
+        valid_options: suggestions,
+        retry_action: 'Re-invoke with one of the valid_options ids. For ENGINE parameters use set_param({port:"hydrasynth", block, name, value}) instead.',
+      },
+    ));
   }
   if (param.category !== 'system') {
-    throw new Error(
-      `"${id}" is an engine parameter, not a System CC. Use set_param({port:"hydrasynth", block:"<block>", name:"${id}", value}) instead; it sends NRPN, accepts the same name, and the device listens on NRPN for engine control. CC-style and canonical NRPN names both resolve.`,
-    );
+    return asError(new DispatchError(
+      'capability_not_supported',
+      'Hydrasynth',
+      `"${id}" is an engine parameter, not a System CC.`,
+      {
+        retry_action: `Use set_param({port:"hydrasynth", block:"<block>", name:"${id}", value}) instead; it sends NRPN. CC-style and canonical NRPN names both resolve.`,
+      },
+    ));
   }
   const conn = ensureMidi();
   conn.send(ccBytes(DEFAULT_CHANNEL, param.cc, value));
   return {
     content: [{
       type: 'text',
-      text: `Sent CC ${param.cc} = ${value} (${param.module} → ${param.parameter}). System CC — always responds.`,
+      text: `Sent CC ${param.cc} = ${value} (${param.module} → ${param.parameter}). System CC; always responds.`,
     }],
+    structuredContent: {
+      id,
+      cc: param.cc,
+      value,
+      module: param.module,
+      parameter: param.parameter,
+    },
   };
 });
 
@@ -86,6 +106,11 @@ server.registerTool('hydra_set_macro', {
       type: 'text',
       text: `Sent Macro ${macro} = ${value} (CC ${cc}). The audible effect depends on the currently-loaded patch's mod matrix routing.`,
     }],
+    structuredContent: {
+      macro,
+      cc,
+      value,
+    },
   };
 });
 
