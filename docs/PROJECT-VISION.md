@@ -1,7 +1,7 @@
-# MCP MIDI Control — Project Vision
+# MCP MIDI Control: Project Vision
 
 ## One-Line Pitch
-Talk to Claude, get authentic tones instantly loaded onto your USB MIDI gear —
+Talk to Claude, get authentic tones instantly loaded onto your USB MIDI gear:
 Fractal AM4, Axe-Fx II XL+, Axe-Fx III (community beta), ASM Hydrasynth
 Explorer, plus any device reachable over generic MIDI.
 
@@ -15,7 +15,7 @@ Sharing presets across players is fragmented and format-locked.
 A local MCP server that bridges Claude Desktop and the user's hardware over
 USB/MIDI. The user describes what they want in plain language. Claude
 translates that into precise SysEx / CC / NRPN commands and sends them
-directly to the device — no vendor editor required. AM4 is the headline
+directly to the device, with no vendor editor required. AM4 is the headline
 device (deepest RE, hardware-verified end-to-end); additional Fractal and
 ASM devices ship in the same release.
 
@@ -24,7 +24,7 @@ ASM devices ship in the same release.
 ## Core User Experience
 
 ```
-User: "Give me a preset for Amber by 311 — 4 scenes, verse through solo"
+User: "Give me a preset for Amber by 311 (4 scenes, verse through solo)"
 
 Claude: Researches Tim Mahoney's verified gear for that recording era,
         maps each block to AM4 equivalents, builds 4 scenes, confirms
@@ -49,21 +49,21 @@ Claude: Reduces Filter sensitivity, re-sends, asks how it sounds now.
 
 ## What It Is Not
 - Not a visual preset editor (vendor-editor replacement)
-- Not cloud-hosted — runs entirely local
+- Not cloud-hosted; runs entirely local
 - Not a subscription service
-- Not closed-source. Apache-2.0 from v0.1.0.
+- Not closed-source. Apache-2.0.
 
 ---
 
-## Success Criteria (v0.1.0)
-1. Can send a complete preset to AM4 without AM4-Edit open (✅ shipping)
-2. Claude can describe a famous tone and produce a working preset (✅ shipping)
-3. Iterative refinement loop works ("more gain", "darker reverb") (✅ shipping)
-4. Preset slots are never silently overwritten — save-authorization gate
-   enforced uniformly across devices (✅ shipping; see
+## Success Criteria
+1. Can send a complete preset to AM4 without AM4-Edit open (shipping)
+2. Claude can describe a famous tone and produce a working preset (shipping)
+3. Iterative refinement loop works ("more gain", "darker reverb") (shipping)
+4. Preset slots are never silently overwritten; save-authorization gate
+   enforced uniformly across devices (shipping; see
    [`docs/SAFE-EDIT-WORKFLOW.md`](SAFE-EDIT-WORKFLOW.md))
 5. Same UX works across multiple devices via the unified 17-tool surface
-   (✅ shipping: AM4, Axe-Fx II XL+, Hydrasynth Explorer; Axe-Fx III in
+   (shipping: AM4, Axe-Fx II XL+, Hydrasynth Explorer; Axe-Fx III in
    community beta)
 
 ---
@@ -80,38 +80,38 @@ Claude: Reduces Filter sensitivity, re-sends, asks how it sounds now.
 
 ## Phased Roadmap
 
-### Phase 0 — Feasibility (complete, 2026-04-14)
+### Phase 0: Feasibility (complete, 2026-04-14)
 Proved USB/MIDI SysEx round-trip with AM4 without AM4-Edit. Session 02
 confirmed AM4 follows the Axe-Fx III published 3rd-party MIDI spec with
 AM4-specific extensions.
 
-### Phase 1 — Protocol Layer (complete)
+### Phase 1: Protocol Layer (complete)
 Decoded the editor-write surface via the puppet-the-device approach
-(per [DECISIONS.md 2026-04-14](DECISIONS.md)) — no preset-binary RE
+(per [DECISIONS.md 2026-04-14](DECISIONS.md)), with no preset-binary RE
 required. AM4 + Axe-Fx II XL+ wire layers ship with byte-exact goldens
 against real captures.
 
-### Phase 2 — MCP Server MVP (complete)
+### Phase 2: MCP Server MVP (complete)
 Wired protocol layer to MCP tools. Tone-from-description works end to
 end on AM4 and Axe-Fx II.
 
-### Phase 3 — Preset Intelligence (complete)
+### Phase 3: Preset Intelligence (complete)
 Lineage data for amps/drives/cabs/delays/reverbs across Fractal devices.
 `lookup_lineage` tool surfaces real-hardware inspiration and Fractal-
 authored quotes. Iterative refinement via single-param edits in the
 working buffer.
 
-### Phase 4 — Multi-device + Library Management (in progress, v0.1.0)
+### Phase 4: Multi-device + Library Management (in progress)
 - Unified 17-tool surface live across registered devices.
 - Save-authorization + dirty-buffer + multi-preset overwrite gates
   enforced uniformly (see [`SAFE-EDIT-WORKFLOW.md`](SAFE-EDIT-WORKFLOW.md)).
 - Setlist authoring shipping for AM4 + Axe-Fx II.
-- Workspace monorepo split (2026-05-04) — one package per device.
+- Workspace monorepo split (2026-05-04), one package per device.
 
-### Phase 5 — Polish, Distribution, Community Devices (next)
-- Axe-Fx III community beta → community-captured wire decodes → write
+### Phase 5: Polish, Distribution, Community Devices (next)
+- Axe-Fx III community beta to community-captured wire decodes to write
   parity with AM4/II.
-- FM9 / FM3 / VP4, Roland/Boss family, more synths — see
+- FM9 / FM3 / VP4, Roland/Boss family, more synths. See
   [`MULTI-DEVICE-ROADMAP.md`](MULTI-DEVICE-ROADMAP.md) for the device
   target order and the planned `fractal-midi` / `asm-midi` vendor-
   protocol-package extraction.

@@ -1926,8 +1926,8 @@ of File -> Export Preset against a specifically-clicked stored preset.
 The BK-036 probe series. `am4_apply_preset` sets the working buffer
 to a known state; `am4_request_active_buffer_dump` captures the
 masked stored-form bytes; the harness diffs against a baseline to
-map byte-to-param relationships. The chunk content is NOT decoded
-in v0.1.0 — the tool surfaces the raw bytes for the probe harness.
+map byte-to-param relationships. The chunk content is NOT decoded;
+the tool surfaces the raw bytes for the probe harness.
 
 ---
 

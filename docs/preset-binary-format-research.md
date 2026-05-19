@@ -484,7 +484,7 @@ but it's a meaningful step.
 
 ## 8. What this means for the BK-036 launch-gate
 
-The original v0.1.0 plan was: **decode chunks completely, build
+The original BK-036 plan was: **decode chunks completely, build
 a fresh-preset encoder, ship direct-to-slot writes that bypass
 the working buffer, fix the HW-068 smearing bug.**
 
@@ -493,12 +493,12 @@ achievable on a static-analysis-only timeline**. The disputed
 region is too large and behaves too inconsistently to decode by
 diffing five session-03 captures.
 
-Two realistic v0.1.0 paths:
+Two realistic paths considered at the time:
 
 - **Ship without the encoder, with the workaround documented.**
   Tell the user "don't move the front-panel preset knob during
   agent batch operations; we're working on it." Loud and ugly but
-  honest. BK-036 stays open as v0.1.x research.
+  honest. BK-036 stays open as follow-up research.
 - **Ship a partial encoder for layout-only.** Implement the §5
   pseudocode minus the disputed-region step, write the layout
   changes via direct-to-slot, then drive per-channel params via
@@ -507,20 +507,18 @@ Two realistic v0.1.0 paths:
   fixed, but the layout part is reliable. Probably ~3 days of
   hardware probes + implementation.
 
-Neither path delivers the full BK-036 promise. Recommendation:
-take the hardware probe series in §6 to a focused session before
-making the v0.1.0 / v0.1.x call. The capture work is bounded
-(~150 captures over a half-day) and could either unlock the
-encoder or definitively block it.
+Neither path delivers the full BK-036 promise. The chosen call
+(see §9) was to ship without the encoder and queue the hardware
+probe series in §6 as follow-up.
 
 ## 9. Status decision (2026-05-09, Session 52)
 
-**v0.1.0 ships without the encoder.** Decision rationale:
+**Shipping without the encoder.** Decision rationale:
 
 - §6 hardware probes are bounded but not free (half-day on
   hardware; founder is concurrently running setlist tests, install
   validation, etc.). Burning that window on encoder RE delays
-  v0.1.0 launch with no compensating user-visible win — the
+  launch with no compensating user-visible win. The
   working-buffer-touch caveat is documented, and `am4_apply_preset_at`
   already mitigates it via switch-first-apply-then-save.
 - The "60/40 cleartext + volatile state" reframing of §3.3 changes

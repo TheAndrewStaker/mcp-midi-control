@@ -1,8 +1,8 @@
-# Axe-Fx III — Community Beta Testing
+# Axe-Fx III: Community Beta Testing
 
 > **For Axe-Fx III owners.** The III tool surface is fully implemented and
 > wire-verified against public captures. **What we need is hardware
-> confirmation** — does our implementation behave correctly against a
+> confirmation:** does our implementation behave correctly against a
 > real III? You don't need to capture anything. Install the server,
 > run the calls listed below, and paste the JSON responses into a
 > GitHub issue.
@@ -17,17 +17,17 @@ The III protocol layer was built from:
   public spec; covers bypass / channel / scene / preset name / tempo /
   looper / tuner).
 - 10 public wire captures of the III's parameter-write opcode (`fn=0x01`)
-  collected from forum posts and FC-12 footswitch traffic — Session 97
-  pivot, 2026-05-18. The envelope is byte-verified against those
+  collected from forum posts and FC-12 footswitch traffic (Session 97
+  pivot, 2026-05-18). The envelope is byte-verified against those
   captures.
 - Mining the AxeEdit III editor's bundled XML (`__block_layout.xml`)
   for 2,017 per-block parameter names with display labels and control
-  types — ~90% of the catalog.
+  types (about 90% of the catalog).
 
 What's NOT verified: that all of this **runs correctly on real III
 firmware**. The maintainer doesn't own a III, so every tool response
-ships with a beta warning. Your test session — five minutes of clicking
-through a handful of tool calls and pasting the JSON — flips the III
+ships with a beta warning. Your test session (five minutes of clicking
+through a handful of tool calls and pasting the JSON) flips the III
 from 🟡 community-beta to 🟢 hardware-confirmed.
 
 ---
@@ -46,11 +46,11 @@ That's it. No capture tools, no driver tricks, no developer setup.
 ## The test menu
 
 Pick any of the calls below. The more you run, the more we learn.
-Each one is safe — none of them write to a stored preset slot.
+Each one is safe; none of them write to a stored preset slot.
 
 Open a chat with Claude and ask it to run the call, or run it through
 your MCP client of choice. Paste the JSON response into a GitHub
-issue titled `axefx3 beta test — <op name>`.
+issue titled `axefx3 beta test: <op name>`.
 
 ### 1. Identify the device
 
@@ -110,13 +110,13 @@ axefx3_status_dump()
 ```
 
 Expected: returns a list of `{ effectId, bypassed, channel, channelCount }`
-entries — one per block in the active preset. Cross-check against
+entries, one per block in the active preset. Cross-check against
 what the front panel shows.
 
 ### 7. Parameter write (the big one)
 
 This is the call that ships behind the strongest beta warning because
-the parameter-write opcode (`fn=0x01`) is not in the v1.4 spec — it
+the parameter-write opcode (`fn=0x01`) is not in the v1.4 spec; it
 was decoded from public captures only.
 
 Pick a knob you don't mind changing. Suggestion: load a scratch preset
@@ -133,7 +133,7 @@ Expected:
 - `get_param` echoes back the value we just wrote.
 
 **If `set_param` succeeds but the front panel doesn't move**, that's
-the highest-value finding — it means our wire shape lands but binds to
+the highest-value finding: it means our wire shape lands but binds to
 the wrong block / param. Please file an issue with the full JSON
 response from both calls.
 
@@ -149,7 +149,7 @@ Expected: front panel shows scene 3 (zero-indexed in the API).
 
 ## How to file the report
 
-GitHub issues, title format `axefx3 beta test — <what you ran>`. In
+GitHub issues, title format `axefx3 beta test: <what you ran>`. In
 the body include:
 
 - III firmware version (System → Firmware on the front panel).
@@ -172,7 +172,7 @@ For each call you confirm:
   the III support matrix from 🟡 community-beta to 🟢 hardware-verified.
 - ❌ doesn't match → maintainer opens a follow-up issue with the
   exact wire bytes the server sent (the server logs them). Usually the
-  fix is one constant in the III descriptor — fast iteration once the
+  fix is one constant in the III descriptor: fast iteration once the
   symptom is in hand.
 
 ---
@@ -181,5 +181,6 @@ For each call you confirm:
 
 - **Fractal published spec:** ["Axe-Fx III MIDI for Third-Party Devices" v1.4](https://www.fractalaudio.com/downloads/misc/Axe-Fx%20III%20MIDI%20for%203rd%20Party%20Devices.pdf)
 - **III protocol decode summary:** [`docs/SYSEX-MAP-AXE-FX-III.md`](../SYSEX-MAP-AXE-FX-III.md)
-- **Per-call wire shape:** [`packages/axe-fx-iii/src/setParam.ts`](../../packages/axe-fx-iii/src/setParam.ts)
-  — every function's evidence chain is in the doc comments.
+- **Per-call wire shape:** `fractal-midi/src/axe-fx-iii/setParam.ts`
+  in the upstream codec package. Every function's evidence chain is in
+  the doc comments.

@@ -176,26 +176,15 @@ Single-action captures are gold. Start a fresh capture per specific
 action (drag one block, turn one knob, switch one preset). Single-
 action `.syx` files are far easier to decode than mixed sessions.
 
-**USBPcap + Wireshark for the editor → device direction.** Windows
+**USBPcap + Wireshark for the editor to device direction.** Windows
 MIDI output ports are write-only from the OS side, so the passive-
 capture script above can't see what an editor app (AxeEdit, AM4-Edit,
-Hydrasynth Manager) sends to the device. To capture the
-editor-write direction:
-
-1. Install [USBPcap](https://desowin.org/usbpcap/) and Wireshark on
-   Windows.
-2. Identify the USB device for your MIDI gear (Device Manager → the
-   device's "USB Composite Device" parent).
-3. Start a USBPcap capture filtered on that USB device.
-4. Open the editor app, perform the single action you want to decode.
-5. Stop capture, save as `.pcapng`. The MIDI SysEx frames are visible
-   in Wireshark's USB packet decode; export the relevant frames to a
-   `.syx` file with Wireshark's "Export Packet Bytes" or use
-   `scripts/_research/decode-pcapng.ts` for batch extraction.
-
-This is the same method the maintainer uses. The `.pcapng` files
-include both directions and a timeline; one capture per action makes
-the decode much easier.
+Hydrasynth Manager) sends to the device. The full step-by-step lives at
+[`docs/capture-guides/usbpcap-wireshark.md`](docs/capture-guides/usbpcap-wireshark.md):
+install pointers, USB device identification, single-action capture
+discipline, SysEx extraction, and the citation expectations for any
+decode that goes into `docs/SYSEX-MAP*.md`. This is the maintainer's
+default workflow for any unknown editor-write op.
 
 ### What goes in `samples/`, what goes in `docs/captures/`
 
