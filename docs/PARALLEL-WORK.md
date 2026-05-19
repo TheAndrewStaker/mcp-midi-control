@@ -297,7 +297,7 @@ Once the founder pushes local main to `origin/main`:
 
 Picking the 3 items is itself an agent task: dispatch a `Plan`
 subagent with a planner prompt that reads `STATE.md` +
-`npm run coverage-audit` + `docs/fractal-protocol-decode-status.md` +
+`npm run coverage-audit` + `docs/research/fractal-protocol-decode-status.md` +
 the open `HARDWARE-TASKS-*.md` files and returns 3 dispatch prompts
 ready to paste / re-dispatch. The planner's prompt should require:
 

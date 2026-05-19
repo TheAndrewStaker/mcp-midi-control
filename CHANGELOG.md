@@ -72,7 +72,7 @@ gear from Claude in plain English.
   - `docs/devices/<am4|axe-fx-ii|axe-fx-iii|hydrasynth>/SYSEX-MAP.md`:
     per-device wire-protocol decodes
     with 🟢/🟡/🔴 confidence legend and capture citations.
-  - `docs/fractal-protocol-decode-status.md`: coverage index; refreshed
+  - `docs/research/fractal-protocol-decode-status.md`: coverage index; refreshed
     by `npm run coverage-audit` reading code state directly.
   - `docs/SAFETY-FOR-MUSICIANS.md`, `docs/GETTING-STARTED.md`: plain-
     English trust model + day-one walkthroughs for non-developer users.

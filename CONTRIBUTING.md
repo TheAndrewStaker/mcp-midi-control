@@ -8,7 +8,7 @@ from "no code" to "deep RE work":
    whether the front panel matches the response. Five minutes per
    device, no developer setup. **This is the most valuable
    contribution right now**, especially for Axe-Fx III owners. See
-   [`docs/community/axefx3-beta-testing.md`](docs/community/axefx3-beta-testing.md)
+   [`docs/AXEFX3-BETA-TESTING.md`](docs/AXEFX3-BETA-TESTING.md)
    for the III test menu. Same shape works for any device: pick a
    handful of tool calls, run them, paste the JSON.
 2. **Add a device.** Write a `DeviceDescriptor` for a new piece of MIDI
@@ -58,7 +58,7 @@ response says. That's it.
 
 The Axe-Fx III is the most-wanted target for this right now. The wire
 shapes are decoded from public captures but no III owner has confirmed
-end-to-end. See [`docs/community/axefx3-beta-testing.md`](docs/community/axefx3-beta-testing.md)
+end-to-end. See [`docs/AXEFX3-BETA-TESTING.md`](docs/AXEFX3-BETA-TESTING.md)
 for a concrete 5–30 minute test menu.
 
 ## Path 2: Add a device

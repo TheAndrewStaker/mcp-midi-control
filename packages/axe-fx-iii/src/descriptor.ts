@@ -133,7 +133,7 @@ function notInSpec(op: string, gap: string): DispatchError {
     {
       retry_action:
         'See docs/devices/axe-fx-iii/SYSEX-MAP.md for the spec coverage ' +
-        'and docs/community/axefx3-beta-testing.md for the community ' +
+        'and docs/AXEFX3-BETA-TESTING.md for the community ' +
         'capture workflow that can unlock this operation.',
     },
   );

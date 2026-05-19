@@ -103,7 +103,7 @@ claims that aren't byte-verified.
 2. **`npm run coverage-audit`** — code-state ground truth, not stale
    text (handled by the section above; restated here because RE
    sessions especially drift on this).
-3. **`docs/fractal-protocol-decode-status.md`** — per-device decode
+3. **`docs/research/fractal-protocol-decode-status.md`** — per-device decode
    status table. Last full sweep Session 82–83. Read before opening
    any new investigation so you know what's already named vs. open.
 4. **`docs/_private/HARDWARE-TASKS-<DEVICE>.md`** — open captures the
@@ -119,7 +119,7 @@ claims that aren't byte-verified.
 - **Ghidra dispatcher mining** — canonical for paramId ↔ name catalog
   discovery (99% wire-accuracy verified Session 82–83). Three-tier
   technique with symbol-table walk, byte-pattern + xref, and
-  instruction-walk fallback. See `docs/ghidra-mining-workflow.md`.
+  instruction-walk fallback. See `docs/research/ghidra-mining-workflow.md`.
 - **JUCE BinaryData extraction** — 5-minute label discovery from
   editor binaries via the embedded ZIP. 1,299 AM4-Edit labels and
   10,250 AxeEdit III labels recovered this way. See
@@ -129,7 +129,7 @@ claims that aren't byte-verified.
   the probe read-only unless explicitly designed to write.
 - **Passive capture** — open the device MIDI input with no editor.
   Axe-Fx II broadcasts state continuously; AM4 is silent and needs an
-  active query loop. See `docs/fractal-broadcast-vs-poll-research.md`.
+  active query loop. See `docs/research/fractal-broadcast-vs-poll-research.md`.
 - **USBPcap + Wireshark** — captures both directions at the USB-class
   layer when the editor → device direction is needed. The maintainer's
   default for editor-write decode. See `CONTRIBUTING.md` for the

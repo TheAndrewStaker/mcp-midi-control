@@ -319,7 +319,7 @@ Trigger: founder ships polish on Axe-Fx II writes + Hydrasynth patch
 sends, OR AM4 surface is mature enough that extraction earns its keep
 without slowing core iteration.
 
-> **Detailed plan:** [`docs/fractal-midi-extraction-plan.md`](fractal-midi-extraction-plan.md)
+> **Detailed plan:** [`docs/research/fractal-midi-extraction-plan.md`](fractal-midi-extraction-plan.md)
 > — per-file move table, consumer surface, blockers, execution
 > sequencing. Authored 2026-05-17 to be picked up when the trigger
 > above fires.

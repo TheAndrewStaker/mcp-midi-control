@@ -124,7 +124,7 @@ values needs an `fn=0x01` GET sweep, which is itself hypothesis-only
 viable but more expensive than the II classifier and has more
 unknowns.
 
-## What's still uncertain — addendum for `docs/community/axefx3-beta-testing.md`
+## What's still uncertain — addendum for `docs/AXEFX3-BETA-TESTING.md`
 
 A III owner can settle this conclusively in **about 60 seconds** of
 testing. Propose adding a Section 9 to the beta-testing doc:
@@ -171,7 +171,7 @@ That's the minimum hardware-loop closure for this question.
   STATE_BROADCAST" (lines 105-134).
 - [`SYSEX-MAP.md`](SYSEX-MAP.md) lines 67-69 (0x21 retraction) and
   lines 614-619 (forum 0x21 claim — likely MIDI-Out, not USB).
-- `docs/fractal-broadcast-vs-poll-research.md` (the AM4/II methodology
+- `docs/research/fractal-broadcast-vs-poll-research.md` (the AM4/II methodology
   reference — replicate this script shape on the III).
 - `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt:149-176` ("PUSH DATA" spec).
 - `packages/axe-fx-ii/src/midi.ts:108-268` (classifier to mirror).

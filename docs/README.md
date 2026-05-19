@@ -30,19 +30,21 @@ plus per-device research and design notes.
 
 ## Wire protocol + RE methodology
 
-Cross-device protocol decode methodology and capture guides:
+Cross-device protocol decode methodology, exploratory research notes,
+and capture guides:
 
-- [`fractal-protocol-decode-status.md`](./fractal-protocol-decode-status.md)
-  — cross-device status table; run `npm run coverage-audit` for the
-  authoritative code-state numbers.
-- [`fractal-broadcast-vs-poll-research.md`](./fractal-broadcast-vs-poll-research.md)
-  — cross-device decode methodology (Axe-Fx II broadcasts, AM4 polls).
-- [`fractal-midi-extraction-plan.md`](./fractal-midi-extraction-plan.md)
-  — Phase 2 vendor protocol package extraction plan.
-- [`ghidra-mining-workflow.md`](./ghidra-mining-workflow.md) — canonical
-  RE method for Fractal editor binaries.
-- [`loudness-data-methodology.md`](./loudness-data-methodology.md) —
-  how the loudness reference data was produced.
+- [`research/`](./research/) — cross-device research notes:
+  - [`research/fractal-protocol-decode-status.md`](./research/fractal-protocol-decode-status.md)
+    cross-device status table. Run `npm run coverage-audit` for the
+    authoritative code-state numbers.
+  - [`research/fractal-broadcast-vs-poll-research.md`](./research/fractal-broadcast-vs-poll-research.md)
+    cross-device decode methodology (Axe-Fx II broadcasts, AM4 polls).
+  - [`research/fractal-midi-extraction-plan.md`](./research/fractal-midi-extraction-plan.md)
+    Phase 2 vendor protocol package extraction plan.
+  - [`research/ghidra-mining-workflow.md`](./research/ghidra-mining-workflow.md)
+    canonical RE method for Fractal editor binaries.
+  - [`research/loudness-data-methodology.md`](./research/loudness-data-methodology.md)
+    how the per-amp loudness corpus was produced.
 - [`capture-guides/`](./capture-guides/) — step-by-step capture
   techniques (USBPcap + Wireshark, JUCE BinaryData extraction).
 
@@ -74,14 +76,11 @@ Cross-device protocol decode methodology and capture guides:
   checklist.
 - [`SAFETY-FOR-MUSICIANS.md`](./SAFETY-FOR-MUSICIANS.md) — plain-language
   trust model for non-developer users.
+- [`AXEFX3-BETA-TESTING.md`](./AXEFX3-BETA-TESTING.md) — five-minute
+  hardware-confirmation test menu for Axe-Fx III owners.
 
 ## Vendor manuals
 
 - [`manuals/README.md`](./manuals/README.md) — Fractal Audio and
   Hydrasynth manuals. PDFs are gitignored; `.txt` extractions are
   committed for grep-ability.
-
-## Community
-
-- [`community/`](./community/) — community-facing workflows
-  (Axe-Fx III beta-tester guide, etc.).

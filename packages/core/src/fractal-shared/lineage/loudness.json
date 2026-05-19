@@ -1,5 +1,5 @@
 {
-  "_source": "BK-064 sub-deliverable 1. Per-amp master sweet-spot + relative-loudness corpus. Hand-curated from the Fractal-Audio-Blocks-Guide power-amp section, per-amp lineage records in fractal-midi shared/lineage, and community priors (Fractal Forum 'amp loudness' / 'master volume sweet spots' threads). See docs/loudness-data-methodology.md for full sourcing and precision discipline.",
+  "_source": "BK-064 sub-deliverable 1. Per-amp master sweet-spot + relative-loudness corpus. Hand-curated from the Fractal-Audio-Blocks-Guide power-amp section, per-amp lineage records in fractal-midi shared/lineage, and community priors (Fractal Forum 'amp loudness' / 'master volume sweet spots' threads). See docs/research/loudness-data-methodology.md for full sourcing and precision discipline.",
   "_referenceAmp": "Double Verb Normal",
   "_referenceAmpRationale": "Fender Twin Reverb (Double Verb in AM4 naming) is the canonical clean reference platform in guitar audio. 85W master-volume design with broad clean headroom. master=6.0 is the historical 'gig unity' setting cited across the Fractal Wiki and community threads.",
   "_referenceDrive": "T808 OD",

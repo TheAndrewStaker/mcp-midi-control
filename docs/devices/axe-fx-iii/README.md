@@ -27,7 +27,7 @@ Code lives in [`packages/axe-fx-iii/`](../../../packages/axe-fx-iii/).
 
 ## See also
 
-- [`../../community/axefx3-beta-testing.md`](../../community/axefx3-beta-testing.md)
+- [`../../AXEFX3-BETA-TESTING.md`](../../AXEFX3-BETA-TESTING.md)
   — workflow for III owners testing the beta surface.
 - [`../../fractal-protocol-decode-status.md`](../../fractal-protocol-decode-status.md)
   — current decode coverage across all Fractal devices.

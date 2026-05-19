@@ -67,7 +67,7 @@ export const BETA_NOTE = [
   'captures + v1.4 spec, not yet confirmed against real III hardware.',
   'If the response disagrees with what the front panel shows, please',
   'open an issue with the tool call + JSON response',
-  '(see docs/community/axefx3-beta-testing.md).',
+  '(see docs/AXEFX3-BETA-TESTING.md).',
 ].join('\n');
 
 // -- MIDI lazy-init -------------------------------------------------------

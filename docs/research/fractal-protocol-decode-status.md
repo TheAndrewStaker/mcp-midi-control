@@ -79,8 +79,8 @@ guard at `WIRED_MISLABEL_CEILING=161` bumped from 154 for the
 | [`docs/devices/axe-fx-iii/SYSEX-MAP.md`](devices/axe-fx-iii/SYSEX-MAP.md) | III wire spec. Covers v1.4 PDF (10 documented functions) + 21 fn bytes confirmed via Ghidra caller trace + the 49-effect dispatcher catalog. **§0x02 SET_PARAMETER** documents the II→III port (model byte `0x03`→`0x10`, Sessions 85+86) with community-evidence chain and the one-call test that converts 🟡→🟢. Documents what III's SET_PARAM ISN'T (fn=0x1f ruled out Session 83). |
 | [`docs/devices/axe-fx-ii/SYSEX-MAP.md`](devices/axe-fx-ii/SYSEX-MAP.md) | II wire spec — community RE work + Session 94 Ghidra direct-scan addendum. |
 | [`docs/BLOCK-PARAMS.md`](BLOCK-PARAMS.md) | AM4 block reference. Header table maps each AM4 block to its pidLow, catalog family, dispatcher case, and catalog param count. Points at the Ghidra catalog as the primary source. |
-| [`docs/ghidra-mining-workflow.md`](ghidra-mining-workflow.md) | **Workflow recipe**: how to mine a new Fractal editor binary. Captures the 3-tier proven technique, v1 failure modes to avoid, dispatcher discovery, ParamDescriptor struct layout, headless runner pattern, cross-block addressing pattern. Session 94 addendum: direct-pattern-scan technique for 32-bit binaries where dispatcher-xref fails. Read this first before opening a new Ghidra project. |
-| [`docs/fractal-midi-extraction-plan.md`](fractal-midi-extraction-plan.md) | **Vendor protocol package plan** (Session 94). Per-file move table covering `packages/core/src/fractal-shared/`, `packages/am4/src/`, `packages/axe-fx-ii/src/`, `packages/axe-fx-iii/src/`; consumer-facing API surface for `fractal-midi` (codec-only, no `node-midi`). |
+| [`docs/research/ghidra-mining-workflow.md`](ghidra-mining-workflow.md) | **Workflow recipe**: how to mine a new Fractal editor binary. Captures the 3-tier proven technique, v1 failure modes to avoid, dispatcher discovery, ParamDescriptor struct layout, headless runner pattern, cross-block addressing pattern. Session 94 addendum: direct-pattern-scan technique for 32-bit binaries where dispatcher-xref fails. Read this first before opening a new Ghidra project. |
+| [`docs/research/fractal-midi-extraction-plan.md`](fractal-midi-extraction-plan.md) | **Vendor protocol package plan** (Session 94). Per-file move table covering `packages/core/src/fractal-shared/`, `packages/am4/src/`, `packages/axe-fx-ii/src/`, `packages/axe-fx-iii/src/`; consumer-facing API surface for `fractal-midi` (codec-only, no `node-midi`). |
 
 ### Research / decode-history (committed)
 
@@ -210,7 +210,7 @@ III SET_PARAM status: **🟡 shipped untested** as `fn=0x02` ported from II by m
 
 In rough order of impact:
 
-1. **Verify the III responds to the byte-verified `fn=0x01` SET_PARAMETER envelope on real hardware** (Session 97 pivot) — wire shape now byte-verified against 10 public captures (`docs/devices/axe-fx-iii/set-parameter-captures.md`); what remains is confirming the device actually honors AxeEdit III's captured wire when re-sent by our MCP tool, AND decoding the response shape (sync echo? STATE_BROADCAST? silent?). The project maintainer doesn't own a III. A III-owning contributor running `axefx3_set_parameter(block="Reverb 1", param_id=0, value=N)` against a scratch preset and reporting the audible effect + any inbound bytes closes the remaining 🟡 GET shape and confirms SET 🟢 end-to-end. See [`docs/community/axefx3-beta-testing.md`](community/axefx3-beta-testing.md) for the contributor on-ramp.
+1. **Verify the III responds to the byte-verified `fn=0x01` SET_PARAMETER envelope on real hardware** (Session 97 pivot) — wire shape now byte-verified against 10 public captures (`docs/devices/axe-fx-iii/set-parameter-captures.md`); what remains is confirming the device actually honors AxeEdit III's captured wire when re-sent by our MCP tool, AND decoding the response shape (sync echo? STATE_BROADCAST? silent?). The project maintainer doesn't own a III. A III-owning contributor running `axefx3_set_parameter(block="Reverb 1", param_id=0, value=N)` against a scratch preset and reporting the audible effect + any inbound bytes closes the remaining 🟡 GET shape and confirms SET 🟢 end-to-end. See [`docs/AXEFX3-BETA-TESTING.md`](AXEFX3-BETA-TESTING.md) for the contributor on-ramp.
 
 2. **Close the 79 UI-MISSING AM4 params** — wired gaps where the catalog has the symbol AND XML exposes the control AND `params.ts` has no entry. Current top families per cross-ref audit: PATCH (29), DISTORT (19), CABINET (13), COMP (4), PEQ (2), GEQ (1), TREMOLO (2), GATE (1), CHORUS (1), ENHANCER (1), VOLUME (1), INPUT (5). Each needs a capture or AM4-Edit screenshot for range/unit (the catalog doesn't carry those). Route through `paramNames.ts` overrides not direct `params.ts` edits — blunt blind-merge corrupts unit metadata (Session 84 bug pattern).
 
@@ -228,7 +228,7 @@ In rough order of impact:
 
 9. **AM4-Edit alternate dispatcher hunt** — case 0x3a in `FUN_1402e3da0` returns an empty table. What's its purpose? (Same on III's `FUN_140397a40`.) Are there OTHER dispatchers we haven't found?
 
-10. **Cross-publish AM4 / III catalogs** — both binaries use the same Fractal symbolic names. A shared `fractal-shared/catalog/` package could centralize the per-family paramId enums (so amp.gain on AM4 and reverb.time on III both pull canonical names from one source). Architectural — would prep BK-051 unified surface. Some of this prep landed Session 94 (`docs/fractal-midi-extraction-plan.md`).
+10. **Cross-publish AM4 / III catalogs** — both binaries use the same Fractal symbolic names. A shared `fractal-shared/catalog/` package could centralize the per-family paramId enums (so amp.gain on AM4 and reverb.time on III both pull canonical names from one source). Architectural — would prep BK-051 unified surface. Some of this prep landed Session 94 (`docs/research/fractal-midi-extraction-plan.md`).
 
 **Closed since last update:**
 
@@ -251,7 +251,7 @@ In rough order of impact:
 | What pidLow does block X use? | `packages/am4/src/blockTypes.ts` (placeable) + `docs/devices/am4/SYSEX-MAP.md` §6p (non-placeable: cab, ingate, patch, global) |
 | What params does block X have? | `samples/captured/decoded/ghidra-am4-paramnames.json` (regenerate via `.cmd`) + coverage report |
 | What's verified vs hypothesized? | This doc's "Devices covered" + "Open questions" |
-| How do I decode a new Fractal device? | `docs/ghidra-mining-workflow.md` |
+| How do I decode a new Fractal device? | `docs/research/ghidra-mining-workflow.md` |
 | Why does AMP share DISTORT? | `docs/devices/am4/SYSEX-MAP.md` §6p + this doc's cross-block section |
 | What's the next high-impact decode work? | This doc's "Open questions" — items 1-4 are the unlocks |
 
@@ -315,8 +315,8 @@ In rough order of impact:
   params became mineable (entire VOCODER/RESONATOR/MOD blocks).
   221 net-new entries paste-merged into `packages/axe-fx-ii/src/
   params.ts` (905 → 1,126). "Skip Ghidra for II" overturned —
-  documented in `docs/ghidra-mining-workflow.md` Session 94
-  technique addendum. Also: `docs/fractal-midi-extraction-plan.md`
+  documented in `docs/research/ghidra-mining-workflow.md` Session 94
+  technique addendum. Also: `docs/research/fractal-midi-extraction-plan.md`
   drafted (vendor protocol package, codec-only).
 - **Session 95** (2026-05-17): **HW-109 closed.** Hydrasynth
   envelope time wire→ms tables verified across 27 (N, display)

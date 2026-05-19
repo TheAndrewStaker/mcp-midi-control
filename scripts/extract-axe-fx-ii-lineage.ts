@@ -46,7 +46,7 @@ const ROOT = path.join(__dirname, '..');
 // only data-gen script — it edits source files in `fractal-midi/`, so it
 // can't use `require.resolve('fractal-midi/shared')` (that points at the
 // built dist). Assumes the sibling-repo layout `C:/dev/{mcp-midi-tools,
-// fractal-midi}` documented in `docs/fractal-midi-extraction-plan.md`.
+// fractal-midi}` documented in `docs/research/fractal-midi-extraction-plan.md`.
 const FRACTAL_MIDI_REPO = path.resolve(ROOT, '..', 'fractal-midi');
 const LINEAGE_DIR = path.join(FRACTAL_MIDI_REPO, 'src', 'shared', 'lineage');
 const PARAMS_PATH = path.join(FRACTAL_MIDI_REPO, 'src', 'axe-fx-ii', 'params.ts');

@@ -321,7 +321,7 @@ const XML_CATALOG_JSON = 'samples/captured/decoded/labels/axe-edit-catalog.json'
 // source files in fractal-midi/, so it can't use `require.resolve`
 // (that points at built dist). Assumes sibling-repo layout
 // `C:/dev/{mcp-midi-tools, fractal-midi}` per
-// `docs/fractal-midi-extraction-plan.md`.
+// `docs/research/fractal-midi-extraction-plan.md`.
 const _scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const FRACTAL_MIDI_REPO = path.resolve(_scriptDir, '..', '..', 'fractal-midi');
 const FRACTAL_MIDI_AXEFX2_SRC = path.join(FRACTAL_MIDI_REPO, 'src', 'axe-fx-ii');

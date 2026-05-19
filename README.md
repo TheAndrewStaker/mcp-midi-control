@@ -48,7 +48,7 @@ full song preset builds cleanly in one conversational turn.
 > errors because Fractal deliberately omits per-block parameter IDs
 > from the public spec. **III owners: we need your help.** Five
 > 5-minute test sessions per the
-> [community beta-testing guide](./docs/community/axefx3-beta-testing.md)
+> [community beta-testing guide](./docs/AXEFX3-BETA-TESTING.md)
 > take the III from 🟡 community-beta to 🟢 hardware-verified. The wire
 > shapes are already decoded from public captures; what's missing is
 > someone with a real III running the calls and pasting the JSON

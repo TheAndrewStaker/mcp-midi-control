@@ -951,6 +951,6 @@ Given the function-byte map + Appendix 1 effect IDs:
 
 - **Project README and CLAUDE.md** — point at `docs/REFERENCES.md` for any "where do I find X" question. The III spec is row 30 there.
 - **III package source** — `packages/axe-fx-iii/src/setParam.ts` carries an inline pointer to this doc at the top of the file (after edits land).
-- **Community beta-testing workflow** — [`docs/community/axefx3-beta-testing.md`](../../community/axefx3-beta-testing.md). III owners run a small list of tool calls and report whether the front panel matches the response.
+- **Community beta-testing workflow** — [`docs/AXEFX3-BETA-TESTING.md`](../../AXEFX3-BETA-TESTING.md). III owners run a small list of tool calls and report whether the front panel matches the response.
 - **Design notes** (some predate the bug discovery here) — [`design-notes.md`](design-notes.md).
 - **Forum reverse-engineering** of preset save format — Fractal Forum thread #159885 ("Axe-Fx III and deconstructing / parsing a .syx / sysex preset file"). Three-function envelope: `0x77` (header, contains destination), 16× `0x78` (body chunks), `0x79` (footer).

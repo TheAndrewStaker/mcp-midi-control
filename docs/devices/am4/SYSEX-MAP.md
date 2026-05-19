@@ -1934,7 +1934,7 @@ the tool surfaces the raw bytes for the probe harness.
 ## 6p. Parameter ID structure — `pidLow` = block, `pidHigh` = paramId (Session 82) 🟢
 
 **Decoded Session 82 (2026-05-16) via Ghidra mining of AM4-Edit.exe.**
-Workflow + tooling: [`docs/ghidra-mining-workflow.md`](ghidra-mining-workflow.md).
+Workflow + tooling: [`docs/research/ghidra-mining-workflow.md`](ghidra-mining-workflow.md).
 
 The two 14-bit header fields `pidLow` and `pidHigh` in the §6a
 parameter envelope aren't arbitrary handles — they encode a clean

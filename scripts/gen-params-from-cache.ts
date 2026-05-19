@@ -48,7 +48,7 @@ import type { Unit } from 'fractal-midi/am4';
 // edits source files in `fractal-midi/`, so it can't use
 // `require.resolve('fractal-midi/am4')` (that resolves to the built
 // dist). Assumes the sibling-repo layout `C:/dev/{mcp-midi-tools,
-// fractal-midi}` documented in `docs/fractal-midi-extraction-plan.md`.
+// fractal-midi}` documented in `docs/research/fractal-midi-extraction-plan.md`.
 const _scriptDir = dirname(fileURLToPath(import.meta.url));
 const FRACTAL_MIDI_REPO = resolve(_scriptDir, '..', '..', 'fractal-midi');
 const CACHE_PARAMS_OUT = join(FRACTAL_MIDI_REPO, 'src', 'am4', 'cacheParams.ts');

@@ -12,7 +12,7 @@ protocol change, consult these; they reflect what is currently
 byte-verified vs. what is still open. Always more current than the
 manuals.
 
-- **`docs/fractal-protocol-decode-status.md`**: cross-device status
+- **`docs/research/fractal-protocol-decode-status.md`**: cross-device status
   index (AM4 / Axe-Fx II / Axe-Fx III). Last full sweep Session 82–83
   (Ghidra mining). Tells you which paramId families are named and
   which are still open per device.
@@ -22,7 +22,7 @@ manuals.
 - **`docs/devices/axe-fx-iii/SYSEX-MAP.md`**: Axe-Fx III wire map
   (covers Fractal's v1.4 PDF + community RE).
 - **`docs/devices/hydrasynth/SYSEX-MAP.md`**: Hydrasynth wire map.
-- **`docs/ghidra-mining-workflow.md`**: proven canonical RE method
+- **`docs/research/ghidra-mining-workflow.md`**: proven canonical RE method
   for paramId catalog extraction (99% wire-accuracy verified). Read
   before opening a new Ghidra project on any Fractal editor binary.
 

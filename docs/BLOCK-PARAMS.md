@@ -6,7 +6,7 @@
 >    family AM4-Edit exposes (50 families, 1732 paramId/name pairs).
 >    Regenerate via `scripts/ghidra/run-am4-paramnames.cmd`; output lands in
 >    `samples/captured/decoded/ghidra-am4-paramnames.json` (gitignored).
->    See `docs/ghidra-mining-workflow.md` for the recipe and
+>    See `docs/research/ghidra-mining-workflow.md` for the recipe and
 >    `docs/devices/am4/SYSEX-MAP.md` §6p for the wire mapping (pidLow=block,
 >    pidHigh=paramId). Get a coverage report via
 >    `scripts/_research/am4-catalog-coverage-report.ts`.
