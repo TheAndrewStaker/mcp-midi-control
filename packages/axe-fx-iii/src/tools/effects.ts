@@ -126,6 +126,14 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
         'Target channel — A, B, C, or D.',
       ),
     },
+    outputSchema: {
+      block: z.string(),
+      effect_id: z.number().int(),
+      channel: z.enum(['A', 'B', 'C', 'D']),
+      wire_channel: z.number().int(),
+      rejected: z.boolean(),
+      error_result_code: z.number().int().optional(),
+    },
   }, async ({ block, channel }) => {
     let effectId: number;
     try {
