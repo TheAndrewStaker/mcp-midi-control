@@ -113,41 +113,15 @@ firmware Quantum 8.02:
 - `Axe-Fx-II-XL+_All-Banks_Q8p02.syx`: all three banks concatenated
   (4.8 MB).
 
-### Roland SPD-SX (BK-019)
-- `SPD-SX_OM.txt`: Owner's Manual. Primary reference. **Key sections for
-  BK-019:** USB save/load (pp. 65–66), USB MODE switch (p. 63),
-  documented MIDI surface (pp. 67–68).
-- `SPD-SX_Wave_Manager_e02.txt`: "Using SPD-SX Wave Manager" guide.
-  Doesn't contain the USB protocol, but documents every operation Wave
-  Manager performs on kit/wave data; serves as the **feature spec** for
-  the flash-drive-based MCP approach chosen in BK-019.
-- `SPD-SX_EffectGuide.txt`: Master + Kit effect parameter reference.
-  Needed when BK-019 extends from kit-structure editing to per-effect
-  parameter editing.
-- `SPD-SX_PA.txt`: Sound List (Factory Data v1.01). 210 factory wave
-  names. Useful when the agent references waves by name while assigning
-  them to kits.
-- **No MIDI Implementation Chart exists.** Roland publishes only four
-  SPD-SX docs (OM, Wave Manager, Effect Guide, Sound List); no separate
-  MIDI Impl PDF, unlike JD-Xi / VE-500. Documented MIDI surface is thin
-  (Program Change, Control Change, Note on/off only). This is why
-  BK-019's feature scope goes through the USB flash drive path.
+### Tier 2 Roland / Boss devices (parked)
 
-### Roland JD-Xi (BK-020)
-- `JD-Xi_MIDI_Implementation.txt`: full MIDI Implementation Chart.
-  Primary reference for BK-020; complete address table + parameter
-  ranges + tone-category enums.
-
-### Boss VE-500 (BK-018)
-- `VE-500_MIDI_ImpleChart.txt`: MIDI Implementation Chart. Confirms the
-  SysEx address map is **closed** ("Specifications of System Exclusive
-  message is not opened for users"), so deep editing requires
-  capture-based RE of Boss Tone Studio; the CC + Program Change surface
-  is what's available out of the box. See BK-018 for scope implications.
-
-### Boss RC-505 MKII (BK-017)
-*No manuals local yet.* Add the RC-505 MKII MIDI Implementation PDF
-from boss.info when BK-017 activates.
+The roadmap names a future Tier 2 of Roland / Boss devices (RC-505 MKII,
+VE-500, SPD-SX, JD-Xi). Manuals for SPD-SX / VE-500 / JD-Xi previously
+lived under `docs/manuals/other-gear/` but were removed when the focus
+narrowed to the Tier 1 Fractal + Hydrasynth surface. Re-add the relevant
+manual `.txt` extracts if any of those device decodes activate.
+See [`docs/MULTI-DEVICE-ROADMAP.md`](MULTI-DEVICE-ROADMAP.md) Tier 2
+for source URLs and per-device scope notes.
 
 ---
 
