@@ -1,0 +1,405 @@
+Multipoint Iterative Matching
+& Impedance Correction
+Technology (MIMICTM)
+
+A Fractal Audio Systems White Paper I April 2013
+                                                                                                                                   
+
+INTRODUCTION
+
+We  at  Fractal  Audio  Systems  are  proud  to  announce  a  significant  advancement  in  the  field  of  amplifier  
+simulation  technology:  Multi--Point  Iterative  Matching  and  Impedance  Correction  (MIMICTM).    MIMIC  offers  a  
+level  or  realism  unmatched  by  any  other  product  at  any  price--point.  
+
+In  this  white--paper  we  present  the  interested  user  with  a  simplified  explanation  of  the  technology  and  its  
+inherent  benefits.  
+
+Guitar Amplifier Evolution and the Paradigm of Electric Guitar Tone
+
+The  origin  of  the  electric  guitar  and  the  electric  guitar  amplifier  stems  from  the  classic  "necessity  is  the  mother  
+of  invention"  motivation.    As  musical  genres  evolved,  guitar  players  found  themselves  unable  to  compete  with  
+the  volume  of  brass  instruments  and  acoustic  drum  sets.    The  electric  guitar  and  amplifier  were  devised  as  a  
+means  for  guitarists  to  achieve  enough  volume  so  as  to  be  sufficiently  audible  in  a  live  context.  
+
+The  earliest  guitar  amplifiers  were  nothing  more  than,  well,  amplifiers.    They  were  designed  to  simply  make  
+the  signal  louder.    The  devices  available  at  the  time  most  suitable  to  this  task  were  the  vacuum  tube  and  direct  
+radiation  loudspeaker.      These  early  amplifiers  were  crude  and  distorted  easily  when  operated  beyond  their  
+linear  range,  which  was  quite  small.    Unintentionally,  and  serendipitously,  however,  the  sound  of  a  distorted  
+guitar  amp  into  a  limited  frequency  response  speaker  became  desirable  and  eventually  ushered  an  entire  new  
+genre  of  musical  styles.  
+
+Designers  soon  began  to  add  features  to  guitar  amps  to  allow  tone  shaping  and  other  forms  of  signal  
+manipulation.    These  very  first  amplifiers  serve  as  a  foundation  for  the  "fundamental  paradigm  of  electric  
+guitar  tone"  which  is  a  nonlinearity  (aka  distortion)  preceded  and  followed  by  filtering.      
+
+The  figure  below  illustrates  the  fundamental  paradigm  of  electric  guitar  tone:  
+
+FILTER  DISTORT  FILTER
+
+                                                                                   
+FIGURE  1:  THE  FUNDAMENTAL  PARADIGM  OF  ELECTRIC  GUITAR  TONE  
+
+PAGE  1  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+                                                                                                                                     
+
+We  can  further  elaborate  on  the  paradigm  by  breaking  it  into  its  constituent  components,  as  desired.    For  
+example,  the  output  filtering  is  comprised  of  the  output  filtering  of  the  guitar  amp  and  the  filtering  of  the  
+speaker.    So  a  more  detailed  model  might  be  as  follows:  
+
+            FILTER          DISTORT   FILTER                                                FILTER
+
+                                                                                            (SPEAKER)
+
+                                                                                                                         
+
+As  guitar  amps  evolved  designers  added  more  gain,  more  tone  shaping  and  more  features.    A  modern  guitar  
+amp  can  have  multiple  stages  of  gain  and  various  filtering  between  the  stages.    Therefore  an  equivalent  block  
+diagram  of  a  modern  tube  amp  might  be:  
+
+    FILTER  DISTORT         FILTER    DISTORT      FILTER                                              FILTER
+
+              (PREAMP)        (TONE)  (POWER AMP)                                                      (SPEAKER)
+
+                                                                                                                            
+
+Amplifier Simulation ­ Theory and Practice
+
+TUBE AMPS
+
+Before  we  can  get  into  modeling  we  need  to  talk  more  about  tube  amplifiers.  
+
+Tube  amplifiers  (amps)  are  the  most  popular  form  of  electric  guitar  amplification.    They  are  cherished  for  their  
+musical  distortion  characteristics  and  dynamic  response.    While  tube  amps  were  never  originally  designed  for  
+these  specific  attributes  (they  were  originally  designed  to  be  as  neutral  as  possible  given  the  technology  of  the  
+day)  musicians  were  quick  to  recognize  the  desirable  sonic  qualities  of  an  amp  being  operated  beyond  its  
+intended  operational  boundaries.    Over  the  years  tube  amps  have  evolved  with  the  express  intent  of  being  
+distortion  generators,  exploiting  the  particular  nonlinear  characteristics  of  vacuum  tubes.  
+
+The  sound  of  a  tube  amp  is  primarily  attributable  to  the  equalization  applied  to  the  input  signal  and  the  
+unique  way  in  which  vacuum  tubes  distort  when  overdriven.    Despite  their  simple  circuits,  the  sound  
+generated  by  a  tube  amp  is  a  complex  relationship  between  the  various  parts  of  the  amplifier.  
+
+                          
+
+PAGE  2  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+                                                                                                                                            
+
+SIMULATION BASICS
+
+The  method  used  by  all  amplifier  simulators,  despite  what  moniker  they  elect  to  use,  be  it  "modeler",  
+"simulator",  "profiler",  "digital  amplifier",  etc.,    is  based  on  the  fundamental  paradigm  we  set  forth  in  Figure  1  
+above.    The  most  popular  amplifier  simulators  use  digital  signal  processing  (DSP)  to  provide  the  various  signal  
+processing  necessary  but  it  is  entirely  possible  to  use  analog  signal  processing,  and  indeed  there  are  several  
+products  that  do.  
+
+There  are  two  basic  building  blocks  used  in  amplifier  simulation:  filtering  and  waveshaping.    Filtering,  or  
+equalization  (EQ),  manipulates  a  signal  to  change  its  frequency  response.    Filters  can  be  implemented  in  a  
+variety  of  ways.    In  digital  processing  filters  are  typically  one  of  two  types:  finite  impulse  response  (FIR)  and  
+infinite  impulse  response  (IIR).    FIR  filters  are  complex  filters  suitable  for  a  wide  range  of  filtering  tasks  and  
+most  products  use  FIR  filters  (commonly  called  IRs)  for  their  speaker  simulations,  sometimes  in  conjunction  
+with  IIR  filters.    IIR  filters  are  simple  but  efficient  filters  that  are  typically  used  to  implement  basic  filters  such  
+as  lowpass,  highpass,  shelving,  etc.  filters  as  well  as  graphic  and  parametric  EQ.  
+
+"Waveshaper"  is  a  fancy  name  for  a  nonlinear  transfer  function.    Waveshapers  are  used  to  introduce  
+distortion.    All  amplifier  simulators  use  a  specific  class  of  waveshaper  known  as  a  sigmoid  function.    A  sigmoid  
+function  is  a  particular  class  of  nonlinearity  that  is  mostly  linear  near  the  origin  and  gets  progressively  more  
+nonlinear.    The  name  is  derived  from  the  shape  since  the  shape  of  a  sigmoid  is  a  "lazy  `S'".    Sigmoid  
+waveshapers  introduce  distortion  by  clipping  a  signal  and  are  used  in  amplifier  simulators  as  they  most  closely  
+replicate  the  type  of  distortion  that  occurs  in  a  tube  amplifier  when  overdriven.  
+
+The  earliest  amplifier  simulators  used  little  more  than  IIR  input  filters,  static  waveshapers  and  IIR  output  
+filters.    Sound  designers  crafted  the  input  and  output  filters  in  an  attempt  to  replicate  the  voicings  of  popular  
+amplifiers  and  speakers  and  the  waveshapers  attempted  to  duplicate  the  distortion.    Needless  to  say  these  
+early  simulators  were  crude  sounding  by  today's  standards.    Much  of  this  was  due  to  the  poor  speaker  
+simulation.    The  frequency  response  of  a  speaker  is  extremely  complex.    There  are  multiple  dips  and  peaks  in  
+the  response  that  are  impossible  to  accurately  reproduce  using  IIR  filters.  
+
+IMPULSE RESPONSES (IRs)
+
+One  of  the  biggest  technological  advances  in  amplifier  simulation  was  the  use  of  FIR  filters  to  replicate  the  
+filtering  of  the  loudspeaker.    While  early  products  relied  on  what  was  basically  a  graphic  equalizer  to  replicate  
+the  complex  response  of  a  loudspeaker,  FIR  filters  (or  IRs)  allowed  designers  to  capture  the  actual  response  of  
+a  loudspeaker  (plus  microphone).    This  afforded  a  huge  improvement  in  overall  realism.  
+
+    PAGE  3  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+                                                                                                                                          
+
+IRs  are  captured  by  essentially  sampling  the  loudspeaker.    A  sample  of  the  speaker's  impulse  response  (hence  
+the  name)  is  recorded  and  digitized  and  the  data  stored  for  subsequent  use.    The  sample  then  becomes  the  
+coefficients  of  the  FIR  filter  directly.  
+
+All  modern  digital  simulators  use  IRs  in  some  fashion  for  their  speaker  simulation.    Many  products  use  IRs  and  
+then  augment  the  response  with  IIR  filters  to  compensate  for  the  lack  of  low--frequency  resolution.    To  
+adequately  replicate  the  response  of  a  loudspeaker  requires  at  least  20  milliseconds  of  response  time  
+(typically  around  one  thousand  samples).    However  this  requires  copious  signal  processing  power  and  many  
+products  are  incapable  of  processing  IRs  of  this  length.    Truncating  an  IR  to  256  samples  (about  5  ms)  is  
+common  but  this  severely  reduces  the  low--frequency  resolution.    Therefore  the  IR  is  often  augmented  with  
+several,  or  more,  bands  of  low--frequency  equalization  to  correct  for  the  lack  of  resolution  at  those  
+frequencies.    (Note  that  the  Axe--Fx  II  can  process  IRs  of  up  to  43  ms  in  length  and  does  not  suffer  from  this  
+limitation).  
+
+FIR  filtering  is  achieved  through  a  process  known  as  convolution.    Convolution  can  be  performed  via  
+frequency--domain  methods  using  the  Fast  Fourier  Transform  (FFT)  or  time--domain  methods  (referred  to  as  
+direct  convolution).    Frequency--domain  convolution  is  far  more  efficient  but  introduces  significant  latency  and  
+is  unsuitable  for  amplifier  simulation.    Direct  convolution  has  zero  latency  but  requires  significant  processing  
+power  for  even  the  shortest  IRs.    Therefore  commercial  products  try  to  keep  the  IR  length  as  short  as  possible  
+in  order  to  keep  the  requisite  processing  costs  as  low  as  possible.  
+
+IRs  are  now  ubiquitous  and  many  products  even  allow  the  user  to  install  aftermarket  IRs  for  more  tonal  
+choices.    The  advanced  user  can  even  create  his  or  her  own  IRs  using  widely  available  "deconvolution"  tools.    
+The  Axe--Fx  II  allows  the  user  to  capture  IRs  using  on--board  signal  generation  and  deconvolution  further  
+simplifying  the  process.    One  of  the  newer  simulators  even  allows  the  user  to  capture  IRs  using  test  tones  
+injected  into  an  actual  tube  amp  and  then  recording  the  response  of  the  amplifier.    Unfortunately  this  
+approach  doesn't  allow  accurate  separation  of  the  amplifier  response  from  the  speaker  response  which  limits  
+overall  device  flexibility  and  is  also  subject  to  significant  very--low--frequency  inaccuracy  due  to  the  absence  of  
+system  response  at  those  frequencies.  
+
+An  advanced  type  of  IR  processing  known  as  dynamic  convolution  holds  promise  for  future  products  but  the  
+processing  power  and  storage  memory  required  make  this  technique  prohibitive  in  consumer  products.    For  
+example  a  typical  loudspeaker  would  require  many  megabytes  of  data  storage  whereas  a  conventional  IR  can  
+be  stored  in  several  kilobytes.    These  techniques  are  also  extremely  input  level  sensitive  and  must  be  carefully  
+calibrated  to  work  properly.    Furthermore  listening  tests  have  not  clearly  established  any  audible  
+improvement  over  classic  static  IRs.  
+
+      
+
+PAGE  4  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+                                                                                                                                          
+
+DYNAMIC WAVESHAPERS
+
+While  IRs  achieved  a  much--needed  improvement  in  frequency  response  realism,  amplifier  simulators  still  
+suffered  from  poor  dynamic  response  and  users  complained  they  didn't  "feel"  the  same  as  a  real  tube  amp.  
+
+This  unnatural  response  has  been  addressed  in  various  ways  but  the  most  common  is  the  "dynamic  
+waveshaper".    In  its  simplest  form  the  dynamic  waveshaper  is  nothing  more  than  a  static  waveshaper  
+preceeded  and  followed  by  time--varying  amplifiers.    This  technique  is  widely  used  and  is  able  to  realistically  
+simulate  the  sag  and  compression  of  an  overdriven  tube  amp.  
+
+Most  products  now  use  a  single  dynamic  waveshaper  to  simulate  the  entire  nonlinear  response  of  the  
+amplifier.    The  Axe--Fx  II  uses  a  highly  sophisticated  approach  that  involves  multiple  triode  simulators  and  a  
+dedicated  power  amp  simulator.    It  is  our  firm  belief  that  multiple  distortion  stages  can  only  be  accurately  
+simulated  using  multiple  digital  stages  of  distortion,  especially  separate  preamp  and  power  amp  simulations  as  
+the  distortion  contributed  by  each  is  unique  and  the  best  tones  are  achieved  through  a  combination  of  
+preamp  and  power  amp  distortion.    Products  that  use  a  single  distortion  stage  exhibit  "glare"  or  "smear"  in  
+the  midrange  as  the  same  waveshaper  is  used  to  distort  the  entire  spectrum  whereas  with  an  actual  tube  amp  
+operating  in  its  "sweet  spot"  some  parts  of  the  spectrum  are  distorted  by  the  preamp  and  some  parts  by  the  
+power  amp.    Preamp  distortion  provides  greater  string  separation  but  can  be  harsh.    Power  amp  distortion  
+tends  to  be  warmer  but  can  be  muddy.    A  well--designed  tube  amp  balances  out  these  two  distortions  to  
+achieve  clarity  without  harshness.  
+
+PRACTICAL IMPLEMENTATION
+
+All  modern  digital  amplifier  simulators  use  an  underlying  generic  amplifier  model  (or  several  base  models)  that  
+can  be  adjusted  to  replicate  a  desired  tube  amplifier.    These  adjustments  include  various  programmable  
+filters,  waveshapers  and  dozens,  or  even  hundreds,  of  parameters  that  control  the  underlying  model.    These  
+parameters  can,  for  example,  control  the  shape  of  the  waveshaper(s),  the  amount  of  compression,  the  shape  
+of  the  input  filtering,  etc.  
+
+In  operation  the  signal  from  the  input  source  (typically  an  electric  guitar)  is  digitized  and  fed  to  the  amplifier  
+simulator.    The  simulator  applies  input  equalization,  distortion  and  then  output  equalization.    The  user  can  
+adjust  various  parameters  that  control  the  equalization  and  amount  of  distortion  as  well  as  other  pertinent  
+aspects  of  the  simulation.    Note  that  the  Axe--Fx  II  uses  multiple  stages  of  distortion  with  filtering  between  
+each  stage  to  accurately  replicate  the  frequency  selective  nature  of  a  real  amp's  distortion.  
+
+The  processed  signal  from  the  amplifier  simulation  is  then  input  to  a  speaker  simulation  which  is  simulated  
+
+using  IRs  (and  IIRs  when  necessary).    In  some  cases  the  user  may  wish  to  defeat  the  speaker  simulation  if  he  is  
+
+using  a  traditional  speaker  cabinet  and  therefore  does  not  desire  the  speaker  simulation.                                         
+
+PAGE  5  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+                                                                                                                                   
+
+USER CONTROL
+
+No  amplifier  simulator  would  be  complete  without  allowing  the  user  to  control  the  simulation.    All  modern  
+simulators  include  gain,  tone  and  various  other  controls  that  allow  the  user  to  shape  the  sound.  
+
+Most  tube  amplifiers  are  unique  in  that  they  provide  tone  control  via  a  passive  network  known  as  a  tone  stack.    
+A  tone  stack  is  actually  somewhat  crude  but  imparts  a  particular  sonic  quality  to  a  tube  amp  that  cannot  be  
+replicated  using  conventional  active  tone  controls  (like  you  would  find  on  hi--fi  equipment).    Most  modern  
+simulators  replicate  this  tone  stack  to  varying  degrees  of  success  whereas  some  make  no  attempt  to  replicate  
+the  behavior  and  therefore  suffer  from  lack  of  authentic  control.  
+
+The  Axe--Fx  II  has  taken  tone  stack  replication  to  the  next  level  and  in  Version  10.xx  firmware  includes  52  
+meticulously  modeled  tone  stacks.    These  tone  stacks  not  only  replicate  the  unique  sonic  signature  of  their  
+real--world  counterparts  but  even  replicate  the  taper  of  the  controls  and  their  interaction.  
+
+LIMITATIONS
+
+Despite  all  the  improvements  in  amplifier  simulation,  all  modern  simulators  suffer  from  various  degrees  of  
+inaccuracy  in  comparison  to  the  actual  amplifier  being  simulated.    The  inaccuracies  can  be  categorized  as  
+follows:  
+
+    1. Deviations  in  control  response,  i.e.  tone  controls  don't  work  the  same.  
+    2. Deviations  in  frequency  response,  i.e.  the  output  doesn't  sound  quite  the  same.  
+    3. Deviations  in  nonlinear  response,  i.e.  the  distortion  quality  is  different.  
+    4. Deviations  in  dynamic  response,  i.e.  the  simulation  doesn't  feel  the  same.  
+
+For  an  amplifier  simulator  to  be  truly  perfect  it  must  address  all  of  these  limitations.    Fortunately  we  now  have  
+the  technology  to  address  these  concerns:  Multipoint  Iterative  Matching  and  Impedance  Correction  
+(MIMICTM).  
+
+      
+
+PAGE  6  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+                                                                                                                                            
+
+Introducing MIMICTM Technology
+
+MIMIC  is  a  breakthrough  in  guitar  amplifier  simulation  technology.    MIMIC  addresses  the  four  fundamental  
+inaccuracies  in  simulation  through  a  combination  of  techniques  and  renders  the  resulting  simulation  
+indistinguishable  from  an  actual  tube  amplifier.    In  the  following  sections  we  will  cover  the  four  categories  and  
+MIMIC's  technology  in  correcting  them.  
+
+1. CONTROL RESPONSE DEVIATION
+
+The  ultimate  amplifier  simulation  is  one  that  behaves  just  like  the  amplifier  being  simulated  over  all  possible  
+settings  of  the  various  controls.    A  simulation  that  only  represents  the  amp  at  one  particular  set  of  control  
+positions  is  a  poor  simulation  since  the  ideal  settings  for  one  user  aren't  usually  the  same  for  other  users.    
+Furthermore  most  amplifier  controls  are  highly  interactive  and  more  than  just  simple  gain  and  tone  controls.    
+For  example,  the  drive  control  on  many  amps  changes  the  amp's  input  frequency  response  as  it  is  rotated,  
+typically  getting  brighter  as  the  drive  is  decreased.    This  is  desirable  as  guitars  with  powerful  pickups  are  
+usually  darker  and  sound  better  with  more  input  treble  boost.    Since  the  pickups  are  more  powerful  the  user  
+will  typically  set  the  drive  lower  which  then  results  in  more  treble  boost.    Conversely  guitars  with  weaker  
+pickups,  i.e.  single  coil  guitars,  are  brighter  and  sound  better  with  less  treble  boost.    As  the  drive  control  is  
+increased  the  amount  of  treble  boost  decreases.  
+
+Deviations  in  control  response  are  due  to  only  one  reason:  incorrect  mathematical  representations.    
+Simulating  drive  and  tone  controls  is  very  difficult  and  laborious.    The  equations  are  onerous  and  complicated,  
+especially  for  tone  stacks.    While  it  is  tempting  to  throw  one's  hands  in  the  air  and  use  generic  hi--fi  style  tone  
+controls  and  a  generic  gain  control,  we  believe  this  is  contrary  to  the  ultimate  goal  of  exactly  replicating  a  tube  
+amp.  
+
+1.1 FIXING IT
+
+Unfortunately  (for  us,  not  you)  there's  only  one  way  to  fix  it:  hard  work.    We  exhaustively  worked  out  the  
+equations  for  all  the  tone  stacks  by  evaluating  the  mesh  and  node  equations.    Fortunately  we  have  computers  
+that  handled  the  polynomial  reduction  but  it  was  still  a  Herculean  effort.  
+
+We  also  worked  out  all  the  equations  for  presence  and  depth  control  calculations  so  these  controls  work  like  
+the  actual  amp  (except  for  the  taper  in  some  cases).  
+
+Finally  we  measured  the  taper  of  the  controls  on  the  actual  amps  and  entered  that  data.    This  ensures  that  the  
+controls  on  the  model  behave  identically  to  the  controls  on  the  actual  amp.    Note  however  that  the  taper  of  
+the  presence  (and  depth)  control  can  deviate  from  the  actual  amp.    In  our  tests  we  found  that  the  presence  
+control  on  many  amps  did  nothing  for  the  first  80%  of  its  rotation  and  all  the  action  occurred  in  the  last  20%.    
+We  feel  that  this  design  anomaly  is  undesirable  and  therefore  did  not  model  that  aspect.  
+
+    PAGE  7  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+                                                                                                                                            
+
+2. FREQUENCY RESPONSE DEVIATION
+
+In  Figure  1  we  introduced  the  fundamental  paradigm  of  guitar  tone.    All  guitar  simulators  are  based  on  this  
+fundamental  paradigm  and,  indeed,  all  real  tube  amps  are  implicitly  based  on  this  same  paradigm.    However,  
+an  amplifier  simulation  will  often  sound  different  than  the  real  amp.    This  seems  implausible  given  the  
+apparent  simplicity  of  the  block  diagram.    There  are  a  variety  of  reasons  why  this  can  happen.  
+
+One  reason  why  this  can  happen  is  simply  poor  implementation.    The  simulation  simply  doesn't  replicate  the  
+real  amplifier's  input  and  output  filters  accurately.    This  can  be  due  to  flawed  data  (i.e.  inaccurate  schematics)  
+or  mistakes  in  translation  (i.e.  human  error).    Either  of  these  will  cause  frequency  response  deviations  that  are  
+detectable  to  the  human  ear.  
+
+Another  cause  for  frequency  response  deviation  is  due  to  what  are  known  as  "parasitics".    A  real  tube  amp  
+doesn't  necessarily  behave  exactly  like  its  schematic  predicts.    This  is  caused  by  parasitic  elements  that  are  
+unintentional  but,  nonetheless,  impact  the  frequency  response.    Older  amps  that  use  point--to--point  wiring  are  
+more  susceptible  to  this  whereas  PC--board  amps  are  more  immune,  although  not  totally.  
+
+Deviation  can  also  occur  due  to  amplifier--to--loudspeaker  interaction  differing  from  the  predicted  interaction.    
+The  output  impedance  of  a  tube  amplifier  is  somewhat  high  and  this  causes  the  frequency  response  of  the  
+amplifier  to  follow  the  impedance  of  the  speaker.    Most  amplifiers  impart  some  amount  of  negative  feedback  
+to  reduce  this  but,  nonetheless,  some  degree  of  interaction  is  always  present.    The  Axe--Fx  predicts  this  
+interaction  very  accurately  but  there  are  still  cases  where  there  is  deviation  due  to  this  interaction.  Another  
+possibility  is  component  tolerance  and  drift.    While  the  design  may  specify  certain  values  for  components,  in  
+practice  the  actual  components  will  deviate  from  these  values.    Over  time  the  deviation  can  increase  due  to  
+component  aging.    In  some  cases  these  deviations  improve  the  sound  of  the  amp.    In  other  cases,  however,  
+this  can  be  detrimental.  
+
+2.1 FIXING IT
+
+MIMIC  addresses  frequency  response  deviation  using  a  patent--pending  measurement  technique  that  
+identifies  and  corrects  these  deviations.    A  complex  series  of  tones  is  injected  into  the  amplifier  being  
+simulated  and  the  output  is  measured.    These  measurements  then  form  data  sets  that  are  stored  with  each  
+model  and  correct  the  various  filters.    These  data  sets  are  fairly  large  but,  fortunately,  the  Axe--Fx  II  was  
+designed  to  be  future--proof  and  has  copious  non--volatile  memory.    You  will  notice  that  the  size  of  Version  
+10.xx  firmware  is  quite  a  bit  larger  than  previous  versions.    This  is  due  to  the  inclusion  of  this  correction  data.  
+
+MIMIC  also  detects  when  there  are  significant  deviations  between  the  measured  and  predicted  responses  and  
+issues  a  warning.    This  warning  is  an  indication  to  reevaluate  the  model  and  identify  possible  data  entry  errors.  
+
+Note  that  MIMIC  is  more  than  just  EQ  matching.    It  matches  all  the  various  filters  in  the  simulation  to  their  
+real--world  counterparts  by  carefully  applying  test  signals  of  various  amplitudes  to  isolate  the  desired  filters.  
+
+    PAGE  8  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+                                                                                                                                     
+
+3. NONLINEAR RESPONSE DEVIATION
+
+While  frequency  response  deviations  are  the  most  noticeable  type  of  deviation,  differences  in  nonlinear  
+response  are  also  detectable  by  humans.    Tube  amplifiers  impart  two  distinct  types  of  nonlinearity:  clipping  
+and  crossover  distortion.    Clipping  distortion  is  the  primary  source  of  distortion  in  an  overdriven  tube  amp  and  
+is  intentionally  created  by  overdriving  the  preamp  and/or  power  amp.    Crossover  distortion  occurs  in  push--pull  
+power  amps  and  imparts  distortion  on  low--level  signals.    While  large  amounts  of  crossover  distortion  can  be  
+objectionable,  small  amounts  give  an  amp  character  and  are  especially  useful  in  aggressive,  modern  tones.    
+Some  modern  simulators  do  not  include  crossover  distortion  simulation  and  we  feel  this  is  a  glaring  omission.  
+
+Deviation  from  these  nonlinearities  arises  due  to  the  transfer  function  of  the  simulated  distortion  being  
+different  from  the  transfer  function  of  the  distortion  generated  in  the  tube  amp.    All  amp  simulators  rely  on  
+waveshapers  to  generate  distortion.    One  common  method  is  the  "(k  +  x)  /  (k  --  x)"  technique.    This  method  
+implements  a  waveshaper  that  is  somewhat  programmable  in  terms  of  how  "hard"  the  clipping  is.    Other  
+techniques  involve  polynomials  or  other  mathematical  functions.    The  Axe--Fx  II  is  unique  in  that  it  implements  
+actual  triode  models  for  the  preamp  simulation.    These  models  behave  nearly  identically  to  an  actual  tube  
+triode  (and  are  far  more  accurate  than  the  aforementioned  techniques),  complete  with  frequency  and  
+amplitude  dependence.  
+
+Another  primary  source  of  nonlinearity  deviation  is  bias  point  deviation.    The  ratio  of  odd--to--even  harmonics  
+generated  by  a  nonlinearity  is  a  function  of  the  quiescent  operating  point.    In  other  words,  how  much  the  
+signal  is  shifted  to  one  side  of  the  transfer  function.    This  is  known  as  the  bias  point.    While  we  can  predict  
+with  excellent  certainty  the  bias  point  of  a  tube,  the  real  world  doesn't  always  agree  and  human  error  can  also  
+be  a  factor.  
+
+3.1 FIXING IT
+
+MIMIC  addresses  deviations  in  nonlinear  response  by  applying  pseudorandom  noise  of  varying  amplitudes  to  
+the  amplifier  being  simulated  and  comparing  the  response  to  the  response  of  the  simulated  amplifier.    
+Histograms  of  the  responses  are  collected  and  analyzed  using  statistical  methods  and  any  deviations  in  
+distortion  transfer  function  and  bias  point  are  then  identified  and  corrected.  
+
+      
+
+PAGE  9  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+                                                                                                                                            
+
+4. DYNAMIC RESPONSE DEVIATION
+
+The  "feel"  of  an  amplifier  is  mainly  attributed  to  its  dynamic  response.    Tube  amplifiers  compress  when  
+overdriven  due  to  sagging  of  the  power  supply.    The  amount  of  sag  depends  on  a  variety  of  factors  including  
+the  power  transformer,  type  of  rectifier  used,  etc.  
+Deviations  in  dynamic  response  can  make  an  amplifier  simulation  feel  too  stiff  or  too  spongy  in  comparison  to  
+the  real  amp.  
+
+4.1 FIXING IT
+
+MIMIC  addresses  dynamic  response  deviations  by  applying  tonal  pulses  to  the  amplifier  being  simulated  and  
+to  the  simulation  simultaneously.    The  pertinent  parameters  of  the  simulation  are  then  varied  until  the  
+dynamic  characteristics  of  the  simulation  match  those  of  the  amp  being  simulated.    These  corrected  
+parameters  are  then  stored  with  the  model.  
+
+Summary
+
+MIMICTM  processing  is  a  major  advancement  in  the  field  of  guitar  tube  amplifier  simulation.    This  technology  
+identifies  deviations  in  the  response  of  the  simulated  amplifier  to  the  actual  amplifier  and  generates  corrective  
+data  bringing  a  level  of  accuracy  that  has  been  heretofore  unachievable.    An  inherent  advantage  of  this  
+technique  is  the  exact  separability  of  the  amplifier  simulation  from  the  cabinet  simulation.    This  allows  those  
+that  desire  "amp--in--the--room  sound"  to  achieve  that  with  no  compromise  as  compared  to  competing  
+technologies  that  cannot  fully  separate  the  amplifier  simulation  from  the  cabinet  response.    Simply  bypass  the  
+cabinet  simulation  and  connect  the  Axe--Fx  II  to  a  quality  power  amp  and  guitar  cabinet  of  your  choice.    For  
+those  comfortable  with  Full--Range  Flat--Response  monitoring  (FRFR),  MIMIC  achieves  polished,  studio--quality  
+tones  with  ease.  
+A  tremendous  amount  of  work  went  into  this  technology  and  we  are  pleased  to  offer  this  upgrade  free--of--
+charge  to  all  owners  of  the  Axe--Fx  II  Digital  Guitar  Processor.  
+
+    PAGE  10  of  10    ·    FRACTAL  AUDIO  SYSTEMS  WHITE  PAPER  ·  MULTI--POINT  ITERATIVE  MATCHING  &  IMPEDANCE  CORRECTION  
+

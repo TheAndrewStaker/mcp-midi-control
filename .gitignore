@@ -14,16 +14,19 @@ build/
 # regression that puts it back at the old location.
 docs/wiki/
 
-# Third-party copyrighted Fractal Audio documentation.
-# Download from https://www.fractalaudio.com/am4-downloads/ to your local
-# clone. See docs/manuals/README.md for the expected file list.
+# Third-party copyrighted Fractal Audio documentation. Source PDFs are
+# the publisher's copyrighted product and don't ship in the repo;
+# download from https://www.fractalaudio.com/ to your local clone.
+# See docs/manuals/README.md for the expected file list.
+#
+# The .txt extractions of these PDFs ARE committed (derivative
+# reference material under fair-use interoperability research) so
+# contributors and Claude Code agents can grep them without
+# re-supplying the source PDFs.
 docs/manuals/*.pdf
-docs/manuals/*.txt
 
-# Other-manufacturer manuals (Roland/Boss, etc.) — copyright-owned PDFs
-# stay local. The .txt extractions alongside them ARE committed, so
-# future Claude Code sessions can grep them without requiring the founder
-# to re-supply the source PDFs.
+# Other-manufacturer manuals (Roland / Boss / ASM / etc.). Same policy:
+# source PDFs stay local, .txt extractions are committed alongside.
 docs/manuals/other-gear/*.pdf
 
 # samples/ is entirely local-only — captures, factory preset exports

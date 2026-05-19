@@ -24,18 +24,27 @@ of the server never need to install them.
 
 PDFs from Fractal Audio are copyrighted by Fractal Audio Systems. PDFs
 from ASM (Hydrasynth) are copyrighted by Ashun Sound Machines. **None of
-the PDFs are committed to the repo.** The `.txt` extractions of Fractal
-PDFs are also gitignored. The `.txt` extractions under `other-gear/`
-(Hydrasynth) are committed because they're short reference snippets the
-codebase needs.
+the PDFs are committed to the repo.**
+
+The `.txt` extractions ARE committed (both top-level Fractal docs and
+the `other-gear/` set). They're derivative reference material used for
+interoperability research; treating them as fair-use development assets
+makes the repo grep-able for both contributors and Claude Code agents
+without forcing every clone to re-run `pdftotext`. If a publisher
+objects to a specific extract, the policy is to drop that file (the
+`.gitignore` entry for the PDF stays; only the `.txt` would be
+removed).
 
 Download each PDF from the publisher's site (links below) and drop it in
-the named location. Several scripts and docs expect these exact filenames.
+the named location so you can re-generate the `.txt` if needed. Several
+scripts and docs expect these exact filenames.
 
 ## Fractal Audio manuals
 
-Drop these in `docs/manuals/`. Both the PDF and the `.txt` extraction are
-gitignored; you generate the `.txt` once with `pdftotext` after download.
+Drop these in `docs/manuals/`. The PDF is gitignored; the `.txt`
+extraction is committed. Generate the `.txt` once with `pdftotext`
+after you download the PDF, then `git add` the `.txt` if it's new to
+the repo.
 
 | File | Source | What this project uses it for |
 |------|--------|-------------------------------|

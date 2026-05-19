@@ -1,0 +1,247 @@
+Axe-Fx II Tone Match Mini Manual
+
+The Tone Match block changes the sound of an Axe-Fx preset to match a reference signal,
+such as a recording or the feed from a mic on a live amp. The result can be saved right
+into the preset where it was created, or exported as a User Cab IR for use in other presets.
+All amp and effect settings are fully editable in presets using Tone Match.
+
+                                                 Use your Axe-Fx II to create a starting point that is reasonably close
+                                                 to the desired sound. Use the same or a similar amp type, and try to
+                                                 set the tone controls and drive/gain appropriately. When matching a
+                                                 real amp it is recommended to create a custom IR of its speaker first.
+                                                 Remember to include the Tone Match block, which should typically
+                                                 replace or follow a cab.
+
+                                                 Connect your reference signal to the Axe-Fx II and configure the Tone
+                                                 Match block to "listen" at the desired inputs. The quality, duration, and
+                                                 content are all critical. You should use a high-quality recording which
+                                                 isolates the tone you're trying to match without other instruments,
+                                                 vocals, or excess noise, or the feed from a mic/pre on a live amp.
+
+                                                 When you're ready, press the front panel "X" button to "capture" a
+                                                 sample of the reference (press X again to stop.) Next, Tone Match
+                                                 needs to "hear" your starting preset, so play your guitar into the
+                                                 Axe-Fx II and press "Y" to capture this "local" signal. Advanced users
+                                                 might create test tones, or to create routings which capture both
+                                                 reference and local at the same time.
+
+                                                 When capturing is complete, you will see two side-by-side "frequency
+                                                 plots." Press ENTER on the Axe-Fx II to create the final Tone Match.
+                                                 You'll be able to hear the result right away when you play your guitar
+                                                 into the Axe-Fx II.
+
+                                                 Now fine tune and save. The Tone Match block "Process" page has
+                                                 parameters to tweak, or you can adjust other blocks as desired (turn
+                                                 any pre-amp FX back on!) When you STORE, the Tone Match is saved
+                                                 right in the preset, which can be exported and shared like any other.
+                                                 Alternately, you can EXPORT Tone Match data into a User Cab memory.
+
+                                                                     © Copyright. Fractal Audio Systems. All rights reserved. Doc v1.05
+1 Create            The Starting Point Preset
+
+       AMP CAB TMA  Use your Axe-Fx II to create a starting point preset. Use the same or
+                    similar amp and cab models, set the tone controls appropriately, and
+                    try to get the gain/drive amount "right". The closer the better, but
+                    remember, Tone Match aims to close the gap, so don't obsess.
+
+                    Remember to insert the Tone Match block. Place it in the signal path
+                    where you want it to process the tone. You can either use it to replace
+                    a cab, or in addition to a cab (see below.) If you have an IR of the
+                    actual cab you're trying to match, using it in the signal path makes
+                    perfect sense.
+
+                    To Cab or Not to Cab?
+
+                    The Tone Match block can be used in place of or in addition to a cab.
+                    The following general guidelines are offered, but it is in fact possible to
+                    obtain usable results with or without a cab block in either case.
+
+                    AMP  vs. TMA                     AMP CAB TMA
+
+                    Consider the Tone Match block    When you're matching a real
+                    instead of a Cab block when      amp, best results will often be
+                    you cannot find or create an IR  obtained by first creating a
+                    of the cab used on a recording.  USER IR of the amp's speaker.
+
+                     AMP CAB TMA                     See the Axe-Fx owner's manual
+                                                     for more on how to create and
+                    NOTE: Use a "stand-in" (a cab    your own custom "user" IRs.
+                    that sounds "close") while
+                    dialing in the starting point.   For your starting point preset,
+                    (Remember to bypass or           load your custom IR into a Cab
+                    remove it later when you         block and use the "correct" or a
+                    capture the local signal.)       substitute amp model. Keep the
+                                                     cab turned ON during capture.
+
+                    Hold the Effects
+
+                    In general, your starting point preset should have no effects in front of
+                    the Tone Match block at this point. You might add some for "flavor"
+                    while dialing in, but set them to BYPASS before doing a Tone Match.
+                    The exception might be a drive or EQ that is really integral to getting
+                    the starting preset to sound or feel "right." Effects after the Tone Match
+                    block are okay, but it's perhaps best to hold off until after capturing.
+2 Connect                       Configure the Reference Input
+
+                         1      For the Tone Match block to work, it first needs to "capture" short
+                         2 TMA  snippets of both the external "reference" signal and the sound of your
+                         3      starting point preset, aka the "local" signal.
+                         4
+                                The reference signal reaches the block through any of 9 different
+                                selectable inputs. These allow you to design a workflow that's best for
+                                you. Depending on the structure of your preset, select the appropriate
+                                "REFERENCE SOURCE" input on the PROCESS page of the Tone Match
+                                block's edit menu. The following choices are available:
+
+                                Row 1­4: Selects any block from the column to the left of the Tone
+                                Match block. Using one of these options requires that your reference
+                                signal be routed on the grid to the Tone Match block. Except in rare
+                                cases, it is best to use one of the other "direct input" options below.
+
+                                Input 1­2: Selecting Input 1 or 2 effectively ignores the grid and
+                                (invisibly) routes signal directly from the designated input to the refer-
+                                ence input of the Tone Match block. "INPUT 2" would be the typical
+                                selection when your reference signal is the analog output from a
+                                computer audio interface or the feed from a mixer/mic pre connected
+                                directly to the 1/4" inputs on the rear of the Axe-Fx II.
+
+                                Block L­R: Using the left or right inputs of the Tone Match block
+                                depends on the reference signal being present on the grid and routed
+                                to the appropriate block input. Like the options "Row 1-4", this would
+                                be a somewhat rare configuration.
+
+                                USB: Perhaps the most convenient way to pass a recording to the Tone
+                                Match block is via USB. You don't need to make any special I/O settings
+                                to use this option. Simply play the file from your computer into the first
+                                available Axe-Fx II USB output.
+
+                                In all cases, the Tone Match block sums L+R when you stereo signals.
+
+                                Set Proper Levels
+
+                                It is important that the reference signal reaches the tone block at a
+                                appropriate level. You can use the front panel input meters and the I/O
+                                Audio : Input page to monitor and control INPUT 1 or INPUT 2 levels.
+                                The meters and controls in your computer audio application can easily
+                                establish that the levels of incoming USB signals are appropriate.
+3 Capture         Quality and Quantity First
+
+     AMP CAB TMA  Tone Match provides best results when you use high quality signals
+                  which sufficiently represent the full tonal range of the source.
+
+                  Format: For reference recordings, lossless formats (WAV, etc.) are
+                  superior to lossy formats (MP3, YouTube, etc.).
+
+                  Production Value: Naturally, you'll want to match tones that sound
+                  great to begin with. A crummy recording of a great amp won't do!
+
+                  Isolation: The use of raw, isolated, "lone-guitar" tracks is essential as
+                  additional instruments/vocals/noise (and certain effects) will add
+                  unwanted frequencies which "contaminate" the Tone Match.
+
+                  Range: Demonstrating the "tonal range" of the source is key. Ten
+                  seconds of diverse chording and lines does more to establish how an
+                  amp responds than sixty seconds of sustained high notes.
+
+                  Duration: By default, the capture process averages about a ten second
+                  window. For more or less time, increase or decrease Average Time on
+                  the PROCESS page of the Tone Match edit menu. The "capture window"
+                  is roughly 4-5x this value in seconds--plenty for Tone Match to "hear"
+                  all it needs. If the frequency plot "falls flat" before you press stop, you
+                  have the window set too small. Setting to max invokes a "peak hold"
+                  mode where the maximum is used rather than the average.
+
+                  Mono: The Tone Match block analyzes only mono signals, isolating or
+                  summing input channels. Use the REFERENCE CHAN and LOCAL CHAN
+                  selectors on the PROCESS page of the Tone Match Edit menu to deter-
+                  mine how incoming signals will be handled (L, R, L+R SUM).
+
+                  Capture Both Signals
+
+                  The capture process is simple. Open the Tone Match Block Edit menu
+                  and go to the CAPTURE page. When you're ready, press the front panel
+                  "X" button to begin capturing the reference signal and then let it roll.
+                  You'll see the spectrum "build" as the incoming signal is analyzed. To
+                  stop the capture, press X again. Avoid excess silence by pressing start
+                  or stop as source as material begins and ends.
+
+                  Repeat the capture process for the local signal using the "Y" button to
+                  start and stop. Remember that if you intend to use the Tone Match to
+                  replace a Cab, you'll want to bypass the Cab block while capturing the
+                  local signal. Play your guitar to "generate" material for the block to
+                  analyze. It's best to play the same chords or phrases as those of the
+                  reference track.
+
+                  Advanced users may also wish to use the onboard synth block to
+                  generate test tones--white or pink noise or swept sine waves--to
+                  present perfectly consistent program material to both the reference
+                  and local amps.
+4 Compare  Match the Tone
+
+           Having completed the captures, you should see a spectrum for each of
+           the signals in the display.
+
+           To create the Tone Match, press ENTER. Turn to the PROCESS page
+           of the Tone Match edit menu to review your result as a frequency plot.
+
+           You can listen to the results immediately. If you're pleased, tweak and
+           save to complete the process (see Step 5). Otherwise, turn back to the
+           CAPTURE page to try again.
+
+           Hearing Differences
+
+           Our hearing is more sensitive to some frequencies than others, and
+           different volume levels change how we perceive the "equal loudness"
+           of different tones. When auditioning matched tones, or when making
+           adjustments, remember that even small differences in level can have a
+           dramatic impact on perception. Also, be sure to check your work at
+           "gig levels" whenever possible, ideally in the context of a mix.
+5 Complete  Fine Tune and Save
+
+            The Tone Match block has two parameters for optional fine-tuning.
+            These appear on the PROCESS page of its edit menu.
+
+            Amount: Scales the effect of the Tone Match filter from 0­100%. Use
+            this to control how much tone re-shaping is applied.
+
+            Smoothing: This "intelligently" averages the frequency curve to
+            smooth the Tone Match result uniformly across all octaves. It first
+            blends out minor ripples and ultimately eases all but extreme peaks or
+            troughs.
+
+            Level, Balance and Bypass Mode work the same as in any other block.
+
+            Ultimately, you need to STORE. When you do (by pressing STORE...
+            ENTER... ENTER) the Tone Match result is saved right inside the
+            preset--a perfect portable package. You can edit, swap, export, share
+            online or do anything else with it that you please.
+
+            The intent of Tone Matching is to provide the means for precision
+            reproduction of any guitar tone without intense "tweaking." That said,
+            even when you've performed a totally satisfying Tone Match, you still
+            have the total flexibility of the entire Axe-Fx at your disposal. Indeed,
+            one of the best aspects of Tone Match is that nothing is set in stone.
+
+            You can adjust the amp tone, drive or dynamics, tweak to "sit" in a mix,
+            apply effects, or create alternate routing configurations.
+
+            Exporting Results
+
+            Finally, Tone Match results can be exported for use as User Cab IRs. The
+            EXPORT page of the Tone Match edit menu allows you to select a
+            location, rename, and store the resulting file.
+
+            This provides the capability for instance, to use multiple simultaneous
+            Tone Match results in a single preset by loading them up in CAB blocks
+            instead of using the Tone Match block, or taking advantage of other
+            parameters only available in the CAB (air, room, delay, etc.).
+
+6 Context   Beyond Tone
+
+            Sometimes the quest can seem like a goal in itself. We created Tone
+            Match to make it easier to "get that sound", but also to inspire an end
+            result: music. Copping a tone is cool, but with advanced technology,
+            the saying, "tone is in the hands" has perhaps never been more apt.
+            Now that you've created a preset, consider taking a step back from the
+            quest for tone to make some music.
+
