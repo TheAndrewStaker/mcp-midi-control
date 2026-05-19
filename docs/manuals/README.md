@@ -45,15 +45,10 @@ gitignored; you generate the `.txt` once with `pdftotext` after download.
 | `Axe-Fx-II-Tone-Match-Manual.pdf` | same source | Tone Match block semantics |
 | `Axe-Fx-II-ir-capture.pdf` | same source | IR capture workflow |
 | `Axe-Fx_II_XL_MIDI_THRU_Guide.pdf` | same source | MIDI Thru on the XL+ specifically |
-| `Axe-Fx III MIDI for 3rd Party Devices.pdf` | [fractalaudio.com/downloads/misc](https://www.fractalaudio.com/downloads/misc/Axe-Fx%20III%20MIDI%20for%203rd%20Party%20Devices.pdf) | Axe-Fx III MIDI surface (the only public III protocol spec) |
+| `Axe-Fx III MIDI for 3rd Party Devices.pdf` | [fractalaudio.com/downloads/misc](https://www.fractalaudio.com/downloads/misc/Axe-Fx%20III%20MIDI%20for%203rd%20Party%20Devices.pdf) | Axe-Fx III MIDI wire surface. The public protocol spec |
+| `Axe-Fx-III-Owners-Manual.pdf` | [fractalaudio.com/axe-fx-iii-downloads](https://www.fractalaudio.com/axe-fx-iii-downloads/) | III block roster, scene model, footswitch logic. Complements the third-party MIDI spec (which covers wire only) |
 | `Fractal-Audio-Blocks-Guide.pdf` | [fractalaudio.com/downloads](https://www.fractalaudio.com/downloads/) (search "Blocks Guide") | Per-block parameter prose. Cross-device (AM4 / FM3 / FM9 / Axe-Fx III). Most-cited reference in the codebase |
 | `Fractal-Audio-Systems-MIMIC-(tm)-Technology.pdf` | Fractal blog / downloads | Background on the speaker simulation technology |
-
-### Recommended additions (not yet local)
-
-| File | Source | Why it would help |
-|------|--------|-------------------|
-| Axe-Fx III Owner's Manual | [fractalaudio.com/axe-fx-iii-downloads](https://www.fractalaudio.com/axe-fx-iii-downloads/) | III block roster + scene/footswitch logic. The third-party MIDI PDF we already have does NOT cover the block roster or scene model. Decode work on the III routinely needs this |
 
 ## Other-manufacturer manuals (`other-gear/`)
 
