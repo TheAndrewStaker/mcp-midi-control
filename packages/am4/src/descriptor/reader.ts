@@ -43,6 +43,7 @@ import {
   loadLineage,
   runLineageLookup,
 } from 'fractal-midi/shared';
+import { formatLoudnessAppendix } from '@mcp-midi-control/core/fractal-shared/loudness.js';
 import { TYPE_APPLICABILITY } from 'fractal-midi/am4';
 import { checkApplicability } from 'fractal-midi/am4';
 import {
@@ -253,17 +254,20 @@ export const reader: DeviceReader = {
     }
     const withQuotes = query.include_quotes ?? true;
     if (result.shape === 'forward') {
-      const baseText = formatLineageRecord(result.hits[0].record, withQuotes);
-      const knobs = formatApplicableKnobs(blockType, result.hits[0].record.am4Name);
-      return { ok: true, text: knobs ? `${baseText}\n${knobs}` : baseText };
+      const rec = result.hits[0].record;
+      const baseText = formatLineageRecord(rec, withQuotes);
+      const knobs = formatApplicableKnobs(blockType, rec.am4Name);
+      const loudness = formatLoudnessAppendix(rec.am4Name);
+      const parts = [baseText, knobs, loudness].filter((s): s is string => Boolean(s));
+      return { ok: true, text: parts.join('\n') };
     }
     const blocks = result.hits.map((h) => {
       const am4Name = 'am4Name' in h ? h.am4Name : '?';
       const recordText = formatLineageRecord(h.record, withQuotes, 3);
       const knobs = formatApplicableKnobs(blockType, am4Name);
-      return knobs
-        ? `── ${am4Name} ──\n${recordText}\n${knobs}`
-        : `── ${am4Name} ──\n${recordText}`;
+      const loudness = formatLoudnessAppendix(am4Name);
+      const parts = [recordText, knobs, loudness].filter((s): s is string => Boolean(s));
+      return `── ${am4Name} ──\n${parts.join('\n')}`;
     });
     return {
       ok: true,
@@ -286,9 +290,9 @@ export const reader: DeviceReader = {
       const blocks = records.map((rec) => {
         const recordText = formatLineageRecord(rec, true, 3);
         const knobs = formatApplicableKnobs(blockType, rec.am4Name);
-        return knobs
-          ? `── ${rec.am4Name} ──\n${recordText}\n${knobs}`
-          : `── ${rec.am4Name} ──\n${recordText}`;
+        const loudness = formatLoudnessAppendix(rec.am4Name);
+        const parts = [recordText, knobs, loudness].filter((s): s is string => Boolean(s));
+        return `── ${rec.am4Name} ──\n${parts.join('\n')}`;
       });
       out[blockType] = `${records.length} ${blockType} records:\n\n${blocks.join('\n\n')}`;
     }

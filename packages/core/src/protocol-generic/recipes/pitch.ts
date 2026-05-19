@@ -168,6 +168,96 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
     },
   },
 
+  // Diatonic harmonies — INTEL HARM mode. Session 88 failure was the
+  // agent writing voice_1_harmony as a +27 semitone offset because it
+  // had no way to disambiguate FIXED HARM (chromatic semitone offset)
+  // vs INTEL HARM (scale degree). These recipes set effect_type +
+  // key + scale + voice_1_harmony explicitly so the agent gets the
+  // diatonic third / fifth without reasoning about wire modes.
+  //
+  // voice_1_harmony semantics in INTEL HARM mode: 1=unison, 2=second,
+  // 3=third, 4=fourth, 5=fifth, 6=sixth, 7=seventh. Set per the
+  // pitch_block agent_guidance section in
+  // packages/axe-fx-ii/src/descriptor/agentGuidance.ts. III mirrors
+  // the same semantics; we mirror PITCH_HARMONY1 + PITCH_KEY +
+  // PITCH_SCALE + PITCH_EFFECT_TYPE in the III column.
+
+  // III is omitted from these recipes until the III PITCH catalog gains
+  // `PITCH_EFFECT_TYPE` and `PITCH_HARMONY1/2`. The current III pitch
+  // catalog (XML-inferred) ships KEY / SCALE / SHIFT but not the harmony
+  // mode-selector or the scale-degree harmony knobs. Re-add III when
+  // those land via the AxeEdit III XML extractor or a III enum dump.
+
+  harmony_third_diatonic_major: {
+    name: 'harmony_third_diatonic_major',
+    description:
+      'Diatonic third up, C major scale. INTEL HARM mode: the harmony bends with the scale (major third on C, minor third on D, major on E, etc.). Pass the song key via apply_preset to override.',
+    applicable_devices: ['axe-fx-ii'] as const,
+    params_per_device: {
+      'axe-fx-ii': {
+        effect_type: 'INTEL HARM',
+        key: 'C',
+        scale: 'IONIAN MAJ',
+        voice_1_harmony: 3,
+        voice_1_level: 0,
+        mix: 40,
+      },
+    },
+  },
+
+  harmony_fifth_diatonic_major: {
+    name: 'harmony_fifth_diatonic_major',
+    description:
+      'Diatonic fifth up, C major scale. INTEL HARM mode: power-chord-style fifth that stays in key (perfect fifth on C/F/G, diminished on B). Override key via apply_preset for non-C songs.',
+    applicable_devices: ['axe-fx-ii'] as const,
+    params_per_device: {
+      'axe-fx-ii': {
+        effect_type: 'INTEL HARM',
+        key: 'C',
+        scale: 'IONIAN MAJ',
+        voice_1_harmony: 5,
+        voice_1_level: 0,
+        mix: 40,
+      },
+    },
+  },
+
+  harmony_third_diatonic_minor: {
+    name: 'harmony_third_diatonic_minor',
+    description:
+      'Diatonic third up, A natural minor. INTEL HARM mode: melancholic harmony that follows the minor scale. Override key for non-A songs.',
+    applicable_devices: ['axe-fx-ii'] as const,
+    params_per_device: {
+      'axe-fx-ii': {
+        effect_type: 'INTEL HARM',
+        key: 'A',
+        scale: 'AEOLIAN MIN',
+        voice_1_harmony: 3,
+        voice_1_level: 0,
+        mix: 40,
+      },
+    },
+  },
+
+  harmony_third_and_fifth_diatonic_major: {
+    name: 'harmony_third_and_fifth_diatonic_major',
+    description:
+      'Diatonic third + fifth stack, C major. INTEL HARM mode on both voices: three-note diatonic chord from a single guitar note (Brian May / Queen-style). Override key for non-C songs.',
+    applicable_devices: ['axe-fx-ii'] as const,
+    params_per_device: {
+      'axe-fx-ii': {
+        effect_type: 'INTEL HARM',
+        key: 'C',
+        scale: 'IONIAN MAJ',
+        voice_1_harmony: 3,
+        voice_2_harmony: 5,
+        voice_1_level: 0,
+        voice_2_level: 0,
+        mix: 45,
+      },
+    },
+  },
+
   // Whammy expression pedal: full octave-down to octave-up sweep
   // driven by an external expression pedal. The pedal-to-PITCH_CTRL
   // wiring is a modifier (BK-063); this recipe seeds the base

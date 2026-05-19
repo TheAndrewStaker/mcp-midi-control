@@ -23,6 +23,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
+import { formatLoudnessAppendix } from '@mcp-midi-control/core/fractal-shared/loudness.js';
+
 const require = createRequire(import.meta.url);
 // Axe-Fx II lineage JSON lives alongside AM4 lineage data inside the
 // fractal-midi package's shared/ subpath. Resolve via the package's
@@ -152,6 +154,12 @@ export function formatAxeFxIILineageRecord(
         }
     }
     if (rec.flags?.length) lines.push(`flags: ${rec.flags.join('; ')}`);
+    // BK-064 part 1 wiring: surface per-amp / per-drive loudness data
+    // when the corpus has an entry. Corpus is keyed by AM4 display
+    // name; lineage records carry `am4Name` as the cross-device key.
+    // Fall back to `axefx2Name` for identical-name records.
+    const loudnessAppendix = formatLoudnessAppendix(rec.am4Name ?? rec.axefx2Name);
+    if (loudnessAppendix) lines.push(loudnessAppendix);
     return lines.join('\n');
 }
 

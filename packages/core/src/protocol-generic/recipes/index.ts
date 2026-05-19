@@ -25,3 +25,17 @@ export {
   resolveFilterRecipe,
   type FilterRecipeSpec,
 } from './filter.js';
+
+export {
+  AUTO_WAH_RECIPES,
+  resolveAutoWahRecipe,
+  type AutoWahRecipeSpec,
+} from './autoWah.js';
+
+export {
+  SCENE_LEVELING_RECIPES,
+  resolveSceneLevelingRecipe,
+  lookupSceneRoleOffset,
+  type SceneLevelingRecipeSpec,
+  type SceneRole,
+} from './sceneLeveling.js';

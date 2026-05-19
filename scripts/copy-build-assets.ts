@@ -26,6 +26,13 @@ const COPIES: AssetCopy[] = [
     src: 'packages/core/src/protocol-generic/param-descriptions.json',
     dst: 'packages/core/dist/protocol-generic/param-descriptions.json',
   },
+  // BK-064 part 1: per-amp + per-drive loudness corpus. Loaded by
+  // packages/core/src/fractal-shared/loudness.ts at runtime; ts-only
+  // emits don't include the JSON, so mirror it explicitly.
+  {
+    src: 'packages/core/src/fractal-shared/lineage/loudness.json',
+    dst: 'packages/core/dist/fractal-shared/lineage/loudness.json',
+  },
 ];
 
 function copyTree(srcDir: string, distDir: string): number {
