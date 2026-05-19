@@ -35,11 +35,26 @@ import { registerParamKindResolver } from '@mcp-midi-control/core/protocol-gener
 
 import { AXE_FX_II_BLOCKS } from 'fractal-midi/axe-fx-ii';
 
+import { listConceptKeysForDevice } from '@mcp-midi-control/core/protocol-generic/concept-keys.js';
+
 import { AXEFX2_AGENT_GUIDANCE } from './descriptor/agentGuidance.js';
 import { resolveAxeFxIIParamKind } from './calibration.js';
 import { buildBlocks, buildBlockTypes } from './descriptor/schema.js';
 import { reader } from './descriptor/reader.js';
 import { writer } from './descriptor/writer.js';
+
+/**
+ * Per-device concept-key map. Built from the central registry in
+ * `concept-keys.ts`. Surfaced via `describe_device.concept_keys` so the
+ * agent can read the canonical concept-key -> local-name map in one call.
+ */
+const AXEFX2_CONCEPT_KEYS: Readonly<Record<string, string>> = (() => {
+  const out: Record<string, string> = {};
+  for (const entry of listConceptKeysForDevice('axe-fx-ii')) {
+    out[entry.conceptKey] = entry.localName;
+  }
+  return Object.freeze(out);
+})();
 
 // Plug the Axe-Fx II resolver into the cross-device param-kind registry
 // BEFORE buildBlocks() runs (schema.ts uses resolveParamKind to derive
@@ -165,4 +180,5 @@ export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
   agent_guidance: AXEFX2_AGENT_GUIDANCE,
   example_spec: AXEFX2_EXAMPLE_SPEC,
   block_params_summary: AXEFX2_BLOCK_PARAMS_SUMMARY,
+  concept_keys: AXEFX2_CONCEPT_KEYS,
 };

@@ -44,6 +44,7 @@ import {
   type ValidationInfo,
 } from '../types.js';
 import { resolveParamAlias } from '../cross-device-aliases.js';
+import { resolveConceptKeyForBlock } from '../concept-keys.js';
 import { findEnumMatch, resolveEnumAlias } from '../cross-device-enums.js';
 import {
   formatUnknownEnumError,
@@ -165,23 +166,52 @@ function validateParamMap(
   if (block === undefined) return;
   const validNames = Object.keys(block.params);
   for (const [paramName, value] of Object.entries(map)) {
-    // First, consult the cross-device alias table. If the agent typed a
-    // foreign device's vocabulary (e.g. `volume` on AM4 drive, where the
-    // canonical is `level`), swap to the canonical before any further
-    // resolution. The original name lands in `info[]` so the agent can
-    // learn the host vocabulary.
+    // Resolution order:
+    //   1. Exact local-name match (the fast path — most common).
+    //   2. Concept-key match (cross-device canonical vocabulary).
+    //   3. Cross-device alias table (per-pair foreign-word fallback).
+    //   4. Levenshtein "did you mean..." suggestion (existing behavior).
+    //
+    // Step 1 happens inside `resolveParamKey` further below. Step 2 runs
+    // first here because concept-keys are device-agnostic and we want
+    // an info notice that names the concept-key explicitly. Step 3
+    // (alias) catches the per-pair cases that aren't concept-keys.
     let effectiveName = paramName;
     let aliasInfoEntry: ValidationInfo | undefined;
-    const aliasResult = resolveParamAlias(descriptor.id, blockKey, paramName);
-    if (aliasResult.aliasUsed !== undefined && aliasResult.canonical !== paramName) {
-      effectiveName = aliasResult.canonical;
+
+    // Step 2: concept-key resolution. If the agent typed a concept-key
+    // (either fully-qualified `block.concept` or just `concept` for the
+    // current block), rewrite to the device-local name.
+    const conceptResult = resolveConceptKeyForBlock(descriptor.id, blockKey, paramName);
+    if (
+      conceptResult !== undefined
+      && conceptResult.localName !== paramName.toLowerCase()
+      && block.params[conceptResult.localName] !== undefined
+    ) {
+      effectiveName = conceptResult.localName;
       aliasInfoEntry = {
         slot_index: slotIndex,
-        path: `${basePath}.${aliasResult.canonical}`,
-        info: `resolved ${blockKey}.${paramName} -> ${blockKey}.${aliasResult.canonical} via cross-device alias`,
-        alias_used: aliasResult.aliasUsed,
-        canonical: aliasResult.canonical,
+        path: `${basePath}.${conceptResult.localName}`,
+        info: `resolved ${blockKey}.${paramName} -> ${blockKey}.${conceptResult.localName} via cross-device concept-key "${conceptResult.conceptKey}"`,
+        alias_used: paramName,
+        canonical: conceptResult.localName,
       };
+    } else {
+      // Step 3: cross-device alias table. If the agent typed a foreign
+      // device's vocabulary (e.g. `volume` on AM4 drive, where the
+      // canonical is `level`), swap to the canonical before any further
+      // resolution.
+      const aliasResult = resolveParamAlias(descriptor.id, blockKey, paramName);
+      if (aliasResult.aliasUsed !== undefined && aliasResult.canonical !== paramName) {
+        effectiveName = aliasResult.canonical;
+        aliasInfoEntry = {
+          slot_index: slotIndex,
+          path: `${basePath}.${aliasResult.canonical}`,
+          info: `resolved ${blockKey}.${paramName} -> ${blockKey}.${aliasResult.canonical} via cross-device alias`,
+          alias_used: aliasResult.aliasUsed,
+          canonical: aliasResult.canonical,
+        };
+      }
     }
     const path = `${basePath}.${effectiveName}`;
     const canonical = resolveParamKey(descriptor, blockKey, effectiveName);

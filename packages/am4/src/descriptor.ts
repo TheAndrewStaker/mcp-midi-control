@@ -36,10 +36,25 @@ import type {
 import { findCompatibleTypes as am4FindCompatibleTypes } from 'fractal-midi/am4';
 import { TOTAL_LOCATIONS } from 'fractal-midi/am4';
 
+import { listConceptKeysForDevice } from '@mcp-midi-control/core/protocol-generic/concept-keys.js';
+
 import { AM4_AGENT_GUIDANCE } from './descriptor/agentGuidance.js';
 import { buildBlocks, buildBlockTypes } from './descriptor/schema.js';
 import { reader } from './descriptor/reader.js';
 import { writer } from './descriptor/writer.js';
+
+/**
+ * Per-device concept-key map. Built from the central registry in
+ * `concept-keys.ts`. Surfaced via `describe_device.concept_keys` so the
+ * agent can read the canonical concept-key -> local-name map in one call.
+ */
+const AM4_CONCEPT_KEYS: Readonly<Record<string, string>> = (() => {
+  const out: Record<string, string> = {};
+  for (const entry of listConceptKeysForDevice('am4')) {
+    out[entry.conceptKey] = entry.localName;
+  }
+  return Object.freeze(out);
+})();
 
 function findCompatibleTypes(query: CompatibleTypesQuery): CompatibleTypesResult {
   const r = am4FindCompatibleTypes(query.block, query.params);
@@ -168,6 +183,7 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
   writer,
   agent_guidance: AM4_AGENT_GUIDANCE,
   block_params_summary: AM4_BLOCK_PARAMS_SUMMARY,
+  concept_keys: AM4_CONCEPT_KEYS,
   findCompatibleTypes,
   example_spec: AM4_EXAMPLE_SPEC,
 };

@@ -79,6 +79,7 @@ import type {
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
+import { listConceptKeysForDevice } from '@mcp-midi-control/core/protocol-generic/concept-keys.js';
 
 import {
   AXE_FX_III_BLOCKS,
@@ -1270,6 +1271,19 @@ const AXEFX3_EXAMPLE_SPEC: PresetSpec = {
   landingScene: 1,
 };
 
+/**
+ * Per-device concept-key map. Built from the central registry in
+ * `concept-keys.ts`. Surfaced via `describe_device.concept_keys` so the
+ * agent can read the canonical concept-key -> local-name map in one call.
+ */
+const AXEFX3_CONCEPT_KEYS: Readonly<Record<string, string>> = (() => {
+  const out: Record<string, string> = {};
+  for (const entry of listConceptKeysForDevice('axe-fx-iii')) {
+    out[entry.conceptKey] = entry.localName;
+  }
+  return Object.freeze(out);
+})();
+
 // ── Descriptor ─────────────────────────────────────────────────────
 
 export const AXEFX3_DESCRIPTOR: DeviceDescriptor = {
@@ -1309,4 +1323,5 @@ export const AXEFX3_DESCRIPTOR: DeviceDescriptor = {
   agent_guidance: AXEFX3_AGENT_GUIDANCE,
   example_spec: AXEFX3_EXAMPLE_SPEC,
   block_params_summary: AXEFX3_BLOCK_PARAMS_SUMMARY,
+  concept_keys: AXEFX3_CONCEPT_KEYS,
 };

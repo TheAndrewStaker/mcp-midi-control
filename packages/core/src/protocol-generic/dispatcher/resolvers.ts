@@ -17,6 +17,8 @@ import {
   type DeviceDescriptor,
   type DispatchErrorDetails,
 } from '../types.js';
+import { resolveConceptKeyForBlock } from '../concept-keys.js';
+import { resolveParamAlias } from '../cross-device-aliases.js';
 
 import { requireDevice } from './core.js';
 import {
@@ -67,10 +69,24 @@ export function resolveParamName(
       `Block '${block}' is not registered on ${descriptor.display_name}.`,
     );
   }
+  // Step 1: exact local-name match — the fast path.
   if (input in schema.params) return { name: input };
+  // Step 1b: descriptor-supplied block-alias map.
   const aliased = schema.aliases?.[input];
   if (aliased !== undefined && aliased in schema.params) {
     return { name: aliased, aliased_from: input };
+  }
+  // Step 2: cross-device concept-key match. Accepts both fully-qualified
+  // (`drive.output_level`) and bare (`output_level`, when the slot
+  // block context provides the block prefix). The dispatcher rewrites
+  // the typed concept-key to the device-local canonical name before the
+  // writer sees it.
+  const conceptResult = resolveConceptKeyForBlock(descriptor.id, block, input);
+  if (
+    conceptResult !== undefined
+    && conceptResult.localName in schema.params
+  ) {
+    return { name: conceptResult.localName, aliased_from: input };
   }
   // Normalize user input (lowercase, collapse non-alphanumeric to "_")
   // so "Input Drive" / "INPUT DRIVE" / "input-drive" all match the
@@ -83,6 +99,16 @@ export function resolveParamName(
   }
   if (schema.aliases?.[normalized] !== undefined && schema.aliases[normalized] in schema.params) {
     return { name: schema.aliases[normalized], aliased_from: input };
+  }
+  // Step 3: cross-device per-pair alias table (BK-065). Catches the
+  // foreign-device vocabulary cases that aren't promoted to concept-keys.
+  const crossDeviceAlias = resolveParamAlias(descriptor.id, block, input);
+  if (
+    crossDeviceAlias.aliasUsed !== undefined
+    && crossDeviceAlias.canonical !== input
+    && crossDeviceAlias.canonical in schema.params
+  ) {
+    return { name: crossDeviceAlias.canonical, aliased_from: input };
   }
   const suggestion = nearestParam(input, Object.keys(schema.params));
   const valid = Object.keys(schema.params);

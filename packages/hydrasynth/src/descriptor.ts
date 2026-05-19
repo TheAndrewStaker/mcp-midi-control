@@ -37,11 +37,28 @@
  */
 
 import type { DeviceDescriptor, PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { listConceptKeysForDevice } from '@mcp-midi-control/core/protocol-generic/concept-keys.js';
 
 import { HYDRASYNTH_AGENT_GUIDANCE } from './descriptor/agentGuidance.js';
 import { buildBlocks, buildBlockTypes } from './descriptor/schema.js';
 import { reader } from './descriptor/reader.js';
 import { writer } from './descriptor/writer.js';
+
+/**
+ * Per-device concept-key map. Built from the central registry in
+ * `concept-keys.ts`. Surfaced via `describe_device.concept_keys` so the
+ * agent can read the canonical concept-key -> local-name map in one call.
+ * Hydrasynth-specific entries cover oscillator pitch, filter cutoff /
+ * resonance, envelope ADSR, and LFO rate; cross-device Fractal concepts
+ * (amp / drive / reverb etc.) are absent since the synth has no analog.
+ */
+const HYDRASYNTH_CONCEPT_KEYS: Readonly<Record<string, string>> = (() => {
+  const out: Record<string, string> = {};
+  for (const entry of listConceptKeysForDevice('hydrasynth')) {
+    out[entry.conceptKey] = entry.localName;
+  }
+  return Object.freeze(out);
+})();
 
 /**
  * Working `apply_preset` payload literal for the unified surface. Hydrasynth
@@ -143,4 +160,5 @@ export const HYDRASYNTH_DESCRIPTOR: DeviceDescriptor = {
   agent_guidance: HYDRASYNTH_AGENT_GUIDANCE,
   example_spec: HYDRASYNTH_EXAMPLE_SPEC,
   block_params_summary: HYDRASYNTH_BLOCK_PARAMS_SUMMARY,
+  concept_keys: HYDRASYNTH_CONCEPT_KEYS,
 };

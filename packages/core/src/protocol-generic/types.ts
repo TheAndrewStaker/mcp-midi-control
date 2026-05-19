@@ -858,6 +858,24 @@ export interface DeviceDescriptor {
   agent_guidance?: Readonly<Record<string, string>>;
 
   /**
+   * Cross-device concept-key map. Keyed by canonical concept-key
+   * (e.g. `drive.output_level`); value is the device-local param name
+   * the writer expects (e.g. `level` on AM4, `volume` on II).
+   *
+   * Surfaced via `describe_device.concept_keys` so the agent can read
+   * the per-device spelling for any cross-device concept in one call.
+   * The dispatcher's preflight step accepts EITHER the concept-key OR
+   * the device-local name; the concept-key path lets an agent share
+   * one vocabulary across every registered Fractal device.
+   *
+   * Optional — devices without any concept-key mappings omit the
+   * field. The shared registry in `concept-keys.ts` is the source of
+   * truth; each device descriptor populates this field from its own
+   * device-specific slice of the registry at module load.
+   */
+  concept_keys?: Readonly<Record<string, string>>;
+
+  /**
    * Curated top-N param list per block — the params a player adjusts daily
    * (first-page knobs on the hardware). Surfaced through `describe_device`
    * so the agent can skip the `list_params` round-trip for common cases;

@@ -46,6 +46,7 @@ export function registerPresetTools(server: McpServer): void {
       'FRESH-BUILD CLEARING: unlisted slots become block_type="none"; unlisted scenes reset to defaults.',
       'ENUM RECOVERY: ambiguous enum values come back with "Valid options: ..." listing exact candidates. Re-invoke with one verbatim; do NOT guess.',
       'TYPE-vs-KNOB SILENT NO-OP: many block.type values gate which knobs are exposed (Hall/Room/Chamber/Cloud reverb drop writes to `time`; non-master Marshalls drop `master`). The wire acks regardless. If you plan to write a `type` AND a specific knob, call find_compatible_types({port, block, params:["time"]}) first and pick from its result. "Long hall reverb" should pick Plate/Echo/SFX, NOT any Hall variant.',
+      'CONCEPT-KEYS: param names accept either the device-local spelling OR a cross-device concept-key (e.g. `drive.output_level` works on II/AM4/III equivalently — it rewrites to `volume` on II, `level` on AM4/III). See describe_device(port).concept_keys for the per-device map. Concept-keys let one agent vocabulary cover every registered device; device-local names still work unchanged.',
       'PERFORMANCE: ~1-3 s; add ~250 ms when target_location triggers a save.',
     ].join(' '),
     inputSchema: {

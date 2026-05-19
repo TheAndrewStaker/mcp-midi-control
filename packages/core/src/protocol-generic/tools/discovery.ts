@@ -41,6 +41,13 @@ export function registerDiscoveryTools(server: McpServer): void {
       '-> ["type", "mix", "time", "predelay", ...]). Use as your FIRST stop',
       'for a knob name. For advanced params, GEQ bands, modifier wiring,',
       'or full enum tables, fall back to `list_params(port, block)`.',
+      'The response also carries `concept_keys`: a cross-device map from',
+      'canonical concept-keys (e.g. `drive.output_level`) to the device-',
+      'local param name (e.g. `volume` on II, `level` on AM4/III). An',
+      'agent that writes concept-keys works on every registered device',
+      'without re-learning each device\'s spelling. Both forms are',
+      'accepted by set_param / apply_preset; the dispatcher rewrites',
+      'concept-keys to the local name before any wire op fires.',
       'Pure introspection, no MIDI I/O. Safe to call repeatedly.',
     ].join(' '),
     inputSchema: {
