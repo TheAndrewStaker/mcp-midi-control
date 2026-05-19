@@ -48,12 +48,12 @@ server.registerTool('hydra_set_param', {
       .filter((p) => p.category === 'system')
       .map((p) => p.id);
     throw new Error(
-      `Unknown parameter id "${id}". hydra_set_param only handles System CCs. Available ids: ${suggestions.join(', ')}. For engine parameters use hydra_set_engine_param.`,
+      `Unknown parameter id "${id}". hydra_set_param only handles System CCs. Available ids: ${suggestions.join(', ')}. For engine parameters use set_param({port:"hydrasynth", block, name, value}).`,
     );
   }
   if (param.category !== 'system') {
     throw new Error(
-      `"${id}" is an engine parameter, not a System CC. Use hydra_set_engine_param("${id}", value) instead — it sends NRPN, accepts the same name, and the device listens on NRPN for engine control. CC-style and canonical NRPN names both resolve.`,
+      `"${id}" is an engine parameter, not a System CC. Use set_param({port:"hydrasynth", block:"<block>", name:"${id}", value}) instead; it sends NRPN, accepts the same name, and the device listens on NRPN for engine control. CC-style and canonical NRPN names both resolve.`,
     );
   }
   const conn = ensureMidi();

@@ -99,7 +99,7 @@ export function resetAxeFxIIConnection(): { wasConnected: boolean; previousError
  * every response — that made the tool look unreliable when reads were
  * actually self-verifying. See Session 56 commit `<TBD>` for context.
  */
-export const NO_ACK_NOTE = 'Note: SET tools on Axe-Fx II are fire-and-forget — the protocol does not ack writes. Verify the change by audible/visible response on the device.';
+export const NO_ACK_NOTE = 'Note: SET tools on Axe-Fx II are fire-and-forget; the protocol does not ack writes. Verify the change by audible/visible response on the device.';
 
 /**
  * Resolve a param descriptor from a block instance + snake-case name.
@@ -127,7 +127,7 @@ export function findBlock(input: string | number): AxeFxIIBlock {
     const sample = AXE_FX_II_BLOCKS.slice(0, 6).map((b) => `"${b.name}"`).join(', ');
     throw new Error(
       `Unknown block "${input}". Pass either an effectId (e.g. 106) or a display name like "Amp 1" / "Reverb 1" / "Delay 1". ` +
-      `Sample valid names: ${sample}, ... — call axefx2_list_block_types for the full list.`,
+      `Sample valid names: ${sample}, ... call axefx2_list_block_types for the full list.`,
     );
   }
   return resolved;

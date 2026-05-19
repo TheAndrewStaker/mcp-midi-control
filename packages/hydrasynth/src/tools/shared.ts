@@ -275,11 +275,12 @@ export async function bankPcDance(
  */
 export const HYDRA_DEV_MODE_PREAMBLE = [
   '⚠ This Hydrasynth tool surface is in active development. Treat THIS',
-  '  description and runtime error messages as authoritative — do NOT',
+  '  description and runtime error messages as authoritative; do NOT',
   '  rely on memorized param names, value ranges, or behaviors from',
   '  prior sessions. If a write fails on a name, call',
-  '  `hydra_param_catalog({ search: "<keyword>" })` to see what is',
-  '  currently mapped. Tool API may change between sessions.',
+  '  `list_params({ port: "hydrasynth" })` (or the unified',
+  '  `set_param({ port: "hydrasynth", block, name, value })`) to see',
+  '  what is currently mapped. Tool API may change between sessions.',
   '',
 ].join('\n');
 
@@ -303,10 +304,10 @@ export const HYDRA_DEV_MODE_PREAMBLE = [
  *     names — pick whichever feels natural.
  */
 export const ENGINE_PARAM_CHEAT_SHEET = `
-Common parameter names (both styles work — pick whichever):
+Common parameter names (both styles work; pick whichever):
 
-OSCILLATORS  — osc1/osc2/osc3 (slot-disambiguated):
-  osc1type / osc2type / osc3type           wave selector — accepts names: "Sine", "Triangle", "Saw", "Square", "Pulse 1".."Pulse 6", "Horizon 1..8", and ~200 more (call hydra_list_enum_values("OSC_WAVES"))
+OSCILLATORS, osc1/osc2/osc3 (slot-disambiguated):
+  osc1type / osc2type / osc3type           wave selector. Accepts names: "Sine", "Triangle", "Saw", "Square", "Pulse 1".."Pulse 6", "Horizon 1..8", and ~200 more (call list_params({port:"hydrasynth", name:"osc1type"}) for the full enum table).
   osc1semi / osc2semi / osc3semi           coarse pitch (-36..+36 semitones)
   osc1cent / osc2cent / osc3cent           fine tune (-50..+50 cents)
   osc1mode / osc2mode / osc3mode           "Single" or "WaveScan"
@@ -321,7 +322,7 @@ MIXER  (canonical or dot-style):
   mixernoisevol / mixer.noise_vol          noise volume
   mixerringmodvol / mixer.ring_mod_vol     ring-mod volume
 
-FILTER 1  (use names for type — "LP Ladder 12", "LP Ladder 24", "Vowel", "BP 3-Ler", etc., 16 options):
+FILTER 1  (use names for type: "LP Ladder 12", "LP Ladder 24", "Vowel", "BP 3-Ler", etc., 16 options):
   filter1type
   filter1cutoff / filter1.cutoff
   filter1resonance / filter1.res
@@ -333,7 +334,7 @@ FILTER 2  (only "LP-BP-HP" or "LP-Notch-HP" types):
   filter2type
   filter2cutoff, filter2resonance, filter2env1amount, filter2lfo1amount, filter2velenv, filter2keytrack
 
-ENVELOPES  — 5 envelopes total. Conventional routing (mod matrix can re-route any of these):
+ENVELOPES. 5 envelopes total. Conventional routing (mod matrix can re-route any of these):
    • ENV1 → Filter (the canonical filter envelope; pair with filter1env1amount)
    • ENV2 → Amp    (the canonical amplifier envelope; the device's "amp env" front-panel page edits ENV2)
    • ENV3/4/5 → assignable (typically pitch / mod-matrix targets via mod*modsource = "ENV3"…)
@@ -343,41 +344,41 @@ ENVELOPES  — 5 envelopes total. Conventional routing (mod matrix can re-route 
   env1.sustain / env1sustain
   env1.release / env1releasesyncoff
   env1holdsyncoff, env1delaysyncoff
-  Same shape for env2..env5 (e.g. env2attacksyncoff for amp-env attack — the Eno-pad slow-attack knob).
+  Same shape for env2..env5 (e.g. env2attacksyncoff for amp-env attack, the Eno-pad slow-attack knob).
 
-LFOS — 5 LFOs. Conventional routing (mod matrix can re-route any LFO):
+LFOS. 5 LFOs. Conventional routing (mod matrix can re-route any LFO):
    • LFO1 → Filter (paired with filter1lfo1amount; classic filter wobble)
    • LFO2 → Amp    (paired with amplfo2amount; tremolo)
    • LFO3/4/5 → assignable (pitch vibrato, pan, FX param modulation via mod matrix)
   Per-LFO params:
-  lfo1ratesyncoff, lfo1wave, lfo1level (alias: lfo1.gain — NOT "lfo1gain"), lfo1phase, lfo1delaysyncoff, lfo1fadeinsyncoff, lfo1smooth, lfo1steps, lfo1oneshot
+  lfo1ratesyncoff, lfo1wave, lfo1level (alias: lfo1.gain, NOT "lfo1gain"), lfo1phase, lfo1delaysyncoff, lfo1fadeinsyncoff, lfo1smooth, lfo1steps, lfo1oneshot
   Same shape for lfo2..lfo5.
 
-PRE-FX / POST-FX  (use names for type — "Bypass", "Chorus", "Flanger", "Rotary", "Phaser", "Lo-Fi", "Tremolo", "EQ", "Compressor", "Distortion"):
+PRE-FX / POST-FX  (use names for type: "Bypass", "Chorus", "Flanger", "Rotary", "Phaser", "Lo-Fi", "Tremolo", "EQ", "Compressor", "Distortion"):
   prefxtype, postfxtype
   prefxparam1, prefxparam2, prefxwet
   postfxparam1, postfxparam2, postfxwet
 
 DELAY / REVERB  (between Pre-FX and Post-FX):
   delaytype, delaytimesyncoff, delayfeedback, delaywet
-  reverbtype (Hall/Room/Plate/Cloud), reverbtime (0..128 index — pass an integer or a string from REVERB_TIMES like "16.0s"), reverbtone (bipolar -64..+64), reverbpredelay (0..250 ms), reverbwet
+  reverbtype (Hall/Room/Plate/Cloud), reverbtime (0..128 index. Pass an integer or a string from REVERB_TIMES like "16.0s"), reverbtone (bipolar -64..+64), reverbpredelay (0..250 ms), reverbwet
 
 VOICE / GLOBAL:
-  voiceglide (BOOL — must be 1 to enable portamento; voiceglidetime alone does nothing if voiceglide=0)
+  voiceglide (BOOL: must be 1 to enable portamento; voiceglidetime alone does nothing if voiceglide=0)
   voiceglidetime, voiceglidecurve, voiceglidelegto
   voicelegato, voicemono, voicepolyphony
   vibratoamount, vibratorate, vibratobpmsync
-  Note: a glide recipe needs BOTH voiceglide=1 AND voiceglidetime=N — pass them together, the time alone doesn't audibly do anything.
+  Note: a glide recipe needs BOTH voiceglide=1 AND voiceglidetime=N; pass them together, the time alone doesn't audibly do anything.
 
-MUTATORS (4) — operate on oscillators (front-panel layout: Mutator 1/2 affect Osc 1; Mutator 3/4 affect Osc 2):
+MUTATORS (4): operate on oscillators (front-panel layout: Mutator 1/2 affect Osc 1; Mutator 3/4 affect Osc 2):
   mutator1mode (use names: "FM-Linear", "WavStack", "Osc Sync", "PW-Orig", "PW-Sqeez", "PW-ASM", "Harmonic", "PhazDiff")
-  mutator1ratio, mutator1depth, mutator1wet (NOT mutator1drywet — common typo)
+  mutator1ratio, mutator1depth, mutator1wet (NOT mutator1drywet; common typo)
   Same shape for mutator2..mutator4.
 
-MOD MATRIX  (32 slots — note edisyn names use "modmatrix" prefix):
-  modmatrix1modsource    — source (LFO, ENV, velocity, aftertouch, …)
-  modmatrix1modtarget    — destination (osc pitch, filter cutoff, …); set to 0 to disable a slot
-  modmatrix1depth        — modulation amount
+MOD MATRIX  (32 slots; note edisyn names use "modmatrix" prefix):
+  modmatrix1modsource    source (LFO, ENV, velocity, aftertouch, …)
+  modmatrix1modtarget    destination (osc pitch, filter cutoff, …); set to 0 to disable a slot
+  modmatrix1depth        modulation amount
   ... modmatrix32modsource / modmatrix32modtarget / modmatrix32depth
 
 MACROS:
@@ -386,7 +387,7 @@ MACROS:
 VALUE NOTES:
   - **Unipolar params (most knobs).** Numbers 0..128 auto-scale onto each param's wireMax. value=64 → display 64.0, value=128 → max. Numbers 129..16383 pass through as raw 14-bit wire values.
   - **Bipolar params** (env amounts, pan, keytrack, mod-matrix depth, EQ gain, lfo/fx phase). Pass a SIGNED display value: \`value: 0\` is centered (no modulation), \`value: +N\` and \`-N\` offset symmetrically. Examples: filter1env1amount=0 (no env mod), filter1env1amount=12 (display +12, mild brightening), filter1keytrack=0 (off), mixerosc1pan=-30 (left). The tool response calls these out as \`[bipolar -X..+Y, display ±N]\` so you see the resolution. Common ranges: env amounts / pan / lfo amounts = -64..+64; keytrack = -200..+200; macros = -128..+128.
-  - **Type-selector params** (osc*type, filter*type, prefxtype, postfxtype, mutator*mode): pass the display name string — auto-resolved.
+  - **Type-selector params** (osc*type, filter*type, prefxtype, postfxtype, mutator*mode): pass the display name string. Auto-resolved.
 `.trim();
 
 /**

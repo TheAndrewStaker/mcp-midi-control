@@ -33,7 +33,7 @@ export const ON_EDITED_SCHEMA = z.enum(['warn', 'discard', 'save_active_first'])
 export const ON_EDITED_DESCRIPTION =
   'What to do if the active preset has UNSAVED working-buffer edits ' +
   'when this tool needs to navigate away from it. "warn" (default) ' +
-  'refuses to navigate and returns a structured warning — the agent ' +
+  'refuses to navigate and returns a structured warning; the agent ' +
   'should surface this to the user and ask whether to save first or ' +
   'discard the edits, then call again with on_active_preset_edited set. ' +
   '"discard" navigates immediately and silently throws away the edits. ' +
@@ -73,7 +73,7 @@ export const SAVE_AUTHORIZED_SCHEMA = z.boolean().optional();
  */
 export function buildSaveAuthorizedDescription(workingBufferToolName: string): string {
   return (
-    'EXPLICIT save authorization. Default false — this tool is DESTRUCTIVE ' +
+    'EXPLICIT save authorization. Default false. This tool is DESTRUCTIVE ' +
     '(overwrites the target slot) and requires the user to have used ' +
     `save/store/keep/put-on language about the target. If the user said ` +
     `"build a tone for X" without naming a save action, use ${workingBufferToolName} ` +
@@ -107,7 +107,7 @@ export function buildSaveAuthorizationRefusal(opts: {
     `\n` +
     `If the user said something like "build a clean tone" / "design a tone for X" ` +
     `without naming a save action (save, store, keep, put on, persist to ${targetDescriptor}), ` +
-    `the right tool is ${workingBufferToolName} (WORKING-BUFFER-ONLY) — let the ` +
+    `the right tool is ${workingBufferToolName} (WORKING-BUFFER-ONLY). Let the ` +
     `user audition the tone first, then ASK "want me to save it to ${targetDescriptor}?" ` +
     `before calling ${applyAtToolName} again with save_authorized: true.\n` +
     `\n` +
@@ -118,6 +118,6 @@ export function buildSaveAuthorizationRefusal(opts: {
     `User phrases that DO NOT authorize saving (use ${workingBufferToolName} first): ` +
     `"build a tone for X", "design a clean preset", "make me a Marshall sound", ` +
     `"build a tone at ${targetDescriptor}" (the "at ${targetDescriptor}" names a target ` +
-    `but doesn't authorize a save — the user might just want to audition there).`
+    `but doesn't authorize a save; the user might just want to audition there).`
   );
 }

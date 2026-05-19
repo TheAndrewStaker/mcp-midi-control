@@ -121,7 +121,7 @@ function resolveNrpn(block: string, paramName: string): HydrasynthNrpn {
       badParam: paramName,
       knownNames: listParamNamesForHydraBlock(block),
     }) +
-      ` Or use the legacy hydra_set_engine_param tool which accepts the full NRPN namespace.`,
+      ` Call list_params({port:"hydrasynth", block:"${block}"}) to see the canonical name list, or try hydra_apply_patch for whole-patch builds.`,
   );
 }
 
@@ -189,7 +189,7 @@ export const writer: DeviceWriter = {
       wire_value: wireValue,
       acked: true,
       info:
-        'Hydrasynth NRPN writes are fire-and-forget — verify by audible / visible response on the device front panel.',
+        'Hydrasynth NRPN writes are fire-and-forget; verify by audible / visible response on the device front panel.',
     };
   },
 

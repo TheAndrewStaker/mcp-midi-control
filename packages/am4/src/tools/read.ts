@@ -144,7 +144,7 @@ export function registerReadTools(server: McpServer): void {
 
     server.registerTool('am4_get_active_location', {
         description: [
-            'Read the AM4\'s currently active preset location (e.g. "W04", "A01"). Use for "what preset am I on?" or to anchor "tweak this preset" requests. Read-only, single round-trip, < 100 ms.',
+            'Read the AM4\'s currently active preset location (e.g. "W4", "A1"). Use for "what preset am I on?" or to anchor "tweak this preset" requests. Read-only, single round-trip, < 100 ms.',
         ].join(' '),
         inputSchema: {},
     }, async () => {

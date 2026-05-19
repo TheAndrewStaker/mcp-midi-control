@@ -209,8 +209,8 @@ export function parseAm4Location(location: string | number): number {
     throw new DispatchError(
       'bad_location',
       'Fractal AM4',
-      `Location '${location}' is not valid on Fractal AM4 — ${msg}. AM4 locations are A01..Z04 (104 total, 26 banks × 4).`,
-      { retry_action: 'Pass a code like "A01" or "Z04".' },
+      `Location '${location}' is not valid on Fractal AM4. ${msg}. AM4 locations are A1..Z4 (104 total, 26 banks × 4).`,
+      { retry_action: 'Pass a code like "A1" or "Z4" (zero-padded "A01" / "Z04" is also accepted).' },
     );
   }
 }

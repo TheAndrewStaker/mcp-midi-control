@@ -137,7 +137,7 @@ export function registerNavigationTools(server: McpServer): void {
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       from: z.union([z.string(), z.number()]).describe(
-        'Inclusive start of the scan range. AM4: "A01"..."Z04"; Axe-Fx II: 0..383; etc.',
+        'Inclusive start of the scan range. AM4: "A1".."Z4"; Axe-Fx II: 0..383; etc.',
       ),
       to: z.union([z.string(), z.number()]).describe(
         'Inclusive end of the scan range. Pass from <= to.',

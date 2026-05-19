@@ -212,7 +212,7 @@ export function resolveNrpnValue(entry: HydrasynthNrpn, input: number | string):
   if (typeof input === 'string') {
     if (!entry.enumTable) {
       throw new Error(
-        `Parameter "${entry.name}" doesn't accept name strings — pass a numeric value (notes: ${entry.notes}).`,
+        `Parameter "${entry.name}" doesn't accept name strings; pass a numeric value (notes: ${entry.notes}).`,
       );
     }
     const idx = resolveHydraEnum(entry.enumTable, input);
@@ -220,7 +220,7 @@ export function resolveNrpnValue(entry: HydrasynthNrpn, input: number | string):
       const table = HYDRASYNTH_ENUMS[entry.enumTable];
       const sample = table ? Object.values(table).slice(0, 6).join(', ') : '';
       throw new Error(
-        `Couldn't resolve "${input}" in ${entry.enumTable}. ${sample ? `First few options: ${sample}…` : ''} Call hydra_list_enum_values("${entry.enumTable}") for the full list.`,
+        `Couldn't resolve "${input}" in ${entry.enumTable}. ${sample ? `First few options: ${sample}…` : ''} Call list_params({port:"hydrasynth", name:"${entry.name}"}) for the full enum table.`,
       );
     }
     return { wire: idx * (entry.enumValueScale ?? 1), scaled: false, bipolar: false };

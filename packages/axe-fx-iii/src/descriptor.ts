@@ -256,7 +256,7 @@ function makePassthroughEncode(family: string, paramKey: string): ParamSchema['e
     if (!Number.isFinite(num)) {
       throw new Error(
         `${family}.${paramKey}: expected a number (raw wire 0..65534), got "${value}". ` +
-          'Axe-Fx III display→wire calibration is unverified — pass the 16-bit wire integer directly.',
+          'Axe-Fx III display→wire calibration is unverified; pass the 16-bit wire integer directly.',
       );
     }
     if (!Number.isInteger(num) || num < 0 || num > 65534) {
@@ -370,7 +370,7 @@ function resolveParamOrThrow(slug: string, name: string): {
     throw new DispatchError(
       'capability_not_supported',
       DEVICE_LABEL,
-      `Block '${slug}' has no parameter catalog on ${DEVICE_LABEL} — the III's ` +
+      `Block '${slug}' has no parameter catalog on ${DEVICE_LABEL}. The III's ` +
         `groupCode-to-family map has no entry for this block (likely AMP / NAM / ` +
         `Tuner / Global Block / Shunt). set_param / get_param refuse for these.`,
     );
@@ -474,7 +474,7 @@ const reader: DeviceReader = {
       throw new DispatchError(
         'no_ack',
         DEVICE_LABEL,
-        `get_param: no response from ${DEVICE_LABEL} within ${GET_RESPONSE_TIMEOUT_MS}ms — ` +
+        `get_param: no response from ${DEVICE_LABEL} within ${GET_RESPONSE_TIMEOUT_MS}ms: ` +
           `${err instanceof Error ? err.message : String(err)}. ` +
           `Likely causes: device doesn't honor 0x02 SET_PARAMETER (the III may have ` +
           `removed the op in firmware > 1.13), or block '${blockSlugIn}' (effect ID ` +
@@ -610,7 +610,7 @@ const writer: DeviceWriter = {
       throw new DispatchError(
         'value_out_of_range',
         DEVICE_LABEL,
-        `axe-fx-iii setBlock: slot must be {row, col} (grid coords) — got linear index ${slot}. ` +
+        `axe-fx-iii setBlock: slot must be {row, col} (grid coords). Got linear index ${slot}. ` +
           'The III uses a 4×14 grid; pass slot as {row: 1..4, col: 1..14}.',
       );
     }
@@ -672,7 +672,7 @@ const writer: DeviceWriter = {
       display_value: blockType === 'none' || blockType === 'empty' ? 'cleared' : change.block_type,
       warning:
         '🟡 axe-fx-iii set_block: tried II 0x05 SET_GRID_CELL envelope on III. ' +
-        'Device emitted no rejection but the III may have ignored the write — ' +
+        'Device emitted no rejection but the III may have ignored the write; ' +
         'confirm by checking the grid layout (call get_grid_layout or look at the device).',
     };
   },
@@ -701,7 +701,7 @@ const writer: DeviceWriter = {
       display_value: bypassed ? 'bypassed' : 'engaged',
       warning:
         '🟡 axe-fx-iii set_bypass: spec-documented (function 0x0A) but ' +
-        'pending hardware verification. Targets the ACTIVE scene only — ' +
+        'pending hardware verification. Targets the ACTIVE scene only; ' +
         'per v1.4 spec, the III has no per-scene bypass write.',
     };
   },
@@ -731,7 +731,7 @@ const writer: DeviceWriter = {
           target: String(slotSpec.slot),
           acked: false,
           warning:
-            `axe-fx-iii apply_preset: skipped slot ${String(slotSpec.slot)} — ` +
+            `axe-fx-iii apply_preset: skipped slot ${String(slotSpec.slot)}: ` +
             'linear slot indexing not supported on grid device.',
         });
         anyFailed = true;
@@ -771,7 +771,7 @@ const writer: DeviceWriter = {
             target: `${blockSlug}.${paramName}`,
             acked: false,
             warning:
-              `axe-fx-iii apply_preset: skipped channel-nested param ${blockSlug}.${paramName} — ` +
+              `axe-fx-iii apply_preset: skipped channel-nested param ${blockSlug}.${paramName}: ` +
               'per-channel apply not yet wired on the III. Use set_param with explicit channel instead.',
           });
           anyFailed = true;
@@ -867,7 +867,7 @@ const writer: DeviceWriter = {
       warning:
         'axe-fx-iii switch_preset: sent standard MIDI Program Change + Bank ' +
         'Select on channel 1 (the III\'s factory-default MIDI channel). The III ' +
-        'does not ack PC writes — confirm by reading the new active preset name ' +
+        'does not ack PC writes; confirm by reading the new active preset name ' +
         '(get_preset_name) or by checking the device front panel. If the device ' +
         'is configured to listen on a different MIDI channel, the switch will ' +
         'silently no-op; set the III back to channel 1 in its Global → MIDI menu.',
@@ -907,7 +907,7 @@ const writer: DeviceWriter = {
         warning:
           `Axe-Fx III rejected save_preset (II 0x1D envelope) via 0x64 MULTIPURPOSE_RESPONSE: ${formatErrorCode(errorReport)}. ` +
           'The III may require its native 0x77/0x78/0x79 multi-frame envelope ' +
-          '(community RE, requires Huffman-compressed preset content — not yet ' +
+          '(community RE, requires Huffman-compressed preset content; not yet ' +
           'implemented). For now, save on the device front panel. ' + BETA_WARNING,
       };
     }
@@ -918,9 +918,9 @@ const writer: DeviceWriter = {
       display_value: String(n),
       warning:
         '🟡 axe-fx-iii save_preset: sent II 0x1D STORE_PRESET envelope ' +
-        '(10 bytes, no preset payload — just "persist working buffer to slot N"). ' +
+        '(10 bytes, no preset payload, just "persist working buffer to slot N"). ' +
         'Device emitted no rejection but the III may have ignored the write. ' +
-        'CONFIRM by switching to a different preset and back — if the working ' +
+        'CONFIRM by switching to a different preset and back: if the working ' +
         'buffer state survived, the save landed. If the original preset returns, ' +
         'the III needs its native 0x77/0x78/0x79 envelope (not yet implemented).',
     };
@@ -989,7 +989,7 @@ const writer: DeviceWriter = {
       display_value: name,
       warning:
         '🟡 axe-fx-iii rename: sent II 0x09 SET_PRESET_NAME envelope. ' +
-        'Device emitted no rejection but the III may have ignored the write — ' +
+        'Device emitted no rejection but the III may have ignored the write; ' +
         'confirm via get_preset_name (or by checking the front-panel preset title). ' +
         'Working-buffer scope only; persist with save_preset.',
     };
@@ -1060,7 +1060,7 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
 
   diagnostic_isolation: [
     'When the user reports an unwanted artifact in a tone, isolate via',
-    'set_bypass — toggle one block at a time and ask the user to play',
+    'set_bypass: toggle one block at a time and ask the user to play',
     'between toggles, before changing any param values. Without a Synth',
     'block in the active preset, MIDI notes don\'t produce sound on the',
     'III (see note_response above), so the human-in-the-loop is the test',
@@ -1077,7 +1077,7 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
     'operations are documented in the Fractal third-party MIDI spec;',
     'others are ported from the Axe-Fx II family with the III model',
     'byte. When an op is rejected, the device returns an error frame',
-    'with a named result code — report it verbatim to the user so they',
+    'with a named result code; report it verbatim to the user so they',
     'can confirm by ear / by panel.',
     '',
     'No unified-surface op refuses outright. Every op attempts a wire',
@@ -1087,7 +1087,7 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
     'When a write is acked, tell the user what you wrote AND ask them',
     'to confirm the audible / visible response on the device. Their',
     'confirmation is the verification path. Example: "I set pitch.harm1',
-    'to wire 27 — can you confirm the harmony interval changed on the',
+    'to wire 27. Can you confirm the harmony interval changed on the',
     'front panel?"',
     '',
     'If the device rejects an op, surface the named error code verbatim',
@@ -1095,9 +1095,9 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
     'overload"). Do not paper over rejections.',
   ].join('\n'),
   channels: [
-    'Axe-Fx III channel names: A, B, C, D (4 channels per block — same as',
+    'Axe-Fx III channel names: A, B, C, D (4 channels per block, same as',
     "AM4, different from Axe-Fx II's X/Y). Per-spec function 0x0B `id id dd`",
-    'targets the ACTIVE scene only — the III has no per-scene channel write',
+    'targets the ACTIVE scene only; the III has no per-scene channel write',
     'in the v1.4 spec.',
   ].join('\n'),
   scenes: [
@@ -1120,26 +1120,26 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
     "  - IR Player 1..4     →  195..198",
     'Full table: docs/devices/axe-fx-iii/SYSEX-MAP.md.',
     '',
-    'AMP, Dynamic Distortion, NAM, Global Block, Shunt — effect IDs NOT',
+    'AMP, Dynamic Distortion, NAM, Global Block, Shunt: effect IDs NOT',
     'in v1.4; bypass/channel control for these will refuse until decoded.',
   ].join('\n'),
   param_addressing: [
     'set_param / get_param address by (block, name) where:',
     '  - block is a single-instance slug (e.g. "reverb", "pitch", "drive")',
     '    that defaults to instance 1. Multi-instance routing (reverb 2,',
-    '    drive 4) is a future hook — for now, all writes hit instance 1.',
+    '    drive 4) is a future hook; for now, all writes hit instance 1.',
     '  - name is the lowercase-stripped catalog symbol (REVERB_TYPE → type,',
     '    PITCH_HARM1 → harm1). The original symbol is also accepted as an',
     '    alias (so "reverb_type" works too).',
     '',
-    'VALUE IS RAW WIRE 0..65534 — the III has no published display',
+    'VALUE IS RAW WIRE 0..65534. The III has no published display',
     'calibration so set_param/get_param pass the 16-bit wire integer',
     'through verbatim. Enum / select params: pass the wire index directly',
     '(0, 1, 2, ...). When you write, READ BACK and confirm with the user.',
     '',
     'list_params(port="axe-fx-iii", block=...) returns the per-block param',
     'list mined from AxeEdit III. The `parameter_name` field on each entry',
-    'is the firmware-internal symbol (e.g. PITCH_HARM1) — useful for',
+    'is the firmware-internal symbol (e.g. PITCH_HARM1); useful for',
     'cross-referencing with community forum posts.',
   ].join('\n'),
 

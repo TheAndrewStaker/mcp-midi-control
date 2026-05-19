@@ -26,7 +26,7 @@ export const PORT_DESC =
  */
 export const BLOCK_PARAMS_SUMMARY_HINT =
   'For the most-commonly-used knobs per block (first-page knobs the player ' +
-  'adjusts daily), read `describe_device(port).block_params_summary` first — ' +
+  'adjusts daily), read `describe_device(port).block_params_summary` first; ' +
   'it covers ~80% of tone-building writes in one round-trip. Call ' +
   '`list_params(port, block)` for the full universe (advanced page params, ' +
   'GEQ bands, modifier wiring, exhaustive enum tables).';
