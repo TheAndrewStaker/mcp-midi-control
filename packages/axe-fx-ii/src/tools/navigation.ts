@@ -45,6 +45,7 @@ import { asError, asText } from '@mcp-midi-control/core/protocol-generic/tools/s
 export function registerAxeFxIINavigationTools(server: McpServer): void {
 
   server.registerTool('axefx2_get_preset_name', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read the active preset name from the Axe-Fx II working buffer (matches the front-panel display). Returns a 32-char ASCII string, space-padded.',
     ].join('\n'),
@@ -81,6 +82,7 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
 
 
   server.registerTool('axefx2_get_active_preset_number', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read the active preset slot (1..16384) on the Axe-Fx II, matching the front-panel display.',
       'For the preset NAME use axefx2_get_preset_name; for the full grid use axefx2_get_grid_layout.',
@@ -118,6 +120,7 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
 
 
   server.registerTool('axefx2_set_block_channel', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Switch a block between its X and Y channels on the Axe-Fx II. Each block holds two independent param sets; switching changes which set is active.',
       'Per-block channel is independent of scenes (scenes pick which channel each block uses; the block itself only has X and Y).',
@@ -131,6 +134,12 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
       channel: z.enum(['X', 'Y']).describe(
         'Target channel — "X" or "Y". Each block has these two channels and only these two.',
       ),
+    },
+    outputSchema: {
+      block: z.string(),
+      group_code: z.string(),
+      effect_id: z.number().int(),
+      channel: z.enum(['X', 'Y']),
     },
   }, async ({ block, channel }) => {
     try {
@@ -161,6 +170,7 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
 
 
   server.registerTool('axefx2_get_block_channel', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read a block\'s current channel (X or Y) on the Axe-Fx II. Call before switching to know the starting state, or after to confirm the change landed.',
     ].join('\n'),
@@ -168,6 +178,12 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
       block: z.union([z.string(), z.number()]).describe(
         'Block instance — display name or numeric effectId.',
       ),
+    },
+    outputSchema: {
+      block: z.string(),
+      group_code: z.string(),
+      effect_id: z.number().int(),
+      channel: z.enum(['X', 'Y']),
     },
   }, async ({ block }) => {
     let target;

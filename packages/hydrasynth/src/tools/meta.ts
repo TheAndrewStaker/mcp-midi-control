@@ -24,6 +24,7 @@ export function registerHydrasynthMetaTools(server: McpServer): void {
 // hydra_reconnect_midi -------------------------------------------------
 
 server.registerTool('hydra_reconnect_midi', {
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: HYDRA_DEV_MODE_PREAMBLE + [
     'Drop and re-open the Hydrasynth MIDI connection. Use when the device was unplugged at server start but is now connected, when calls report "no Hydrasynth output port" after a confirmed replug, or when USB enumeration has been flaky.',
     'Safe to call any time. No device-side effect.',
@@ -60,6 +61,7 @@ server.registerTool('hydra_reconnect_midi', {
 // hydra_get_active_patch (informational) -------------------------------
 
 server.registerTool('hydra_get_active_patch', {
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   description: HYDRA_DEV_MODE_PREAMBLE + [
     'Informational only: Hydrasynth has no SysEx command for reading the current patch slot. Returns a fixed explanation, no wire round-trip.',
     'Use when the user asks "what slot am I on?" (answer: ask them to read the front-panel display, or call hydra_apply_patch with `slot` omitted which auto-targets H128 scratch with dance:"both").',

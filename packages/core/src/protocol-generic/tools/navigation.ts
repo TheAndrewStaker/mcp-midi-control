@@ -28,6 +28,7 @@ import { PORT_DESC, asError, asText } from './shared.js';
 
 export function registerNavigationTools(server: McpServer): void {
   server.registerTool('switch_preset', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Load a stored preset into the working buffer. Same effect as turning the device\'s preset knob.',
       'WARNING: discards unsaved working-buffer edits. The on_active_preset_edited gate refuses by default if the buffer is dirty; pass "discard" or "save_active_first" to override.',
@@ -56,6 +57,7 @@ export function registerNavigationTools(server: McpServer): void {
   });
 
   server.registerTool('save_preset', {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'DESTRUCTIVE: persist the working buffer to a stored location, optionally renaming first. Call ONLY when the user explicitly said save/store/keep/persist.',
       '- "make me a preset for X" is audition language, not save. When unsure, apply_preset first and ask before persisting.',
@@ -81,6 +83,7 @@ export function registerNavigationTools(server: McpServer): void {
   });
 
   server.registerTool('switch_scene', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Change the active scene within the current preset. Toggles per-scene bypass + channel state; the block layout stays the same.',
       '- Working-buffer scope only; the next preset load starts at its default scene.',
@@ -103,6 +106,7 @@ export function registerNavigationTools(server: McpServer): void {
   });
 
     server.registerTool('rename', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Rename the working-buffer preset or one of its scenes. Target is "preset" or "scene:N" (1-indexed).',
       '- Writes the working buffer only; persists only if save_preset follows.',
@@ -128,6 +132,7 @@ export function registerNavigationTools(server: McpServer): void {
   });
 
   server.registerTool('scan_locations', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Bulk-read stored preset names across a location range. Non-destructive; working buffer and active location preserved.',
       'Canonical use: before bulk-applying or restoring a range, scan first to surface which locations hold customised presets vs are empty.',

@@ -23,6 +23,7 @@ import { PORT_DESC, asError, asText } from './shared.js';
 
 export function registerDiscoveryTools(server: McpServer): void {
   server.registerTool('describe_device', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Return a registered device\'s capabilities and canonical vocabulary.',
       'Call once per session for any device you\'re about to control via the',
@@ -62,6 +63,7 @@ export function registerDiscoveryTools(server: McpServer): void {
   });
 
   server.registerTool('list_params', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Enumerate a device\'s parameters with units and display ranges. Pure introspection, no MIDI I/O.',
       'Call before set_param when unsure of an enum spelling or knob range.',
@@ -90,6 +92,7 @@ export function registerDiscoveryTools(server: McpServer): void {
   });
 
   server.registerTool('find_compatible_types', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics).',
       'Call before apply_preset / set_param when "long-decay reverb" or "Vox with master" combines a tone vocabulary with a specific knob requirement. Prevents the silent-no-op trap where a fixed-decay reverb.type drops writes to `time`.',
@@ -113,6 +116,7 @@ export function registerDiscoveryTools(server: McpServer): void {
   });
 
   server.registerTool('lookup_lineage', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. Pure data lookup, no MIDI I/O.',
       'Three call shapes (pick one):',

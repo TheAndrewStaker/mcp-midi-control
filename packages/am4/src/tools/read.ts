@@ -55,6 +55,7 @@ const BYPASS_STATE_PID_HIGH = 0x0003;
 
 export function registerReadTools(server: McpServer): void {
     server.registerTool('am4_get_block_layout', {
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         description: [
             'Read the AM4 working-buffer block layout (4 slots). Returns the block type at each signal-chain position 1..4, or "none" for empty slots.',
             'Call before proposing layout changes so the user can see the diff in chat ("currently drive->amp->delay->reverb; changing slot 1 to compressor").',
@@ -108,6 +109,7 @@ export function registerReadTools(server: McpServer): void {
     // (keys: relative_change, tempo_time_discipline).
 
     server.registerTool('am4_get_active_scene', {
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         description: [
             'Read the AM4\'s currently active scene (1..4). Use for "what scene am I on?" or session-opener state summaries. Read-only, single round-trip, < 100 ms.',
         ].join(' '),
@@ -145,6 +147,7 @@ export function registerReadTools(server: McpServer): void {
     });
 
     server.registerTool('am4_get_active_location', {
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         description: [
             'Read the AM4\'s currently active preset location (e.g. "W4", "A1"). Use for "what preset am I on?" or to anchor "tweak this preset" requests. Read-only, single round-trip, < 100 ms.',
         ].join(' '),
@@ -193,12 +196,17 @@ export function registerReadTools(server: McpServer): void {
     // scan_locations({ port: 'am4', from, to }).
 
     server.registerTool('am4_get_block_bypass', {
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         description: [
             'Read whether an AM4 block is bypassed or active in the currently-selected scene. Returns "active" or "bypassed".',
             'Call for "is the amp on?" or before changing a param on a block the user may have toggled off. Tracks live state regardless of source (this tool, front panel, or AM4-Edit). Read-only, < 100 ms.',
         ].join(' '),
         inputSchema: {
             block: z.string().describe('Block name, e.g. "amp", "drive", "reverb", "delay", "compressor", "filter"'),
+        },
+        outputSchema: {
+            block: z.string(),
+            bypassed: z.boolean(),
         },
     }, async ({ block }) => {
         const blockTypeValue = resolveBlockType(block);

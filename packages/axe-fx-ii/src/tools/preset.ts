@@ -40,6 +40,7 @@ import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js
 
 export function registerAxeFxIIPresetTools(server: McpServer): void {
   server.registerTool('axefx2_test_apply', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Build a preset on the working buffer and verify its chain integrity in one call. Non-destructive (no STORE_PRESET; switching presets reverts).',
       'PREFER the unified equivalent: apply_preset({port:"axe-fx-ii", spec, verify_chain:true}) does the same thing in the unified shape (scenes[], routing[], cross-device aliases). This tool is the older single-scene flat-blocks shortcut, kept for backward compatibility.',

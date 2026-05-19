@@ -32,6 +32,7 @@ import { PORT_DESC, asError, asText, presetShape } from './shared.js';
 
 export function registerPresetTools(server: McpServer): void {
   server.registerTool('apply_preset', {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Build a fresh preset in one structured call (replaces a sequence of set_block + set_param + switch_scene). REPLACES the working-buffer layout. For "just tweak the reverb" use set_param instead.',
       'Call describe_device({port}) once per session first to load device-specific idioms (channel/scene model, iconic-amp enum strings, applicability gates).',
@@ -80,6 +81,7 @@ export function registerPresetTools(server: McpServer): void {
   });
 
   server.registerTool('apply_setlist', {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'DESTRUCTIVE: bulk switch + apply + save per entry across a list. Use when the user has a fully-specified setlist plan up front. For creative per-song builds, prefer apply_preset in sequence so you can narrate progress.',
       'PRE-FLIGHT: call scan_locations across the target range first and surface what would be overwritten. Silent overwrites are the worst failure mode here.',
@@ -119,6 +121,7 @@ export function registerPresetTools(server: McpServer): void {
   });
 
   server.registerTool('port_preset', {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III).',
       'Translation covers chain topology, block availability (II/III cab vs AM4 integrated), param-name aliases (drive.volume ↔ drive.level), enum mappings (USA IIC+ ↔ USA MK IIC+), and scene/channel cardinality (AM4 4×4 ↔ II 8×2 ↔ III 8×4). Modifier wiring is deferred.',
@@ -162,6 +165,7 @@ export function registerPresetTools(server: McpServer): void {
   });
 
   server.registerTool('restore_defaults', {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'DESTRUCTIVE: reset preset locations to factory state. Overwrites user content with no working-buffer recovery. Always run scan_locations first and get explicit user approval before clobbering non-empty slots.',
       'Two shapes: pass only `from` for one location; pass `from` + `to` for an inclusive range (max 26 per call).',

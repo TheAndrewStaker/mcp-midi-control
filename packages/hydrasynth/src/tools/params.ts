@@ -30,6 +30,7 @@ export function registerHydrasynthParamTools(server: McpServer): void {
 // hydra_set_param --------------------------------------------------------
 
 server.registerTool('hydra_set_param', {
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: HYDRA_DEV_MODE_PREAMBLE + [
     'Set a Hydrasynth SYSTEM CC: master_volume, modulation_wheel, sustain_pedal, expression_pedal, bank_select_msb/lsb, all_notes_off. These are always-on regardless of the device\'s Param TX/RX setting.',
     'For ENGINE params (oscillators, filters, envelopes, mixer, FX) use the unified set_param({port:"hydrasynth", block, name, value}) instead, which routes through NRPN and covers the full 1175-param surface.',
@@ -42,6 +43,13 @@ server.registerTool('hydra_set_param', {
     value: z.number().int().min(0).max(127).describe(
       'Raw MIDI CC value 0..127.',
     ),
+  },
+  outputSchema: {
+    id: z.string(),
+    cc: z.number().int(),
+    value: z.number().int(),
+    module: z.string(),
+    parameter: z.string(),
   },
 }, async ({ id, value }) => {
   const param = HYDRASYNTH_PARAMS_BY_ID.get(id);
@@ -89,6 +97,7 @@ server.registerTool('hydra_set_param', {
 // hydra_set_macro --------------------------------------------------------
 
 server.registerTool('hydra_set_macro', {
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: HYDRA_DEV_MODE_PREAMBLE + [
     'Set one of the Hydrasynth\'s 8 Macro controls (CCs 16-23). Each patch wires its Macros to different synthesis params via the mod matrix, so the audible effect is per-patch. Excellent first lever for tone tweaks because they\'re curated by the patch designer.',
     'Requires Param TX/RX = CC on the device.',
@@ -96,6 +105,11 @@ server.registerTool('hydra_set_macro', {
   inputSchema: {
     macro: z.number().int().min(1).max(8).describe('Macro number 1..8 (1-indexed, matching the device\'s display).'),
     value: z.number().int().min(0).max(127).describe('Macro value 0..127.'),
+  },
+  outputSchema: {
+    macro: z.number().int(),
+    cc: z.number().int(),
+    value: z.number().int(),
   },
 }, async ({ macro, value }) => {
   const cc = 15 + macro; // Macro 1 = CC 16, Macro 8 = CC 23

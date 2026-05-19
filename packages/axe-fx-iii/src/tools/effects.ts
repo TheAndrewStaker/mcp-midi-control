@@ -56,12 +56,18 @@ const CHANNEL_VALUES = { A: 0, B: 1, C: 2, D: 3 } as const;
 export function registerAxeFxIIIEffectTools(server: McpServer): void {
 
   server.registerTool('axefx3_get_bypass', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read a block\'s current bypass state on the Axe-Fx III. Returns BYPASSED or ENGAGED.',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {
       block: z.string().describe(BLOCK_INPUT_DESCRIPTION),
+    },
+    outputSchema: {
+      block: z.string(),
+      effect_id: z.number().int(),
+      bypassed: z.boolean(),
     },
   }, async ({ block }) => {
     let effectId: number;
@@ -108,6 +114,7 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
 
 
   server.registerTool('axefx3_set_channel', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Switch a block\'s active channel (A/B/C/D) on the Axe-Fx III. Each block holds up to 4 independent param sets. Targets the ACTIVE scene only.',
       NO_ACK_NOTE,
@@ -156,12 +163,19 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
 
 
   server.registerTool('axefx3_get_channel', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read a block\'s current channel (A/B/C/D) on the Axe-Fx III.',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {
       block: z.string().describe(BLOCK_INPUT_DESCRIPTION),
+    },
+    outputSchema: {
+      block: z.string(),
+      effect_id: z.number().int(),
+      channel: z.string(),
+      wire_channel: z.number().int(),
     },
   }, async ({ block }) => {
     let effectId: number;

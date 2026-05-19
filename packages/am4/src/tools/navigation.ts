@@ -46,6 +46,7 @@ export function registerNavigationTools(server: McpServer): void {
     // to-param relationships. The chunk content is NOT decoded here — v0.1.0
     // surfaces the raw bytes for the probe harness.
     server.registerTool('am4_request_active_buffer_dump', {
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         description: [
             'Dump the AM4 working buffer as raw stored-form bytes (6-message stream: 0x77 header + 4x 0x78 chunks + 0x79 footer). No parsing of the masked content.',
             'Non-destructive: working buffer, active location, and playback are preserved.',

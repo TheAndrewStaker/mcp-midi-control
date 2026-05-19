@@ -35,6 +35,7 @@ export function registerHydrasynthNavigationTools(server: McpServer): void {
 // hydra_navigate_to (diagnostic) ----------------------------------------
 
 server.registerTool('hydra_navigate_to', {
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: HYDRA_DEV_MODE_PREAMBLE + [
     'Diagnostic primitive. Sends Bank Select + Program Change to navigate the Hydrasynth\'s active patch to a slot ("A001".."H128"), then captures inbound MIDI for 200 ms.',
     'Use before any test that bundles bank/PC + SysEx to verify in isolation that the device responds to PC. If the front-panel display doesn\'t change, bank/PC is broken upstream and tools that bundle PC + SysEx will silently miss.',
@@ -44,6 +45,14 @@ server.registerTool('hydra_navigate_to', {
     slot: z.string().describe(
       'Target slot in "A001".."H128" form. Letter A..H + patch 1..128.',
     ),
+  },
+  outputSchema: {
+    target_slot: z.string(),
+    target_bank: z.number().int(),
+    target_patch: z.number().int(),
+    elapsed_ms: z.number(),
+    inbound_message_count: z.number().int(),
+    has_input: z.boolean(),
   },
 }, async ({ slot }) => {
   let target: ReturnType<typeof parseSlot>;

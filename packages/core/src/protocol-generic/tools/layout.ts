@@ -19,6 +19,7 @@ import { PORT_DESC, asError, asText } from './shared.js';
 
 export function registerLayoutTools(server: McpServer): void {
   server.registerTool('set_block', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Place or clear a block at a slot in the signal chain. Use to build a preset layout before tuning per-block params with set_param.',
       '- Slot is 1-based on linear devices (AM4: 1..4).',
@@ -44,6 +45,7 @@ export function registerLayoutTools(server: McpServer): void {
   });
 
   server.registerTool('set_bypass', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Silence (bypassed=true) or activate (bypassed=false) a block on the currently-active scene. Params stay intact; the block just passes signal through.',
       '- Scene scope: writes land on the active scene. To bypass on a different scene, switch_scene first.',

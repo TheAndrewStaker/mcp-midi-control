@@ -36,6 +36,7 @@ export function registerAxeFxIILayoutTools(server: McpServer): void {
   // through descriptor.writer.setBypass (same paramId-255 wire write).
 
   server.registerTool('axefx2_get_grid_layout', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read the active preset\'s 4-row x 12-column block-placement grid on the Axe-Fx II. Call FIRST before suggesting any tweak so you know which blocks are placed and which are absent.',
       'If a block the user named isn\'t on the grid, say so and ask them to add it via the device or AxeEdit; this tool surface does not yet add/remove grid blocks.',
@@ -85,6 +86,7 @@ export function registerAxeFxIILayoutTools(server: McpServer): void {
 
 
   server.registerTool('axefx2_set_block_at_cell', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Place (or clear) a block at a grid cell (row 1..4, col 1..12) on the Axe-Fx II. Wire-level analog of AxeEdit drag-onto-grid.',
       'WARNING: placement alone does NOT cable the cell. New cells land with mask=0 (no input). To form an audible chain, follow with axefx2_set_cell_routing on the downstream cell, OR use apply_preset which places + cables in one call.',
@@ -185,6 +187,7 @@ export function registerAxeFxIILayoutTools(server: McpServer): void {
   });
 
   server.registerTool('axefx2_set_cell_routing', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Add or remove a cable between two adjacent-column grid cells on the Axe-Fx II. Use for incremental tweaks. For building a fresh chain prefer apply_preset with a routing array, which places + cables in one call.',
       'Use cases: parallel chains (one source -> multiple destination rows), FX loops (row 1 -> row 3 across columns), mergers (multiple source rows -> one mixer cell), surgical cable removal.',

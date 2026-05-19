@@ -70,6 +70,7 @@ function sendErrorResponse(
 
 export function registerMidiPrimitiveTools(server: McpServer): void {
     server.registerTool('send_cc', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Send a MIDI Control Change to any CC-responsive device. Channel 1..16 (musician convention), controller 0..127, value 0..127.',
             'Prefer the unified set_param tools for registered devices (AM4 / Axe-Fx / Hydrasynth) which understand block/param semantics; use send_cc for devices without a dedicated wrapper.',
@@ -99,6 +100,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_note', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         description: [
             'Play one MIDI note on any note-responsive device (synth, drum pad, sampler). Sends Note On, waits `duration_ms` (default 500, max 5000), sends Note Off.',
             'Channel 1..16, note 0..127 (60 = middle C), velocity 0..127.',
@@ -134,6 +136,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_program_change', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Switch patches on any PC-responsive device. Sends optional Bank Select (CC 0 MSB + CC 32 LSB), then Program Change.',
             'Channel 1..16, program 0..127, banks 0..127 (omit unused bank args).',
@@ -179,6 +182,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_nrpn', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Write an NRPN on any NRPN-responsive device. Emits the standard 3- or 4-message sequence (CC 99, CC 98, CC 6, optional CC 38).',
             '- value: 0..127 in 7-bit mode (default), or 0..16383 when high_res=true (14-bit, e.g. Hydrasynth engine NRPN).',
@@ -216,6 +220,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_pitch_bend', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Send a MIDI Pitch Bend on a channel. value is signed -8192..+8191 (0 = no bend, +8191 = max up, -8192 = max down). Per-synth bend range typically defaults to +/-2 semitones at full deflection.',
         ].join(' '),
@@ -244,6 +249,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_channel_pressure', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Send MIDI Channel Pressure (aftertouch) on a channel: one pressure value affecting every held note. For per-key aftertouch use Polyphonic Pressure (not yet exposed).',
         ].join(' '),
@@ -269,6 +275,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_clock_start', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         description: [
             'Send MIDI Timing Clock Start (0xFA) to start a sequencer / drum machine / clock-aware synth from the beginning. System message; affects every receiver on the port.',
             'For mid-song restart use send_clock_continue; for jump-to-bar precede send_clock_continue with send_song_position.',
@@ -293,6 +300,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_clock_stop', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Send MIDI Timing Clock Stop (0xFC) to halt a running sequencer / drum machine / clock-aware synth. System message; affects every receiver on the port.',
         ].join(' '),
@@ -316,6 +324,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_clock_continue', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         description: [
             'Send MIDI Timing Clock Continue (0xFB) to resume a stopped sequencer / drum machine from its current position. System message.',
             'Precede with send_song_position to jump to a specific bar before resuming.',
@@ -340,6 +349,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_song_position', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Send MIDI Song Position Pointer (0xF2): jump a sequencer / drum machine to a specific beat.',
             '- beats: 14-bit 0..16383. One beat = 6 MIDI Timing Clock pulses (a sixteenth-note at 24 PPQN).',
@@ -368,6 +378,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_panic', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'MIDI panic: silence every stuck note on every channel of a device. Sends All Sound Off (CC 120) + All Notes Off (CC 123) on all 16 channels (32 messages). CC 120 cuts release tails; CC 123 lets natural release finish; doing both covers every receiver.',
         ].join(' '),
@@ -397,6 +408,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_reset_controllers', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Reset All Controllers (CC 121) on a channel: pitch bend, mod wheel, expression, channel pressure, etc. revert to defaults.',
             'Use after a take where mod wheel was pushed up or pitch bend was held, to restore a clean baseline without a full panic.',
@@ -422,6 +434,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_sysex', {
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
         description: [
             'Send a raw SysEx frame. Power-user escape hatch: validates F0/F7 framing + 7-bit body, then sends verbatim. Useful for ad-hoc RE and device one-offs without a wrapper.',
             'WARNING: malformed SysEx can put devices into unexpected states. Prefer the unified set_param / apply_preset / device-specific tools when available.',

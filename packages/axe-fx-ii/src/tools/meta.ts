@@ -19,6 +19,7 @@ export function registerAxeFxIIMetaTools(server: McpServer): void {
   // tools/shared.ts. Until the Axe-Fx II is migrated onto the shared
   // registry, this tool is the only way to drop the cached handle.
   server.registerTool('axefx2_reconnect_midi', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Drop the cached Axe-Fx II MIDI handle and force a fresh port-open on the next axefx2_* call. Use after a mid-session replug or a timeout that left the USB handle stale.',
       'Does NOT affect AM4 (use reconnect_midi) or Hydrasynth (use hydra_reconnect_midi).',
@@ -46,6 +47,7 @@ export function registerAxeFxIIMetaTools(server: McpServer): void {
 
 
   server.registerTool('axefx2_probe_sysex', {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     description: [
       'Send raw SysEx to the Axe-Fx II AND capture inbound MIDI in the response window. Diagnostic analog of send_sysex with wire visibility for protocol RE; not for production preset edits.',
       'Workflow: subscribes to inbound BEFORE sending so responses can\'t race ahead, sends, drains for capture_ms, returns each message with timestamps.',

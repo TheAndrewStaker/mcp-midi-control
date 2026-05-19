@@ -42,6 +42,7 @@ import {
 export function registerAxeFxIIINavigationTools(server: McpServer): void {
 
   server.registerTool('axefx3_get_active_scene', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read the currently-active scene (1-based) within the active Axe-Fx III preset.',
       BETA_NOTE,
@@ -80,6 +81,7 @@ export function registerAxeFxIIINavigationTools(server: McpServer): void {
 
 
   server.registerTool('axefx3_get_preset_name', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read a preset\'s name + number on the Axe-Fx III in one round-trip. Default reads the active preset; pass `preset` (0..1023) to look up a stored preset by number.',
       'There is no separate "get preset number" function on the III; this is how you get both.',
@@ -126,6 +128,7 @@ export function registerAxeFxIIINavigationTools(server: McpServer): void {
 
 
   server.registerTool('axefx3_get_scene_name', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read a scene\'s name (1..8) in the active Axe-Fx III preset, or pass scene="current" for the active scene.',
       'Read-only: the public spec has no SET_SCENE_NAME envelope.',

@@ -78,6 +78,7 @@ const GET_HYPOTHESIS_BANNER = [
 export function registerAxeFxIIIParamTools(server: McpServer): void {
 
   server.registerTool('axefx3_set_parameter', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Write a raw 16-bit wire value to one paramId on one block on the Axe-Fx III. Targets the active scene only.',
       'EXCEPTION TO DISPLAY-FIRST CONTRACT: the Axe-Fx III ships without a published display calibration, so this tool exposes raw wire 0..65534 directly. AM4 and Axe-Fx II tools accept display units (knob 0..10, dB, %); do NOT generalise this raw-wire convention to those devices. When the III gets its calibration, this tool will switch to display units behind the same name.',
@@ -97,6 +98,14 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
         'Raw 16-bit wire value (0..65534). Display→wire conversion is the ' +
         "caller's responsibility — III has no published display calibration.",
       ),
+    },
+    outputSchema: {
+      block: z.string(),
+      effect_id: z.number().int(),
+      param_id: z.number().int(),
+      value: z.number().int(),
+      rejected: z.boolean(),
+      error_result_code: z.number().int().optional(),
     },
   }, async ({ block, param_id, value }) => {
     let effectId: number;
@@ -137,6 +146,7 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
   });
 
   server.registerTool('axefx3_get_parameter', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Query the wire-level value of one paramId on one block on the Axe-Fx III. Targets the active scene only.',
       GET_HYPOTHESIS_BANNER,
@@ -147,6 +157,12 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
       param_id: z.number().int().min(0).max(0x3fff).describe(
         'Parameter ID within the block (0..16383).',
       ),
+    },
+    outputSchema: {
+      block: z.string(),
+      effect_id: z.number().int(),
+      param_id: z.number().int(),
+      value: z.number().int(),
     },
   }, async ({ block, param_id }) => {
     let effectId: number;

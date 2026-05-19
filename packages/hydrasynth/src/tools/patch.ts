@@ -54,6 +54,7 @@ export function registerHydrasynthPatchTools(server: McpServer): void {
 // hydra_apply_init -------------------------------------------------------
 
 server.registerTool('hydra_apply_init', {
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: HYDRA_DEV_MODE_PREAMBLE + [
     'Recovery primitive: load the factory INIT patch into scratch slot H128 via a SysEx whole-patch dump, then bank/PC dance to make it audibly active. Use when the device has gone silent or wedged after recipe writes; equivalent to pressing the device\'s INIT button from a tool.',
     '- RAM only (no flash burn). After completion, active patch = H128 "Init".',
@@ -197,6 +198,7 @@ server.registerTool('hydra_apply_init', {
 // hydra_apply_init_to (diagnostic) --------------------------------------
 
 server.registerTool('hydra_apply_init_to', {
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: HYDRA_DEV_MODE_PREAMBLE + [
     'Diagnostic primitive: dump the factory INIT patch via SysEx to the named slot ("A001".."H128"), with configurable bank/PC dance. Used to test whether SysEx-to-current-memory modifies the audibly-active patch.',
     'Set `slot` to whatever the device\'s display reads NOW (SysEx-to-current-memory only modifies the active bank\'s working memory).',
@@ -335,6 +337,7 @@ server.registerTool('hydra_apply_init_to', {
 // hydra_apply_patch (milestone-3 prototype) -----------------------------
 
 server.registerTool('hydra_apply_patch', {
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   description: HYDRA_DEV_MODE_PREAMBLE + [
     'Build a Hydrasynth patch atomically: apply a sparse override map on top of the factory INIT buffer and dump via SysEx to the named slot. Covers the full surface (oscillators, filters, envelopes, mixer, mutators, pre/post-FX, delay, reverb, name) in ONE call. No follow-up NRPN batch needed.',
     'CLOBBER WARNING on save:true: this dumps THIS call\'s `params` + INIT defaults and flashes that. Any front-panel tweaks the user made between calls ARE LOST (Hydrasynth has no SysEx working-memory read). If the user says "save my current sound" after turning knobs on the device, do NOT call this with save:true; tell them to press the device SAVE button. Reserve save:true for "build this recipe and persist it".',

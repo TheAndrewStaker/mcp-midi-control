@@ -62,6 +62,7 @@ function parseNoteInput(input: string | number): number {
 
 export function registerAuditionTools(server: McpServer): void {
   server.registerTool('play_note', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     description: [
       'Audition the active patch by playing one MIDI note (Note On, wait, Note Off). Useful after editing params to hear the result without asking the user to play.',
       'Audibility is per-device: synths (Hydrasynth) sound; audio processors (AM4, Axe-Fx II) are silent because they process guitar input. Axe-Fx III sounds only when a Synth block is in the active preset. Check describe_device(port).agent_guidance.note_response.',
@@ -100,6 +101,7 @@ export function registerAuditionTools(server: McpServer): void {
   });
 
   server.registerTool('play_chord', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     description: [
       'Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). Prefer this over play_note when the patch is chord-designed (pads, orchestral stabs, supersaws) so stack-detuning and inter-note filter dynamics are exercised.',
       '- `notes`: array of MIDI numbers or pitch names ("C3"/"Eb3"/"G3", or [48,51,55]). 1..16 notes.',

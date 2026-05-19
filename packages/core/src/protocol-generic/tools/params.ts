@@ -28,6 +28,7 @@ import { PORT_DESC, asError, asText } from './shared.js';
 
 export function registerParamTools(server: McpServer): void {
   server.registerTool('get_param', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name).',
       'Call before set_param when the user says "more / less / a bit" so the relative change has a baseline.',
@@ -57,6 +58,7 @@ export function registerParamTools(server: McpServer): void {
   });
 
   server.registerTool('set_param', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Write one parameter on a device, addressed by (block, name) in display units (knob 0..10, dB, ms, %, enum name or wire index).',
       'Call describe_device({port}) once per session first; its agent_guidance covers relative-change, tempo/time sync, applicability gates, and enum-naming conventions that decide whether the write actually does anything.',
@@ -86,6 +88,7 @@ export function registerParamTools(server: McpServer): void {
   });
 
   server.registerTool('set_params', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Batch-write parameters on a device. Prefer this over many set_param calls when applying a scene, preset, or any grouped change.',
       '- Per-entry shape mirrors set_param: (block, name, value, channel?). Writes go in the order provided.',
@@ -111,6 +114,7 @@ export function registerParamTools(server: McpServer): void {
   });
 
   server.registerTool('get_params', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Batch-read parameters from a device. Useful for state-anchoring before a tone-edit (read amp gain + master + bass + mid + treble, then propose changes).',
       '- Per-query shape: (block, name, channel?). Returns display units.',

@@ -42,6 +42,7 @@ function describeEffectId(effectId: number): string {
 export function registerAxeFxIIIDiscoveryTools(server: McpServer): void {
 
   server.registerTool('axefx3_status_dump', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Status dump of every block in the active preset on the Axe-Fx III. One row per block: effect_id | name | bypassed | channel.',
       'Use to (a) see which blocks the active preset contains and (b) capture unrecognized effect IDs (AMP / NAM / Dynamic Distortion show as "unknown") for the community decode workflow.',
@@ -105,6 +106,7 @@ export function registerAxeFxIIIDiscoveryTools(server: McpServer): void {
 
 
   server.registerTool('axefx3_list_blocks', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Return the Axe-Fx III block roster: every block type the editor recognises, with names, group codes, and effect IDs where documented. Pure data, no MIDI.',
       'Blocks with firstId=null are absent from the public v1.4 spec (AMP) or added after firmware 1.13 (NAM, Dynamic Distortion); they are not SysEx-addressable.',

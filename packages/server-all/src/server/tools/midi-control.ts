@@ -19,6 +19,7 @@ import { invalidateChannelCache } from '@mcp-midi-control/am4/shared/channels.js
 
 export function registerMidiControlTools(server: McpServer): void {
     server.registerTool('list_midi_ports', {
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         description: [
             'List every MIDI input + output port the OS exposes. Safe any time; opens no connection.',
             'Call when the user reports a device isn\'t connected, to diagnose whether the device is visible, the driver is installed, or another app holds the port.',
@@ -70,6 +71,7 @@ export function registerMidiControlTools(server: McpServer): void {
     });
 
     server.registerTool('reconnect_midi', {
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         description: [
             'Reset the MIDI connection: close the cached handle and open a fresh one. Use after USB replug, device power-cycle, or any event leaving the handle dead.',
             `The server auto-reconnects after ${STALE_HANDLE_TIMEOUT_THRESHOLD} consecutive ack-less writes; call this manually to force it sooner.`,
