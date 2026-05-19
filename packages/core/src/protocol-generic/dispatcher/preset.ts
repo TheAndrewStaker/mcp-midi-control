@@ -25,6 +25,7 @@ import {
 
 import { openCtx, requireDevice } from './core.js';
 import { collectApplyPresetPreflight } from './preflight.js';
+import { translatePresetSpec, type TranslatePresetResult } from '../port-preset.js';
 
 /**
  * Generic type-knob compatibility precheck for `apply_preset`.
@@ -128,6 +129,13 @@ export async function executeApplyPreset(args: {
   target_location?: string | number;
   save_authorized?: boolean;
   on_active_preset_edited?: 'warn' | 'discard' | 'save_active_first';
+  /**
+   * BK-057: when true, the dispatcher runs `writer.verifyChain` after a
+   * successful `applyPreset` and decorates the response with
+   * `chain_integrity`. Devices that don't implement `verifyChain` get
+   * a trivial-pass envelope ("not applicable on <device>").
+   */
+  verify_chain?: boolean;
 }): Promise<ApplyResult & { device: string }> {
   const descriptor = requireDevice(args.port);
   if (descriptor.writer.applyPreset === undefined) {
@@ -232,9 +240,28 @@ export async function executeApplyPreset(args: {
   // vocabulary. Omit the field entirely when nothing was resolved so
   // the happy-path response stays unchanged for existing consumers.
   const validation_info = preflight.info.length > 0 ? preflight.info : undefined;
+
+  // BK-057: optional read-after-write chain integrity check. Only runs
+  // when the caller opted in (verify_chain: true) AND the apply itself
+  // succeeded; a failed apply doesn't have anything to verify.
+  let chain_integrity = undefined as ApplyResult['chain_integrity'];
+  if (args.verify_chain === true && result.ok) {
+    if (descriptor.writer.verifyChain !== undefined) {
+      chain_integrity = await descriptor.writer.verifyChain(ctx, normalizedSpec);
+    } else {
+      chain_integrity = {
+        ok: true,
+        breaks: [],
+        summary: `verify_chain: not applicable on ${descriptor.display_name} (no chain-routing semantics).`,
+        extra_round_trips: 0,
+      };
+    }
+  }
+
   return {
     ...result,
     ...(validation_info !== undefined ? { validation_info } : {}),
+    ...(chain_integrity !== undefined ? { chain_integrity } : {}),
     device: descriptor.display_name,
   };
 }
@@ -290,6 +317,121 @@ export async function executeApplySetlist(args: {
   }
   const result = await descriptor.writer.applySetlist(ctx, args.entries, args.options);
   return { ...result, device: descriptor.display_name };
+}
+
+/**
+ * BK-067 result envelope. Wraps the pure translator's output and adds
+ * the apply-side fields when the dispatcher actually fires the
+ * translated spec at the target device.
+ */
+export interface PortPresetResult extends TranslatePresetResult {
+  /** Source device's display name. */
+  source_device: string;
+  /** Target device's display name. */
+  target_device: string;
+  /**
+   * Present when the dispatcher applied the translated spec to the
+   * target device. Carries the same envelope `executeApplyPreset`
+   * returns (ok, steps, duration_ms, validation_info, ...).
+   */
+  apply_result?: ApplyResult & { device: string };
+  /**
+   * True when the dispatcher returned BEFORE firing any apply wire op.
+   * Set by the `dry_run: true` flag or when `target_location` is
+   * omitted (translator-only mode).
+   */
+  dry_run: boolean;
+}
+
+/**
+ * BK-067 cross-device tone porting. Translates a `PresetSpec` from one
+ * device's vocabulary to another (via `translatePresetSpec`) and,
+ * optionally, applies it to the target device by handing the
+ * translated spec to `executeApplyPreset`.
+ *
+ * Three modes (mirrors `apply_preset`'s gating):
+ *
+ *   1. `dry_run: true` OR no `target_location` → translator-only.
+ *      Returns the translated spec + summary + warnings. No wire ops
+ *      on either device.
+ *   2. `target_location` without `save_authorized: true` → audition
+ *      at target. Translator runs, then `executeApplyPreset` runs
+ *      with `save_authorized: false` (navigate + apply, no save).
+ *      Reversible by switching presets on the target device.
+ *   3. `target_location` with `save_authorized: true` → translate +
+ *      apply + save. Destructive. Use only when the user used
+ *      explicit save-language.
+ *
+ * The source device is not touched. The translator is pure (no I/O),
+ * so callers can use this in dry-run mode without any device
+ * connected.
+ *
+ * v1 limitation: this tool does NOT read the source preset from the
+ * source device. The caller supplies the `source_spec` directly.
+ * v2 (HW-118, post-MVP) layers a device-read on top so the caller
+ * can ask for `source_location: 'M03'` and the dispatcher handles the
+ * source-side dump. For now, agents should construct the source spec
+ * via the existing read tools (`get_block_layout`, `get_param`,
+ * `get_params`) before calling `port_preset`.
+ */
+export async function executePortPreset(args: {
+  source_port: string;
+  source_spec: PresetSpec;
+  target_port: string;
+  target_location?: string | number;
+  dry_run?: boolean;
+  save_authorized?: boolean;
+  on_active_preset_edited?: 'warn' | 'discard' | 'save_active_first';
+}): Promise<PortPresetResult> {
+  const sourceDescriptor = requireDevice(args.source_port);
+  const targetDescriptor = requireDevice(args.target_port);
+  // Same-device port_preset is a no-op route. Surface as a soft error
+  // so callers don't accidentally use this tool when they meant apply_preset.
+  if (sourceDescriptor.id === targetDescriptor.id) {
+    throw new DispatchError(
+      'value_out_of_range',
+      sourceDescriptor.display_name,
+      `port_preset source and target are the same device (${sourceDescriptor.display_name}). Use apply_preset instead.`,
+    );
+  }
+
+  const translation = translatePresetSpec(
+    sourceDescriptor,
+    args.source_spec,
+    targetDescriptor,
+  );
+
+  // Translator-only modes: no apply, just return the translated spec.
+  const translatorOnly =
+    args.dry_run === true || args.target_location === undefined;
+  if (translatorOnly || !translation.ok) {
+    return {
+      ...translation,
+      source_device: sourceDescriptor.display_name,
+      target_device: targetDescriptor.display_name,
+      dry_run: true,
+    };
+  }
+
+  // Apply path: hand the translated spec to executeApplyPreset, which
+  // re-runs preflight on the target descriptor (catches any gap the
+  // translator couldn't bridge — unknown blocks, unmappable enums) and
+  // enforces the safe-edit gates the same as direct apply_preset.
+  const applyResult = await executeApplyPreset({
+    port: args.target_port,
+    spec: translation.applied_spec,
+    target_location: args.target_location,
+    save_authorized: args.save_authorized,
+    on_active_preset_edited: args.on_active_preset_edited,
+  });
+
+  return {
+    ...translation,
+    source_device: sourceDescriptor.display_name,
+    target_device: targetDescriptor.display_name,
+    apply_result: applyResult,
+    dry_run: false,
+  };
 }
 
 /**

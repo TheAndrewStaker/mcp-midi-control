@@ -72,7 +72,9 @@ export {
 export {
   executeApplyPreset,
   executeApplySetlist,
+  executePortPreset,
   executeRestoreDefaults,
+  type PortPresetResult,
 } from './dispatcher/preset.js';
 export {
   collectApplyPresetErrors,

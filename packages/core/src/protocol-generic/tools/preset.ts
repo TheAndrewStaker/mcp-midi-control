@@ -17,6 +17,7 @@ import * as z from 'zod/v4';
 import {
   executeApplyPreset,
   executeApplySetlist,
+  executePortPreset,
   executeRestoreDefaults,
 } from '../dispatcher.js';
 import type { PresetSpec } from '../types.js';
@@ -123,8 +124,11 @@ export function registerPresetTools(server: McpServer): void {
         'Set to true ONLY when the user used explicit save-language: "save", "store", "keep", "put on", "persist", "commit to flash". ANTI-PATTERNS — these are AUDITION language, NOT save: "build a preset at X", "make me a tone on X", "design a preset at X", "I want X to have a copy of Y", "make X look/sound like Y", "create a [thing] based on [other thing] at X". State descriptions ("I want X to be Z") describe the desired end state, not whether to persist — interpret as audition unless the user adds save vocab. When ambiguous, audition (false) and ASK before saving — saves are destructive; auditions are reversible by switching presets. With target_location set: false = audition at target, true = save at target.',
       ),
       on_active_preset_edited: ON_EDITED_SCHEMA.describe(ON_EDITED_DESCRIPTION),
+      verify_chain: z.boolean().optional().describe(
+        'When true, run a read-after-write chain integrity check after the apply ops ack. On grid devices (Axe-Fx II / III) the check reads the working-buffer grid and surfaces any cell past col 1 with `routing_mask == 0` (broken cable, signal won\'t flow). On linear devices (AM4) and synths (Hydrasynth) the check returns a trivial pass since they have no chain-routing semantics. Use when you need certainty the preset will produce sound before the user plugs in. Adds ~50-100 ms per call on grid devices.',
+      ),
     },
-  }, async ({ port, spec, target_location, save_authorized, on_active_preset_edited }) => {
+  }, async ({ port, spec, target_location, save_authorized, on_active_preset_edited, verify_chain }) => {
     try {
       const result = await executeApplyPreset({
         port,
@@ -132,6 +136,7 @@ export function registerPresetTools(server: McpServer): void {
         target_location,
         save_authorized,
         on_active_preset_edited,
+        verify_chain,
       });
       return asText(result);
     } catch (err) {
@@ -187,6 +192,83 @@ export function registerPresetTools(server: McpServer): void {
           spec: e.spec as PresetSpec,
         })),
         options: { on_error, dry_run, verify },
+        on_active_preset_edited,
+      });
+      return asText(result);
+    } catch (err) {
+      return asError(err);
+    }
+  });
+
+  server.registerTool('port_preset', {
+    description: [
+      'Translate a preset built for one Fractal device into an equivalent',
+      'preset on another. The marquee cross-device feature: users with an',
+      'existing preset library on one Fractal device get a one-call port',
+      'to a sibling device.',
+      'TRANSLATION COVERAGE: chain topology (AM4 4 linear slots ↔ Axe-Fx',
+      'II/III grid), block availability (II/III separate cab block ↔',
+      'AM4 integrated cab), parameter-name aliases (drive.volume ↔',
+      'drive.level via BK-065), enum-value mapping (USA IIC+ ↔ USA MK',
+      'IIC+ via BK-066 Phase 2 concept-key table — 67 high-confidence',
+      'amp/drive/reverb mappings ship today), scene + channel cardinality',
+      '(AM4 4 scenes × 4 channels ↔ II 8 × 2 ↔ III 8 × 4). Modifier wiring',
+      '(BK-063, gated on capture work) is deferred — modifier-driven',
+      'tones port as static positions; the user adds the wiring step',
+      'manually.',
+      'THREE MODES (mirrors apply_preset gating):',
+      '  1. dry_run=true OR no target_location → translator-only.',
+      '     Returns the translated spec + per-block warnings. No wire',
+      '     ops on either device. Use this first to preview the port.',
+      '  2. target_location WITHOUT save_authorized=true → translate +',
+      '     audition at target. Translator runs, then apply_preset',
+      '     navigates the target device and applies (no save).',
+      '     Reversible by switching presets on the target.',
+      '  3. target_location WITH save_authorized=true → translate +',
+      '     apply + SAVE. Destructive. Use ONLY when the user used',
+      '     explicit save-language ("save", "store", "keep", "put on").',
+      'CALLER RESPONSIBILITY: this tool does NOT read the source preset',
+      'from the source device — v1 takes an explicit source_spec from',
+      'the caller. Construct source_spec via the existing read tools',
+      '(get_block_layout, get_param, get_params) before calling, OR',
+      'pass a spec the agent has in hand from a prior apply_preset.',
+      'Reading-from-device source support is a v2 follow-up.',
+      'OUTPUT: returns {ok, port_summary, applied_spec, warnings,',
+      'apply_result?}. port_summary counts blocks_translated /',
+      'blocks_dropped / params_aliased / enums_mapped / scene_collapses.',
+      'warnings[] surfaces every non-fatal translation note (dropped',
+      'channels, integrated-cab hints, scene overflow). applied_spec',
+      'is the translated PresetSpec — agent can echo it back to the',
+      'user, or feed it to apply_preset directly. apply_result is the',
+      'standard apply_preset envelope when modes 2 or 3 ran.',
+      'PERFORMANCE: ~5ms translator, plus ~1-3s apply time when',
+      'target_location is set. Dry-run is wire-free, hardware not',
+      'required.',
+    ].join(' '),
+    inputSchema: {
+      source_port: z.string().describe(`Source device port (the preset's home device). ${PORT_DESC}`),
+      source_spec: presetShape.describe('Source preset specification (slots, optional scenes, optional name) in the SOURCE device\'s vocabulary. Param names + enum strings should match what the source device accepts; the translator handles the cross-device rewrite.'),
+      target_port: z.string().describe(`Target device port (where the translated preset lands). Must differ from source_port. ${PORT_DESC}`),
+      target_location: z.union([z.string(), z.number()]).optional().describe(
+        'Optional navigation target on the target device. Omit (or pass dry_run=true) to get just the translated spec back without firing any wire op. Set to a location for mode-2 (audition) or mode-3 (save with save_authorized=true).',
+      ),
+      dry_run: z.boolean().optional().describe(
+        'When true, returns the translated spec + summary without applying. Default false. Always-true effective when target_location is omitted.',
+      ),
+      save_authorized: SAVE_AUTHORIZED_SCHEMA.describe(
+        'Set to true ONLY when the user used explicit save-language. See apply_preset.save_authorized for the full rules; the same anti-patterns apply here.',
+      ),
+      on_active_preset_edited: ON_EDITED_SCHEMA.describe(ON_EDITED_DESCRIPTION),
+    },
+  }, async ({ source_port, source_spec, target_port, target_location, dry_run, save_authorized, on_active_preset_edited }) => {
+    try {
+      const result = await executePortPreset({
+        source_port,
+        source_spec: source_spec as PresetSpec,
+        target_port,
+        target_location,
+        dry_run,
+        save_authorized,
         on_active_preset_edited,
       });
       return asText(result);

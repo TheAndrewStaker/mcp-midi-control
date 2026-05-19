@@ -36,6 +36,7 @@ import type {
   ApplySetlistResult,
   BatchWriteResult,
   BlockChange,
+  ChainIntegrityResult,
   DeviceWriter,
   DispatchCtx,
   LocationRef,
@@ -75,6 +76,9 @@ import {
   parseSetGridCellResponse,
   parseStorePresetResponse,
   wireToDisplay,
+  buildGetGridLayout,
+  isGetGridLayoutResponse,
+  parseGetGridLayoutResponse,
   type AxeFxIIChannel,
 } from 'fractal-midi/axe-fx-ii';
 
@@ -510,6 +514,53 @@ export const writer: DeviceWriter = {
       warning: result.ok
         ? `Working buffer configured. Press SAVE on the device or call save_preset to persist.`
         : undefined,
+    };
+  },
+
+  // ── Execute: BK-057 verify chain ──────────────────────────────────
+  //
+  // Read the working-buffer grid via fn 0x20 and walk row 2 cells past
+  // col 1, flagging any cell with `routingFlags === 0`. A non-zero
+  // routing mask means signal flows; a zero mask is a broken cable.
+  // Logic lifted from axefx2_test_apply; this folds it into the
+  // unified surface so the agent doesn't have to switch tools.
+
+  async verifyChain(ctx, _spec): Promise<ChainIntegrityResult> {
+    const GRID_TIMEOUT_MS = 800;
+    const gridPromise = ctx.conn.receiveSysExMatching(
+      isGetGridLayoutResponse,
+      GRID_TIMEOUT_MS,
+    );
+    ctx.conn.send(buildGetGridLayout());
+    let breaks: Array<{ slot_ref: SlotRef; reason: string }> = [];
+    try {
+      const gridBytes = await gridPromise;
+      const cells = parseGetGridLayoutResponse(gridBytes);
+      for (const c of cells) {
+        if (c.blockId === 0) continue;
+        if (c.row !== 2) continue;
+        if (c.col > 1 && c.routingFlags === 0) {
+          breaks.push({
+            slot_ref: { row: c.row, col: c.col },
+            reason: `block id ${c.blockId} placed at row ${c.row} col ${c.col} has routing_mask=0 — signal does not flow through this cell.`,
+          });
+        }
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        breaks: [],
+        summary: `verify_chain: failed to read grid (${err instanceof Error ? err.message : String(err)}).`,
+        extra_round_trips: 1,
+      };
+    }
+    return {
+      ok: breaks.length === 0,
+      breaks,
+      summary: breaks.length === 0
+        ? `verify_chain: chain intact — every placed block on row 2 has live routing.`
+        : `verify_chain: ${breaks.length} broken cable${breaks.length === 1 ? '' : 's'} on row 2 — signal will not flow past col ${breaks[0].slot_ref && typeof breaks[0].slot_ref === 'object' ? (breaks[0].slot_ref as { col: number }).col : '?'}.`,
+      extra_round_trips: 1,
     };
   },
 

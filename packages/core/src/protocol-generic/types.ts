@@ -413,6 +413,30 @@ export interface ApplyResult {
    * for next time. Absent or empty when no resolutions occurred.
    */
   validation_info?: readonly ValidationInfo[];
+  /**
+   * BK-057: structured read-after-write chain integrity check. Present
+   * only when the caller passed `verify_chain: true` AND the device
+   * descriptor implements `writer.verifyChain`. Devices without chain
+   * integrity semantics (AM4 linear slots, Hydrasynth) return a
+   * trivial-pass shape; grid devices (II / III) walk the read-back
+   * grid and surface every cell with `routing_mask == 0` past col 1.
+   */
+  chain_integrity?: ChainIntegrityResult;
+}
+
+/**
+ * BK-057: result envelope for `verify_chain: true` apply_preset calls.
+ * `ok` is false only when the device's read-back found broken signal
+ * routing AFTER the apply ops acked successfully. `breaks` lists each
+ * dropped cable so the agent can report the exact slot that didn't
+ * land. `extra_round_trips` counts the wire ops the verify step added
+ * on top of the base apply.
+ */
+export interface ChainIntegrityResult {
+  ok: boolean;
+  breaks: ReadonlyArray<{ slot_ref: SlotRef; reason: string }>;
+  summary: string;
+  extra_round_trips: number;
 }
 
 /**
@@ -686,6 +710,17 @@ export interface DeviceWriter {
     target?: LocationRef,
     options?: ApplyPresetOptions,
   ): Promise<ApplyResult>;
+  /**
+   * BK-057: optional read-after-write chain integrity check. Called by
+   * the dispatcher after `applyPreset` returned ok=true, only when the
+   * caller passed `verify_chain: true`. Implementations read the
+   * device's current routing state and return a structured pass/fail.
+   *
+   * Devices without chain-routing semantics omit this method; the
+   * dispatcher surfaces `chain_integrity: { ok: true, breaks: [],
+   * summary: 'not applicable on <device>', extra_round_trips: 0 }`.
+   */
+  verifyChain?(ctx: DispatchCtx, spec: PresetSpec): Promise<ChainIntegrityResult>;
   applySetlist?(
     ctx: DispatchCtx,
     entries: readonly SetlistEntrySpec[],
