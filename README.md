@@ -5,12 +5,12 @@ Talk to Claude. Control your MIDI gear.
 MCP MIDI Control is a local [Model Context Protocol](https://modelcontextprotocol.io)
 (MCP) server that lets Claude drive USB MIDI hardware in plain English.
 First-class support today for the **Fractal Audio AM4**, **Fractal
-Axe-Fx II XL+**, and **ASM Hydrasynth Explorer**: block layout, amp/
-oscillator/filter type, drive/cutoff, delay/envelopes, reverb/mutators,
-scenes, and preset names all updateable in real time. Thirteen generic-
-MIDI primitives (CC, NRPN, SysEx, program change, ...) work against any
-USB MIDI device, so synths, looper pedals, and other gear are reachable
-from day one.
+Axe-Fx II XL+**, **Fractal Axe-Fx III** (community beta), and **ASM
+Hydrasynth Explorer**: block layout, amp/oscillator/filter type, drive/
+cutoff, delay/envelopes, reverb/mutators, scenes, and preset names all
+updateable in real time. Generic-MIDI primitives (CC, NRPN, SysEx,
+program change, note play, ...) work against any USB MIDI device, so
+synths, looper pedals, and other gear are reachable from day one.
 
 > **Unaffiliated community tool.** "Fractal Audio", "AM4", "Axe-Fx",
 > "Axe-Fx II", "Axe-Fx III", "FM3", "FM9", "ASM", "Hydrasynth", and
@@ -28,7 +28,7 @@ from day one.
 ## Status
 
 v0.1.0, first public release. The protocol layer is hardware-verified
-across Fractal AM4, Axe-Fx II XL+, and ASM Hydrasynth Explorer; **58
+across Fractal AM4, Axe-Fx II XL+, and ASM Hydrasynth Explorer; **77
 MCP tools** are live; every wire-level tool ships with byte-exact
 goldens against real captures. Axe-Fx II preset authoring is
 audio-confirmed end-to-end on Q8.02 firmware: building "Comp + Amp +
@@ -37,7 +37,11 @@ no manual re-routing in AxeEdit required. Multi-scene authoring
 (distinct per-scene bypass + channel state) is hardware-verified too.
 `apply_preset` now configures all block types (including non-channel
 blocks like filter, chorus, and compressor) in a single call, so a
-full song preset builds cleanly in one conversational turn.
+full song preset builds cleanly in one conversational turn. A new
+`port_preset` tool ports a tone across devices (e.g. AM4 to Axe-Fx II)
+by mapping block roles and translating params, and `apply_preset`
+gained a `verify_chain` flag that reads back every written param to
+confirm the device matches intent.
 
 > **🟡 Axe-Fx III, community beta.** The Axe-Fx III protocol layer is
 > scaffolded from Fractal's published "Axe-Fx III MIDI for Third-Party
@@ -58,23 +62,27 @@ full song preset builds cleanly in one conversational turn.
 Two surfaces cover the common path; a third covers device-specific
 edge cases:
 
-- **Unified surface (17 tools):** `set_param`, `get_param`,
+- **Unified surface (18 tools):** `set_param`, `get_param`,
   `apply_preset`, `apply_setlist`, `switch_preset`, `save_preset`,
   `switch_scene`, `set_block`, `set_bypass`, `set_params`,
   `get_params`, `list_params`, `describe_device`, `rename`,
-  `scan_locations`, `lookup_lineage`, `restore_defaults`. Port-
-  dispatched and device-agnostic: same tool name, every registered
+  `scan_locations`, `lookup_lineage`, `restore_defaults`, `port_preset`.
+  Port-dispatched and device-agnostic: same tool name, every registered
   device. **This is the surface to learn first**; it's the tool
   contract. Adding a new device means writing a `DeviceDescriptor`,
   not new tools.
-- **Generic-MIDI primitives (13 tools):** `send_cc`, `send_note`,
-  `send_program_change`, `send_nrpn`, `send_sysex`, plus `send_panic`,
-  `send_pitch_bend`, `send_clock_*`, etc. Work against any USB MIDI
-  device the OS exposes, including ones with no registered descriptor.
-- **Device-namespaced tools (~25 tools, `am4_*` / `axefx2_*` /
-  `hydra_*`):** kept for capabilities the unified contract doesn't
-  yet cover (Axe-Fx II's 4×12 grid, Hydrasynth's NRPN patch dump,
-  per-device state reads). Documented in the
+- **Generic-MIDI primitives (18 tools):** `send_cc`, `send_note`,
+  `play_note`, `play_chord`, `send_program_change`, `send_nrpn`,
+  `send_sysex`, `send_panic`, `send_pitch_bend`, `send_channel_pressure`,
+  `send_song_position`, `send_reset_controllers`, `send_clock_start` /
+  `_stop` / `_continue`, `find_compatible_types`, `list_midi_ports`,
+  `reconnect_midi`. Work against any USB MIDI device the OS exposes,
+  including ones with no registered descriptor.
+- **Device-namespaced tools (41 tools, `am4_*` / `axefx2_*` /
+  `axefx3_*` / `hydra_*`):** kept for capabilities the unified
+  contract doesn't yet cover (Axe-Fx II's 4×12 grid, Hydrasynth's
+  NRPN patch dump, Axe-Fx III looper / tuner / tempo, per-device
+  state reads). Documented in the
   [device-namespaced appendix](#appendix--device-namespaced-tools).
 
 > **Your presets stay safe.** Every save is gated behind explicit
@@ -106,13 +114,24 @@ Once connected, Claude can:
   'solo'."* / *"Switch to scene 3."*
 - **Research tones by real gear.** *"What's the closest drive to a
   Klon?"* / *"Which amp on the AM4 is inspired by a Matchless DC-30?"*
+- **Port a tone across devices.** *"Take my AM4 preset at A1 and rebuild
+  it on the Axe-Fx II at slot 614."* (`port_preset` maps block roles
+  and translates params between Fractal devices.)
+- **Verify the device matches intent.** Pass `verify_chain: true` to
+  `apply_preset` and the server reads back every written param,
+  reporting any drift before returning success.
+- **Apply named recipes.** Pitch, wah, filter, auto-wah, and diatonic-
+  pitch blocks ship as recipes (e.g. *"add an auto-wah with envelope
+  follower on the drive"*), and a per-amp loudness corpus drives
+  scene-leveling guidance so a "lead" scene actually gets louder than
+  "rhythm" without redlining.
 - **Switch presets.** *"Load A1."*
 
-Under the hood Claude reaches for one of the 17 unified-surface tools
-(or one of the 13 generic-MIDI primitives if the device isn't a
+Under the hood Claude reaches for one of the 18 unified-surface tools
+(or one of the 18 generic-MIDI primitives if the device isn't a
 registered one) and sends SysEx, CC, or NRPN to the device. Tool
-round-trips land in roughly 30–60 ms; whole-preset builds take under
-a second.
+round-trips land in roughly 30 to 60 ms; whole-preset builds take
+under a second.
 
 The unified surface (`set_param`, `get_param`, `apply_preset`,
 `switch_preset`, `save_preset`, `switch_scene`, `set_block`,
@@ -401,15 +420,23 @@ If step 3 works, you're done. Move on to building full presets.
 
 Claude reaches for one of two cross-device tool families almost all
 the time: the **unified surface** for any registered device (AM4,
-Axe-Fx II, Hydrasynth), and the **generic-MIDI primitives** for any
-other USB MIDI gear. Together that's 30 tools, the surface a guitarist
-actually needs to learn. The device-namespaced tools (`am4_*`,
-`axefx2_*`, `hydra_*`) are a smaller surface kept for capabilities the
-tool contract doesn't yet cover; they're documented in the
-[device-namespaced appendix](#appendix--device-namespaced-tools) at
-the end.
+Axe-Fx II, Axe-Fx III, Hydrasynth), and the **generic-MIDI primitives**
+for any other USB MIDI gear. Together that's 36 tools, the surface a
+guitarist actually needs to learn. The device-namespaced tools (`am4_*`,
+`axefx2_*`, `axefx3_*`, `hydra_*`) are a larger surface kept for
+capabilities the tool contract doesn't yet cover; they're documented
+in the [device-namespaced appendix](#appendix--device-namespaced-tools)
+at the end.
 
-### Unified surface (17 tools): same name, every device
+> **Cross-device tolerance built in.** The unified surface accepts
+> common aliases (`drive.volume` resolves to `drive.level` where the
+> device uses that name) and fuzzy enum names (e.g. *"Plexi 100W"* maps
+> to whichever exact enum string the target device uses), so the same
+> conversational instruction works across AM4 / Axe-Fx II / Axe-Fx III
+> without per-device rewording. `port_preset` leans on both to port a
+> tone between devices in one call.
+
+### Unified surface (18 tools): same name, every device
 
 Pass `port` to select which device (id, display_name, or any MIDI
 port-name substring match). Adding a new device means writing a schema
@@ -418,15 +445,16 @@ descriptor + wire adapter; no new tools.
 | Tool | What it does |
 |---|---|
 | `describe_device(port)` | Capabilities + canonical vocabulary + block roster. Pure introspection. Call once per session to learn what a device offers. |
-| `list_params(port, block?, name?)` | Enumerate named params. With `block`+`name` on an enum-typed param, returns the full enum table. |
-| `get_param(port, block, name, channel?)` | Single read, returns display-shaped value. |
-| `set_param(port, block, name, value, channel?)` | Single write. Display values for numerics ("4.5"); enum names or wire index for enums. |
+| `list_params(port, block?, name?, include_descriptions?)` | Enumerate named params. With `block`+`name` on an enum-typed param, returns the full enum table. `include_descriptions: true` returns the long-form param descriptions for tone-building context. |
+| `get_param(port, block, name, channel?, include_description?)` | Single read, returns display-shaped value. `include_description: true` adds the long-form description in the response. |
+| `set_param(port, block, name, value, channel?)` | Single write. Display values for numerics ("4.5"); enum names or wire index for enums. Cross-device aliases (e.g. `drive.volume` -> `drive.level`) and fuzzy enum matching are applied automatically. |
 | `get_params(port, queries[])` | Batch read. Continues past per-query failures. |
 | `set_params(port, ops[])` | Atomic batch write; validates every entry up-front. |
 | `set_block(port, slot, block_type)` | Place/clear a block at a slot. |
 | `set_bypass(port, block, bypassed)` | Silence/activate a block on the active scene. |
-| `apply_preset(port, spec, target_location?)` | Build a whole preset in one call (blocks + params + scenes + name). Without `target_location`, writes to the working buffer only; with it, switches to the target slot and saves. |
+| `apply_preset(port, spec, target_location?, verify_chain?)` | Build a whole preset in one call (blocks + params + scenes + name). Without `target_location`, writes to the working buffer only; with it, switches to the target slot and saves. `verify_chain: true` reads back every written param after apply and returns drift detail. |
 | `apply_setlist(port, entries[])` | Batch preset write across N entries. Each entry has the same shape as `apply_preset`. |
+| `port_preset(from_port, to_port, source, target?)` | Port a tone across devices: read the source preset (or working buffer), map block roles, translate params, and apply to the destination. Same Fractal lineage = high-fidelity port; Fractal -> Hydrasynth surfaces what can/can't translate. |
 | `switch_preset(port, location)` | Load a stored preset into the working buffer. |
 | `save_preset(port, location, name?)` | Persist working buffer (optional rename first). Only on explicit user save phrase; apply_preset is reversible, save_preset is not. |
 | `switch_scene(port, scene)` | Switch scene. Capability-gated (devices without scenes reject). |
@@ -435,7 +463,7 @@ descriptor + wire adapter; no new tools.
 | `lookup_lineage(port, block_type, query)` | Authored lineage data: real-hardware inspiration, manufacturer/model, developer quotes. AM4 + Axe-Fx II ship lineage corpora. |
 | `restore_defaults(port, from, to?)` | Reset a single location or inclusive range to factory state. Capability-gated; only devices with `supports_factory_restore=true` (currently AM4) honor it. |
 
-### Generic MIDI primitives (13 tools)
+### Generic MIDI primitives (18 tools)
 
 Work with any USB MIDI device the OS exposes, registered or not.
 Channels are 1..16 at the tool boundary (musician convention); the
@@ -449,6 +477,8 @@ below.
 |---|---|
 | `send_cc` | Send a Control Change. Channel 1..16, controller 0..127, value 0..127. |
 | `send_note` | Play a note (Note On + Note Off after `duration_ms`, default 500, max 5000). |
+| `play_note` | Cross-device note audition with name-resolved pitches (e.g. `"C4"`). |
+| `play_chord` | Play a chord (multi-note On then Off after duration). |
 | `send_program_change` | Switch patches. Optional Bank Select MSB/LSB prefix. |
 | `send_nrpn` | Write a Non-Registered Parameter Number. 7-bit by default; `high_res: true` unlocks 14-bit values (0..16383). |
 | `send_sysex` | Send a raw System Exclusive frame. Validates F0/F7 framing; otherwise sends bytes verbatim. |
@@ -458,6 +488,7 @@ below.
 | `send_song_position` | MIDI clock song-position pointer. |
 | `send_reset_controllers` | Reset all controllers on a channel. |
 | `send_clock_start` / `_stop` / `_continue` | MIDI clock transport commands. |
+| `find_compatible_types` | Cross-device block-type discovery: given a block role (e.g. `'drive'`), report which block_type strings the target device accepts. |
 | `list_midi_ports` | Enumerate input/output ports the OS exposes. |
 | `reconnect_midi` | Force-reopen a stale MIDI handle. |
 
@@ -636,14 +667,15 @@ to your device once the descriptor is registered. No new tools needed.
 
 ## Appendix: Device-namespaced tools
 
-The 25 device-namespaced tools (`am4_*`, `axefx2_*`, `hydra_*`) are
-the ones with semantics the unified surface doesn't yet cover:
-device-state reads, grid-specific writes, raw-protocol probes. Most
-day-one tone-building won't need them: `apply_preset`, `set_param`,
-`switch_preset`, etc. on the unified surface handle the common path.
-Reach for these when you need device-specific introspection or
-hardware that has no cross-device equivalent (e.g. the Axe-Fx II
-4×12 routing grid). Pass `port='am4' | 'axe-fx-ii' | 'hydrasynth'`
+The 41 device-namespaced tools (`am4_*`, `axefx2_*`, `axefx3_*`,
+`hydra_*`) are the ones with semantics the unified surface doesn't yet
+cover: device-state reads, grid-specific writes, raw-protocol probes,
+III-only looper / tuner / tempo controls. Most day-one tone-building
+won't need them: `apply_preset`, `set_param`, `switch_preset`, etc. on
+the unified surface handle the common path. Reach for these when you
+need device-specific introspection or hardware that has no cross-device
+equivalent (e.g. the Axe-Fx II 4x12 routing grid, the Axe-Fx III looper
+state). Pass `port='am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'hydrasynth'`
 to target a device on any unified tool.
 
 ### AM4 (5 tools): device-state reads + non-destructive working-buffer dump
@@ -671,7 +703,26 @@ to target a device on any unified tool.
 | `axefx2_probe_sysex` | Raw SysEx send + inbound capture. Developer tool for protocol RE. |
 | `axefx2_reconnect_midi` | Force-reopen the Axe-Fx II MIDI handle. |
 
-### ASM Hydrasynth Explorer (11 tools): patch-based architecture (no scenes); NRPN-driven engine
+### Axe-Fx III (18 tools, community beta): looper / tuner / tempo / scene + block channel + raw-protocol probes
+
+| Tool | What it does |
+|---|---|
+| `axefx3_get_active_scene` | Read which scene (1..8) is currently selected. |
+| `axefx3_get_bypass` | Read whether a block is bypassed in the active scene. |
+| `axefx3_get_channel` | Read which channel a block is on. |
+| `axefx3_set_channel` | Switch a block's channel. |
+| `axefx3_get_parameter` | Read a single block parameter (raw III-protocol path; the unified `get_param` is preferred for catalog-named reads). |
+| `axefx3_set_parameter` | Write a single block parameter (raw III-protocol path). |
+| `axefx3_get_preset_name` / `axefx3_get_scene_name` | Read preset and scene names. |
+| `axefx3_get_tempo` / `axefx3_set_tempo` / `axefx3_tempo_tap` | Read, set, or tap the global tempo. |
+| `axefx3_get_looper_state` / `axefx3_set_looper` | Looper transport (record / play / overdub / stop / undo / reverse / half-speed). |
+| `axefx3_set_tuner` | Engage or disengage the tuner. |
+| `axefx3_list_blocks` | Enumerate the III block roster (47 blocks). |
+| `axefx3_status_dump` | Aggregate read of preset / scene / tempo / tuner state. |
+| `axefx3_probe_sysex` | Raw SysEx send + inbound capture. Developer tool for protocol RE. |
+| `axefx3_reconnect_midi` | Force-reopen the Axe-Fx III MIDI handle. |
+
+### ASM Hydrasynth Explorer (8 tools): patch-based architecture (no scenes); NRPN-driven engine
 
 | Tool | What it does |
 |---|---|
@@ -679,13 +730,15 @@ to target a device on any unified tool.
 | `hydra_apply_init_to` | Same as `hydra_apply_init`, targeting a named slot. |
 | `hydra_apply_patch` | Build a full patch with sparse overrides on top of the factory INIT buffer. Optional `save: true` (gated by `save_authorized`). |
 | `hydra_set_param` | Set a system CC (master volume, mod wheel, sustain). 7 system params only. |
-| `hydra_set_engine_param` | Set one of 1175 engine params (oscillators / filters / envelopes / FX) via NRPN. |
-| `hydra_set_engine_params` | Batch engine-param write; same shape as `hydra_set_engine_param`. |
 | `hydra_set_macro` | Set a macro (1..8) value. |
-| `hydra_play_note` | Send a Note On + Note Off pair to the device for audition. |
 | `hydra_get_active_patch` | Read the active patch's bank/slot indices. |
 | `hydra_navigate_to` | Navigate to a specific Bank/Patch on the device. |
 | `hydra_reconnect_midi` | Force-reopen the Hydrasynth MIDI handle. |
+
+> Engine-param writes (oscillators / filters / envelopes / FX) and
+> note play moved to the unified surface in v0.3: use
+> `set_param({port:'hydrasynth',...})` / `set_params` and
+> `play_note({port:'hydrasynth',...})`.
 
 ---
 

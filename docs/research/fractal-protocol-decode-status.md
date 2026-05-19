@@ -89,7 +89,7 @@ guard at `WIRED_MISLABEL_CEILING=161` bumped from 154 for the
 | [`docs/devices/axe-fx-iii/fn01-decode.md`](devices/axe-fx-iii/fn01-decode.md) | III function 0x01 — three-mode envelope. Session 81-82 RE work. |
 | [`docs/devices/axe-fx-iii/preset-format-research.md`](devices/axe-fx-iii/preset-format-research.md) | III preset-save format research (forum thread #159885 archive). |
 | [`docs/devices/axe-fx-ii/community-re-methodology.md`](devices/axe-fx-ii/community-re-methodology.md) | II community RE methodology background. |
-| [`docs/_private/DECISIONS.md`](DECISIONS.md) | Architectural decisions. 2026-05-16 entry covers the Ghidra-as-canonical-RE-method decision. 2026-05-17 entry locks in the `fractal-midi` vendor-package split. |
+| `docs/_private/DECISIONS.md` (founder-private; gitignored) | Architectural decisions. 2026-05-16 entry covers the Ghidra-as-canonical-RE-method decision. 2026-05-17 entry locks in the `fractal-midi` vendor-package split. |
 
 ### Ghidra outputs (gitignored — regenerate locally)
 

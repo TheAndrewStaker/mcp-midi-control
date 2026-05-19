@@ -45,7 +45,7 @@ const COMMANDS = {
   EFFECTS_MODE:  [0xF0, 0x00, 0x01, 0x74, 0x15, 0x12, 0x4A, 0x48, 0xF7],
   TUNER_MODE:    [0xF0, 0x00, 0x01, 0x74, 0x15, 0x12, 0x18, 0x1A, 0xF7],
   GET_FIRMWARE:     buildMessage(AM4_MODEL_ID, 0x08),
-  // Axe-Fx III 3rd-party spec commands (PDF in docs/manuals/). AM4 is
+  // Axe-Fx III 3rd-party spec commands (PDF in docs/devices/axe-fx-iii/manuals/). AM4 is
   // expected to follow the III spec since it's in the same product family.
   // Query form: send 0x7F (or 0x7F 0x7F for 14-bit) as the value.
   Q_SCENE:          buildMessage(AM4_MODEL_ID, 0x0C, [0x7F]),

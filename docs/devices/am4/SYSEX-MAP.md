@@ -2444,7 +2444,7 @@ documented here.
 | Indirect scene read (read inactive scene state without switching to it) | ❌ no wire path | ❌ no wire path | ❌ no wire path | **Switch-then-read.** `switch_scene(N)` → `get_param`. To author per-scene state: `switch_scene N → write → optionally switch back`. Same discipline across all three devices. |
 | Front-panel edit broadcast (device emits MIDI on knob turn / scene change / bypass) | ❌ none (HW-107 Session 74: zero bytes captured) | ✅ `0x74` state-broadcast triple | ❓ unverified | **AM4:** polled working-buffer fingerprint on the navigation seam (see SAFE-EDIT-WORKFLOW.md). **Axe-Fx II:** passive listener (`isStateBroadcastInbound` in `axe-fx-ii/midi.ts`). |
 | Working-buffer dump request | ✅ HW-045 (Session 51) | ✅ same family | ❓ unverified | AM4 dump is 12,352 bytes streamed; ~150–200 ms round-trip. Acceptable to call once per navigation seam, not continuously. AM4-Edit's ~60 Hz polling cadence is explicitly rejected for this server. |
-| Stored-preset binary read | ❌ scrambled per-export (Session 03) | ❌ same | ❌ same | **Puppet the device:** send a sequence of param/block writes against the working buffer, then `save_to_location`. AM4-Edit works this way; do not attempt to construct preset binaries in-memory. See DECISIONS.md 2026-04-14 row "Architecture: puppet the device, don't encode preset binaries." |
+| Stored-preset binary read | ❌ scrambled per-export (Session 03) | ❌ same | ❌ same | **Puppet the device:** send a sequence of param/block writes against the working buffer, then `save_to_location`. AM4-Edit works this way; do not attempt to construct preset binaries in-memory. See `docs/_private/DECISIONS.md` 2026-04-14 row "Architecture: puppet the device, don't encode preset binaries." |
 | Decoded scene-switch ack payload | ⏳ BK-025 partial (latency polish; doesn't unlock new capability) | ❓ unverified | ❓ unverified | Even fully decoded, the move-before-read pattern stays. The decoded payload would save one read after a switch the agent already had to do. |
 
 ### Cross-references
@@ -2453,4 +2453,4 @@ documented here.
 - **No-indirect-read (Axe-Fx III):** [`docs/devices/axe-fx-iii/design-notes.md`](../axe-fx-iii/design-notes.md):30-34 documents the move-before-write/read pattern.
 - **AM4 dirty signal absence + polled-fingerprint workaround:** `packages/am4/src/bufferFingerprint.ts` + `packages/am4/src/tools/safeEdit.ts`; cross-device contract in `docs/SAFE-EDIT-WORKFLOW.md`.
 - **HW-107 closure note:** AM4 emits zero unsolicited MIDI on front-panel edits (3 independent captures, Session 74).
-- **Preset binary scrambling:** DECISIONS.md 2026-04-14 (architecture pivot).
+- **Preset binary scrambling:** `docs/_private/DECISIONS.md` 2026-04-14 (architecture pivot).

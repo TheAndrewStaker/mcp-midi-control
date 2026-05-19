@@ -2,7 +2,7 @@
 
 End-to-end checklist for shipping a public release. Walk this top to
 bottom; each step has acceptance criteria and a "what could go wrong"
-note. Cross-references go to `DECISIONS.md` (packager + cert decisions)
+note. Cross-references go to `docs/_private/DECISIONS.md` (packager + cert decisions)
 and the project's own private launch plan for any audience-specific
 announce work.
 

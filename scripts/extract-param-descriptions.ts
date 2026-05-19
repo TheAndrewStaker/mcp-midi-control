@@ -1,11 +1,12 @@
 /**
  * Maintainer-time extractor for `param-descriptions.json`.
  *
- * Walks the Fractal Audio Blocks Guide plus the AM4 / Axe-Fx II /
- * Axe-Fx III Owner's Manuals (.txt extractions in `docs/manuals/`),
- * regex-scrapes `Param Name <delim> description...` pairs, and joins
- * them against each device descriptor's blocks + params catalog to
- * produce a (device, block, param) -> short prose excerpt lookup.
+ * Walks the Fractal Audio Blocks Guide (`docs/manuals/`) plus the
+ * AM4 / Axe-Fx II / Axe-Fx III Owner's Manuals (.txt extractions
+ * under `docs/devices/<device>/manuals/`), regex-scrapes
+ * `Param Name <delim> description...` pairs, and joins them against
+ * each device descriptor's blocks + params catalog to produce a
+ * (device, block, param) -> short prose excerpt lookup.
  *
  * The output (`packages/core/src/protocol-generic/param-descriptions.json`)
  * is committed and bundled with the release. The runtime tool surface
@@ -52,6 +53,7 @@ import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/t
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 const MANUALS = path.join(ROOT, 'docs', 'manuals');
+const DEVICES = path.join(ROOT, 'docs', 'devices');
 const OUT = path.join(
   ROOT,
   'packages',
@@ -88,17 +90,17 @@ const SOURCES: readonly ManualSource[] = [
   },
   {
     label: 'AM4 Owner\'s Manual',
-    file: path.join(MANUALS, 'AM4-Owners-Manual.txt'),
+    file: path.join(DEVICES, 'am4', 'manuals', 'AM4-Owners-Manual.txt'),
     applyTo: ['am4'],
   },
   {
     label: 'Axe-Fx II Owner\'s Manual',
-    file: path.join(MANUALS, 'Axe-Fx-II-Owners-Manual.txt'),
+    file: path.join(DEVICES, 'axe-fx-ii', 'manuals', 'Axe-Fx-II-Owners-Manual.txt'),
     applyTo: ['axe-fx-ii'],
   },
   {
     label: 'Axe-Fx III Owner\'s Manual',
-    file: path.join(MANUALS, 'Axe-Fx-III-Owners-Manual.txt'),
+    file: path.join(DEVICES, 'axe-fx-iii', 'manuals', 'Axe-Fx-III-Owners-Manual.txt'),
     applyTo: ['axe-fx-iii'],
   },
 ];

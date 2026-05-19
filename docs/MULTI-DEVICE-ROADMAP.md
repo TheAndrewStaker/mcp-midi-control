@@ -401,8 +401,10 @@ the broader MIDI / tools community who don't care about MCP specifically.
   device support umbrella), BK-014 (Axe-Fx II), BK-015 (Axe-Fx III
   community beta), BK-029 (project rename, shipped), BK-031 (Hydrasynth
   Explorer)
-- [`docs/_private/DECISIONS.md`](DECISIONS.md) — vendor-neutral name decision,
-  ESM choice, distribution model, workspace-split rationale
+- [`docs/_private/DECISIONS.md`](_private/DECISIONS.md): vendor-neutral
+  name decision, ESM choice, distribution model, workspace-split
+  rationale (founder-private; gitignored, available to local Claude
+  Code agents)
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md): current workspace
   architecture (kept in sync with code)
 - [`docs/SAFE-EDIT-WORKFLOW.md`](SAFE-EDIT-WORKFLOW.md) — cross-device

@@ -30,8 +30,10 @@ manuals.
 
 ## Official Fractal Audio documents (local)
 
-All files below live in `docs/manuals/` unless noted. Plain-text `.txt` extractions
-sit next to each PDF for grep-ability.
+Cross-device Fractal documents live in `docs/manuals/`. Per-device
+manuals (AM4, Axe-Fx II, Axe-Fx III, Hydrasynth) live under
+`docs/devices/<device>/manuals/`. Plain-text `.txt` extractions sit
+next to each PDF for grep-ability.
 
 ### `docs/devices/am4/manuals/AM4-Owners-Manual.pdf` (8.4 MB, extracted to `.txt`, 2956 lines)
 Primary AM4 user manual from Fractal Audio. The authoritative source for:
@@ -75,14 +77,17 @@ by the number of presets.
 ## Other-manufacturer manuals (local)
 
 Docs for devices on the multi-device expansion roadmap (BK-014..BK-020).
-All files live in `docs/manuals/`. **PDFs are gitignored** for
-copyright and size reasons; only the plain-text extractions are committed.
+Per-device manuals live under `docs/devices/<device>/manuals/`;
+cross-device docs (Blocks Guide, MIMIC whitepaper) live in
+`docs/manuals/`. **PDFs are gitignored** for copyright and size
+reasons; only the plain-text extractions are committed.
 If you need the source PDF, obtain it from the manufacturer's downloads
 page. Extract with `pdftotext -layout <file>.pdf <file>.txt` (ships with
 Git for Windows).
 
 ### Fractal Audio: Axe-Fx II XL+ (BK-014)
-Manuals added 2026-05-09 (Session 53), live at `docs/manuals/`:
+Manuals added 2026-05-09 (Session 53), live at `docs/devices/axe-fx-ii/manuals/`
+(the cross-device MIMIC whitepaper still lives at `docs/manuals/`):
 - `Axe-Fx-II-Owners-Manual.{pdf,txt}`: primary user manual. Section
   17.3 has the MIDI Implementation Chart; Section 16.19 documents the
   read-only `SysEx ID = 00 01 74` constraint and per-device-byte
@@ -219,7 +224,8 @@ write-safety protocol.
 ## How to use this file
 
 - Before searching the web, check whether a local manual covers the question:
-  `grep -l <term> docs/manuals/*.txt` is fast and precise.
+  `grep -l <term> docs/manuals/*.txt docs/devices/*/manuals/*.txt` is fast
+  and precise.
 - When adding a new PDF or external reference to the project, add a section to
   this file so future Claude Code sessions discover it without rescanning.
 - Prefer the AM4 owner's manual over the Blocks Guide when they disagree on

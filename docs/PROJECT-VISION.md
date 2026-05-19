@@ -87,7 +87,7 @@ AM4-specific extensions.
 
 ### Phase 1: Protocol Layer (complete)
 Decoded the editor-write surface via the puppet-the-device approach
-(per [DECISIONS.md 2026-04-14](DECISIONS.md)), with no preset-binary RE
+(per [`_private/DECISIONS.md`](_private/DECISIONS.md) 2026-04-14), with no preset-binary RE
 required. AM4 + Axe-Fx II XL+ wire layers ship with byte-exact goldens
 against real captures.
 

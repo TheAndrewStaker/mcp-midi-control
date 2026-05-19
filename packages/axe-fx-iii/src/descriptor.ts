@@ -3,7 +3,7 @@
  *
  * BEFORE EDITING, READ:
  *   - `docs/devices/axe-fx-iii/SYSEX-MAP.md`
- *   - `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt` (Fractal v1.4 PDF extracted)
+ *   - `docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt` (Fractal v1.4 PDF extracted)
  *
  * The v1.4 PDF is the only Fractal-published spec for the III's third-
  * party MIDI surface. It documents bypass / channel / scene / preset

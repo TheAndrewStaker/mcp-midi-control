@@ -387,7 +387,7 @@ abstraction is cheaper to write once the third copy exists.
   is a high-leverage gift to the community even if downstream
   consumers wire their own gates.
 - **Hardware-verified contribution workflow translates.** Decision
-  2026-05-10 in `DECISIONS.md` (every new device-support PR carries
+  2026-05-10 in `docs/_private/DECISIONS.md` (every new device-support PR carries
   capture evidence) applies to `fractal-midi` too. Wire the same
   CI shape into the new repo from day one.
 
@@ -395,8 +395,9 @@ abstraction is cheaper to write once the third copy exists.
 
 - [`MULTI-DEVICE-ROADMAP.md`](MULTI-DEVICE-ROADMAP.md) — the
   high-level architecture intent (this doc is its Phase 2 detail).
-- [`DECISIONS.md`](DECISIONS.md) — 2026-05-14 workspace-split row,
-  2026-04-28 display-first row, 2026-05-10 contribution-evidence row.
+- `docs/_private/DECISIONS.md` (founder-private; gitignored):
+  2026-05-14 workspace-split row, 2026-04-28 display-first row,
+  2026-05-10 contribution-evidence row.
 - [`SAFE-EDIT-WORKFLOW.md`](SAFE-EDIT-WORKFLOW.md) — the cross-device
   contract; gates stay in `mcp-midi-control`, fingerprint primitives
   move to `fractal-midi`.

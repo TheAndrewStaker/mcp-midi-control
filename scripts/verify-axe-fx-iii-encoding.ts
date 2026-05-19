@@ -5,7 +5,7 @@
  * No hardware required. The Axe-Fx III project ships without a
  * maintainer who owns the device, so this script is the project's
  * only protection against the builders drifting away from
- * `docs/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`.
+ * `docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`.
  *
  * Each expected hex string is computed by hand from the spec
  * envelope `F0 00 01 74 10 [fn] [payload...] [cs] F7` with checksum
