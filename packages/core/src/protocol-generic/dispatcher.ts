@@ -74,4 +74,8 @@ export {
   executeApplySetlist,
   executeRestoreDefaults,
 } from './dispatcher/preset.js';
-export { collectApplyPresetErrors } from './dispatcher/preflight.js';
+export {
+  collectApplyPresetErrors,
+  collectApplyPresetPreflight,
+  type PreflightResult,
+} from './dispatcher/preflight.js';

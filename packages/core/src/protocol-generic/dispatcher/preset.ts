@@ -24,7 +24,7 @@ import {
 } from '../types.js';
 
 import { openCtx, requireDevice } from './core.js';
-import { collectApplyPresetErrors } from './preflight.js';
+import { collectApplyPresetPreflight } from './preflight.js';
 
 /**
  * Generic type-knob compatibility precheck for `apply_preset`.
@@ -148,17 +148,29 @@ export async function executeApplyPreset(args: {
   // every shape/vocabulary error, return them all at once with zero
   // wire ops. The agent fixes the whole spec in one follow-up call
   // instead of bouncing through "first error throws" recovery.
+  //
+  // BK-065 + BK-066 phase 1: the preflight walker now also consults
+  // the cross-device alias table and runs a four-tier enum tolerance
+  // matcher. Successful auto-resolutions land on `info[]` and the
+  // walker returns a normalized copy of the spec where alias + case/
+  // whitespace substitutions have been collapsed onto the device's
+  // canonical vocabulary. The writer downstream sees that normalized
+  // spec, not the original, so it stays oblivious to the alias /
+  // matcher entirely.
   const preflightStart = Date.now();
-  const validation_errors = collectApplyPresetErrors(args.spec, descriptor);
-  if (validation_errors.length > 0) {
+  const preflight = collectApplyPresetPreflight(args.spec, descriptor);
+  if (preflight.errors.length > 0) {
     return {
       ok: false,
       steps: 0,
       duration_ms: Date.now() - preflightStart,
-      validation_errors,
+      validation_errors: preflight.errors,
       device: descriptor.display_name,
     };
   }
+  // From here on, the canonical, alias-resolved spec is what we pass
+  // downstream. Original `args.spec` is left untouched.
+  const normalizedSpec = preflight.normalized_spec;
   // Legacy per-device pre-MIDI validation pass. Catches translation
   // errors the unified-surface walk above doesn't model (e.g. AM4
   // multi-instance rejection). Throws DispatchError on first error;
@@ -166,7 +178,7 @@ export async function executeApplyPreset(args: {
   // so the contract stays uniform.
   if (descriptor.writer.validatePreset !== undefined) {
     try {
-      descriptor.writer.validatePreset(args.spec, args.target_location);
+      descriptor.writer.validatePreset(normalizedSpec, args.target_location);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const fallback: ValidationError = { path: 'spec', error: message };
@@ -186,7 +198,7 @@ export async function executeApplyPreset(args: {
   // fixed-decay, time silently drops). Device must implement
   // findCompatibleTypes for this to run; devices without it skip the
   // check (no false positives — applicability is unknown).
-  precheckTypeKnobCompatibility(args.spec, descriptor);
+  precheckTypeKnobCompatibility(normalizedSpec, descriptor);
   // Safe-edit contract for target_location:
   //   - The buffer-dirty gate ALWAYS runs (target_location implies the
   //     active location is about to change, so unsaved edits would be
@@ -214,8 +226,17 @@ export async function executeApplyPreset(args: {
   const options = args.target_location !== undefined
     ? { save: args.save_authorized === true }
     : undefined;
-  const result = await descriptor.writer.applyPreset(ctx, args.spec, args.target_location, options);
-  return { ...result, device: descriptor.display_name };
+  const result = await descriptor.writer.applyPreset(ctx, normalizedSpec, args.target_location, options);
+  // Surface any BK-065 alias substitutions + BK-066 case/whitespace
+  // resolutions on the success path so the agent learns the canonical
+  // vocabulary. Omit the field entirely when nothing was resolved so
+  // the happy-path response stays unchanged for existing consumers.
+  const validation_info = preflight.info.length > 0 ? preflight.info : undefined;
+  return {
+    ...result,
+    ...(validation_info !== undefined ? { validation_info } : {}),
+    device: descriptor.display_name,
+  };
 }
 
 /**
