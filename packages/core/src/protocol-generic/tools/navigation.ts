@@ -133,6 +133,7 @@ export function registerNavigationTools(server: McpServer): void {
       'Canonical use: before bulk-applying or restoring a range, scan first to surface which locations hold customised presets vs are empty.',
       '- Empty locations come back with is_empty=true.',
       '- On mid-loop failure the scan aborts and returns partial results + the failure location.',
+      '- Performance: ~50-100 ms per location on AM4 (4-location bank ~200-400 ms); ~80 ms per slot on Axe-Fx II (64-slot scan ~5 s). For II ranges larger than ~12 slots, announce the wait to the user up front.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
