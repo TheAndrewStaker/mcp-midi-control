@@ -396,6 +396,39 @@ export interface ApplyResult {
    * working-buffer-only applies (no target), undefined.
    */
   saved?: boolean;
+  /**
+   * BK-059: structured pre-flight validation errors. Populated when the
+   * dispatcher's spec walk surfaces any of unknown block, unknown param,
+   * out-of-range enum value, bad channel letter, malformed slot ref, or
+   * scene-index range failure. Returning this array means zero wire ops
+   * fired — the agent gets every error at once and can fix the whole
+   * spec in a single follow-up call.
+   */
+  validation_errors?: readonly ValidationError[];
+}
+
+/**
+ * BK-059: one entry in `ApplyResult.validation_errors[]`. Identifies the
+ * exact path in the apply_preset spec that failed and, where useful,
+ * carries `suggestions[]` (closest valid names / values) so the agent
+ * can retry with a verbatim choice.
+ */
+export interface ValidationError {
+  /** Index into `spec.slots[]` when the error is slot-scoped. */
+  slot_index?: number;
+  /** Index into `spec.scenes[]` when the error is scene-scoped. */
+  scene_index?: number;
+  /** Index into `spec.routing[]` when the error is routing-scoped. */
+  routing_index?: number;
+  /**
+   * Dot-path into the spec where the error lives, e.g.
+   * "slots[2].params.Y.effect_type" or "scenes[0].channels.amp".
+   */
+  path: string;
+  /** Human-readable message. */
+  error: string;
+  /** Up to ~5 closest valid names / values for the agent to retry with. */
+  suggestions?: readonly string[];
 }
 
 /**

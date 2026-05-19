@@ -340,10 +340,28 @@ async function main(): Promise<void> {
       arguments: { port: 'am4', spec },
     });
     const result = resp.result as
-      | { isError?: boolean; content: { type: string; text: string }[] }
+      | {
+          isError?: boolean;
+          content: { type: string; text: string }[];
+          structuredContent?: {
+            ok?: boolean;
+            validation_errors?: { path: string; error: string }[];
+          };
+        }
       | undefined;
-    const errMessage = resp.error?.message ?? result?.content?.[0]?.text ?? '';
-    const rejected = !!resp.error || result?.isError === true;
+    const structured = result?.structuredContent;
+    // BK-059: validation now returns ok:false + validation_errors[] as a
+    // structured success response rather than throwing. Treat that as
+    // rejection and search across every error's `path` + `error` strings.
+    const validationErrors = structured?.validation_errors ?? [];
+    const isValidationRejection =
+      structured?.ok === false && validationErrors.length > 0;
+    const errMessage =
+      resp.error?.message
+      ?? (isValidationRejection
+        ? validationErrors.map((v) => `${v.path}: ${v.error}`).join(' | ')
+        : (result?.content?.[0]?.text ?? ''));
+    const rejected = !!resp.error || result?.isError === true || isValidationRejection;
     if (!rejected) {
       throw new Error(`apply_preset ${label}: expected rejection, got success: ${JSON.stringify(resp.result)}`);
     }
@@ -357,21 +375,21 @@ async function main(): Promise<void> {
   await assertApplyPresetError(
     'channels on a block without channels',
     { slots: [{ slot: 1, block_type: 'compressor', params: { A: { ratio: 4 } } }] },
-    "doesn't have channels",
+    'does not expose channels',
   );
   console.log(`✓ apply_preset rejects channels on compressor (no channel register)`);
 
   await assertApplyPresetError(
     'unknown channel letter',
     { slots: [{ slot: 1, block_type: 'amp', params: { E: { gain: 6 } } }] },
-    'must be one of A/B/C/D',
+    'unknown channel "E"',
   );
   console.log(`✓ apply_preset rejects unknown channel letter E`);
 
   await assertApplyPresetError(
     'unknown param inside channels.<letter>',
     { slots: [{ slot: 1, block_type: 'amp', params: { A: { not_a_real_param: 6 } } }] },
-    'channels.A.not_a_real_param',
+    'slots[0].params.A.not_a_real_param',
   );
   console.log(`✓ apply_preset surfaces path-like error for unknown param inside channels`);
 
@@ -431,7 +449,7 @@ async function main(): Promise<void> {
       slots: [{ slot: 1, block_type: 'amp' }],
       scenes: [{ scene: 1, channels: { amp: 'E' } }],
     },
-    'must be one of A/B/C/D',
+    'is not valid on Fractal AM4',
   );
   console.log(`✓ apply_preset rejects non-A/B/C/D letter in scenes[].channels`);
 
@@ -441,7 +459,7 @@ async function main(): Promise<void> {
       slots: [{ slot: 1, block_type: 'amp' }],
       scenes: [{ scene: 1, bypassed: { not_a_block: true } }],
     },
-    'bypass.not_a_block',
+    'bypassed.not_a_block',
   );
   console.log(`✓ apply_preset rejects unknown block in scenes[].bypass`);
 
@@ -451,7 +469,7 @@ async function main(): Promise<void> {
       slots: [{ slot: 1, block_type: 'amp' }],
       scenes: [{ scene: 1, bypassed: { none: true } }],
     },
-    'no bypass state',
+    'unknown block "none"',
   );
   console.log(`✓ apply_preset rejects "none" in scenes[].bypass`);
 

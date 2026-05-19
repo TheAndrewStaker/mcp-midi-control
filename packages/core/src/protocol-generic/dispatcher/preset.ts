@@ -20,9 +20,11 @@ import {
   type RestoreDefaultsResult,
   type SetlistApplyOptions,
   type SetlistEntrySpec,
+  type ValidationError,
 } from '../types.js';
 
 import { openCtx, requireDevice } from './core.js';
+import { collectApplyPresetErrors } from './preflight.js';
 
 /**
  * Generic type-knob compatibility precheck for `apply_preset`.
@@ -142,11 +144,40 @@ export async function executeApplyPreset(args: {
       `apply_preset(target_location=...) requires a device that supports save; ${descriptor.display_name} does not.`,
     );
   }
-  // Pre-MIDI validation pass: lets devices reject malformed specs
-  // before we open a MIDI handle. Without this, "AM4 not found"
-  // would mask a spec-shape bug whenever the hardware isn't connected.
+  // BK-059 structured pre-flight pass: walk the entire spec, collect
+  // every shape/vocabulary error, return them all at once with zero
+  // wire ops. The agent fixes the whole spec in one follow-up call
+  // instead of bouncing through "first error throws" recovery.
+  const preflightStart = Date.now();
+  const validation_errors = collectApplyPresetErrors(args.spec, descriptor);
+  if (validation_errors.length > 0) {
+    return {
+      ok: false,
+      steps: 0,
+      duration_ms: Date.now() - preflightStart,
+      validation_errors,
+      device: descriptor.display_name,
+    };
+  }
+  // Legacy per-device pre-MIDI validation pass. Catches translation
+  // errors the unified-surface walk above doesn't model (e.g. AM4
+  // multi-instance rejection). Throws DispatchError on first error;
+  // surfaced as a single fallback `validation_errors[]` entry below
+  // so the contract stays uniform.
   if (descriptor.writer.validatePreset !== undefined) {
-    descriptor.writer.validatePreset(args.spec, args.target_location);
+    try {
+      descriptor.writer.validatePreset(args.spec, args.target_location);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const fallback: ValidationError = { path: 'spec', error: message };
+      return {
+        ok: false,
+        steps: 0,
+        duration_ms: Date.now() - preflightStart,
+        validation_errors: [fallback],
+        device: descriptor.display_name,
+      };
+    }
   }
   // Structural type-knob compatibility precheck: when a slot specifies
   // both a `type` enum value AND additional knobs, ensure the type
