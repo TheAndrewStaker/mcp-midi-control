@@ -137,24 +137,43 @@ async function main(): Promise<void> {
 
   const results: ProbeResult[] = [];
 
-  // ── Probe 1: fn 0x21 SYSEX_RESYNC ──
+  // ── Probe 1: fn 0x21 SYSEX_RESYNC (long listen — device may flood) ──
+  // Hypothesis: triggers a series of 0x74/0x75/0x76 state-broadcast
+  // triples, one per placed block. 5s listen handles slow floods.
   results.push(
-    await probe('fn 0x21 SYSEX_RESYNC', buildEnvelope(0x21), output, collected, 2500),
+    await probe('fn 0x21 SYSEX_RESYNC', buildEnvelope(0x21), output, collected, 5000),
   );
 
-  // ── Probe 2: fn 0x1F SYSEX_GET_ALL_PARAMS [blockId AMP 1] ──
-  // blockId AMP 1 = 106 = 0x6A
+  // ── Probe 2a: fn 0x1F SYSEX_GET_ALL_PARAMS — empty payload ──
+  // Tests whether the envelope returns global state without a target.
+  results.push(
+    await probe('fn 0x1F SYSEX_GET_ALL_PARAMS (no payload)', buildEnvelope(0x1f), output, collected, 3000),
+  );
+
+  // ── Probe 2b: fn 0x1F SYSEX_GET_ALL_PARAMS [blockId AMP 1] ──
+  // blockId AMP 1 = 106 = 0x6A. Wiki block-ID convention.
   results.push(
     await probe(
       'fn 0x1F SYSEX_GET_ALL_PARAMS (AMP 1, blockId 106)',
       buildEnvelope(0x1f, [...encode14(106)]),
-      output, collected, 2500,
+      output, collected, 3000,
+    ),
+  );
+
+  // ── Probe 2c: fn 0x1F with effectId padding ──
+  // Some envelopes need a longer payload — try AMP 1 with 0 padding
+  // matching the fn 0x18 shape (8 bytes payload).
+  results.push(
+    await probe(
+      'fn 0x1F SYSEX_GET_ALL_PARAMS (AMP 1 + zero pad)',
+      buildEnvelope(0x1f, [...encode14(106), 0, 0, 0, 0, 0, 0]),
+      output, collected, 3000,
     ),
   );
 
   // ── Probe 3: fn 0x0E SYSEX_QUERY_STATES (empty payload) ──
   results.push(
-    await probe('fn 0x0E SYSEX_QUERY_STATES (no payload)', buildEnvelope(0x0e), output, collected, 2500),
+    await probe('fn 0x0E SYSEX_QUERY_STATES (no payload)', buildEnvelope(0x0e), output, collected, 3000),
   );
 
   // ── Probe 4: fn 0x18 SYSEX_GET_MODIFIER_INFO (AMP 1) ──
@@ -170,6 +189,17 @@ async function main(): Promise<void> {
   // ── Probe 5: fn 0x47 SYSEX_GET_SYSINFO (empty payload) ──
   results.push(
     await probe('fn 0x47 SYSEX_GET_SYSINFO (no payload)', buildEnvelope(0x47), output, collected, 1500),
+  );
+
+  // ── Probe 6: fn 0x47 with the AxeEdit captured payload ──
+  // session-58 had fn 0x47 with `0a 02 3d 01 00 08 04 00` (8 bytes).
+  // Test whether the payload shape changes the response.
+  results.push(
+    await probe(
+      'fn 0x47 SYSEX_GET_SYSINFO (AxeEdit-captured payload)',
+      buildEnvelope(0x47, [0x0a, 0x02, 0x3d, 0x01, 0x00, 0x08, 0x04, 0x00]),
+      output, collected, 1500,
+    ),
   );
 
   // ── Save raw bytes ──
