@@ -105,24 +105,53 @@ claims that aren't byte-verified.
 3. **`docs/research/fractal-protocol-decode-status.md`** — per-device decode
    status table. Last full sweep Session 82–83. Read before opening
    any new investigation so you know what's already named vs. open.
-4. **`docs/_private/HARDWARE-TASKS-<DEVICE>.md`** — open captures the
+4. **`docs/devices/captures-inventory.md`** — what `.pcapng` / `.syx`
+   captures and Ghidra dumps already exist. **Always check this
+   BEFORE asking the founder for more captures.** Session 103
+   proposed a 70-minute, 21-capture plan without checking the
+   inventory; 5+ relevant captures already existed in
+   `samples/captured/`, and Ghidra mining of the existing
+   already-analyzed AxeEdit.exe project produced the full 94-opcode
+   wire-byte table in 30 minutes (zero hardware time).
+5. **`docs/_private/HARDWARE-TASKS-<DEVICE>.md`** — open captures the
    founder owes. If a 🔜 Pending task gates the work you're about to
    do, surface it instead of speculating around the missing data.
-5. **Per-device wire map** — `docs/devices/<device>/SYSEX-MAP.md`
+6. **Per-device wire map** — `docs/devices/<device>/SYSEX-MAP.md`
    (AM4, Axe-Fx II, Axe-Fx III, Hydrasynth). The authoritative
-   byte-shape doc for the device you're working on.
-6. **`docs/REFERENCES.md`** — only the section for your device. Don't
+   byte-shape doc for the device you're working on. For Axe-Fx II,
+   also read `docs/devices/axe-fx-ii/axeedit-opcode-table.md` (94
+   wire opcodes recovered from AxeEdit.exe Session 103).
+7. **`docs/REFERENCES.md`** — only the section for your device. Don't
    WebFetch for a manual we already have extracted to `.txt`.
 
 ### Capture methods (in order of preference)
+
+**Hardware-free lanes — exhaust these BEFORE queuing founder time:**
+
+- **Existing captures** — `samples/captured/` has 169 files spanning
+  50+ session IDs (gitignored, local-only). Many decode targets are
+  already covered. See `docs/devices/captures-inventory.md` for the
+  full index by device + decode purpose. Session 103 retrospective:
+  an agent nearly queued a 21-capture plan that 5+ existing captures
+  would have answered.
 - **Ghidra dispatcher mining** — canonical for paramId ↔ name catalog
-  discovery (99% wire-accuracy verified Session 82–83). Three-tier
-  technique with symbol-table walk, byte-pattern + xref, and
-  instruction-walk fallback. See `docs/research/ghidra-mining-workflow.md`.
+  discovery (99% wire-accuracy verified Session 82–83). Also for SysEx
+  opcode-table decode: Session 103 mined the full AxeEdit II wire
+  vocabulary (94 opcodes, opcode struct `{name; wire_byte+1}` in
+  `.rdata`) via 6 iterative GhidraScripts in ~30 min wall time. The
+  `ghidra-axe-edit` project at `C:\Users\Steph\` is already
+  auto-analyzed; new scripts run read-only against it. See
+  `docs/research/ghidra-mining-workflow.md`,
+  `docs/devices/axe-fx-ii/axeedit-opcode-table.md`, and the
+  `scripts/ghidra/` directory (30+ existing scripts + their CMD
+  launchers).
 - **JUCE BinaryData extraction** — 5-minute label discovery from
   editor binaries via the embedded ZIP. 1,299 AM4-Edit labels and
   10,250 AxeEdit III labels recovered this way. See
   `docs/capture-guides/juce-binarydata-extraction.md`.
+
+**Hardware lanes — only after the above is exhausted:**
+
 - **Directed probe scripts** (`scripts/probe*.ts`) — cheap, scriptable,
   default for unknown wire envelopes. One hypothesis per probe; keep
   the probe read-only unless explicitly designed to write.
@@ -155,6 +184,21 @@ claims that aren't byte-verified.
 - **AM4 `0x77` preset-save envelope assumed portable to Axe-Fx II** —
   inert on II XL+ (Session 94). Each device family gets its own
   envelope decode; do not extrapolate across model bytes.
+- **Flat-byte-offset diff of the II 0x77/0x78/0x79 preset binary** —
+  proposed in Session 103 as a 21-capture decode plan. Two reasons
+  to reject:
+  1. The body is Huffman-compressed per III community RE (Fractal
+     Forum thread #159885); same envelope family. Flat offsets are
+     not stable across presets and the codebook decode is research
+     of unknown duration.
+  2. The atomic read primitive is `fn 0x0E SYSEX_QUERY_STATES`
+     (recovered from AxeEdit.exe Session 103), NOT the preset-binary
+     envelope. One `fn 0x0E` request → device responds with the full
+     per-block state. That's what AxeEdit actually uses for its
+     "Read from Axe-Fx" sync flow — visible in
+     `samples/captured/session-58-direct-sync.syx`.
+  General lesson: don't propose multi-capture decode plans before
+  checking what AxeEdit itself does via Ghidra + existing captures.
 
 ### Scientific discipline (rules forged by real bugs)
 - **Every new `pidHigh` in `params.ts` requires a `verify-msg.ts`
