@@ -334,17 +334,82 @@ export function connectAxeFxII(): AxeFxIIConnection {
  */
 function mockAxeFxIIConnection(): AxeFxIIConnection {
   const handlers = new Set<(bytes: number[]) => void>();
+  // Minimal mock responder: synthesizes the GET_BLOCK_CHANNEL response
+  // (function 0x11) so bucket-7 channel-write safety logic can run under
+  // MCP_MOCK_TRANSPORT=1. All other GETs still fall through to the
+  // not-implemented rejection — extending this responder is the path to
+  // mock more read-side wire shapes (see am4MockResponder for the
+  // full-coverage pattern).
+  //
+  // The mock pretends every block is currently on channel X. That lets
+  // the agent-retry-paths test cover both branches:
+  //   - set_param(channel: 'X') succeeds (active channel matches);
+  //   - set_param(channel: 'Y') refuses with channel-mismatch warning.
+  const FUNC_BLOCK_CHANNEL = 0x11;
+  const SYSEX_START_BYTE = 0xf0;
+  const SYSEX_END_BYTE = 0xf7;
+  const buildGetBlockChannelMockResponse = (outgoing: number[]): number[] | undefined => {
+    if (outgoing.length < 10) return undefined;
+    if (outgoing[0] !== SYSEX_START_BYTE) return undefined;
+    if (outgoing[1] !== 0x00 || outgoing[2] !== 0x01 || outgoing[3] !== 0x74) {
+      return undefined;
+    }
+    const modelId = outgoing[4];
+    const fn = outgoing[5];
+    if (fn !== FUNC_BLOCK_CHANNEL) return undefined;
+    // Outgoing 'get' frame has action=0x00 at index 9; ignore writes
+    // (action=0x01) — those don't get a response in the live protocol.
+    if (outgoing[9] !== 0x00) return undefined;
+    const effLo = outgoing[6] ?? 0;
+    const effHi = outgoing[7] ?? 0;
+    // Response: F0 00 01 74 [model] 11 [eff_lo] [eff_hi] [chan=0 (X)] [cs] F7
+    const head = [
+      SYSEX_START_BYTE, 0x00, 0x01, 0x74,
+      modelId, FUNC_BLOCK_CHANNEL,
+      effLo & 0x7f, effHi & 0x7f, 0x00,
+    ];
+    const cs = head.slice(1).reduce((a, b) => a ^ b, 0) & 0x7f;
+    return [...head, cs, SYSEX_END_BYTE];
+  };
   return {
-    send: (_bytes) => { /* no-op — writes accepted, no wire traffic */ },
+    send: (bytes) => {
+      // Synthesize an inbound response when the outgoing frame matches a
+      // known shape the mock can answer (currently only GET_BLOCK_CHANNEL).
+      const response = buildGetBlockChannelMockResponse(bytes);
+      if (response !== undefined) {
+        // Dispatch on next tick so the sender's await/receive setup has
+        // time to register its predicate handler before the response
+        // arrives. setImmediate avoids the 0ms-timer race on Windows.
+        setImmediate(() => {
+          for (const h of handlers) {
+            try { h(response); } catch { /* swallow handler errors */ }
+          }
+        });
+      }
+    },
     onMessage: (handler) => {
       handlers.add(handler);
       return () => { handlers.delete(handler); };
     },
-    receiveSysExMatching: (_predicate, _timeoutMs = 1000) => Promise.reject(new Error(
-      'mock Axe-Fx II transport: read-side response synthesis not implemented. ' +
-      'Cases needing reads should either extend mockAxeFxIIConnection with the ' +
-      'documented response envelopes or run against real hardware.',
-    )),
+    receiveSysExMatching: (predicate, timeoutMs = 1000) => {
+      return new Promise<number[]>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          handlers.delete(handler);
+          reject(new Error(
+            `mock Axe-Fx II transport: no synthesized response for this predicate within ${timeoutMs}ms. ` +
+            `Extend mockAxeFxIIConnection with the wire shape this caller needs.`,
+          ));
+        }, timeoutMs);
+        const handler = (bytes: number[]) => {
+          if (bytes[0] !== SYSEX_START_BYTE) return;
+          if (!predicate(bytes)) return;
+          clearTimeout(timer);
+          handlers.delete(handler);
+          resolve(bytes);
+        };
+        handlers.add(handler);
+      });
+    },
     hasInput: true,
     close: () => { handlers.clear(); },
     receiveSysEx: (_timeoutMs?: number) => Promise.reject(new Error(

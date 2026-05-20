@@ -348,6 +348,129 @@ async function main(): Promise<void> {
         && sc['value'] === 32767;
       record('axefx3_set_parameter(good name) → structuredContent emitted', pass, notes);
     }
+
+    // ── Bucket 7: II channel-write safety (refusal on mismatch) ─────
+    console.log('\nAxe-Fx II — bucket 7 channel-write safety');
+    {
+      // Mock reports every block on channel X. Writing with channel='Y'
+      // must refuse with a structured DispatchError explaining the
+      // cross-scene corruption hazard and naming switch_scene as the
+      // safe alternative.
+      const r = await client.callTool({
+        name: 'set_param',
+        arguments: { port: 'axe-fx-ii', block: 'amp', name: 'input_drive', value: 5, channel: 'Y' },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const refusesWrite = /refusing to write/i.test(t);
+      const explainsHazard = /mutates the channel pointer across multiple scenes/i.test(t);
+      const pointsAtSwitchScene = /switch_scene/i.test(t);
+      const offersDropChannel = /omit the channel arg|drop the channel arg/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`text refuses write → ${refusesWrite}`);
+      notes.push(`text explains cross-scene hazard → ${explainsHazard}`);
+      notes.push(`text points at switch_scene → ${pointsAtSwitchScene}`);
+      notes.push(`text offers drop-channel alternative → ${offersDropChannel}`);
+      const pass = isErr && refusesWrite && explainsHazard && pointsAtSwitchScene && offersDropChannel;
+      record('set_param(axe-fx-ii, channel:Y when active=X) → channel-mismatch refusal', pass, notes);
+    }
+
+    {
+      // Same call WITHOUT the channel arg — must NOT refuse. The mock
+      // accepts the write and the dispatcher returns a success envelope
+      // with the resolved display value.
+      const r = await client.callTool({
+        name: 'set_param',
+        arguments: { port: 'axe-fx-ii', block: 'amp', name: 'input_drive', value: 5 },
+      });
+      const sc = structured(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      notes.push(`isError=${isErr}`);
+      notes.push(`structuredContent present → ${sc !== undefined}`);
+      // We don't gate on a specific wire_value here because the calibration
+      // overlay maps display 5 → a calibrated wire integer; the test cares
+      // that the write succeeded, not the exact wire shape.
+      const pass = !isErr && sc !== undefined;
+      record('set_param(axe-fx-ii, no channel arg) → write proceeds without safety gate', pass, notes);
+    }
+
+    {
+      // Channel arg that MATCHES the mock's reported channel (X) must
+      // also proceed — the gating is "refuse on mismatch", not "refuse
+      // on any channel arg". This guards against an over-zealous future
+      // refactor that breaks the matching-channel case.
+      const r = await client.callTool({
+        name: 'set_param',
+        arguments: { port: 'axe-fx-ii', block: 'amp', name: 'input_drive', value: 5, channel: 'X' },
+      });
+      const sc = structured(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      notes.push(`isError=${isErr}`);
+      notes.push(`structuredContent present → ${sc !== undefined}`);
+      const pass = !isErr && sc !== undefined;
+      record('set_param(axe-fx-ii, channel:X when active=X) → write proceeds (matching channel)', pass, notes);
+    }
+
+    // ── Bucket 7: loudness offsets surfaced on enum metadata ────────
+    console.log('\nUnified — bucket 7 loudness offsets on enum');
+    {
+      // list_params for amp.type on Axe-Fx II must carry
+      // enum_value_loudness_offsets_db with at least one known anchor
+      // (DOUBLE VERB NRML maps to 0 dB — the reference amp).
+      const r = await client.callTool({
+        name: 'list_params',
+        arguments: { port: 'axe-fx-ii', block: 'amp', name: 'type' },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const hasField = /enum_value_loudness_offsets_db/i.test(t);
+      const hasReferenceAmp = /DOUBLE VERB NRM/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`response carries enum_value_loudness_offsets_db → ${hasField}`);
+      notes.push(`response includes reference amp label "DOUBLE VERB NRM" → ${hasReferenceAmp}`);
+      const pass = !isErr && hasField && hasReferenceAmp;
+      record('list_params(axe-fx-ii, amp, type) → loudness offsets surfaced on enum', pass, notes);
+    }
+
+    {
+      // Same for AM4 amp.type. AM4 labels are the corpus keys, so the
+      // reference amp label is "Double Verb Normal" verbatim.
+      const r = await client.callTool({
+        name: 'list_params',
+        arguments: { port: 'am4', block: 'amp', name: 'type' },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const hasField = /enum_value_loudness_offsets_db/i.test(t);
+      const hasReferenceAmp = /Double Verb Normal/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`response carries enum_value_loudness_offsets_db → ${hasField}`);
+      notes.push(`response includes reference amp label → ${hasReferenceAmp}`);
+      const pass = !isErr && hasField && hasReferenceAmp;
+      record('list_params(am4, amp, type) → loudness offsets surfaced on enum', pass, notes);
+    }
+
+    {
+      // Non-amp/drive enums must NOT carry the offset field — keeps the
+      // response shape minimal where the data doesn't apply.
+      const r = await client.callTool({
+        name: 'list_params',
+        arguments: { port: 'am4', block: 'reverb', name: 'type' },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const hasField = /enum_value_loudness_offsets_db/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`response omits enum_value_loudness_offsets_db → ${!hasField}`);
+      const pass = !isErr && !hasField;
+      record('list_params(am4, reverb, type) → no loudness offsets (out of scope)', pass, notes);
+    }
   } finally {
     await client.close();
   }

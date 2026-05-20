@@ -13,6 +13,12 @@ import {
   type DeviceDescriptor,
   type PresetSpec,
 } from '../types.js';
+import {
+  lookupAmpLoudness,
+  lookupDriveLoudness,
+} from '../../fractal-shared/loudness.js';
+import { resolveEnumAlias } from '../cross-device-enums.js';
+import { resolveParamAlias } from '../cross-device-aliases.js';
 
 import { requireDevice } from './core.js';
 import { resolveBlockName } from './resolvers.js';
@@ -110,6 +116,66 @@ export interface ListParamsEntry {
    * derived by `scripts/extract-param-descriptions.ts`.
    */
   description?: string;
+  /**
+   * Per-enum-value loudness offset in dB vs the reference amp/drive,
+   * keyed by enum display label (e.g. `"USA IIC+": 6`). Present only
+   * when:
+   *   - block is `amp` (or `drive`) AND `name` is `type`;
+   *   - the caller asked for enum values (passing `name`);
+   *   - the lineage loudness corpus has an entry for the
+   *     AM4-equivalent label.
+   * Reference anchors: amp = Double Verb Normal (Twin Reverb) at
+   * master=6 = 0 dB; drive = T808 OD at level=7 = +6 dB.
+   *
+   * Agents should add this offset on top of the conventional
+   * scene-leveling spread when balancing per-amp loudness across
+   * scenes (Session 102 bucket 7).
+   */
+  enum_value_loudness_offsets_db?: Readonly<Record<string, number>>;
+}
+
+/**
+ * For an `amp.type` or `drive.type` enum table, look up each enum
+ * label's loudness offset via the cross-device alias table → AM4
+ * canonical name → loudness corpus. Returns `undefined` when no enum
+ * label has a corpus hit (so the field is omitted entirely rather
+ * than rendered as `{}`).
+ *
+ * The corpus is keyed by AM4 display names; for II/III labels the
+ * concept-key alias table translates first. Devices not in the alias
+ * table (no AM4 column) get no offset.
+ */
+function loudnessOffsetsForEnum(
+  port: string,
+  block: string,
+  paramName: string,
+  enumValues: Readonly<Record<number, string>>,
+): Readonly<Record<string, number>> | undefined {
+  // Each device names the type-enum knob differently (AM4: `type`,
+  // II: `effect_type`, III: `type`). Match all known type-knob names so
+  // the loudness offsets surface regardless of device dialect.
+  if (paramName !== 'type' && paramName !== 'effect_type') return undefined;
+  if (block !== 'amp' && block !== 'drive') return undefined;
+  const lookup =
+    block === 'amp' ? lookupAmpLoudness : lookupDriveLoudness;
+  const offsets: Record<string, number> = {};
+  for (const label of Object.values(enumValues)) {
+    // Translate this device's label to its AM4 canonical form (the
+    // corpus key). For AM4 itself the resolver returns the label
+    // unchanged when it's already AM4-canonical. Devices missing
+    // from the cross-device table fall through to lookup-by-original-
+    // label (the corpus might still have a direct match for AM4).
+    const am4Label = port === 'am4'
+      ? label
+      : resolveEnumAlias('am4', block, paramName, label).canonical;
+    const entry = lookup(am4Label);
+    if (entry === undefined) continue;
+    const offset = block === 'amp'
+      ? (entry as { relative_loudness_dB: number }).relative_loudness_dB
+      : (entry as { boost_response_dB: number }).boost_response_dB;
+    offsets[label] = offset;
+  }
+  return Object.keys(offsets).length > 0 ? offsets : undefined;
 }
 
 export function listParams(args: {
@@ -171,13 +237,29 @@ export function listParams(args: {
       aliasReverse[canonical] ??= [];
       aliasReverse[canonical].push(alias);
     }
+    // Build a per-block canonical-name set from the wantNames input,
+    // running each requested name through the cross-device alias table
+    // so callers using cross-device vocabulary land on the local param.
+    // Example: `list_params({port:"axe-fx-ii", block:"amp", name:"type"})`
+    // resolves "type" → "effect_type" before the filter runs.
+    let canonicalWantNames: Set<string> | undefined;
+    if (wantNames !== undefined) {
+      canonicalWantNames = new Set<string>();
+      for (const input of wantNames) {
+        const aliased = resolveParamAlias(args.port, block, input);
+        canonicalWantNames.add(aliased.canonical);
+      }
+    }
     for (const [name, param] of Object.entries(schema.params)) {
-      if (wantNames !== undefined && !wantNames.has(name)) continue;
+      if (canonicalWantNames !== undefined && !canonicalWantNames.has(name)) continue;
       const aliasList = aliasReverse[name];
       const includeEnum =
         wantNames !== undefined && param.enum_values !== undefined;
       const description = args.include_descriptions
         ? getParamDescription(args.port, block, name)
+        : undefined;
+      const loudnessOffsets = includeEnum && param.enum_values !== undefined
+        ? loudnessOffsetsForEnum(args.port, block, name, param.enum_values)
         : undefined;
       entries.push({
         block,
@@ -192,6 +274,7 @@ export function listParams(args: {
         parameter_name: param.parameter_name,
         applies_only_when: param.applies_only_when,
         description,
+        enum_value_loudness_offsets_db: loudnessOffsets,
       });
     }
   }

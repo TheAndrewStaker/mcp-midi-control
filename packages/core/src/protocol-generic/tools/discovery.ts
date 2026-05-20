@@ -70,6 +70,7 @@ export function registerDiscoveryTools(server: McpServer): void {
       '- No filter: every (block, name) the device exposes. With `block`: scoped to that block. With both `block` and `name`: full enum table for enum-typed params.',
       '- Batch form: both `block` and `name` accept arrays. `block: ["amp","drive","reverb"]` surveys 3 blocks in one call.',
       '- `include_descriptions: true` attaches a Blocks-Guide / Owner\'s-Manual excerpt per param; default false.',
+      '- For `amp.type` and `drive.type`, the response carries `enum_value_loudness_offsets_db` — per-model dB offsets vs the reference amp/drive (Twin Reverb at master=6 = 0 dB; T808 OD at level=7 = +6 dB). Add these on top of the conventional scene-leveling spread when balancing per-amp loudness.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),

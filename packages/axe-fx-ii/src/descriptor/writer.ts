@@ -60,6 +60,7 @@ import {
 } from 'fractal-midi/axe-fx-ii';
 import { KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/axe-fx-ii';
 import {
+  buildGetBlockChannel,
   buildGetPresetName,
   buildSetBlockBypass,
   buildSetBlockChannel,
@@ -70,9 +71,11 @@ import {
   buildStorePreset,
   buildSwitchPreset,
   channelToWire,
+  isGetBlockChannelResponse,
   isGetPresetNameResponse,
   isSetGridCellResponse,
   isStorePresetResponse,
+  parseGetBlockChannelResponse,
   parseGetPresetNameResponse,
   parseSetGridCellResponse,
   parseStorePresetResponse,
@@ -106,6 +109,7 @@ const CHANNEL_SWITCH_SETTLE_MS = 20;
 const STORE_RESPONSE_TIMEOUT_MS = 800;
 const GRID_CELL_RESPONSE_TIMEOUT_MS = 800;
 const GET_NAME_TIMEOUT_MS = 800;
+const GET_BLOCK_CHANNEL_TIMEOUT_MS = 800;
 
 // ── Param-name → AxeFxIIParam ───────────────────────────────────────
 // Resolution shared with legacy axefx2_* tools via paramAliases.ts.
@@ -235,10 +239,51 @@ export const writer: DeviceWriter = {
     const param = findParamOrThrow(block, name);
     const channelWire = normalizeChannel(channel);
 
-    // Pre-write channel switch with settle.
+    // Channel-write safety (Session 102 fresh-machine finding). A
+    // `buildSetBlockChannel` here mutates the block's channel pointer
+    // on multiple scenes at once on Axe-Fx II (X/Y model), corrupting
+    // the non-active scenes the user didn't intend to touch. The safe
+    // pattern is to assert that the active scene's block is ALREADY on
+    // the requested channel; if so the param write lands on that
+    // channel's slot directly and no channel switch is needed. If the
+    // active channel differs, refuse and point the agent at
+    // `switch_scene` (or omit the channel arg). Root fix lives in
+    // BK-070 via the preset-binary apply path.
     if (channelWire !== undefined && block.canBypass) {
-      ctx.conn.send(buildSetBlockChannel(block.id, channelWire));
-      await new Promise((res) => setTimeout(res, CHANNEL_SWITCH_SETTLE_MS));
+      const reqBytes = buildGetBlockChannel(block.id);
+      const ackPromise = ctx.conn.receiveSysExMatching(
+        (bytes) => isGetBlockChannelResponse(bytes, block.id),
+        GET_BLOCK_CHANNEL_TIMEOUT_MS,
+      );
+      ctx.conn.send(reqBytes);
+      let active: AxeFxIIChannel;
+      try {
+        const ack = await ackPromise;
+        active = parseGetBlockChannelResponse(ack);
+      } catch (err) {
+        throw new DispatchError(
+          'no_ack',
+          DEVICE_LABEL,
+          `set_param: cannot verify ${block.name} channel before write — ${err instanceof Error ? err.message : String(err)}. ` +
+          `Likely cause: ${block.name} is not placed on the active grid. Place the block first or omit the channel arg.`,
+        );
+      }
+      if (active !== channelWire) {
+        throw new DispatchError(
+          'capability_not_supported',
+          DEVICE_LABEL,
+          `set_param: refusing to write ${block.name}.${param.name} on channel ${channelWire} — the active scene has ${block.name} on channel ${active}. ` +
+          `On Axe-Fx II, switching a block's channel mutates the channel pointer across multiple scenes at once (not just the active scene), which silently corrupts other scenes' patches. ` +
+          `Safe pattern: call switch_scene first to a scene that already has ${block.name} on channel ${channelWire}, OR omit the channel arg to write to whichever channel the active scene is already on.`,
+          {
+            valid_options: [active],
+            retry_action:
+              `Either call switch_scene to a scene that has ${block.name} on channel ${channelWire}, or drop the channel arg and write to the active channel (${active}).`,
+          },
+        );
+      }
+      // Channels already aligned — skip the SET_BLOCK_CHANNEL write
+      // entirely; the param write below will land on this channel.
     }
 
     const bytes = buildSetBlockParameterValue(
