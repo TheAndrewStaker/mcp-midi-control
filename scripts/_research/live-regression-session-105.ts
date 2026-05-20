@@ -366,6 +366,96 @@ async function main(): Promise<void> {
         isErr && mentionsGap,
         [`isError=${isErr}`, `text mentions capability gap → ${mentionsGap}`]);
     }
+
+    // ── Axe-Fx II cross-device capability gates ─────────────────────
+    if (axefx2Available) {
+      console.log('\nAxe-Fx II cross-device capability gates');
+      // nudge_param is AM4-only today. II must refuse with a clear
+      // capability_not_supported and steer the agent at the fallback.
+      {
+        const r = await client.callTool({
+          name: 'nudge_param',
+          arguments: { port: 'axe-fx-ii', block: 'amp', name: 'input_drive', direction: 'up', granularity: 'fine' },
+        });
+        const t = extractText(r);
+        const isErr = isError(r);
+        const mentionsGap = /not implemented for Fractal Axe-Fx II|capability_not_supported/i.test(t);
+        const pointsAtFallback = /set_param/i.test(t);
+        record('nudge_param(axe-fx-ii) refuses (II has no nudge primitive)',
+          isErr && mentionsGap && pointsAtFallback,
+          [`isError=${isErr}`, `mentions capability gap → ${mentionsGap}`, `points at set_param → ${pointsAtFallback}`]);
+      }
+      // toggle_bypass is AM4-only today. Same expectation as nudge.
+      {
+        const r = await client.callTool({
+          name: 'toggle_bypass',
+          arguments: { port: 'axe-fx-ii', block: 'reverb' },
+        });
+        const t = extractText(r);
+        const isErr = isError(r);
+        const mentionsGap = /not implemented for Fractal Axe-Fx II|capability_not_supported/i.test(t);
+        const pointsAtFallback = /set_bypass/i.test(t);
+        record('toggle_bypass(axe-fx-ii) refuses (II has no atomic toggle primitive)',
+          isErr && mentionsGap && pointsAtFallback,
+          [`isError=${isErr}`, `mentions capability gap → ${mentionsGap}`, `points at set_bypass → ${pointsAtFallback}`]);
+      }
+    }
+
+    // ── Axe-Fx II core read/write path still works ──────────────────
+    // Validates that the BK-070 PresetSnapshot type change + the
+    // capabilities.atomic_read addition didn't regress the existing
+    // II surface. get_param + set_param round-trip on amp.input_drive.
+    if (axefx2Available) {
+      console.log('\nAxe-Fx II core read/write path (no regression from BK-070)');
+      try {
+        const before = await client.callTool({
+          name: 'get_param',
+          arguments: { port: 'axe-fx-ii', block: 'amp', name: 'input_drive' },
+        });
+        const beforeSc = structured(before);
+        const beforeDisplay = beforeSc?.['display_value'];
+        const beforeIsErr = isError(before);
+        record('get_param(axe-fx-ii, amp, input_drive) succeeds',
+          !beforeIsErr && typeof beforeDisplay === 'number',
+          [`isError=${beforeIsErr}`, `display_value=${beforeDisplay}`]);
+
+        if (!beforeIsErr && typeof beforeDisplay === 'number') {
+          // Bump amp.input_drive by 0.5 display units and read back.
+          // Then restore. Stays well within the knob's 0..10 range.
+          const target = Math.min(10, Math.max(0, beforeDisplay + 0.5));
+          const setR = await client.callTool({
+            name: 'set_param',
+            arguments: { port: 'axe-fx-ii', block: 'amp', name: 'input_drive', value: target },
+          });
+          const setIsErr = isError(setR);
+          record(`set_param(axe-fx-ii, amp, input_drive, ${target.toFixed(2)}) acks`,
+            !setIsErr, [`isError=${setIsErr}`, ...debugOnFail('set_param', setR)]);
+
+          const after = await client.callTool({
+            name: 'get_param',
+            arguments: { port: 'axe-fx-ii', block: 'amp', name: 'input_drive' },
+          });
+          const afterSc = structured(after);
+          const afterDisplay = afterSc?.['display_value'];
+          // II's display rounding/Q15 quantization can drift the read-back
+          // by ~0.01 display units; allow 0.1 tolerance.
+          const landed = typeof afterDisplay === 'number'
+            && Math.abs(afterDisplay - target) < 0.1;
+          record(`get_param read-back lands within 0.1 of ${target.toFixed(2)}`,
+            landed, [`display_value=${afterDisplay}`, `target=${target}`]);
+
+          // Restore original value so the user's preset state is
+          // unchanged after the regression.
+          await client.callTool({
+            name: 'set_param',
+            arguments: { port: 'axe-fx-ii', block: 'amp', name: 'input_drive', value: beforeDisplay },
+          });
+        }
+      } catch (err) {
+        record('Axe-Fx II read/write round-trip', false,
+          [`exception: ${err instanceof Error ? err.message : String(err)}`]);
+      }
+    }
   } finally {
     await client.close();
   }
