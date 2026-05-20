@@ -95,6 +95,48 @@ export async function executeGetParam(args: {
 }
 
 /**
+ * Full lifecycle for `nudge_param`. Same resolve pipeline as set_param
+ * but no display→wire encode step — the device knows its own step
+ * quantum per param so the wire envelope is payload-free. Devices
+ * without a wire nudge primitive error with capability_not_supported.
+ */
+export async function executeNudgeParam(args: {
+  port: string;
+  block: string;
+  name: string;
+  direction: 'up' | 'down';
+  granularity?: 'fine' | 'coarse';
+  channel?: string | number;
+}): Promise<WriteResult & { device: string; aliased_param_from?: string }> {
+  const descriptor = requireDevice(args.port);
+  if (descriptor.writer.nudgeParam === undefined) {
+    throw new DispatchError(
+      'capability_not_supported',
+      descriptor.display_name,
+      `nudge_param is not implemented for ${descriptor.display_name}. Use set_param with an explicit value instead.`,
+    );
+  }
+  const canonical_block = resolveBlockName(descriptor, args.block);
+  const { name: canonical_name, aliased_from } = resolveParamName(descriptor, canonical_block, args.name);
+  const channel = resolveChannel(descriptor, canonical_block, args.channel);
+  const granularity = args.granularity ?? 'fine';
+  const ctx = openCtx(descriptor);
+  const result = await descriptor.writer.nudgeParam(
+    ctx,
+    canonical_block,
+    canonical_name,
+    args.direction,
+    granularity,
+    channel,
+  );
+  return {
+    ...result,
+    device: descriptor.display_name,
+    aliased_param_from: aliased_from,
+  };
+}
+
+/**
  * Full lifecycle for `set_params` — batch write. Validates EVERY entry
  * up-front before sending any MIDI, so a bad value at index 7 doesn't
  * leave indices 0..6 half-sent.

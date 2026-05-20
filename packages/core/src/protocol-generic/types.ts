@@ -704,6 +704,32 @@ export interface DeviceWriter {
   setParams?(ctx: DispatchCtx, ops: readonly WriteOp[]): Promise<BatchWriteResult>;
   setBlock?(ctx: DispatchCtx, slot: SlotRef, change: BlockChange): Promise<WriteResult>;
   setBypass?(ctx: DispatchCtx, block: string, bypassed: boolean): Promise<WriteResult>;
+  /**
+   * Nudge a continuous param up or down by one device-defined step.
+   * Maps to the AM4 MESSAGE_INCR / DECR / INCR_COARSE / DECR_COARSE
+   * actions; the device knows its own quantum per param, so no value
+   * is sent on the wire. "fine" = 1× quantum (~0.01 on a 0..10 knob);
+   * "coarse" = 10× quantum (~0.1). Optional — devices without a wire
+   * nudge primitive (II, III) omit this and the dispatcher errors
+   * with capability_not_supported.
+   */
+  nudgeParam?(
+    ctx: DispatchCtx,
+    block: string,
+    name: string,
+    direction: 'up' | 'down',
+    granularity: 'fine' | 'coarse',
+    channel?: string | number,
+  ): Promise<WriteResult>;
+  /**
+   * Flip a block's bypass state atomically. Maps to the AM4
+   * MESSAGE_TOGGLE action (0x07). Single wire round-trip — agents
+   * no longer need to read bypass state and write the inverse.
+   * Optional — devices that lack an atomic toggle opcode omit this
+   * and the dispatcher falls back to `set_bypass` semantics or
+   * errors with capability_not_supported.
+   */
+  toggleBypass?(ctx: DispatchCtx, block: string): Promise<WriteResult>;
   applyPreset?(
     ctx: DispatchCtx,
     spec: PresetSpec,

@@ -52,6 +52,7 @@ import {
   resolveBlockType,
 } from 'fractal-midi/am4';
 import {
+  buildNudgeParam,
   buildSaveToLocation,
   buildSetBlockBypass,
   buildSetBlockType,
@@ -60,6 +61,7 @@ import {
   buildSetSceneName,
   buildSwitchPreset,
   buildSwitchScene,
+  buildToggleBlockBypass,
   isCommandAck,
   isWriteEcho,
 } from 'fractal-midi/am4';
@@ -89,6 +91,31 @@ import {
 } from '../shared/channels.js';
 import { checkApplicability } from 'fractal-midi/am4';
 import type { ApplyPresetSkippedParam } from '../tools/applyExecutor.js';
+
+/**
+ * Predicate matching the AM4's wire-ack for the new Session 104 opcodes
+ * (TOGGLE 0x07, INCR 0x03, DECR 0x05, INCR_COARSE 0x04, DECR_COARSE 0x06,
+ * SET_NORM 0x02). Shape captured live Session 104:
+ *
+ *   F0 00 01 74 15 01 <pidLow septets> <pidHigh septets>
+ *                     <ACTION septets> 00 00 <hdr4=0x0028> ...payload... <cs> F7
+ *
+ * Identical envelope to `isWriteEcho` BUT the action byte echoes the
+ * outgoing request (e.g. 0x03 for INCR), not the canonical WRITE 0x01.
+ * hdr4 is still 0x0028 (40-byte param descriptor payload) so the
+ * receipt-echo / loopback variants (hdr4=0x0004) are still filtered out.
+ */
+function isNudgeOrToggleAck(write: number[], response: number[]): boolean {
+  if (response.length < 16) return false;
+  // Envelope + function byte (bytes 0..5) match the outgoing write.
+  for (let i = 0; i < 6; i++) if (response[i] !== write[i]) return false;
+  // Addressing (pidLow 6..7, pidHigh 8..9, action 10..11) echoes the request.
+  for (let i = 6; i < 12; i++) if (response[i] !== write[i]) return false;
+  // hdr4 = 0x0028 (40-byte payload). Filters out the 18B cmd-ack shape
+  // and the loopback receipt-echo (which has the outgoing hdr4 of 0x0000).
+  if (response[14] !== 0x28 || response[15] !== 0x00) return false;
+  return true;
+}
 
 /**
  * Render a skip list (params the applicability gate dropped) into a
@@ -608,6 +635,84 @@ export const writer: DeviceWriter = {
       warning: result.acked
         ? undefined
         : `No write-echo within timeout; verify on the AM4 display.`,
+    };
+  },
+
+  async nudgeParam(ctx, block, name, direction, granularity, channel): Promise<WriteResult> {
+    await warmupAM4BaselineIfNeeded(ctx.conn);
+    const key = `${block}.${name}` as ParamKey;
+    const param: Param | undefined = KNOWN_PARAMS[key];
+    if (param === undefined) {
+      throw new DispatchError(
+        'unknown_param',
+        'Fractal AM4',
+        `Param '${key}' is not known on Fractal AM4.`,
+      );
+    }
+    let channelSwitched: boolean | undefined;
+    if (channel !== undefined && CHANNEL_BLOCKS.has(block)) {
+      const switchResult = await switchBlockChannel(ctx.conn, block, channel);
+      channelSwitched = switchResult.switched;
+    }
+    const wireDirection: 'incr' | 'decr' = direction === 'up' ? 'incr' : 'decr';
+    const bytes = buildNudgeParam(param, wireDirection, granularity);
+    const result = await sendAndAwaitAck(ctx.conn, bytes, isNudgeOrToggleAck);
+    const channelName = channelSwitched && typeof channel === 'number'
+      ? channelLetter(channel)
+      : (typeof channel === 'string' ? channel.toUpperCase() : undefined);
+    const stepWord = granularity === 'coarse' ? 'coarse step' : 'fine step';
+    const dirWord = direction === 'up' ? '+' : '−';
+    return {
+      op: 'nudge_param',
+      target: `${block}.${name}`,
+      block,
+      name,
+      acked: result.acked,
+      channel: channelName,
+      info: result.acked
+        ? `${block}.${name} ${dirWord}1 ${stepWord}. Read back with get_param to see the landed value.`
+        : undefined,
+      warning: result.acked
+        ? undefined
+        : `Nudge sent but no ack within timeout. The step may still have landed; verify with get_param.`,
+    };
+  },
+
+  async toggleBypass(ctx, block): Promise<WriteResult> {
+    await warmupAM4BaselineIfNeeded(ctx.conn);
+    const wire = resolveBlockType(block);
+    if (wire === undefined || wire === BLOCK_TYPE_VALUES.none) {
+      const known = Object.keys(BLOCK_TYPE_VALUES).filter((n) => n !== 'none').join(', ');
+      throw new DispatchError(
+        'unknown_block',
+        'Fractal AM4',
+        `Block '${block}' is not valid on Fractal AM4 (cannot toggle 'none'). Known: ${known}.`,
+      );
+    }
+    // AM4 quirk surfaced Session 104: the AMP slot has no bypass register.
+    // pidHigh=0x03 on AMP is the BOOST register, so TOGGLE @ AMP flips
+    // boost, not bypass. Refuse rather than silently mis-route — the
+    // caller can call set_bypass on AMP if they truly want the (no-op)
+    // semantics, or set the boost knob explicitly.
+    if (block === 'amp') {
+      throw new DispatchError(
+        'capability_not_supported',
+        'Fractal AM4',
+        `toggle_bypass on Fractal AM4 's AMP slot would flip the boost register, not bypass (the AMP slot has no bypass). Use set_bypass(port:'am4', block:'amp', bypassed:false) for a no-op confirmation, or set_param(port:'am4', block:'amp', name:'boost') to control boost explicitly.`,
+      );
+    }
+    const bytes = buildToggleBlockBypass(wire);
+    const result = await sendAndAwaitAck(ctx.conn, bytes, isNudgeOrToggleAck);
+    return {
+      op: 'toggle_bypass',
+      target: block,
+      acked: result.acked,
+      info: result.acked
+        ? `${block} bypass flipped on the active scene. Read back with set_bypass or get_block_layout to confirm direction; two toggles return to the original state.`
+        : undefined,
+      warning: result.acked
+        ? undefined
+        : `Toggle sent but no ack within timeout. The flip may still have landed; verify on the AM4 display.`,
     };
   },
 

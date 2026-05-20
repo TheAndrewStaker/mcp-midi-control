@@ -20,6 +20,7 @@ import * as z from 'zod/v4';
 import {
   executeGetParam,
   executeGetParams,
+  executeNudgeParam,
   executeSetParam,
   executeSetParams,
 } from '../dispatcher.js';
@@ -107,6 +108,38 @@ export function registerParamTools(server: McpServer): void {
   }, async ({ port, ops }) => {
     try {
       const result = await executeSetParams({ port, ops });
+      return asText(result);
+    } catch (err) {
+      return asError(err);
+    }
+  });
+
+  server.registerTool('nudge_param', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    description: [
+      'Nudge a continuous param up or down by one step — for the conversational "turn it up a touch / a hair less" UX. The device knows its own step size per param, so no target value is computed.',
+      'When the user says "a bit / a touch / a hair", default to granularity="fine" (~0.01 on a 0..10 knob, ~1% of full range). When they say "a lot / much more", use "coarse" (~0.1, ~10% of full range).',
+      '- For a specific target ("set gain to 7"), use set_param with the explicit value.',
+      '- NOT idempotent: each call shifts state by one step. The wire is payload-free so it\'s cheap to call in a tight UX loop.',
+      '- Channel-bearing blocks: pass `channel` to nudge a specific A/B/C/D / X/Y; omit for the active channel.',
+      '- AM4 quantum (hardware-verified on AMP.GAIN): fine = 66/65534 ≈ 0.001 internal, coarse = 655/65534 ≈ 0.01 internal. Display step = 10× internal for the standard 0..10 knob.',
+      '- Currently only AM4 implements this; II/III error with capability_not_supported.',
+    ].join(' '),
+    inputSchema: {
+      port: z.string().describe(PORT_DESC),
+      block: z.string().describe('Block name (e.g. "amp", "reverb", "delay").'),
+      name: z.string().describe('Parameter name within the block (e.g. "gain", "time", "mix").'),
+      direction: z.enum(['up', 'down']).describe('"up" = increment, "down" = decrement.'),
+      granularity: z.enum(['fine', 'coarse']).optional().describe(
+        '"fine" (default) ≈ one click of the knob; "coarse" ≈ 10×. Map "a touch / a hair" → fine, "a lot / way more" → coarse.',
+      ),
+      channel: z.union([z.string(), z.number()]).optional().describe(
+        'Optional channel selector for channel-bearing blocks; see describe_device.capabilities.channel_blocks.',
+      ),
+    },
+  }, async ({ port, block, name, direction, granularity, channel }) => {
+    try {
+      const result = await executeNudgeParam({ port, block, name, direction, granularity, channel });
       return asText(result);
     } catch (err) {
       return asError(err);

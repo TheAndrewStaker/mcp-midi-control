@@ -13,7 +13,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 
-import { executeSetBlock, executeSetBypass } from '../dispatcher.js';
+import { executeSetBlock, executeSetBypass, executeToggleBypass } from '../dispatcher.js';
 
 import { PORT_DESC, asError, asText } from './shared.js';
 
@@ -59,6 +59,27 @@ export function registerLayoutTools(server: McpServer): void {
   }, async ({ port, block, bypassed }) => {
     try {
       const result = await executeSetBypass({ port, block, bypassed });
+      return asText(result);
+    } catch (err) {
+      return asError(err);
+    }
+  });
+
+  server.registerTool('toggle_bypass', {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    description: [
+      'Atomically flip a block\'s bypass state — one wire round-trip, no value to pass. Prefer this over read-then-set_bypass when the user says "turn it off / on" / "kick the reverb in" / "kill the delay".',
+      '- Scene scope: writes land on the active scene. To toggle bypass on a different scene, switch_scene first.',
+      '- NOT idempotent: each call flips state. Two calls = back to original. If you need a specific state (definitely-on, definitely-off), use set_bypass.',
+      '- AM4 quirk: the AMP slot has no bypass register; the toggle wire hits the BOOST register instead. Use set_bypass on AMP to avoid the surprise.',
+    ].join(' '),
+    inputSchema: {
+      port: z.string().describe(PORT_DESC),
+      block: z.string().describe('Block name to toggle (e.g. "reverb", "drive", "delay").'),
+    },
+  }, async ({ port, block }) => {
+    try {
+      const result = await executeToggleBypass({ port, block });
       return asText(result);
     } catch (err) {
       return asError(err);

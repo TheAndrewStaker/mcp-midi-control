@@ -57,10 +57,11 @@ export {
 export {
   executeGetParam,
   executeGetParams,
+  executeNudgeParam,
   executeSetParam,
   executeSetParams,
 } from './dispatcher/params.js';
-export { executeSetBlock, executeSetBypass } from './dispatcher/layout.js';
+export { executeSetBlock, executeSetBypass, executeToggleBypass } from './dispatcher/layout.js';
 export { executePlayChord, executePlayNote } from './dispatcher/audition.js';
 export {
   executeRename,

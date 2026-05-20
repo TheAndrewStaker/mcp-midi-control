@@ -6,6 +6,7 @@ import {
   BLOCK_SLOT_PID_HIGH_BASE,
   BLOCK_SLOT_PID_LOW,
   buildGetPresetName,
+  buildNudgeParam,
   buildReadParam,
   buildRequestActiveBufferDump,
   buildSaveToLocation,
@@ -13,10 +14,12 @@ import {
   buildSetBlockType,
   buildSetFloatParam,
   buildSetParam,
+  buildSetParamNorm,
   buildSetPresetName,
   buildSetSceneName,
   buildSwitchPreset,
   buildSwitchScene,
+  buildToggleBlockBypass,
   isCommandAck,
   isReadResponse,
   parseGetPresetNameResponse,
@@ -1181,6 +1184,67 @@ const cases: { label: string; built: number[]; expected: string }[] = [
     label: 'buildSetParam("preset.scene_4_midi_1_value", 127) — session-85-scene-midi',
     built: buildSetParam('preset.scene_4_midi_1_value', 127),
     expected: 'f000017415014e016c0001000000040000001f64105cf7',
+  },
+  // Session 104 (2026-05-20): hardware-verified MESSAGE_INCR / DECR
+  // (action=0x03/0x05) and their _COARSE variants (0x04/0x06) on
+  // AMP.GAIN. Wire shape: standard 0x01 PARAM_RW envelope, no payload
+  // (hdr4=0x0000). Probe: scripts/_research/probe-am4-action-writes.ts;
+  // capture: samples/captured/probe-am4-action-writes-findings.md
+  // documents the AMP.GAIN u32 delta of ±66 (fine) / ±655 (coarse) ticks
+  // each call lands. The outgoing-request bytes assert here are derived
+  // from the probe's captured response (bytes 0..13 of the device echo
+  // match the outgoing request verbatim).
+  {
+    label: 'buildNudgeParam(amp.gain, incr, fine) — Session 104 MESSAGE_INCR @ AMP.GAIN',
+    built: buildNudgeParam(KNOWN_PARAMS['amp.gain'], 'incr', 'fine'),
+    expected: 'f000017415013a000b0003000000000023f7',
+  },
+  {
+    label: 'buildNudgeParam(amp.gain, incr, coarse) — Session 104 MESSAGE_INCR_COARSE @ AMP.GAIN',
+    built: buildNudgeParam(KNOWN_PARAMS['amp.gain'], 'incr', 'coarse'),
+    expected: 'f000017415013a000b0004000000000024f7',
+  },
+  {
+    label: 'buildNudgeParam(amp.gain, decr, fine) — Session 104 MESSAGE_DECR @ AMP.GAIN',
+    built: buildNudgeParam(KNOWN_PARAMS['amp.gain'], 'decr', 'fine'),
+    expected: 'f000017415013a000b0005000000000025f7',
+  },
+  {
+    label: 'buildNudgeParam(amp.gain, decr, coarse) — Session 104 MESSAGE_DECR_COARSE @ AMP.GAIN',
+    built: buildNudgeParam(KNOWN_PARAMS['amp.gain'], 'decr', 'coarse'),
+    expected: 'f000017415013a000b0006000000000026f7',
+  },
+  // Session 104: hardware-verified MESSAGE_SET_NORM (action=0x02) on
+  // AMP.GAIN at 0.7. Normalized [0,1] float32 LE payload; same packBytes
+  // path as buildSetFloatParam. Probe confirmed Δ -0.45 from baseline,
+  // i.e. internal float landed at 0 (display 0) — the 0.7 input bumped
+  // AMP.GAIN below its current value, demonstrating SET_NORM bypasses
+  // the display→internal scale.
+  {
+    label: 'buildSetParamNorm(amp.gain, 0.7) — Session 104 MESSAGE_SET_NORM @ AMP.GAIN',
+    built: buildSetParamNorm(KNOWN_PARAMS['amp.gain'], 0.7),
+    expected: 'f000017415013a000b00020000000400194c6633785ef7',
+  },
+  // Session 104: hardware-verified MESSAGE_TOGGLE (action=0x07) on the
+  // bypass register (pidHigh=0x0003) of 6 bypassable blocks. Two TOGGLEs
+  // flip state and flip back: see samples/captured/probe-am4-toggle-bypass-findings.md.
+  // Each block_type's pidLow is BLOCK_TYPE_VALUES[name]. Goldens here
+  // assert wire bytes for reverb / delay / drive — the three most-used
+  // tone-shaping blocks where bypass toggling is a daily UX action.
+  {
+    label: 'buildToggleBlockBypass(reverb) — Session 104 MESSAGE_TOGGLE @ reverb',
+    built: buildToggleBlockBypass(BLOCK_TYPE_VALUES.reverb),
+    expected: 'f000017415014200030007000000000057f7',
+  },
+  {
+    label: 'buildToggleBlockBypass(delay) — Session 104 MESSAGE_TOGGLE @ delay',
+    built: buildToggleBlockBypass(BLOCK_TYPE_VALUES.delay),
+    expected: 'f000017415014600030007000000000053f7',
+  },
+  {
+    label: 'buildToggleBlockBypass(drive) — Session 104 MESSAGE_TOGGLE @ drive',
+    built: buildToggleBlockBypass(BLOCK_TYPE_VALUES.drive),
+    expected: 'f000017415017600030007000000000063f7',
   },
 ];
 

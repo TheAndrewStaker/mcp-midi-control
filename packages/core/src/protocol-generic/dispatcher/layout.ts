@@ -62,3 +62,26 @@ export async function executeSetBypass(args: {
   const result = await descriptor.writer.setBypass(ctx, canonical_block, args.bypassed);
   return { ...result, device: descriptor.display_name };
 }
+
+/**
+ * Full lifecycle for `toggle_bypass(port, block)`. Atomic bypass flip
+ * via the device's native toggle opcode (AM4: MESSAGE_TOGGLE 0x07).
+ * One wire round-trip; agents no longer need a read+write pair.
+ */
+export async function executeToggleBypass(args: {
+  port: string;
+  block: string;
+}): Promise<WriteResult & { device: string }> {
+  const descriptor = requireDevice(args.port);
+  if (descriptor.writer.toggleBypass === undefined) {
+    throw new DispatchError(
+      'capability_not_supported',
+      descriptor.display_name,
+      `toggle_bypass is not implemented for ${descriptor.display_name}. Use set_bypass(port, block, bypassed) instead.`,
+    );
+  }
+  const canonical_block = resolveBlockName(descriptor, args.block);
+  const ctx = openCtx(descriptor);
+  const result = await descriptor.writer.toggleBypass(ctx, canonical_block);
+  return { ...result, device: descriptor.display_name };
+}
