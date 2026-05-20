@@ -199,17 +199,18 @@ async function main(): Promise<void> {
         `display_value=${upDisplay}`,
         `info=${typeof upInfo === 'string' ? upInfo.slice(0, 80) : upInfo}`,
       ];
-      // Pass when ack landed; wire_value/display_value decode is
-      // best-effort (the 64B ack response shape may vary by firmware,
-      // so the writer drops out-of-range decodes and falls back to a
-      // "verify with get_param" hint). Acceptable shapes:
-      //   (a) acked + wire_value in [0, 65534] + display_value set
-      //   (b) acked + wire_value undefined + info mentions verify hint
-      const upOk = !isError(upR) && upAcked === true && (
-        (typeof upWire === 'number' && upWire >= 0 && upWire <= 65534)
-        || (upWire === undefined && typeof upInfo === 'string' && /verify with get_param/i.test(upInfo))
-      );
-      record('nudge_param(amp, gain, up, fine) acks (decode best-effort)', upOk, upNotes);
+      // The writer does an always-read-after-write so the response
+      // carries a reliable wire_value + display_value. Anything else
+      // is a regression on the contract (agents shouldn't have to do
+      // a second get_param call to confirm where a nudge landed).
+      const upOk = !isError(upR) && upAcked === true
+        && typeof upWire === 'number'
+        && upWire >= 0
+        && upWire <= 65534
+        && typeof upDisplay === 'number'
+        && upDisplay >= 0
+        && upDisplay <= 10;
+      record('nudge_param(amp, gain, up, fine) returns valid wire + display', upOk, upNotes);
 
       // Revert: nudge down, fine. Working buffer back to original.
       await client.callTool({

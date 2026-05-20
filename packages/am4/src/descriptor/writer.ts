@@ -77,6 +77,7 @@ import {
   type ApplyPresetSceneInput,
   type ApplyPresetSlotInput,
 } from '../tools/applyExecutor.js';
+import { sendReadAndParse } from '../shared/readOps.js';
 import { loadFactoryBank, sendFactoryRestore } from '../factoryBank.js';
 import {
   guardActiveAM4BufferOrSave,
@@ -712,46 +713,32 @@ export const writer: DeviceWriter = {
       : (typeof channel === 'string' ? channel.toUpperCase() : undefined);
     const stepWord = granularity === 'coarse' ? 'coarse step' : 'fine step';
     const dirWord = direction === 'up' ? '+' : '-';
-    // HIGH-4: decode the new wire/display value from the 64B ack response
-    // so callers don't need a follow-up get_param to see where the nudge
-    // landed. The response carries the device's current value in the
-    // first 4 raw bytes of the 40-byte payload (same shape as a long-
-    // form read response).
-    let wireValue: number | undefined = result.acked
-      ? decodeWireValueFromAck(result.ackBytes)
-      : undefined;
-    let displayValue: number | string | undefined;
-    if (wireValue !== undefined) {
-      // Sanity-check the decoded wire value before trusting it. The
-      // 64-byte nudge/toggle ack carries a param descriptor whose first
-      // 4 packed bytes look like the wire value on captured samples but
-      // appear to be a different field on at least some live responses
-      // (live regression Session 105 showed u32=4294931316 / display=
-      // 655374.51 after a correct +1 fine nudge; the actual on-device
-      // value was 29556 / display 4.51 per a follow-up get_param). We
-      // accept the value only when it falls in the documented wire
-      // range [0, READ_VALUE_DENOMINATOR]; out-of-range u32 values
-      // (sign-extension, sentinel encodings, etc.) get treated as
-      // undecodable and the caller is steered to get_param for the
-      // authoritative read.
-      if (wireValue >= 0 && wireValue <= READ_VALUE_DENOMINATOR) {
-        try {
-          // am4Decode expects the normalized [0,1] internal float, not
-          // the raw wire u32. The wire layer carries values as
-          // `internal × 65534` (see READ_VALUE_DENOMINATOR), so
-          // normalize before decode.
-          const internal = wireValue / READ_VALUE_DENOMINATOR;
-          displayValue = am4Decode(param, internal);
-        } catch {
-          displayValue = undefined;
-        }
-      } else {
-        // Decoded value is out of the documented wire range. Most
-        // likely the ack response encodes the value at a different
-        // offset than parseReadResponse-style 64B descriptors. Drop
-        // both wire_value and display_value so the agent doesn't see
-        // garbage; the wire write still landed correctly.
-        wireValue = undefined;
+    // Always-read-after-write: the 64B nudge ack's value field has been
+    // observed encoding a different field on at least some live AM4
+    // firmware (Session 105 live regression: ack u32=4294931316 after
+    // a correct +1 fine nudge whose actual on-device value was 29556).
+    // A follow-up short-form read returns the authoritative current
+    // value via the well-tested parseReadResponse path. ~80 ms extra
+    // wire time per nudge, but the agent gets one tool call with a
+    // reliable wire_value + display_value and doesn't need a separate
+    // get_param round-trip. The TOTAL latency stays well under the
+    // 200 ms ideal budget.
+    let postWireValue: number | undefined;
+    let postDisplayValue: number | string | undefined;
+    if (result.acked) {
+      try {
+        const parsed = await sendReadAndParse(ctx.conn, param.pidLow, param.pidHigh);
+        const internalOrEnum = param.unit === 'enum'
+          ? parsed.asUInt32LE()
+          : parsed.asInternalFloat();
+        postWireValue = parsed.asUInt32LE();
+        postDisplayValue = param.unit === 'enum'
+          ? ((param.enumValues as Record<number, string> | undefined)?.[Math.round(internalOrEnum)] ?? Math.round(internalOrEnum))
+          : am4Decode(param, internalOrEnum);
+      } catch {
+        // Read-back failed; surface the write ack but no post-state.
+        postWireValue = undefined;
+        postDisplayValue = undefined;
       }
     }
     return {
@@ -760,13 +747,13 @@ export const writer: DeviceWriter = {
       block,
       name,
       acked: result.acked,
-      wire_value: wireValue,
-      display_value: displayValue,
+      wire_value: postWireValue,
+      display_value: postDisplayValue,
       channel: channelName,
       info: result.acked
-        ? (displayValue !== undefined
-          ? `${block}.${name} ${dirWord}1 ${stepWord}, now at ${displayValue}.`
-          : `${block}.${name} ${dirWord}1 ${stepWord}. New value not decodable from ack; verify with get_param.`)
+        ? (postDisplayValue !== undefined
+          ? `${block}.${name} ${dirWord}1 ${stepWord}, now at ${postDisplayValue}.`
+          : `${block}.${name} ${dirWord}1 ${stepWord}. Post-write read failed; the step landed but the new value couldn't be confirmed.`)
         : undefined,
       warning: result.acked
         ? undefined
