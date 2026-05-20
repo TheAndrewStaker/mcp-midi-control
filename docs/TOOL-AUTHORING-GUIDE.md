@@ -1,5 +1,9 @@
 # Tool Authoring Guide
 
+**Last verified against MCP spec: 2026-05-20** (Anthropic MCP @
+`@modelcontextprotocol/sdk` ^1.0.0, current spec at
+<https://modelcontextprotocol.io/>).
+
 How to write a new MCP tool (or extend an existing one) that survives
 agent interaction at production quality. This guide captures the
 patterns the project has accumulated, plus the safety contracts the
@@ -8,6 +12,84 @@ codebase has learned the hard way.
 Read this before adding a new tool to the unified surface or before
 implementing a new device's writer/reader. It complements `CLAUDE.md`
 (project conventions) and `docs/ARCHITECTURE.md` (system overview).
+
+---
+
+## Spec references and freshness
+
+MCP is a young protocol (launched November 2024); both the spec and
+the SDK evolve quickly. **The live spec at
+<https://modelcontextprotocol.io/> and the
+`@modelcontextprotocol/sdk` package are the source of truth, not
+this guide.** This guide captures how those patterns are applied in
+this project, plus the project-specific learnings on top.
+
+### When to re-verify against the live spec
+
+A future agent (or maintainer) should re-verify this guide against
+the upstream MCP spec when any of these happen:
+
+- An SDK upgrade (`@modelcontextprotocol/sdk` minor / major bump)
+  introduces new tool annotations or response-shape fields.
+- A new MCP capability lands upstream (resources, prompts, sampling,
+  logging) that this project doesn't currently use.
+- A tool annotation in our `verify-tool-annotations` test fails
+  against a fresh SDK version.
+- A new tool author reports the guide felt out of date.
+
+When that happens, update the "Last verified against MCP spec" date
+at the top, walk the spec sections below for changes, and revise the
+guide entries that drifted.
+
+### Sections most likely to drift
+
+- **Idempotency annotations** (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`): the spec may add new hint
+  fields. Cross-check against the `Tool` interface in the SDK's
+  `types.ts` after every SDK bump.
+- **Response shape**: `structuredContent` is the field this project
+  relies on for structured tool responses. The spec may add new
+  envelope fields (annotations, citations) we'd want to surface.
+- **Error envelope**: `isError: true` + `content` is the current
+  pattern. Spec may evolve toward structured error codes (the SDK
+  already supports `ErrorCode` enum on the McpError class).
+- **Capability declarations**: server-side capabilities advertised
+  during `initialize`. Project doesn't use most of these today;
+  watch for additions that would benefit a hardware-MIDI surface
+  (e.g., long-running operations, partial-result streams).
+
+### What this project explicitly relies on
+
+When auditing for drift, these are the project's load-bearing MCP
+features:
+
+| Feature | Why this project uses it | Where it lives |
+|---|---|---|
+| `server.registerTool` | Every tool registered via the SDK's tool builder | `packages/core/src/protocol-generic/tools/*.ts` |
+| Tool annotations | Drives agent retry/safety heuristics | All `server.registerTool({annotations:...})` calls |
+| `structuredContent` | Machine-readable tool responses for agent regression | `asText` helper in `tools/shared.ts` |
+| `isError + content` | Structured error surface with retry_action hints | `asError` helper, `DispatchError` throws |
+| `StdioClientTransport` | Test infrastructure spawns the server via stdio | `scripts/mcp-test-*.ts` |
+
+If an SDK upgrade breaks any of these, the project breaks. Re-verify.
+
+### What this project explicitly does NOT use yet
+
+Watch for upstream advances we could adopt:
+
+- **Resources** (`server.registerResource`). Lineage corpora are
+  already exposed as resources via `lineage://` URIs; preset-bank
+  exports could be too.
+- **Prompts** (`server.registerPrompt`). Pre-built tone-shaping
+  prompts could ship as MCP prompts rather than embedded in agent
+  guidance.
+- **Sampling** (`server.createMessage`). Server-side LLM calls; not
+  applicable to this surface.
+- **Logging** (`server.sendLoggingMessage`). Live device-status
+  streaming during apply_preset would benefit from structured
+  logging.
+- **Progress notifications**. Useful for `apply_setlist` and
+  multi-block reads where >1 s wall time is expected.
 
 ---
 
@@ -148,6 +230,16 @@ For tools that exceed 1 s, the description should suggest the agent
 tell the user ("reading what you have, about 2 seconds") so the user
 doesn't think the agent stalled.
 
+**Live-measure performance numbers, don't extrapolate.** When a tool
+description carries a wall-time number, the number must come from a
+live measurement on real hardware (logged via `live-regression-*` or
+similar). Estimates extrapolated from probe scripts skew pessimistic
+and undermine agent confidence in the surface. Session 105 surfaced
+this: `get_preset` was documented at 1.5 to 2 s based on the
+worst-case probe data; live measurement showed ~420 ms for a typical
+11-block preset on Q8.02. Always update the description after the
+first hardware-validation pass.
+
 ---
 
 ## Agent guidance for tool use
@@ -174,6 +266,97 @@ Add a new guidance key when:
 
 Each guidance entry should answer: "Given this user phrase, which
 tool do I call, with what shape, and what do I do with the response?"
+
+---
+
+## WriteResult shape
+
+Every write tool returns a `WriteResult` envelope (see
+`packages/core/src/protocol-generic/types.ts`). The fields:
+
+```ts
+interface WriteResult {
+  op?: string;           // 'set_param', 'switch_preset', etc.
+  target?: string;       // 'amp.gain', 'M03', etc.
+  acked: boolean;        // wire-level ack received
+  info?: string;         // routine post-success advisory text
+  warning?: string;      // genuine "something is off" or no-ack diagnostic
+
+  // param-write specific (only set_param family)
+  block?: string;
+  name?: string;
+  wire_value?: number;
+  display_value?: number | string;
+  channel?: string;
+}
+```
+
+### `info` vs `warning`
+
+- **`info`** is for routine, post-success advisory text: "switched to
+  Z03, any unsaved buffer edits were discarded", "amp.gain +1 fine
+  step, now at 4.51". Calls succeeded; this is helpful context for
+  the agent to summarise back to the user.
+- **`warning`** is for genuine concerns: no-ack timeouts, partial-
+  failure cases, soft-fails where the wire acked but the side effect
+  may not have landed. The agent should surface warnings to the user
+  before claiming success.
+
+Don't pad `info` with static facts (e.g. "Two toggles return to the
+original state") that don't depend on the call result. That bloats
+the agent's context window across repeated calls. Put static guidance
+in the tool description or in `agent_guidance` instead.
+
+### When to populate `wire_value` + `display_value`
+
+Two cases:
+1. **Relative writes** where the agent can't compute the target value
+   client-side. `nudge_param` is the canonical example: the user
+   says "a bit more gain", the agent calls nudge, the response
+   carries the new value so the agent can confirm to the user
+   without a follow-up `get_param`.
+2. **Toggle-style writes** where the response carries post-state.
+   `toggle_bypass` reports `display_value: 'bypassed'` or `'active'`
+   from the bypass flag in the ack response.
+
+For absolute writes (`set_param(x, 5)`), the new value is exactly
+what the agent passed; `wire_value` is mostly redundant but harmless
+to populate for symmetry.
+
+### Decoding values from acks
+
+The shape of the wire ack varies per opcode family. AM4 has three
+predicate-distinct ack shapes:
+
+- `isCommandAck` (18 bytes): addressing-only echo (save, rename).
+  Carries no value; just confirms the command landed.
+- `isWriteEcho` (64 bytes, hdr4=0x28, action=0x01): SET_PARAM /
+  placement / scene-switch echo. The first 4 raw payload bytes are
+  the param's new wire value, encoded as u32 LE.
+- `isNudgeOrToggleAck` (64 bytes, hdr4=0x28, action echoes outgoing):
+  INCR/DECR/SET_NORM/TOGGLE echo. Same layout as isWriteEcho except
+  the action byte echoes the request action (0x03/0x05/0x07/etc)
+  rather than the canonical WRITE 0x01. For continuous params (nudge
+  on amp.gain) the u32 at bytes 16-20 carries the new value. For
+  toggle_bypass, the U32 at 16-20 is the param's underlying register
+  value (often unrelated to bypass state); the bypass FLAG is at
+  byte 22 (`LONG_READ_BYPASS_FLAG_BYTE`), 0x01 = bypassed,
+  0x00 = active. Always read byte 22 for bypass direction.
+
+When implementing a new ack decode, capture a sample response from
+hardware FIRST, then decode against the capture. Don't extrapolate
+from related opcodes; ack shapes can carry different fields at the
+same offsets.
+
+### Round-trip normalization
+
+AM4 wire values are u32 LE encoding `internal × 65534`. To decode
+to display via the schema's `decode(param, internalFloat)`, divide
+the u32 by `READ_VALUE_DENOMINATOR` (65534) FIRST. Forgetting this
+is how a wire value of 29556 (display 4.51) decodes to 295560 instead
+of 4.51 — the decode function takes the normalized [0,1] internal
+float, not the raw u32. (Live-caught in Session 105; the lesson is
+why this section exists.)
 
 ---
 

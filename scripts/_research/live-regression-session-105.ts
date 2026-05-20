@@ -80,6 +80,20 @@ function record(name: string, pass: boolean, notes: string[], skipped = false): 
   for (const n of notes) console.log(`      ${n}`);
 }
 
+/**
+ * On failure, dump the tool response's error text so the next reader
+ * has context. The most common live-regression failure mode is
+ * hardware-side ("AM4 not found in the MIDI device list" when AM4-Edit
+ * has the port, USB disconnect, etc.); the error message tells the
+ * operator whether it's their setup or a code bug.
+ */
+function debugOnFail(label: string, response: unknown): string[] {
+  const isErr = isError(response);
+  if (!isErr) return [];
+  const t = extractText(response);
+  return [`error_text: ${t.slice(0, 240).replace(/\s+/g, ' ')}`];
+}
+
 async function main(): Promise<void> {
   console.log('Session 105 live regression');
   console.log('===========================\n');
@@ -142,6 +156,7 @@ async function main(): Promise<void> {
           `isError=${isErr}`,
           `names AMP-slot quirk → ${namesQuirk}`,
           `points at amp.master fallback → ${pointsAtMaster}`,
+          ...debugOnFail('set_bypass(amp)', r),
         ];
         record('set_bypass(am4, amp) refuses with quirk + retry hint',
           isErr && namesQuirk && pointsAtMaster, notes);
@@ -184,8 +199,17 @@ async function main(): Promise<void> {
         `display_value=${upDisplay}`,
         `info=${typeof upInfo === 'string' ? upInfo.slice(0, 80) : upInfo}`,
       ];
-      const upOk = !isError(upR) && upAcked === true && typeof upWire === 'number';
-      record('nudge_param(amp, gain, up, fine) acks with wire_value', upOk, upNotes);
+      // Pass when ack landed; wire_value/display_value decode is
+      // best-effort (the 64B ack response shape may vary by firmware,
+      // so the writer drops out-of-range decodes and falls back to a
+      // "verify with get_param" hint). Acceptable shapes:
+      //   (a) acked + wire_value in [0, 65534] + display_value set
+      //   (b) acked + wire_value undefined + info mentions verify hint
+      const upOk = !isError(upR) && upAcked === true && (
+        (typeof upWire === 'number' && upWire >= 0 && upWire <= 65534)
+        || (upWire === undefined && typeof upInfo === 'string' && /verify with get_param/i.test(upInfo))
+      );
+      record('nudge_param(amp, gain, up, fine) acks (decode best-effort)', upOk, upNotes);
 
       // Revert: nudge down, fine. Working buffer back to original.
       await client.callTool({
@@ -362,9 +386,41 @@ async function main(): Promise<void> {
 }
 
 async function checkDevice(client: Client, port: string): Promise<boolean> {
+  // Probe whether the device is REACHABLE on MIDI, not just registered.
+  // describe_device returns success on any registered descriptor (pure
+  // metadata, no wire ops). The real liveness signal is whether a
+  // wire-touching read like get_param can open the port. We try a
+  // cheap read and inspect the error text. "X not found in the MIDI
+  // device list" means the port isn't reachable; the device is either
+  // unplugged or an exclusive-mode owner (e.g. AM4-Edit) is holding it.
   try {
-    const r = await client.callTool({ name: 'describe_device', arguments: { port } });
-    return !isError(r);
+    const r = await client.callTool({
+      name: 'describe_device',
+      arguments: { port },
+    });
+    if (isError(r)) return false;
+    // Cheap wire-touching probe: get_param on a known param for the
+    // device. Use the unified surface so it works for any registered
+    // device. Falls back to "not found" semantics when the port can't
+    // be opened.
+    const probeReadParam = port === 'am4'
+      ? { block: 'amp', name: 'gain' }
+      : port === 'axe-fx-ii'
+        ? { block: 'amp', name: 'input_drive' }
+        : null;
+    if (!probeReadParam) return !isError(r);
+    const probe = await client.callTool({
+      name: 'get_param',
+      arguments: { port, ...probeReadParam },
+    });
+    if (isError(probe)) {
+      const t = extractText(probe);
+      // Connection-layer errors mean hardware is not reachable.
+      if (/not found in the MIDI device list|cannot open|stale handle/i.test(t)) {
+        return false;
+      }
+    }
+    return true;
   } catch {
     return false;
   }

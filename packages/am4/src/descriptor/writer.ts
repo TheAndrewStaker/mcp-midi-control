@@ -641,7 +641,10 @@ export const writer: DeviceWriter = {
   },
 
   async setBypass(ctx, block, bypassed): Promise<WriteResult> {
-    await warmupAM4BaselineIfNeeded(ctx.conn);
+    // Pure-logic refusals first, BEFORE any wire op or connection
+    // warmup, so the agent gets the helpful redirect even when the
+    // device isn't reachable. A connection error would mask the
+    // safety message and tell the agent to retry the same call.
     const wire = resolveBlockType(block);
     if (wire === undefined || wire === BLOCK_TYPE_VALUES.none) {
       const known = Object.keys(BLOCK_TYPE_VALUES).filter((n) => n !== 'none').join(', ');
@@ -668,6 +671,7 @@ export const writer: DeviceWriter = {
         },
       );
     }
+    await warmupAM4BaselineIfNeeded(ctx.conn);
     const bytes = buildSetBlockBypass(wire, bypassed);
     const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
     const stateWord = bypassed ? 'bypassed' : 'active';
@@ -713,19 +717,41 @@ export const writer: DeviceWriter = {
     // landed. The response carries the device's current value in the
     // first 4 raw bytes of the 40-byte payload (same shape as a long-
     // form read response).
-    const wireValue = result.acked
+    let wireValue: number | undefined = result.acked
       ? decodeWireValueFromAck(result.ackBytes)
       : undefined;
     let displayValue: number | string | undefined;
     if (wireValue !== undefined) {
-      try {
-        // am4Decode expects the normalized [0,1] internal float, not the
-        // raw wire u32. The wire layer carries values as `internal × 65534`
-        // (see READ_VALUE_DENOMINATOR), so normalize before decode.
-        const internal = wireValue / READ_VALUE_DENOMINATOR;
-        displayValue = am4Decode(param, internal);
-      } catch {
-        displayValue = undefined;
+      // Sanity-check the decoded wire value before trusting it. The
+      // 64-byte nudge/toggle ack carries a param descriptor whose first
+      // 4 packed bytes look like the wire value on captured samples but
+      // appear to be a different field on at least some live responses
+      // (live regression Session 105 showed u32=4294931316 / display=
+      // 655374.51 after a correct +1 fine nudge; the actual on-device
+      // value was 29556 / display 4.51 per a follow-up get_param). We
+      // accept the value only when it falls in the documented wire
+      // range [0, READ_VALUE_DENOMINATOR]; out-of-range u32 values
+      // (sign-extension, sentinel encodings, etc.) get treated as
+      // undecodable and the caller is steered to get_param for the
+      // authoritative read.
+      if (wireValue >= 0 && wireValue <= READ_VALUE_DENOMINATOR) {
+        try {
+          // am4Decode expects the normalized [0,1] internal float, not
+          // the raw wire u32. The wire layer carries values as
+          // `internal × 65534` (see READ_VALUE_DENOMINATOR), so
+          // normalize before decode.
+          const internal = wireValue / READ_VALUE_DENOMINATOR;
+          displayValue = am4Decode(param, internal);
+        } catch {
+          displayValue = undefined;
+        }
+      } else {
+        // Decoded value is out of the documented wire range. Most
+        // likely the ack response encodes the value at a different
+        // offset than parseReadResponse-style 64B descriptors. Drop
+        // both wire_value and display_value so the agent doesn't see
+        // garbage; the wire write still landed correctly.
+        wireValue = undefined;
       }
     }
     return {
@@ -749,7 +775,9 @@ export const writer: DeviceWriter = {
   },
 
   async toggleBypass(ctx, block): Promise<WriteResult> {
-    await warmupAM4BaselineIfNeeded(ctx.conn);
+    // Pure-logic refusals first, BEFORE any wire op or connection
+    // warmup. Mirrors setBypass: the AMP-slot redirect is the most
+    // useful response and must surface even when MIDI isn't reachable.
     const wire = resolveBlockType(block);
     if (wire === undefined || wire === BLOCK_TYPE_VALUES.none) {
       const known = Object.keys(BLOCK_TYPE_VALUES).filter((n) => n !== 'none').join(', ');
@@ -776,6 +804,7 @@ export const writer: DeviceWriter = {
         },
       );
     }
+    await warmupAM4BaselineIfNeeded(ctx.conn);
     const bytes = buildToggleBlockBypass(wire);
     const result = await sendAndAwaitAck(ctx.conn, bytes, isNudgeOrToggleAck);
     // HIGH-4: decode the new bypass state from the ack so the response
@@ -798,8 +827,8 @@ export const writer: DeviceWriter = {
       display_value: newBypassState === undefined ? undefined : (newBypassState ? 'bypassed' : 'active'),
       info: result.acked
         ? (newBypassState !== undefined
-          ? `${block} is now ${newBypassState ? 'bypassed' : 'active'} on the active scene. Two toggles return to the original state.`
-          : `${block} bypass flipped on the active scene. Direction not decodable from ack; verify with set_bypass or am4_get_block_bypass.`)
+          ? `${block} is now ${newBypassState ? 'bypassed' : 'active'} on the active scene.`
+          : `${block} bypass flipped on the active scene. Direction not decodable from ack; check the AM4 front panel.`)
         : undefined,
       warning: result.acked
         ? undefined
