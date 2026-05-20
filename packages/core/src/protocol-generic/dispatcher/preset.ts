@@ -14,6 +14,7 @@ import {
   type ApplyResult,
   type ApplySetlistResult,
   type DeviceDescriptor,
+  type PresetSnapshot,
   type PresetSpec,
   type RestoreDefaultsRangeOptions,
   type RestoreDefaultsRangeResult,
@@ -111,15 +112,19 @@ function precheckTypeKnobCompatibility(
  * block via the device's atomic-read primitive; closes the N×get_param
  * read pain in a single tool call.
  *
- * Returns a PresetSpec describing the active working buffer. Scope v1:
- * active-channel state only, no routing edges, no per-scene snapshots.
+ * Returns a PresetSnapshot describing the active working buffer. Scope
+ * v1: active-channel state only, no routing edges, no per-scene
+ * snapshots. The reader populates `_meta` with the device label,
+ * timestamp, and partial-info flags so callers can distinguish a
+ * complete snapshot from a partial one programmatically.
+ *
  * Devices that don't implement `reader.getPreset` error with
- * capability_not_supported — caller falls back to grid + per-block
+ * capability_not_supported. Callers fall back to grid + per-block
  * get_param reads.
  */
 export async function executeGetPreset(args: {
   port: string;
-}): Promise<PresetSpec & { device: string }> {
+}): Promise<PresetSnapshot> {
   const descriptor = requireDevice(args.port);
   if (descriptor.reader.getPreset === undefined) {
     throw new DispatchError(
@@ -129,8 +134,7 @@ export async function executeGetPreset(args: {
     );
   }
   const ctx = openCtx(descriptor);
-  const spec = await descriptor.reader.getPreset(ctx);
-  return { ...spec, device: descriptor.display_name };
+  return descriptor.reader.getPreset(ctx);
 }
 
 /**

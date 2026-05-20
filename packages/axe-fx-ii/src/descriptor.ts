@@ -164,6 +164,7 @@ export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
     supports_save: true,
     supports_factory_restore: false,
     supports_lineage: true,
+    atomic_read: true,
   },
   canonical_terms: {
     block: 'block',

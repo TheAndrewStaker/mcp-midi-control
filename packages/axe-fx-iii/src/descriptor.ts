@@ -1320,6 +1320,7 @@ export const AXEFX3_DESCRIPTOR: DeviceDescriptor = {
     supports_save: false,           // STORE envelope not in v1.4 PDF
     supports_factory_restore: false,
     supports_lineage: false,
+    atomic_read: false,
   },
   canonical_terms: {
     block: 'block',

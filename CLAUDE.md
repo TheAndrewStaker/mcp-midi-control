@@ -392,6 +392,18 @@ v0.3+ ships exclusively. If a new capability doesn't fit the unified
 contract, design the contract change first (extend `DeviceWriter` /
 `DeviceReader` / capabilities), then register the unified tool.
 
+**Before adding or substantially modifying a tool, read
+`docs/TOOL-AUTHORING-GUIDE.md`.** It captures the patterns the project
+has accumulated from senior MCP design reviews: display-first contract,
+refuse-don't-misroute on hardware quirks, symmetric capability flags,
+snapshot-vs-spec response shape separation, performance characterization
+above 1 s, idempotency annotation rules, wire-byte goldens, end-to-end
+mocked-agent regression, no-em-dash convention, internal-refs lint
+boundary, and the test-infrastructure summary. The guide also lists the
+common pitfalls (wire-ack-not-audible, type-gated silent no-op,
+opcode-not-portable-across-model-bytes) the codebase has burned cycles
+relearning.
+
 ## Tool API conventions
 
 **Display-first.** Every MCP tool surface â€” for every device, present

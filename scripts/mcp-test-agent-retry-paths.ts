@@ -472,6 +472,63 @@ async function main(): Promise<void> {
       record('list_params(am4, reverb, type) → no loudness offsets (out of scope)', pass, notes);
     }
 
+    // ── AM4 AMP-slot bypass quirk: both set_bypass + toggle_bypass refuse ──
+    console.log('\nAM4 AMP-slot bypass quirk refusals');
+    {
+      // set_bypass(am4, amp, true) used to silently write to the BOOST
+      // register. Must now refuse with capability_not_supported and a
+      // retry_action pointing at set_param master/boost.
+      const r = await client.callTool({
+        name: 'set_bypass',
+        arguments: { port: 'am4', block: 'amp', bypassed: true },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const namesQuirk = /no bypass register|always engaged/i.test(t);
+      const pointsAtMaster = /amp\.master|amp\.level/i.test(t);
+      const pointsAtBoost = /boost/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`names AMP-slot quirk → ${namesQuirk}`);
+      notes.push(`points at amp.master/level fallback → ${pointsAtMaster}`);
+      notes.push(`mentions boost retarget → ${pointsAtBoost}`);
+      const pass = isErr && namesQuirk && pointsAtMaster && pointsAtBoost;
+      record('set_bypass(am4, amp) → refuses with AMP-slot quirk explanation', pass, notes);
+    }
+    {
+      // toggle_bypass(am4, amp) refuses for the same reason. Both refusals
+      // should give the same fallback advice (don't loop the agent).
+      const r = await client.callTool({
+        name: 'toggle_bypass',
+        arguments: { port: 'am4', block: 'amp' },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const namesQuirk = /no bypass register|always engaged/i.test(t);
+      const pointsAtMaster = /amp\.master|amp\.level/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`names AMP-slot quirk → ${namesQuirk}`);
+      notes.push(`points at amp.master/level fallback → ${pointsAtMaster}`);
+      const pass = isErr && namesQuirk && pointsAtMaster;
+      record('toggle_bypass(am4, amp) → refuses with AMP-slot quirk explanation', pass, notes);
+    }
+    {
+      // set_bypass on a non-AMP block must still proceed normally.
+      // Mock accepts the write; structuredContent should be present.
+      const r = await client.callTool({
+        name: 'set_bypass',
+        arguments: { port: 'am4', block: 'reverb', bypassed: true },
+      });
+      const sc = structured(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      notes.push(`isError=${isErr}`);
+      notes.push(`structuredContent present → ${sc !== undefined}`);
+      const pass = !isErr && sc !== undefined;
+      record('set_bypass(am4, reverb) → write proceeds on non-AMP block', pass, notes);
+    }
+
     // ── BK-070: get_preset routes correctly + capability gating ─────
     console.log('\nBK-070 — unified get_preset routing');
     {

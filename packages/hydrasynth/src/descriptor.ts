@@ -139,6 +139,7 @@ export const HYDRASYNTH_DESCRIPTOR: DeviceDescriptor = {
     supports_save: false,
     supports_factory_restore: false,
     supports_lineage: false,
+    atomic_read: false,
   },
   canonical_terms: {
     block: 'module',                 // OSC / Filter / Env / LFO / Mutator / etc.

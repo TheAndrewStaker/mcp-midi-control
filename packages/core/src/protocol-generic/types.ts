@@ -69,6 +69,20 @@ export interface DeviceCapabilities {
   supports_factory_restore: boolean;
   supports_lineage: boolean;
   has_macros?: boolean;
+  /**
+   * Whether the device exposes an atomic-read primitive that lets
+   * `get_preset` snapshot the active working buffer in a small,
+   * bounded number of round-trips (rather than N×get_param).
+   *
+   * True on Axe-Fx II (fn 0x1F SYSEX_GET_ALL_PARAMS, Session 103 decode).
+   * False / omitted on devices that fall back to per-param reads —
+   * `get_preset` on those returns capability_not_supported.
+   *
+   * Agents should prefer `get_preset` for state-anchoring when this
+   * flag is true; on false-flagged devices, the fallback is
+   * `get_params` with a curated subset (block_params_summary).
+   */
+  atomic_read?: boolean;
 }
 
 // ── Param / block schema ────────────────────────────────────────────
@@ -525,6 +539,68 @@ export interface ApplyPresetOptions {
   save?: boolean;
 }
 
+/**
+ * Read-side counterpart to `PresetSpec`. Carries the same structural
+ * shape (slots, scenes, name) plus snapshot metadata that doesn't
+ * belong on the write-side input.
+ *
+ * Distinct type so callers can statically tell "this is a snapshot,
+ * not a build spec" and not accidentally feed the whole thing into
+ * `apply_preset` (which would clear unlisted scenes / routing per its
+ * FRESH-BUILD semantics).
+ *
+ * Field parallels with `PresetSpec`:
+ *   - `slots[]`, `scenes?[]`, `name?`: same shape, same semantics.
+ *   - `slots[i].channel_status`: NEW. Per-slot marker indicating which
+ *     channel the snapshot reflects. `'active'` = the device's active
+ *     channel, params nested under that channel key. `'all_channels'`
+ *     = all channels decomposed (v2 scope). `'unknown'` = channel read
+ *     failed, params returned flat as fallback.
+ *   - `active_scene?`: NEW. 1-indexed scene the device is currently
+ *     showing, when the device has scenes. Undefined on devices
+ *     without scenes (Hydrasynth).
+ *   - `_meta`: NEW. Snapshot envelope (device label, snapshot time,
+ *     partial-info flags). Distinct from the spec shape so a copy
+ *     of `slots`/`scenes`/`name` is feedable into `apply_preset` after
+ *     dropping `_meta`/`active_scene`/`channel_status`.
+ */
+export interface PresetSnapshot {
+  name?: string;
+  slots: readonly PresetSnapshotSlot[];
+  scenes?: readonly SceneSpec[];
+  active_scene?: number;
+  routing?: readonly RoutingEdge[];
+  _meta: PresetSnapshotMeta;
+}
+
+export interface PresetSnapshotSlot extends PresetSlotSpec {
+  /**
+   * Which channel the params dict reflects on a channel-bearing block.
+   * `'active'`: params nested under the device's active channel key
+   * (default — round-trippable through apply_preset on that channel).
+   * `'all_channels'`: every channel decomposed under its key (v2
+   * scope; not yet emitted by any device).
+   * `'unknown'`: channel read failed; params returned flat. Agent
+   * should not feed this slot back into apply_preset without
+   * resolving the channel first (call set_param with explicit
+   * channel and re-call get_preset).
+   * Omitted on non-channel blocks where the distinction doesn't
+   * apply (flat params are always correct).
+   */
+  channel_status?: 'active' | 'all_channels' | 'unknown';
+}
+
+export interface PresetSnapshotMeta {
+  /** Device the snapshot was read from (matches descriptor.display_name). */
+  device: string;
+  /** Server-side timestamp of the read, milliseconds since epoch. */
+  read_at_ms: number;
+  /** True when the snapshot reflects only the active scene (v1 scope). */
+  active_scene_only: boolean;
+  /** True when routing edges were not included in the snapshot. */
+  routing_omitted: boolean;
+}
+
 export interface SetlistEntrySpec {
   location: LocationRef;
   spec: PresetSpec;
@@ -628,22 +704,24 @@ export interface DeviceReader {
   getParam(ctx: DispatchCtx, block: string, name: string, channel?: string | number): Promise<ReadResult>;
   getParams(ctx: DispatchCtx, queries: readonly ParamQuery[]): Promise<BatchReadResult>;
   /**
-   * Atomic read of the active working buffer — returns one PresetSpec
-   * describing every placed block + its current param state. Single
-   * tool-call alternative to N×get_param round-trips for state-anchoring
-   * before a tone-edit conversation.
+   * Atomic read of the active working buffer. Returns one
+   * `PresetSnapshot` describing every placed block + its current param
+   * state. Single tool-call alternative to N×get_param round-trips for
+   * state-anchoring before a tone-edit conversation.
    *
    * Optional. Currently implemented only on Axe-Fx II via fn 0x1F
    * SYSEX_GET_ALL_PARAMS per-block (Session 103 decode). Devices without
-   * an atomic-read primitive omit this and the dispatcher errors with
-   * capability_not_supported — caller falls back to grid + per-block
-   * get_param reads.
+   * an atomic-read primitive omit this method and the dispatcher errors
+   * with capability_not_supported. Callers fall back to grid +
+   * per-block get_param reads.
    *
-   * Scope v1 (Session 105): active-channel state only (X or Y on II —
-   * whichever the block currently shows on the device). Routing edges,
-   * per-scene snapshots, and per-channel decomposition are deferred.
+   * Scope v1: active-channel state only (X or Y on II, A/B/C/D on AM4
+   * once AM4 is wired). Routing edges, per-scene snapshots, and
+   * per-channel decomposition are deferred to v2 and will land via
+   * additional fields on `PresetSnapshot` rather than a tool-shape
+   * change.
    */
-  getPreset?(ctx: DispatchCtx): Promise<PresetSpec>;
+  getPreset?(ctx: DispatchCtx): Promise<PresetSnapshot>;
   /** Bulk-scan stored preset locations for their names. */
   scanLocations?(ctx: DispatchCtx, from: string | number, to: string | number): Promise<{
     scanned: readonly ScannedLocation[];
@@ -726,9 +804,20 @@ export interface DeviceWriter {
    * Maps to the AM4 MESSAGE_INCR / DECR / INCR_COARSE / DECR_COARSE
    * actions; the device knows its own quantum per param, so no value
    * is sent on the wire. "fine" = 1× quantum (~0.01 on a 0..10 knob);
-   * "coarse" = 10× quantum (~0.1). Optional — devices without a wire
+   * "coarse" = 10× quantum (~0.1). Optional. Devices without a wire
    * nudge primitive (II, III) omit this and the dispatcher errors
    * with capability_not_supported.
+   *
+   * SAFETY CONTRACT FOR FUTURE IMPLEMENTERS (II in particular). The
+   * `channel` arg drives an internal channel switch on channel-bearing
+   * blocks. On Axe-Fx II the channel pointer is shared across scenes,
+   * so switching channel-Y on a block while scene 3 references the
+   * block's channel-X corrupts scene 3's state without any wire signal.
+   * This is the BK-058 channel-write hazard. When implementing
+   * nudgeParam on II, port the channel-mismatch refusal gate from
+   * `setParam` (refuse when explicit channel ≠ active channel; suggest
+   * switch_scene or omitting the channel arg). The AM4 implementation
+   * doesn't need this gate because AM4 channels are scoped per scene.
    */
   nudgeParam?(
     ctx: DispatchCtx,

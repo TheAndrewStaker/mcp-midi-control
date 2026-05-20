@@ -35,13 +35,13 @@ export function registerPresetTools(server: McpServer): void {
   server.registerTool('get_preset', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
-      'Snapshot the active working buffer in one round-trip — every placed block + its current params, no per-param chatter.',
-      'Use for state-anchoring before a tone-edit conversation: read what\'s on the device, summarize to the user, propose changes, then call set_param / set_params / apply_preset.',
-      '- Returns a PresetSpec shape that mirrors apply_preset\'s input. Slot/block_type/instance/params line up so the agent can read, mutate, and re-apply with structural symmetry.',
-      '- Active-channel state only: on devices with X/Y or A/B/C/D channels (Axe-Fx II, AM4), each block\'s params reflect whichever channel the device currently displays. To inspect a non-active channel, switch_scene or set_param with explicit channel and re-call.',
-      '- Routing edges + per-scene snapshots are NOT yet included; the response describes the active scene only.',
-      '- Performance: ~1.5–2 s on Axe-Fx II for a typical 12-block preset (one fn 0x1F per placed block, serial). AM4 / Hydra error with capability_not_supported until their atomic-read primitives land.',
-      '- On capability_not_supported, fall back to get_param / get_params (slower but works on every device).',
+      'Snapshot the active working buffer in one tool call. Returns every placed block with its current params under a PresetSpec-shaped envelope.',
+      'Use for state-anchoring before a tone-edit conversation: read what is on the device, summarize what is placed and which scene/channel is active, propose changes, then call set_param or set_params for the targeted edits.',
+      'PERFORMANCE. ~400 ms on Axe-Fx II for a typical 11-block preset (live-measured on Q8.02 firmware, one fn 0x1F per placed block, serial). Larger or more parameter-dense presets may push toward 1 s. Generally fast enough not to need an upfront wait announcement, but for big setlists or stacked plugins announce so the user does not think the agent stalled. AM4 / III / Hydra return capability_not_supported until their atomic-read primitives land; on those devices fall back to get_param + get_params.',
+      'RESPONSE SCOPE. Active scene only. Channel-bearing blocks come back with params nested under the active channel key (e.g. params:{X:{input_drive:5,...}} on II) so you can read what the user is currently hearing. Scenes 2..N, non-active channels, and routing edges are NOT included.',
+      'DO NOT FEED THE WHOLE RESPONSE INTO apply_preset. apply_preset has FRESH-BUILD CLEARING semantics: unlisted slots clear to none, unlisted scenes reset to defaults. Round-tripping the snapshot would reset scenes 2..N and drop routing. For read-mutate-write, use set_param / set_params for the specific knobs you changed. The snapshot is for INSPECTION and TARGETED EDITS, not cloning back wholesale.',
+      'POST-WRITE VALIDATION. After set_param / set_params / apply_preset, call get_preset again and diff against your intent on the slots and params you actually wrote. Catches type-gated params that silently no-op (wire ack does not mean audible change).',
+      'CAPABILITY GATE. describe_device(port).capabilities.atomic_read is true when this tool is supported, false otherwise. Check before recommending the snapshot pattern in a session-opener.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),

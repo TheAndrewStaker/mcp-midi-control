@@ -168,6 +168,7 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
     supports_save: true,
     supports_factory_restore: true,
     supports_lineage: true,
+    atomic_read: false,
   },
   canonical_terms: {
     block: 'block',

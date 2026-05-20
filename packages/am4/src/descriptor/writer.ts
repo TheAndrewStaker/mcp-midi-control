@@ -62,9 +62,13 @@ import {
   buildSwitchPreset,
   buildSwitchScene,
   buildToggleBlockBypass,
+  decode as am4Decode,
   isCommandAck,
   isWriteEcho,
+  LONG_READ_BYPASS_FLAG_BYTE,
+  READ_VALUE_DENOMINATOR,
 } from 'fractal-midi/am4';
+import { unpackValue } from 'fractal-midi/shared';
 import {
   prepareApplyPresetWrites,
   runApplyPresetAt,
@@ -91,6 +95,31 @@ import {
 } from '../shared/channels.js';
 import { checkApplicability } from 'fractal-midi/am4';
 import type { ApplyPresetSkippedParam } from '../tools/applyExecutor.js';
+
+/**
+ * Decode the current wire value from a 64-byte structured ack response
+ * (the shape `isNudgeOrToggleAck` matches). The response carries a 40-
+ * byte sliding-window packed payload at bytes 16..62; the first 4 raw
+ * bytes of that payload are the param's current u32-LE value. Within
+ * the chunked packing (packValueChunked: 7 raw → 8 wire per chunk), the
+ * value sits in the first 7-byte chunk, occupying bytes 16..23 on the
+ * wire. Unpacking the full first chunk (8 wire → 7 raw) and taking the
+ * first 4 raw bytes gives the same value the device holds now.
+ *
+ * Returns `undefined` when the response is too short or malformed; the
+ * caller surfaces a warning rather than failing the write since the
+ * wire mutation already landed.
+ */
+function decodeWireValueFromAck(response: number[] | undefined): number | undefined {
+  if (response === undefined || response.length < 24) return undefined;
+  try {
+    const firstChunk = new Uint8Array(response.slice(16, 24));
+    const rawBytes = unpackValue(firstChunk, 7);
+    return new DataView(rawBytes.buffer, rawBytes.byteOffset, 4).getUint32(0, true);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Predicate matching the AM4's wire-ack for the new Session 104 opcodes
@@ -622,6 +651,23 @@ export const writer: DeviceWriter = {
         `Block '${block}' is not valid on Fractal AM4 (cannot bypass 'none'). Known: ${known}.`,
       );
     }
+    // AM4 AMP-slot quirk (hardware-verified). AM4's AMP slot has no
+    // bypass register; pidHigh=0x03 on the AMP block is the BOOST
+    // register. buildSetBlockBypass(amp, true) writes value 1 to
+    // pidHigh=0x03 of AMP, which silently toggles BOOST instead of
+    // bypassing the amp. AMP is always engaged on AM4; "silence the
+    // amp" requires a different action (drop level/master to zero, or
+    // bypass an earlier block). Refuse rather than silently misroute.
+    if (block === 'amp') {
+      throw new DispatchError(
+        'capability_not_supported',
+        'Fractal AM4',
+        `Fractal AM4's AMP slot has no bypass register: a set_bypass(amp) write would silently toggle the BOOST knob instead. AMP is always engaged on AM4. To silence the amp, drop amp.master or amp.level to 0, or bypass an upstream block. To control boost, use set_param(port:'am4', block:'amp', name:'boost', value:0|1).`,
+        {
+          retry_action: `Call set_param({port:'am4', block:'amp', name:'master', value:0}) to mute the amp, or set_param({port:'am4', block:'amp', name:'boost', value:0|1}) to control boost.`,
+        },
+      );
+    }
     const bytes = buildSetBlockBypass(wire, bypassed);
     const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
     const stateWord = bypassed ? 'bypassed' : 'active';
@@ -661,16 +707,40 @@ export const writer: DeviceWriter = {
       ? channelLetter(channel)
       : (typeof channel === 'string' ? channel.toUpperCase() : undefined);
     const stepWord = granularity === 'coarse' ? 'coarse step' : 'fine step';
-    const dirWord = direction === 'up' ? '+' : '−';
+    const dirWord = direction === 'up' ? '+' : '-';
+    // HIGH-4: decode the new wire/display value from the 64B ack response
+    // so callers don't need a follow-up get_param to see where the nudge
+    // landed. The response carries the device's current value in the
+    // first 4 raw bytes of the 40-byte payload (same shape as a long-
+    // form read response).
+    const wireValue = result.acked
+      ? decodeWireValueFromAck(result.ackBytes)
+      : undefined;
+    let displayValue: number | string | undefined;
+    if (wireValue !== undefined) {
+      try {
+        // am4Decode expects the normalized [0,1] internal float, not the
+        // raw wire u32. The wire layer carries values as `internal × 65534`
+        // (see READ_VALUE_DENOMINATOR), so normalize before decode.
+        const internal = wireValue / READ_VALUE_DENOMINATOR;
+        displayValue = am4Decode(param, internal);
+      } catch {
+        displayValue = undefined;
+      }
+    }
     return {
       op: 'nudge_param',
       target: `${block}.${name}`,
       block,
       name,
       acked: result.acked,
+      wire_value: wireValue,
+      display_value: displayValue,
       channel: channelName,
       info: result.acked
-        ? `${block}.${name} ${dirWord}1 ${stepWord}. Read back with get_param to see the landed value.`
+        ? (displayValue !== undefined
+          ? `${block}.${name} ${dirWord}1 ${stepWord}, now at ${displayValue}.`
+          : `${block}.${name} ${dirWord}1 ${stepWord}. New value not decodable from ack; verify with get_param.`)
         : undefined,
       warning: result.acked
         ? undefined
@@ -689,26 +759,47 @@ export const writer: DeviceWriter = {
         `Block '${block}' is not valid on Fractal AM4 (cannot toggle 'none'). Known: ${known}.`,
       );
     }
-    // AM4 quirk surfaced Session 104: the AMP slot has no bypass register.
-    // pidHigh=0x03 on AMP is the BOOST register, so TOGGLE @ AMP flips
-    // boost, not bypass. Refuse rather than silently mis-route — the
-    // caller can call set_bypass on AMP if they truly want the (no-op)
-    // semantics, or set the boost knob explicitly.
+    // AM4 AMP-slot quirk (hardware-verified). The AMP slot has no
+    // bypass register; pidHigh=0x03 on AMP is the BOOST register, so a
+    // toggle there flips boost, not bypass. AMP is always engaged on
+    // AM4; "silence the amp" requires a different action (drop
+    // amp.master/level to 0, or bypass an upstream block). set_bypass
+    // also refuses on AMP for the same reason, so we don't recommend
+    // it here.
     if (block === 'amp') {
       throw new DispatchError(
         'capability_not_supported',
         'Fractal AM4',
-        `toggle_bypass on Fractal AM4 's AMP slot would flip the boost register, not bypass (the AMP slot has no bypass). Use set_bypass(port:'am4', block:'amp', bypassed:false) for a no-op confirmation, or set_param(port:'am4', block:'amp', name:'boost') to control boost explicitly.`,
+        `Fractal AM4's AMP slot has no bypass register: a toggle here would silently flip the BOOST knob instead. AMP is always engaged on AM4. To silence the amp, drop amp.master or amp.level to 0, or bypass an upstream block. To control boost, use set_param(port:'am4', block:'amp', name:'boost').`,
+        {
+          retry_action: `Call set_param({port:'am4', block:'amp', name:'master', value:0}) to mute the amp, or set_param({port:'am4', block:'amp', name:'boost', value:0|1}) to control boost.`,
+        },
       );
     }
     const bytes = buildToggleBlockBypass(wire);
     const result = await sendAndAwaitAck(ctx.conn, bytes, isNudgeOrToggleAck);
+    // HIGH-4: decode the new bypass state from the ack so the response
+    // carries direction info (bypassed=true vs false). The bypass FLAG
+    // sits at byte 22 of the 64-byte response (same offset as the
+    // long-form read response uses), separate from the u32 param value
+    // at bytes 16-20. byte22 = 0x01 means bypassed, 0x00 means active.
+    // The u32 carries the param's continuous value (e.g. boost level)
+    // and is NOT a reliable indicator of bypass state, since most
+    // bypassable blocks share pidHigh=0x03 with the block's other
+    // registers depending on type.
+    let newBypassState: boolean | undefined;
+    if (result.acked && result.ackBytes.length > LONG_READ_BYPASS_FLAG_BYTE) {
+      newBypassState = result.ackBytes[LONG_READ_BYPASS_FLAG_BYTE] === 0x01;
+    }
     return {
       op: 'toggle_bypass',
       target: block,
       acked: result.acked,
+      display_value: newBypassState === undefined ? undefined : (newBypassState ? 'bypassed' : 'active'),
       info: result.acked
-        ? `${block} bypass flipped on the active scene. Read back with set_bypass or get_block_layout to confirm direction; two toggles return to the original state.`
+        ? (newBypassState !== undefined
+          ? `${block} is now ${newBypassState ? 'bypassed' : 'active'} on the active scene. Two toggles return to the original state.`
+          : `${block} bypass flipped on the active scene. Direction not decodable from ack; verify with set_bypass or am4_get_block_bypass.`)
         : undefined,
       warning: result.acked
         ? undefined

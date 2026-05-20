@@ -117,13 +117,13 @@ export function registerParamTools(server: McpServer): void {
   server.registerTool('nudge_param', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     description: [
-      'Nudge a continuous param up or down by one step — for the conversational "turn it up a touch / a hair less" UX. The device knows its own step size per param, so no target value is computed.',
-      'When the user says "a bit / a touch / a hair", default to granularity="fine" (~0.01 on a 0..10 knob, ~1% of full range). When they say "a lot / much more", use "coarse" (~0.1, ~10% of full range).',
+      'Nudge a continuous param up or down by one device-defined step. Use for the conversational "turn it up a touch", "a hair less drive", "a lot more reverb" UX, where no target value is computed.',
+      'Map user intensity language to granularity: "a touch / a hair / a bit" picks "fine" (default, roughly 1% of the param\'s full range, ~0.1 on a 0..10 knob). "A lot / way more / way less" picks "coarse" (roughly 10% of full range, ~1.0 on a 0..10 knob). The exact quantum varies per param; the response carries the landed display value so you can confirm the user\'s intensity language matched their ear.',
       '- For a specific target ("set gain to 7"), use set_param with the explicit value.',
       '- NOT idempotent: each call shifts state by one step. The wire is payload-free so it\'s cheap to call in a tight UX loop.',
-      '- Channel-bearing blocks: pass `channel` to nudge a specific A/B/C/D / X/Y; omit for the active channel.',
-      '- AM4 quantum (hardware-verified on AMP.GAIN): fine = 66/65534 ≈ 0.001 internal, coarse = 655/65534 ≈ 0.01 internal. Display step = 10× internal for the standard 0..10 knob.',
-      '- Currently only AM4 implements this; II/III error with capability_not_supported.',
+      '- Channel-bearing blocks: pass `channel` to nudge a specific A/B/C/D (AM4) or X/Y (II). Omit to nudge the active channel.',
+      '- The response carries the new display value, so a follow-up get_param is not needed for confirmation.',
+      '- Currently only Fractal AM4 implements this; II / III / Hydra return capability_not_supported. On unsupported devices, fall back to get_param + set_param with a computed delta.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),

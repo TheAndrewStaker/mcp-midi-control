@@ -68,7 +68,7 @@ export function registerLayoutTools(server: McpServer): void {
   server.registerTool('toggle_bypass', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     description: [
-      'Atomically flip a block\'s bypass state — one wire round-trip, no value to pass. Prefer this over read-then-set_bypass when the user says "turn it off / on" / "kick the reverb in" / "kill the delay".',
+      'Atomically flip a block\'s bypass state in one wire round-trip, no value to pass. Prefer this over read-then-set_bypass when the user says "turn it off / on", "kick the reverb in", or "kill the delay".',
       '- Scene scope: writes land on the active scene. To toggle bypass on a different scene, switch_scene first.',
       '- NOT idempotent: each call flips state. Two calls = back to original. If you need a specific state (definitely-on, definitely-off), use set_bypass.',
       '- AM4 quirk: the AMP slot has no bypass register; the toggle wire hits the BOOST register instead. Use set_bypass on AMP to avoid the surprise.',

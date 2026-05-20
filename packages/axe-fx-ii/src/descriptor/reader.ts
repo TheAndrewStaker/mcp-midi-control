@@ -21,7 +21,8 @@ import type {
   DeviceReader,
   DispatchCtx,
   PresetSlotSpec,
-  PresetSpec,
+  PresetSnapshot,
+  PresetSnapshotSlot,
   ReadResult,
   ScannedLocation,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
@@ -39,20 +40,26 @@ import {
 import { KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/axe-fx-ii';
 import {
   buildGetAllParams,
+  buildGetBlockChannel,
   buildGetBlockParameterValue,
   buildGetGridLayout,
   buildGetPresetName,
   buildGetPresetNumber,
+  buildGetSceneNumber,
   buildSetBlockChannel,
   buildSwitchPreset,
+  isGetBlockChannelResponse,
   isGetBlockParameterResponse,
   isGetGridLayoutResponse,
   isGetPresetNameResponse,
   isGetPresetNumberResponse,
+  isSceneNumberResponse,
+  parseGetBlockChannelResponse,
   parseGetBlockParameterResponse,
   parseGetGridLayoutResponse,
   parseGetPresetNameResponse,
   parseGetPresetNumberResponse,
+  parseSceneNumberResponse,
   type AxeFxIIChannel,
   type GridCell,
 } from 'fractal-midi/axe-fx-ii';
@@ -423,12 +430,20 @@ export const reader: DeviceReader = {
    * Wall-time on Q8.02 XL+ with a 12-block preset: ~1.8 s. The same
    * coverage via per-param get_param round-trips would be ~22 calls × ~80
    * ms each = ~1.8 s as well, but the AGENT-side latency advantage is
-   * one tool call instead of 22 — that's the BK-070 win.
+   * one tool call instead of 22 (that's the BK-070 win).
+   *
+   * Returns `PresetSnapshot`, distinct from `PresetSpec`, so callers
+   * can statically tell "snapshot, don't feed back into apply_preset
+   * wholesale." Slots carry `channel_status` so partial-info state
+   * (channel read failed) is programmatically detectable. `_meta`
+   * envelope carries device label, timestamp, and partial-info flags.
    *
    * Scope (v1): active-channel state only. Routing edges + per-scene
-   * snapshots + per-X-vs-Y decomposition are deferred to v2.
+   * snapshots + per-X-vs-Y decomposition are deferred to v2 and will
+   * land via additional `PresetSnapshot` fields without a tool-shape
+   * change.
    */
-  async getPreset(ctx: DispatchCtx): Promise<PresetSpec> {
+  async getPreset(ctx: DispatchCtx): Promise<PresetSnapshot> {
     // 1. Grid read so we know which blocks are placed and at what slot.
     const gridResponsePromise = ctx.conn.receiveSysExMatching(
       isGetGridLayoutResponse,
@@ -465,39 +480,85 @@ export const reader: DeviceReader = {
     //    device returns one state-broadcast triple per request, and
     //    concurrent fn 0x1F bursts would interleave 0x75 chunks across
     //    different headers in the inbound stream (no per-request tag).
-    const slots: PresetSlotSpec[] = [];
+    //
+    //    For channel-bearing blocks (canBypass=true on II), we ALSO read
+    //    the active channel via fn 0x11 so the returned params nest under
+    //    the active channel key (e.g. `{X: {input_drive: 5, ...}}`). That
+    //    nested shape is what `apply_preset` expects on channel blocks,
+    //    so the round-trip read → mutate → re-apply works without the
+    //    agent reshaping the response.
+    const slots: PresetSnapshotSlot[] = [];
     const errors: string[] = [];
     for (const block of placed) {
       try {
+        // Read active channel first (only for channel-bearing blocks).
+        // Best-effort: a failure here doesn't kill the param read. We
+        // fall back to flat params with `channel_status: 'unknown'` so
+        // callers can detect the partial-info state programmatically.
+        let activeChannel: AxeFxIIChannel | undefined;
+        if (block.canBypass) {
+          try {
+            const chPromise = ctx.conn.receiveSysExMatching(
+              (bytes) => isGetBlockChannelResponse(bytes, block.effectId),
+              GET_RESPONSE_TIMEOUT_MS,
+            );
+            ctx.conn.send(buildGetBlockChannel(block.effectId));
+            activeChannel = parseGetBlockChannelResponse(await chPromise);
+          } catch {
+            activeChannel = undefined;
+          }
+        }
+
         const triple = await readAllParams(ctx, block.effectId);
         const groupCode = BLOCK_BY_ID[block.effectId].groupCode;
         const paramIndex = buildGroupParamIndex(groupCode);
-        const params: Record<string, number | string> = {};
+        const flatParams: Record<string, number | string> = {};
         for (let i = 0; i < triple.values.length; i++) {
           const p = paramIndex.get(i);
-          if (p === undefined) continue; // undocumented paramId — skip
+          if (p === undefined) continue; // undocumented paramId, skip
           const wire = triple.values[i];
-          // Decode wire → display via the schema's resolver (same path
+          // Decode wire to display via the schema's resolver (same path
           // get_param uses, so the values round-trip through encode).
           const kind = resolveParamKind('axe-fx-ii', p.block, p.name);
           let display: number | string;
           if (kind.decodeWire !== undefined) {
             display = kind.decodeWire(wire);
           } else if (p.controlType === 'select') {
-            // Enum without resolver decode — surface the wire integer
-            // (the wire index is meaningful even without a label; the
-            // schema's enum_values can resolve it agent-side).
+            // Enum without resolver decode. Surface the wire integer;
+            // the schema's enum_values can resolve it agent-side.
             display = wire;
           } else {
             display = wire;
           }
-          params[p.name] = display;
+          flatParams[p.name] = display;
         }
+
+        // Shape decision: channel-bearing blocks get the nested shape
+        // (e.g. {X: {...}}) so the agent can identify which channel the
+        // snapshot reflects. Non-channel blocks use the flat shape.
+        // When the channel read failed (rare), fall back to flat with
+        // channel_status: 'unknown' so the agent doesn't accidentally
+        // feed the slot back to apply_preset on the wrong channel.
+        let params: PresetSlotSpec['params'];
+        let channelStatus: PresetSnapshotSlot['channel_status'];
+        if (!block.canBypass) {
+          // Non-channel block: flat is correct, channel_status omitted.
+          params = flatParams;
+          channelStatus = undefined;
+        } else if (activeChannel !== undefined) {
+          params = { [activeChannel]: flatParams };
+          channelStatus = 'active';
+        } else {
+          params = flatParams;
+          channelStatus = 'unknown';
+        }
+
         slots.push({
           slot: block.slot,
           block_type: block.blockType,
           instance: block.instance,
           params,
+          channel_status: channelStatus,
         });
       } catch (err) {
         errors.push(`${block.displayName} @ row ${block.slot.row} col ${block.slot.col}: ${err instanceof Error ? err.message : String(err)}`);
@@ -512,9 +573,32 @@ export const reader: DeviceReader = {
         `get_preset: read failed on every placed block (${placed.length} blocks). First error: ${errors[0]}`,
       );
     }
+
+    // Best-effort active-scene read so the snapshot tells callers which
+    // scene's state they're looking at. Failure is non-blocking.
+    let activeScene: number | undefined;
+    try {
+      const scenePromise = ctx.conn.receiveSysExMatching(
+        isSceneNumberResponse,
+        GET_RESPONSE_TIMEOUT_MS,
+      );
+      ctx.conn.send(buildGetSceneNumber());
+      const sceneWire = parseSceneNumberResponse(await scenePromise);
+      activeScene = sceneWire + 1; // wire 0..7 to display 1..8
+    } catch {
+      activeScene = undefined;
+    }
+
     return {
       name: presetName,
       slots,
+      active_scene: activeScene,
+      _meta: {
+        device: DEVICE_LABEL,
+        read_at_ms: Date.now(),
+        active_scene_only: true,
+        routing_omitted: true,
+      },
     };
   },
 
