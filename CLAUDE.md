@@ -63,6 +63,48 @@ architecture, research artefacts) and DO ship in the repo.
 - @modelcontextprotocol/sdk for MCP
 - No framework. No ORM. Keep it simple.
 
+## Two-repo layout (`fractal-midi` extracted Session 98)
+
+This project consumes a SEPARATE npm package, `fractal-midi`, that
+owns all wire codec logic. **The codec is NOT in this repo.** When you
+need to change wire shapes, builders, parsers, param dictionaries,
+block tables, or anything else the device speaks:
+
+| Lives in | What |
+|---|---|
+| **`C:/dev/fractal-midi/`** (separate git repo, published to npm as `fractal-midi@0.1.0-alpha.0`) | Pure-TypeScript codec: `src/{shared,am4,axe-fx-ii,axe-fx-iii}/`. Builders, parsers, param dictionaries, block tables, calibration, fractal-shared lineage. NO MIDI transport, NO MCP server. |
+| **`C:/dev/mcp-midi-tools/`** (this repo) | MCP server + descriptors + dispatcher + agent guidance + tool registrations. Imports from `fractal-midi/*` (e.g. `import { KNOWN_PARAMS } from 'fractal-midi/axe-fx-ii'`). Consumes the codec; doesn't define it. |
+
+**Workflow for a codec change** (e.g. adding the `SYSEX_RESYNC` builder
+or the new opcodes.ts enum from Session 103):
+
+1. `cd C:/dev/fractal-midi` — edit `src/axe-fx-ii/setParam.ts` (or wherever).
+2. Run that repo's tests (`npm test`).
+3. Bump the version in `package.json` (alpha bump is fine pre-1.0).
+4. `npm pack` produces a `.tgz`.
+5. `cd C:/dev/mcp-midi-tools` and `npm install /path/to/.tgz` to consume.
+6. Test the integration here.
+7. When the codec change is solid, push the fractal-midi commits and tag
+   `v0.1.0-alpha.N` — CI publishes to npm.
+
+For QUICK iteration (you're still drafting), `npm link` between the two
+repos avoids the pack/install cycle. Reset to a published version before
+committing.
+
+**Where protocol docs SHOULD live:** the wire-map docs
+(`SYSEX-MAP.md`, `axeedit-opcode-table.md`) are codec-domain — they
+belong in `C:/dev/fractal-midi/docs/`. They currently sit in this
+repo for historical reasons (predate the extraction); a doc-migration
+sweep is queued under `docs/devices/axe-fx-ii/ghidra-followups.md`
+C5. Ghidra mining scripts in `scripts/ghidra/` are also codec-domain
+and will move with the docs.
+
+**Where research docs SHOULD live:** captures + decoded artifacts in
+`samples/captured/` are project-scratch (gitignored). The committed
+research narratives (`docs/research/*-research.md`) are publishable
+OSS material — they'll likely move to `fractal-midi/docs/research/`
+too in the same sweep.
+
 ## Target User
 A working guitarist with a Claude account — not a developer. Every UX,
 install, and distribution decision prioritizes the non-technical user.
