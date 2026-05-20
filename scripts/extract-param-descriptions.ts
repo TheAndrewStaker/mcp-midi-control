@@ -52,8 +52,12 @@ import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/t
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
-const MANUALS = path.join(ROOT, 'docs', 'manuals');
-const DEVICES = path.join(ROOT, 'docs', 'devices');
+// Session 103 migration: protocol-RE assets (manuals + per-device research)
+// moved into the sibling fractal-midi repo. The shared Blocks Guide and the
+// per-device Owner's Manuals now live under fractal-midi/docs/.
+const FRACTAL_MIDI_DOCS = path.resolve(ROOT, '..', 'fractal-midi', 'docs');
+const MANUALS = path.join(FRACTAL_MIDI_DOCS, 'manuals');
+const DEVICES_DIR = path.join(FRACTAL_MIDI_DOCS, 'devices');
 const OUT = path.join(
   ROOT,
   'packages',
@@ -90,17 +94,17 @@ const SOURCES: readonly ManualSource[] = [
   },
   {
     label: 'AM4 Owner\'s Manual',
-    file: path.join(DEVICES, 'am4', 'manuals', 'AM4-Owners-Manual.txt'),
+    file: path.join(DEVICES_DIR, 'am4', 'manuals', 'AM4-Owners-Manual.txt'),
     applyTo: ['am4'],
   },
   {
     label: 'Axe-Fx II Owner\'s Manual',
-    file: path.join(DEVICES, 'axe-fx-ii', 'manuals', 'Axe-Fx-II-Owners-Manual.txt'),
+    file: path.join(DEVICES_DIR, 'axe-fx-ii', 'manuals', 'Axe-Fx-II-Owners-Manual.txt'),
     applyTo: ['axe-fx-ii'],
   },
   {
     label: 'Axe-Fx III Owner\'s Manual',
-    file: path.join(DEVICES, 'axe-fx-iii', 'manuals', 'Axe-Fx-III-Owners-Manual.txt'),
+    file: path.join(DEVICES_DIR, 'axe-fx-iii', 'manuals', 'Axe-Fx-III-Owners-Manual.txt'),
     applyTo: ['axe-fx-iii'],
   },
 ];

@@ -59,9 +59,9 @@ import {
   calibrationEntries,
   calibrationStats,
   getCalibration,
-} from '../packages/axe-fx-ii/src/calibration.ts';
+} from '@mcp-midi-control/axe-fx-ii/calibration.js';
 
-import { AXEFX2_DESCRIPTOR } from '../packages/axe-fx-ii/src/descriptor.ts';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
 
 let failures = 0;
 

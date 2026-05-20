@@ -63,7 +63,7 @@ const STUB_NO_VERIFY: DeviceDescriptor = {
     supports_factory_restore: false,
     supports_lineage: false,
   },
-  canonical_terms: { preset: 'preset', location: 'slot', slot: 'slot', block: 'block', channel: 'channel', scene: 'scene', save: 'save' },
+  canonical_terms: { preset: 'preset', location: 'slot', slot: 'slot', block: 'block', channel: 'channel', scene: 'scene' },
   blocks: {
     amp: {
       display_name: 'Amp',
