@@ -140,6 +140,63 @@ const aliasCases: AliasCase[] = [
     desc: 'III wah.effect_type -> type (II vocabulary)',
   },
 
+  // ── Senior MCP review 2026-05-20: musician-vocabulary additions ──
+  // For AM4 + II, `regen` / `regeneration` aliases live in fractal-midi
+  // per-device PARAM_ALIASES (codec, not this table) — they are
+  // within-device musician-vocabulary aliases, not cross-device
+  // divergences. The dispatcher's resolveParamKey catches them at step
+  // 1b via the descriptor's block.aliases. Coverage for that path
+  // lives in fractal-midi's own test suite.
+  //
+  // This table now expects pass-through for AM4 + II so we don't
+  // duplicate the alias entry in two layers (which would silently
+  // mask a regression if the codec dropped its entry).
+  {
+    port: 'am4',
+    block: 'delay',
+    input: 'regen',
+    expected: { canonical: 'regen' },
+    desc: 'AM4 delay.regen pass-through (alias lives in fractal-midi codec)',
+  },
+  {
+    port: 'axe-fx-ii',
+    block: 'delay',
+    input: 'regen',
+    expected: { canonical: 'regen' },
+    desc: 'II delay.regen pass-through (alias lives in fractal-midi codec)',
+  },
+  // III still holds these aliases here because fractal-midi has no
+  // III PARAM_ALIASES table (III SET_PARAM undecoded as of Session 97).
+  // Audit and migrate to the codec when III SET_PARAM lands.
+  {
+    port: 'axe-fx-iii',
+    block: 'delay',
+    input: 'regen',
+    expected: { canonical: 'feedback', aliasUsed: 'regen' },
+    desc: 'III delay.regen -> feedback (kept in this table; III codec lacks alias support)',
+  },
+  {
+    port: 'am4',
+    block: 'amp',
+    input: 'output',
+    expected: { canonical: 'master', aliasUsed: 'output' },
+    desc: 'AM4 amp.output -> master (additional to output_level)',
+  },
+  {
+    port: 'am4',
+    block: 'amp',
+    input: 'mid_freq',
+    expected: { canonical: 'mid', aliasUsed: 'mid_freq' },
+    desc: 'AM4 amp.mid_freq -> mid (amp has only `mid`, not `mid_freq`)',
+  },
+  {
+    port: 'am4',
+    block: 'amp',
+    input: 'mid_frequency',
+    expected: { canonical: 'mid', aliasUsed: 'mid_frequency' },
+    desc: 'AM4 amp.mid_frequency -> mid',
+  },
+
   // ── Canonical names pass through unchanged (no aliasUsed) ────────
   {
     port: 'am4',

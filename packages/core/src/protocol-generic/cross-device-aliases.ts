@@ -88,11 +88,19 @@ export const CROSS_DEVICE_ALIASES: Readonly<
     }),
     // AM4 amp's main volume is `master`; II canonical is `master_volume`.
     // AM4 amp's amp-type-enum knob is `type`; II calls it `effect_type`.
+    //
+    // AM4 amp exposes a single `mid` knob — there is no `mid_freq` on
+    // the amp block, unlike `drive` which has both. An agent that
+    // learned the II/III drive vocabulary may reach for `mid_freq` /
+    // `mid_frequency` on amp; route to `mid`.
     amp: Object.freeze({
       master_volume: 'master',
       output_level: 'master',
+      output: 'master',
       volume: 'master',
       effect_type: 'type',
+      mid_freq: 'mid',
+      mid_frequency: 'mid',
     }),
     // AM4 wah's effect-type enum knob is `type`; II is `effect_type`.
     wah: Object.freeze({
@@ -117,6 +125,12 @@ export const CROSS_DEVICE_ALIASES: Readonly<
     phaser: Object.freeze({
       effect_type: 'type',
     }),
+    // NOTE: `regen` / `regeneration` aliases for delay/flanger/phaser
+    // feedback live in fractal-midi's per-device PARAM_ALIASES
+    // (am4/params.ts), not here. They're within-device musician-
+    // vocabulary aliases, not cross-device divergences. The dispatcher's
+    // resolveParamKey catches them at step 1b via block.aliases before
+    // this table runs at step 3.
   }),
 
   'axe-fx-ii': Object.freeze({
@@ -160,6 +174,8 @@ export const CROSS_DEVICE_ALIASES: Readonly<
     phaser: Object.freeze({
       type: 'effect_type',
     }),
+    // NOTE: `regen` / `regeneration` aliases live in fractal-midi's
+    // PARAM_ALIASES_AXEFX2 (axe-fx-ii/paramAliases.ts), not here.
   }),
 
   'axe-fx-iii': Object.freeze({
@@ -191,17 +207,31 @@ export const CROSS_DEVICE_ALIASES: Readonly<
     reverb: Object.freeze({
       effect_type: 'type',
     }),
+    // III's SET_PARAM is undecoded as of Session 97. The III delay
+    // canonical name in the descriptor example arrays is `feed` (not
+    // `feedback`), while phaser/flanger show `feedback`. We can't move
+    // these aliases into a per-device PARAM_ALIASES file (no III
+    // alias table exists yet in fractal-midi). When III SET_PARAM
+    // lands, audit each entry — `regen → feedback` may need to become
+    // `regen → feed` on delay specifically. For now, keeping them
+    // here is acceptable since III apply_preset is a beta path.
     delay: Object.freeze({
       effect_type: 'type',
+      regen: 'feedback',
+      regeneration: 'feedback',
     }),
     chorus: Object.freeze({
       effect_type: 'type',
     }),
     flanger: Object.freeze({
       effect_type: 'type',
+      regen: 'feedback',
+      regeneration: 'feedback',
     }),
     phaser: Object.freeze({
       effect_type: 'type',
+      regen: 'feedback',
+      regeneration: 'feedback',
     }),
   }),
 

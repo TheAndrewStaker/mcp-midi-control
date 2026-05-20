@@ -479,6 +479,58 @@ says > 1 s, redesign before implementing.
   against misreading septet-encoded pidHighs as little-endian bytes
   (the class of bug that hit Session 08 â€” see SYSEX-MAP.md Â§6a note).
 
+## Broken tests get fixed, not annotated
+
+**No test stays red across sessions, and "not from my changes" is not
+an acceptable answer.**
+
+When you run `npm run preflight`, `npm run launch-verify`,
+`npm run live-regression`, or `npm run agent-sweep` and a check fails,
+that failure is your responsibility regardless of when it was introduced.
+The codebase carries enough red tests for two reasons over time and
+both are unacceptable:
+
+- Agents say "this failure pre-existed on baseline" and move on. Even
+  when factually true (you can `git stash` and confirm), this leaves
+  the test red for the next agent, who repeats the same defense.
+  After three sessions, nobody knows whether the test is wrong, the
+  code is wrong, or both.
+- The release-gate stops being a gate. If 22/24 is the new normal,
+  the next regression hides in the noise.
+
+**Workflow when a check fails:**
+
+1. Investigate root cause. If the failure is in code you didn't touch,
+   that's a clue, not an exit. Read the assertion + the production
+   behavior. One of them is wrong.
+2. Pick the fix that matches reality. Common patterns:
+   - Behavior changed deliberately (e.g. dispatcher switched from
+     throw to structured `{ok: false, validation_errors: [...]}` per
+     BK-059), assertion is stale â†’ update the assertion to recognize
+     the new shape. Document why in the test file's comment.
+   - Behavior regressed accidentally â†’ fix the code.
+   - Test was always flaky â†’ make it deterministic or delete it.
+     Never `skip` it with a "fix later" comment.
+3. Run the full suite (`npm run release-gate` if hardware connected,
+   otherwise `npm run preflight && npm run launch-verify`) and confirm
+   the count went UP, not just "didn't get worse."
+4. If you cannot fix the failure in this session, **escalate to the
+   founder before declaring work complete**. Don't silently leave a
+   red test for the next agent.
+
+**Adding new tests:** if you ship a new MCP tool, capability, or
+codepath, add coverage in the appropriate suite the same session:
+- New unified tool â†’ case in `scripts/launch-verification.ts`.
+- New device capability that requires hardware â†’ case in
+  `scripts/live-regression.ts`. Self-restoring mutations only.
+- New agent-facing tool description or alias â†’ case in
+  `scripts/agent-regression/cases-<device>.ts`.
+- New wire builder / parser â†’ golden in `scripts/verify-msg.ts` or
+  `scripts/verify-pack.ts`.
+
+The rule: every failing test gets fixed in the session that surfaces it,
+and every shipped feature has live coverage before the session ends.
+
 ## Verification sources of truth
 
 For any test that needs to confirm "what does the device actually hold

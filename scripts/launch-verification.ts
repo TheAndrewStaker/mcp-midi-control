@@ -75,6 +75,21 @@ function extractText(callResult: unknown): string {
 }
 function isError(r: unknown): boolean { return !!(r as { isError?: boolean })?.isError; }
 
+/**
+ * True when the call returned either:
+ *   - an MCP `isError: true` envelope (old throw-on-first-error path), OR
+ *   - a structured `{ok: false, validation_errors: [...]}` body (BK-059
+ *     all-errors-at-once preflight). The structured response is NOT
+ *     marked isError because it's a normal tool result; the dispatcher
+ *     surfaces the validation errors in the payload so the agent can
+ *     fix the whole spec in one follow-up. For "must reject" checks
+ *     either shape is correct rejection.
+ */
+function isRejection(r: unknown, t: string): boolean {
+  if (isError(r)) return true;
+  return /"ok"\s*:\s*false/.test(t) && /validation_errors/.test(t);
+}
+
 // ── Assertion tracking ─────────────────────────────────────────────
 
 interface Check {
@@ -243,7 +258,7 @@ async function verifyAm4(client: Client): Promise<void> {
     const t = extractText(r);
     record(
       'apply_preset rejects routing[] on AM4',
-      isError(r) && /routing|linear|implicit/i.test(t),
+      isRejection(r, t) && /routing|linear|implicit/i.test(t),
       t.slice(0, 300),
     );
   }
@@ -263,7 +278,7 @@ async function verifyAm4(client: Client): Promise<void> {
     const t = extractText(r);
     record(
       'apply_preset rejects instance≠1 on AM4',
-      isError(r) && /instance|one instance|single/i.test(t),
+      isRejection(r, t) && /instance|one instance|single/i.test(t),
       t.slice(0, 300),
     );
   }

@@ -19,6 +19,7 @@ import {
 } from '../../fractal-shared/loudness.js';
 import { resolveEnumAlias } from '../cross-device-enums.js';
 import { resolveParamAlias } from '../cross-device-aliases.js';
+import { summarizeRecipesForPort, type RecipeSummaryEntry } from '../recipes/index.js';
 
 import { requireDevice } from './core.js';
 import { resolveBlockName } from './resolvers.js';
@@ -43,6 +44,7 @@ export function describeDevice(port: string): {
   example_spec?: PresetSpec;
   block_params_summary?: DeviceDescriptor['block_params_summary'];
   concept_keys?: DeviceDescriptor['concept_keys'];
+  recipes?: readonly RecipeSummaryEntry[];
 } {
   const desc = requireDevice(port);
   // RegExp objects serialize to `{}` through JSON.stringify, so MCP agents
@@ -50,6 +52,7 @@ export function describeDevice(port: string): {
   // pattern. Surface the regex source as a string so the field is
   // human-readable in the wire response.
   const { preset_location_format, ...restCapabilities } = desc.capabilities;
+  const recipes = summarizeRecipesForPort(desc.id);
   return {
     device: desc.display_name,
     id: desc.id,
@@ -64,6 +67,7 @@ export function describeDevice(port: string): {
     example_spec: desc.example_spec,
     block_params_summary: desc.block_params_summary,
     concept_keys: desc.concept_keys,
+    recipes: recipes.length > 0 ? recipes : undefined,
   };
 }
 

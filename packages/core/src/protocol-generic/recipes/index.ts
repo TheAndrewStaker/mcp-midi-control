@@ -39,3 +39,15 @@ export {
   type SceneLevelingRecipeSpec,
   type SceneRole,
 } from './sceneLeveling.js';
+
+export {
+  BLOCK_STACK_RECIPES,
+  resolveBlockStackRecipe,
+  type BlockStackRecipeSpec,
+  type BlockStackSlotSpec,
+} from './blockStack.js';
+
+export {
+  summarizeRecipesForPort,
+  type RecipeSummaryEntry,
+} from './summary.js';
