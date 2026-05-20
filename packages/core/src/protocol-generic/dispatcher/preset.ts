@@ -107,6 +107,33 @@ function precheckTypeKnobCompatibility(
 }
 
 /**
+ * BK-070: full lifecycle for `get_preset`. One round-trip per placed
+ * block via the device's atomic-read primitive; closes the N×get_param
+ * read pain in a single tool call.
+ *
+ * Returns a PresetSpec describing the active working buffer. Scope v1:
+ * active-channel state only, no routing edges, no per-scene snapshots.
+ * Devices that don't implement `reader.getPreset` error with
+ * capability_not_supported — caller falls back to grid + per-block
+ * get_param reads.
+ */
+export async function executeGetPreset(args: {
+  port: string;
+}): Promise<PresetSpec & { device: string }> {
+  const descriptor = requireDevice(args.port);
+  if (descriptor.reader.getPreset === undefined) {
+    throw new DispatchError(
+      'capability_not_supported',
+      descriptor.display_name,
+      `get_preset is not implemented for ${descriptor.display_name}. Fall back to get_param / get_params per block, or call describe_device to see which capabilities the device exposes.`,
+    );
+  }
+  const ctx = openCtx(descriptor);
+  const spec = await descriptor.reader.getPreset(ctx);
+  return { ...spec, device: descriptor.display_name };
+}
+
+/**
  * Full lifecycle for `apply_preset`. Optional `target_location` runs the
  * switch + apply + save sequence atomically; without it, writes the
  * spec to the working buffer only (legacy `am4_apply_preset` shape).

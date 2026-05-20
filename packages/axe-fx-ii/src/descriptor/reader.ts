@@ -20,6 +20,8 @@
 import type {
   DeviceReader,
   DispatchCtx,
+  PresetSlotSpec,
+  PresetSpec,
   ReadResult,
   ScannedLocation,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
@@ -29,24 +31,30 @@ import { resolveParamKind } from '@mcp-midi-control/core/protocol-generic/paramK
 
 import {
   AXE_FX_II_BLOCKS,
+  AXE_FX_II_XL_PLUS_MODEL_ID,
   BLOCK_BY_ID,
   resolveBlock,
   type AxeFxIIBlock,
 } from 'fractal-midi/axe-fx-ii';
 import { KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/axe-fx-ii';
 import {
+  buildGetAllParams,
   buildGetBlockParameterValue,
+  buildGetGridLayout,
   buildGetPresetName,
   buildGetPresetNumber,
   buildSetBlockChannel,
   buildSwitchPreset,
   isGetBlockParameterResponse,
+  isGetGridLayoutResponse,
   isGetPresetNameResponse,
   isGetPresetNumberResponse,
   parseGetBlockParameterResponse,
+  parseGetGridLayoutResponse,
   parseGetPresetNameResponse,
   parseGetPresetNumberResponse,
   type AxeFxIIChannel,
+  type GridCell,
 } from 'fractal-midi/axe-fx-ii';
 import {
   AXE_FX_II_LINEAGE_BLOCKS,
@@ -62,6 +70,12 @@ const DEVICE_LABEL = 'Fractal Axe-Fx II XL+';
 const GET_RESPONSE_TIMEOUT_MS = 800;
 const CHANNEL_SWITCH_SETTLE_MS = 20;
 const MAX_SCAN_RANGE = 64;
+// BK-070: fn 0x1F SYSEX_GET_ALL_PARAMS responds with a 1+N+1 state-broadcast
+// triple (header 0x74 + N×chunk 0x75 + footer 0x76). Probe-axefx2-fn1f-sweep
+// measured ~150 ms per round-trip for the largest blocks; 2 s gives the
+// kernel scheduler + USB stack comfortable headroom. Unplaced or shunt
+// blocks return a zero-item triple in well under 200 ms.
+const FN1F_TRIPLE_TIMEOUT_MS = 2000;
 // scan_preset_range only — switch_preset is async on the Axe-Fx II,
 // and a 20ms post-switch settle was racing the GET_PRESET_NAME response
 // (the device echoed the stale working-buffer name instead of the
@@ -120,6 +134,191 @@ function unitFor(param: AxeFxIIParam): string {
   // Same resolver schema.ts/writer.ts use, so the unit reported on
   // get_param matches what set_param's encode closure expects.
   return resolveParamKind('axe-fx-ii', param.block, param.name).unit;
+}
+
+// ── BK-070: bulk per-block atomic read via fn 0x1F ──────────────────
+//
+// `readAllParams` issues a SYSEX_GET_ALL_PARAMS request and reassembles
+// the device's 0x74 / N×0x75 / 0x76 state-broadcast triple into a
+// (paramId → wireValue) map. Codec primitive lives in fractal-midi
+// (`buildGetAllParams`); the inbound-triple parser is inline here for
+// now and could be lifted into the codec on the next alpha bump.
+//
+// Wire shape (Session 60 decode + Session 103 hardware-verification):
+//   Header (fn 0x74):
+//     F0 00 01 74 07 74 [t_lo t_hi] [c_lo c_hi] [op] [cs] F7
+//     - targetId  = decode14(t_lo, t_hi)   → outgoing effectId echoed
+//     - itemCount = decode14(c_lo, c_hi)   → number of 16-bit values
+//     - op        = 0x01 (block-state) or 0x00 (preset-structure edit)
+//   Chunks (fn 0x75):
+//     F0 00 01 74 07 75 [n_lo n_hi] [N × 3 packed septets] [cs] F7
+//     - n = decode14(n_lo, n_hi)  → values in this chunk (max ~340)
+//     - each value = (b0 & 0x7f) | ((b1 & 0x7f) << 7) | ((b2 & 0x03) << 14)
+//   Footer (fn 0x76):
+//     F0 00 01 74 07 76 [cs] F7 — empty; marks end of triple.
+//
+// Position-as-paramId pattern (Session 60): values[i] is the wire value
+// of paramId i for that block's group. Catalog lookup via KNOWN_PARAMS
+// filtered by groupCode.
+
+function decode14(lo: number, hi: number): number {
+  return (lo & 0x7f) | ((hi & 0x7f) << 7);
+}
+
+function decode16Packed(b0: number, b1: number, b2: number): number {
+  return (b0 & 0x7f) | ((b1 & 0x7f) << 7) | ((b2 & 0x03) << 14);
+}
+
+interface DecodedTriple {
+  targetId: number;
+  itemCount: number;
+  opFlag: number;
+  values: number[];
+}
+
+function isFn(bytes: number[], fn: number): boolean {
+  return (
+    bytes.length >= 7
+    && bytes[0] === 0xf0
+    && bytes[1] === 0x00
+    && bytes[2] === 0x01
+    && bytes[3] === 0x74
+    && bytes[4] === AXE_FX_II_XL_PLUS_MODEL_ID
+    && bytes[5] === fn
+  );
+}
+
+function decodeChunk(bytes: number[]): number[] {
+  // bytes[6..7] = item count septet pair; bytes[8..] = N × 3 packed septets
+  const itemCount = decode14(bytes[6], bytes[7]);
+  const out: number[] = [];
+  const start = 8;
+  const end = bytes.length - 2; // exclude checksum + F7
+  for (let i = 0; i < itemCount; i++) {
+    const off = start + i * 3;
+    if (off + 2 >= end) break;
+    out.push(decode16Packed(bytes[off], bytes[off + 1], bytes[off + 2]));
+  }
+  return out;
+}
+
+async function readAllParams(
+  ctx: DispatchCtx,
+  effectId: number,
+): Promise<DecodedTriple> {
+  // Collect inbound triples by listening for fn 0x74 header matching our
+  // targetId, then accumulating subsequent fn 0x75 chunks until fn 0x76.
+  // Subscribe BEFORE send so the device's response can't outrace the
+  // listener registration (state-broadcast triples are bursty — header +
+  // chunks land within a single USB callback frame on Q8.02).
+  let header: DecodedTriple | undefined;
+  const values: number[] = [];
+  let footerSeen = false;
+  let resolveDone!: () => void;
+  let rejectDone!: (err: Error) => void;
+  const donePromise = new Promise<void>((res, rej) => {
+    resolveDone = res;
+    rejectDone = rej;
+  });
+  const unsubscribe = ctx.conn.onMessage((bytes) => {
+    if (isFn(bytes, 0x74)) {
+      const tId = decode14(bytes[6], bytes[7]);
+      if (tId !== effectId) return; // unrelated broadcast (e.g. front-panel edit)
+      if (header !== undefined) return; // already saw one — ignore duplicates
+      header = {
+        targetId: tId,
+        itemCount: decode14(bytes[8], bytes[9]),
+        opFlag: bytes[10],
+        values: [],
+      };
+    } else if (isFn(bytes, 0x75)) {
+      if (header === undefined) return; // chunk before header — drop
+      for (const v of decodeChunk(bytes)) values.push(v);
+    } else if (isFn(bytes, 0x76)) {
+      if (header === undefined) return; // footer before header — drop
+      footerSeen = true;
+      resolveDone();
+    }
+  });
+  const timer = setTimeout(() => {
+    // Some shunts / unplaced blocks return only the header + footer with
+    // zero chunks; that's a valid triple. Resolve if we at least saw a
+    // header, otherwise reject as a real timeout.
+    if (header !== undefined) resolveDone();
+    else rejectDone(new Error(`fn 0x1F triple timeout for effectId ${effectId}`));
+  }, FN1F_TRIPLE_TIMEOUT_MS);
+  try {
+    ctx.conn.send(buildGetAllParams(effectId));
+    await donePromise;
+  } finally {
+    clearTimeout(timer);
+    unsubscribe();
+  }
+  if (header === undefined) {
+    throw new DispatchError(
+      'no_ack',
+      DEVICE_LABEL,
+      `readAllParams(${effectId}): no state-broadcast header arrived within ${FN1F_TRIPLE_TIMEOUT_MS}ms. The block may not be placed (fn 0x1F rejects empty effectIds with a multipurpose-NACK) or the MIDI handle may be stale.`,
+    );
+  }
+  return { ...header, values };
+}
+
+/**
+ * Index every KNOWN_PARAMS entry for a given groupCode by its paramId,
+ * so the (position i → paramId i) overlay can look up the param's name +
+ * decode function in one map access.
+ */
+function buildGroupParamIndex(groupCode: string): Map<number, AxeFxIIParam> {
+  const out = new Map<number, AxeFxIIParam>();
+  for (const key of Object.keys(KNOWN_PARAMS)) {
+    const p = KNOWN_PARAMS[key as keyof typeof KNOWN_PARAMS] as AxeFxIIParam;
+    if (p.groupCode === groupCode) out.set(p.paramId, p);
+  }
+  return out;
+}
+
+/**
+ * Split a grid into a deduplicated list of placed blocks with their
+ * canonical (block_type, instance, slot) coordinates. Skips empty cells
+ * (blockId=0) and shunts (200..235); skips duplicate cells (multi-cell
+ * blocks span multiple grid positions but the device returns the same
+ * blockId once per cell).
+ */
+interface PlacedBlock {
+  effectId: number;
+  blockType: string;       // slug like "amp", "drive"
+  instance: number;        // 1-indexed
+  slot: { row: number; col: number };
+  displayName: string;     // "Amp 1" / "Reverb 2"
+  canBypass: boolean;
+}
+
+function collectPlacedBlocks(cells: readonly GridCell[]): PlacedBlock[] {
+  const seen = new Set<number>();
+  const placed: PlacedBlock[] = [];
+  for (const cell of cells) {
+    if (cell.blockId === 0) continue;
+    if (cell.blockId >= 200 && cell.blockId <= 235) continue; // shunt
+    if (seen.has(cell.blockId)) continue;
+    seen.add(cell.blockId);
+    const block = BLOCK_BY_ID[cell.blockId];
+    if (block === undefined) continue;
+    // "Amp 1" → slug "amp", instance 1. The trailing number on each
+    // block.name encodes the instance; the slug is everything before.
+    const m = /^(.+?)\s+(\d+)$/.exec(block.name);
+    const blockType = (m ? m[1] : block.name).toLowerCase();
+    const instance = m ? Number(m[2]) : 1;
+    placed.push({
+      effectId: cell.blockId,
+      blockType,
+      instance,
+      slot: { row: cell.row, col: cell.col },
+      displayName: block.name,
+      canBypass: block.canBypass,
+    });
+  }
+  return placed;
 }
 
 function normalizeChannel(channel: string | number | undefined): AxeFxIIChannel | undefined {
@@ -213,6 +412,109 @@ export const reader: DeviceReader = {
       reads,
       failed_indices,
       errors: failed_indices.length > 0 ? errors : undefined,
+    };
+  },
+
+  /**
+   * BK-070: atomic read of the active working buffer. One grid read +
+   * one fn 0x1F per placed block; the device's existing state-broadcast
+   * triples carry the full param state per block in a single round-trip.
+   *
+   * Wall-time on Q8.02 XL+ with a 12-block preset: ~1.8 s. The same
+   * coverage via per-param get_param round-trips would be ~22 calls × ~80
+   * ms each = ~1.8 s as well, but the AGENT-side latency advantage is
+   * one tool call instead of 22 — that's the BK-070 win.
+   *
+   * Scope (v1): active-channel state only. Routing edges + per-scene
+   * snapshots + per-X-vs-Y decomposition are deferred to v2.
+   */
+  async getPreset(ctx: DispatchCtx): Promise<PresetSpec> {
+    // 1. Grid read so we know which blocks are placed and at what slot.
+    const gridResponsePromise = ctx.conn.receiveSysExMatching(
+      isGetGridLayoutResponse,
+      GET_RESPONSE_TIMEOUT_MS,
+    );
+    ctx.conn.send(buildGetGridLayout());
+    let cells: GridCell[];
+    try {
+      const gridResponse = await gridResponsePromise;
+      cells = parseGetGridLayoutResponse(gridResponse);
+    } catch (err) {
+      throw new DispatchError(
+        'no_ack',
+        DEVICE_LABEL,
+        `get_preset: grid read failed — ${err instanceof Error ? err.message : String(err)}. Check that the Axe-Fx II is connected and AxeEdit isn't holding the port.`,
+      );
+    }
+    const placed = collectPlacedBlocks(cells);
+
+    // 2. Preset name (best-effort — non-blocking on failure).
+    let presetName: string | undefined;
+    try {
+      const namePromise = ctx.conn.receiveSysExMatching(
+        isGetPresetNameResponse,
+        GET_RESPONSE_TIMEOUT_MS,
+      );
+      ctx.conn.send(buildGetPresetName());
+      presetName = parseGetPresetNameResponse(await namePromise);
+    } catch {
+      presetName = undefined;
+    }
+
+    // 3. Per-block atomic param dump via fn 0x1F. Loop serially — the
+    //    device returns one state-broadcast triple per request, and
+    //    concurrent fn 0x1F bursts would interleave 0x75 chunks across
+    //    different headers in the inbound stream (no per-request tag).
+    const slots: PresetSlotSpec[] = [];
+    const errors: string[] = [];
+    for (const block of placed) {
+      try {
+        const triple = await readAllParams(ctx, block.effectId);
+        const groupCode = BLOCK_BY_ID[block.effectId].groupCode;
+        const paramIndex = buildGroupParamIndex(groupCode);
+        const params: Record<string, number | string> = {};
+        for (let i = 0; i < triple.values.length; i++) {
+          const p = paramIndex.get(i);
+          if (p === undefined) continue; // undocumented paramId — skip
+          const wire = triple.values[i];
+          // Decode wire → display via the schema's resolver (same path
+          // get_param uses, so the values round-trip through encode).
+          const kind = resolveParamKind('axe-fx-ii', p.block, p.name);
+          let display: number | string;
+          if (kind.decodeWire !== undefined) {
+            display = kind.decodeWire(wire);
+          } else if (p.controlType === 'select') {
+            // Enum without resolver decode — surface the wire integer
+            // (the wire index is meaningful even without a label; the
+            // schema's enum_values can resolve it agent-side).
+            display = wire;
+          } else {
+            display = wire;
+          }
+          params[p.name] = display;
+        }
+        slots.push({
+          slot: block.slot,
+          block_type: block.blockType,
+          instance: block.instance,
+          params,
+        });
+      } catch (err) {
+        errors.push(`${block.displayName} @ row ${block.slot.row} col ${block.slot.col}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (errors.length === placed.length && placed.length > 0) {
+      // Every block failed. Hard surface as no_ack so the caller can
+      // diagnose (probably stale handle or device-busy).
+      throw new DispatchError(
+        'no_ack',
+        DEVICE_LABEL,
+        `get_preset: read failed on every placed block (${placed.length} blocks). First error: ${errors[0]}`,
+      );
+    }
+    return {
+      name: presetName,
+      slots,
     };
   },
 

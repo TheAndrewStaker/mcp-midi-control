@@ -346,8 +346,54 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
   //   - set_param(channel: 'X') succeeds (active channel matches);
   //   - set_param(channel: 'Y') refuses with channel-mismatch warning.
   const FUNC_BLOCK_CHANNEL = 0x11;
+  const FUNC_GET_GRID_LAYOUT = 0x20;
+  const FUNC_GET_PRESET_NAME = 0x0f;
   const SYSEX_START_BYTE = 0xf0;
   const SYSEX_END_BYTE = 0xf7;
+
+  // BK-070 mock: synthesize an EMPTY 48-cell grid response for fn 0x20.
+  // Lets the unified `get_preset` end-to-end test verify routing without
+  // also stubbing per-block fn 0x1F responses. An empty grid means the
+  // reader does one round-trip + name-read and returns an empty slots
+  // array — every layer (dispatcher, reader.getPreset, grid parse) is
+  // exercised, but the per-block param-decode path isn't. Extending the
+  // mock to cover fn 0x1F + the 0x74/0x75/0x76 triple is a follow-up.
+  const buildEmptyGridResponse = (outgoing: number[]): number[] | undefined => {
+    if (outgoing.length < 8) return undefined;
+    if (outgoing[0] !== SYSEX_START_BYTE) return undefined;
+    if (outgoing[1] !== 0x00 || outgoing[2] !== 0x01 || outgoing[3] !== 0x74) return undefined;
+    if (outgoing[5] !== FUNC_GET_GRID_LAYOUT) return undefined;
+    const modelId = outgoing[4];
+    // 48 cells × 4 bytes each = 192 bytes; all zero (empty).
+    const cells = new Array(48 * 4).fill(0x00);
+    const head = [
+      SYSEX_START_BYTE, 0x00, 0x01, 0x74,
+      modelId, FUNC_GET_GRID_LAYOUT,
+      ...cells,
+    ];
+    const cs = head.slice(1).reduce((a, b) => a ^ b, 0) & 0x7f;
+    return [...head, cs, SYSEX_END_BYTE];
+  };
+
+  // BK-070 mock: GET_PRESET_NAME response so `get_preset` can fill
+  // `name`. Returns "Mock Preset" + null terminator. Body is null-
+  // terminated ASCII per parseGetPresetNameResponse.
+  const buildPresetNameResponse = (outgoing: number[]): number[] | undefined => {
+    if (outgoing.length < 7) return undefined;
+    if (outgoing[0] !== SYSEX_START_BYTE) return undefined;
+    if (outgoing[1] !== 0x00 || outgoing[2] !== 0x01 || outgoing[3] !== 0x74) return undefined;
+    if (outgoing[5] !== FUNC_GET_PRESET_NAME) return undefined;
+    const modelId = outgoing[4];
+    const nameBytes = Array.from('Mock Preset', (c) => c.charCodeAt(0));
+    const head = [
+      SYSEX_START_BYTE, 0x00, 0x01, 0x74,
+      modelId, FUNC_GET_PRESET_NAME,
+      ...nameBytes, 0x00,
+    ];
+    const cs = head.slice(1).reduce((a, b) => a ^ b, 0) & 0x7f;
+    return [...head, cs, SYSEX_END_BYTE];
+  };
+
   const buildGetBlockChannelMockResponse = (outgoing: number[]): number[] | undefined => {
     if (outgoing.length < 10) return undefined;
     if (outgoing[0] !== SYSEX_START_BYTE) return undefined;
@@ -374,8 +420,16 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
   return {
     send: (bytes) => {
       // Synthesize an inbound response when the outgoing frame matches a
-      // known shape the mock can answer (currently only GET_BLOCK_CHANNEL).
-      const response = buildGetBlockChannelMockResponse(bytes);
+      // known shape the mock can answer. Each responder returns undefined
+      // when the outgoing frame isn't its shape, so we just walk the
+      // ordered list and use the first hit. Currently covers:
+      //   - GET_BLOCK_CHANNEL (fn 0x11) — bucket-7 channel-write safety
+      //   - GET_GRID_LAYOUT  (fn 0x20) — BK-070 get_preset, empty grid
+      //   - GET_PRESET_NAME  (fn 0x0f) — BK-070 get_preset, name field
+      const response =
+        buildGetBlockChannelMockResponse(bytes)
+        ?? buildEmptyGridResponse(bytes)
+        ?? buildPresetNameResponse(bytes);
       if (response !== undefined) {
         // Dispatch on next tick so the sender's await/receive setup has
         // time to register its predicate handler before the response

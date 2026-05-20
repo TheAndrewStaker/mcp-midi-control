@@ -73,6 +73,7 @@ export {
 export {
   executeApplyPreset,
   executeApplySetlist,
+  executeGetPreset,
   executePortPreset,
   executeRestoreDefaults,
   type PortPresetResult,

@@ -627,6 +627,23 @@ export interface LineageQuery {
 export interface DeviceReader {
   getParam(ctx: DispatchCtx, block: string, name: string, channel?: string | number): Promise<ReadResult>;
   getParams(ctx: DispatchCtx, queries: readonly ParamQuery[]): Promise<BatchReadResult>;
+  /**
+   * Atomic read of the active working buffer — returns one PresetSpec
+   * describing every placed block + its current param state. Single
+   * tool-call alternative to N×get_param round-trips for state-anchoring
+   * before a tone-edit conversation.
+   *
+   * Optional. Currently implemented only on Axe-Fx II via fn 0x1F
+   * SYSEX_GET_ALL_PARAMS per-block (Session 103 decode). Devices without
+   * an atomic-read primitive omit this and the dispatcher errors with
+   * capability_not_supported — caller falls back to grid + per-block
+   * get_param reads.
+   *
+   * Scope v1 (Session 105): active-channel state only (X or Y on II —
+   * whichever the block currently shows on the device). Routing edges,
+   * per-scene snapshots, and per-channel decomposition are deferred.
+   */
+  getPreset?(ctx: DispatchCtx): Promise<PresetSpec>;
   /** Bulk-scan stored preset locations for their names. */
   scanLocations?(ctx: DispatchCtx, from: string | number, to: string | number): Promise<{
     scanned: readonly ScannedLocation[];

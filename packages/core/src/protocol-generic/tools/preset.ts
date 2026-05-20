@@ -17,6 +17,7 @@ import * as z from 'zod/v4';
 import {
   executeApplyPreset,
   executeApplySetlist,
+  executeGetPreset,
   executePortPreset,
   executeRestoreDefaults,
 } from '../dispatcher.js';
@@ -31,6 +32,29 @@ import {
 import { PORT_DESC, asError, asText, presetShape } from './shared.js';
 
 export function registerPresetTools(server: McpServer): void {
+  server.registerTool('get_preset', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    description: [
+      'Snapshot the active working buffer in one round-trip — every placed block + its current params, no per-param chatter.',
+      'Use for state-anchoring before a tone-edit conversation: read what\'s on the device, summarize to the user, propose changes, then call set_param / set_params / apply_preset.',
+      '- Returns a PresetSpec shape that mirrors apply_preset\'s input. Slot/block_type/instance/params line up so the agent can read, mutate, and re-apply with structural symmetry.',
+      '- Active-channel state only: on devices with X/Y or A/B/C/D channels (Axe-Fx II, AM4), each block\'s params reflect whichever channel the device currently displays. To inspect a non-active channel, switch_scene or set_param with explicit channel and re-call.',
+      '- Routing edges + per-scene snapshots are NOT yet included; the response describes the active scene only.',
+      '- Performance: ~1.5–2 s on Axe-Fx II for a typical 12-block preset (one fn 0x1F per placed block, serial). AM4 / Hydra error with capability_not_supported until their atomic-read primitives land.',
+      '- On capability_not_supported, fall back to get_param / get_params (slower but works on every device).',
+    ].join(' '),
+    inputSchema: {
+      port: z.string().describe(PORT_DESC),
+    },
+  }, async ({ port }) => {
+    try {
+      const result = await executeGetPreset({ port });
+      return asText(result);
+    } catch (err) {
+      return asError(err);
+    }
+  });
+
   server.registerTool('apply_preset', {
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [

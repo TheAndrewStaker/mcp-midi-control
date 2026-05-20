@@ -471,6 +471,51 @@ async function main(): Promise<void> {
       const pass = !isErr && !hasField;
       record('list_params(am4, reverb, type) → no loudness offsets (out of scope)', pass, notes);
     }
+
+    // ── BK-070: get_preset routes correctly + capability gating ─────
+    console.log('\nBK-070 — unified get_preset routing');
+    {
+      // Axe-Fx II implements getPreset; mock returns an empty 48-cell
+      // grid + a "Mock Preset" name, so the response should have an
+      // empty slots array and the name populated. Verifies the dispatcher
+      // routes to descriptor.reader.getPreset, the reader assembles
+      // grid + name, and the unified tool envelope is well-formed.
+      const r = await client.callTool({
+        name: 'get_preset',
+        arguments: { port: 'axe-fx-ii' },
+      });
+      const sc = structured(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      notes.push(`isError=${isErr}`);
+      notes.push(`structuredContent present → ${sc !== undefined}`);
+      if (sc) {
+        notes.push(`  name=${JSON.stringify(sc['name'])}`);
+        notes.push(`  slots.length=${(sc['slots'] as unknown[] | undefined)?.length ?? '<missing>'}`);
+      }
+      const slots = sc?.['slots'] as unknown[] | undefined;
+      const pass = !isErr && sc !== undefined && sc['name'] === 'Mock Preset' && Array.isArray(slots) && slots.length === 0;
+      record('get_preset(axe-fx-ii) → empty grid mock returns name + empty slots', pass, notes);
+    }
+    {
+      // AM4 doesn't implement getPreset; dispatcher must surface
+      // capability_not_supported with a clear retry_action pointing at
+      // get_param. Validates the optional-method gate in the dispatcher.
+      const r = await client.callTool({
+        name: 'get_preset',
+        arguments: { port: 'am4' },
+      });
+      const t = extractText(r);
+      const notes: string[] = [];
+      const isErr = isError(r);
+      const mentionsCapability = /not implemented for Fractal AM4|capability_not_supported/i.test(t);
+      const pointsAtFallback = /get_param/i.test(t);
+      notes.push(`isError=${isErr}`);
+      notes.push(`text mentions capability gap → ${mentionsCapability}`);
+      notes.push(`text points at get_param fallback → ${pointsAtFallback}`);
+      const pass = isErr && mentionsCapability && pointsAtFallback;
+      record('get_preset(am4) → capability_not_supported with get_param fallback hint', pass, notes);
+    }
   } finally {
     await client.close();
   }
