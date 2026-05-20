@@ -166,10 +166,14 @@ if (-not $SkipSmokeBoot -and -not $isSourceInstall) {
     Write-Host 'Smoke-booting server (8s timeout)...'
     $smokeStdoutFile = [System.IO.Path]::GetTempFileName()
     $smokeStderrFile = [System.IO.Path]::GetTempFileName()
+    # PowerShell's Start-Process -RedirectStandardInput resolves a bare 'NUL'
+    # as a relative path against the working directory, then fails with
+    # FileNotFoundException. Create an empty file for stdin instead.
+    $smokeStdinFile = [System.IO.Path]::GetTempFileName()
     try {
         $proc = Start-Process -FilePath $nodeCommand -ArgumentList @($entryJs) `
             -NoNewWindow -PassThru `
-            -RedirectStandardInput 'NUL' `
+            -RedirectStandardInput $smokeStdinFile `
             -RedirectStandardOutput $smokeStdoutFile `
             -RedirectStandardError $smokeStderrFile
 
@@ -246,6 +250,7 @@ if (-not $SkipSmokeBoot -and -not $isSourceInstall) {
     } finally {
         Remove-Item -Path $smokeStdoutFile -ErrorAction SilentlyContinue
         Remove-Item -Path $smokeStderrFile -ErrorAction SilentlyContinue
+        Remove-Item -Path $smokeStdinFile -ErrorAction SilentlyContinue
     }
 }
 
