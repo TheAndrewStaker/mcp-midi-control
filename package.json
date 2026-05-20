@@ -114,14 +114,14 @@
     "test:hydra": "npm run hydra:verify-encoding && npm run hydra:verify-sysex-envelope && npm run hydra:verify-sysex-patch && npm run hydra:verify-init-buffer && npm run hydra:test-patch-name && npm run hydra:verify-enum-mapping && npm run hydra:verify-nrpn-display",
     "test:server": "npm run smoke-server && npm run build && npm run verify-lineage-resources && npm run verify-agent-retry-paths && npm run verify-tool-annotations",
     "verify-agent-retry-paths": "tsx scripts/mcp-test-agent-retry-paths.ts",
-    "live-regression": "tsx scripts/_research/live-regression-session-105.ts",
+    "live-regression": "tsx scripts/live-regression.ts",
     "verify-tool-annotations": "tsx scripts/mcp-test-tool-annotations.ts",
     "test": "npm run test:codec && npm run test:cross-device && npm run test:axe-fx-ii && npm run test:axe-fx-iii && npm run test:hydra && npm run test:server",
     "test:jest": "jest --testPathIgnorePatterns=integration",
     "test:jest:all": "jest",
     "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/am4/tsconfig.json && tsc --noEmit -p packages/axe-fx-ii/tsconfig.json && tsc --noEmit -p packages/axe-fx-iii/tsconfig.json && tsc --noEmit -p packages/hydrasynth/tsconfig.json && tsc --noEmit -p packages/server-all/tsconfig.json",
     "preflight": "npm run typecheck && npm test && npm run verify-no-internal-refs && npm run coverage-audit && npm run coverage-cross-ref-audit",
-    "release-gate": "npm run preflight && npm run launch-verify && npm run agent-sweep"
+    "release-gate": "npm run preflight && npm run launch-verify && npm run agent-sweep && npm run live-regression"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

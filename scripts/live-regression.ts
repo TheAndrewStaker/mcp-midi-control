@@ -1,34 +1,53 @@
 /**
- * Live regression for Session 105 work, end-to-end via the MCP server.
+ * Live regression suite for the unified MCP tool surface, run end-to-end
+ * via the shipped server.
  *
- * Spawns the shipped server-all dist over stdio (real transport, no
- * MCP_MOCK_TRANSPORT), then exercises the new Session 105 tools against
- * whichever Fractal devices are connected:
+ * Spawns the server-all dist over stdio (real transport, no
+ * MCP_MOCK_TRANSPORT) and exercises cross-device contracts against
+ * whichever Fractal devices are physically connected. Each test case is
+ * self-restoring so the user's preset state is unchanged after the run.
+ *
+ * Coverage:
  *
  *   AM4 path:
  *     - describe_device(am4).capabilities.atomic_read === false
- *     - nudge_param(amp, gain, up, fine)   then nudge_param(... down) to revert
- *     - nudge_param(amp, gain, up, coarse) then revert (down, coarse)
- *     - toggle_bypass(reverb) twice (flip then flip back)
- *     - set_bypass(amp, true) MUST refuse with AMP-quirk explanation
- *     - toggle_bypass(amp) MUST refuse with AMP-quirk explanation
+ *     - set_bypass(amp) refuses with AMP-slot-quirk explanation
+ *     - toggle_bypass(amp) refuses with AMP-slot-quirk explanation
+ *     - nudge_param(amp, gain, up, fine) returns valid wire+display via
+ *       always-read-after-write
+ *     - nudge_param up+down round-trip leaves amp.gain unchanged
+ *     - toggle_bypass on a placed bypassable block flips state and
+ *       flips back on second call
  *
  *   Axe-Fx II path:
  *     - describe_device(axe-fx-ii).capabilities.atomic_read === true
- *     - get_preset(axe-fx-ii) returns PresetSnapshot with _meta, slots
- *       carrying channel_status on channel-bearing blocks
+ *     - get_preset(axe-fx-ii) returns PresetSnapshot with _meta, name,
+ *       active_scene, slots, channel_status
+ *     - get_preset slots carry channel_status='active' on channel-
+ *       bearing blocks
+ *     - nudge_param(axe-fx-ii) refuses (capability gate)
+ *     - toggle_bypass(axe-fx-ii) refuses (capability gate)
+ *     - get_param + set_param round-trip lands within Q15 tolerance
+ *
+ *   Cross-device:
+ *     - get_preset(am4) refuses with capability_not_supported and
+ *       points at get_param fallback
  *
  * Non-destructive: no saves issued, no preset locations overwritten.
- * AM4 amp.gain nudge is reverted in-call so the working buffer ends at
- * the same value it started at. Reverb bypass toggles twice (back to
- * original state). On a clean run the device's audible state at exit
- * matches its state at start.
+ * Mutating tests revert before exit (nudge up then down; set_param
+ * snapshot then restore).
  *
  * Run:
- *   npx tsx scripts/_research/live-regression-session-105.ts
+ *   npm run live-regression
  *
- * Both AM4 + II must be plugged in. If only one is connected, the
- * other device's cases are reported as "SKIPPED — device not found".
+ * Devices not connected are reported as SKIPPED rather than FAIL.
+ * Connection-layer failures (port held by AM4-Edit / AxeEdit, USB
+ * disconnect) skip the affected device's cases; the script does not
+ * try to reopen or retry.
+ *
+ * Maintenance: when adding a new MCP tool to the unified surface, add
+ * the corresponding live case here. Mock-transport regressions live in
+ * scripts/mcp-test-agent-retry-paths.ts (run via verify-agent-retry-paths).
  */
 
 import path from 'node:path';
