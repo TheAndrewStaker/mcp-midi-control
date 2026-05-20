@@ -1,81 +1,0 @@
-<!-- mcp-midi-control: source attribution + trimmed extract -->
-Source: Axe-Fx II XL MIDI Thru Guide by Fractal Audio Systems.
-Copyright (c) Fractal Audio Systems. All rights reserved.
-This file contains selected technical reference content extracted under
-fair-use interoperability research. Marketing, legal, and regulatory
-front-matter / back-matter sections have been removed; the remaining
-content is the technical reference relied on by the MCP MIDI Control
-project for protocol decoding and tool authoring. See
-docs/manuals/README.md for the policy.
-
----
-Axe--Fx  II  XL  --  MIDI  Controller/MIDI  THRU  Connections  Guide  
-
-Depending  on  how  you  connect  an  MFC--101  
-MIDI  Foot  Controller  (or  3rd  party  MIDI  Foot  
-Controller)  to  your  Axe--Fx  II  XL,  you'll  need  to  
-connect  downstream  MIDI  "thru"  devices  
-differently.  To  begin,  let's  review  the  rear--
-panel  connectors  of  the  Axe--Fx  II  XL:  
-
-1. FASLINKTM  is  used  to  connect  an  MFC--101  
-     Mark  III  directly  to  the  Axe--Fx  II  XL.  FASLINKTM  uses  a  standard  XLR  cable  to  transmit  both  power  and  
-     2--way  communications.  (For  an  older  model  MFC--101,  check  out  the  XA--2  FASLINKTM  Adapter.)  
-
-2. The  MFC  port  connects  the  MFC--101  via  a  standard  computer  networking  cable  (Ethernet  or  
-     EtherCON).  Like  FASLINK,  this  provides  2--way  communication  and  power  to  the  MFC.  
-
-3. The  MIDI  IN  port  can  be  used  with  any  model  MFC--101  --  or  any  other  MIDI  device  (a  computer,  
-     another  MIDI  controller,  etc.).  "Phantom  Power"  can  be  provided  to  many  MIDI  controllers  over  a  
-     special  7--pin  cable.  (See  your  Axe--Fx  or  MFC--101  manual  for  more  on  Phantom  Power.)  
-
-4. The  MIDI  OUT  port  is  typically  used  for  data  dumps  from  the  Axe--Fx  II,  but  also  serves  as  a  "SOFT  
-     MIDI  THRU"  to  relay  MIDI  from  the  FASLINK  or  MFC  ports  to  downstream  MIDI  devices.  
-
-5. The  MIDI  THRU  port  is  "hard--wired"  to  re--broadcast  anything  received  at  the  MIDI  IN  port.    
-     MIDI  THRU  has  no  connection  to  the  FASLINKTM  or  MFC  ports!  
-
-Q:  How  is  your  MIDI  Controller  connected?  
-
-A:  FASLINKTM                                                                                                                                  
-
-With  your  MFC--101  at  the  FASLINK  port,  do  not  use  
-
-the  MIDI  THRU  port.  Instead,  connect  downstream  
-
-devices  to  the  MIDI  OUT  port  and  set  MFC  ECHO  
-
-TO  MIDI  OUT  to  "ON"  (in  the  I/O:MIDI  menu  of  the  
-
-Axe--Fx.)  This  turns  MIDI  OUT  into  a  "soft  thru."                                                                                      
-
-A:  Ethernet/EtherCON                                                                                                                          
-
-  When  you  are  using  an  MFC--101  at  the  MFC  port,  
-
-do  not  use  the  MIDI  THRU  port.  Instead,  connect  
-
-downstream  devices  to  the  MIDI  OUT  port  and  set  
-
-MFC  ECHO  TO  MIDI  OUT  to  "ON"  (in  the  I/O:MIDI  
-
-menu  of  the  Axe--Fx.)  This  turns  MIDI  OUT  into  a                                                                                      
-
-"soft  thru."  
-
-A:  5--  or  7--pin  MIDI                                                                                                                      
-
-When  your  MFC--101  or  other  controller  is  
-
-connected  to  the  Axe--Fx  II  MIDI  IN  port  --  whether  
-
-using  5--  or  7--pin  --use  the  standard  5--pin  MIDI  
-
-THRU  port.  No  special  settings  are  required.  
-
-                                                                                                                        
-
-To  get  help  using  MIDI  Thru  on  the  Axe--Fx  II  XL,  please  reach  us  at  http://support.fractalaudio.com      
-
-                             �  2014  Fractal  Audio  Systems.  All  rights  reserved.  
-

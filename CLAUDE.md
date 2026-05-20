@@ -1,4 +1,4 @@
-# MCP MIDI Control — Claude Code Context
+﻿# MCP MIDI Control â€” Claude Code Context
 
 This file is read by Claude Code at the start of every session.
 
@@ -10,13 +10,13 @@ guitar amp modeler over USB/MIDI via natural language conversation.
 
 ## Current Phase
 See **`docs/_private/STATE.md`** first. It names the current phase, the
-single next action, and recent findings — start every session there.
+single next action, and recent findings â€” start every session there.
 `STATE.md` is kept current; the longer-lived reference docs are
 `docs/PROJECT-VISION.md` and `docs/ARCHITECTURE.md`.
 
 **Then run `npm run coverage-audit`.** It auto-snapshots Ghidra-catalog
 coverage vs `params.ts` vs `verify-msg.ts` goldens, plus per-device
-param counts. This is the antidote to handoff-list drift — STATE.md
+param counts. This is the antidote to handoff-list drift â€” STATE.md
 "open follow-ups" go stale silently when later sessions close them
 without ticking off the prior handoff; the audit reads current code
 state directly, so it can't lie about what's done. Trust the audit
@@ -26,15 +26,15 @@ so it also runs at session-end.
 Hardware tasks the founder owes (USB captures, round-trip tests on
 the device, reference dumps) are queued per-device under
 `docs/_private/`:
-- **`HARDWARE-TASKS.md`** — index file pointing at per-device files.
-- **`HARDWARE-TASKS-AXEFX2.md`** — Fractal Axe-Fx II XL+ tasks.
-- **`HARDWARE-TASKS-AM4.md`** — Fractal AM4 tasks.
-- **`HARDWARE-TASKS-HYDRASYNTH.md`** — ASM Hydrasynth Explorer tasks.
-- **`HARDWARE-TASKS-ARCHIVE.md`** — closed tasks across all devices.
+- **`HARDWARE-TASKS.md`** â€” index file pointing at per-device files.
+- **`HARDWARE-TASKS-AXEFX2.md`** â€” Fractal Axe-Fx II XL+ tasks.
+- **`HARDWARE-TASKS-AM4.md`** â€” Fractal AM4 tasks.
+- **`HARDWARE-TASKS-HYDRASYNTH.md`** â€” ASM Hydrasynth Explorer tasks.
+- **`HARDWARE-TASKS-ARCHIVE.md`** â€” closed tasks across all devices.
 
-Each active file groups tasks as 📷 capture-required, 🎛️ desktop test,
-or 💬 chat-only. Check the index at session start; if anything sits at
-🔜 Pending in the relevant device's file, flag it before proceeding
+Each active file groups tasks as ðŸ“· capture-required, ðŸŽ›ï¸ desktop test,
+or ðŸ’¬ chat-only. Check the index at session start; if anything sits at
+ðŸ”œ Pending in the relevant device's file, flag it before proceeding
 with work that depends on it. When you identify a new hardware action
 you can't perform yourself, append a `HW-NNN` entry to the right
 device's file (NOT the index) with detailed steps the founder can
@@ -43,21 +43,25 @@ follow without re-reading the backlog.
 `docs/_private/` is the founder's operational scratch (gitignored,
 local-only): STATE, HARDWARE-TASKS, SESSIONS log, BACKLOG, DECISIONS
 log, HW-NNN test plans, marketing drafts, internal data dumps. The
-committed `docs/` files (`devices/<device>/SYSEX-MAP.md`,
-`BLOCK-PARAMS.md`, `ARCHITECTURE.md`, `*-research.md`,
-`capture-guides/`, etc.) are the OSS public good (protocol RE,
-architecture, research artefacts) and DO ship in the repo.
+committed `docs/` files in THIS repo cover MCP-server architecture
++ contract (`ARCHITECTURE.md`, `BLOCK-PARAMS.md`, `PROJECT-VISION.md`,
+`SAFE-EDIT-WORKFLOW.md`, `FRACTAL-PRESET-SCHEMA.md`,
+`TYPE-KNOB-WORKFLOW.md`, etc.). Protocol RE (per-device `SYSEX-MAP.md`,
+`*-research.md`, capture guides, Ghidra scripts) lives in the
+[`fractal-midi`](https://github.com/TheAndrewStaker/fractal-midi)
+codec repo — Session 103 doc migration. Both classes are OSS public
+good; the split tracks the code split.
 
 > Phase 0 (feasibility) completed 2026-04-14. Phase 1 (protocol RE) is in
-> progress — USB capture of AM4-Edit's outgoing traffic is the current
+> progress â€” USB capture of AM4-Edit's outgoing traffic is the current
 > blocker. See `_private/STATE.md` for exact next steps.
 
 ## Stack
-- TypeScript / Node.js (**ES modules**, not CommonJS — `package.json` has
+- TypeScript / Node.js (**ES modules**, not CommonJS â€” `package.json` has
   `"type": "module"`, `tsconfig.json` uses `"module": "NodeNext"`)
-- `tsx` is the TypeScript runner for scripts (not `ts-node`) — invoke via
+- `tsx` is the TypeScript runner for scripts (not `ts-node`) â€” invoke via
   `npm run <script>` or `npx tsx <path>`
-- node-midi for USB MIDI (native module — requires VS Build Tools on Windows
+- node-midi for USB MIDI (native module â€” requires VS Build Tools on Windows
   dev machines; end users get the release ZIP with a bundled Node runtime
   and a prebuilt native binary, so they need neither)
 - @modelcontextprotocol/sdk for MCP
@@ -78,35 +82,35 @@ block tables, or anything else the device speaks:
 **Workflow for a codec change** (e.g. adding the `SYSEX_RESYNC` builder
 or the new opcodes.ts enum from Session 103):
 
-1. `cd C:/dev/fractal-midi` — edit `src/axe-fx-ii/setParam.ts` (or wherever).
+1. `cd C:/dev/fractal-midi` â€” edit `src/axe-fx-ii/setParam.ts` (or wherever).
 2. Run that repo's tests (`npm test`).
 3. Bump the version in `package.json` (alpha bump is fine pre-1.0).
 4. `npm pack` produces a `.tgz`.
 5. `cd C:/dev/mcp-midi-tools` and `npm install /path/to/.tgz` to consume.
 6. Test the integration here.
 7. When the codec change is solid, push the fractal-midi commits and tag
-   `v0.1.0-alpha.N` — CI publishes to npm.
+   `v0.1.0-alpha.N` â€” CI publishes to npm.
 
 For QUICK iteration (you're still drafting), `npm link` between the two
 repos avoids the pack/install cycle. Reset to a published version before
 committing.
 
 **Where protocol docs SHOULD live:** the wire-map docs
-(`SYSEX-MAP.md`, `axeedit-opcode-table.md`) are codec-domain — they
+(`SYSEX-MAP.md`, `axeedit-opcode-table.md`) are codec-domain â€” they
 belong in `C:/dev/fractal-midi/docs/`. They currently sit in this
 repo for historical reasons (predate the extraction); a doc-migration
-sweep is queued under `docs/devices/axe-fx-ii/ghidra-followups.md`
-C5. Ghidra mining scripts in `scripts/ghidra/` are also codec-domain
+sweep is queued under [`fractal-midi/docs/devices/axe-fx-ii/ghidra-followups.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-ii/ghidra-followups.md)
+C5. Ghidra mining scripts in [`fractal-midi/scripts/ghidra/`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/scripts/ghidra/) are also codec-domain
 and will move with the docs.
 
 **Where research docs SHOULD live:** captures + decoded artifacts in
 `samples/captured/` are project-scratch (gitignored). The committed
 research narratives (`docs/research/*-research.md`) are publishable
-OSS material — they'll likely move to `fractal-midi/docs/research/`
+OSS material â€” they'll likely move to `fractal-midi/docs/research/`
 too in the same sweep.
 
 ## Target User
-A working guitarist with a Claude account — not a developer. Every UX,
+A working guitarist with a Claude account â€” not a developer. Every UX,
 install, and distribution decision prioritizes the non-technical user.
 The MVP ships as a Windows ZIP that bundles Node + a prebuilt native MIDI
 binary and runs `setup.cmd` to register the server with Claude Desktop;
@@ -121,16 +125,16 @@ TypeScript runner, distribution model, or wiki-scrape workflow.
 ## External References
 Manuals, protocol specs, factory preset banks, and generated working docs
 are catalogued in `docs/REFERENCES.md`. Check there first before searching
-the web — most common questions are answered by one of the local PDFs
+the web â€” most common questions are answered by one of the local PDFs
 (all extracted to `.txt` for grep-ability).
 
 **Per-device spec quick-references** (read these before WebFetching
 or speculating about wire shapes):
 
-- **AM4** → `docs/devices/am4/SYSEX-MAP.md`
-- **Axe-Fx II** → `docs/devices/axe-fx-ii/SYSEX-MAP.md`
-- **Axe-Fx III** → `docs/devices/axe-fx-iii/SYSEX-MAP.md` (covers Fractal v1.4 PDF; extracted text at `docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`) + `docs/devices/axe-fx-iii/preset-format-research.md` (community RE of preset .syx format; Forum thread #159885 archived at `docs/_private/fractal-forum-text.txt`)
-- **Hydrasynth** → `docs/devices/hydrasynth/SYSEX-MAP.md` + `docs/devices/hydrasynth/OVERVIEW.md` for capability landscape; `docs/devices/hydrasynth/preset-format-research.md` for the `.hydra` / `.patch` file format probe; `docs/_private/HYDRASYNTH-ICONIC-TONES.md` for the iconic-tones test portfolio
+- **AM4** → [`fractal-midi/docs/devices/am4/SYSEX-MAP.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/am4/SYSEX-MAP.md)
+- **Axe-Fx II** â†’ [`fractal-midi/docs/devices/axe-fx-ii/SYSEX-MAP.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-ii/SYSEX-MAP.md)
+- **Axe-Fx III** â†’ [`fractal-midi/docs/devices/axe-fx-iii/SYSEX-MAP.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-iii/SYSEX-MAP.md) (covers Fractal v1.4 PDF; extracted text at [`fractal-midi/docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt)) + [`fractal-midi/docs/devices/axe-fx-iii/preset-format-research.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-iii/preset-format-research.md) (community RE of preset .syx format; Forum thread #159885 archived at `docs/_private/fractal-forum-text.txt`)
+- **Hydrasynth** â†’ [`fractal-midi/docs/devices/hydrasynth/SYSEX-MAP.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/hydrasynth/SYSEX-MAP.md) + [`fractal-midi/docs/devices/hydrasynth/OVERVIEW.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/hydrasynth/OVERVIEW.md) for capability landscape; [`fractal-midi/docs/devices/hydrasynth/preset-format-research.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/hydrasynth/preset-format-research.md) for the `.hydra` / `.patch` file format probe; `docs/_private/HYDRASYNTH-ICONIC-TONES.md` for the iconic-tones test portfolio
 
 ## Reverse-engineering workflow
 
@@ -139,15 +143,15 @@ below keeps sessions from re-treading dead ends and from publishing
 claims that aren't byte-verified.
 
 ### Session start (read in this order)
-1. **`docs/_private/STATE.md`** — current phase, single next action,
+1. **`docs/_private/STATE.md`** â€” current phase, single next action,
    recent breakthroughs. Always first.
-2. **`npm run coverage-audit`** — code-state ground truth, not stale
+2. **`npm run coverage-audit`** â€” code-state ground truth, not stale
    text (handled by the section above; restated here because RE
    sessions especially drift on this).
-3. **`docs/research/fractal-protocol-decode-status.md`** — per-device decode
-   status table. Last full sweep Session 82–83. Read before opening
+3. **[`fractal-midi/docs/research/fractal-protocol-decode-status.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/research/fractal-protocol-decode-status.md)** â€” per-device decode
+   status table. Last full sweep Session 82â€“83. Read before opening
    any new investigation so you know what's already named vs. open.
-4. **`docs/devices/captures-inventory.md`** — what `.pcapng` / `.syx`
+4. **`docs/devices/captures-inventory.md`** â€” what `.pcapng` / `.syx`
    captures and Ghidra dumps already exist. **Always check this
    BEFORE asking the founder for more captures.** Session 103
    proposed a 70-minute, 21-capture plan without checking the
@@ -155,78 +159,78 @@ claims that aren't byte-verified.
    `samples/captured/`, and Ghidra mining of the existing
    already-analyzed AxeEdit.exe project produced the full 94-opcode
    wire-byte table in 30 minutes (zero hardware time).
-5. **`docs/_private/HARDWARE-TASKS-<DEVICE>.md`** — open captures the
-   founder owes. If a 🔜 Pending task gates the work you're about to
+5. **`docs/_private/HARDWARE-TASKS-<DEVICE>.md`** â€” open captures the
+   founder owes. If a ðŸ”œ Pending task gates the work you're about to
    do, surface it instead of speculating around the missing data.
-6. **Per-device wire map** — `docs/devices/<device>/SYSEX-MAP.md`
+6. **Per-device wire map** â€” per-device wire maps in fractal-midi: https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/
    (AM4, Axe-Fx II, Axe-Fx III, Hydrasynth). The authoritative
    byte-shape doc for the device you're working on. For Axe-Fx II,
-   also read `docs/devices/axe-fx-ii/axeedit-opcode-table.md` (94
+   also read [`fractal-midi/docs/devices/axe-fx-ii/axeedit-opcode-table.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-ii/axeedit-opcode-table.md) (94
    wire opcodes recovered from AxeEdit.exe Session 103).
-7. **`docs/REFERENCES.md`** — only the section for your device. Don't
+7. **`docs/REFERENCES.md`** â€” only the section for your device. Don't
    WebFetch for a manual we already have extracted to `.txt`.
 
 ### Capture methods (in order of preference)
 
-**Hardware-free lanes — exhaust these BEFORE queuing founder time:**
+**Hardware-free lanes â€” exhaust these BEFORE queuing founder time:**
 
-- **Existing captures** — `samples/captured/` has 169 files spanning
+- **Existing captures** â€” `samples/captured/` has 169 files spanning
   50+ session IDs (gitignored, local-only). Many decode targets are
   already covered. See `docs/devices/captures-inventory.md` for the
   full index by device + decode purpose. Session 103 retrospective:
   an agent nearly queued a 21-capture plan that 5+ existing captures
   would have answered.
-- **Ghidra dispatcher mining** — canonical for paramId ↔ name catalog
-  discovery (99% wire-accuracy verified Session 82–83). Also for SysEx
+- **Ghidra dispatcher mining** â€” canonical for paramId â†” name catalog
+  discovery (99% wire-accuracy verified Session 82â€“83). Also for SysEx
   opcode-table decode: Session 103 mined the full AxeEdit II wire
   vocabulary (94 opcodes, opcode struct `{name; wire_byte+1}` in
   `.rdata`) via 6 iterative GhidraScripts in ~30 min wall time. The
   `ghidra-axe-edit` project at `C:\Users\Steph\` is already
   auto-analyzed; new scripts run read-only against it. See
-  `docs/research/ghidra-mining-workflow.md`,
-  `docs/devices/axe-fx-ii/axeedit-opcode-table.md`, and the
-  `scripts/ghidra/` directory (30+ existing scripts + their CMD
+  [`fractal-midi/docs/research/ghidra-mining-workflow.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/research/ghidra-mining-workflow.md),
+  [`fractal-midi/docs/devices/axe-fx-ii/axeedit-opcode-table.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-ii/axeedit-opcode-table.md), and the
+  [`fractal-midi/scripts/ghidra/`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/scripts/ghidra/) directory (30+ existing scripts + their CMD
   launchers).
-- **JUCE BinaryData extraction** — 5-minute label discovery from
+- **JUCE BinaryData extraction** â€” 5-minute label discovery from
   editor binaries via the embedded ZIP. 1,299 AM4-Edit labels and
   10,250 AxeEdit III labels recovered this way. See
-  `docs/capture-guides/juce-binarydata-extraction.md`.
+  [`fractal-midi/docs/capture-guides/juce-binarydata-extraction.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/capture-guides/juce-binarydata-extraction.md).
 
-**Hardware lanes — only after the above is exhausted:**
+**Hardware lanes â€” only after the above is exhausted:**
 
-- **Directed probe scripts** (`scripts/probe*.ts`) — cheap, scriptable,
+- **Directed probe scripts** (`scripts/probe*.ts`) â€” cheap, scriptable,
   default for unknown wire envelopes. One hypothesis per probe; keep
   the probe read-only unless explicitly designed to write.
-- **Passive capture** — open the device MIDI input with no editor.
+- **Passive capture** â€” open the device MIDI input with no editor.
   Axe-Fx II broadcasts state continuously; AM4 is silent and needs an
-  active query loop. See `docs/research/fractal-broadcast-vs-poll-research.md`.
-- **USBPcap + Wireshark** — captures both directions at the USB-class
-  layer when the editor → device direction is needed. The maintainer's
+  active query loop. See [`fractal-midi/docs/research/fractal-broadcast-vs-poll-research.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/research/fractal-broadcast-vs-poll-research.md).
+- **USBPcap + Wireshark** â€” captures both directions at the USB-class
+  layer when the editor â†’ device direction is needed. The maintainer's
   default for editor-write decode. See `CONTRIBUTING.md` for the
   step-by-step.
 
-### Methods that have failed — don't re-attempt
-- **WinDbg trap-after-launch** — stack-frame too shallow, label written
+### Methods that have failed â€” don't re-attempt
+- **WinDbg trap-after-launch** â€” stack-frame too shallow, label written
   before trap arms. Session 46. Use JUCE BinaryData instead.
-- **Positional XML → cache-record binding** — XML `parameterName` is a
-  per-variant UI symbol, not a unique wire key. 20–40% inversions
+- **Positional XML â†’ cache-record binding** â€” XML `parameterName` is a
+  per-variant UI symbol, not a unique wire key. 20â€“40% inversions
   across variants. Session 46 cont 2.
 - **Virtual MIDI driver bridges** (any class-compliant virtual port
-  trying to interpose between editor and device) — Fractal editors
+  trying to interpose between editor and device) â€” Fractal editors
   filter these out by driver class via `midiInGetDevCaps` /
   `midiOutGetDevCaps`. Intentional filtering, not a bug. Use the
   USBPcap + Wireshark path instead.
 - **Byte-literal full SysEx envelope (`F0 00 01 74 10`) search in
-  Ghidra** — model byte loaded at runtime from a device-handle struct.
+  Ghidra** â€” model byte loaded at runtime from a device-handle struct.
   Search the 4-byte `F0 00 01 74` instead and inspect the next
   instruction for the model load. Session 82.
-- **Param table as flat `-1`-terminated `int` array** — actually a
+- **Param table as flat `-1`-terminated `int` array** â€” actually a
   16-byte `ParamDescriptor` (paramId at +0, name pointer at +8).
   Stride-by-4 produces garbage. Session 82.
-- **AM4 `0x77` preset-save envelope assumed portable to Axe-Fx II** —
+- **AM4 `0x77` preset-save envelope assumed portable to Axe-Fx II** â€”
   inert on II XL+ (Session 94). Each device family gets its own
   envelope decode; do not extrapolate across model bytes.
-- **Flat-byte-offset diff of the II 0x77/0x78/0x79 preset binary** —
+- **Flat-byte-offset diff of the II 0x77/0x78/0x79 preset binary** â€”
   proposed in Session 103 as a 21-capture decode plan. Two reasons
   to reject:
   1. The body is Huffman-compressed per III community RE (Fractal
@@ -235,9 +239,9 @@ claims that aren't byte-verified.
      of unknown duration.
   2. The atomic read primitive is `fn 0x0E SYSEX_QUERY_STATES`
      (recovered from AxeEdit.exe Session 103), NOT the preset-binary
-     envelope. One `fn 0x0E` request → device responds with the full
+     envelope. One `fn 0x0E` request â†’ device responds with the full
      per-block state. That's what AxeEdit actually uses for its
-     "Read from Axe-Fx" sync flow — visible in
+     "Read from Axe-Fx" sync flow â€” visible in
      `samples/captured/session-58-direct-sync.syx`.
   General lesson: don't propose multi-capture decode plans before
   checking what AxeEdit itself does via Ghidra + existing captures.
@@ -261,10 +265,10 @@ claims that aren't byte-verified.
 - **Variant-dependent binding.** The same `parameterName` maps to
   different wire IDs across effect variants (e.g. `DISTORT_TONE` is
   `drive.id=12` in some variants, `drive.id=23` in others). XML alone
-  is never sufficient — combine with a capture or the Ghidra paramId
+  is never sufficient â€” combine with a capture or the Ghidra paramId
   table.
 - **Septet-encode every 14-bit field, not just `pidLow`.** `action`,
-  effect IDs, preset numbers, tempo BPM, location bytes — all 7-bit-
+  effect IDs, preset numbers, tempo BPM, location bytes â€” all 7-bit-
   pair encoded. Forgetting once = wire mismatch and a confused
   device.
 - **Cite captures with file path + byte offset** in `SYSEX-MAP*.md`
@@ -275,39 +279,39 @@ claims that aren't byte-verified.
 When a probe rules a hypothesis OUT (e.g. Session 94 ruling that AM4's
 `0x77` envelope doesn't work on Axe-Fx II), commit the result to
 `docs/SYSEX-MAP-*.md` or `docs/_private/SESSIONS.md` with the search
-terms a future agent would use ("AM4 0x77 portable to II — no"). This
+terms a future agent would use ("AM4 0x77 portable to II â€” no"). This
 saves a session every time someone re-asks the same question.
 
-## AM4 SysEx — quick facts
+## AM4 SysEx â€” quick facts
 
 Full envelope, checksum, function-byte table, and capture-cited
-decodes live in **`docs/devices/am4/SYSEX-MAP.md`**. The basics, here:
+decodes live in **[`fractal-midi/docs/devices/am4/SYSEX-MAP.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/am4/SYSEX-MAP.md)**. The basics, here:
 
 - **Model byte:** `0x15`. Envelope: `F0 00 01 74 15 [fn] [...] [cksum] F7`.
 - **Checksum:** `bytes.reduce((a,b)=>a^b,0) & 0x7F` over `F0`..last payload byte.
-- **Preset locations:** A01–Z04 (104 total). Use `parseLocationCode` /
-  `formatLocationCode` from `src/protocol/locations.ts` — never hardcode.
+- **Preset locations:** A01â€“Z04 (104 total). Use `parseLocationCode` /
+  `formatLocationCode` from `src/protocol/locations.ts` â€” never hardcode.
 
 ## Fractal terminology (use these exact words)
 
 Fractal's docs use specific words for AM4 concepts. Our code and user-
-facing strings MUST match, because one of the words — "slot" — has
+facing strings MUST match, because one of the words â€” "slot" â€” has
 opposite meanings in casual use:
 
 | Term | What it means |
 |---|---|
-| **Bank** | A letter A–Z grouping 4 preset locations |
+| **Bank** | A letter Aâ€“Z grouping 4 preset locations |
 | **Preset** | The stored patch (blocks + params + scenes + name) |
 | **Location** | Where a preset is stored. "A01" through "Z04", 104 total. NOT called a "slot" |
-| **Slot** (or **effect slot**) | A position 1–4 in a preset's signal chain. The slot is the container; the block is what fills it |
-| **Block** | The effect occupying a slot (amp, drive, delay, reverb, chorus, …) |
+| **Slot** (or **effect slot**) | A position 1â€“4 in a preset's signal chain. The slot is the container; the block is what fills it |
+| **Block** | The effect occupying a slot (amp, drive, delay, reverb, chorus, â€¦) |
 | **Scene** | One of 4 performance variations within a preset (bypass + channel state, not a copy of the blocks themselves) |
 | **Channel** | Per-block A/B/C/D variation of that block's settings |
 
 Anti-patterns to avoid:
-- "preset slot" when you mean "preset location" (wrong — preset slots
+- "preset slot" when you mean "preset location" (wrong â€” preset slots
   don't exist; presets occupy *locations*, not slots)
-- "save to slot N" in user-facing text (wrong — "save to location N")
+- "save to slot N" in user-facing text (wrong â€” "save to location N")
 - "effect in slot 3" is correct; "effect in position 3" is also OK but
   "slot" matches Fractal's wording
 
@@ -351,7 +355,7 @@ a dirty-state signal:
   edits, so there is no push signal to listen for. The dirty gate
   instead polls the working buffer on the navigation seam: dump the
   buffer (HW-045), hash it, compare to the last cached "clean"
-  fingerprint for the active location. Match → proceed; mismatch →
+  fingerprint for the active location. Match â†’ proceed; mismatch â†’
   refuse / save-first / discard. Cache baselines are refreshed after
   every clean transition (post-switch, post-save). One source of truth,
   catches our writes + front-panel edits + parallel-editor edits in
@@ -362,7 +366,7 @@ a dirty-state signal:
 
 **Two surfaces ship in parallel through v0.1.0.**
 
-1. **Unified surface** (`src/protocol/generic/tools.ts`) — port-
+1. **Unified surface** (`src/protocol/generic/tools.ts`) â€” port-
    dispatched, device-agnostic. `set_param(port, block, name, value)`,
    `get_param`, `apply_preset`, `switch_preset`, `save_preset`,
    `switch_scene`, `set_block`, `set_bypass`, `set_params`,
@@ -373,7 +377,7 @@ a dirty-state signal:
    tools. Dispatcher lives in `src/protocol/generic/dispatcher.ts`,
    types in `src/protocol/generic/types.ts`.
 
-2. **Device-namespaced surface** (`am4_*`, `axefx2_*`, `hydra_*`) —
+2. **Device-namespaced surface** (`am4_*`, `axefx2_*`, `hydra_*`) â€”
    first-generation pattern. Kept in parallel through v0.1 because
    the long tool descriptions carry device-specific behavioral
    guidance (AM4: relative-change discipline, tempo-sync model,
@@ -383,23 +387,23 @@ a dirty-state signal:
    `describe_device` responses.
 
 **When adding a new tool, prefer the unified surface.** New device-
-namespaced tools are technical debt — the unified surface is what
+namespaced tools are technical debt â€” the unified surface is what
 v0.3+ ships exclusively. If a new capability doesn't fit the unified
 contract, design the contract change first (extend `DeviceWriter` /
 `DeviceReader` / capabilities), then register the unified tool.
 
 ## Tool API conventions
 
-**Display-first.** Every MCP tool surface — for every device, present
-and future — accepts and returns **display units** (what a musician
+**Display-first.** Every MCP tool surface â€” for every device, present
+and future â€” accepts and returns **display units** (what a musician
 reads on the front panel: `0..10` knob, dB, ms, ratio `4:1`, enum
 string `'Plexi 100W High'`). Wire-format details (septet-encoded
-14-bit ints, packed-float bytes, `value × scale` fixed-point) are
+14-bit ints, packed-float bytes, `value Ã— scale` fixed-point) are
 internal and never leak through tool I/O. Error messages use display
 shape too: `"amp.gain out of range [0..10]: 12.5"`, never `"wire value
 0x4800 invalid"`.
 
-Display ↔ wire coercion happens once at the tool boundary via
+Display â†” wire coercion happens once at the tool boundary via
 `resolveValue` / `resolveEnumValue` (`src/server/shared/paramHelpers.ts`,
 `src/fractal/am4/params.ts`). Everything below the tool layer takes
 wire and is type-checked against it. Rationale + rejected
@@ -412,9 +416,9 @@ during overt batch actions, but individual tool calls should feel
 instantaneous.
 
 - **Ideal:** < 200 ms per tool call (single `set_param`, `set_block_
-  type`, etc.). SysEx round-trips against the AM4 land in 30–60 ms,
+  type`, etc.). SysEx round-trips against the AM4 land in 30â€“60 ms,
   with a 300 ms ack window.
-- **Acceptable:** < 1 s for tools that make 2–5 wire transactions
+- **Acceptable:** < 1 s for tools that make 2â€“5 wire transactions
   (`apply_preset` with a handful of blocks and params).
 - **Requires explicit progress:** anything > 1 s must tell the user
   upfront ("This will probe 16 preset locations, ~1 second"). Never
@@ -424,7 +428,7 @@ instantaneous.
   command, or design around the probe.
 
 When writing new tool specs, estimate the wire-round-trip count
-up front. SysEx is serial — N reads ≈ N × 50 ms minimum. If the math
+up front. SysEx is serial â€” N reads â‰ˆ N Ã— 50 ms minimum. If the math
 says > 1 s, redesign before implementing.
 
 ## Key Constraints
@@ -438,10 +442,10 @@ says > 1 s, redesign before implementing.
 
 ## File Conventions
 - All .syx binary samples + USB captures + decoded analysis outputs go
-  in `samples/` — **the entire directory is gitignored**. Nothing in
+  in `samples/` â€” **the entire directory is gitignored**. Nothing in
   `samples/` is committed; treat it as local debug scratch.
-- All reverse-engineering notes go in docs/devices/am4/SYSEX-MAP.md
-- All block parameter tables go in docs/BLOCK-PARAMS.md
+- All reverse-engineering notes go in [`fractal-midi/docs/devices/<device>/SYSEX-MAP.md`](https://github.com/TheAndrewStaker/fractal-midi/tree/main/docs/devices) — protocol-RE is codec-domain and lives in the codec repo.
+- All block parameter tables go in `docs/BLOCK-PARAMS.md` (this repo — MCP contract docs).
 - Sniffing session logs go in docs/_private/SESSIONS.md
 - Tests that require hardware are in tests/integration/ and skipped in CI
 
@@ -450,10 +454,10 @@ says > 1 s, redesign before implementing.
 - **`npm run preflight`** is the single command to run before every
   commit. It runs `tsc --noEmit` and then `npm test`, which chains the
   three protocol-layer goldens:
-  - `verify-pack` — 10-sample pack/unpack round-trip.
-  - `verify-msg` — built messages vs. captured wire bytes (byte-exact,
+  - `verify-pack` â€” 10-sample pack/unpack round-trip.
+  - `verify-msg` â€” built messages vs. captured wire bytes (byte-exact,
     including checksum).
-  - `verify-transpile` — IR → command sequence goldens.
+  - `verify-transpile` â€” IR â†’ command sequence goldens.
 - `npm test` alone runs just the goldens; handy for iterating on the
   protocol layer without waiting for the typecheck.
 - `npm run test:jest` is reserved for future Jest-based unit tests (the
@@ -461,7 +465,7 @@ says > 1 s, redesign before implementing.
 - **When adding a new pidHigh to `params.ts`, add a matching case to
   `verify-msg.ts` built from captured bytes.** That is the only guard
   against misreading septet-encoded pidHighs as little-endian bytes
-  (the class of bug that hit Session 08 — see SYSEX-MAP.md §6a note).
+  (the class of bug that hit Session 08 â€” see SYSEX-MAP.md Â§6a note).
 
 ## Verification sources of truth
 
@@ -473,7 +477,7 @@ right now," trust these in order:
    its own display label in the response payload, so this is the wire-
    level truth as the device understands it.
 3. **AxeEdit / AM4-Edit panel display.** Useful but **not authoritative**
-   — editor apps cache UI state (HW-086 example: freshly-placed
+   â€” editor apps cache UI state (HW-086 example: freshly-placed
    Volume/Pan block reads `10.00` in AxeEdit while device holds wire
    `0`). If front panel or `get_param` disagrees with the editor, the
    editor is wrong. Reload-the-preset in the editor forces a fresh
@@ -495,37 +499,37 @@ overwriting source files on disk does NOT reach the live MCP server.
 (any `*_get_*` / `*_set_*` / `*_apply_*` / etc. MCP tool call), you MUST
 do all three of these or the test will run against stale code:**
 
-1. **`npm run preflight`** — per-package typecheck + goldens pass.
-2. **`npm run build`** — rebuilds every package in dependency order
-   (`@mcp-midi-control/core` → `@mcp-midi-control/am4|axe-fx-ii|
-   hydrasynth` → `@mcp-midi-control/server-all`) and copies
+1. **`npm run preflight`** â€” per-package typecheck + goldens pass.
+2. **`npm run build`** â€” rebuilds every package in dependency order
+   (`@mcp-midi-control/core` â†’ `@mcp-midi-control/am4|axe-fx-ii|
+   hydrasynth` â†’ `@mcp-midi-control/server-all`) and copies
    lineage JSON into `packages/core/dist/fractal-shared/lineage/`.
 3. **Tell the founder to fully quit and relaunch Claude Desktop.** Just
-   closing the window keeps the MCP server child alive in the tray — it
+   closing the window keeps the MCP server child alive in the tray â€” it
    has to be a full quit. The relaunch respawns the child from the new
    dist.
 
 If you only changed `scripts/` (run via `tsx`, never dist), `docs/`,
-or `samples/` — preflight is enough; no rebuild needed.
+or `samples/` â€” preflight is enough; no rebuild needed.
 
 **Default at session end:** if you've edited any TypeScript under
 `src/` and the next user step is testing in Claude Desktop, run
 `npm run build` and surface the relaunch reminder in your wrap-up.
 
-## Living documentation — update before declaring a session complete
+## Living documentation â€” update before declaring a session complete
 
 Certain docs must stay current because future sessions (human and
 Claude) consult them as source of truth. When the underlying thing
-changes, the doc must change in the same session — not as a followup.
+changes, the doc must change in the same session â€” not as a followup.
 Cheaper than discovering drift later.
 
-| Doc | Update when… |
+| Doc | Update whenâ€¦ |
 |---|---|
-| `docs/_private/STATE.md` | A substantive session happens. Always — it's the session-start orientation doc. Update "single next action" and any relevant "recent breakthroughs" entry. |
-| `docs/_private/PROMPT-COVERAGE.md` | A new MCP tool ships, a protocol decode lands, or founder testing surfaces a new user prompt pattern. Flip ⚠ → ✅ when the blocker clears; flip ❌ → ⚠ when a research item gets a concrete decode plan; add new rows for unanticipated prompts. |
-| `docs/_private/HARDWARE-TASKS.md` | A HW-NNN item completes (mark ✅ + capture outcome), or a new hardware action is identified that Claude can't perform alone (append HW-NNN with step-by-step instructions). |
+| `docs/_private/STATE.md` | A substantive session happens. Always â€” it's the session-start orientation doc. Update "single next action" and any relevant "recent breakthroughs" entry. |
+| `docs/_private/PROMPT-COVERAGE.md` | A new MCP tool ships, a protocol decode lands, or founder testing surfaces a new user prompt pattern. Flip âš  â†’ âœ… when the blocker clears; flip âŒ â†’ âš  when a research item gets a concrete decode plan; add new rows for unanticipated prompts. |
+| `docs/_private/HARDWARE-TASKS.md` | A HW-NNN item completes (mark âœ… + capture outcome), or a new hardware action is identified that Claude can't perform alone (append HW-NNN with step-by-step instructions). |
 | `docs/_private/04-BACKLOG.md` | A new backlog item is identified, an existing item ships / re-scopes / is superseded, or a cross-reference between items is worth recording. |
-| `docs/devices/<device>/SYSEX-MAP.md` | A new protocol decode is confirmed against captured bytes. Include the concrete capture reference and byte-exact example. (Public — protocol RE is the OSS public good.) |
+| per-device wire maps in fractal-midi: https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/ | A new protocol decode is confirmed against captured bytes. Include the concrete capture reference and byte-exact example. (Public â€” protocol RE is the OSS public good.) |
 | `docs/_private/SESSIONS.md` | A session produces a substantive finding worth a chronological entry (decodes, major tool changes, hardware-verified behavior). STATE.md is the summary; SESSIONS.md is the log. |
 | `docs/_private/DECISIONS.md` | A non-obvious architectural or library choice is made. (Founder-private; gitignored. Useful to Claude Code agents working locally; not surfaced to OSS contributors.) |
 
@@ -536,17 +540,17 @@ verify nothing was missed.
 
 ## Do Not
 - Do not use AM4-Edit as a dependency or requirement
-- Do not hardcode preset-location values — always use the A01–Z04 naming
+- Do not hardcode preset-location values â€” always use the A01â€“Z04 naming
 - Do not skip the safety read before any write operation
-- Do not guess parameter names — verify against AM4 manual or sniffed data
+- Do not guess parameter names â€” verify against AM4 manual or sniffed data
 - Do not issue any preset-store / save-to-location SysEx command from
   `scripts/probe.ts`. Probe is read-only forever.
-- Do not auto-save after `apply_preset` — saves require an explicit
+- Do not auto-save after `apply_preset` â€” saves require an explicit
   save phrase from the user ("save this", "put it on M03", "keep it").
   `apply_preset` is reversible (switching presets discards the working
   buffer); save is not.
 - Before overwriting a non-empty preset location, confirm with the
-  user — read the current contents, surface what's there, and ask
+  user â€” read the current contents, surface what's there, and ask
   before clobbering. **Z04 remains the conventional scratch location**
   for try-it-out work; the historical hard-gate to Z04 was lifted
   Session 49 once HW-064 confirmed save-to-inactive-location is a
