@@ -115,6 +115,7 @@
     "test:server": "npm run smoke-server && npm run build && npm run verify-lineage-resources && npm run verify-agent-retry-paths && npm run verify-tool-annotations",
     "verify-agent-retry-paths": "tsx scripts/mcp-test-agent-retry-paths.ts",
     "live-regression": "tsx scripts/live-regression.ts",
+    "analyze-logs": "tsx scripts/analyze-mcp-logs.ts",
     "verify-tool-annotations": "tsx scripts/mcp-test-tool-annotations.ts",
     "test": "npm run test:codec && npm run test:cross-device && npm run test:axe-fx-ii && npm run test:axe-fx-iii && npm run test:hydra && npm run test:server",
     "test:jest": "jest --testPathIgnorePatterns=integration",
