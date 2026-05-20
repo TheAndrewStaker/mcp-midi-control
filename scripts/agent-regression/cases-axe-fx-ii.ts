@@ -74,18 +74,26 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
     },
   },
 
-  // §2 discovery — describe_device routes to the agent_guidance text
+  // §2 discovery — content correctness, not tool-call audit
   {
     id: 'axefx2-discovery-describe',
     device: 'axe-fx-ii',
     tier: 'no-hardware',
-    description: 'Discovery — "What can the Axe-Fx II do?" should call describe_device({port:"axe-fx-ii"}) so the agent gets channel/scene semantics right. Catches the regression where the agent describes AM4 conventions (A/B/C/D, 4 scenes) for an Axe-Fx II prompt.',
+    description: 'Discovery — "What can the Axe-Fx II do?" must NOT hallucinate AM4 semantics (A/B/C/D channels, 4 scenes) for an Axe-Fx II prompt. The agent may answer from training priors or via describe_device; both are acceptable as long as the content is right. Catches the regression where the agent applies the wrong device\'s channel/scene model to II.',
     prompt: 'What can the Axe-Fx II do? Tell me how many channels per block and how many scenes per preset it has.',
     expectations: {
-      must_call: ['describe_device'],
+      // No must_call. The senior MCP review (2026-05-20) flagged the
+      // prior must_call=[describe_device] as model-behavior-test, not
+      // tool-correctness-test: Sonnet correctly answers from priors
+      // about II's X/Y + 8-scene model without needing the tool. The
+      // hallucination regression we actually care about is in the
+      // content, which text_not_contains catches.
       max_tools: 3,
       tool_call_validators: [{
+        // If the agent does call describe_device, it should target the
+        // right port. Optional: not calling at all is also acceptable.
         tool: 'describe_device',
+        optional: true,
         check: (args) => {
           if (args.port !== 'axe-fx-ii' && args.port !== 'axe-fx ii' && args.port !== 'axefx2') {
             return `describe_device port should target axe-fx-ii, got ${String(args.port)}.`;
@@ -93,8 +101,8 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
           return true;
         },
       }],
-      // Catches "described it like an AM4" hallucination — Axe-Fx II
-      // is X/Y channels (not A/B/C/D) and 8 scenes (not 4). Phrases
+      // Catches "described it like an AM4" hallucination. Axe-Fx II is
+      // X/Y channels (not A/B/C/D) and 8 scenes (not 4). Phrases
       // below are tight enough to avoid false-positives on comparative
       // explanations ("AM4 has A/B/C/D, II has X/Y" is legitimate).
       text_not_contains: [
