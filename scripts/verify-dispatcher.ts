@@ -1150,6 +1150,197 @@ await expectApplyPreflightWarns(
   );
 }
 
+// ── apply_preset channel-Y inactive pre-flight (BK-077) ────────────
+//
+// When a slot specifies channel-nested params (e.g. {X:{...},Y:{...}})
+// but no scene in spec.scenes[] references the channel-Y key for that
+// block, the Y data writes to the working buffer yet stays inaudible
+// (the active scene routes to X). BK-058 fixed the writer-side data
+// loss; BK-077 surfaces the trap at the spec layer so the agent
+// self-corrects before reporting false success.
+//
+// Pure spec validation — calls `collectChannelYInactiveWarnings`
+// directly (same pattern as BK-071 tests above).
+
+console.log('\napply_preset channel-Y inactive pre-flight (BK-077):');
+
+async function expectChannelYWarns(
+  port: string,
+  label: string,
+  spec: Parameters<typeof import('@mcp-midi-control/core/protocol-generic/dispatcher/preset.js').collectChannelYInactiveWarnings>[0],
+  expected: {
+    slot_index: number;
+    channel: string;
+    droppedParamSubstring?: string;
+    referencedSubstring?: string;
+  },
+): Promise<void> {
+  const { collectChannelYInactiveWarnings } = await import(
+    '@mcp-midi-control/core/protocol-generic/dispatcher/preset.js'
+  );
+  const { resolveDevice } = await import(
+    '@mcp-midi-control/core/protocol-generic/registry.js'
+  );
+  const descriptor = resolveDevice(port);
+  if (descriptor === undefined) {
+    failed++;
+    console.error(`  ✗ ${label}\n      ${port} descriptor not registered`);
+    return;
+  }
+  const warnings = collectChannelYInactiveWarnings(spec, descriptor);
+  const entry = warnings.find(
+    (e) => e.slot_index === expected.slot_index && e.path.endsWith(`.${expected.channel}`),
+  );
+  if (entry === undefined) {
+    failed++;
+    console.error(`  ✗ ${label}\n      expected validation_info for slot ${expected.slot_index} channel ${expected.channel}, got: ${JSON.stringify(warnings)}`);
+    return;
+  }
+  if (entry.level !== 'warning') {
+    failed++;
+    console.error(`  ✗ ${label}\n      expected level='warning', got: ${entry.level}`);
+    return;
+  }
+  if (expected.droppedParamSubstring !== undefined && !entry.info.includes(expected.droppedParamSubstring)) {
+    failed++;
+    console.error(`  ✗ ${label}\n      info should mention "${expected.droppedParamSubstring}", got: ${entry.info}`);
+    return;
+  }
+  if (expected.referencedSubstring !== undefined && !entry.reason?.includes(expected.referencedSubstring)) {
+    failed++;
+    console.error(`  ✗ ${label}\n      reason should mention "${expected.referencedSubstring}", got: ${entry.reason}`);
+    return;
+  }
+  if (!entry.retry_action || !entry.retry_action.includes('scenes[')) {
+    failed++;
+    console.error(`  ✗ ${label}\n      retry_action should mention scenes[N], got: ${entry.retry_action}`);
+    return;
+  }
+  passed++;
+}
+
+async function expectNoChannelYWarning(
+  port: string,
+  label: string,
+  spec: Parameters<typeof import('@mcp-midi-control/core/protocol-generic/dispatcher/preset.js').collectChannelYInactiveWarnings>[0],
+): Promise<void> {
+  const { collectChannelYInactiveWarnings } = await import(
+    '@mcp-midi-control/core/protocol-generic/dispatcher/preset.js'
+  );
+  const { resolveDevice } = await import(
+    '@mcp-midi-control/core/protocol-generic/registry.js'
+  );
+  const descriptor = resolveDevice(port);
+  if (descriptor === undefined) {
+    failed++;
+    console.error(`  ✗ ${label}\n      ${port} descriptor not registered`);
+    return;
+  }
+  const warnings = collectChannelYInactiveWarnings(spec, descriptor);
+  if (warnings.length > 0) {
+    failed++;
+    console.error(`  ✗ ${label}\n      expected zero warnings, got: ${JSON.stringify(warnings)}`);
+    return;
+  }
+  passed++;
+}
+
+// Trap case: II spec writes amp.Y params, scene 1 routes amp→X.
+await expectChannelYWarns(
+  'axe-fx-ii',
+  'II amp.Y params + scene→X → warn (Y is dead storage on this preset)',
+  {
+    slots: [{ slot: { row: 1, col: 1 }, block_type: 'amp', params: { X: { gain: 5 }, Y: { gain: 8 } } }],
+    scenes: [{ scene: 1, channels: { amp: 'X' } }, { scene: 2, channels: { amp: 'X' } }],
+  } as Parameters<typeof import('@mcp-midi-control/core/protocol-generic/dispatcher/preset.js').collectChannelYInactiveWarnings>[0],
+  { slot_index: 0, channel: 'Y', droppedParamSubstring: 'channel-Y', referencedSubstring: 'X' },
+);
+
+// Trap case: AM4 spec writes amp.D params, all scenes route amp→A.
+await expectChannelYWarns(
+  'am4',
+  'AM4 amp.D params + all scenes→A → warn (D is dead storage)',
+  {
+    slots: [{ slot: 1, block_type: 'amp', params: { A: { gain: 3 }, D: { gain: 7 } } }],
+    scenes: [
+      { scene: 1, channels: { amp: 'A' } },
+      { scene: 2, channels: { amp: 'A' } },
+      { scene: 3, channels: { amp: 'A' } },
+      { scene: 4, channels: { amp: 'A' } },
+    ],
+  } as Parameters<typeof import('@mcp-midi-control/core/protocol-generic/dispatcher/preset.js').collectChannelYInactiveWarnings>[0],
+  { slot_index: 0, channel: 'D', referencedSubstring: 'A' },
+);
+
+// Positive: II amp.Y params + at least one scene routes amp→Y → no warning.
+await expectNoChannelYWarning(
+  'axe-fx-ii',
+  'II amp.Y + scene 2→Y → no warning (Y is active on scene 2)',
+  {
+    slots: [{ slot: { row: 1, col: 1 }, block_type: 'amp', params: { X: { gain: 5 }, Y: { gain: 8 } } }],
+    scenes: [
+      { scene: 1, channels: { amp: 'X' } },
+      { scene: 2, channels: { amp: 'Y' } },
+    ],
+  } as Parameters<typeof import('@mcp-midi-control/core/protocol-generic/dispatcher/preset.js').collectChannelYInactiveWarnings>[0],
+);
+
+// Negative: no scenes in spec → silent (can't claim Y is inactive).
+await expectNoChannelYWarning(
+  'axe-fx-ii',
+  'II amp.Y params + no scenes[] → no warning (working-buffer-only mode)',
+  {
+    slots: [{ slot: { row: 1, col: 1 }, block_type: 'amp', params: { X: { gain: 5 }, Y: { gain: 8 } } }],
+  } as Parameters<typeof import('@mcp-midi-control/core/protocol-generic/dispatcher/preset.js').collectChannelYInactiveWarnings>[0],
+);
+
+// Negative: flat params (no channel nesting) → silent.
+await expectNoChannelYWarning(
+  'axe-fx-ii',
+  'II amp flat params + scenes → no warning (no channel-keyed params)',
+  {
+    slots: [{ slot: { row: 1, col: 1 }, block_type: 'amp', params: { gain: 5 } }],
+    scenes: [{ scene: 1, channels: { amp: 'X' } }],
+  } as Parameters<typeof import('@mcp-midi-control/core/protocol-generic/dispatcher/preset.js').collectChannelYInactiveWarnings>[0],
+);
+
+// Negative: scenes specify the block but no channel for it → no warning.
+// (No channel constraint = scene inherits existing device state.)
+await expectNoChannelYWarning(
+  'axe-fx-ii',
+  'II amp.Y + scenes[].channels undefined → no warning (no scene constraint)',
+  {
+    slots: [{ slot: { row: 1, col: 1 }, block_type: 'amp', params: { Y: { gain: 8 } } }],
+    scenes: [{ scene: 1, channels: {} }, { scene: 2, channels: {} }],
+  } as Parameters<typeof import('@mcp-midi-control/core/protocol-generic/dispatcher/preset.js').collectChannelYInactiveWarnings>[0],
+);
+
+// Multi-param warning: dropped_param undefined when multiple Y params.
+{
+  const { collectChannelYInactiveWarnings } = await import(
+    '@mcp-midi-control/core/protocol-generic/dispatcher/preset.js'
+  );
+  const { resolveDevice } = await import(
+    '@mcp-midi-control/core/protocol-generic/registry.js'
+  );
+  const descriptor = resolveDevice('axe-fx-ii');
+  if (descriptor !== undefined) {
+    const warnings = collectChannelYInactiveWarnings(
+      {
+        slots: [{ slot: { row: 1, col: 1 }, block_type: 'amp', params: { Y: { gain: 8, master: 5, treble: 7 } } }],
+        scenes: [{ scene: 1, channels: { amp: 'X' } }],
+      } as Parameters<typeof collectChannelYInactiveWarnings>[0],
+      descriptor,
+    );
+    const entry = warnings[0];
+    assert(
+      'multi-Y-param warning omits dropped_param (single only)',
+      entry !== undefined && entry.dropped_param === undefined && entry.info.includes('gain') && entry.info.includes('master'),
+      `entry=${JSON.stringify(entry)}`,
+    );
+  }
+}
+
 // ── find_compatible_types (AM4) ─────────────────────────────────────
 //
 // 2026-05-15 H1 + H2 traces (Sunday Morning + Verse Chorus Bridge Solo)

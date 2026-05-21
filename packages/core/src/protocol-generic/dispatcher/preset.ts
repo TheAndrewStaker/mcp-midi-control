@@ -61,6 +61,120 @@ import { translatePresetSpec, type TranslatePresetResult } from '../port-preset.
  * path remains. Adding `findCompatibleTypes` to those devices later
  * activates the pre-flight automatically with no dispatcher change.
  */
+/**
+ * BK-077: channel-Y inactive pre-flight for `apply_preset`.
+ *
+ * When a slot specifies channel-nested params (e.g. `{X: {...}, Y: {...}}`)
+ * BUT every scene in `spec.scenes[]` references a different channel for
+ * that block, the channel-Y data is written to the working buffer yet
+ * never reaches the audio path. The agent reports "applied Y settings"
+ * and the user hears the X channel's tone. BK-058 traced this class of
+ * silent failure on Axe-Fx II; the writer-side fix preserved Y data,
+ * but a spec that wrote Y while every authored scene routes to X is
+ * still a real trap.
+ *
+ * Fires only when `spec.scenes` is explicitly defined AND non-empty. A
+ * working-buffer-only apply (no scenes[]) inherits the device's current
+ * scene configuration, which the dispatcher can't see without a wire
+ * read; in that case we stay silent rather than risk a false positive.
+ *
+ * Soft-warn (level='warning'), not refusal: the user might be authoring
+ * Y state for a future scene swap (a `set_param` after the apply could
+ * route a scene to Y). Surfacing the trap lets the agent self-correct
+ * (move the params under an active channel, or add a scene mapping)
+ * without robbing the user of intentional Y-stash flows.
+ *
+ * No additional wire reads: the check is pure spec validation. Devices
+ * without channels or scenes return an empty array.
+ */
+export function collectChannelYInactiveWarnings(
+  spec: PresetSpec,
+  descriptor: DeviceDescriptor,
+): ValidationInfo[] {
+  const out: ValidationInfo[] = [];
+  if (spec.scenes === undefined || spec.scenes.length === 0) return out;
+  const cap = descriptor.capabilities;
+  if (!cap.has_scenes || !cap.has_channels) return out;
+  const channelNames = cap.channel_names ?? [];
+  if (channelNames.length === 0) return out;
+  const channelNamesUpper = channelNames.map((c) => c.toUpperCase());
+
+  for (let i = 0; i < spec.slots.length; i++) {
+    const slot = spec.slots[i];
+    const params = slot.params;
+    if (params === undefined || params === null) continue;
+    const entries = Object.entries(params as Record<string, unknown>);
+    const looksNested = entries.some(([, v]) => v !== null && typeof v === 'object' && !Array.isArray(v));
+    if (!looksNested) continue;
+
+    const paramChannels = new Map<string, Record<string, unknown>>();
+    for (const [chKey, chValue] of entries) {
+      if (chValue === null || typeof chValue !== 'object' || Array.isArray(chValue)) continue;
+      const upperCh = chKey.trim().toUpperCase();
+      if (!channelNamesUpper.includes(upperCh)) continue;
+      paramChannels.set(upperCh, chValue as Record<string, unknown>);
+    }
+    if (paramChannels.size === 0) continue;
+
+    const blockType = slot.block_type;
+    const blockTypeLower = blockType.toLowerCase();
+    const slotIdLower = slot.id?.toLowerCase();
+    const matchesSlot = (blockSlug: string): boolean => {
+      const sl = blockSlug.trim().toLowerCase();
+      return sl === blockTypeLower || (slotIdLower !== undefined && sl === slotIdLower);
+    };
+
+    const referencedChannels = new Set<string>();
+    const sceneRefs: { scene: number; channel: string | undefined }[] = [];
+    for (const sc of spec.scenes) {
+      let entry: { channel: string | undefined } = { channel: undefined };
+      if (sc.channels !== undefined) {
+        for (const [blockSlug, ch] of Object.entries(sc.channels)) {
+          if (!matchesSlot(blockSlug)) continue;
+          const normalized = typeof ch === 'number'
+            ? channelNames[ch]?.toUpperCase()
+            : String(ch).trim().toUpperCase();
+          if (normalized !== undefined && channelNamesUpper.includes(normalized)) {
+            referencedChannels.add(normalized);
+            entry = { channel: normalized };
+          }
+          break;
+        }
+      }
+      sceneRefs.push({ scene: sc.scene, channel: entry.channel });
+    }
+
+    // Only warn when at least one scene explicitly constrains this
+    // block's channel. An empty `referencedChannels` means no scene in
+    // the spec touched this block's channel pointer; device-side scenes
+    // still apply, so we can't claim Y is inactive without a wire read.
+    if (referencedChannels.size === 0) continue;
+
+    for (const [paramCh, paramMap] of paramChannels) {
+      if (referencedChannels.has(paramCh)) continue;
+      const droppedParams = Object.keys(paramMap);
+      if (droppedParams.length === 0) continue;
+      const head = droppedParams.slice(0, 5);
+      const more = droppedParams.length > head.length ? ` (+${droppedParams.length - head.length} more)` : '';
+      const referencedList = Array.from(referencedChannels).join(', ');
+      const sceneSummary = sceneRefs
+        .map((s) => `scene ${s.scene}→${s.channel ?? '(unspecified)'}`)
+        .join(', ');
+      const activeAlts = Array.from(referencedChannels).join('/');
+      out.push({
+        slot_index: i,
+        path: `slots[${i}].params.${paramCh}`,
+        info: `${blockType} channel-${paramCh} params (${head.join(', ')}${more}) write to the working buffer but no scene in this spec activates ${blockType} channel ${paramCh} (${sceneSummary}). The channel-${paramCh} state is stored but inaudible unless an existing device-side scene routes ${blockType} to ${paramCh}.`,
+        level: 'warning',
+        dropped_param: droppedParams.length === 1 ? droppedParams[0] : undefined,
+        reason: `No scene in spec.scenes[] sets ${blockType} channel to ${paramCh}; authored scenes use ${referencedList}.`,
+        retry_action: `Either add channel ${paramCh} to one of the scenes' channel maps (e.g. \`scenes[N].channels.${blockType} = "${paramCh}"\`), or move the channel-${paramCh} params under one of the active channels (${activeAlts}).`,
+      });
+    }
+  }
+  return out;
+}
+
 export function collectTypeKnobApplicabilityWarnings(
   spec: PresetSpec,
   descriptor: DeviceDescriptor,
@@ -262,6 +376,14 @@ export async function executeApplyPreset(args: {
   // (II / III / Hydra today) get an empty array; their existing
   // dropped-param warning path remains.
   const applicabilityWarnings = collectTypeKnobApplicabilityWarnings(normalizedSpec, descriptor);
+  // BK-077: channel-Y inactive pre-flight. Pure spec validation — when
+  // a slot specifies channel-nested params but no scene in this spec
+  // activates that channel for the block, the data writes but never
+  // hits the audio path. Closes the BK-058 silent-failure class at the
+  // spec-validation layer (the writer-side fix already preserves Y
+  // data; this surfaces the trap before the agent reports false
+  // success). Devices without channels/scenes get an empty array.
+  const channelInactiveWarnings = collectChannelYInactiveWarnings(normalizedSpec, descriptor);
   // Safe-edit contract for target_location:
   //   - The buffer-dirty gate ALWAYS runs (target_location implies the
   //     active location is about to change, so unsaved edits would be
@@ -299,7 +421,11 @@ export async function executeApplyPreset(args: {
   // vocabulary. BK-071: also includes type-knob applicability warnings
   // for dropped params. Omit the field entirely when nothing was
   // resolved/dropped so the happy-path response stays unchanged.
-  const combinedInfo: ValidationInfo[] = [...preflight.info, ...applicabilityWarnings];
+  const combinedInfo: ValidationInfo[] = [
+    ...preflight.info,
+    ...applicabilityWarnings,
+    ...channelInactiveWarnings,
+  ];
   const validation_info = combinedInfo.length > 0 ? combinedInfo : undefined;
 
   // BK-057: optional read-after-write chain integrity check. Only runs

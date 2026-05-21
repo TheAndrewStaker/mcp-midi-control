@@ -325,4 +325,63 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 120,
     },
   },
+
+  // ── BK-077 channel-Y inactive pre-flight ────────────────────────
+  //
+  // Session 113: extends the BK-071/BK-075 ValidationInfo[] soft-warn
+  // pattern. When the agent authors an apply_preset spec with channel-
+  // nested amp params (X + Y) but every scene in spec.scenes[]
+  // references channel X for the amp, the Y data writes to the working
+  // buffer yet stays inaudible. The dispatcher fires the channel-Y
+  // inactive warning and the agent should self-correct on the next
+  // turn (either by adding a scene that routes to Y, or by moving the
+  // Y params under X).
+  //
+  // The prompt explicitly authors a "scene 1 uses the clean amp"
+  // configuration with Y data — a realistic agent trap. Acceptable
+  // recoveries: a follow-up apply_preset that either drops the Y
+  // block or assigns a scene to Y; OR a chat-only acknowledgement
+  // that the Y data is currently inactive.
+  {
+    id: 'axefx2-channel-y-inactive-warning',
+    device: 'axe-fx-ii',
+    tier: 'no-hardware',
+    description: 'Channel-Y inactive trap — agent authors Y-channel amp params plus a one-scene spec that routes amp→X. Dispatcher pre-flight surfaces validation_info[] warning naming the inactive channel. Agent must NOT report the Y settings as audible; acceptable paths are a follow-up apply_preset with a scene routing to Y, or a chat-only acknowledgement of the inactive Y data.',
+    prompt: "On the Axe-Fx II, build a working-buffer preset with the amp's X channel set to a clean tone at gain 3, and the amp's Y channel set to a lead tone at gain 8. Define one scene that uses the clean amp. Use the working buffer, don't save.",
+    expectations: {
+      must_call: ['apply_preset'],
+      max_tools: 8,
+      max_repeats: { apply_preset: 2 },
+      tool_call_validators: [{
+        tool: 'apply_preset',
+        call_index: 0,
+        check: (args) => {
+          const keys = ampChannelKeys(args);
+          if (!keys.has('X') || !keys.has('Y')) {
+            return `apply_preset amp params should include BOTH X and Y to exercise the channel-Y trap, got: ${[...keys].sort().join(',') || '(none)'}.`;
+          }
+          const spec = (args.spec ?? {}) as { scenes?: unknown };
+          if (!Array.isArray(spec.scenes) || spec.scenes.length === 0) {
+            return `apply_preset spec should declare scenes[] to exercise the BK-077 pre-flight (the warning only fires when at least one scene constrains the block's channel).`;
+          }
+          return true;
+        },
+      }],
+      // Agent must NOT positive-claim Y settings are active. Reading the
+      // validation_info[] warning naturally produces text mentioning the
+      // inactive Y channel; the false-claim regressions only fire when
+      // the agent IGNORED the warning surface.
+      text_not_contains: [
+        'Y channel is now',
+        'Y channel is set',
+        'lead tone is now',
+        'lead amp is now',
+        'lead amp is audible',
+        'lead is audible',
+        'all set',
+        "you're all set",
+      ],
+      max_wall_seconds: 120,
+    },
+  },
 ];

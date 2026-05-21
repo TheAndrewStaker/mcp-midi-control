@@ -475,6 +475,70 @@ async function verifyAxefx2(client: Client): Promise<void> {
     );
   }
 
+  // BK-077 channel-Y inactive pre-flight (Session 113): apply_preset
+  // spec carries channel-nested amp params for both X and Y, but the
+  // single authored scene routes amp→X. Dispatcher surfaces a
+  // validation_info[] warning naming the inactive Y channel.
+  {
+    const r = await client.callTool({
+      name: 'apply_preset',
+      arguments: {
+        port: 'axefx2',
+        spec: {
+          name: 'YINACTIVE',
+          slots: [
+            { slot: 1, block_type: 'amp', params: { X: { input_drive: 3, master_volume: 5 }, Y: { input_drive: 8, master_volume: 6 } } },
+            { slot: 2, block_type: 'cab' },
+          ],
+          scenes: [{ scene: 1, channels: { amp: 'X' } }],
+        },
+        on_active_preset_edited: 'discard',
+      },
+    });
+    const t = extractText(r);
+    record(
+      'axefx2 apply_preset channel-Y inactive surfaces validation_info[] warning',
+      !isError(r) && /validation_info/.test(t)
+        && /"level"\s*:\s*"warning"/.test(t)
+        && /channel-Y|channel Y/i.test(t),
+      t.slice(0, 500),
+    );
+    record(
+      'axefx2 channel-Y warning retry_action mentions scenes[N] mapping',
+      !isError(r) && /scenes\[/.test(t),
+      t.slice(0, 500),
+    );
+  }
+
+  // BK-077 negative case: same spec but with a scene that DOES route
+  // amp→Y. Both X and Y are active across the scenes; no warning fires.
+  {
+    const r = await client.callTool({
+      name: 'apply_preset',
+      arguments: {
+        port: 'axefx2',
+        spec: {
+          name: 'XYACTIVE',
+          slots: [
+            { slot: 1, block_type: 'amp', params: { X: { input_drive: 3, master_volume: 5 }, Y: { input_drive: 8, master_volume: 6 } } },
+            { slot: 2, block_type: 'cab' },
+          ],
+          scenes: [
+            { scene: 1, channels: { amp: 'X' } },
+            { scene: 2, channels: { amp: 'Y' } },
+          ],
+        },
+        on_active_preset_edited: 'discard',
+      },
+    });
+    const t = extractText(r);
+    record(
+      'axefx2 apply_preset X+Y with scene→Y has no channel-Y inactive warning',
+      !isError(r) && !/channel-Y|channel Y/i.test(t),
+      t.slice(0, 300),
+    );
+  }
+
   // Dirty-buffer gate on switch_preset. Axe-Fx II has a device-sourced
   // dirty signal (state-broadcast triple on every edit), so this exercises
   // a different code path than AM4 but checks the same contract: dirty
