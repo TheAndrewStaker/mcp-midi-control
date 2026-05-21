@@ -844,6 +844,58 @@ export const AM4_CASES: AgentRegressionCase[] = [
     },
   },
 
+  // ── Scene-boundary quirk: 0x7fff sentinel read response ──────────
+  //
+  // BK-073 second mockFixture demo (Session 110). Uses
+  // `mockFixture: 'device-quirk-scene-7fff'` so the AM4 mock's scene
+  // read returns 0x7fff — the observed real-device quirk where the
+  // scene register lands at the signed-int16 boundary instead of a
+  // legal 0..3 index.
+  //
+  // The expected agent behavior: the device-namespaced
+  // `am4_get_active_scene` tool already validates the range and
+  // returns `isError: true` with a clear "unexpected scene index"
+  // message. The agent should surface that to the user, NOT confabulate
+  // a scene number ("you're on scene 1") to hide the read failure.
+  //
+  // This case validates: (1) the mockFixture plumbing for the
+  // device-quirk profile, (2) the read tool's defensive range check
+  // is still in place, (3) the agent doesn't paper over a read error
+  // with a confident-sounding fake answer.
+  {
+    id: 'am4-scene-quirk-7fff',
+    device: 'am4',
+    tier: 'no-hardware',
+    mockFixture: 'device-quirk-scene-7fff',
+    description: 'Scene-boundary quirk — mock returns 0x7fff for scene read (real-device boundary quirk). Agent must surface the read failure, not confabulate a scene number. Validates the BK-073 case-spec MOCK_FIXTURE field on a second fixture profile.',
+    prompt: "What's the active scene on the AM4 right now?",
+    expectations: {
+      // Agent should attempt to read the scene state. Allow either the
+      // device-namespaced or unified surface.
+      must_call_any: [['am4_get_active_scene'], ['describe_device']],
+      max_tools: 4,
+      // Must NOT claim a definite scene number — the mock's 0x7fff
+      // response is out-of-range and the read tool returns isError:true.
+      // Positive-claim shapes: agent reports "scene 1/2/3/4" or "on
+      // scene N" as if the read succeeded.
+      text_not_contains: [
+        'on scene 1',
+        'on scene 2',
+        'on scene 3',
+        'on scene 4',
+        'currently scene 1',
+        'currently scene 2',
+        'currently scene 3',
+        'currently scene 4',
+        'active scene: 1',
+        'active scene: 2',
+        'active scene: 3',
+        'active scene: 4',
+      ],
+      max_wall_seconds: 60,
+    },
+  },
+
   // ── Overwrite-confirmation gate — exercises the safe-edit discipline
   //
   // BK-073 case-spec MOCK_FIXTURE demonstration (Session 110). Uses
