@@ -27,7 +27,15 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import { requireDevice } from './dispatcher.js';
+// Side-effect import: keep the descriptor registry in this module's
+// import graph so any future bundler / tree-shaker preserves it
+// alongside the unified tool registrations. The dispatcher functions
+// each per-family file uses (requireDevice, resolveDevice, etc.) already
+// import registry.js transitively, but pinning it here makes the intent
+// explicit and stops a "this import looks unused, drop it" cleanup pass
+// from inadvertently breaking the unified surface. Replaces an earlier
+// `void requireDevice;` no-op statement (T-14, 2026-05-21).
+import './registry.js';
 
 import { registerAuditionTools } from './tools/audition.js';
 import { registerDiscoveryTools } from './tools/discovery.js';
@@ -44,10 +52,3 @@ export function registerUnifiedTools(server: McpServer): void {
   registerPresetTools(server);
   registerAuditionTools(server);
 }
-
-// Self-register `requireDevice` as an unused-but-exported symbol just to
-// guarantee the registry module's side effect (initialization) is part of
-// this module's import graph. Without this, tree-shaking COULD drop the
-// registry from a future minified build before any descriptor registers.
-// Harmless no-op at runtime.
-void requireDevice;
