@@ -12,6 +12,7 @@ import {
   type WriteResult,
 } from '../types.js';
 
+import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
 import { openCtx, requireDevice } from './core.js';
 
 /**
@@ -50,6 +51,9 @@ export async function executeSwitchPreset(args: {
     }
   }
   const result = await descriptor.writer.switchPreset(ctx, args.location);
+  // BK-075: switching to a new preset replaces the working buffer
+  // contents entirely; cached layout is now stale.
+  invalidateBlockLayoutCache(descriptor.id);
   return { ...result, device: descriptor.display_name };
 }
 
@@ -75,6 +79,11 @@ export async function executeSavePreset(args: { port: string; location: string |
   }
   const ctx = openCtx(descriptor);
   const result = await descriptor.writer.savePreset(ctx, args.location, args.name);
+  // BK-075: save persists the working buffer to a location; layout itself
+  // didn't change, but invalidating is the safe call — a subsequent
+  // switch_preset back to here would otherwise serve a snapshot keyed by
+  // the old active-buffer state.
+  invalidateBlockLayoutCache(descriptor.id);
   return { ...result, device: descriptor.display_name };
 }
 

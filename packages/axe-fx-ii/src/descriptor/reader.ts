@@ -18,6 +18,7 @@
  */
 
 import type {
+  BlockLayoutSnapshot,
   DeviceReader,
   DispatchCtx,
   PresetSlotSpec,
@@ -443,6 +444,33 @@ export const reader: DeviceReader = {
    * land via additional `PresetSnapshot` fields without a tool-shape
    * change.
    */
+  async getBlockLayoutSnapshot(ctx: DispatchCtx): Promise<BlockLayoutSnapshot> {
+    // BK-075 phantom-param pre-flight: single grid read → unique placed
+    // block-type slugs. Reuses the same wire envelope as `get_preset`'s
+    // first step but skips the per-block param dump (~150ms each vs the
+    // grid read's ~50ms total). Result is cached for 5s by the
+    // dispatcher; subsequent set_param calls within the burst pay 0ms.
+    const responsePromise = ctx.conn.receiveSysExMatching(
+      isGetGridLayoutResponse,
+      GET_RESPONSE_TIMEOUT_MS,
+    );
+    ctx.conn.send(buildGetGridLayout());
+    let cells: GridCell[];
+    try {
+      const response = await responsePromise;
+      cells = parseGetGridLayoutResponse(response);
+    } catch (err) {
+      throw new DispatchError(
+        'no_ack',
+        DEVICE_LABEL,
+        `getBlockLayoutSnapshot: grid read failed — ${err instanceof Error ? err.message : String(err)}.`,
+      );
+    }
+    const placed = collectPlacedBlocks(cells);
+    const placedBlocks = new Set<string>(placed.map((p) => p.blockType));
+    return { placedBlocks };
+  },
+
   async getPreset(ctx: DispatchCtx): Promise<PresetSnapshot> {
     // 1. Grid read so we know which blocks are placed and at what slot.
     const gridResponsePromise = ctx.conn.receiveSysExMatching(

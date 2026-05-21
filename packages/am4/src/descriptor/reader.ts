@@ -18,6 +18,7 @@
  */
 
 import type {
+  BlockLayoutSnapshot,
   DeviceReader,
   DispatchCtx,
   ReadResult,
@@ -26,8 +27,13 @@ import type {
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 import {
+  BLOCK_NAMES_BY_VALUE,
+  BLOCK_SLOT_PID_HIGH_BASE,
+  BLOCK_SLOT_PID_LOW,
   KNOWN_PARAMS,
+  buildBlockLayoutSnapshot,
   decode as am4Decode,
+  type BlockTypeName,
   type Param,
   type ParamKey,
 } from 'fractal-midi/am4';
@@ -193,6 +199,21 @@ export const reader: DeviceReader = {
       failed_indices,
       errors: failed_indices.length > 0 ? errors : undefined,
     };
+  },
+
+  async getBlockLayoutSnapshot(ctx: DispatchCtx): Promise<BlockLayoutSnapshot> {
+    // 4 slot-register reads → block-type names per slot. Identical wire
+    // shape to the `am4_get_block_layout` tool (HW-044); kept duplicated
+    // rather than refactored to delegate because the tool surface returns
+    // formatted text while this method returns structured data.
+    const slots: BlockTypeName[] = [];
+    for (const position of [1, 2, 3, 4] as const) {
+      const pidHigh = BLOCK_SLOT_PID_HIGH_BASE + (position - 1);
+      const parsed = await sendReadAndParse(ctx.conn, BLOCK_SLOT_PID_LOW, pidHigh);
+      const u32 = parsed.asUInt32LE();
+      slots.push(BLOCK_NAMES_BY_VALUE[u32] ?? ('none' as BlockTypeName));
+    }
+    return buildBlockLayoutSnapshot([slots[0], slots[1], slots[2], slots[3]]);
   },
 
   async scanLocations(ctx, from, to) {

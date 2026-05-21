@@ -371,6 +371,59 @@ async function verifyAm4(client: Client): Promise<void> {
       t.slice(0, 500),
     );
   }
+
+  // BK-075 phantom-param pre-flight (Session 112): set_param targeting a
+  // block not placed in any slot wire-acks but the device silently no-ops.
+  // The dispatcher surfaces a validation_info[] warning with the unplaced-
+  // block + retry_action. AM4 mock default layout is amp/chorus/reverb/
+  // delay, so 'phaser' is guaranteed-absent.
+  //
+  // Sequence (matters):
+  //   1. switch_preset to Z3 with discard — flushes any dirty state from
+  //      earlier tests AND invalidates the cached layout snapshot.
+  //   2. set_param targeting an absent block — pre-flight should fire.
+  //
+  // Without the switch_preset, an earlier set_block in this run may have
+  // placed a phaser somewhere, defeating the absent-block test.
+  {
+    await client.callTool({
+      name: 'switch_preset',
+      arguments: { port: 'am4', location: 'Z3', on_active_preset_edited: 'discard' },
+    });
+    const r = await client.callTool({
+      name: 'set_param',
+      arguments: { port: 'am4', block: 'phaser', name: 'rate', value: 3 },
+    });
+    const t = extractText(r);
+    record(
+      'set_param on unplaced block (phaser) surfaces validation_info[] warning',
+      !isError(r) && /validation_info/.test(t)
+        && /"dropped_param"\s*:\s*"rate"/.test(t)
+        && /"level"\s*:\s*"warning"/.test(t),
+      t.slice(0, 500),
+    );
+    record(
+      'phantom-param warning names retry_action with set_block',
+      !isError(r) && /set_block/.test(t) && /phaser/.test(t),
+      t.slice(0, 500),
+    );
+  }
+
+  // BK-075 negative case: set_param on a PLACED block (amp is in slot 1
+  // by mock default) should NOT carry a phantom-param warning. The happy-
+  // path response stays unchanged.
+  {
+    const r = await client.callTool({
+      name: 'set_param',
+      arguments: { port: 'am4', block: 'amp', name: 'gain', value: 5 },
+    });
+    const t = extractText(r);
+    record(
+      'set_param on placed block (amp.gain) has no phantom-param warning',
+      !isError(r) && !/validation_info/.test(t),
+      t.slice(0, 300),
+    );
+  }
 }
 
 async function verifyAxefx2(client: Client): Promise<void> {

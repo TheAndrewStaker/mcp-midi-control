@@ -25,6 +25,7 @@ import {
   type ValidationInfo,
 } from '../types.js';
 
+import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
 import { openCtx, requireDevice } from './core.js';
 import { collectApplyPresetPreflight } from './preflight.js';
 import { translatePresetSpec, type TranslatePresetResult } from '../port-preset.js';
@@ -289,6 +290,10 @@ export async function executeApplyPreset(args: {
     ? { save: args.save_authorized === true }
     : undefined;
   const result = await descriptor.writer.applyPreset(ctx, normalizedSpec, args.target_location, options);
+  // BK-075: apply_preset can change which blocks are placed in the
+  // working buffer; cached layout snapshot is now stale regardless of
+  // target_location. Invalidate so the next set_param re-reads.
+  invalidateBlockLayoutCache(descriptor.id);
   // Surface any BK-065 alias substitutions + BK-066 case/whitespace
   // resolutions on the success path so the agent learns the canonical
   // vocabulary. BK-071: also includes type-knob applicability warnings
@@ -372,6 +377,9 @@ export async function executeApplySetlist(args: {
     }
   }
   const result = await descriptor.writer.applySetlist(ctx, args.entries, args.options);
+  // BK-075: setlist iterated applies; cached layout reflects whatever
+  // state the LAST applied entry left behind. Safest is invalidate.
+  invalidateBlockLayoutCache(descriptor.id);
   return { ...result, device: descriptor.display_name };
 }
 
@@ -521,6 +529,10 @@ export async function executeRestoreDefaults(args: {
       );
     }
     const result = await descriptor.writer.restoreDefaults(ctx, args.from, { verify: args.verify });
+    // BK-075: factory restore overwrites the location; if the user is
+    // currently sitting at it the working buffer reflects the factory
+    // preset (different blocks). Invalidate cache.
+    invalidateBlockLayoutCache(descriptor.id);
     return { ...result, device: descriptor.display_name, shape: 'single' };
   }
   if (descriptor.writer.restoreDefaultsRange === undefined) {
@@ -536,5 +548,6 @@ export async function executeRestoreDefaults(args: {
     verify: args.verify,
   };
   const result = await descriptor.writer.restoreDefaultsRange(ctx, args.from, args.to, opts);
+  invalidateBlockLayoutCache(descriptor.id);
   return { ...result, device: descriptor.display_name, shape: 'range' };
 }

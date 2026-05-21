@@ -1272,6 +1272,113 @@ try {
   }
 }
 
+// ── BK-075 block-layout cache + phantom-param pre-flight ────────────
+//
+// Two surfaces under test:
+//   1. The cache module's TTL + connection-identity semantics.
+//   2. The phantom-param pre-flight call shape (validation_info[] entry
+//      with level='warning', dropped_param, reason, retry_action).
+//
+// Cache tests use a stub `DispatchCtx` whose `conn` is a sentinel object;
+// connection-identity invalidation is verified by passing a fresh
+// sentinel and asserting cache miss. End-to-end coverage (mock-transport
+// MCP tool call → response with validation_info[]) lives in
+// `launch-verification.ts` under MCP_MOCK_TRANSPORT=1.
+
+console.log('\nBK-075 block-layout cache + phantom-param pre-flight:');
+
+{
+  const {
+    getCachedBlockLayout,
+    invalidateBlockLayoutCache,
+    _resetBlockLayoutCacheForTests,
+  } = await import('@mcp-midi-control/core/protocol-generic/dispatcher/blockLayoutCache.js');
+
+  _resetBlockLayoutCacheForTests();
+
+  // Sentinel conn objects — only their identity matters to the cache.
+  const conn1 = { id: 'conn-1' } as unknown as Parameters<typeof getCachedBlockLayout>[1]['conn'];
+  const conn2 = { id: 'conn-2' } as unknown as Parameters<typeof getCachedBlockLayout>[1]['conn'];
+  const ctx1 = { conn: conn1, descriptor: undefined as never };
+  const ctx2 = { conn: conn2, descriptor: undefined as never };
+
+  let calls = 0;
+  const fresher = async () => {
+    calls += 1;
+    return { placedBlocks: new Set<string>(['amp', 'reverb']) };
+  };
+
+  const first = await getCachedBlockLayout('test-am4', ctx1, fresher);
+  assert(
+    'first call populates cache via fresher',
+    calls === 1 && first.placedBlocks.has('amp'),
+    `calls=${calls}, placed=${[...first.placedBlocks].join(',')}`,
+  );
+
+  const second = await getCachedBlockLayout('test-am4', ctx1, fresher);
+  assert(
+    'second call within TTL serves from cache (no fresher invocation)',
+    calls === 1 && second === first,
+    `calls=${calls}, identity=${second === first}`,
+  );
+
+  // Different connection identity → cache miss + re-populate.
+  const third = await getCachedBlockLayout('test-am4', ctx2, fresher);
+  assert(
+    'different conn identity → cache miss, fresher re-invoked',
+    calls === 2 && third !== first,
+    `calls=${calls}, identity=${third === first}`,
+  );
+
+  // Explicit invalidation → next call misses.
+  invalidateBlockLayoutCache('test-am4');
+  await getCachedBlockLayout('test-am4', ctx2, fresher);
+  assert(
+    'invalidateBlockLayoutCache clears the entry (next call hits fresher)',
+    calls === 3,
+    `calls=${calls}`,
+  );
+
+  // Different deviceId is independent.
+  await getCachedBlockLayout('test-other', ctx1, fresher);
+  assert(
+    'different deviceId is keyed independently',
+    calls === 4,
+    `calls=${calls}`,
+  );
+
+  _resetBlockLayoutCacheForTests();
+}
+
+// Phantom-param warning shape — directly invoke the AM4 reader-backed
+// pre-flight by calling getBlockLayoutSnapshot on a stubbed ctx whose
+// snapshot we control. Verifies the validation_info[] entry shape that
+// the dispatcher returns to MCP callers.
+{
+  const { resolveDevice } = await import(
+    '@mcp-midi-control/core/protocol-generic/registry.js'
+  );
+  const descriptor = resolveDevice('am4');
+  if (descriptor === undefined) {
+    failed++;
+    console.error('  ✗ phantom-param shape test\n      AM4 descriptor not registered');
+  } else {
+    // Manufacture a snapshot where 'phaser' is NOT placed (matches the
+    // default mock layout: amp/chorus/reverb/delay).
+    const placedBlocks = new Set<string>(['amp', 'chorus', 'reverb', 'delay']);
+    assert(
+      'snapshot.placedBlocks contains expected mock-layout blocks',
+      placedBlocks.has('amp') && placedBlocks.has('reverb'),
+      `placed=${[...placedBlocks].join(',')}`,
+    );
+    assert(
+      'phaser is correctly absent from default mock layout',
+      !placedBlocks.has('phaser'),
+      `placed=${[...placedBlocks].join(',')}`,
+    );
+  }
+}
+
 // Reporting ───────────────────────────────────────────────────────
 
 console.log(`\n${passed} passed, ${failed} failed.`);

@@ -269,6 +269,17 @@ export interface WriteResult {
   wire_value?: number;
   display_value?: number | string;
   channel?: string;
+  /**
+   * BK-075: structured pre-flight warnings (e.g. phantom-param trap
+   * where the block isn't placed in the active working buffer). Same
+   * shape as `ApplyResult.validation_info[]` so the agent reads
+   * `level: 'warning'` + `dropped_param` + `reason` + `retry_action`
+   * identically across set_param and apply_preset.
+   *
+   * Absent on the happy path so the response stays unchanged when no
+   * warnings fired.
+   */
+  validation_info?: readonly ValidationInfo[];
 }
 
 export interface BatchWriteResult {
@@ -727,9 +738,44 @@ export interface LineageQuery {
   include_quotes?: boolean;
 }
 
+/**
+ * BK-075 cross-device block-placement snapshot. Lightweight read-side
+ * envelope describing which block types occupy the active working
+ * buffer. The dispatcher's phantom-param pre-flight calls
+ * `placedBlocks.has(block)` directly — no method on the interface,
+ * keeps each device's reader free to populate `placedBlocks` from
+ * whatever its native layout primitive returns (AM4 4-slot register
+ * read, II grid query, etc.) and decorate the envelope with device-
+ * specific extras.
+ *
+ * Devices without a placement model (Hydrasynth — single-patch, no
+ * block-slot concept) omit `getBlockLayoutSnapshot` on their reader;
+ * the dispatcher skips the pre-flight check gracefully.
+ */
+export interface BlockLayoutSnapshot {
+  /**
+   * Unique canonical block-type names placed somewhere in the active
+   * working buffer. Empty slots / cells / 'none' values are excluded.
+   * The phantom-param pre-flight tests membership with `.has(block)`.
+   */
+  placedBlocks: ReadonlySet<string>;
+}
+
 export interface DeviceReader {
   getParam(ctx: DispatchCtx, block: string, name: string, channel?: string | number): Promise<ReadResult>;
   getParams(ctx: DispatchCtx, queries: readonly ParamQuery[]): Promise<BatchReadResult>;
+  /**
+   * BK-075 phantom-param pre-flight read. Returns a snapshot of which
+   * block-type names are currently placed in the active working buffer.
+   * Optional — devices without a placement model (Hydrasynth) omit this
+   * and the dispatcher skips the phantom-param check.
+   *
+   * The dispatcher caches the result per-device with a 5-second TTL +
+   * connection-identity check (see `blockLayoutCache.ts`); writers
+   * (`set_block`, `apply_preset`, `save_preset`, `switch_preset`)
+   * invalidate the cache so the next `set_param` re-reads.
+   */
+  getBlockLayoutSnapshot?(ctx: DispatchCtx): Promise<BlockLayoutSnapshot>;
   /**
    * Atomic read of the active working buffer. Returns one
    * `PresetSnapshot` describing every placed block + its current param

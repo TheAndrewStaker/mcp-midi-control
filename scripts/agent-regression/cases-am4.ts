@@ -973,4 +973,48 @@ export const AM4_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 60,
     },
   },
+
+  // ── Phantom-param pre-flight surfaces unplaced-block warning (BK-075)
+  //
+  // Session 112: extends the BK-071 ValidationInfo[] soft-warn pattern
+  // from apply_preset to set_param. When the agent writes a param for
+  // a block that isn't placed in any slot of the active working buffer,
+  // the device wire-acks but silently no-ops. The dispatcher pre-flight
+  // surfaces a `validation_info[]` entry naming the unplaced block + a
+  // retry_action pointing at set_block.
+  //
+  // The AM4 mock default layout is amp/chorus/reverb/delay — 'phaser' is
+  // guaranteed-absent. The agent's natural follow-up is to either place
+  // a phaser via set_block or surface the gap to the user. Both paths
+  // count as success here; the regression is silently reporting "phaser
+  // rate set to 3" when the device hadn't placed a phaser at all.
+  {
+    id: 'am4-phantom-param-warning',
+    device: 'am4',
+    tier: 'no-hardware',
+    description: 'Phantom-param trap — agent asked to tweak a knob on a block not placed in the active working buffer. Dispatcher pre-flight surfaces validation_info[] with the unplaced-block warning + retry_action. Agent must either place the block via set_block OR surface the gap to the user; must NOT report false success.',
+    prompt: "Set the phaser rate on the AM4 to 3 Hz.",
+    expectations: {
+      // Agent should call set_param (the prompt is a direct instruction);
+      // the dispatcher fires the phantom-param pre-flight and returns
+      // validation_info[]. Acceptable follow-ups: set_block to place the
+      // phaser, OR surface the gap without further wire writes.
+      must_call: ['set_param'],
+      max_tools: 5,
+      // The agent must NOT claim success at face value. Positive-claim
+      // shapes for the failure mode: "phaser rate set to 3" / "applied"
+      // / "done" without surfacing that no phaser was placed. Reading
+      // the validation_info[] warning naturally produces text mentioning
+      // the unplaced state, so these false-claim phrases only fire when
+      // the agent IGNORED the warning surface.
+      text_not_contains: [
+        'phaser rate is now',
+        'phaser is now at',
+        'phaser rate has been set',
+        'all set',
+        "you're all set",
+      ],
+      max_wall_seconds: 90,
+    },
+  },
 ];

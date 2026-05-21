@@ -11,6 +11,7 @@ import {
   type WriteResult,
 } from '../types.js';
 
+import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
 import { openCtx, requireDevice } from './core.js';
 import { resolveBlockName } from './resolvers.js';
 
@@ -36,6 +37,9 @@ export async function executeSetBlock(args: {
   }
   const ctx = openCtx(descriptor);
   const result = await descriptor.writer.setBlock(ctx, args.slot, args.change);
+  // BK-075: block placement just changed; invalidate the cached layout
+  // snapshot so the next set_param pre-flight re-reads.
+  invalidateBlockLayoutCache(descriptor.id);
   return { ...result, device: descriptor.display_name };
 }
 

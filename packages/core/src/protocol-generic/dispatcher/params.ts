@@ -12,12 +12,16 @@ import {
   DispatchError,
   type BatchReadResult,
   type BatchWriteResult,
+  type DispatchCtx,
+  type DeviceDescriptor,
   type ParamQuery,
   type ReadResult,
+  type ValidationInfo,
   type WriteOp,
   type WriteResult,
 } from '../types.js';
 
+import { getCachedBlockLayout } from './blockLayoutCache.js';
 import { openCtx, requireDevice } from './core.js';
 import {
   encodeValue,
@@ -25,6 +29,54 @@ import {
   resolveChannel,
   resolveParamName,
 } from './resolvers.js';
+
+/**
+ * BK-075 phantom-param pre-flight. Returns a `validation_info[]` entry
+ * when the descriptor exposes `getBlockLayoutSnapshot` and the target
+ * block isn't placed in the active working buffer. Returns an empty
+ * array otherwise (block placed, or device doesn't model placement).
+ *
+ * The write proceeds regardless — same display-first / user-agency
+ * rationale as BK-071. Surface the trap, don't refuse.
+ */
+async function collectPhantomParamWarnings(
+  descriptor: DeviceDescriptor,
+  ctx: DispatchCtx,
+  canonicalBlock: string,
+  canonicalName: string,
+): Promise<ValidationInfo[]> {
+  if (descriptor.reader.getBlockLayoutSnapshot === undefined) return [];
+  let snapshot;
+  try {
+    snapshot = await getCachedBlockLayout(descriptor.id, ctx, () =>
+      descriptor.reader.getBlockLayoutSnapshot!(ctx),
+    );
+  } catch {
+    // A failed layout read shouldn't block the write. The pre-flight is
+    // advisory; if we can't read placement we proceed silently rather
+    // than masking the user's intended write with a read error.
+    return [];
+  }
+  if (snapshot.placedBlocks.has(canonicalBlock)) return [];
+  return [{
+    path: `${canonicalBlock}.${canonicalName}`,
+    info:
+      `${canonicalBlock}.${canonicalName} write acked on the wire, but no '${canonicalBlock}' ` +
+      `block is placed in the active working buffer on ${descriptor.display_name}. ` +
+      `The device's audible state will not change. ` +
+      `Call set_block to place '${canonicalBlock}' first, then re-issue set_param.`,
+    level: 'warning',
+    dropped_param: canonicalName,
+    reason:
+      `No '${canonicalBlock}' block is placed in any slot/cell of the active working buffer on ` +
+      `${descriptor.display_name}. Param-register writes for unplaced blocks ack on the wire ` +
+      `but the param never reaches an active block, so the audible state stays put.`,
+    retry_action:
+      `Call set_block({port:"${descriptor.id}", block_type:"${canonicalBlock}", ...}) to place ` +
+      `the block in a slot, OR use apply_preset with a structural spec that includes ` +
+      `'${canonicalBlock}'. Then retry the set_param.`,
+  }];
+}
 
 /**
  * Full lifecycle for `set_param`. Steps 1–4 are the same validation
@@ -51,9 +103,22 @@ export async function executeSetParam(args: {
     );
   }
   const ctx = openCtx(descriptor);
+  // BK-075 phantom-param pre-flight: consult the cached block-layout
+  // snapshot to surface a `validation_info[]` warning when the target
+  // block isn't placed in the active working buffer. The write still
+  // proceeds (display-first / user-agency, same shape as BK-071).
+  // Devices without a placement model (Hydra) get an empty array.
+  const phantomWarnings = await collectPhantomParamWarnings(
+    descriptor,
+    ctx,
+    canonical_block,
+    canonical_name,
+  );
   const result = await descriptor.writer.setParam(ctx, canonical_block, canonical_name, wire_value, channel);
+  const validation_info = phantomWarnings.length > 0 ? phantomWarnings : undefined;
   return {
     ...result,
+    ...(validation_info !== undefined ? { validation_info } : {}),
     device: descriptor.display_name,
     aliased_param_from: aliased_from,
   };
