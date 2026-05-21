@@ -341,6 +341,36 @@ The server speaks MCP over stdio in either case.
 
 ---
 
+## Configuring tool profiles
+
+The server registers a large tool surface (every device-namespaced tool, every unified tool, every generic-MIDI primitive). For agents with tight context budgets, you can scope the registered surface via the `MCP_TOOLS_PROFILE` env var.
+
+| Profile | Tools | When to use |
+|---|---|---|
+| `full` (default) | All registered tools | Compatibility baseline. No change from prior versions. |
+| `experimental` | All tools except a small reserved debug set | Hardware-specific control + diagnostic probes. Default for dev sessions. |
+| `core` | ~25 unified-surface essentials + conversational generic-MIDI | Smallest agent context. Recommended once the unified surface covers your needs. |
+
+To select a profile, add `env` to your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "mcp-midi-control": {
+      "command": "node",
+      "args": ["C:\\path\\to\\mcp-midi-control\\packages\\server-all\\dist\\server\\index.js"],
+      "env": { "MCP_TOOLS_PROFILE": "core" }
+    }
+  }
+}
+```
+
+At startup, the server prints the active profile and the number of hidden tools to the MCP log panel (`Tool profile: core (59 tools hidden — set MCP_TOOLS_PROFILE=full in claude_desktop_config.json env to disable filtering)`). Unknown profile values fall back to `full` with a stderr warning, so a typo in the config never bricks the server.
+
+Profiles only affect tool visibility. Hidden tools are not deleted, just unregistered for the current process. To resurrect a tool that has been permanently removed (rather than profile-hidden), see [`docs/TOOL-ARCHIVE.md`](docs/TOOL-ARCHIVE.md).
+
+---
+
 ## MCP host compatibility
 
 The server implements the open [Model Context Protocol](https://modelcontextprotocol.io)

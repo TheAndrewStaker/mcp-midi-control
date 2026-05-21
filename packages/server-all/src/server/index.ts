@@ -51,6 +51,7 @@ import { AM4_PORT_NEEDLES } from '@mcp-midi-control/am4/midi.js';
 
 import { registerMidiControlTools } from './tools/midi-control.js';
 import { registerMidiPrimitiveTools } from './tools/midi-primitives.js';
+import { readToolProfile, wrapServerWithProfileFilter } from './toolProfiles.js';
 
 import { registerAM4Tools } from '@mcp-midi-control/am4/tools/index.js';
 import { registerAxeFxIITools, describeAxeFxIIPortStatus } from '@mcp-midi-control/axe-fx-ii/tools.js';
@@ -122,12 +123,23 @@ const SERVER_INSTRUCTIONS = [
   'and audition. When ambiguous, audition and ASK before persisting.',
 ].join('\n');
 
-const server = new McpServer({
+const rawServer = new McpServer({
   name: 'mcp-midi-control',
   version: '0.1.0',
 }, {
   instructions: SERVER_INSTRUCTIONS,
 });
+
+// MCP_TOOLS_PROFILE gates which tools register on the surface (T-17).
+// Default profile = 'full', so existing claude_desktop_config.json users
+// see no behavioral change. Set MCP_TOOLS_PROFILE=core in the config's
+// env block to opt into the ~25-tool focused surface, or =experimental
+// for the dev-and-debug surface. The wrapper intercepts registerTool
+// and skips registrations whose tool name is not in the active profile;
+// every register*Tools(server) callsite below uses `server` (the wrapped
+// proxy) so the gating applies uniformly.
+const TOOL_PROFILE = readToolProfile();
+const server = wrapServerWithProfileFilter(rawServer, TOOL_PROFILE);
 
 // -- Generic-MIDI tool families (any device) --------------------------------
 //
@@ -198,6 +210,14 @@ async function main(): Promise<void> {
   // this moment; if the user reports "AM4 not connected" later, the
   // startup banner captures whatever state the server started with.
   console.error('MCP MIDI Control MCP server running on stdio.');
+  // Surface the active MCP_TOOLS_PROFILE so users debugging "why is
+  // tool X not visible?" can see in the log panel what filter is in
+  // effect. Skipped count is empty for the 'full' profile.
+  const skippedCount = server.__skippedTools.length;
+  const profileBanner = TOOL_PROFILE === 'full'
+    ? `Tool profile: full (all registered tools, ${skippedCount === 0 ? 'no filter' : `${skippedCount} hidden`})`
+    : `Tool profile: ${TOOL_PROFILE} (${skippedCount} tool${skippedCount === 1 ? '' : 's'} hidden — set MCP_TOOLS_PROFILE=full in claude_desktop_config.json env to disable filtering)`;
+  console.error(profileBanner);
   try {
     const { inputs, outputs } = listMidiPorts(AM4_PORT_NEEDLES);
     const am4In = inputs.find((p) => p.matched);
