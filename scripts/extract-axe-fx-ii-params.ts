@@ -314,7 +314,21 @@ interface EnumLabelOverride {
   readonly paramId: number;
   readonly wireIndex: number;
   readonly hardwareLabel: string;
-  readonly wikiLabel: string;
+  /**
+   * Pre-override label from the wiki MIDI_SysEx page. Required when
+   * patching an existing wiki entry (the default — `isNew: false`).
+   * Omitted (or empty) when `isNew: true`.
+   */
+  readonly wikiLabel?: string;
+  /**
+   * Session 114 (2026-05-22): when true, this entry is APPENDED to the
+   * rendered enum const at `wireIndex` — the wiki catalog never had it.
+   * Used for hardware-truthed wire indexes beyond the wiki's
+   * documented range (e.g. delay.tempo wires 33+, amp.tone_stack 108+,
+   * pitch.mode 0..4). When false/omitted, the entry is a label-only
+   * replacement at an existing wire index (the original behavior).
+   */
+  readonly isNew?: boolean;
   readonly note: string;
 }
 
@@ -598,6 +612,58 @@ const ENUM_VALUE_OVERRIDES: ReadonlyArray<EnumLabelOverride> = [
     hardwareLabel: 'RIGHT ONLY', wikiLabel: 'Right ONLY',
     note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
   },
+
+  // ── Session 114 (2026-05-22): catalog-missing wire indexes ───────────
+  //
+  // Hardware probe (fn 0x28 on Q8.02 XL+, samples/captured/probe-axefx2-
+  // enum-dump-findings.md) surfaced wire indexes the wiki MIDI_SysEx
+  // page never documented. Marked `isNew: true` so the generator
+  // appends them to the rendered enum const rather than overriding an
+  // existing wiki entry. delay.tempo wires 33-78 are handled separately
+  // via `DELAY_TEMPO_VALUES_DATA` below — they're not in this list.
+  {
+    block: 'amp', paramId: 34, wireIndex: 108, hardwareLabel: 'SPAWN NITROUS',
+    isNew: true,
+    note: 'Catalog-missing tone-stack model; device emits this label at wire 108.',
+  },
+  {
+    block: 'amp', paramId: 34, wireIndex: 109, hardwareLabel: 'SV BASS',
+    isNew: true,
+    note: 'Catalog-missing tone-stack model; device emits this label at wire 109.',
+  },
+  {
+    block: 'drive', paramId: 0, wireIndex: 36, hardwareLabel: 'BLACKGLASS 7K',
+    isNew: true,
+    note: 'Catalog-missing drive model; device emits this label at wire 36.',
+  },
+  // pitch.mode: wiki documented only wire 5 ("UP|DN 2 OCT"). Probe
+  // surfaced 5 additional wires 0..4 with their octave-shift labels.
+  // Wire 5 stays as the wiki entry (byte-exact match).
+  {
+    block: 'pitch', paramId: 1, wireIndex: 0, hardwareLabel: 'UP 1 OCT',
+    isNew: true,
+    note: 'Catalog-missing pitch mode (wiki only documented wire 5); device emits this at wire 0.',
+  },
+  {
+    block: 'pitch', paramId: 1, wireIndex: 1, hardwareLabel: 'DOWN 1 OCT',
+    isNew: true,
+    note: 'Catalog-missing pitch mode; device emits this at wire 1.',
+  },
+  {
+    block: 'pitch', paramId: 1, wireIndex: 2, hardwareLabel: 'UP 2 OCT',
+    isNew: true,
+    note: 'Catalog-missing pitch mode; device emits this at wire 2.',
+  },
+  {
+    block: 'pitch', paramId: 1, wireIndex: 3, hardwareLabel: 'DOWN 2 OCT',
+    isNew: true,
+    note: 'Catalog-missing pitch mode; device emits this at wire 3.',
+  },
+  {
+    block: 'pitch', paramId: 1, wireIndex: 4, hardwareLabel: 'UP|DN 1 OCT',
+    isNew: true,
+    note: 'Catalog-missing pitch mode; device emits this at wire 4.',
+  },
 ];
 
 // HW-091 + HW-093 (2026-05-11): delay.tempo wire 0..32 → musical
@@ -606,6 +672,12 @@ const ENUM_VALUE_OVERRIDES: ReadonlyArray<EnumLabelOverride> = [
 // bar multiples; 25..26 are polymeter ratios; 27..32 are odd-numerator
 // 64th-note ratios where 10/64 is parens-displayed as (5/32) — the
 // Axe-Fx II firmware's "reduced fraction" convention.
+//
+// Session 114 (2026-05-22): wires 33..78 added from the fn 0x28 sweep
+// (samples/captured/probe-axefx2-enum-dump-findings.md). They continue
+// the odd-numerator 64th-note ratio ladder up to 63/64. The parenthetical
+// reduced form appears for ratios that simplify (e.g. 14/64 = 7/32);
+// wires that don't simplify keep just the unreduced n/64 form.
 const DELAY_TEMPO_VALUES_DATA: ReadonlyArray<readonly [number, string]> = [
   [0, 'NONE'],
   [1, '1/64 TRIP'], [2, '1/64'], [3, '1/64 DOT'],
@@ -619,6 +691,22 @@ const DELAY_TEMPO_VALUES_DATA: ReadonlyArray<readonly [number, string]> = [
   [25, '4/3'], [26, '5/4'],
   [27, '5/64'], [28, '7/64'], [29, '9/64'],
   [30, '10/64 (5/32)'], [31, '11/64'], [32, '13/64'],
+  [33, '14/64 (7/32)'], [34, '15/64'], [35, '17/64'],
+  [36, '18/64 (9/32)'], [37, '19/64'], [38, '20/64 (5/16)'],
+  [39, '21/64'], [40, '22/64 (11/32)'], [41, '23/64'],
+  [42, '25/64'], [43, '26/64 (13/32)'], [44, '27/64'],
+  [45, '28/64 (7/16)'], [46, '29/64'], [47, '30/64 (15/32)'],
+  [48, '31/64'], [49, '33/64'], [50, '34/64 (17/32)'],
+  [51, '35/64'], [52, '36/64 (9/16)'], [53, '37/64'],
+  [54, '38/64 (19/32)'], [55, '39/64'], [56, '40/64 (5/8)'],
+  [57, '41/64'], [58, '42/64 (21/32)'], [59, '43/64'],
+  [60, '44/64 (11/16)'], [61, '45/64'], [62, '46/64 (23/32)'],
+  [63, '47/64'], [64, '49/64'], [65, '50/64 (25/32)'],
+  [66, '51/64'], [67, '52/64 (13/16)'], [68, '53/64'],
+  [69, '54/64 (27/32)'], [70, '55/64'], [71, '56/64 (7/8)'],
+  [72, '57/64'], [73, '58/64 (29/32)'], [74, '59/64'],
+  [75, '60/64 (15/16)'], [76, '61/64'], [77, '62/64 (31/32)'],
+  [78, '63/64'],
 ];
 
 // ── Inputs / outputs ──────────────────────────────────────────────────
@@ -1134,26 +1222,54 @@ function emitParams(): string {
                 // overrides from hardware-captured fn 0x28 dumps. The
                 // wiki MIDI_SysEx page carries a handful of transcription
                 // errors; the device's emitted label is the truth.
+                //
+                // Session 114 (2026-05-22): also accept `isNew: true`
+                // entries that append wireIndexes the wiki never
+                // documented (delay.tempo 33+, amp.tone_stack 108+, etc).
                 const labelOverrides = new Map<number, EnumLabelOverride>();
+                const additions: EnumLabelOverride[] = [];
                 for (const ov of ENUM_VALUE_OVERRIDES) {
-                    if (ov.block === block && ov.paramId === r.paramId) {
-                        labelOverrides.set(ov.wireIndex, ov);
-                    }
+                    if (ov.block !== block || ov.paramId !== r.paramId) continue;
+                    if (ov.isNew) additions.push(ov);
+                    else labelOverrides.set(ov.wireIndex, ov);
                 }
+                // Safety: if an `isNew` entry collides with a wiki
+                // wireIndex, drop the addition (the wiki + label
+                // override path covers it).
+                const wikiIndexes = new Set(r.options.map((o) => o.index));
+                const filteredAdditions = additions
+                    .filter((a) => !wikiIndexes.has(a.wireIndex))
+                    .sort((a, b) => a.wireIndex - b.wireIndex);
+                // Build per-wireIndex lines for wiki options and
+                // additions, then sort by wireIndex so the rendered
+                // const reads monotonically (ECMAScript would iterate
+                // integer keys numerically anyway, but the source file
+                // is easier to review in order).
+                const indexedLines: Array<readonly [number, string]> = r.options.map((o) => {
+                    const ov = labelOverrides.get(o.index);
+                    const label = ov ? ov.hardwareLabel : o.name;
+                    const trailer = ov
+                        ? `  // hw fn 0x28 override (was ${JSON.stringify(ov.wikiLabel ?? '')}): ${ov.note}`
+                        : '';
+                    return [o.index, `    ${o.index}: ${JSON.stringify(label)},${trailer}`] as const;
+                });
+                for (const ov of filteredAdditions) {
+                    indexedLines.push([
+                        ov.wireIndex,
+                        `    ${ov.wireIndex}: ${JSON.stringify(ov.hardwareLabel)},` +
+                            `  // hw fn 0x28 add (catalog-missing): ${ov.note}`,
+                    ] as const);
+                }
+                const optionLines = indexedLines
+                    .sort((a, b) => a[0] - b[0])
+                    .map(([, line]) => line);
                 enumDecls.push(
                     `export const ${enumName}: Readonly<Record<number, string>> = Object.freeze({\n` +
-                    r.options.map((o) => {
-                        const ov = labelOverrides.get(o.index);
-                        const label = ov ? ov.hardwareLabel : o.name;
-                        const trailer = ov
-                            ? `  // hw fn 0x28 override (was ${JSON.stringify(ov.wikiLabel)}): ${ov.note}`
-                            : '';
-                        return `    ${o.index}: ${JSON.stringify(label)},${trailer}`;
-                    }).join('\n') +
+                    optionLines.join('\n') +
                     `\n});`,
                 );
                 props.push(`enumValues: ${enumName}`);
-                totalEnumEntries += r.options.length;
+                totalEnumEntries += r.options.length + filteredAdditions.length;
             }
 
             const trimmedMin = r.min?.trim();
@@ -1206,17 +1322,17 @@ function emitParams(): string {
         const delayTempoConstText =
             '/**\n' +
             ' * Delay tempo-sync division enum — hardware-measured 2026-05-11 via\n' +
-            ' * HW-091 (wire 0..8) and HW-093 (wire 9..32). Wire 33+ not yet\n' +
-            ' * probed; the device likely saturates at wire 32 or rejects further.\n' +
+            ' * HW-091 (wire 0..8) and HW-093 (wire 9..32), extended 2026-05-22\n' +
+            ' * via Session 114 fn 0x28 sweep (wire 33..78).\n' +
             ' *\n' +
             ' * Pattern: wire 0 = NONE (disables sync); wires 1..21 are the\n' +
             ' * canonical musical-division ladder TRIP/straight/DOT in increasing\n' +
             ' * note-value; wires 22..24 are integer bar multiples; wires 25..26\n' +
-            ' * are polymeter ratios (4/3, 5/4); wires 27..32 are odd-numerator\n' +
-            ' * 64th-note ratios where 10/64 is parens-displayed as (5/32) — the\n' +
-            ' * Axe-Fx II firmware\'s "reduced fraction" convention (parens =\n' +
-            ' * computed value, same convention as tempo-gated `(375 ms)` on\n' +
-            ' * delay.time).\n' +
+            ' * are polymeter ratios (4/3, 5/4); wires 27..78 are the full odd-\n' +
+            ' * numerator 64th-note ratio ladder (5/64 through 63/64). Ratios that\n' +
+            ' * simplify are parens-displayed as the reduced form (e.g. 10/64 →\n' +
+            ' * "(5/32)") — the Axe-Fx II firmware\'s "reduced fraction"\n' +
+            ' * convention (same as tempo-gated `(375 ms)` on delay.time).\n' +
             ' */\n' +
             'export const DELAY_TEMPO_VALUES: Readonly<Record<number, string>> = Object.freeze({\n' +
             DELAY_TEMPO_VALUES_DATA.map(

@@ -267,12 +267,24 @@ async function main(): Promise<void> {
     );
 
     // Compare against catalog.
+    //
+    // Session 114 (2026-05-22): display-first match. The Axe-Fx II
+    // pads several single-letter / short labels with trailing
+    // whitespace ("A " for chromatic notes, "NONE " for delay.tempo
+    // idx 0, "AUTO: " for input.input_z idx 0) — purely display-layer
+    // padding the firmware emits to align fixed-width readouts. Our
+    // catalog stores the trimmed form (the "display-first" string a
+    // musician reads); the dispatcher trims when matching agent input.
+    // Treat `hw.trimEnd() === cat` as a match so this probe stops
+    // surfacing whitespace-only diffs as catalog gaps. Future
+    // catalog-missing entries still surface (leading/embedded text
+    // differs) and truncated frames still flag in the headline.
     let exact = 0;
     const mismatches: ProbeResult['mismatchList'] = [];
     for (let i = 0; i < strings.length; i++) {
       const hw = strings[i]!;
       const cat = probe.catalogStrings[i];
-      if (cat === hw) exact++;
+      if (cat === hw || (cat !== undefined && hw.trimEnd() === cat)) exact++;
       else mismatches.push({ idx: i, hw, cat });
     }
 
@@ -339,7 +351,7 @@ async function main(): Promise<void> {
       `- Response frames: ${r.inbound.length}`,
       `- Decoded strings: ${r.decodedStrings.length} / catalog ${r.probe.expectedCount}`,
       `- Frame truncated: ${r.truncated ? `yes (partial = "${r.trailingPartial}")` : 'no'}`,
-      `- Byte-exact matches: ${r.matchCount}`,
+      `- Display-equal matches: ${r.matchCount} (treats trailing whitespace as equivalent)`,
       `- Mismatches: ${r.mismatchList.length}`,
       '',
     );
@@ -373,8 +385,8 @@ async function main(): Promise<void> {
   const totalDiff = results.reduce((a, r) => a + r.mismatchList.length, 0);
   const truncCount = results.filter((r) => r.truncated).length;
   console.log(
-    `\nTotals: ${totalCaptured} strings captured, ${totalExact} byte-exact ` +
-      `matches, ${totalDiff} mismatches, ${truncCount}/${results.length} ` +
+    `\nTotals: ${totalCaptured} strings captured, ${totalExact} display-equal ` +
+      `matches (trim-tolerant), ${totalDiff} mismatches, ${truncCount}/${results.length} ` +
       `probes hit the 2048B frame cap.`,
   );
 
