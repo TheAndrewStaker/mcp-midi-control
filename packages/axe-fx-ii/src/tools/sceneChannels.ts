@@ -186,10 +186,10 @@ export function registerAxeFxIISceneChannelsTool(server: McpServer): void {
   server.registerTool('axefx2_set_scene_channels', {
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
-      'Set per-scene channel routing (X or Y) for one or more blocks ATOMICALLY. Kills BK-058 (channel-Y write loss) at the wire/protocol level by patching the preset binary directly instead of sending individual SET_BLOCK_CHANNEL frames per scene.',
+      'Set per-scene channel routing (X or Y) for one or more blocks ATOMICALLY by patching the preset binary directly instead of sending individual per-scene channel frames.',
       'Each `assignments[]` entry names a block (display name or effectId) and lists which scenes should be on channel Y. Scenes not listed stay on X.',
       'When `save_authorized: true`, commits to `location` via STORE_PRESET. When false, push to working buffer only (reverts on next preset switch).',
-      'Pre-flight refuses if any named block is not in the per-scene channel map (currently: Amp 1, Drive 1, Reverb 1, Delay 1, Cab 1, Compressor 1). For other blocks, fall back to set_block_channel (sequential frames; subject to BK-058).',
+      'Pre-flight refuses if any named block is not in the per-scene channel map (currently: Amp 1, Drive 1, Reverb 1, Delay 1, Cab 1, Compressor 1). For other blocks, fall back to set_block_channel.',
       'Performance: ~1.5 s dump + ~600 ms push + ~250 ms save (when save_authorized=true).',
       'Returns: `{ ok, applied[], frames_sent, nacks, name, saved_to_location? }`.',
     ].join(' '),
@@ -220,7 +220,7 @@ export function registerAxeFxIISceneChannelsTool(server: McpServer): void {
           throw new Error(
             `assignments[${idx}].block: "${block.name}" (id ${block.id}) is not in the per-scene channel map yet. ` +
             `Mapped blocks: ${[...SCENE_CHANNEL_MAP.values()].map((v) => v.blockName).join(', ')}. ` +
-            `Use set_block_channel for unmapped blocks (subject to BK-058 channel-Y race).`,
+            `Use set_block_channel for unmapped blocks.`,
           );
         }
         return { block, loc, scenesOnY: a.scenes_on_y };

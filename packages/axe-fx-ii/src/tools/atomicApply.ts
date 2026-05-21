@@ -197,11 +197,11 @@ export function registerAxeFxIIAtomicApplyTool(server: McpServer): void {
   server.registerTool('axefx2_atomic_apply', {
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
-      'Atomic preset modification via dump → patch → push → save. ZERO use of per-frame SET_BLOCK_CHANNEL or SET_BLOCK_PARAMETER — kills BK-058 (channel-Y write loss) at the protocol level. The device sees one coherent preset binary, not 50+ wire frames with race-prone scene state.',
-      'Each blocks[] entry names a block (display name or effectId) and may carry: `params` (param-name → display-or-wire value), `scenes_bypassed` (1-indexed scene numbers to bypass), `scenes_on_y` (1-indexed scene numbers to route to channel Y; remaining scenes go to channel X).',
+      'Atomic preset modification via dump, patch, push, save. ZERO use of per-frame channel/param frames; the device sees one coherent preset binary instead of 50+ race-prone wire frames.',
+      'Each blocks[] entry names a block (display name or effectId) and may carry: `params` (param-name to display-or-wire value), `scenes_bypassed` (1-indexed scene numbers to bypass), `scenes_on_y` (1-indexed scene numbers to route to channel Y; remaining scenes go to channel X).',
       'When `save_authorized: true`, STORE_PRESET commits to `location` after pushing. When false, push goes to working buffer only.',
-      '⚠️ LAYOUT LIMIT (Session 116 finding): paramBase entries are calibrated for the Test Crunch 6-block composition (compressor / drive / amp / cab / delay / reverb at row 2, nothing else placed). Apply against a preset with a different block composition writes to the WRONG ushorts. Verify the target preset matches this composition before relying on param writes. sceneState entries may also be layout-dependent; not yet verified.',
-      'COVERAGE LIMITS (Session 115 v0.1): per-scene state mapped for Amp 1, Drive 1, Cab 1, Reverb 1, Delay 1, Compressor 1. Params atomic-writable for the same six blocks (X + Y). Other blocks: fall back to apply_preset (subject to BK-058).',
+      'LAYOUT LIMIT: paramBase entries are calibrated for the Test Crunch 6-block composition (compressor / drive / amp / cab / delay / reverb at row 2, nothing else placed). Apply against a preset with a different block composition writes to the WRONG ushorts. Verify the target preset matches this composition before relying on param writes. sceneState entries may also be layout-dependent; not yet verified.',
+      'COVERAGE LIMITS: per-scene state mapped for Amp 1, Drive 1, Cab 1, Reverb 1, Delay 1, Compressor 1. Params atomic-writable for the same six blocks (X + Y). Other blocks: fall back to apply_preset.',
       'Returns: `{ ok, applied[], block_layout_lookups[], frames_sent, nacks, name, saved_to_location? }`.',
       'Performance: ~1.5 s dump + ~800 ms push + ~250 ms save when save_authorized=true.',
     ].join(' '),
@@ -238,7 +238,7 @@ export function registerAxeFxIIAtomicApplyTool(server: McpServer): void {
           throw new Error(
             `blocks[${idx}].block: "${block.name}" (id ${block.id}) is not in BLOCK_LAYOUT_MAP yet. ` +
             `Mapped: ${[...BLOCK_LAYOUT_MAP.values()].map((v) => v.blockName).join(', ')}. ` +
-            `For unmapped blocks use apply_preset (non-atomic, subject to BK-058).`,
+            `For unmapped blocks use apply_preset (non-atomic).`,
           );
         }
         return { block, layout, input: b };
