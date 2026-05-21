@@ -357,6 +357,7 @@ function stripDroppedKnobsFromSlotParams(
  */
 export async function executeGetPreset(args: {
   port: string;
+  include_channel_state?: boolean;
 }): Promise<PresetSnapshot> {
   const descriptor = requireDevice(args.port);
   if (descriptor.reader.getPreset === undefined) {
@@ -367,7 +368,7 @@ export async function executeGetPreset(args: {
     );
   }
   const ctx = openCtx(descriptor);
-  return descriptor.reader.getPreset(ctx);
+  return descriptor.reader.getPreset(ctx, { include_channel_state: args.include_channel_state === true });
 }
 
 /**

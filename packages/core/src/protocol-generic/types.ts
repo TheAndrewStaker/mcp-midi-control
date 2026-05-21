@@ -637,6 +637,31 @@ export interface PresetSnapshotMeta {
   active_scene_only: boolean;
   /** True when routing edges were not included in the snapshot. */
   routing_omitted: boolean;
+  /**
+   * True when channel-bearing-block channel-id reads were skipped to
+   * save wire round-trips (T-3 Phase A default). When true, every
+   * channel-bearing slot in `slots[]` returns flat params with
+   * `channel_status: 'unknown'`; callers wanting round-trippable
+   * snapshots must pass `include_channel_state: true` to `get_preset`.
+   */
+  channel_state_omitted?: boolean;
+}
+
+/**
+ * Per-call options for `reader.getPreset`. Drives latency / completeness
+ * trade-offs without changing the response envelope.
+ */
+export interface GetPresetOptions {
+  /**
+   * When true, run the per-block channel-id read (fn 0x11 on Axe-Fx II)
+   * so each channel-bearing slot's params nest under the active channel
+   * key. Costs one extra SysEx round-trip per channel-bearing block (≈
+   * 50 ms each; an 11-block preset with 9 channel-bearing blocks adds
+   * ≈ 450 ms to the snapshot wall time). Default false (omit) for the
+   * common case where the caller is inspecting state, not authoring a
+   * round-trip mutate-and-reapply flow.
+   */
+  include_channel_state?: boolean;
 }
 
 export interface SetlistEntrySpec {
@@ -807,7 +832,7 @@ export interface DeviceReader {
    * additional fields on `PresetSnapshot` rather than a tool-shape
    * change.
    */
-  getPreset?(ctx: DispatchCtx): Promise<PresetSnapshot>;
+  getPreset?(ctx: DispatchCtx, options?: GetPresetOptions): Promise<PresetSnapshot>;
   /** Bulk-scan stored preset locations for their names. */
   scanLocations?(ctx: DispatchCtx, from: string | number, to: string | number): Promise<{
     scanned: readonly ScannedLocation[];

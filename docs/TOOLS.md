@@ -13,9 +13,9 @@ See [README.md § Configuring tool profiles](../README.md#configuring-tool-profi
 
 | Profile | Tool count | Average description length | Tools over 600 chars | Tools over 1000 chars |
 |---|---|---|---|---|
-| `core` | 26 | 929 chars | 11 | 5 |
-| `experimental` | 81 | 688 chars | 30 | 7 |
-| `full` | 81 | 688 chars | 30 | 7 |
+| `core` | 26 | 924 chars | 11 | 5 |
+| `experimental` | 81 | 686 chars | 30 | 7 |
+| `full` | 81 | 686 chars | 30 | 7 |
 
 ## core profile (26 tools)
 
@@ -29,7 +29,7 @@ Default-recommended unified surface for conversational tone-building. Smallest a
 | `find_compatible_types` | 746 ⚠ | Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics). |
 | `get_param` | 631 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 303 | Batch-read parameters from a device. |
-| `get_preset` | 2255 ⚠️ over 1000 | Snapshot the active working buffer in one tool call. |
+| `get_preset` | 2131 ⚠️ over 1000 | Snapshot the active working buffer in one tool call. |
 | `list_midi_ports` | 460 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 838 ⚠ | Enumerate a device's parameters with units and display ranges. |
 | `lookup_lineage` | 587 | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
@@ -96,7 +96,7 @@ Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics.
 | `find_compatible_types` | 746 ⚠ | Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics). |
 | `get_param` | 631 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 303 | Batch-read parameters from a device. |
-| `get_preset` | 2255 ⚠️ over 1000 | Snapshot the active working buffer in one tool call. |
+| `get_preset` | 2131 ⚠️ over 1000 | Snapshot the active working buffer in one tool call. |
 | `hydra_apply_init` | 903 ⚠ | ⚠ This Hydrasynth tool surface is in active development. |
 | `hydra_apply_init_to` | 891 ⚠ | ⚠ This Hydrasynth tool surface is in active development. |
 | `hydra_apply_patch` | 5834 ⚠️ over 1000 | ⚠ This Hydrasynth tool surface is in active development. |
@@ -184,7 +184,7 @@ Everything registered (current default; equivalent to no env var). Preserved as 
 | `find_compatible_types` | 746 ⚠ | Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics). |
 | `get_param` | 631 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 303 | Batch-read parameters from a device. |
-| `get_preset` | 2255 ⚠️ over 1000 | Snapshot the active working buffer in one tool call. |
+| `get_preset` | 2131 ⚠️ over 1000 | Snapshot the active working buffer in one tool call. |
 | `hydra_apply_init` | 903 ⚠ | ⚠ This Hydrasynth tool surface is in active development. |
 | `hydra_apply_init_to` | 891 ⚠ | ⚠ This Hydrasynth tool surface is in active development. |
 | `hydra_apply_patch` | 5834 ⚠️ over 1000 | ⚠ This Hydrasynth tool surface is in active development. |
@@ -235,7 +235,7 @@ Tools with descriptions over 1000 chars. T-4 / T-13 target these for migration i
 | `hydra_apply_patch` | 5834 chars |
 | `apply_preset` | 5808 chars |
 | `describe_device` | 2623 chars |
-| `get_preset` | 2255 chars |
+| `get_preset` | 2131 chars |
 | `axefx3_set_parameter` | 1504 chars |
 | `nudge_param` | 1199 chars |
 | `set_param` | 1109 chars |

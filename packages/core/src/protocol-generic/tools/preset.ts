@@ -36,20 +36,23 @@ export function registerPresetTools(server: McpServer): void {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Snapshot the active working buffer in one tool call. Returns every placed block with its current params under a PresetSpec-shaped envelope.',
-      'Use for state-anchoring before a tone-edit conversation: read what is on the device, summarize what is placed and which scene/channel is active, propose changes, then call set_param or set_params for the targeted edits.',
-      'PERFORMANCE. ~400 ms on Axe-Fx II for a typical 11-block preset (live-measured on Q8.02 firmware, one fn 0x1F per placed block, serial). Larger or more parameter-dense presets may push toward 1 s. Generally fast enough not to need an upfront wait announcement, but for big setlists or stacked plugins announce so the user does not think the agent stalled. AM4 / III / Hydra return capability_not_supported until their atomic-read primitives land; on those devices fall back to get_param + get_params.',
-      'RESPONSE SCOPE. Active scene only. Channel-bearing blocks come back with params nested under the active channel key (e.g. params:{X:{input_drive:5,...}} on II) so you can read what the user is currently hearing. Scenes 2..N, non-active channels, and routing edges are NOT included.',
-      'DO NOT FEED THE WHOLE RESPONSE INTO apply_preset. apply_preset has FRESH-BUILD CLEARING semantics: unlisted slots clear to none, unlisted scenes reset to defaults. Round-tripping the snapshot would reset scenes 2..N and drop routing. For read-mutate-write, use set_param / set_params for the specific knobs you changed. The snapshot is for INSPECTION and TARGETED EDITS, not cloning back wholesale.',
-      'TO CLONE A SLOT INTO apply_preset. Copy {slot, block_type, instance, params} from one snapshot entry and drop channel_status. The shape is otherwise compatible with PresetSlotSpec, so a cherry-picked slot from the snapshot drops cleanly into an apply_preset spec\'s slots array.',
+      'Use for state-anchoring before a tone-edit conversation: read what is on the device, summarize what is placed, propose changes, then call set_param or set_params for the targeted edits.',
+      'PERFORMANCE. ~1-1.5 s on Axe-Fx II for a typical 11-block preset (one fn 0x1F per placed block, serial). Pass include_channel_state:true to ALSO nest params under the active channel key on channel-bearing blocks; that adds ~50 ms per channel-bearing block (≈ +450 ms on an 11-block preset with 9 channel blocks). Default OFF saves the round-trips on inspection workflows. AM4 / III / Hydra return capability_not_supported until their atomic-read primitives land; on those devices fall back to get_param + get_params.',
+      'RESPONSE SCOPE. Active scene only. By default channel-bearing blocks return FLAT params with channel_status:"unknown" and _meta.channel_state_omitted:true. Set include_channel_state:true to nest under the active channel (channel_status:"active", _meta.channel_state_omitted:false) when you need round-trippable shapes. Scenes 2..N, non-active channels, and routing edges are NOT included.',
+      'DO NOT FEED THE WHOLE RESPONSE INTO apply_preset. apply_preset has FRESH-BUILD CLEARING semantics: unlisted slots clear to none, unlisted scenes reset to defaults. Round-tripping the snapshot would reset scenes 2..N and drop routing. For read-mutate-write, use set_param / set_params for the specific knobs you changed.',
+      'TO CLONE A SLOT INTO apply_preset. With include_channel_state:true, copy {slot, block_type, instance, params} from a snapshot entry and drop channel_status. The shape is otherwise compatible with PresetSlotSpec.',
       'POST-WRITE VALIDATION. After set_param / set_params / apply_preset, call get_preset again and diff against your intent on the slots and params you actually wrote. Catches type-gated params that silently no-op (wire ack does not mean audible change).',
-      'CAPABILITY GATE. describe_device(port).capabilities.atomic_read is true when this tool is supported, false otherwise. Check before recommending the snapshot pattern in a session-opener.',
+      'CAPABILITY GATE. describe_device(port).capabilities.atomic_read is true when this tool is supported, false otherwise.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
+      include_channel_state: z.boolean().optional().describe(
+        'When true, read each channel-bearing block\'s active channel via an extra SysEx round-trip per block (~50 ms each) so params nest under the active channel key. Default false (faster inspection).',
+      ),
     },
-  }, async ({ port }) => {
+  }, async ({ port, include_channel_state }) => {
     try {
-      const result = await executeGetPreset({ port });
+      const result = await executeGetPreset({ port, include_channel_state });
       return asText(result);
     } catch (err) {
       return asError(err);

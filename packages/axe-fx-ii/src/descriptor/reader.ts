@@ -495,7 +495,8 @@ export const reader: DeviceReader = {
     return { placedBlocks, unroutedBlocks };
   },
 
-  async getPreset(ctx: DispatchCtx): Promise<PresetSnapshot> {
+  async getPreset(ctx: DispatchCtx, options?: { include_channel_state?: boolean }): Promise<PresetSnapshot> {
+    const includeChannelState = options?.include_channel_state === true;
     // 1. Grid read so we know which blocks are placed and at what slot.
     const gridResponsePromise = ctx.conn.receiveSysExMatching(
       isGetGridLayoutResponse,
@@ -533,22 +534,27 @@ export const reader: DeviceReader = {
     //    concurrent fn 0x1F bursts would interleave 0x75 chunks across
     //    different headers in the inbound stream (no per-request tag).
     //
-    //    For channel-bearing blocks (canBypass=true on II), we ALSO read
-    //    the active channel via fn 0x11 so the returned params nest under
-    //    the active channel key (e.g. `{X: {input_drive: 5, ...}}`). That
-    //    nested shape is what `apply_preset` expects on channel blocks,
-    //    so the round-trip read → mutate → re-apply works without the
-    //    agent reshaping the response.
+    //    For channel-bearing blocks (canBypass=true on II), the active
+    //    channel is read via fn 0x11 ONLY when the caller opts in via
+    //    `include_channel_state`. T-3 Phase A (2026-05-21) flipped the
+    //    default to skip the channel-read loop — that loop adds one
+    //    SysEx round-trip per channel-bearing block (≈ 50 ms each, ≈
+    //    450 ms total on a typical 11-block / 9-channel-bearing preset)
+    //    and the common get_preset use case is "tell me what's on the
+    //    device," not round-trip read → mutate → re-apply. Callers that
+    //    DO want the round-trippable nested shape pass
+    //    `include_channel_state: true` and pay the latency knowingly.
     const slots: PresetSnapshotSlot[] = [];
     const errors: string[] = [];
     for (const block of placed) {
       try {
-        // Read active channel first (only for channel-bearing blocks).
-        // Best-effort: a failure here doesn't kill the param read. We
-        // fall back to flat params with `channel_status: 'unknown'` so
-        // callers can detect the partial-info state programmatically.
+        // Read active channel first when opted-in (channel-bearing
+        // blocks only). Best-effort: a failure here doesn't kill the
+        // param read. When skipped (default) or when the read fails,
+        // we fall back to flat params with `channel_status: 'unknown'`
+        // so callers can detect the partial-info state programmatically.
         let activeChannel: AxeFxIIChannel | undefined;
-        if (block.canBypass) {
+        if (includeChannelState && block.canBypass) {
           try {
             const chPromise = ctx.conn.receiveSysExMatching(
               (bytes) => isGetBlockChannelResponse(bytes, block.effectId),
@@ -650,6 +656,12 @@ export const reader: DeviceReader = {
         read_at_ms: Date.now(),
         active_scene_only: true,
         routing_omitted: true,
+        // T-3 Phase A: flag when the caller opted out of the per-block
+        // channel-id read. When true, every channel-bearing slot in
+        // slots[] has channel_status='unknown' (flat params, callers
+        // wanting nested {X:{...}} / {Y:{...}} pass include_channel_state
+        // on the next call).
+        channel_state_omitted: !includeChannelState,
       },
     };
   },
