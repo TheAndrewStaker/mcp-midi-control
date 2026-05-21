@@ -45,7 +45,21 @@ Tools listed here are allowed to exceed the 1000-char hard cap or 600-char warn 
 
 ## Removed tools
 
-_No entries yet. First removals land in T-2 (axefx2_test_apply, axefx3_get_parameter, axefx3_set_parameter, hydra_set_param) and T-6 (axefx2_atomic_apply)._
+### axefx2_atomic_apply (removed: 2026-05-21)
+
+**Wire function:** FN_PATCH_DUMP (0x03), FN_PATCH_HEADER (0x77), FN_PATCH_CHUNK (0x78), FN_PATCH_FOOTER (0x79), STORE_PRESET (0x1d). The full dump → patch → push → save sequence.
+
+**Original use case:** Atomic multi-block, multi-scene, multi-param preset modification in one round-trip. Designed to kill the BK-058 race condition (`SET_BLOCK_CHANNEL` fn 0x11 dropping channel-Y writes on inactive scenes) by patching the preset binary directly and pushing it back atomically instead of streaming per-frame channel writes.
+
+**Why cut:** The dump → patch → push → save pipeline is wire-correct, but the (chunk, ushort) coordinates in `BLOCK_LAYOUT_MAP` are calibrated only against the Test Crunch 6-block composition (compressor / drive / amp / cab / delay / reverb at row 2). Hardware probing in Session 116 cont 3 proved layout positions SHIFT per-preset (adding a Chorus block shifts Compressor's X paramBase by +50 ushorts). Ghidra confirmed the encoder lives in firmware; the sort algorithm cannot be RE'd from AxeEdit. Shipping the tool as-is means silent writes to the wrong ushorts whenever the target preset does not match Test Crunch. Functional equivalent for multi-channel writes already lives on the unified surface via `apply_preset` with `slots[].params.X / .Y` nested params (BK-058 writer fix + BK-077 channel-Y inactive warning).
+
+**Resurrection instructions:**
+- Source preserved at `packages/axe-fx-ii/src/research/atomicApply.ts` (moved 2026-05-21; not registered).
+- Last live registration shipped at commit `e9dcf3e` (May 2026). To recover the registration call site: `git show e9dcf3e:packages/axe-fx-ii/src/tools/atomicApply.ts` then re-add `registerAxeFxIIAtomicApplyTool(server)` to `packages/axe-fx-ii/src/tools.ts:registerAxeFxIITools`.
+- Research probes: `scripts/_research/test-atomic-apply.ts`, `scripts/_research/test-atomic-dual-channel.ts`. Both still register the tool standalone (separate from the production server) for ad-hoc Test-Crunch-composition runs.
+- Resurrection prerequisite: a layout-discovery step that runs BEFORE the patch phase and resolves (chunk, ushort) coordinates against the actual target preset's composition. Two candidate decode paths: (a) mine the AxeEdit III binary for a parallel implementation; (b) ship a calibration-probe v2 that probes-and-confirms each ushort cell pre-write. Until either lands, treat the tool as wire-correct-but-layout-fragile.
+
+**Stability note:** wire format is settled (the dump / push primitives mirror what `registerAxeFxIIPresetBinaryTools` already ships safely). The layout-map data is N=1 calibration; needs a real solution before the tool resurrects.
 
 ## Unrealized capabilities
 

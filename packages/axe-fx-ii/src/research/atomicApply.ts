@@ -1,23 +1,60 @@
 /**
- * Axe-Fx II atomic apply — BK-070 ship vehicle.
+ * Axe-Fx II atomic apply — RESEARCH ARTIFACT (not registered).
  *
- * `axefx2_atomic_apply` writes a multi-block, multi-scene, multi-param
- * preset modification in ONE round-trip via dump → patch → push → save.
+ * Status (2026-05-21, T-6 sprint): this tool is preserved as a decode
+ * research artifact and is intentionally NOT exposed via the MCP tool
+ * surface. The `registerAxeFxIIAtomicApplyTool` export still exists
+ * for use by hardware research scripts under `scripts/_research/`,
+ * but no production code path calls it.
  *
- * Why this exists: the existing per-frame apply_preset path uses
- * SET_BLOCK_CHANNEL (fn 0x11) for per-scene channel state. That op has
- * the BK-058 race condition that drops channel-Y writes on scenes that
- * aren't currently active. This tool ZERO uses that op — it patches the
- * preset binary directly and pushes it back atomically. The device
- * never sees a partial state, so the race is impossible.
+ * Why it is not shipped:
  *
- * Scope: only blocks present in BLOCK_LAYOUT_MAP can have per-scene
- * state or params modified through this tool. Currently Amp 1, Drive 1,
- * Cab 1, Reverb 1, Delay 1, Compressor 1 have per-scene state; Amp 1
- * and Drive 1 additionally have params mappable. Other blocks need
- * their (chunk, ushort) discovered via the bk070-* research scripts.
+ *   The dump → patch → push → save pipeline is wire-correct and uses
+ *   ZERO of the BK-058-race-prone SET_BLOCK_CHANNEL (fn 0x11) frames
+ *   the per-frame `apply_preset` path used to depend on. The
+ *   atomicity is real. What is NOT real: portability across preset
+ *   compositions.
  *
- * For unmapped blocks, fall back to the existing per-frame apply_preset.
+ *   BLOCK_LAYOUT_MAP encodes the (chunk, ushort) coordinates of each
+ *   per-scene-state byte AND each param's X/Y storage cell INSIDE the
+ *   preset binary, but those coordinates are calibrated against the
+ *   exact Test Crunch 6-block composition (compressor / drive / amp /
+ *   cab / delay / reverb at row 2, nothing else placed). Hardware
+ *   probing in Session 116 cont 3 proved that the layout positions
+ *   SHIFT per-preset (e.g. adding a Chorus block shifts Compressor's
+ *   X paramBase by +50 ushorts). Ghidra confirmed the layout encoder
+ *   lives in firmware, so the sort algorithm cannot be reverse-
+ *   engineered from AxeEdit alone. Shipping the tool as-is means
+ *   silent writes to the wrong ushorts whenever the target preset
+ *   does not match Test Crunch exactly.
+ *
+ *   The functional equivalent for multi-channel writes lives on the
+ *   unified surface: `apply_preset` with `slots[].params.X / .Y`
+ *   nested params (BK-058 writer fix + BK-077 channel-Y inactive
+ *   warning). Standard `apply_preset` works on any preset composition.
+ *
+ *   Byte-exact backup / restore stays available via
+ *   `registerAxeFxIIPresetBinaryTools` (the dump and push primitives
+ *   here mirror those, but without the layout-fragile patching).
+ *
+ * What is preserved for future work:
+ *
+ *   - The dump → patch → push → save sequence (atomic write primitive)
+ *   - The (chunk, ushort) coordinate model in `sceneChannelMap.ts` +
+ *     `blockBinaryLayout.ts`
+ *   - The N=1 calibration data for the Test Crunch composition
+ *   - The wire builders for FN_PATCH_HEADER (0x77), FN_PATCH_CHUNK
+ *     (0x78), FN_PATCH_FOOTER (0x79), and FN_PATCH_DUMP (0x03)
+ *
+ * Resurrection path: when a future session decodes the firmware-side
+ * layout encoder (e.g. by mining the AxeEdit III binary for a parallel
+ * implementation, or by shipping a calibration-probe v2 that runs
+ * pre-write layout discovery), this file can register as a shipping
+ * tool again. Until then it is reference material for the wire format,
+ * not a tool callers should rely on.
+ *
+ * See docs/TOOL-ARCHIVE.md row "axefx2_atomic_apply" for the full
+ * archive entry.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -39,7 +76,7 @@ import {
 } from 'fractal-midi/axe-fx-ii';
 import { resolveBlock, KNOWN_PARAMS, findParamFuzzy } from 'fractal-midi/axe-fx-ii';
 
-import { ensureConn, GET_RESPONSE_TIMEOUT_MS } from './shared.js';
+import { ensureConn, GET_RESPONSE_TIMEOUT_MS } from '../tools/shared.js';
 import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 import {
   BLOCK_LAYOUT_MAP,

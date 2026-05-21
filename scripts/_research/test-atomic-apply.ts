@@ -9,7 +9,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerAxeFxIIPresetBinaryTools } from '@mcp-midi-control/axe-fx-ii/tools/presetBinary.js';
-import { registerAxeFxIIAtomicApplyTool } from '@mcp-midi-control/axe-fx-ii/tools/atomicApply.js';
+import { registerAxeFxIIAtomicApplyTool } from '@mcp-midi-control/axe-fx-ii/research/atomicApply.js';
 import { registerDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
 import { executeSwitchPreset } from '@mcp-midi-control/core/protocol-generic/dispatcher/navigation.js';
