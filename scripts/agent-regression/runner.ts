@@ -16,6 +16,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type {
   AgentRegressionCase,
@@ -24,6 +25,7 @@ import type {
 } from './types.js';
 
 const MCP_CONFIG_PATH = path.resolve('scripts/agent-regression/mcp-config.json');
+const TRACES_DIR = path.resolve('scripts/agent-regression/traces');
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 /**
  * Claude Code's MCP tool naming convention prefixes every tool with
@@ -42,7 +44,13 @@ interface RunOptions {
   /**
    * Max retries on failure. Default 1 — Sonnet is non-deterministic
    * even at temperature 0, so a single spurious fail shouldn't block
-   * release. Pass 0 to disable retry entirely (CI debug mode).
+   * release. Pass 0 to disable retry (CI debug mode, or when iterating
+   * on a single case where you want to see every failure mode).
+   *
+   * Empirically validated 2026-05-21: a 23-case sweep had 2/23 cases
+   * pass only on retry. Default 0 would have caused 2 false-negative
+   * release-gate failures. Capture-on-fail traces (this file) make the
+   * underlying flake visible without losing the gate.
    */
   max_retries?: number;
 }
@@ -55,8 +63,7 @@ interface RunOptions {
  * assertions even when the underlying agent behavior is correct. To
  * keep release-gate runs from spurious blocks, a failed attempt is
  * retried once by default. If the retry passes, the case is flagged
- * `flaked: true` in the report so flakiness is visible — not silently
- * normalized — but it doesn't block the gate.
+ * `flaked: true` so flakiness stays visible.
  */
 export async function runCase(opts: RunOptions): Promise<CaseResult> {
   const maxRetries = opts.max_retries ?? 1;
@@ -161,6 +168,10 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
   let final_text = '';
   let raw_event_count = 0;
   let buffer = '';
+  // Hold every raw stream-json line so we can dump a trace on failure.
+  // Cheap (a typical case produces ~50-200 lines, ~50-300 KB) and the
+  // only diagnostic we have when an agent loops or crashes.
+  const raw_lines: string[] = [];
 
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk: string) => {
@@ -171,6 +182,7 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
       buffer = buffer.slice(nl + 1);
       if (line.length === 0) continue;
       raw_event_count++;
+      raw_lines.push(line);
       let event: unknown;
       try {
         event = JSON.parse(line);
@@ -204,6 +216,23 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
   const agent_tool_calls = tool_calls.filter((c) => !HARNESS_INVISIBLE_TOOLS.has(c.short_name));
 
   const failures = applyAssertions(testCase, agent_tool_calls, final_text, exitCode);
+
+  // Capture-on-fail: dump the full raw stream-json so the maintainer
+  // can diagnose without re-running with --verbose. Without this, a
+  // release-gate failure is opaque — the parsed tool_calls[] tells
+  // you WHAT the agent did but not WHY (the assistant thinking text
+  // explaining the retry, the tool_result error envelopes, etc).
+  if (failures.length > 0 && raw_lines.length > 0) {
+    try {
+      mkdirSync(TRACES_DIR, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const tracePath = path.join(TRACES_DIR, `${testCase.id}-${stamp}.ndjson`);
+      writeFileSync(tracePath, raw_lines.join('\n') + '\n', 'utf8');
+      console.error(`    trace: ${path.relative(process.cwd(), tracePath)}`);
+    } catch (err) {
+      console.error(`    [trace dump failed] ${(err as Error).message}`);
+    }
+  }
 
   return {
     case: testCase,

@@ -342,6 +342,262 @@ const ENUM_VALUE_OVERRIDES: ReadonlyArray<EnumLabelOverride> = [
     hardwareLabel: 'SV BASS 1', wikiLabel: 'SV BASS',
     note: 'Wiki dropped the trailing "1".',
   },
+
+  // ── Full-block sweep 2026-05-21 (probe-axefx2-enum-dump.ts on Q8.02 XL+) ──
+  //
+  // 145-probe sweep across every block's enum params surfaced 47 new
+  // overridable mismatches (existing wireIndex, wrong label) split as:
+  //   - LEFT/RIGHT/BOTH/NONE/MUTE/THRU casing diffs (~33 entries)
+  //   - Wiki transcription errors: amp.bypass_mode had wrong table
+  //     (Left/Right vs. THRU/MUTE), amp.sat_switch had abbreviated
+  //     "AUTH"/"IDEAL" vs. full "ON (AUTH)"/"ON (IDEAL)", pantrem
+  //     "PanNER" vs. "PANNER", chorus "JAPan CE-2" vs. "JAPAN CE-2"
+  //   - looper.quantize wiki used English ("QUARTER","EIGTH"-typo,
+  //     "SIXTEENTH") vs. firmware fractions ("1/4","1/8","1/16")
+  //
+  // 52 additional catalog-MISSING entries (delay.tempo idx 33-78 wide
+  // expansion, amp.tone_stack idx 108-109 SPAWN NITROUS + SV BASS,
+  // drive.effect_type idx 36 BLACKGLASS 7K, pitch.mode 1-5, etc) are
+  // deferred — they need a generator extension to ADD wireIndexes,
+  // not just override labels. Tracked as Session 108 follow-up.
+  //
+  // Source: samples/captured/probe-axefx2-enum-dump-findings.md
+  // Generator: npx tsx scripts/_research/generate-enum-overrides.ts
+  {
+    block: 'amp', paramId: 15, wireIndex: 0,
+    hardwareLabel: 'LEFT', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'amp', paramId: 15, wireIndex: 1,
+    hardwareLabel: 'RIGHT', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'amp', paramId: 23, wireIndex: 0,
+    hardwareLabel: 'THRU', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page had the wrong table (Left/Right copied from input_select); device emits "THRU"/"MUTE".',
+  },
+  {
+    block: 'amp', paramId: 23, wireIndex: 1,
+    hardwareLabel: 'MUTE', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page had the wrong table (Left/Right copied from input_select); device emits "THRU"/"MUTE".',
+  },
+  {
+    block: 'amp', paramId: 54, wireIndex: 1,
+    hardwareLabel: 'ON (AUTH)', wikiLabel: 'AUTH',
+    note: 'Wiki MIDI_SysEx page abbreviated; device emits full "ON (AUTH)".',
+  },
+  {
+    block: 'amp', paramId: 54, wireIndex: 2,
+    hardwareLabel: 'ON (IDEAL)', wikiLabel: 'IDEAL',
+    note: 'Wiki MIDI_SysEx page abbreviated; device emits full "ON (IDEAL)".',
+  },
+  {
+    block: 'cab', paramId: 1, wireIndex: 0,
+    hardwareLabel: 'NONE', wikiLabel: 'None',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'cab', paramId: 3, wireIndex: 0,
+    hardwareLabel: 'NONE', wikiLabel: 'None',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'cab', paramId: 30, wireIndex: 1,
+    hardwareLabel: 'LEFT', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'cab', paramId: 30, wireIndex: 2,
+    hardwareLabel: 'RIGHT', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'cab', paramId: 31, wireIndex: 0,
+    hardwareLabel: 'NONE', wikiLabel: 'None',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'chorus', paramId: 0, wireIndex: 4,
+    hardwareLabel: 'JAPAN CE-2', wikiLabel: 'JAPan CE-2',
+    note: 'Wiki MIDI_SysEx page used inconsistent casing; device emits all-caps.',
+  },
+  {
+    block: 'chorus', paramId: 16, wireIndex: 0,
+    hardwareLabel: 'NONE', wikiLabel: 'None',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'chorus', paramId: 16, wireIndex: 1,
+    hardwareLabel: 'RIGHT', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'chorus', paramId: 16, wireIndex: 2,
+    hardwareLabel: 'LEFT', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'chorus', paramId: 16, wireIndex: 3,
+    hardwareLabel: 'BOTH', wikiLabel: 'Both',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'delay', paramId: 47, wireIndex: 0,
+    hardwareLabel: 'NONE', wikiLabel: 'None',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'delay', paramId: 47, wireIndex: 1,
+    hardwareLabel: 'RIGHT', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'delay', paramId: 47, wireIndex: 2,
+    hardwareLabel: 'LEFT', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'delay', paramId: 47, wireIndex: 3,
+    hardwareLabel: 'BOTH', wikiLabel: 'Both',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'delay', paramId: 48, wireIndex: 0,
+    hardwareLabel: 'BOTH', wikiLabel: 'Both',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'delay', paramId: 48, wireIndex: 1,
+    hardwareLabel: 'LEFT', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'delay', paramId: 48, wireIndex: 2,
+    hardwareLabel: 'RIGHT', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'delay', paramId: 49, wireIndex: 0,
+    hardwareLabel: 'BOTH', wikiLabel: 'Both',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'delay', paramId: 49, wireIndex: 1,
+    hardwareLabel: 'LEFT', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'delay', paramId: 49, wireIndex: 2,
+    hardwareLabel: 'RIGHT', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'drive', paramId: 17, wireIndex: 1,
+    hardwareLabel: 'LEFT', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'drive', paramId: 17, wireIndex: 2,
+    hardwareLabel: 'RIGHT', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'enhancer', paramId: 7, wireIndex: 0,
+    hardwareLabel: 'NONE', wikiLabel: 'None',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'enhancer', paramId: 7, wireIndex: 1,
+    hardwareLabel: 'RIGHT', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'enhancer', paramId: 7, wireIndex: 2,
+    hardwareLabel: 'LEFT', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'enhancer', paramId: 7, wireIndex: 3,
+    hardwareLabel: 'BOTH', wikiLabel: 'Both',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'filter', paramId: 11, wireIndex: 0,
+    hardwareLabel: 'NONE', wikiLabel: 'None',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'filter', paramId: 11, wireIndex: 1,
+    hardwareLabel: 'RIGHT', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'filter', paramId: 11, wireIndex: 2,
+    hardwareLabel: 'LEFT', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'filter', paramId: 11, wireIndex: 3,
+    hardwareLabel: 'BOTH', wikiLabel: 'Both',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'flanger', paramId: 17, wireIndex: 0,
+    hardwareLabel: 'NONE', wikiLabel: 'None',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'flanger', paramId: 17, wireIndex: 1,
+    hardwareLabel: 'RIGHT', wikiLabel: 'Right',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'flanger', paramId: 17, wireIndex: 2,
+    hardwareLabel: 'LEFT', wikiLabel: 'Left',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'flanger', paramId: 17, wireIndex: 3,
+    hardwareLabel: 'BOTH', wikiLabel: 'Both',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'looper', paramId: 9, wireIndex: 1,
+    hardwareLabel: '1/4', wikiLabel: 'QUARTER',
+    note: 'Wiki MIDI_SysEx page used English ("QUARTER"); device emits fraction "1/4".',
+  },
+  {
+    block: 'looper', paramId: 9, wireIndex: 2,
+    hardwareLabel: '1/8', wikiLabel: 'EIGTH',
+    note: 'Wiki MIDI_SysEx page used English ("EIGTH", with typo); device emits fraction "1/8".',
+  },
+  {
+    block: 'looper', paramId: 9, wireIndex: 3,
+    hardwareLabel: '1/16', wikiLabel: 'SIXTEENTH',
+    note: 'Wiki MIDI_SysEx page used English ("SIXTEENTH"); device emits fraction "1/16".',
+  },
+  {
+    block: 'pantrem', paramId: 0, wireIndex: 1,
+    hardwareLabel: 'PANNER', wikiLabel: 'PanNER',
+    note: 'Wiki MIDI_SysEx page used inconsistent casing; device emits all-caps.',
+  },
+  {
+    block: 'pitch', paramId: 37, wireIndex: 1,
+    hardwareLabel: 'BOTH', wikiLabel: 'Both',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'volpan', paramId: 8, wireIndex: 1,
+    hardwareLabel: 'LEFT ONLY', wikiLabel: 'Left ONLY',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
+  {
+    block: 'volpan', paramId: 8, wireIndex: 2,
+    hardwareLabel: 'RIGHT ONLY', wikiLabel: 'Right ONLY',
+    note: 'Wiki MIDI_SysEx page used title-case; device emits all-caps.',
+  },
 ];
 
 // HW-091 + HW-093 (2026-05-11): delay.tempo wire 0..32 → musical

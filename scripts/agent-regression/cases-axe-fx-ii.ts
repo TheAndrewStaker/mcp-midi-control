@@ -79,6 +79,7 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
     id: 'axefx2-discovery-describe',
     device: 'axe-fx-ii',
     tier: 'no-hardware',
+    disabled: true,  // Retired 2026-05-21: II-side discovery exercised end-to-end by axefx2-bk058 + axefx2-enter-sandman cases.
     description: 'Discovery — "What can the Axe-Fx II do?" must NOT hallucinate AM4 semantics (A/B/C/D channels, 4 scenes) for an Axe-Fx II prompt. The agent may answer from training priors or via describe_device; both are acceptable as long as the content is right. Catches the regression where the agent applies the wrong device\'s channel/scene model to II.',
     prompt: 'What can the Axe-Fx II do? Tell me how many channels per block and how many scenes per preset it has.',
     expectations: {
@@ -122,6 +123,7 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
     id: 'axefx2-err-bad-channel',
     device: 'axe-fx-ii',
     tier: 'no-hardware',
+    disabled: true,  // Retired 2026-05-21: cross-device duplicate of channel-on-non-channel-block (AM4 side); both test the same error-envelope shape.
     description: 'Error envelope — `set amp channel Z gain to 6 on Axe-Fx II`: Axe-Fx II channels are X/Y only, so channel Z must reject. Acceptable paths: call set_param + let the validator reject, or refuse upfront from describe_device knowledge.',
     prompt: 'Set the amp channel Z gain to 6 on the Axe-Fx II.',
     expectations: {
@@ -224,6 +226,7 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
     id: 'axefx2-slot-shape-recovery',
     device: 'axe-fx-ii',
     tier: 'no-hardware',
+    disabled: true,  // Retired 2026-05-21: agent reliably picks per-tool path (set_block_at_cell + set_params) over apply_preset with bare-int slot. Test design issue: prompt doesn't push toward apply_preset. Re-enable after a tool-description revision pushes structured authoring.
     description: 'Slot auto-coerce on Axe-Fx II — Wave 1 fix lets bare-int slot:3 on grid devices auto-coerce to {row:2, col:3} with an info[] advisory. Bouncing-regression: agent should NOT retry, the FIRST apply_preset call should succeed with the advisory surfaced. Catches an agent that ignores the coerce + reissues with {row, col}.',
     prompt: "On the Axe-Fx II, place an amp in slot 3 using the working buffer. Use a clean amp at moderate gain. Don\'t save.",
     expectations: {

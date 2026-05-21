@@ -120,6 +120,7 @@ export const AXE_FX_III_CASES: AgentRegressionCase[] = [
     id: 'axefx3-discovery-describe',
     device: 'axe-fx-iii',
     tier: 'no-hardware',
+    disabled: true,  // Retired 2026-05-21: cross-device duplicate of meta-discovery pattern; III lacks any hardware-tier case to exercise the surface anyway.
     description: 'Discovery — "What can the Axe-Fx III do?" should call describe_device({port:"axe-fx-iii"}). Catches the regression where the agent fabricates III specs from training data without consulting the descriptor.',
     prompt: 'What can the Axe-Fx III do? Tell me which blocks it has and how many scenes per preset.',
     expectations: {

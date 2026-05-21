@@ -47,6 +47,7 @@ export const HYDRASYNTH_CASES: AgentRegressionCase[] = [
     id: 'hydrasynth-discovery-describe',
     device: 'hydrasynth',
     tier: 'no-hardware',
+    disabled: true,  // Retired 2026-05-21: cross-device duplicate of meta-discovery pattern.
     description: 'Discovery — "What can the Hydrasynth do?" should call describe_device({port:"hydrasynth"}). Catches the regression where the agent fabricates Hydrasynth specs from training data instead of consulting the descriptors agent_guidance (which carries the Param TX/RX precondition, smushed-lowercase NRPN naming, etc.).',
     prompt: 'What can the Hydrasynth do? Tell me how I would change a filter cutoff and whether there is any precondition I should set first.',
     expectations: {

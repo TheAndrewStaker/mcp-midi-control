@@ -95,10 +95,13 @@ async function main(): Promise<void> {
     process.env.AGENT_REGRESSION_REAL_HARDWARE = '1';
   }
 
+  // Disabled cases are excluded from default sweeps but stay registered
+  // so `--case=<id>` can still target them (e.g. for one-off retires).
   let cases: readonly AgentRegressionCase[] = ALL_CASES.filter((c) => {
     if (args.device !== undefined && c.device !== args.device) return false;
     if (args.tier !== undefined && c.tier !== args.tier) return false;
     if (args.caseId !== undefined && c.id !== args.caseId) return false;
+    if (c.disabled === true && args.caseId === undefined) return false;
     return true;
   });
 
@@ -124,20 +127,29 @@ async function main(): Promise<void> {
   cases = runnable;
 
   const transportMode = args.realHardware ? 'real hardware (USB MIDI)' : 'mock transport (no USB)';
-  console.log(`Running ${cases.length} case(s)${args.model !== undefined ? ` with model ${args.model}` : ''}${skipped.length > 0 ? `; skipping ${skipped.length} hardware case(s)` : ''}.`);
+  const disabledCount = ALL_CASES.filter((c) => c.disabled === true).length;
+  console.log(`Running ${cases.length} case(s)${args.model !== undefined ? ` with model ${args.model}` : ''}${skipped.length > 0 ? `; skipping ${skipped.length} hardware case(s)` : ''}${disabledCount > 0 ? ` (${disabledCount} disabled — run via --case=<id>)` : ''}.`);
   console.log(`Surface: MCP-only via \`--tools ""\` (Desktop-fidelity — no Bash/Grep/Skill/Task).`);
   console.log(`Transport: ${transportMode}.\n`);
 
+  // Serial execution. Parallelism caused MCP-server cold-start races —
+  // spawning 4 `claude -p` children simultaneously each requires its own
+  // MCP server child, and some failed to register tools before the agent
+  // started thinking (system init showed `tools:[], mcp_servers:[pending]`).
+  // The agent then hallucinated tool names and burned LLM tokens. Validated
+  // 2026-05-21: 4-way parallel turned 1 known-broken case into 5 broken
+  // cases. The right wall-time lever is fewer high-value cases, not
+  // parallelism.
+  const total = cases.length;
+  let completed = 0;
   const results: CaseResult[] = [];
   for (const testCase of cases) {
-    console.log(`▸ ${testCase.id}  [${testCase.device}, ${testCase.tier}]`);
-    console.log(`  ${testCase.description}`);
-    process.stdout.write('  running…');
     const result = await runCase({ case: testCase, model: args.model, verbose: args.verbose });
+    completed += 1;
     const verdict = result.passed
       ? (result.flaked ? '⚠ PASS (retry)' : '✓ PASS')
       : '✗ FAIL';
-    process.stdout.write(`\r  ${verdict}  ${result.tool_calls.length} tools / ${result.wall_seconds.toFixed(1)}s\n`);
+    console.log(`[${completed}/${total}] ${verdict}  ${result.case.id}  [${result.case.device}, ${result.case.tier}]  ${result.tool_calls.length} tools / ${result.wall_seconds.toFixed(1)}s`);
     if (!result.passed) {
       for (const f of result.failures) console.log(`    ✗ ${f}`);
       console.log(`    sequence: ${formatToolSequence(result)}`);
@@ -145,7 +157,6 @@ async function main(): Promise<void> {
       console.log(`    (passed on attempt ${result.attempts} after a failed first run — investigate if recurring)`);
     }
     results.push(result);
-    console.log('');
   }
 
   // ── Summary ────────────────────────────────────────────────────

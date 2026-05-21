@@ -83,6 +83,14 @@ export interface AgentRegressionCase {
   /** Literal user message sent to the agent. No agent-side hints. */
   prompt: string;
   expectations: Expectations;
+  /**
+   * When true, the case is excluded from default sweeps but kept in the
+   * source for provenance + easy re-enablement. Disabled cases run when
+   * targeted explicitly via `--case=<id>`. Use to retire low-signal or
+   * duplicate cases without losing the assertion code. Sweep summary
+   * reports disabled count separately.
+   */
+  disabled?: boolean;
 }
 
 export interface CaseResult {

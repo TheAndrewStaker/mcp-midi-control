@@ -17,7 +17,8 @@ import {
   type MockResponder,
 } from '@mcp-midi-control/core/midi/transport.js';
 import { fractalChecksum } from 'fractal-midi/shared';
-import { packValue, packValueChunked } from 'fractal-midi/shared';
+import { packValue, packValueChunked, unpackValue } from 'fractal-midi/shared';
+import { PRESET_NAME_EMPTY_SENTINEL } from 'fractal-midi/am4';
 
 export {
   connect,
@@ -134,9 +135,48 @@ const HDR4_READ_PRESET_NAME_LO = 0x20;
 // packages/am4/src/setParam.ts). Mock hardcodes plausible defaults so
 // agents that poll state during hero-case prompts see something
 // representative of a populated Z04 working buffer.
+//
+// MOCK DESIGN INVARIANTS (Session 108, 2026-05-21 — fix surfaced by
+// am4-enter-sandman + am4-recipe-auto-wah trace analysis):
+//   1. Every read returns a value that would pass real-device range
+//      validation. No sentinels like 0x7fff for fields that require
+//      a bounded enum index (scene 0..3, location 0..103, etc.).
+//   2. Scratch row (Z bank, indices 100..103) reports `is_empty: true`
+//      via the PRESET_NAME_EMPTY_SENTINEL marker. Banks A..Y report
+//      a fabricated "Factory NN" name so safe-edit overwrite gates
+//      can still be tested deliberately by aiming at A..Y.
+//   3. Active location is Z04 by default; working-buffer block layout
+//      mirrors a populated Z04 (amp / chorus / reverb / delay).
+//   4. State is deterministic per request; the mock is stateless beyond
+//      these hardcoded defaults (writes don't read back).
+//   5. Mock is silent about being a mock at the wire layer — agents
+//      cannot detect mock vs. real via tool responses.
 const LOCATION_STATE_PID_LOW = 0x00ce;
 const LOCATION_STATE_PID_HIGH = 0x000a;
 const MOCK_ACTIVE_LOCATION_INDEX = 103; // Z04
+
+// Scene state register — `am4_get_active_scene` reads here. Real device
+// returns the active scene index 0..3 (display 1..4). Mock returns 0
+// (display "Scene 1") so the agent has a valid starting scene when the
+// case prompt refers to "the current scene" or "lead scene".
+const SCENE_STATE_PID_LOW = 0x00ce;
+const SCENE_STATE_PID_HIGH = 0x000d;
+const MOCK_ACTIVE_SCENE_INDEX = 0;
+
+// READ_PRESET_NAME register pair (see fractal-midi/am4/setParam.ts).
+// Location index is the request's u32-LE payload, not a hardcoded
+// register — `buildPresetNameResponse` extracts it from `outgoing`.
+const READ_PRESET_NAME_PID_LOW = 0x004e;
+const READ_PRESET_NAME_PID_HIGH = 0x000b;
+
+// Z bank = indices 100..103 (Z01..Z04). The Y bank (80..99) is also
+// conventionally treated as scratch by `DEFAULT_SCRATCH_LOCATION`
+// callers; the mock reports both Y and Z as empty so any case
+// targeting "scratch convention" can write without tripping the
+// safe-edit overwrite-confirmation gate. To test that gate, point a
+// case at an A..X location — those return a fabricated factory name.
+const MOCK_SCRATCH_LOCATION_MIN = 80; // Y01
+const MOCK_SCRATCH_LOCATION_MAX = 103; // Z04
 
 // Block-placement registers — slots 1..4 live at
 // (pidLow=0x00CE, pidHigh=0x000F+i). The u32 value is the placed
@@ -180,11 +220,29 @@ function mockReadValueFor(pidLow: number, pidHigh: number): number {
   if (pidLow === LOCATION_STATE_PID_LOW && pidHigh === LOCATION_STATE_PID_HIGH) {
     return MOCK_ACTIVE_LOCATION_INDEX;
   }
+  if (pidLow === SCENE_STATE_PID_LOW && pidHigh === SCENE_STATE_PID_HIGH) {
+    return MOCK_ACTIVE_SCENE_INDEX;
+  }
   if (pidLow === BLOCK_SLOT_PID_LOW) {
     const placed = MOCK_SLOT_BLOCK_TYPES.get(pidHigh);
     if (placed !== undefined) return placed;
   }
   return MOCK_DEFAULT_PARAM_VALUE;
+}
+
+/**
+ * Pick the mock preset name for a given location index. Scratch rows
+ * (Y + Z banks) report empty via PRESET_NAME_EMPTY_SENTINEL so a case
+ * that writes to scratch convention doesn't trip the overwrite gate.
+ * A..X banks return a fabricated "Factory NN" name (the parser's
+ * isEmpty check needs the exact sentinel string, so any other name
+ * reads as occupied — exactly what we want for testing the gate).
+ */
+function mockPresetNameFor(locationIndex: number): string {
+  if (locationIndex >= MOCK_SCRATCH_LOCATION_MIN && locationIndex <= MOCK_SCRATCH_LOCATION_MAX) {
+    return PRESET_NAME_EMPTY_SENTINEL;
+  }
+  return `Factory ${String(locationIndex + 1).padStart(3, '0')}`;
 }
 
 /**
@@ -223,14 +281,31 @@ function buildLongReadResponse(outgoing: number[]): number[] {
 
 /**
  * Build the READ_PRESET_NAME response (55 bytes) for an outgoing
- * preset-name read. 32-char name is "(mock preset)" + spaces, packed
- * via packValueChunked into 37 wire bytes.
+ * preset-name read. Decodes the requested location index from the
+ * outgoing request's 5-byte packed payload (bytes 16..20 — see wire
+ * shape comment on `buildGetPresetName` in fractal-midi) and returns
+ * the per-location mock name. Scratch rows (Y + Z) report empty so
+ * scan_locations doesn't trip the safe-edit overwrite gate; other
+ * banks report a fabricated factory name so the gate IS testable.
  */
 function buildPresetNameResponse(outgoing: number[]): number[] {
-  const name = '(mock preset)';
+  // Outgoing wire: F0 .. [4 raw payload bytes = u32 LE locationIndex]
+  // packed into bytes 16..20 via packValue (5 packed bytes for 4 raw).
+  const packedLocation = outgoing.slice(16, 21);
+  let locationIndex = MOCK_ACTIVE_LOCATION_INDEX;
+  if (packedLocation.length === 5) {
+    const unpacked = unpackValue(new Uint8Array(packedLocation), 4);
+    if (unpacked.length === 4) {
+      locationIndex = new DataView(unpacked.buffer, unpacked.byteOffset, unpacked.byteLength).getUint32(0, true);
+    }
+  }
+  const name = mockPresetNameFor(locationIndex);
   const raw = new Uint8Array(32);
   for (let i = 0; i < name.length && i < 32; i++) raw[i] = name.charCodeAt(i);
-  for (let i = name.length; i < 32; i++) raw[i] = 0x20; // pad with spaces
+  // Real device terminates the name with a NUL — the parser slices at
+  // the first NUL before trimming. Pad rest with NUL (not space) so
+  // PRESET_NAME_EMPTY_SENTINEL (`<EMPTY>`) decodes byte-exact.
+  for (let i = name.length; i < 32; i++) raw[i] = 0x00;
   const packed = Array.from(packValueChunked(raw));
   const body: number[] = new Array<number>(16).fill(0);
   body[0] = SYSEX_START;

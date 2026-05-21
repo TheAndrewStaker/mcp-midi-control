@@ -157,7 +157,7 @@ function buildProbeList(filters: {
 
   const probes: EnumProbe[] = [];
   const seen = new Set<string>();
-  for (const p of KNOWN_PARAMS as ReadonlyArray<AxeFxIIParam>) {
+  for (const p of Object.values(KNOWN_PARAMS) as ReadonlyArray<AxeFxIIParam>) {
     if (p.controlType !== 'select') continue;
     if (!p.enumValues || Object.keys(p.enumValues).length === 0) continue;
     if (filters.block && p.block !== filters.block) continue;
