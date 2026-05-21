@@ -713,6 +713,7 @@ Cheaper than discovering drift later.
 | per-device wire maps in fractal-midi: https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/ | A new protocol decode is confirmed against captured bytes. Include the concrete capture reference and byte-exact example. (Public â€” protocol RE is the OSS public good.) |
 | `docs/_private/SESSIONS.md` | A session produces a substantive finding worth a chronological entry (decodes, major tool changes, hardware-verified behavior). STATE.md is the summary; SESSIONS.md is the log. |
 | `docs/_private/DECISIONS.md` | A non-obvious architectural or library choice is made. (Founder-private; gitignored. Useful to Claude Code agents working locally; not surfaced to OSS contributors.) |
+| `docs/TOOL-ARCHIVE.md` | A registered MCP tool is removed from the surface. Add the archive entry in the SAME commit as the registration removal: tool name, removal date, wire function (if any), original use case, why cut, resurrection git pointer, stability note. Entries are removed-but-documented capabilities, not deprecation warnings. See the file's "Conventions" section. |
 
 **Session-wrap check.** Before declaring work complete, walk the table
 above and update whichever rows apply to what changed. A one-line
