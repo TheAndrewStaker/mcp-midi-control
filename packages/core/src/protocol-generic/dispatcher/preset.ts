@@ -22,6 +22,7 @@ import {
   type SetlistApplyOptions,
   type SetlistEntrySpec,
   type ValidationError,
+  type ValidationInfo,
 } from '../types.js';
 
 import { openCtx, requireDevice } from './core.js';
@@ -29,38 +30,50 @@ import { collectApplyPresetPreflight } from './preflight.js';
 import { translatePresetSpec, type TranslatePresetResult } from '../port-preset.js';
 
 /**
- * Generic type-knob compatibility precheck for `apply_preset`.
+ * BK-071: type-knob applicability pre-flight for `apply_preset`.
  *
  * When a slot specifies both a `type` enum value AND additional knobs,
- * the active type must expose every listed knob — otherwise the wire
- * writes ack but the knob values silently no-op on the device. The
- * H1 Sunday Morning trace surfaced this: agent set
+ * the picked type may not expose every listed knob — the wire writes
+ * ack but those knob values silently no-op on the device. The H1
+ * Sunday Morning trace surfaced this: agent set
  * `reverb.type="Hall, Large"` + `reverb.time=6`, the writes acked,
  * the agent reported "decay locked in" — but Hall algorithms are
  * fixed-decay and `time` never applied.
  *
- * This precheck closes the silent-no-op loop by failing fast with a
- * structured `DispatchError(value_out_of_range)` carrying `valid_options`
- * — the subset of type values that DO expose every listed knob. The
- * agent's natural error-recovery picks one from the list and retries.
+ * The pre-flight runs per-knob via `findCompatibleTypes` and returns
+ * structured `ValidationInfo` entries for each dropped param. The
+ * dispatcher accepts the write (the user may want the type for
+ * other reasons; refusing violates display-first + user-agency) and
+ * surfaces the drops on `validation_info[]` so the agent self-corrects
+ * on the next turn instead of reporting false success.
+ *
+ * Why soft-warn instead of hard refusal (MCP eng review 2026-05-21):
+ *   - A guitarist might want Hall for the tail texture and accept the
+ *     fixed-decay default. Refusing the type robs them of that choice.
+ *   - Hard refusal teaches agents to retry-loop around dispatcher
+ *     errors instead of reading the structured info surface that
+ *     already drives recovery on alias / case-tolerance paths.
  *
  * Device must implement `descriptor.findCompatibleTypes` for the
- * precheck to run. Devices without it (Axe-Fx II / III / Hydra today)
- * skip the check; their existing dropped-param warning path remains.
+ * pre-flight to run. Devices without it (Axe-Fx II / III / Hydra
+ * today) return an empty array — their existing dropped-param warning
+ * path remains. Adding `findCompatibleTypes` to those devices later
+ * activates the pre-flight automatically with no dispatcher change.
  */
-function precheckTypeKnobCompatibility(
+export function collectTypeKnobApplicabilityWarnings(
   spec: PresetSpec,
   descriptor: DeviceDescriptor,
-): void {
-  if (descriptor.findCompatibleTypes === undefined) return;
+): ValidationInfo[] {
+  if (descriptor.findCompatibleTypes === undefined) return [];
+  const out: ValidationInfo[] = [];
   for (let i = 0; i < spec.slots.length; i++) {
     const slot = spec.slots[i];
     const params = slot.params;
     if (params === undefined || params === null) continue;
-    // The PresetSlotSpec.params union allows EITHER a flat record
-    // (`{type, knob1, knob2}`) for non-channel blocks OR a channel-
-    // nested record (`{A: {type, knob1}, D: {type, knob2}}`) for
-    // channel blocks. Walk both shapes uniformly.
+    // PresetSlotSpec.params allows EITHER a flat record (`{type, knob1,
+    // knob2}`) for non-channel blocks OR a channel-nested record (`{A:
+    // {type, knob1}, D: {type, knob2}}`) for channel blocks. Walk both
+    // shapes uniformly.
     const channelMaps: { channel: string | undefined; map: Record<string, unknown> }[] = [];
     const entries = Object.entries(params as Record<string, unknown>);
     const looksNested = entries.some(([, v]) => v !== null && typeof v === 'object' && !Array.isArray(v));
@@ -78,33 +91,40 @@ function precheckTypeKnobCompatibility(
       if (typeof typeValue !== 'string') continue;
       const knobNames = Object.keys(map).filter((k) => k !== 'type');
       if (knobNames.length === 0) continue;
-      const result = descriptor.findCompatibleTypes({
-        block: slot.block_type,
-        params: knobNames,
-      });
-      // applicability_known: false → device has no structured data for
-      // this block; we can't make a compatibility claim. Let the write
-      // proceed; downstream dropped-param warnings still fire.
-      if (!result.applicability_known) continue;
-      if (result.compatible_types.includes(typeValue)) continue;
-      // Incompatible. Slim valid_options to a reasonable head (the
-      // full enum list can be 100+ entries on amp.type).
-      const head = result.compatible_types.slice(0, 16);
-      const more = result.compatible_types.length > head.length
-        ? ` (… ${result.compatible_types.length - head.length} more — call find_compatible_types({block:"${slot.block_type}", params:[${knobNames.map((n) => `"${n}"`).join(', ')}]}) for the full subset)`
-        : '';
-      const where = channel !== undefined ? ` channel ${channel}` : '';
-      throw new DispatchError(
-        'value_out_of_range',
-        descriptor.display_name,
-        `slots[${i}] (${slot.block_type}${where}): type "${typeValue}" doesn't expose all of [${knobNames.join(', ')}] on ${descriptor.display_name}. The write would ack but the listed knobs would silently no-op. Pick a type that exposes every listed knob.`,
-        {
-          valid_options: [...head, ...(more.length > 0 ? [more.trim()] : [])],
-          retry_action: `Call find_compatible_types({block:"${slot.block_type}", params:${JSON.stringify(knobNames)}}) for the canonical list, then re-issue apply_preset with a verbatim choice.`,
-        },
-      );
+      // Bulk gate: if the type exposes every knob, skip the per-knob
+      // loop entirely. Most calls land here (the common case is
+      // type-compatible specs).
+      const bulk = descriptor.findCompatibleTypes({ block: slot.block_type, params: knobNames });
+      if (!bulk.applicability_known) continue;
+      if (bulk.compatible_types.includes(typeValue)) continue;
+      // Type fails the bulk gate — at least one knob is dropped. Loop
+      // per-knob to pinpoint which (and surface each with its own
+      // retry pointer).
+      for (const knobName of knobNames) {
+        const perKnob = descriptor.findCompatibleTypes({
+          block: slot.block_type,
+          params: [knobName],
+        });
+        if (!perKnob.applicability_known) continue;
+        if (perKnob.compatible_types.includes(typeValue)) continue;
+        const where = channel !== undefined ? `.${channel}` : '';
+        const head = perKnob.compatible_types.slice(0, 8);
+        const more = perKnob.compatible_types.length > head.length
+          ? ` (… ${perKnob.compatible_types.length - head.length} more)`
+          : '';
+        out.push({
+          slot_index: i,
+          path: `slots[${i}].params${where}.${knobName}`,
+          info: `${slot.block_type}.${knobName} is not exposed by ${slot.block_type}.type="${typeValue}" on ${descriptor.display_name}. The write acked but the device silently no-ops this knob. Pick a type that exposes ${knobName} (e.g. ${head.join(', ')}${more}) or call find_compatible_types({block:"${slot.block_type}", params:["${knobName}"]}) for the full list.`,
+          level: 'warning',
+          dropped_param: knobName,
+          reason: `${slot.block_type}.type="${typeValue}" does not expose ${knobName} on ${descriptor.display_name}.`,
+          retry_action: `Call find_compatible_types({block:"${slot.block_type}", params:["${knobName}"]}) to pick a ${knobName}-exposing ${slot.block_type} type, then re-issue apply_preset with the verbatim choice.`,
+        });
+      }
     }
   }
+  return out;
 }
 
 /**
@@ -230,14 +250,17 @@ export async function executeApplyPreset(args: {
       };
     }
   }
-  // Structural type-knob compatibility precheck: when a slot specifies
-  // both a `type` enum value AND additional knobs, ensure the type
-  // exposes every listed knob. Catches the H1 silent-no-op trap
-  // (e.g. reverb.type="Hall, Large" + reverb.time=6 — Hall is
-  // fixed-decay, time silently drops). Device must implement
-  // findCompatibleTypes for this to run; devices without it skip the
-  // check (no false positives — applicability is unknown).
-  precheckTypeKnobCompatibility(normalizedSpec, descriptor);
+  // BK-071 structural type-knob applicability pre-flight: when a slot
+  // specifies both a `type` enum value AND additional knobs, identify
+  // any knob the picked type doesn't expose and surface it as a
+  // structured `validation_info[]` entry (level: 'warning'). The write
+  // proceeds — the agent reads the warning on the response and
+  // self-corrects on the next turn. Closes the H1 silent-no-op trap
+  // (e.g. reverb.type="Hall, Large" + reverb.time=6) without violating
+  // display-first / user-agency. Devices without findCompatibleTypes
+  // (II / III / Hydra today) get an empty array; their existing
+  // dropped-param warning path remains.
+  const applicabilityWarnings = collectTypeKnobApplicabilityWarnings(normalizedSpec, descriptor);
   // Safe-edit contract for target_location:
   //   - The buffer-dirty gate ALWAYS runs (target_location implies the
   //     active location is about to change, so unsaved edits would be
@@ -268,9 +291,11 @@ export async function executeApplyPreset(args: {
   const result = await descriptor.writer.applyPreset(ctx, normalizedSpec, args.target_location, options);
   // Surface any BK-065 alias substitutions + BK-066 case/whitespace
   // resolutions on the success path so the agent learns the canonical
-  // vocabulary. Omit the field entirely when nothing was resolved so
-  // the happy-path response stays unchanged for existing consumers.
-  const validation_info = preflight.info.length > 0 ? preflight.info : undefined;
+  // vocabulary. BK-071: also includes type-knob applicability warnings
+  // for dropped params. Omit the field entirely when nothing was
+  // resolved/dropped so the happy-path response stays unchanged.
+  const combinedInfo: ValidationInfo[] = [...preflight.info, ...applicabilityWarnings];
+  const validation_info = combinedInfo.length > 0 ? combinedInfo : undefined;
 
   // BK-057: optional read-after-write chain integrity check. Only runs
   // when the caller opted in (verify_chain: true) AND the apply itself

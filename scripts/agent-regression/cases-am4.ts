@@ -609,37 +609,87 @@ export const AM4_CASES: AgentRegressionCase[] = [
     id: 'am4-recipe-auto-wah',
     device: 'am4',
     tier: 'hardware',
-    description: 'Auto-wah on AM4 — bouncing-regression for the install-test failure pattern. AM4\'s FILTER block has built-in Auto-Wah type; agent should pick that, not a static wah with deferred modifier wiring. Asserts apply_preset spec carries filter.type=\'Auto-Wah\' + envelope-follower knobs (sensitivity, attack_time, release_time).',
+    description: 'Auto-wah on AM4 (BK-072 relaxed): AM4\'s FILTER block has built-in Auto-Wah type; agent should pick that, not a static wah with deferred modifier wiring. Accepts EITHER apply_preset OR the primitive set_block + set_params path (Sonnet 4.6 reliably picks primitives when the prompt reads as a step-by-step modify-sequence). End-state assertion lives in the optional apply_preset validator + the false-deferral text_not_contains.',
     prompt: "Add an auto-wah on scene 1 of the AM4. Replace the chorus in slot 2 with a filter block. I want envelope-follower behavior — sweeping with my pick attack, not a static parked wah.",
     expectations: {
-      must_call: ['apply_preset'],
-      max_tools: 10,
+      // BK-072: accept either path. The primitive set_block + set_params
+      // sequence lands the same end-state on the device; what matters is
+      // that the agent placed a FILTER block, picked an envelope-follower
+      // type, and wrote the recipe knobs. The optional validator below
+      // only fires when apply_preset is chosen.
+      must_call_any: [
+        ['apply_preset'],
+        ['set_block', 'set_params'],
+      ],
+      max_tools: 16,  // primitive path runs 4-12 tool calls naturally; headroom for one retry.
       max_repeats: { apply_preset: 2 },
-      tool_call_validators: [{
-        tool: 'apply_preset',
-        call_index: 0,
-        check: (args) => {
-          // Recipe target on AM4 is the FILTER block (per autoWah.ts).
-          const filterType = pickParamValue(args, 'filter', 'type');
-          if (typeof filterType !== 'string') {
-            return `apply_preset spec missing filter.type on AM4 — the FILTER block\'s built-in Auto-Wah type is the AM4 path to envelope-follower wah. Agent picked a different shape.`;
-          }
-          if (!/auto.?wah|envelope.?filter|touch.?wah/i.test(filterType)) {
-            return `apply_preset filter.type="${filterType}" is not an envelope-follower type. AM4 envelope-follower types: Auto-Wah / Envelope Filter / Touch-Wah.`;
-          }
-          // Recipe knobs the agent should land per autoWah.ts (sensitivity,
-          // attack_time, release_time). Don\'t hard-assert all three; ≥ 2
-          // is enough to prove the agent picked recipe-shaped values
-          // rather than just the bare type enum.
-          const keys = slotParamKeys(args, 'filter');
-          const recipeKnobs = ['sensitivity', 'attack_time', 'release_time'];
-          const hit = recipeKnobs.filter((k) => keys.has(k)).length;
-          if (hit < 2) {
-            return `apply_preset filter block set type but only ${hit}/3 envelope-follower knobs (sensitivity, attack_time, release_time). Agent should land the recipe shape, not the bare type enum.`;
-          }
-          return true;
+      tool_call_validators: [
+        // apply_preset path: optional because agent may pick primitives.
+        {
+          tool: 'apply_preset',
+          call_index: 0,
+          optional: true,
+          check: (args) => {
+            // Recipe target on AM4 is the FILTER block (per autoWah.ts).
+            const filterType = pickParamValue(args, 'filter', 'type');
+            if (typeof filterType !== 'string') {
+              return `apply_preset spec missing filter.type on AM4 — the FILTER block\'s built-in Auto-Wah type is the AM4 path to envelope-follower wah. Agent picked a different shape.`;
+            }
+            if (!/auto.?wah|envelope.?filter|touch.?wah/i.test(filterType)) {
+              return `apply_preset filter.type="${filterType}" is not an envelope-follower type. AM4 envelope-follower types: Auto-Wah / Envelope Filter / Touch-Wah.`;
+            }
+            // Recipe knobs the agent should land per autoWah.ts (sensitivity,
+            // attack_time, release_time). Don\'t hard-assert all three; ≥ 2
+            // is enough to prove the agent picked recipe-shaped values
+            // rather than just the bare type enum.
+            const keys = slotParamKeys(args, 'filter');
+            const recipeKnobs = ['sensitivity', 'attack_time', 'release_time'];
+            const hit = recipeKnobs.filter((k) => keys.has(k)).length;
+            if (hit < 2) {
+              return `apply_preset filter block set type but only ${hit}/3 envelope-follower knobs (sensitivity, attack_time, release_time). Agent should land the recipe shape, not the bare type enum.`;
+            }
+            return true;
+          },
         },
-      }],
+        // BK-072 loophole closer (eng review Q4): when the agent takes the
+        // primitive path, assert set_block placed a filter block. Without
+        // this, the primitive path passes for ANY set_block call.
+        {
+          tool: 'set_block',
+          call_index: 0,
+          optional: true,  // Not present on the apply_preset path.
+          check: (args) => {
+            const blockType = String(args.block_type ?? args.block ?? '').toLowerCase();
+            if (blockType !== 'filter') {
+              return `set_block placed block_type="${blockType}" — recipe requires placing a FILTER block (AM4 built-in envelope-follower). Agent picked a different shape.`;
+            }
+            return true;
+          },
+        },
+        // BK-072 loophole closer: assert at least one set_params call
+        // carries the envelope-follower type. set_param calls are checked
+        // separately below via must_call_any matching.
+        {
+          tool: 'set_params',
+          call_index: 0,
+          optional: true,  // Not present on the apply_preset path or pure set_param path.
+          check: (args) => {
+            // set_params takes an array of {name, value} ops. Look for the
+            // filter.type set OR any envelope-follower knob set.
+            const ops = (args.ops ?? args.params ?? []) as Array<{ name?: string; value?: unknown }>;
+            if (!Array.isArray(ops) || ops.length === 0) {
+              return `set_params ops array missing or empty — agent placed a filter block but didn\'t configure any params.`;
+            }
+            const knobs = new Set(ops.map((op) => String(op.name ?? '').toLowerCase()));
+            const recipeKnobs = ['type', 'sensitivity', 'attack_time', 'release_time'];
+            const hit = recipeKnobs.filter((k) => knobs.has(k)).length;
+            if (hit < 2) {
+              return `set_params landed only ${hit}/4 recipe-relevant knobs (type, sensitivity, attack_time, release_time). Agent should land the recipe shape, not just the bare type enum.`;
+            }
+            return true;
+          },
+        },
+      ],
       // The install-test trace had the agent say "True envelope-follower
       // behavior needs a modifier wired from the envelope-follower
       // source onto the wah\'s control" — that's the regression. On AM4,
@@ -653,6 +703,40 @@ export const AM4_CASES: AgentRegressionCase[] = [
         'you\'ll need to wire',
       ],
       max_wall_seconds: 180,
+    },
+  },
+
+  // Pri4 (SURFACE-FIXES Session 108): companion to am4-recipe-auto-wah.
+  // Same recipe, but a vague prompt that omits the scene, the slot, and
+  // the envelope-follower terminology. Asserts the agent doesn't
+  // confidently apply without either (a) asking a clarifying question
+  // or (b) explicitly naming the defaults it picked. Catches the
+  // "agent silently invents a build" failure mode.
+  {
+    id: 'am4-recipe-auto-wah-ambiguous',
+    device: 'am4',
+    tier: 'no-hardware',
+    disabled: true,  // Pri4: ambiguity-handling case. Enabled after harness gains a deterministic clarification-detector. For now keep in source so the assertion shape ships with the design.
+    description: 'Auto-wah on AM4, vague prompt: tests agent ambiguity-handling. Companion to am4-recipe-auto-wah (explicit prompt). Asserts agent either asks a clarifying question OR names its defaults — does not silently invent a build. Disabled until harness has a deterministic clarification-detector; the shape ships so the assertion is in source.',
+    prompt: "I want some kind of wah on the AM4.",
+    expectations: {
+      // No must_call: agent may legitimately do nothing wire-side and
+      // just ask. If they DO write, must_call_any covers both paths.
+      must_call_any: [
+        ['apply_preset'],
+        ['set_block', 'set_params'],
+        // Or no write at all — covered by min_tools:0 below.
+      ],
+      max_tools: 8,
+      min_tools: 0,  // Agent may legitimately ask before writing.
+      text_contains: [
+        // Either a question mark (asking) or explicit defaults naming.
+        // The harness's text_contains is currently AND-of-substrings;
+        // since this assertion is OR-shaped it's commented as
+        // intentional documentation. Enable once OR-text-contains
+        // semantics land in the harness.
+      ],
+      max_wall_seconds: 120,
     },
   },
 

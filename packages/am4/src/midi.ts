@@ -151,6 +151,27 @@ const HDR4_READ_PRESET_NAME_LO = 0x20;
 //      these hardcoded defaults (writes don't read back).
 //   5. Mock is silent about being a mock at the wire layer — agents
 //      cannot detect mock vs. real via tool responses.
+//
+// BK-073 (Session 109): the MOCK_FIXTURE env var swaps in alternate
+// profiles for adversary testing. Defaults to 'clean-scratch' (the
+// invariants above). Profiles:
+//   - 'clean-scratch' (default): invariants above unchanged.
+//   - 'populated-z01': Z01 reports a user-named preset "My Clean Build"
+//     so cases targeting Z01 hit the overwrite-confirmation gate. Y +
+//     Z02..Z04 still report empty.
+//   - 'device-quirk-scene-7fff': scene read returns 0x7fff (the
+//     observed real-device quirk reproduced for regression coverage).
+//     Cases under this fixture verify the dispatcher's range-clamp /
+//     refusal path.
+// Pick a profile via `MOCK_FIXTURE=<name>` at process spawn time
+// (typically in scripts/agent-regression/runner.ts per case).
+type MockFixture = 'clean-scratch' | 'populated-z01' | 'device-quirk-scene-7fff';
+const MOCK_FIXTURE: MockFixture = ((): MockFixture => {
+  const raw = process.env.MOCK_FIXTURE;
+  if (raw === 'populated-z01' || raw === 'device-quirk-scene-7fff') return raw;
+  return 'clean-scratch';
+})();
+
 const LOCATION_STATE_PID_LOW = 0x00ce;
 const LOCATION_STATE_PID_HIGH = 0x000a;
 const MOCK_ACTIVE_LOCATION_INDEX = 103; // Z04
@@ -159,9 +180,13 @@ const MOCK_ACTIVE_LOCATION_INDEX = 103; // Z04
 // returns the active scene index 0..3 (display 1..4). Mock returns 0
 // (display "Scene 1") so the agent has a valid starting scene when the
 // case prompt refers to "the current scene" or "lead scene".
+//
+// BK-073: under MOCK_FIXTURE=device-quirk-scene-7fff the mock returns
+// 0x7fff (the observed real-device quirk where scene reads land at the
+// signed-int16 boundary). Reproduces the regression deliberately.
 const SCENE_STATE_PID_LOW = 0x00ce;
 const SCENE_STATE_PID_HIGH = 0x000d;
-const MOCK_ACTIVE_SCENE_INDEX = 0;
+const MOCK_ACTIVE_SCENE_INDEX = MOCK_FIXTURE === 'device-quirk-scene-7fff' ? 0x7fff : 0;
 
 // READ_PRESET_NAME register pair (see fractal-midi/am4/setParam.ts).
 // Location index is the request's u32-LE payload, not a hardcoded
@@ -239,6 +264,13 @@ function mockReadValueFor(pidLow: number, pidHigh: number): number {
  * reads as occupied — exactly what we want for testing the gate).
  */
 function mockPresetNameFor(locationIndex: number): string {
+  // BK-073 populated-z01 fixture: Z01 (index 100) carries a user-named
+  // preset so overwrite-confirmation cases see the gate fire. Z02..Z04
+  // + Y bank stay empty (preserves clean-scratch invariant for the
+  // canonical scratch row).
+  if (MOCK_FIXTURE === 'populated-z01' && locationIndex === 100) {
+    return 'My Clean Build';
+  }
   if (locationIndex >= MOCK_SCRATCH_LOCATION_MIN && locationIndex <= MOCK_SCRATCH_LOCATION_MAX) {
     return PRESET_NAME_EMPTY_SENTINEL;
   }

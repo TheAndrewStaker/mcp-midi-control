@@ -332,14 +332,14 @@ async function verifyAm4(client: Client): Promise<void> {
     });
   }
 
-  // AM4 type-applicability precheck (commit 179c974, 2026-05-15): when a
-  // slot specifies a `type` enum AND knobs that type doesn't expose, the
-  // dispatcher REJECTS upfront with a structured error containing
-  // valid_options. The previous skip-with-warning semantic was replaced
-  // structurally because agents kept silently no-op'ing on incompatible
-  // combinations (H1 trap). Verify the rejection wording and that the
-  // named offending knob appears in the message so agents know what to
-  // pick from.
+  // AM4 type-applicability pre-flight (BK-071, Session 109): when a slot
+  // specifies a `type` enum AND knobs that type doesn't expose, the
+  // dispatcher ACCEPTS the write but surfaces each dropped knob on
+  // `validation_info[]` with level='warning' + retry_action. The agent
+  // reads the structured warning and re-issues with a compatible type
+  // on the next turn (display-first + user-agency). Prior behavior was
+  // hard-refusal — replaced 2026-05-21 per MCP eng review (hard refusal
+  // taught agents to retry-loop instead of reading the info surface).
   {
     const r = await client.callTool({
       name: 'apply_preset',
@@ -360,13 +360,14 @@ async function verifyAm4(client: Client): Promise<void> {
     });
     const t = extractText(r);
     record(
-      'apply_preset precheck rejects type-gated incompatibility',
-      isError(r) && /doesn't expose all of|silently no-op/i.test(t),
+      'apply_preset pre-flight accepts type-gated incompatibility (soft-warn)',
+      !isError(r) && /"ok"\s*:\s*true/.test(t) && /validation_info/.test(t),
       t.slice(0, 400),
     );
     record(
-      'apply_preset precheck surfaces offending knob + valid_options pointer',
-      isError(r) && /master/i.test(t) && /find_compatible_types|valid_options|Pick a type/i.test(t),
+      'apply_preset pre-flight surfaces dropped_param=master + retry_action',
+      !isError(r) && /"dropped_param"\s*:\s*"master"/.test(t)
+        && /find_compatible_types/.test(t) && /"level"\s*:\s*"warning"/.test(t),
       t.slice(0, 500),
     );
   }

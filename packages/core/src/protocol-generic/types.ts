@@ -521,6 +521,33 @@ export interface ValidationInfo {
   original_value?: string;
   /** The canonical name/value the dispatcher used downstream. */
   canonical?: string;
+  /**
+   * BK-071: severity hint for the agent. Defaults to 'info' when omitted
+   * (alias/case-tolerance resolutions). 'warning' means the dispatcher
+   * accepted the write but the agent should reconsider — e.g. a knob
+   * the picked type doesn't expose, which silently no-ops on the wire.
+   */
+  level?: 'info' | 'warning';
+  /**
+   * BK-071: name of the param that the picked type doesn't expose. The
+   * write proceeded but the device will silently no-op this knob.
+   * Pairs with `reason` + `retry_action` so the agent can self-correct
+   * on the next turn instead of reporting false success.
+   */
+  dropped_param?: string;
+  /**
+   * BK-071: one-line explanation of why the param dropped (e.g.
+   * "Hall variants are fixed-decay on AM4; reverb.time is not
+   * exposed for this type"). Distinct from `info` which is the
+   * full agent-facing message.
+   */
+  reason?: string;
+  /**
+   * BK-071: concrete next-call the agent should issue to recover —
+   * e.g. `find_compatible_types({block:"reverb", params:["time"]})`.
+   * The agent reads this verbatim and re-issues.
+   */
+  retry_action?: string;
 }
 
 /**

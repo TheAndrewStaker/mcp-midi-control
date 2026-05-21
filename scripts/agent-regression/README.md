@@ -119,6 +119,11 @@ block the gate. Override with `--max-retries=0` for CI-debug mode.
 2. Pick the assertions:
    - `must_call` — bare tool names that MUST appear (optional; omit when
      the case accepts multiple valid paths).
+   - `must_call_any` — BK-072 OR-of-AND alternation: `[[a], [b, c]]`
+     accepts "called a" OR "called both b and c". Use when the agent
+     has multiple equivalent end-state paths (e.g. `apply_preset` vs
+     primitive `set_block + set_params`). Pair with `optional: true`
+     on any tool_call_validators that only apply to one path.
    - `min_tools` — floor on total tool calls. Default 1; set to 0 when
      an upfront refusal is an acceptable agent path.
    - `max_tools` — efficiency ceiling.

@@ -23,9 +23,14 @@
  *   9. Routing edge `from`/`to` references match a slot id (or auto-id).
  *
  * What's NOT validated here (continues to live downstream):
- *   - Type-knob applicability , `precheckTypeKnobCompatibility` still
- *     runs after preflight; its errors throw as DispatchError so the
- *     agent's existing recovery path stays unchanged.
+ *   - Type-knob applicability — `collectTypeKnobApplicabilityWarnings`
+ *     (BK-071, Session 109) runs after preflight. It surfaces dropped
+ *     knobs as `validation_info[]` entries with level='warning' rather
+ *     than throwing, so the write proceeds and the agent self-corrects
+ *     on the next turn via `retry_action`. Prior behavior was hard
+ *     refusal (DispatchError value_out_of_range); replaced per MCP eng
+ *     review (hard refusal taught agents to retry-loop instead of
+ *     reading the info surface that drives recovery elsewhere).
  *   - Wire-mode encoding (the writer's responsibility once display →
  *     wire conversion has happened).
  *   - Device-specific multi-instance disambiguation , the writer

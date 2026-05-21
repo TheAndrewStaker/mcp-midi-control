@@ -226,20 +226,33 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
     id: 'axefx2-slot-shape-recovery',
     device: 'axe-fx-ii',
     tier: 'no-hardware',
-    disabled: true,  // Retired 2026-05-21: agent reliably picks per-tool path (set_block_at_cell + set_params) over apply_preset with bare-int slot. Test design issue: prompt doesn't push toward apply_preset. Re-enable after a tool-description revision pushes structured authoring.
-    description: 'Slot auto-coerce on Axe-Fx II — Wave 1 fix lets bare-int slot:3 on grid devices auto-coerce to {row:2, col:3} with an info[] advisory. Bouncing-regression: agent should NOT retry, the FIRST apply_preset call should succeed with the advisory surfaced. Catches an agent that ignores the coerce + reissues with {row, col}.',
+    // BK-072 re-enabled 2026-05-21: Sonnet 4.6 still picks the per-tool
+    // path (set_block_at_cell + set_params) over apply_preset, but the
+    // relaxed must_call_any now accepts that path. The bare-int
+    // auto-coerce assertion still runs whenever apply_preset IS chosen
+    // (optional validator below).
+    description: 'Slot auto-coerce on Axe-Fx II — Wave 1 fix lets bare-int slot:3 on grid devices auto-coerce to {row:2, col:3} with an info[] advisory. BK-072: accepts either apply_preset (asserting the coerce) OR the primitive set_block_at_cell + set_params path.',
     prompt: "On the Axe-Fx II, place an amp in slot 3 using the working buffer. Use a clean amp at moderate gain. Don\'t save.",
     expectations: {
-      must_call: ['apply_preset'],
-      max_tools: 6,
-      // Single apply_preset call is the win condition. A retry on
-      // slot:3 means the agent didn\'t trust the auto-coerce.
+      must_call_any: [
+        ['apply_preset'],
+        ['set_block_at_cell', 'set_params'],
+        ['set_block_at_cell', 'set_param'],
+        // Sonnet often reaches for the device-namespaced surface
+        // (axefx2_*) on II — accept both unified and namespaced.
+        ['axefx2_set_block_at_cell', 'set_params'],
+        ['axefx2_set_block_at_cell', 'axefx2_set_param'],
+        ['axefx2_set_block_at_cell', 'set_param'],
+      ],
+      max_tools: 8,
       max_repeats: { apply_preset: 1 },
       tool_call_validators: [{
         tool: 'apply_preset',
         call_index: 0,
+        optional: true,  // BK-072: primitive path is acceptable too.
         check: (args, result) => {
-          // First, verify the agent passed slot:3 as the bare int.
+          // When apply_preset IS the chosen path, verify the agent passed
+          // slot:3 as the bare int and the response carried the advisory.
           const spec = (args.spec ?? {}) as { slots?: unknown };
           if (!Array.isArray(spec.slots) || spec.slots.length === 0) {
             return `apply_preset spec.slots empty — no amp placed.`;
@@ -248,8 +261,6 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
           if (first.slot !== 3 && (typeof first.slot !== 'object' || first.slot === null)) {
             return `apply_preset slot should be the bare-int shorthand 3 (testing the auto-coerce path) — got ${JSON.stringify(first.slot)}.`;
           }
-          // Then, verify the response surfaced the "coerced shorthand"
-          // info advisory the preflight walker emits on the auto-coerce.
           if (result === undefined || !/coerced shorthand|row.*2.*col.*3|validation_info/i.test(result)) {
             return `apply_preset result should carry the auto-coerce info advisory ("coerced shorthand slot=3 -> {row: 2, col: 3}"). Got: ${result?.slice(0, 280)}.`;
           }

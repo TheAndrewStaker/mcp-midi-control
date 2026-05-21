@@ -51,6 +51,23 @@ export interface ToolCallValidator {
 export interface Expectations {
   /** Tools that MUST be called at least once. Bare names. Omit when the case accepts multiple valid paths and verifies via tool_call_validators / text_contains. */
   must_call?: readonly string[];
+  /**
+   * BK-072: must call ALL tools in ANY ONE of the inner arrays (OR-of-AND).
+   * Use when the agent has multiple equivalent end-state paths — e.g.
+   * `apply_preset` is one path, `set_block` + `set_params` is the
+   * primitive-equivalent path. At least one inner group must be
+   * satisfied (every tool in that group called at least once).
+   *
+   * Layered over `must_call`: both can coexist; `must_call` still
+   * enforces unconditional requirements (e.g. `describe_device` once
+   * per session) while `must_call_any` covers the choice of end-state
+   * path. Empty / missing → no constraint from this field.
+   *
+   * Pairs with `tool_call_validators` carrying `optional: true` for
+   * the not-always-called path. The validator silently passes when
+   * the agent took the other path.
+   */
+  must_call_any?: readonly (readonly string[])[];
   /** Tools that MUST NOT be called. Bare names. */
   must_not_call?: readonly string[];
   /** Ceiling on total tool calls. Efficiency check. */

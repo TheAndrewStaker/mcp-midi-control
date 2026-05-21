@@ -397,6 +397,24 @@ function applyAssertions(
     }
   }
 
+  // BK-072: must_call_any (OR-of-AND). The agent must satisfy at least
+  // one of the inner groups; every tool in that group must have been
+  // called. Used when multiple end-state paths are acceptable
+  // (e.g. apply_preset vs primitive set_block + set_params).
+  if (exp.must_call_any !== undefined && exp.must_call_any.length > 0) {
+    const satisfied = exp.must_call_any.some((group) =>
+      group.length > 0 && group.every((tool) => callsByName.has(tool)),
+    );
+    if (!satisfied) {
+      const groupDescs = exp.must_call_any
+        .map((g) => `[${g.join(' + ')}]`)
+        .join(' OR ');
+      failures.push(
+        `must_call_any: agent satisfied none of the accepted paths (${groupDescs}); called: [${[...callsByName.keys()].join(', ')}]`,
+      );
+    }
+  }
+
   // must_not_call
   for (const tool of exp.must_not_call ?? []) {
     if (callsByName.has(tool)) {
@@ -453,12 +471,20 @@ function applyAssertions(
     }
   }
 
-  // should_avoid_dropped_param_warning — scan apply_preset results for the
-  // executor's "dropped X param(s)" warning text.
+  // should_avoid_dropped_param_warning — scan apply_preset results for
+  // any dropped-param signal. Two flavors land here:
+  //   - Post-write executor warning: "Dropped …" / "don't apply on the
+  //     active block type" (AM4 writer surface after the wire ack).
+  //   - BK-071 pre-flight warning: `validation_info[]` entry with
+  //     `level: 'warning'` + `dropped_param` (dispatcher pre-flight,
+  //     before the wire). Same root cause; same agent-side mistake.
   if (exp.should_avoid_dropped_param_warning === true) {
     for (const c of tool_calls) {
       if (c.short_name !== 'apply_preset') continue;
-      if (c.result?.includes('Dropped ') === true || c.result?.includes("don't apply on the active block type") === true) {
+      const r = c.result ?? '';
+      const postWriteHit = r.includes('Dropped ') || r.includes("don't apply on the active block type");
+      const preFlightHit = /"dropped_param"\s*:/.test(r) && /"level"\s*:\s*"warning"/.test(r);
+      if (postWriteHit || preFlightHit) {
         failures.push(`should_avoid_dropped_param_warning: apply_preset response carried a dropped-param warning — agent picked a type that doesn't expose every requested knob`);
       }
     }

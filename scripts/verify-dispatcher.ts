@@ -1051,81 +1051,89 @@ assert(
   assert('buildSwitchPreset("I001") rejected (bank out of A..H range)', threw);
 }
 
-// ── apply_preset type-knob compatibility precheck (AM4) ────────────
+// ── apply_preset type-knob applicability pre-flight (AM4, BK-071) ──
 //
-// Structural fix for the H1 silent-no-op trap. The dispatcher pre-
-// validates that each slot's `type` enum value exposes every other
-// knob listed in the same slot — BEFORE any MIDI. If incompatible,
-// throws DispatchError(value_out_of_range) with `valid_options`
-// carrying the compatible type subset. The agent's natural error-
-// recovery picks one from the list and retries.
+// Structural fix for the H1 silent-no-op trap. Per BK-071, the
+// dispatcher does NOT refuse incompatible writes (a guitarist might
+// want Hall for tail texture and accept fixed-decay); instead it
+// accepts the write and surfaces each dropped knob on
+// `validation_info[]` with level='warning' + retry_action. The agent
+// reads the structured warning and re-issues with a compatible type
+// on the next turn.
+//
+// These tests call `collectTypeKnobApplicabilityWarnings` directly
+// rather than going through `executeApplyPreset`. That keeps the
+// suite MIDI-free (the full dispatcher path opens an AM4 handle that
+// holds the event loop open and hangs the script at exit). End-to-end
+// coverage of the BK-071 surface lives in `launch-verification.ts`
+// which runs against MCP_MOCK_TRANSPORT=1.
 
-console.log('\napply_preset type-knob compatibility precheck (AM4):');
+console.log('\napply_preset type-knob applicability pre-flight (AM4, BK-071):');
 
-async function expectApplyPrecheckThrows(
+async function expectApplyPreflightWarns(
   label: string,
   spec: { slots: { slot: number; block_type: string; params?: unknown }[] },
-  fragmentInMessage: string,
-  expectedValidOption?: string,
+  expectedDroppedParams: readonly string[],
+  expectedRetryFragment: string,
 ): Promise<void> {
-  const { executeApplyPreset } = await import(
-    '@mcp-midi-control/core/protocol-generic/dispatcher.js'
+  const { collectTypeKnobApplicabilityWarnings } = await import(
+    '@mcp-midi-control/core/protocol-generic/dispatcher/preset.js'
   );
-  try {
-    await executeApplyPreset({ port: 'am4', spec: spec as Parameters<typeof executeApplyPreset>[0]['spec'] });
+  const { resolveDevice } = await import(
+    '@mcp-midi-control/core/protocol-generic/registry.js'
+  );
+  const descriptor = resolveDevice('am4');
+  if (descriptor === undefined) {
     failed++;
-    console.error(`  ✗ ${label}\n      expected DispatchError, got success`);
-  } catch (err) {
-    if (!(err instanceof DispatchError)) {
-      failed++;
-      console.error(`  ✗ ${label}\n      expected DispatchError, got: ${err instanceof Error ? err.message : String(err)}`);
-      return;
-    }
-    if (err.code !== 'value_out_of_range') {
-      failed++;
-      console.error(`  ✗ ${label}\n      expected code value_out_of_range, got ${err.code}: ${err.message}`);
-      return;
-    }
-    if (!err.message.includes(fragmentInMessage)) {
-      failed++;
-      console.error(`  ✗ ${label}\n      message missing "${fragmentInMessage}": ${err.message}`);
-      return;
-    }
-    if (expectedValidOption !== undefined) {
-      const opts = err.details?.valid_options ?? [];
-      if (!opts.some((o) => o.includes(expectedValidOption))) {
-        failed++;
-        console.error(`  ✗ ${label}\n      valid_options should include "${expectedValidOption}", got: ${JSON.stringify(opts)}`);
-        return;
-      }
-    }
-    passed++;
+    console.error(`  ✗ ${label}\n      AM4 descriptor not registered`);
+    return;
   }
+  const warnings = collectTypeKnobApplicabilityWarnings(
+    spec as Parameters<typeof collectTypeKnobApplicabilityWarnings>[0],
+    descriptor,
+  );
+  for (const droppedParam of expectedDroppedParams) {
+    const entry = warnings.find((e) => e.level === 'warning' && e.dropped_param === droppedParam);
+    if (entry === undefined) {
+      failed++;
+      console.error(`  ✗ ${label}\n      expected validation_info entry for dropped_param="${droppedParam}", got: ${JSON.stringify(warnings)}`);
+      return;
+    }
+    if (!entry.retry_action || !entry.retry_action.includes(expectedRetryFragment)) {
+      failed++;
+      console.error(`  ✗ ${label}\n      retry_action should include "${expectedRetryFragment}", got: ${entry.retry_action}`);
+      return;
+    }
+  }
+  passed++;
 }
 
 // The exact H1 trap: agent sends reverb.type="Hall, Large" + reverb.time=6.
-// Pre-fix: silent no-op on time. Post-fix: structured precheck rejects
-// with valid_options listing Plate/Spring/Echo/SFX variants.
-await expectApplyPrecheckThrows(
-  'reverb.type="Hall, Large" + reverb.time=6 — precheck rejects (Hall fixed-decay)',
+// Pre-fix: silent no-op on time, agent reports false success.
+// Post-fix: write proceeds, validation_info carries the dropped-time
+// warning so the agent self-corrects on turn 2.
+await expectApplyPreflightWarns(
+  'reverb.type="Hall, Large" + reverb.time=6 — soft-warn (Hall fixed-decay)',
   { slots: [{ slot: 1, block_type: 'reverb', params: { A: { type: 'Hall, Large', time: 6, mix: 30 } } }] },
-  'doesn\'t expose all of [time, mix]',
-  'Plate',
+  ['time'],
+  'find_compatible_types',
 );
 
-// Same trap, flat-shape variant.
-await expectApplyPrecheckThrows(
-  'reverb.type="Hall, Large Deep" + reverb.time=6 (flat) — precheck rejects (no Hall variant exposes time)',
+// Same trap, flat-shape variant. Mix IS exposed by Hall (just time isn't);
+// we should see exactly one warning for `time`, none for `mix`.
+await expectApplyPreflightWarns(
+  'reverb.type="Hall, Large Deep" + reverb.time=6 (flat) — soft-warn (only time drops)',
   { slots: [{ slot: 1, block_type: 'reverb', params: { type: 'Hall, Large Deep', time: 6 } as Record<string, number | string> }] },
-  'doesn\'t expose',
-  'Plate',
+  ['time'],
+  'find_compatible_types',
 );
 
 // amp.master on non-master Vox AC30 — same silent-no-op trap class.
-await expectApplyPrecheckThrows(
-  'amp.type="Class-A 30W TB" + amp.master=5 — precheck rejects (AC30 has no master)',
+await expectApplyPreflightWarns(
+  'amp.type="Class-A 30W TB" + amp.master=5 — soft-warn (AC30 has no master)',
   { slots: [{ slot: 1, block_type: 'amp', params: { A: { type: 'Class-A 30W TB', gain: 3, master: 5 } } }] },
-  'doesn\'t expose',
+  ['master'],
+  'find_compatible_types',
 );
 
 // Positive case verified via findCompatibleTypes directly (calling
