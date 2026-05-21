@@ -1,6 +1,35 @@
 /**
- * Verify built SET_PARAM messages match captured wire bytes byte-for-byte.
+ * Verify built AM4 wire messages and their decoders against captured
+ * bytes byte-for-byte. Single entry point that runs every golden suite
+ * in sequence.
+ *
  * Run:  npx tsx scripts/verify-msg.ts
+ *
+ * Suite layout (jump to a line range to find what you're touching):
+ *
+ *   line   45 — `cases`              SET_PARAM / GET_PARAM / nudge /
+ *                                    set-block-type / bypass / switch /
+ *                                    save / preset-name / scene-name
+ *                                    builder goldens (~258 cases)
+ *   line 1263 — `ackCases`           command-ack predicate goldens (HW-002b
+ *                                    capture, 2026-04-19)
+ *   line 1331 — `readPredicateCases` read-response predicate goldens
+ *                                    (HW-044, session 42)
+ *   line 1502 — `decodeCases`        parseReadResponse decode goldens
+ *                                    (HW-044, HW-046, HW-047)
+ *   line 1622 — `decodeRuleCases`    BK-038 decode-rule cases (linear vs
+ *                                    log10 scaling per cache typecode)
+ *   line 1691 — `presetNameCases` /  preset-name + factory-bank coverage
+ *               factory-bank assertions
+ *
+ * T-15 (Session 2026-05-21): the per-builder file split called out by
+ * the senior MCP review is deferred to a follow-up session. The
+ * reviewer's secondary point about failure messages naming the builder
+ * was already addressed by the per-case `label:` field on every suite
+ * (the suites print the label + the built/expected diff on mismatch,
+ * not a line number). The size-driven maintainability concern remains
+ * valid and is queued as a backlog item; see TOOL-ARCHIVE.md or the
+ * sprint plan for the full per-file split spec.
  */
 import {
   BLOCK_SLOT_PID_HIGH_BASE,
