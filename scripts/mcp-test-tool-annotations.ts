@@ -108,7 +108,6 @@ const ADDITIVE_TOOLS = new Set([
   'axefx2_set_block_at_cell',
   'axefx2_set_cell_routing',
   'axefx2_reconnect_midi',
-  'axefx2_test_apply',
   'axefx3_set_channel',
   'axefx3_set_parameter',
   'axefx3_set_tempo',

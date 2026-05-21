@@ -34,7 +34,6 @@ import { registerAxeFxIILayoutTools } from './tools/layout.js';
 import { registerAxeFxIIMetaTools } from './tools/meta.js';
 import { registerAxeFxIINavigationTools } from './tools/navigation.js';
 import { registerAxeFxIIParamTools } from './tools/params.js';
-import { registerAxeFxIIPresetTools } from './tools/preset.js';
 import { registerAxeFxIIPresetBinaryTools } from './tools/presetBinary.js';
 // Session 116 cont 3 (BK-070): `axefx2_set_scene_channels` and
 // `axefx2_atomic_apply` deprecated. Both used a hardcoded
@@ -64,7 +63,6 @@ export function registerAxeFxIITools(server: McpServer): void {
   registerAxeFxIIParamTools(server);
   registerAxeFxIILayoutTools(server);
   registerAxeFxIINavigationTools(server);
-  registerAxeFxIIPresetTools(server);
   registerAxeFxIIPresetBinaryTools(server);
   registerAxeFxIIMetaTools(server);
 }

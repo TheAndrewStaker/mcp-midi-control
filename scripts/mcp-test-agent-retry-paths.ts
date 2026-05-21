@@ -304,27 +304,10 @@ async function main(): Promise<void> {
       record('hydra_apply_patch(bad param) → structured DispatchError', pass, notes);
     }
 
-    // ── Axe-Fx II: bad shape in test_apply ──────────────────────────
-    console.log('\nAxe-Fx II — test_apply validation retry path');
-    {
-      const r = await client.callTool({
-        name: 'axefx2_test_apply',
-        arguments: {
-          blocks: [
-            { block: 'NotARealBlock' },
-          ],
-          on_active_preset_edited: 'discard',
-        },
-      });
-      const t = extractText(r);
-      const notes: string[] = [];
-      const isErr = isError(r);
-      const pointsAtUnified = /apply_preset\(\{port:"axe-fx-ii", spec, verify_chain:true\}\)/i.test(t);
-      notes.push(`isError=${isErr}`);
-      notes.push(`text steers to unified apply_preset → ${pointsAtUnified}`);
-      const pass = isErr && pointsAtUnified;
-      record('axefx2_test_apply(bad shape) → steers to unified apply_preset', pass, notes);
-    }
+    // axefx2_test_apply removed 2026-05-21 (T-2). Its "DEPRECATED, use
+    // apply_preset" deprecation-steering path tested here is gone too;
+    // callers now find the unified apply_preset directly. No replacement
+    // assertion needed.
 
     // ── Axe-Fx III: success on valid block (mock transport acks) ────
     console.log('\nAxe-Fx III — success path (continued)');

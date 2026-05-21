@@ -45,6 +45,20 @@ Tools listed here are allowed to exceed the 1000-char hard cap or 600-char warn 
 
 ## Removed tools
 
+### axefx2_test_apply (removed: 2026-05-21)
+
+**Wire function:** none unique (delegated to `runApplyPresetAtOps` + GET_GRID_LAYOUT response parsing; same wire path the unified `apply_preset({port:'axe-fx-ii', spec, verify_chain:true})` uses).
+
+**Original use case:** Working-buffer-only apply + chain-integrity verify in one call. Pre-dated the unified surface, served as the early "did the apply land correctly?" check.
+
+**Why cut:** Pure superset by `apply_preset({port:'axe-fx-ii', spec, verify_chain:true})`. Unified version provides chain verify + working-buffer apply + scenes[] + cross-device aliases + validation_info[] surfacing + the full PresetSpec shape. The device-namespaced tool was already labeled DEPRECATED in its description and pointed callers at the unified replacement.
+
+**Resurrection instructions:**
+- Source last lived at commit `108ecc7^` (pre-T-2). To recover: `git show 108ecc7^:packages/axe-fx-ii/src/tools/preset.ts` then re-add `registerAxeFxIIPresetTools` import + call to `packages/axe-fx-ii/src/tools.ts:registerAxeFxIITools`.
+- No tests to restore (no goldens dedicated to this tool; `axefx2_test_apply` shared coverage with the underlying applyExecutor which still ships).
+
+**Stability note:** wire path is unchanged (the underlying executor + grid-layout response shape are stable). Resurrection would just re-expose an already-deprecated alias; recommend updating the caller to the unified `apply_preset` instead.
+
 ### axefx2_atomic_apply (removed: 2026-05-21)
 
 **Wire function:** FN_PATCH_DUMP (0x03), FN_PATCH_HEADER (0x77), FN_PATCH_CHUNK (0x78), FN_PATCH_FOOTER (0x79), STORE_PRESET (0x1d). The full dump → patch → push → save sequence.

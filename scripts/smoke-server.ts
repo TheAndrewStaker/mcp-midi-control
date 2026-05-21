@@ -161,7 +161,8 @@ async function main(): Promise<void> {
     'axefx2_set_block_at_cell',
     'axefx2_set_block_channel',
     // axefx2_set_param removed v0.3 — use set_param({port:'axe-fx-ii',...}).
-    'axefx2_test_apply',
+    // axefx2_test_apply removed 2026-05-21 (T-2) — use apply_preset({port:'axe-fx-ii',
+    // spec, verify_chain:true}) for the same working-buffer apply + chain integrity check.
     // BK-051 unified tool surface — port-dispatched, device-agnostic.
     // Session B chunk 1 (2026-05-11): describe_device, list_params,
     // get_param, set_param.
