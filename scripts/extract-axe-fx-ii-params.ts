@@ -290,6 +290,60 @@ const HARDWARE_OVERRIDES: Readonly<Record<string, HardwareOverride>> = {
   },
 };
 
+// ── Hardware-captured enum-value overrides (Session 107, 2026-05-20) ──
+//
+// fn 0x28 SYSEX_GET_PARAM_STRINGS on Q8.02 XL+ surfaced 4 wiki
+// transcription errors in the AMP_EFFECT_TYPE table: the wiki's
+// MIDI_SysEx page (the generator's primary input) differs from both
+// the device's emitted display labels AND the wiki's own
+// Amp_models_list page. Hardware ground truth wins per the
+// "Verification sources of truth" rule in CLAUDE.md.
+//
+// Each entry overrides a single (block, paramId, wireIndex) ASCII
+// label with the hardware-captured string. Generator emits the
+// overridden value verbatim into the corresponding *_VALUES enum
+// const.
+//
+// Re-validate / extend on the next fn 0x28 probe sweep:
+//   npx tsx scripts/_research/probe-axefx2-enum-dump.ts
+// Decoder + diff:
+//   npx tsx scripts/_research/diff-fn28-vs-catalog.ts
+
+interface EnumLabelOverride {
+  readonly block: string;
+  readonly paramId: number;
+  readonly wireIndex: number;
+  readonly hardwareLabel: string;
+  readonly wikiLabel: string;
+  readonly note: string;
+}
+
+const ENUM_VALUE_OVERRIDES: ReadonlyArray<EnumLabelOverride> = [
+  {
+    block: 'amp', paramId: 0, wireIndex: 22,
+    hardwareLabel: 'USA IIC+ BRIGHT', wikiLabel: 'USA IIC+ BRight',
+    note: 'Wiki MIDI_SysEx page has inconsistent casing; device emits all-caps.',
+  },
+  {
+    block: 'amp', paramId: 0, wireIndex: 44,
+    hardwareLabel: 'CORNFED M50', wikiLabel: 'CORNCOB M50',
+    note:
+      'Wiki MIDI_SysEx page has a transcription error ("CORNCOB"); ' +
+      'Wiki Amp_models_list page + device both have "CORNFED M50". ' +
+      'Amp models a Cornford MK50 II.',
+  },
+  {
+    block: 'amp', paramId: 0, wireIndex: 45,
+    hardwareLabel: 'CAROL-ANN OD-2', wikiLabel: 'CA OD-2',
+    note: 'Wiki MIDI_SysEx page abbreviated to "CA"; full name is CAROL-ANN.',
+  },
+  {
+    block: 'amp', paramId: 0, wireIndex: 65,
+    hardwareLabel: 'SV BASS 1', wikiLabel: 'SV BASS',
+    note: 'Wiki dropped the trailing "1".',
+  },
+];
+
 // HW-091 + HW-093 (2026-05-11): delay.tempo wire 0..32 → musical
 // division enum. Wires 1..21 are the canonical musical-division ladder
 // (TRIP / straight / DOT in increasing note-value); 22..24 are integer
@@ -820,9 +874,26 @@ function emitParams(): string {
                 props.push(`enumValues: ${override.enumValuesRef}`);
             } else if (r.type === 'select' && r.options.length > 0) {
                 const enumName = `${block.toUpperCase()}_${baseKey.toUpperCase()}_VALUES`;
+                // Apply per-(block, paramId, wireIndex) ASCII label
+                // overrides from hardware-captured fn 0x28 dumps. The
+                // wiki MIDI_SysEx page carries a handful of transcription
+                // errors; the device's emitted label is the truth.
+                const labelOverrides = new Map<number, EnumLabelOverride>();
+                for (const ov of ENUM_VALUE_OVERRIDES) {
+                    if (ov.block === block && ov.paramId === r.paramId) {
+                        labelOverrides.set(ov.wireIndex, ov);
+                    }
+                }
                 enumDecls.push(
                     `export const ${enumName}: Readonly<Record<number, string>> = Object.freeze({\n` +
-                    r.options.map((o) => `    ${o.index}: ${JSON.stringify(o.name)},`).join('\n') +
+                    r.options.map((o) => {
+                        const ov = labelOverrides.get(o.index);
+                        const label = ov ? ov.hardwareLabel : o.name;
+                        const trailer = ov
+                            ? `  // hw fn 0x28 override (was ${JSON.stringify(ov.wikiLabel)}): ${ov.note}`
+                            : '';
+                        return `    ${o.index}: ${JSON.stringify(label)},${trailer}`;
+                    }).join('\n') +
                     `\n});`,
                 );
                 props.push(`enumValues: ${enumName}`);
