@@ -15,6 +15,7 @@ import {
   type ApplySetlistResult,
   type DeviceDescriptor,
   type PresetSnapshot,
+  type PresetSlotSpec,
   type PresetSpec,
   type RestoreDefaultsRangeOptions,
   type RestoreDefaultsRangeResult,
@@ -216,10 +217,14 @@ export function applyTypeKnobApplicabilityPreflight(
   spec: PresetSpec,
   descriptor: DeviceDescriptor,
 ): { spec: PresetSpec; warnings: ValidationInfo[] } {
-  if (descriptor.findCompatibleTypes === undefined) return { spec, warnings: [] };
+  // Stash the function reference in a local so TS narrows it inside the
+  // .map closure below (the outer descriptor.findCompatibleTypes guard
+  // doesn't survive the closure boundary).
+  const findCompatibleTypes = descriptor.findCompatibleTypes;
+  if (findCompatibleTypes === undefined) return { spec, warnings: [] };
   const warnings: ValidationInfo[] = [];
   let mutated = false;
-  const newSlots = spec.slots.map((slot, i) => {
+  const newSlots = spec.slots.map((slot, i): PresetSlotSpec => {
     const params = slot.params;
     if (params === undefined || params === null) return slot;
     // PresetSlotSpec.params allows EITHER a flat record (`{type, knob1,
@@ -249,14 +254,14 @@ export function applyTypeKnobApplicabilityPreflight(
       // Bulk gate: if the type exposes every knob, skip the per-knob
       // loop entirely. Most calls land here (the common case is
       // type-compatible specs).
-      const bulk = descriptor.findCompatibleTypes({ block: slot.block_type, params: knobNames });
+      const bulk = findCompatibleTypes({ block: slot.block_type, params: knobNames });
       if (!bulk.applicability_known) continue;
       if (bulk.compatible_types.includes(typeValue)) continue;
       // Type fails the bulk gate — at least one knob is dropped. Loop
       // per-knob to pinpoint which (and surface each with its own
       // retry pointer).
       for (const knobName of knobNames) {
-        const perKnob = descriptor.findCompatibleTypes({
+        const perKnob = findCompatibleTypes({
           block: slot.block_type,
           params: [knobName],
         });
@@ -281,7 +286,12 @@ export function applyTypeKnobApplicabilityPreflight(
     }
     if (dropsForSlot.length === 0) return slot;
     mutated = true;
-    return { ...slot, params: stripDroppedKnobsFromSlotParams(params, dropsForSlot) };
+    // The strip helper preserves the input's shape (flat ⇄ flat,
+    // nested ⇄ nested), so the resulting params still satisfies the
+    // PresetSlotSpec union. Cast at the boundary so we don't have to
+    // thread a polymorphic generic through the helper.
+    const filteredParams = stripDroppedKnobsFromSlotParams(params, dropsForSlot) as PresetSlotSpec['params'];
+    return { ...slot, params: filteredParams };
   });
   if (!mutated) return { spec, warnings };
   return { spec: { ...spec, slots: newSlots }, warnings };
