@@ -179,12 +179,49 @@ export function collectTypeKnobApplicabilityWarnings(
   spec: PresetSpec,
   descriptor: DeviceDescriptor,
 ): ValidationInfo[] {
-  if (descriptor.findCompatibleTypes === undefined) return [];
-  const out: ValidationInfo[] = [];
-  for (let i = 0; i < spec.slots.length; i++) {
-    const slot = spec.slots[i];
+  return applyTypeKnobApplicabilityPreflight(spec, descriptor).warnings;
+}
+
+/**
+ * T-7 (Session "subtraction-sprint", 2026-05-21): the same BK-071 walk,
+ * extended to STRIP each dropped knob from the spec before wire
+ * dispatch instead of just warning post-hoc. Rationale:
+ *
+ *   - Pre-T-7 behavior: warning collected pre-flight, BUT the spec
+ *     including the dropped knob was still sent on the wire. The device
+ *     acked and silently no-op'd. Wasted SysEx round-trip per dropped
+ *     knob (50-300 ms apiece on AM4, 50 ms apiece on II).
+ *   - Post-T-7 behavior: dropped knob is removed from the spec before
+ *     `writer.applyPreset` sees it. No wire byte is sent for a write
+ *     the device would have silently dropped. The warning still fires
+ *     and tells the agent which write was suppressed and why.
+ *
+ * This preserves the existing soft-warn philosophy: the type is still
+ * applied (a guitarist who wants Hall for the tail texture gets Hall),
+ * only the knob that the type fundamentally can't express is suppressed.
+ * The user-agency rationale documented above is unchanged. What changes
+ * is that we stop pretending the wire write matters when we know it
+ * doesn't.
+ *
+ * Returns:
+ *   - `spec`: a deep-copy of the input with dropped knobs removed.
+ *     Empty channels (every knob dropped) are themselves dropped to keep
+ *     the spec clean. If nothing was filtered, returns the original
+ *     reference (no allocation on the common path).
+ *   - `warnings`: ValidationInfo[] with level='warning' and
+ *     dropped_param set for each suppressed knob. Same shape as the
+ *     legacy `collectTypeKnobApplicabilityWarnings` return.
+ */
+export function applyTypeKnobApplicabilityPreflight(
+  spec: PresetSpec,
+  descriptor: DeviceDescriptor,
+): { spec: PresetSpec; warnings: ValidationInfo[] } {
+  if (descriptor.findCompatibleTypes === undefined) return { spec, warnings: [] };
+  const warnings: ValidationInfo[] = [];
+  let mutated = false;
+  const newSlots = spec.slots.map((slot, i) => {
     const params = slot.params;
-    if (params === undefined || params === null) continue;
+    if (params === undefined || params === null) return slot;
     // PresetSlotSpec.params allows EITHER a flat record (`{type, knob1,
     // knob2}`) for non-channel blocks OR a channel-nested record (`{A:
     // {type, knob1}, D: {type, knob2}}`) for channel blocks. Walk both
@@ -201,6 +238,9 @@ export function collectTypeKnobApplicabilityWarnings(
     } else {
       channelMaps.push({ channel: undefined, map: params as Record<string, unknown> });
     }
+    // Pairs of (channel, knob) to strip from this slot's params after
+    // the walk completes.
+    const dropsForSlot: { channel: string | undefined; knob: string }[] = [];
     for (const { channel, map } of channelMaps) {
       const typeValue = map.type;
       if (typeof typeValue !== 'string') continue;
@@ -227,10 +267,11 @@ export function collectTypeKnobApplicabilityWarnings(
         const more = perKnob.compatible_types.length > head.length
           ? ` (… ${perKnob.compatible_types.length - head.length} more)`
           : '';
-        out.push({
+        dropsForSlot.push({ channel, knob: knobName });
+        warnings.push({
           slot_index: i,
           path: `slots[${i}].params${where}.${knobName}`,
-          info: `${slot.block_type}.${knobName} is not exposed by ${slot.block_type}.type="${typeValue}" on ${descriptor.display_name}. The write acked but the device silently no-ops this knob. Pick a type that exposes ${knobName} (e.g. ${head.join(', ')}${more}) or call find_compatible_types({block:"${slot.block_type}", params:["${knobName}"]}) for the full list.`,
+          info: `${slot.block_type}.${knobName} is not exposed by ${slot.block_type}.type="${typeValue}" on ${descriptor.display_name}. The write was suppressed by apply_preset pre-flight (the device would have silently no-op'd it). Pick a type that exposes ${knobName} (e.g. ${head.join(', ')}${more}) or call find_compatible_types({block:"${slot.block_type}", params:["${knobName}"]}) for the full list.`,
           level: 'warning',
           dropped_param: knobName,
           reason: `${slot.block_type}.type="${typeValue}" does not expose ${knobName} on ${descriptor.display_name}.`,
@@ -238,6 +279,53 @@ export function collectTypeKnobApplicabilityWarnings(
         });
       }
     }
+    if (dropsForSlot.length === 0) return slot;
+    mutated = true;
+    return { ...slot, params: stripDroppedKnobsFromSlotParams(params, dropsForSlot) };
+  });
+  if (!mutated) return { spec, warnings };
+  return { spec: { ...spec, slots: newSlots }, warnings };
+}
+
+/**
+ * Remove the (channel, knob) pairs from a slot's params record.
+ * Handles both flat and channel-nested shapes; preserves whichever the
+ * input used. Empty channels (every knob filtered out) are themselves
+ * dropped so the spec stays clean.
+ */
+function stripDroppedKnobsFromSlotParams(
+  params: unknown,
+  drops: readonly { channel: string | undefined; knob: string }[],
+): unknown {
+  if (params === null || typeof params !== 'object') return params;
+  const entries = Object.entries(params as Record<string, unknown>);
+  const looksNested = entries.some(([, v]) => v !== null && typeof v === 'object' && !Array.isArray(v));
+  if (looksNested) {
+    const out: Record<string, unknown> = {};
+    for (const [ch, v] of entries) {
+      if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+        const droppedKnobsForCh = new Set(
+          drops.filter((d) => d.channel === ch).map((d) => d.knob),
+        );
+        const chMap = v as Record<string, unknown>;
+        const newChMap: Record<string, unknown> = {};
+        for (const [k, kv] of Object.entries(chMap)) {
+          if (!droppedKnobsForCh.has(k)) newChMap[k] = kv;
+        }
+        if (Object.keys(newChMap).length > 0) out[ch] = newChMap;
+      } else {
+        out[ch] = v;
+      }
+    }
+    return out;
+  }
+  const droppedKnobsFlat = new Set(
+    drops.filter((d) => d.channel === undefined).map((d) => d.knob),
+  );
+  const flat = params as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(flat)) {
+    if (!droppedKnobsFlat.has(k)) out[k] = v;
   }
   return out;
 }
@@ -368,14 +456,24 @@ export async function executeApplyPreset(args: {
   // BK-071 structural type-knob applicability pre-flight: when a slot
   // specifies both a `type` enum value AND additional knobs, identify
   // any knob the picked type doesn't expose and surface it as a
-  // structured `validation_info[]` entry (level: 'warning'). The write
-  // proceeds — the agent reads the warning on the response and
-  // self-corrects on the next turn. Closes the H1 silent-no-op trap
-  // (e.g. reverb.type="Hall, Large" + reverb.time=6) without violating
-  // display-first / user-agency. Devices without findCompatibleTypes
-  // (II / III / Hydra today) get an empty array; their existing
-  // dropped-param warning path remains.
-  const applicabilityWarnings = collectTypeKnobApplicabilityWarnings(normalizedSpec, descriptor);
+  // structured `validation_info[]` entry (level: 'warning'). Closes the
+  // H1 silent-no-op trap (e.g. reverb.type="Hall, Large" + reverb.time=6)
+  // without violating display-first / user-agency. Devices without
+  // findCompatibleTypes (II / III / Hydra today) get an empty array;
+  // their existing dropped-param warning path remains.
+  //
+  // T-7 (2026-05-21): in addition to surfacing the warning, the
+  // pre-flight now STRIPS the dropped knob from the spec before wire
+  // dispatch. Previous behavior wrote the doomed knob on the wire and
+  // let the device silently no-op it (wasted 50-300 ms per dropped
+  // knob). The type itself is preserved (user agency); only the
+  // type-incompatible knob is suppressed. Channel-Y inactive checks
+  // and chain verification continue to walk the un-stripped
+  // `normalizedSpec` so a full-channel filter doesn't accidentally
+  // hide a channel-Y trap or a routing reference.
+  const applicability = applyTypeKnobApplicabilityPreflight(normalizedSpec, descriptor);
+  const applicabilityWarnings = applicability.warnings;
+  const wireSpec = applicability.spec;
   // BK-077: channel-Y inactive pre-flight. Pure spec validation — when
   // a slot specifies channel-nested params but no scene in this spec
   // activates that channel for the block, the data writes but never
@@ -411,7 +509,10 @@ export async function executeApplyPreset(args: {
   const options = args.target_location !== undefined
     ? { save: args.save_authorized === true }
     : undefined;
-  const result = await descriptor.writer.applyPreset(ctx, normalizedSpec, args.target_location, options);
+  // wireSpec === normalizedSpec when no knobs were stripped (common
+  // case); otherwise it's a deep-copy with dropped knobs removed per
+  // T-7. The writer never sees the suppressed knobs.
+  const result = await descriptor.writer.applyPreset(ctx, wireSpec, args.target_location, options);
   // BK-075: apply_preset can change which blocks are placed in the
   // working buffer; cached layout snapshot is now stale regardless of
   // target_location. Invalidate so the next set_param re-reads.
