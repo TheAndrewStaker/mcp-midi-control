@@ -32,7 +32,13 @@ export type Device = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'hydrasynth';
  *     real-device boundary quirk). Use on cases that need to verify
  *     dispatcher range-clamp / refusal paths.
  */
-export type MockFixture = 'clean-scratch' | 'populated-z01' | 'device-quirk-scene-7fff';
+export type MockFixture =
+  | 'clean-scratch'
+  | 'populated-z01'
+  | 'device-quirk-scene-7fff'
+  | 'slow-response'
+  | 'partial-ack'
+  | 'populated-unrouted';
 
 export interface ToolCall {
   /** MCP-prefixed tool name as emitted by Claude Code, e.g. `mcp__mcp-midi-control__apply_preset`. */
@@ -101,6 +107,18 @@ export interface Expectations {
   text_contains?: readonly string[];
   /** Substrings the final text must NOT contain (e.g. "I can't" / "not available"). */
   text_not_contains?: readonly string[];
+  /**
+   * OR-of-AND text assertion. Inner array is an AND group (every
+   * substring must appear); outer array is OR alternatives (at least
+   * one inner group must pass). Use for ambiguity-handling cases where
+   * the agent can EITHER ask a clarifying question OR explicitly name
+   * its defaults — both paths legitimately satisfy the case.
+   *
+   * Example: text_contains_any: [['?', 'which'], ['I\'ll use', 'default']]
+   *  → passes if final text has "?" AND "which", OR "I'll use" AND "default".
+   * Empty inner group is treated as never-matching (no false positives).
+   */
+  text_contains_any?: readonly (readonly string[])[];
   /** Argument-level assertions on specific tool calls. */
   tool_call_validators?: readonly ToolCallValidator[];
   /**

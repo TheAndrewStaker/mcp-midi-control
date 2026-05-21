@@ -384,4 +384,43 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 120,
     },
   },
+
+  // ── BK-076 routing-mask=0 pre-flight, end-to-end ───────────────
+  //
+  // Session 113 cont follow-up: uses MOCK_FIXTURE='populated-unrouted'
+  // so the II mock grid carries Amp 1 at (row 2, col 3) with
+  // routingFlags=0. When the agent calls set_param on amp.gain, the
+  // dispatcher's BK-076 pre-flight reads the grid via
+  // getBlockLayoutSnapshot, finds amp in unroutedBlocks, and attaches
+  // a validation_info[] warning with level='warning', dropped_param,
+  // reason, retry_action.
+  //
+  // Acceptable agent recoveries: a follow-up `axefx2_set_cell_routing`
+  // call to connect a previous-column cell into amp, OR a chat-only
+  // acknowledgement of the broken-cable state. Both paths pass.
+  {
+    id: 'axefx2-routing-mask-warning',
+    device: 'axe-fx-ii',
+    tier: 'no-hardware',
+    mockFixture: 'populated-unrouted',
+    description: 'Routing-mask=0 trap — agent set_param on amp.gain when amp is placed at (row 2, col 3) with routing_mask=0 (no input cable). Dispatcher pre-flight surfaces validation_info[] warning naming the broken-cable state + retry_action pointing at axefx2_set_cell_routing. Agent must NOT positive-claim audible success; acceptable paths are a follow-up cable write OR a chat-only acknowledgement.',
+    prompt: "On the Axe-Fx II, set the amp gain to 6.",
+    expectations: {
+      must_call: ['set_param'],
+      max_tools: 6,
+      // Agent must NOT positive-claim audible success. Reading the
+      // validation_info[] warning naturally produces text mentioning
+      // the broken-cable state; false-claim regressions fire when the
+      // agent IGNORED the warning surface.
+      text_not_contains: [
+        'gain is now 6',
+        'gain is now at 6',
+        'amp gain is 6',
+        'audibly',
+        'all set',
+        "you're all set",
+      ],
+      max_wall_seconds: 120,
+    },
+  },
 ];

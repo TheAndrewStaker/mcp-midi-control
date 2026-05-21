@@ -761,25 +761,38 @@ export const AM4_CASES: AgentRegressionCase[] = [
     id: 'am4-recipe-auto-wah-ambiguous',
     device: 'am4',
     tier: 'no-hardware',
-    disabled: true,  // Pri4: ambiguity-handling case. Enabled after harness gains a deterministic clarification-detector. For now keep in source so the assertion shape ships with the design.
-    description: 'Auto-wah on AM4, vague prompt: tests agent ambiguity-handling. Companion to am4-recipe-auto-wah (explicit prompt). Asserts agent either asks a clarifying question OR names its defaults — does not silently invent a build. Disabled until harness has a deterministic clarification-detector; the shape ships so the assertion is in source.',
+    description: 'Auto-wah on AM4, vague prompt: tests agent ambiguity-handling. Companion to am4-recipe-auto-wah (explicit prompt). Asserts agent either asks a clarifying question OR explicitly names its defaults — does not silently invent a build. Uses text_contains_any (OR-of-AND) so both legitimate paths pass.',
     prompt: "I want some kind of wah on the AM4.",
     expectations: {
-      // No must_call: agent may legitimately do nothing wire-side and
-      // just ask. If they DO write, must_call_any covers both paths.
       must_call_any: [
         ['apply_preset'],
         ['set_block', 'set_params'],
-        // Or no write at all — covered by min_tools:0 below.
       ],
       max_tools: 8,
       min_tools: 0,  // Agent may legitimately ask before writing.
-      text_contains: [
-        // Either a question mark (asking) or explicit defaults naming.
-        // The harness's text_contains is currently AND-of-substrings;
-        // since this assertion is OR-shaped it's commented as
-        // intentional documentation. Enable once OR-text-contains
-        // semantics land in the harness.
+      // OR-of-AND clarification detector. Inner AND groups capture the
+      // two legitimate paths:
+      //   1. Clarifying question — final text has a question mark AND
+      //      one of the question-word substrings.
+      //   2. Explicit defaults narration — final text names "default"
+      //      OR "I'll" and references "wah" so the narration is
+      //      grounded in the actual build (not a generic disclaimer).
+      // At least one path must pass. Silently inventing a build with
+      // no question and no defaults-narration fails the case.
+      text_contains_any: [
+        ['?', 'which'],
+        ['?', 'what'],
+        ['?', 'should'],
+        ["i'll use", 'wah'],
+        ['default', 'wah'],
+        ['by default', 'wah'],
+      ],
+      // Final text must NOT positive-claim a finished build when the
+      // agent had no concrete inputs to work from.
+      text_not_contains: [
+        'all set',
+        "you're all set",
+        'preset is ready',
       ],
       max_wall_seconds: 120,
     },
@@ -1013,6 +1026,96 @@ export const AM4_CASES: AgentRegressionCase[] = [
         'phaser rate has been set',
         'all set',
         "you're all set",
+      ],
+      max_wall_seconds: 90,
+    },
+  },
+
+  // ── Slow-response fixture: batched-write preference under latency ──
+  //
+  // Session 113 cont: MOCK_FIXTURE='slow-response' inflates the simulated
+  // ack latency to 1500 ms per round-trip (vs real-hardware ~30 ms,
+  // vs default mock 30 ms). Under that latency, an agent that fans out
+  // 5 sequential set_param calls spends ~7.5 s on writes alone before
+  // the user gets a response; a batched set_params lands the same edit
+  // in one round-trip (~1.5 s). The case asserts the batched path.
+  //
+  // No must_call on the batched tool name specifically — the agent may
+  // legitimately use apply_preset (which also batches under the hood)
+  // for the same effect. The constraint is "don't fan out N set_param
+  // calls": max_repeats: { set_param: 1 } enforces this.
+  {
+    id: 'am4-slow-response-batched-write',
+    device: 'am4',
+    tier: 'no-hardware',
+    mockFixture: 'slow-response',
+    description: 'Slow-response fixture (~1.5 s per ack): prompt asks for 5 amp param edits. Agent should batch via set_params or apply_preset (≤ 1 set_param call); fanning out 5 sequential set_param calls is the regression. Tests batched-write preference under realistic high-latency conditions.',
+    prompt: "On the AM4, set the amp gain to 6, master to 5, treble to 7, mid to 4, and bass to 5.",
+    expectations: {
+      // No must_call on a specific batched tool — both set_params and
+      // apply_preset are valid. Just enforce: at most 1 individual
+      // set_param call. (Most agents will batch via set_params.)
+      max_tools: 8,
+      max_repeats: { set_param: 1 },
+      // The 5 edits must reach the device. We don't assert tool args
+      // tightly here — the constraint is on tool selection, not args.
+      // Final text must mention all 5 params landed.
+      text_contains_any: [
+        ['gain', 'master', 'treble', 'mid', 'bass'],
+      ],
+      // No positive-claim regression on this case — the agent's narrative
+      // is allowed to say "all set" because the writes DID succeed.
+      // The case fails on the BATCHING question, not on the narration.
+      max_wall_seconds: 60,
+    },
+  },
+
+  // ── Partial-ack fixture: read-after-write integrity ─────────────
+  //
+  // Session 113 cont: MOCK_FIXTURE='partial-ack' returns a constant
+  // display ~1.0 value for any standard-knob read, regardless of what
+  // the agent just wrote. Writes still ack normally on the wire. An
+  // agent that narrates "set amp.gain to 6" from the write-echo alone
+  // misses the discrepancy; one that verifies via get_param reads
+  // back ~1.0 and surfaces the mismatch.
+  //
+  // The case nudges toward read-after-write by explicitly asking the
+  // agent to confirm the change landed. Agents that comply hit the
+  // mismatch and must surface it; agents that just write blind pass
+  // the writes but fail the text_not_contains "now at 6" assertion
+  // because they made a positive claim without evidence.
+  {
+    id: 'am4-partial-ack-read-integrity',
+    device: 'am4',
+    tier: 'no-hardware',
+    mockFixture: 'partial-ack',
+    description: 'Partial-ack fixture: writes ack on the wire but reads always return display ~1.0 (the device never echoes the write). Agent must verify via get_param and surface the discrepancy ("the device acked but reads back ~1.0"). Catches agents that positive-claim a successful write off the wire-echo alone.',
+    prompt: "On the AM4, set the amp.gain to 6, and then verify the change actually landed by reading it back. If the device disagrees with what we wrote, tell me.",
+    expectations: {
+      must_call: ['set_param', 'get_param'],
+      max_tools: 6,
+      // Final text must mention the discrepancy / mismatch / device-
+      // not-matching narrative — i.e. the agent saw the mismatch.
+      // OR-of-AND: any wording for "the device reports a different
+      // value than we wrote" satisfies. "Read returned X" + "wrote 6"
+      // narrative passes via the AND group.
+      text_contains_any: [
+        ['discrepancy'],
+        ['mismatch'],
+        ['differ'],
+        ['does not match'],
+        ["doesn't match"],
+        ["did not take"],
+        ['1', 'wrote', '6'],
+      ],
+      // Catches the "claimed success from write-echo alone" failure mode.
+      // If the agent says "gain is now 6" without surfacing the read
+      // mismatch, that's the regression.
+      text_not_contains: [
+        'gain is now 6',
+        'gain is now at 6',
+        'amp gain is 6',
+        'set gain to 6',
       ],
       max_wall_seconds: 90,
     },

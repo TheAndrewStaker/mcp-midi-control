@@ -74,7 +74,14 @@ export function listMidiPorts(
  */
 export function connectAM4(): MidiConnection {
   if (process.env.MCP_MOCK_TRANSPORT === '1') {
-    return mockConnect({ responder: am4MockResponder });
+    // BK-113 (Session 110): slow-response fixture inflates the simulated
+    // ack latency so the agent perceives multi-second wire round-trips.
+    // Surfaces agents that retry-loop or fan out N×set_param calls when
+    // a batched set_params / apply_preset would land the same edit in
+    // one round-trip. Real hardware lands acks in ~30-60 ms; under the
+    // slow-response fixture we synthesize 1500 ms.
+    const ackLatencyMs = MOCK_FIXTURE === 'slow-response' ? 1500 : undefined;
+    return mockConnect({ responder: am4MockResponder, ackLatencyMs });
   }
   return connect({
     needles: AM4_PORT_NEEDLES,
@@ -163,12 +170,36 @@ const HDR4_READ_PRESET_NAME_LO = 0x20;
 //     observed real-device quirk reproduced for regression coverage).
 //     Cases under this fixture verify the dispatcher's range-clamp /
 //     refusal path.
+//   - 'slow-response' (Session 113 cont): mock acks land after 1500 ms
+//     instead of the default 30 ms. Surfaces agents that fan out
+//     N×set_param when a batched set_params / apply_preset would land
+//     the same edit in one round-trip. The fixture itself doesn't
+//     mutate state — invariants above all hold; only timing changes.
+//   - 'partial-ack' (Session 113 cont): writes ack on the wire (the
+//     write-echo arrives), but subsequent reads return the PREVIOUS
+//     mock value (not the value the agent just wrote). Exercises the
+//     read-after-write integrity surface — agents that narrate
+//     "set X to 6" purely off the write-echo never notice the
+//     mismatch; agents that verify via get_param catch it and surface
+//     the discrepancy to the user. The mock is still stateless beyond
+//     the hardcoded mid-scale default; "partial" here means the read
+//     just doesn't observe the (non-existent) post-write state.
 // Pick a profile via `MOCK_FIXTURE=<name>` at process spawn time
 // (typically in scripts/agent-regression/runner.ts per case).
-type MockFixture = 'clean-scratch' | 'populated-z01' | 'device-quirk-scene-7fff';
+type MockFixture =
+  | 'clean-scratch'
+  | 'populated-z01'
+  | 'device-quirk-scene-7fff'
+  | 'slow-response'
+  | 'partial-ack';
 const MOCK_FIXTURE: MockFixture = ((): MockFixture => {
   const raw = process.env.MOCK_FIXTURE;
-  if (raw === 'populated-z01' || raw === 'device-quirk-scene-7fff') return raw;
+  if (
+    raw === 'populated-z01' ||
+    raw === 'device-quirk-scene-7fff' ||
+    raw === 'slow-response' ||
+    raw === 'partial-ack'
+  ) return raw;
   return 'clean-scratch';
 })();
 
@@ -234,6 +265,13 @@ const MOCK_SLOT_BLOCK_TYPES: ReadonlyMap<number, number> = new Map([
 // the 0..10 knob convention (`READ_VALUE_DENOMINATOR` = 65534, see
 // `setParam.ts`). Sensible mid-scale for amp.gain, reverb.mix, etc.
 const MOCK_DEFAULT_PARAM_VALUE = 32767;
+// BK-113 partial-ack: reads of standard knob registers return a value
+// far from any plausible mid-scale write target (display ~1.0 on the
+// 0..10 knob). Agents writing 5/6/7 and reading back see ~1.0 — the
+// discrepancy is the surface this fixture exercises. State registers
+// (location, scene, block slots) keep their canonical values so the
+// agent's orientation reads still match invariants.
+const MOCK_PARTIAL_ACK_KNOB_VALUE = 6553;
 
 /**
  * Compute the u32 value the mock should return for a short-read of a
@@ -252,6 +290,7 @@ function mockReadValueFor(pidLow: number, pidHigh: number): number {
     const placed = MOCK_SLOT_BLOCK_TYPES.get(pidHigh);
     if (placed !== undefined) return placed;
   }
+  if (MOCK_FIXTURE === 'partial-ack') return MOCK_PARTIAL_ACK_KNOB_VALUE;
   return MOCK_DEFAULT_PARAM_VALUE;
 }
 

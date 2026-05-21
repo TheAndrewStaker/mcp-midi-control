@@ -332,6 +332,19 @@ export function connectAxeFxII(): AxeFxIIConnection {
  * doesn't trip — the mock pretends a bidirectional connection exists
  * even though reads will time out at the predicate level.
  */
+// BK-113 follow-up: II mock fixture profiles for adversary testing.
+// Default 'clean-scratch' returns the empty grid (existing behavior).
+// 'populated-unrouted' places Amp 1 at (row 2, col 3) with routing_mask=0
+// so the BK-076 routing-mask pre-flight has a real failure to detect.
+// Picked at process spawn time via the `MOCK_FIXTURE` env var (the
+// agent-regression runner injects it per case-spec).
+type AxeFxIIMockFixture = 'clean-scratch' | 'populated-unrouted';
+const MOCK_FIXTURE: AxeFxIIMockFixture = ((): AxeFxIIMockFixture => {
+  const raw = process.env.MOCK_FIXTURE;
+  if (raw === 'populated-unrouted') return raw;
+  return 'clean-scratch';
+})();
+
 function mockAxeFxIIConnection(): AxeFxIIConnection {
   const handlers = new Set<(bytes: number[]) => void>();
   // Minimal mock responder: synthesizes the GET_BLOCK_CHANNEL response
@@ -351,21 +364,41 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
   const SYSEX_START_BYTE = 0xf0;
   const SYSEX_END_BYTE = 0xf7;
 
-  // BK-070 mock: synthesize an EMPTY 48-cell grid response for fn 0x20.
-  // Lets the unified `get_preset` end-to-end test verify routing without
-  // also stubbing per-block fn 0x1F responses. An empty grid means the
-  // reader does one round-trip + name-read and returns an empty slots
-  // array — every layer (dispatcher, reader.getPreset, grid parse) is
-  // exercised, but the per-block param-decode path isn't. Extending the
-  // mock to cover fn 0x1F + the 0x74/0x75/0x76 triple is a follow-up.
-  const buildEmptyGridResponse = (outgoing: number[]): number[] | undefined => {
+  // BK-070 mock: synthesize a 48-cell grid response for fn 0x20.
+  //
+  // Default ('clean-scratch'): empty grid (every cell zero). Lets the
+  // unified `get_preset` end-to-end test verify routing without also
+  // stubbing per-block fn 0x1F responses.
+  //
+  // BK-113 follow-up ('populated-unrouted'): grid carries Amp 1 (id 106)
+  // at (row 2, col 3) with routingFlags=0 — block placed but no
+  // previous-column cell feeds its input. Exercises the BK-076
+  // routing-mask=0 pre-flight end-to-end: `set_param` on `amp` reads
+  // the grid via `getBlockLayoutSnapshot`, computes `unroutedBlocks`,
+  // and surfaces the `validation_info[]` warning. All other cells stay
+  // empty.
+  //
+  // Per `parseGetGridLayoutResponse`: cells are column-major, top-to-
+  // bottom within each column. Per cell, 4 bytes: blockId lo (bits
+  // 6-0), blockId hi (bits 13-7), routing flags, unused.
+  const buildGridResponse = (outgoing: number[]): number[] | undefined => {
     if (outgoing.length < 8) return undefined;
     if (outgoing[0] !== SYSEX_START_BYTE) return undefined;
     if (outgoing[1] !== 0x00 || outgoing[2] !== 0x01 || outgoing[3] !== 0x74) return undefined;
     if (outgoing[5] !== FUNC_GET_GRID_LAYOUT) return undefined;
     const modelId = outgoing[4];
-    // 48 cells × 4 bytes each = 192 bytes; all zero (empty).
     const cells = new Array(48 * 4).fill(0x00);
+    if (MOCK_FIXTURE === 'populated-unrouted') {
+      // Amp 1 = id 106. Place at row 2 col 3 with routingFlags=0.
+      // Cell index = (col - 1) * 4 + (row - 1) = 2 * 4 + 1 = 9.
+      const cellIndex = 9;
+      const byteOffset = cellIndex * 4;
+      const ampId = 106;
+      cells[byteOffset] = ampId & 0x7f;
+      cells[byteOffset + 1] = (ampId >> 7) & 0x7f;
+      cells[byteOffset + 2] = 0x00; // routingFlags = 0 → no input cable
+      cells[byteOffset + 3] = 0x00;
+    }
     const head = [
       SYSEX_START_BYTE, 0x00, 0x01, 0x74,
       modelId, FUNC_GET_GRID_LAYOUT,
@@ -374,6 +407,9 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
     const cs = head.slice(1).reduce((a, b) => a ^ b, 0) & 0x7f;
     return [...head, cs, SYSEX_END_BYTE];
   };
+
+  // Back-compat alias so existing references resolve.
+  const buildEmptyGridResponse = buildGridResponse;
 
   // BK-070 mock: GET_PRESET_NAME response so `get_preset` can fill
   // `name`. Returns "Mock Preset" + null terminator. Body is null-

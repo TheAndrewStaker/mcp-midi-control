@@ -463,6 +463,21 @@ function applyAssertions(
       failures.push(`text_not_contains: final text contained "${needle}"`);
     }
   }
+  // text_contains_any — OR-of-AND. Pass when at least one inner AND
+  // group is fully satisfied. Empty inner groups never match.
+  if (exp.text_contains_any !== undefined && exp.text_contains_any.length > 0) {
+    const lower = final_text.toLowerCase();
+    const groupSatisfied = (group: readonly string[]): boolean => {
+      if (group.length === 0) return false;
+      return group.every((needle) => lower.includes(needle.toLowerCase()));
+    };
+    if (!exp.text_contains_any.some(groupSatisfied)) {
+      const summary = exp.text_contains_any
+        .map((g) => `[${g.map((s) => `"${s}"`).join(' + ')}]`)
+        .join(' OR ');
+      failures.push(`text_contains_any: none of the OR-alternatives matched — expected one of ${summary}`);
+    }
+  }
 
   // tool_call_validators
   for (const v of exp.tool_call_validators ?? []) {
