@@ -72,6 +72,7 @@
     "cookbook-verify": "tsx scripts/cookbook-verify.ts",
     "decode-progress": "tsx scripts/decode-progress.ts",
     "synthesis-review": "tsx scripts/synthesis-review.ts",
+    "cookbook-mine": "tsx scripts/cookbook-mine.ts",
     "verify-no-internal-refs": "tsx scripts/verify-no-internal-refs.ts",
     "write-test": "tsx scripts/_research/write-test.ts",
     "server": "tsx packages/server-all/src/server/index.ts",
