@@ -166,11 +166,81 @@ for (const r of runs) {
   console.log(`    after =[${bSlice}]`);
 }
 console.log('');
+
+// ── NATIVE-STREAM diff (Session 115 — septet-decoded view) ──
+// The wire-byte diffs above are informative but ambiguous because each
+// 16-bit native ushort spans 3 wire bytes. Decoding the chunks into
+// native ushorts (per BK-070 Ghidra finding) makes single-knob mutations
+// pinpoint exactly one ushort or one bit within an ushort.
+function decodeChunkNative(payload: Uint8Array): Uint16Array {
+  const count = payload[0] & 0x7f;
+  const out = new Uint16Array(count);
+  for (let i = 0; i < count; i++) {
+    const off = 1 + i * 3;
+    const v =
+      ((payload[off] & 0x7f) |
+        ((payload[off + 1] & 0x7f) << 7) |
+        ((payload[off + 2] & 0x7f) << 14)) &
+      0xffff;
+    out[i] = v;
+  }
+  return out;
+}
+
+const nativeBefore: Uint16Array[] = before.chunkPayloads.map(decodeChunkNative);
+const nativeAfter: Uint16Array[] = after.chunkPayloads.map(decodeChunkNative);
+
+type NativeDiff = { chunk: number; offset: number; nativeIndex: number; before: number; after: number };
+const nativeDiffs: NativeDiff[] = [];
+for (let c = 0; c < nativeBefore.length; c++) {
+  const a = nativeBefore[c];
+  const b = nativeAfter[c];
+  const lim = Math.min(a.length, b.length);
+  for (let o = 0; o < lim; o++) {
+    if (a[o] !== b[o]) {
+      nativeDiffs.push({
+        chunk: c,
+        offset: o,
+        nativeIndex: c * 64 + o,
+        before: a[o],
+        after: b[o],
+      });
+    }
+  }
+}
+
+console.log(`Native-stream diffs (16-bit ushorts): ${nativeDiffs.length}`);
+if (nativeDiffs.length === 0 && diffs.length > 0) {
+  console.log('  (wire-byte diffs exist but all in chunk-header/count region — no payload ushorts changed)');
+}
+for (const d of nativeDiffs) {
+  const xor = d.before ^ d.after;
+  const popcount = ((): number => {
+    let v = xor;
+    let n = 0;
+    while (v) { n += v & 1; v >>>= 1; }
+    return n;
+  })();
+  const bitsList: number[] = [];
+  for (let bit = 0; bit < 16; bit++) if (xor & (1 << bit)) bitsList.push(bit);
+  console.log(
+    `  chunk ${d.chunk.toString().padStart(2)} ushort[${d.offset.toString().padStart(2)}] ` +
+      `(native idx ${d.nativeIndex.toString().padStart(4)}):  ` +
+      `0x${d.before.toString(16).padStart(4, '0')} → 0x${d.after.toString(16).padStart(4, '0')}  ` +
+      `xor=0x${xor.toString(16).padStart(4, '0')} ` +
+      `(${popcount} bit${popcount === 1 ? '' : 's'} flipped${
+        popcount > 0 && popcount <= 4 ? ' @ ' + bitsList.join(',') : ''
+      })`,
+  );
+}
+console.log('');
+
 console.log(`Interpretation tips:`);
-console.log(`  - Single-byte diffs in chunks 0-1 → likely block-record metadata`);
-console.log(`    (block-id changes, grid-position, or per-block flags).`);
-console.log(`  - Single-bit diffs in chunks 2-21 → per-scene channel/bypass bits`);
-console.log(`    (the field BK-070 needs to decode for atomic apply).`);
-console.log(`  - Multi-byte diffs in chunks 2-21 → param value changes`);
-console.log(`    (less interesting unless you specifically changed a knob).`);
+console.log(`  - 1-bit flip in native chunks 17-20 → strong per-scene channel/bypass`);
+console.log(`    candidate. The bit position within the ushort indexes the scene`);
+console.log(`    (scene 0 = bit 0, scene 1 = bit 1, etc. — to be verified).`);
+console.log(`  - Multi-bit flip in one ushort → could be a packed multi-scene byte`);
+console.log(`    or a 2-3 bit channel selector field.`);
+console.log(`  - Native diffs in chunks 0..16 → block-id / param-value changes`);
+console.log(`    (less interesting for the per-scene state hunt).`);
 console.log(`  - Diffs in FOOTER → content hash; expected to change with content.`);
