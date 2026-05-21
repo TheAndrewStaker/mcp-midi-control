@@ -13,6 +13,27 @@
 export type Tier = 'no-hardware' | 'hardware';
 export type Device = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'hydrasynth';
 
+/**
+ * Mock-transport fixture profile — selected per case to exercise alternate
+ * device-state shapes during agent regression.
+ *
+ * Implementations live in the device package mocks (currently AM4 only in
+ * packages/am4/src/midi.ts). The runner injects the chosen profile as the
+ * `MOCK_FIXTURE` env var on each `claude -p` spawn so the MCP server child
+ * picks it up at module load.
+ *
+ * Keep this union in sync with `MockFixture` in packages/am4/src/midi.ts.
+ *
+ *   - 'clean-scratch' (default): canonical clean state. Y + Z banks empty,
+ *     A..X factory, scene=0, all reads return legal mid-range. Most cases.
+ *   - 'populated-z01': Z01 carries a user-named preset for overwrite-gate
+ *     coverage. Use on cases that target Z01 deliberately.
+ *   - 'device-quirk-scene-7fff': scene read returns 0x7fff (the observed
+ *     real-device boundary quirk). Use on cases that need to verify
+ *     dispatcher range-clamp / refusal paths.
+ */
+export type MockFixture = 'clean-scratch' | 'populated-z01' | 'device-quirk-scene-7fff';
+
 export interface ToolCall {
   /** MCP-prefixed tool name as emitted by Claude Code, e.g. `mcp__mcp-midi-control__apply_preset`. */
   name: string;
@@ -108,6 +129,15 @@ export interface AgentRegressionCase {
    * reports disabled count separately.
    */
   disabled?: boolean;
+  /**
+   * Mock-transport fixture profile (BK-073 promotion per MCP eng review Q5).
+   * When set, the runner injects `MOCK_FIXTURE=<value>` into the per-case
+   * `claude -p` spawn so the MCP server child picks it up at module load.
+   * Source-of-truth lives on the case; the `MOCK_FIXTURE` env var still
+   * works as an ad-hoc override when this field is omitted. Case-spec
+   * always wins when both are present. Defaults to 'clean-scratch'.
+   */
+  mockFixture?: MockFixture;
 }
 
 export interface CaseResult {

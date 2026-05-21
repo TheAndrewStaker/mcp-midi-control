@@ -69,7 +69,18 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
         },
       }],
       // No save-confidence narration on a working-buffer apply.
-      text_not_contains: ['saved to', 'persisted to', 'stored to'],
+      // POSITIVE-CLAIM SHAPES so negation disclaimers ("Not saved to
+      // flash yet") don't false-trip (Session 110 fix).
+      text_not_contains: [
+        'I saved',
+        'I persisted',
+        'I stored',
+        'preset is saved',
+        'preset is persisted',
+        'now saved to',
+        'now persisted to',
+        'now stored to',
+      ],
       max_wall_seconds: 180,
     },
   },
@@ -211,7 +222,18 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
           return true;
         },
       }],
-      text_not_contains: ['saved to', 'persisted to', 'stored to'],
+      // POSITIVE-CLAIM SHAPES — negation disclaimers ("Not saved to
+      // flash yet") pass through (Session 110 fix).
+      text_not_contains: [
+        'I saved',
+        'I persisted',
+        'I stored',
+        'preset is saved',
+        'preset is persisted',
+        'now saved to',
+        'now persisted to',
+        'now stored to',
+      ],
       max_wall_seconds: 240,
     },
   },
@@ -251,23 +273,56 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
         call_index: 0,
         optional: true,  // BK-072: primitive path is acceptable too.
         check: (args, result) => {
-          // When apply_preset IS the chosen path, verify the agent passed
-          // slot:3 as the bare int and the response carried the advisory.
+          // Session 110 relax: the agent has two valid apply_preset paths.
+          // Both land an amp at row=2, col=3 — only the bare-int path
+          // exercises the auto-coerce surface.
+          //
+          //   1. Bare-int shorthand `slot: 3` — the auto-coerce path being
+          //      tested. Dispatcher coerces to {row:2,col:3} and emits an
+          //      `info[]` advisory with "coerced shorthand" wording.
+          //      Assertion: spec carries 3 + result carries advisory text.
+          //   2. Proper object shape `slot: {row:2, col:3}` — Sonnet 4.6
+          //      naturally picks this when describe_device shows the grid
+          //      example. No coerce path triggered, no advisory expected.
+          //      Assertion: spec carries {row:2,col:3}.
+          //
+          // Both are healthy end-states. The validator previously demanded
+          // advisory text in ALL apply_preset paths, which false-failed the
+          // {row,col} branch.
           const spec = (args.spec ?? {}) as { slots?: unknown };
           if (!Array.isArray(spec.slots) || spec.slots.length === 0) {
             return `apply_preset spec.slots empty — no amp placed.`;
           }
           const first = spec.slots[0] as { slot?: unknown; block_type?: string };
-          if (first.slot !== 3 && (typeof first.slot !== 'object' || first.slot === null)) {
-            return `apply_preset slot should be the bare-int shorthand 3 (testing the auto-coerce path) — got ${JSON.stringify(first.slot)}.`;
+
+          // Bare-int 3 path: must trigger auto-coerce advisory.
+          if (first.slot === 3) {
+            if (result === undefined || !/coerced shorthand|row.*2.*col.*3|validation_info/i.test(result)) {
+              return `apply_preset bare-int slot:3 should trigger auto-coerce advisory ("coerced shorthand slot=3 -> {row: 2, col: 3}"). Got: ${result?.slice(0, 280)}.`;
+            }
+            return true;
           }
-          if (result === undefined || !/coerced shorthand|row.*2.*col.*3|validation_info/i.test(result)) {
-            return `apply_preset result should carry the auto-coerce info advisory ("coerced shorthand slot=3 -> {row: 2, col: 3}"). Got: ${result?.slice(0, 280)}.`;
+
+          // {row,col} object path: must target row=2, col=3. No advisory expected.
+          if (typeof first.slot === 'object' && first.slot !== null) {
+            const o = first.slot as { row?: unknown; col?: unknown };
+            if (o.row !== 2 || o.col !== 3) {
+              return `apply_preset slot should target row=2, col=3 (the amp position the prompt requested) — got ${JSON.stringify(first.slot)}.`;
+            }
+            return true;
           }
-          return true;
+
+          return `apply_preset slot should be bare-int 3 (testing auto-coerce) or {row:2, col:3} (the proper grid shape) — got ${JSON.stringify(first.slot)}.`;
         },
       }],
-      max_wall_seconds: 60,
+      // Session 110: bumped 60 → 120 because Sonnet's natural disposition
+      // is to verify after a write (describe → grid_layout → apply_preset
+      // → grid_layout). The mock-transport doesn't persist grid placements
+      // across calls, so the verification call shows an empty grid and the
+      // agent enters a brief recovery-reasoning loop before the case ends.
+      // Bumping the budget covers that without hiding any real regression
+      // (the assertion still catches a runaway retry via max_repeats: 1).
+      max_wall_seconds: 120,
     },
   },
 ];

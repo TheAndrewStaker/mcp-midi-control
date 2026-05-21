@@ -110,7 +110,18 @@ export const AXE_FX_III_CASES: AgentRegressionCase[] = [
           return true;
         },
       }],
-      text_not_contains: ['saved to', 'persisted to', 'stored to'],
+      // POSITIVE-CLAIM SHAPES so negation disclaimers ("Not saved to
+      // flash yet") don't false-trip (Session 110 fix).
+      text_not_contains: [
+        'I saved',
+        'I persisted',
+        'I stored',
+        'preset is saved',
+        'preset is persisted',
+        'now saved to',
+        'now persisted to',
+        'now stored to',
+      ],
       max_wall_seconds: 240,
     },
   },

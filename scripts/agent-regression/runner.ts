@@ -155,10 +155,23 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
   // required. Agent-regression cases all run against the mock by
   // default; opt out via `--real-hardware` for the launch-verify-style
   // wire-roundtrip test.
+  //
+  // `MOCK_FIXTURE` is picked per case (BK-073 promotion per MCP eng review
+  // Q5): when `case.mockFixture` is set, inject the chosen profile so the
+  // AM4 mock (and future II / III mocks) read it at module load. Case-spec
+  // wins over the inherited process env so ad-hoc `MOCK_FIXTURE=...` runs
+  // still work when a case doesn't pin a profile.
+  const childEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    MCP_MOCK_TRANSPORT: process.env.AGENT_REGRESSION_REAL_HARDWARE === '1' ? '0' : '1',
+  };
+  if (testCase.mockFixture !== undefined) {
+    childEnv.MOCK_FIXTURE = testCase.mockFixture;
+  }
   const child = spawn('claude', args, {
     shell: false,
     stdio: ['pipe', 'pipe', 'inherit'],
-    env: { ...process.env, MCP_MOCK_TRANSPORT: process.env.AGENT_REGRESSION_REAL_HARDWARE === '1' ? '0' : '1' },
+    env: childEnv,
   });
   child.stdin.write(testCase.prompt);
   child.stdin.end();

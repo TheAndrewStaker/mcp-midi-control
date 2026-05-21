@@ -14,14 +14,15 @@ single next action, and recent findings â€” start every session there.
 `STATE.md` is kept current; the longer-lived reference docs are
 `docs/PROJECT-VISION.md` and `docs/ARCHITECTURE.md`.
 
-**Then run `npm run coverage-audit`.** It auto-snapshots Ghidra-catalog
-coverage vs `params.ts` vs `verify-msg.ts` goldens, plus per-device
-param counts. This is the antidote to handoff-list drift â€” STATE.md
-"open follow-ups" go stale silently when later sessions close them
-without ticking off the prior handoff; the audit reads current code
-state directly, so it can't lie about what's done. Trust the audit
-over any text claim that something is "open." Wired into preflight,
-so it also runs at session-end.
+`npm run coverage-audit` auto-snapshots Ghidra-catalog coverage vs
+`params.ts` vs `verify-msg.ts` goldens, plus per-device param counts.
+It runs as part of `npm run preflight`, so every session-end pass
+exercises it. **Not required at session start** anymore (Session 110):
+AM4 has been at 100% catalog and II at ~97.4% for many sessions, and
+the audit-as-drift-guard value has decayed. Run it manually when
+touching codec / params.ts, after pulling fractal-midi changes, or
+when STATE.md's "open follow-ups" feel out-of-sync with reality. Trust
+the audit over any text claim that something is "open."
 
 Hardware tasks the founder owes (USB captures, round-trip tests on
 the device, reference dumps) are queued per-device under

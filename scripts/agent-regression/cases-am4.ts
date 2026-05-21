@@ -109,11 +109,33 @@ function pickReverbType(args: Record<string, unknown>): string | undefined {
 
 export const AM4_CASES: AgentRegressionCase[] = [
   // ── H1 — Hero: clean tone with mixed param shapes ───────────────
+  //
+  // DOCUMENTED CANARY (Session 110, MCP eng review recommendation).
+  // H1 is INTENTIONALLY left in the active sweep as a failure signal,
+  // not a green-must-pass test:
+  //
+  //   - The case prompt ("long HALL reverb") + Sonnet 4.6 disposition
+  //     produce inconsistent recovery from silent-no-op traps. BK-071's
+  //     pre-flight `validation_info[]` surfaces the warning correctly;
+  //     the gap is on the AGENT side (Sonnet doesn't reliably override
+  //     the literal user phrasing on first try).
+  //   - `should_avoid_dropped_param_warning` strictly checks EVERY
+  //     apply_preset call's result. Even when the agent recovers (turn-2
+  //     retry with a valid type), the turn-1 warning fails the assertion.
+  //     That strictness IS the test — H1 going green would mean Sonnet
+  //     learned to anticipate the trap without needing the warning.
+  //   - Wall-time penalty per sweep: ~140 s. Worth keeping for the signal.
+  //
+  // Re-disposition triggers:
+  //   - Sonnet model bump that consistently green-passes H1 → relax the
+  //     assertion to FINAL apply_preset only, treat as a healthy retry case.
+  //   - Three consecutive sweeps with H1 green on first try → same.
+  //   - Founder explicit decision to disable (loses the signal).
   {
     id: 'am4-h1-sunday-morning',
     device: 'am4',
     tier: 'hardware',
-    description: 'H1 — Vox AC30 + slow chorus + long hall reverb. Tests apply_preset with mixed flat (chorus) + channel-nested (amp, reverb) param shapes. Catches the H1 regression: agent picking a reverb type that does NOT expose `time`.',
+    description: 'H1 documented canary (Session 110) — Vox AC30 + slow chorus + long hall reverb. Tests apply_preset with mixed flat (chorus) + channel-nested (amp, reverb) param shapes. The `should_avoid_dropped_param_warning` assertion is intentionally strict: any apply_preset call with a dropped-param warning fails the case, even when the agent recovers on retry. Expected to flake-fail under Sonnet 4.6; consistent green indicates the BK-071 surface fully covers the silent-no-op trap.',
     prompt: "Build me an AM4 clean tone on Z4. I want a Vox AC30 with the gain rolled back, a slow chorus, and a long hall reverb with about 30% mix. Call it 'Sunday Morning'.",
     expectations: {
       must_call: ['describe_device', 'apply_preset'],
@@ -137,8 +159,17 @@ export const AM4_CASES: AgentRegressionCase[] = [
       // the write silently no-op'd on Hall. With the right type pick, no such
       // language should appear — the value actually applies.
       should_avoid_dropped_param_warning: true,
-      // No false-confidence language about persisting — apply_preset is audition-only.
-      text_not_contains: ['saved to Z', 'persisted to Z'],
+      // No false-confidence language about persisting — apply_preset is
+      // audition-only. POSITIVE-CLAIM SHAPES so negation disclaimers
+      // ("Not saved to Z04 yet") don't false-trip (Session 110 fix).
+      text_not_contains: [
+        'I saved',
+        'I persisted',
+        'now saved to Z',
+        'now persisted to Z',
+        'preset is saved',
+        'preset is persisted',
+      ],
       max_wall_seconds: 180,
     },
   },
@@ -591,9 +622,23 @@ export const AM4_CASES: AgentRegressionCase[] = [
           return true;
         },
       }],
-      // No save-confidence narration when apply_preset runs in
-      // working-buffer mode (no target_location).
-      text_not_contains: ['saved to', 'persisted to'],
+      // No false-positive save-confidence narration. Patterns are
+      // POSITIVE-CLAIM SHAPES (subject + verb + object) so negation
+      // disclaimers ("Not saved to flash yet", "I haven't saved
+      // anything") don't trip them. Session 110 fix — the prior
+      // bare-substring 'saved to' tripped on "Not saved to flash yet"
+      // which is the CORRECT disclaimer the agent emits when
+      // apply_preset runs in working-buffer mode.
+      text_not_contains: [
+        'I saved',
+        'I persisted',
+        'I stored',
+        'preset is saved',
+        'preset is persisted',
+        'now saved to',
+        'now persisted to',
+        'now stored to',
+      ],
       max_wall_seconds: 240,
     },
   },

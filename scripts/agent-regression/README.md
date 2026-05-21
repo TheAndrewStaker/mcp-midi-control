@@ -134,6 +134,12 @@ block the gate. Override with `--max-retries=0` for CI-debug mode.
      not firing it is also acceptable."
    - `should_avoid_dropped_param_warning` — flag for the H1-silent-no-op class.
    - `text_not_contains` — guards against false-confidence narration.
+   - `mockFixture` — pin a non-default mock-transport profile for cases
+     that exercise alternate device-state shapes (`populated-z01` for
+     overwrite-gate coverage, `device-quirk-scene-7fff` for the scene-
+     boundary regression, etc.). Default omitted = `clean-scratch`. The
+     env-var side door (`MOCK_FIXTURE=...`) still works for ad-hoc runs;
+     case-spec wins when both are present.
 3. Run with `--verbose` once to see the actual tool sequence, tune the
    bounds, and commit.
 
@@ -152,6 +158,37 @@ prescriptive about the tool path. Prefer:
     tool was called),
   - `text_not_contains` for false-success narration ("amp gain is now
     12.5"), which catches the actual regression we care about.
+
+### `text_not_contains` discipline: positive-claim shapes only
+
+`text_not_contains` is naive case-insensitive substring match. A
+pattern like `'saved to'` will match BOTH the failure mode ("I saved
+to flash") AND the correct disclaimer ("Not saved to flash yet").
+The disclaimer is what the agent SHOULD say when running in working-
+buffer mode — but the bare substring fires either way.
+
+**Always shape `text_not_contains` patterns as the positive claim
+the agent would emit on the failure mode**, never the bare verb +
+preposition:
+
+  - ✗ `'saved to'` — fires on "Not saved to flash yet" (correct
+    disclaimer = false positive).
+  - ✗ `'set gain to'` — fires on "I won't set gain to 12.5" (correct
+    refusal = false positive).
+  - ✓ `'I saved'`, `'now saved to'`, `'preset is saved'` — only the
+    failure mode (agent claiming persistence) emits these.
+  - ✓ `'gain is now 12'`, `'set gain to 12 successfully'` — only the
+    failure mode (agent claiming the out-of-range write landed).
+
+Subject + verb (or auxiliary + past-participle) is the structural
+pattern that won't appear in negation. "I saved" almost never appears
+inside "I have NOT saved" because English speakers (and Sonnet) write
+"I haven't saved" instead, breaking the substring.
+
+If a case needs to assert absence of a concept that doesn't have a
+clean positive-claim phrasing, use a regex via `tool_call_validators`
+on the apply_preset / set_param result envelope instead — that scopes
+to wire-layer output where negation noise is structurally absent.
 
 ## Tier-skipping
 
