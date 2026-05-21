@@ -39,7 +39,7 @@ import {
  * The write proceeds regardless — same display-first / user-agency
  * rationale as BK-071. Surface the trap, don't refuse.
  */
-async function collectPhantomParamWarnings(
+export async function collectPhantomParamWarnings(
   descriptor: DeviceDescriptor,
   ctx: DispatchCtx,
   canonicalBlock: string,
@@ -79,6 +79,60 @@ async function collectPhantomParamWarnings(
 }
 
 /**
+ * BK-076 routing-mask pre-flight. Returns a `validation_info[]` entry
+ * when the descriptor exposes `getBlockLayoutSnapshot` with a populated
+ * `unroutedBlocks` set AND the target block is in it (placed but no
+ * cable feeds any of its cells past col 1). Returns an empty array
+ * otherwise — block is routed, device doesn't model routing, or block
+ * isn't placed (phantom-param handles that case).
+ *
+ * Soft-warn (level='warning'), not refusal: a user mid-build might
+ * place a block before cabling it, knowing they'll wire it up next.
+ * Refusing the param write robs them of that flow. Surface the trap
+ * so the agent self-corrects (call set_cell_routing or apply_preset
+ * with a routing[] array).
+ *
+ * Shares the cached snapshot with collectPhantomParamWarnings; both
+ * collectors run off the same single grid read.
+ */
+export async function collectRoutingMaskWarnings(
+  descriptor: DeviceDescriptor,
+  ctx: DispatchCtx,
+  canonicalBlock: string,
+  canonicalName: string,
+): Promise<ValidationInfo[]> {
+  if (descriptor.reader.getBlockLayoutSnapshot === undefined) return [];
+  let snapshot;
+  try {
+    snapshot = await getCachedBlockLayout(descriptor.id, ctx, () =>
+      descriptor.reader.getBlockLayoutSnapshot!(ctx),
+    );
+  } catch {
+    return [];
+  }
+  if (snapshot.unroutedBlocks === undefined) return [];
+  if (!snapshot.unroutedBlocks.has(canonicalBlock)) return [];
+  return [{
+    path: `${canonicalBlock}.${canonicalName}`,
+    info:
+      `${canonicalBlock}.${canonicalName} write acked on the wire, but '${canonicalBlock}' ` +
+      `is placed in a grid cell with no input cable on ${descriptor.display_name} ` +
+      `(routing_mask=0 past col 1). Signal does not flow through the block, so the param ` +
+      `has no audible effect until a previous-column cell is cabled into its input.`,
+    level: 'warning',
+    dropped_param: canonicalName,
+    reason:
+      `'${canonicalBlock}' is placed but its grid cell has routing_mask=0 ` +
+      `on ${descriptor.display_name}. No previous-column cell feeds its input, ` +
+      `so audio bypasses the block entirely; param-register writes have no audible effect.`,
+    retry_action:
+      `Call axefx2_set_cell_routing to connect a previous-column cell into '${canonicalBlock}'s ` +
+      `input, OR use apply_preset with a routing[] array to place + cable the block in one call. ` +
+      `Then retry the set_param.`,
+  }];
+}
+
+/**
  * Full lifecycle for `set_param`. Steps 1–4 are the same validation
  * pipeline used by the pure `encodeSetParam`; steps 5–6 open the MIDI
  * connection and delegate to `descriptor.writer.setParam`.
@@ -114,8 +168,20 @@ export async function executeSetParam(args: {
     canonical_block,
     canonical_name,
   );
+  // BK-076 routing-mask pre-flight. Mutually exclusive with phantom-
+  // param (a block in `unroutedBlocks` is by construction in
+  // `placedBlocks` too) but both calls are safe: phantom returns empty
+  // when the block is placed, routing returns empty when the block
+  // isn't unrouted. Shares the cached snapshot — no extra wire read.
+  const routingWarnings = await collectRoutingMaskWarnings(
+    descriptor,
+    ctx,
+    canonical_block,
+    canonical_name,
+  );
   const result = await descriptor.writer.setParam(ctx, canonical_block, canonical_name, wire_value, channel);
-  const validation_info = phantomWarnings.length > 0 ? phantomWarnings : undefined;
+  const combinedWarnings = [...phantomWarnings, ...routingWarnings];
+  const validation_info = combinedWarnings.length > 0 ? combinedWarnings : undefined;
   return {
     ...result,
     ...(validation_info !== undefined ? { validation_info } : {}),

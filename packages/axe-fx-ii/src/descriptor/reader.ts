@@ -468,7 +468,31 @@ export const reader: DeviceReader = {
     }
     const placed = collectPlacedBlocks(cells);
     const placedBlocks = new Set<string>(placed.map((p) => p.blockType));
-    return { placedBlocks };
+    // BK-076: compute the "block is placed but no cable feeds it" set.
+    // Walk every cell with a placed block-id and group by block_type;
+    // a block_type lands in `unroutedBlocks` only when EVERY one of its
+    // cells is unrouted (col 1 cells are always treated as routed — the
+    // device's global input feeds row-2 col-1 implicitly). If at least
+    // one cell of a given block_type has routing, the param write
+    // reaches a live signal path and we stay silent.
+    const cellsByBlockType = new Map<string, GridCell[]>();
+    for (const cell of cells) {
+      if (cell.blockId === 0) continue;
+      if (cell.blockId >= 200 && cell.blockId <= 235) continue;
+      const block = BLOCK_BY_ID[cell.blockId];
+      if (block === undefined) continue;
+      const m = /^(.+?)\s+(\d+)$/.exec(block.name);
+      const blockType = (m ? m[1] : block.name).toLowerCase();
+      const list = cellsByBlockType.get(blockType) ?? [];
+      list.push(cell);
+      cellsByBlockType.set(blockType, list);
+    }
+    const unroutedBlocks = new Set<string>();
+    for (const [blockType, list] of cellsByBlockType) {
+      const anyRouted = list.some((c) => c.col === 1 || c.routingFlags !== 0);
+      if (!anyRouted) unroutedBlocks.add(blockType);
+    }
+    return { placedBlocks, unroutedBlocks };
   },
 
   async getPreset(ctx: DispatchCtx): Promise<PresetSnapshot> {

@@ -19,6 +19,8 @@ import {
   parseSetGridCellResponse,
 } from 'fractal-midi/axe-fx-ii';
 
+import { invalidateBlockLayoutCache } from '@mcp-midi-control/core/protocol-generic/dispatcher/blockLayoutCache.js';
+
 import { renderGridAscii, renderGridJson, renderGridMarkdown, renderGridSummary } from './gridRender.js';
 import {
   GET_RESPONSE_TIMEOUT_MS,
@@ -168,6 +170,8 @@ export function registerAxeFxIILayoutTools(server: McpServer): void {
         ` change with axefx2_get_grid_layout.`;
     }
 
+    invalidateBlockLayoutCache('axe-fx-ii');
+
     const cellIdx = (col - 1) * 4 + (row - 1);
     return {
       content: [{
@@ -258,6 +262,8 @@ export function registerAxeFxIILayoutTools(server: McpServer): void {
         `No 0x64 ACK arrived within ${GET_RESPONSE_TIMEOUT_MS}ms: ${msg}.\n` +
         `The SET_CELL_ROUTING bytes were sent; verify with axefx2_get_grid_layout.`;
     }
+
+    invalidateBlockLayoutCache('axe-fx-ii');
 
     return {
       content: [{

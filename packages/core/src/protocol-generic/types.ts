@@ -759,6 +759,19 @@ export interface BlockLayoutSnapshot {
    * The phantom-param pre-flight tests membership with `.has(block)`.
    */
   placedBlocks: ReadonlySet<string>;
+  /**
+   * BK-076: block-type names whose every placed cell has routing_mask=0
+   * past col 1 (no input cable feeding the cell). The block IS placed
+   * — it appears in `placedBlocks` — but no signal flows through it,
+   * so a `set_param` write acks on the wire while the audible state
+   * stays put. Mutually exclusive with phantom-param: a block here is
+   * always present in `placedBlocks`.
+   *
+   * Optional. Devices without a routing model (AM4 linear chain;
+   * Hydra no grid) leave this undefined and the dispatcher skips the
+   * routing-mask pre-flight gracefully.
+   */
+  unroutedBlocks?: ReadonlySet<string>;
 }
 
 export interface DeviceReader {
