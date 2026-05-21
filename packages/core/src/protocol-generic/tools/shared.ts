@@ -67,6 +67,14 @@ export function asText(payload: unknown): {
  * `err.candidates: readonly string[]` is the structured candidate list
  * the agent should pick from. When present, surface it as
  * `Valid options:` in the response text (same shape DispatchError uses).
+ *
+ * DO NOT "clean this up" with `instanceof EnumAmbiguityError`. Core
+ * (this package) sits below the device packages in the dependency
+ * graph; importing AM4's / II's / III's / Hydra's error classes here
+ * would invert the layering and create a cycle. The duck-typed shape
+ * check is the cross-package import boundary; T-16 (Session
+ * 2026-05-21) marked this comment after a senior review flagged the
+ * pattern as cleanup-bait. Future agents reading this: leave it alone.
  */
 function structuredCandidates(err: unknown): readonly string[] | undefined {
   if (err === null || typeof err !== 'object') return undefined;
