@@ -15,7 +15,7 @@
     "@mcp-midi-control/core": "*",
     "@mcp-midi-control/hydrasynth": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "fractal-midi": "file:../../../fractal-midi/fractal-midi-0.1.0-alpha.6.tgz",
+    "fractal-midi": "file:../../../fractal-midi/fractal-midi-0.1.0-alpha.7.tgz",
     "midi": "^2.0.0",
     "zod": "^4.4.2"
   },

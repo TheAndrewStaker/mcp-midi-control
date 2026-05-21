@@ -21,9 +21,37 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import { buildRequestActiveBufferDump } from 'fractal-midi/am4';
+import {
+  buildRequestActiveBufferDump,
+  decodeAm4PresetNameFromFrame,
+} from 'fractal-midi/am4';
 import { receivePresetDumpStream } from '../presetDump.js';
 import { toHex } from '@mcp-midi-control/core/midi/transport.js';
+
+/**
+ * Flatten a captured 6-message preset-dump stream into the 12,352-byte
+ * frame that field-level decoders (e.g. `decodeAm4PresetNameFromFrame`)
+ * operate on. Same layout as a `.syx` file exported by AM4-Edit and as
+ * one preset's slice of the factory bank.
+ */
+function assembleDumpFrame(stream: {
+  headerBytes: number[];
+  chunkBytes: number[][];
+  footerBytes: number[];
+}): Uint8Array {
+  const total =
+    stream.headerBytes.length +
+    stream.chunkBytes.reduce((n, c) => n + c.length, 0) +
+    stream.footerBytes.length;
+  const out = new Uint8Array(total);
+  let cursor = 0;
+  out.set(stream.headerBytes, cursor); cursor += stream.headerBytes.length;
+  for (const chunk of stream.chunkBytes) {
+    out.set(chunk, cursor); cursor += chunk.length;
+  }
+  out.set(stream.footerBytes, cursor);
+  return out;
+}
 
 import { ensureMidi } from '@mcp-midi-control/core/server-shared/connections.js';
 
@@ -48,7 +76,8 @@ export function registerNavigationTools(server: McpServer): void {
     server.registerTool('am4_request_active_buffer_dump', {
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         description: [
-            'Dump the AM4 working buffer as raw stored-form bytes (6-message stream: 0x77 header + 4x 0x78 chunks + 0x79 footer). No parsing of the masked content.',
+            'Dump the AM4 working buffer as raw stored-form bytes (6-message stream: 0x77 header + 4x 0x78 chunks + 0x79 footer).',
+            'Decodes the 32-char preset name field; remaining chunk content is unparsed.',
             'Non-destructive: working buffer, active location, and playback are preserved.',
             'Primary use: diff-based probe series for decoding the preset binary format. Returns ~12 KB in ~150-200 ms.',
         ].join(' '),
@@ -64,11 +93,23 @@ export function registerNavigationTools(server: McpServer): void {
         try {
             conn.send(bytes);
             const stream = await streamPromise;
+            // Best-effort name decode. A failure here doesn't kill the dump
+            // response — the raw bytes are still useful for probe diffs.
+            let presetName: string | undefined;
+            let presetNameError: string | undefined;
+            try {
+                const frame = assembleDumpFrame(stream);
+                presetName = decodeAm4PresetNameFromFrame(frame);
+            } catch (decodeErr) {
+                presetNameError = decodeErr instanceof Error ? decodeErr.message : String(decodeErr);
+            }
             return {
                 content: [{
                     type: 'text',
                     text: JSON.stringify(
                         {
+                            presetName,
+                            presetNameError,
                             bank: stream.bank,
                             sub: stream.sub,
                             totalBytes: stream.totalBytes,
