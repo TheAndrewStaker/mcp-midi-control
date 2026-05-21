@@ -42,8 +42,9 @@ export function registerAxeFxIIPresetTools(server: McpServer): void {
   server.registerTool('axefx2_test_apply', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
+      'DEPRECATED — slated for removal in v0.3. Use apply_preset({port:"axe-fx-ii", spec, verify_chain:true}) instead. This tool predates the unified surface; the unified call does everything this one does (chain verify, working-buffer apply, no save) plus scenes[], cross-device aliases, validation_info[] surfacing, and the full PresetSpec shape.',
+      'Kept only for backward compatibility with older session transcripts that hardcode the device-namespaced name. New conversations should call apply_preset.',
       'Build a preset on the working buffer and verify its chain integrity in one call. Non-destructive (no STORE_PRESET; switching presets reverts).',
-      'PREFER the unified equivalent: apply_preset({port:"axe-fx-ii", spec, verify_chain:true}) does the same thing in the unified shape (scenes[], routing[], cross-device aliases). This tool is the older single-scene flat-blocks shortcut, kept for backward compatibility.',
       'Use as a "did the apply land correctly?" check before asking the user to plug in. Pass criterion: every cell past col 1 has a non-zero routing_mask (no broken cables).',
       '- Input mirrors apply_preset for single-scene use (blocks + optional scene + name). No scenes[] array; for multi-scene authoring use apply_preset directly.',
       '- Returns {ok, verdict, chainBreaks, gridSummary, applyDigest, elapsedMs, ackCount}.',
