@@ -1,5 +1,5 @@
 /**
- * MCP MIDI Tools — First verified parameter write
+ * mcp-midi-control — First verified parameter write
  *
  * This is the first script that WRITES to the AM4 (every prior script was
  * read-only). Writes here only modify the AM4's working buffer, not any

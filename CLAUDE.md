@@ -283,6 +283,30 @@ When a probe rules a hypothesis OUT (e.g. Session 94 ruling that AM4's
 terms a future agent would use ("AM4 0x77 portable to II â€” no"). This
 saves a session every time someone re-asks the same question.
 
+### Param-coverage audit discipline (Session 113 cont 3)
+
+When grepping `fractal-midi/src/<device>/params.ts` to confirm whether
+a param is registered, **the registered name often differs from the
+Blocks Guide / Owner's Manual spelling** because params are renamed
+for AM4-Edit / front-panel UI-label match. Naive search for the
+manual's wording produces false negatives.
+
+Concrete examples (all registered, easy to miss with a naive grep):
+
+| Manual / Blocks Guide name | Registered as |
+|---|---|
+| `amp.sag` | `amp.preamp_sag` |
+| `amp.negative_feedback` | `amp.negative_fb` |
+| `amp.saturation_switch` | `amp.saturation_sw` |
+| `amp.boost_type` | `amp.in_boost_type` |
+
+**Audit rule:** before opening a "missing param" investigation, re-grep
+using AM4's short canonical spellings — `_sw`, `_fb`, `preamp_*`,
+`nfb_*`, `in_*` prefix variants. Check comment headers for "renamed
+for UI-label match (audit row: ...)". Don't trust the first negative
+grep — a 30-minute re-investigation that ends in "actually we shipped
+it already" is a worse outcome than a 5-minute careful first pass.
+
 ## AM4 SysEx â€” quick facts
 
 Full envelope, checksum, function-byte table, and capture-cited

@@ -1,5 +1,5 @@
 /**
- * MCP MIDI Tools — Phase 0 Feasibility Probe
+ * mcp-midi-control — Phase 0 Feasibility Probe
  *
  * Run this first. It will:
  * 1. List all MIDI devices

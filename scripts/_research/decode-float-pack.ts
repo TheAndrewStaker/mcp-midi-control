@@ -1,5 +1,5 @@
 /**
- * MCP MIDI Tools — Decode 0x01-payload float packing scheme
+ * mcp-midi-control — Decode 0x01-payload float packing scheme
  *
  * The 6-byte value field in a 0x01 WRITE carries a 32-bit IEEE 754 float
  * encoded with 10 bits of overhead. Session 04 + 05 captured 10

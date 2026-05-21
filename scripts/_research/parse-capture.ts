@@ -1,5 +1,5 @@
 /**
- * MCP MIDI Tools — USB Capture Parser
+ * mcp-midi-control — USB Capture Parser
  *
  * Reads a `tshark -V -Y sysex` text dump of a USBPcap capture and extracts
  * every reassembled AM4 SysEx message with direction and timestamp. Used

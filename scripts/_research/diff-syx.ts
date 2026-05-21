@@ -1,5 +1,5 @@
 /**
- * MCP MIDI Tools — SysEx Diff Tool
+ * mcp-midi-control — SysEx Diff Tool
  *
  * Compares two .syx files byte by byte and highlights differences.
  * Use this to reverse-engineer what changed when you modified one parameter.

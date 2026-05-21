@@ -1,5 +1,5 @@
 /**
- * MCP MIDI Tools — MIDI Proxy Sniffer
+ * mcp-midi-control — MIDI Proxy Sniffer
  *
  * Sits in between AM4-Edit and the real AM4, forwarding SysEx both ways
  * and logging every message with direction, timestamp, and annotation.
