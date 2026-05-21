@@ -123,7 +123,7 @@ export function registerParamTools(server: McpServer): void {
       '- NOT idempotent: each call shifts state by one step. The wire is payload-free so it\'s cheap to call in a tight UX loop.',
       '- Channel-bearing blocks: pass `channel` to nudge a specific A/B/C/D (AM4) or X/Y (II). Omit to nudge the active channel.',
       '- The response carries the new display value, so a follow-up get_param is not needed for confirmation.',
-      '- Currently only Fractal AM4 implements this; II / III / Hydra return capability_not_supported. On unsupported devices, fall back to get_param + set_param with a computed delta.',
+      '- AM4 ONLY today — wire-native nudge primitive (action bytes 0x03 / 0x04 / 0x05 / 0x06; one round-trip, ~50 ms). II / III / Hydra return capability_not_supported; their wire formats do not currently expose a relative-change opcode. Fall back to get_param + set_param with a computed delta on those devices. The unrealized II / III / Hydra parity hypothesis is documented in docs/TOOL-ARCHIVE.md under "Unrealized capabilities" — when a future capture confirms a relative-change opcode on those devices, the unified surface picks it up automatically.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),

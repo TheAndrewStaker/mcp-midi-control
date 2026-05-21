@@ -13,9 +13,9 @@ See [README.md § Configuring tool profiles](../README.md#configuring-tool-profi
 
 | Profile | Tool count | Average description length | Tools over 600 chars | Tools over 1000 chars |
 |---|---|---|---|---|
-| `core` | 26 | 924 chars | 11 | 5 |
-| `experimental` | 81 | 686 chars | 30 | 7 |
-| `full` | 81 | 686 chars | 30 | 7 |
+| `core` | 26 | 939 chars | 11 | 5 |
+| `experimental` | 81 | 691 chars | 30 | 7 |
+| `full` | 81 | 691 chars | 30 | 7 |
 
 ## core profile (26 tools)
 
@@ -33,7 +33,7 @@ Default-recommended unified surface for conversational tone-building. Smallest a
 | `list_midi_ports` | 460 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 838 ⚠ | Enumerate a device's parameters with units and display ranges. |
 | `lookup_lineage` | 587 | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
-| `nudge_param` | 1199 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
+| `nudge_param` | 1571 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
 | `port_preset` | 989 ⚠ | Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III). |
@@ -108,7 +108,7 @@ Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics.
 | `list_midi_ports` | 460 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 838 ⚠ | Enumerate a device's parameters with units and display ranges. |
 | `lookup_lineage` | 587 | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
-| `nudge_param` | 1199 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
+| `nudge_param` | 1571 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
 | `port_preset` | 989 ⚠ | Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III). |
@@ -196,7 +196,7 @@ Everything registered (current default; equivalent to no env var). Preserved as 
 | `list_midi_ports` | 460 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 838 ⚠ | Enumerate a device's parameters with units and display ranges. |
 | `lookup_lineage` | 587 | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
-| `nudge_param` | 1199 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
+| `nudge_param` | 1571 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
 | `port_preset` | 989 ⚠ | Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III). |
@@ -236,6 +236,6 @@ Tools with descriptions over 1000 chars. T-4 / T-13 target these for migration i
 | `apply_preset` | 5808 chars |
 | `describe_device` | 2623 chars |
 | `get_preset` | 2131 chars |
+| `nudge_param` | 1571 chars |
 | `axefx3_set_parameter` | 1504 chars |
-| `nudge_param` | 1199 chars |
 | `set_param` | 1109 chars |

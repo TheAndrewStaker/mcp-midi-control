@@ -79,4 +79,21 @@ Tools listed here are allowed to exceed the 1000-char hard cap or 600-char warn 
 
 Tools that were considered but never shipped, captured here so future agents do not re-derive the same hypothesis from scratch.
 
-_No entries yet. First entry lands in T-8 (nudge_param parity for II / III / Hydra)._
+### nudge_param on Axe-Fx II / III / Hydrasynth (unrealized; 2026-05-21)
+
+**Wire function:** Unknown on II / III / Hydrasynth.
+
+**Original use case:** Relative-change parameter nudges ("turn it up a touch", "a hair less drive") for conversational tone-building. Already implemented on AM4 using a wire-native primitive — Fractal action bytes 0x03 (INCR), 0x04 (INCR_COARSE), 0x05 (DECR), 0x06 (DECR_COARSE) — see `fractal-midi/src/am4/setParam.ts:32-35` and `packages/am4/src/descriptor/writer.ts:127-147`. One SysEx round-trip per nudge; the device decodes the action byte and applies a per-param quantum (fine ≈ ±0.01 display units, coarse ≈ ±0.1).
+
+**Why not implemented elsewhere:**
+- **Axe-Fx II:** No relative-change opcode appears in the published Fractal "Axe-Fx II MIDI for Third-Party Devices" PDF or in the AxeEdit binary opcode table mined Session 103. The II's wire vocabulary uses 0x02 SET_PARAMETER + 0x11 SET_BLOCK_CHANNEL + 0x1F GET_ALL_PARAMS; no INCR / DECR. Could exist as an undocumented opcode (Fractal historically hides primitives — see fn 0x28 enum-dump only mined Session 107) but no capture evidence yet.
+- **Axe-Fx III:** Same situation, scaled. The v1.4 PDF defines fn 0x01 SET_PARAMETER as raw 16-bit write; no relative opcode documented. III owners using AxeEdit III could capture an editor-side nudge gesture to test if a hidden opcode exists.
+- **Hydrasynth:** NRPN-based wire format is fundamentally different (no per-param opcodes, just CC + NRPN addressed by parameter number). A relative-change NRPN would require a Hydra-specific design; ASM's published spec covers absolute writes only.
+
+**Resurrection instructions:**
+- AM4 path is shipping (`registerParamTools` in `packages/core/src/protocol-generic/tools/params.ts`); reuses the dispatcher capability gate that returns `capability_not_supported` on II / III / Hydra.
+- To enable II / III / Hydra parity: (1) capture an editor-side relative-change gesture via USBPcap + Wireshark with AxeEdit / AxeEdit III / Hydrasynth Manager running; (2) decode the captured bytes against the device's wire-format envelope; (3) if a relative-change opcode exists, add the wire builder to `fractal-midi/src/<device>/` and a `descriptor.writer.nudgeParam` implementation in `packages/<device>/src/descriptor/writer.ts`. The unified dispatcher picks it up automatically without a tool-shape change.
+- Hardware-tasks entries to file: `HARDWARE-TASKS-AXEFX2.md` ("HW-NNN: capture AxeEdit relative-change nudge — drag amp gain knob slowly in AxeEdit, capture inbound bytes, decode action byte"), `HARDWARE-TASKS-AXEFX3.md` (same shape against AxeEdit III).
+- Negative-finding fallback: if the capture proves no opcode exists (matching the cookbook negative-findings pattern), file `fractal-midi/docs/research/cookbook/_negative/<device>-no-relative-change.md` so a future agent does not re-attempt the same probe.
+
+**Stability note:** AM4 implementation is shipping and wire-byte-verified. II / III / Hydra parity is a one-capture hypothesis (~5 min per device with hardware connected); no decode work in flight today.
