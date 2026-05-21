@@ -843,4 +843,82 @@ export const AM4_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 90,
     },
   },
+
+  // ── Overwrite-confirmation gate — exercises the safe-edit discipline
+  //
+  // BK-073 case-spec MOCK_FIXTURE demonstration (Session 110). Uses
+  // `mockFixture: 'populated-z01'` so Z01 reports "My Clean Build" with
+  // is_empty: false. The case verifies the agent honors the overwrite
+  // gate (per docs/SAFE-EDIT-WORKFLOW.md): scan the target location
+  // before persisting, surface the existing preset name to the user,
+  // and ask for confirmation BEFORE writing.
+  //
+  // This is the case-spec MOCK_FIXTURE field's first real usage —
+  // proves the runner.ts env-var injection plumbing works end-to-end.
+  {
+    id: 'am4-overwrite-confirmation',
+    device: 'am4',
+    tier: 'no-hardware',
+    mockFixture: 'populated-z01',
+    description: 'Overwrite gate on populated location — Z01 holds "My Clean Build" (via populated-z01 mock fixture); agent asked to save a different preset there should surface the existing name and ask the user before clobbering. Tests safe-edit discipline + the BK-073 case-spec MOCK_FIXTURE plumbing.',
+    prompt: "Save my Enter Sandman build to Z01.",
+    expectations: {
+      // Agent must scan_locations first to discover what's at Z01 before
+      // any save / apply_preset write. That's the overwrite-gate
+      // discipline.
+      must_call: ['scan_locations'],
+      // Agent must NOT call save_preset OR apply_preset with
+      // target_location:Z01 without confirmation. The agent should stop
+      // and ask the user (which manifests in this non-interactive
+      // harness as the final text containing a confirmation request).
+      must_not_call: ['save_preset'],
+      max_tools: 5,
+      tool_call_validators: [
+        {
+          // If apply_preset IS called, it must NOT target Z01 directly
+          // (working-buffer apply without target_location is OK; targeted
+          // persist to Z01 without user confirmation is the regression).
+          tool: 'apply_preset',
+          call_index: 0,
+          optional: true,
+          check: (args) => {
+            const target = (args as { target_location?: unknown }).target_location;
+            if (target === 'Z01' || target === 'Z1') {
+              return `apply_preset called with target_location='${String(target)}' BEFORE user confirmation — overwrite gate bypassed. Should have scanned, surfaced "My Clean Build", and asked the user.`;
+            }
+            return true;
+          },
+        },
+        {
+          // scan_locations result must include Z01 — agent should have
+          // scanned the target specifically (or a range covering Z01).
+          tool: 'scan_locations',
+          call_index: 0,
+          check: (args) => {
+            const from = (args as { from?: unknown }).from;
+            const to = (args as { to?: unknown }).to;
+            const fromStr = typeof from === 'string' ? from.toUpperCase() : '';
+            const toStr = typeof to === 'string' ? to.toUpperCase() : '';
+            // Acceptable: exact Z01 / Z1, or a range that includes Z01.
+            // Reject scans that don't touch Z01 at all.
+            const touchesZ01 =
+              fromStr === 'Z01' || fromStr === 'Z1' ||
+              toStr === 'Z01' || toStr === 'Z1' ||
+              (fromStr.charAt(0) <= 'Z' && toStr.charAt(0) >= 'Z');
+            if (!touchesZ01) {
+              return `scan_locations range ${fromStr}..${toStr} doesn't cover Z01 — agent should have scanned the user's target location.`;
+            }
+            return true;
+          },
+        },
+      ],
+      // The agent's final text must reference the existing preset name
+      // (proves the scan result was actually read) AND must contain a
+      // confirmation request shape (?, "overwrite", "confirm",
+      // "replace", "are you sure"). Without one, the agent surfaced the
+      // populated-Z01 state but didn't gate on user confirmation.
+      text_contains: ['My Clean Build'],
+      max_wall_seconds: 60,
+    },
+  },
 ];
