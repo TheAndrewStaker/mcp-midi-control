@@ -35,6 +35,26 @@ import { registerAxeFxIIMetaTools } from './tools/meta.js';
 import { registerAxeFxIINavigationTools } from './tools/navigation.js';
 import { registerAxeFxIIParamTools } from './tools/params.js';
 import { registerAxeFxIIPresetTools } from './tools/preset.js';
+import { registerAxeFxIIPresetBinaryTools } from './tools/presetBinary.js';
+// Session 116 cont 3 (BK-070): `axefx2_set_scene_channels` and
+// `axefx2_atomic_apply` deprecated. Both used a hardcoded
+// `BLOCK_LAYOUT_MAP` for paramBase / sceneState ushort offsets, which
+// only worked against the exact Test Crunch 6-block composition. Hardware
+// probing proved layout positions shift per-preset (e.g. adding Chorus
+// shifts Compressor's X paramBase by +50 ushorts). Ghidra confirmed
+// the encoder lives in firmware, so the sort algorithm can't be
+// reverse-engineered from AxeEdit. Rather than ship a tool that silently
+// writes to the wrong ushorts on non-Test-Crunch presets, the tools are
+// removed from the MCP surface. The underlying parser / serializer /
+// hash / block-record decoder / blockBinaryLayout.ts widths stay in the
+// codec for future use (calibration-probe v2 or firmware RE).
+//
+// Functional equivalent for multi-channel writes: apply_preset with
+// slots[].params.X / .Y nested params (BK-058 fix shipped Session 100;
+// BK-077 channel-Y inactive warning shipped Session 113). Standard
+// apply_preset works on any preset composition.
+//
+// Byte-exact backup/restore stays available via registerAxeFxIIPresetBinaryTools.
 
 export { describeAxeFxIIPortStatus } from './tools/meta.js';
 export { resetAxeFxIIConnection, findParam } from './tools/shared.js';
@@ -45,5 +65,6 @@ export function registerAxeFxIITools(server: McpServer): void {
   registerAxeFxIILayoutTools(server);
   registerAxeFxIINavigationTools(server);
   registerAxeFxIIPresetTools(server);
+  registerAxeFxIIPresetBinaryTools(server);
   registerAxeFxIIMetaTools(server);
 }

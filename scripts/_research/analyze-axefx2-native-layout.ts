@@ -36,11 +36,15 @@ const FACTORY_BANK_A = 'samples/factory/Axe-Fx-II_XL+_Bank-A_Q8p02.syx';
 const CHUNK_COUNT = 64;
 const USHORTS_PER_CHUNK = 64;
 
+// Per descriptor table 0xe04440: count = 14-bit septet at payload[0..1],
+// data starts at payload[2] (= wire offset 8). Fixed Session 115 from
+// (count = payload[0] & 0x7f, off = 1 + i*3) which read the wrong bytes
+// but happened to work for factory presets where N=64 fits in 7 bits.
 function decodeChunkNative(payload: Uint8Array): Uint16Array {
-  const count = payload[0] & 0x7f;
+  const count = (payload[0] & 0x7f) | ((payload[1] & 0x7f) << 7);
   const out = new Uint16Array(count);
   for (let i = 0; i < count; i++) {
-    const off = 1 + i * 3;
+    const off = 2 + i * 3;
     const v =
       ((payload[off] & 0x7f) |
         ((payload[off + 1] & 0x7f) << 7) |

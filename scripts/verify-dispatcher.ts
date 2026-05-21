@@ -45,6 +45,11 @@ import {
   buildSwitchPreset,
   displayToWire,
 } from 'fractal-midi/axe-fx-ii';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/axe-fx-iii/descriptor.js';
+import {
+  FN_SET_GET_CHANNEL,
+  FN_PARAMETER_SETGET,
+} from 'fractal-midi/axe-fx-iii';
 
 function hex(arr: number[]): string {
   return arr.map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -1734,6 +1739,226 @@ console.log('\nBK-076 routing-mask pre-flight (II grid):');
 
   _resetBlockLayoutCacheForTests();
 }
+
+// ── Axe-Fx III channel-nested apply_preset (Session 116 cont 5) ─────
+//
+// III's applyPreset now honors slots[].params.A/B/C/D nested params:
+// for each channel, send SET_CHANNEL (fn 0x0A) then loop SET_PARAMETER
+// (fn 0x01) per param. Brings III to AM4/II parity for multi-channel
+// apply.
+//
+// This test mocks the III's MIDI transport: outbound bytes are captured,
+// inbound `receiveSysExMatching` always rejects with a timeout (the
+// III's `sendAndWatchForError` interprets a timeout as "no rejection
+// arrived → write accepted"). We then verify the captured frames
+// carry the right fn bytes in the right order, and that result.steps
+// counts both set_channel + set_param ops.
+
+console.log('\napply_preset channel-nested (Axe-Fx III, AM4/II parity, Session 116 cont 5):');
+
+interface CapturedFrame {
+  readonly bytes: readonly number[];
+  /** Function byte at offset 5 in `F0 00 01 74 10 fn …`. */
+  readonly fn: number;
+}
+
+function buildMockIIICtx(): {
+  ctx: import('@mcp-midi-control/core/protocol-generic/types.js').DispatchCtx;
+  captured: CapturedFrame[];
+} {
+  const captured: CapturedFrame[] = [];
+  const mockConn: import('@mcp-midi-control/core/midi/transport.js').MidiConnection = {
+    send: (bytes: number[]) => {
+      captured.push({ bytes: [...bytes], fn: bytes[5] });
+    },
+    receiveSysEx: () => Promise.reject(new Error('mock: no inbound')),
+    // Always time out → III's sendAndWatchForError treats as "accepted".
+    receiveSysExMatching: () => Promise.reject(new Error('mock: timeout (= accepted)')),
+    onMessage: () => () => {},
+    hasInput: false,
+    close: () => {},
+  };
+  return {
+    ctx: { conn: mockConn, descriptor: AXEFX3_DESCRIPTOR },
+    captured,
+  };
+}
+
+async function testIIIChannelNestedApply(): Promise<void> {
+  // Spec: amp block with channel-nested params for A and B.
+  // Expected outbound sequence:
+  //   1. set_block (fn 0x05 SET_GRID_CELL) — place amp at (r2,c3)
+  //   2. set_channel A (fn 0x0A)
+  //   3. set_param drive (fn 0x01)
+  //   4. set_channel B (fn 0x0A)
+  //   5. set_param drive (fn 0x01)
+  const { ctx, captured } = buildMockIIICtx();
+  const spec = {
+    slots: [{
+      slot: { row: 2, col: 3 },
+      block_type: 'drive',
+      params: {
+        A: { drive: 5 },
+        B: { drive: 8 },
+      },
+    }],
+  };
+  const result = await AXEFX3_DESCRIPTOR.writer.applyPreset!(
+    ctx,
+    spec as Parameters<NonNullable<typeof AXEFX3_DESCRIPTOR.writer.applyPreset>>[1],
+  );
+
+  // Verify the wire-frame sequence.
+  const channelFrames = captured.filter((f) => f.fn === FN_SET_GET_CHANNEL);
+  const paramFrames = captured.filter((f) => f.fn === FN_PARAMETER_SETGET);
+  assert(
+    'III channel-nested apply emits 2 SET_CHANNEL frames (one per channel A, B)',
+    channelFrames.length === 2,
+    `expected 2 channel frames, got ${channelFrames.length}: ${captured.map((f) => '0x' + f.fn.toString(16)).join(',')}`,
+  );
+  assert(
+    'III channel-nested apply emits 2 SET_PARAMETER frames (drive×2)',
+    paramFrames.length === 2,
+    `expected 2 param frames, got ${paramFrames.length}`,
+  );
+
+  // Verify the SET_CHANNEL/SET_PARAMETER frames interleave correctly:
+  // each SET_CHANNEL must be followed by its channel's SET_PARAMETER
+  // before the next SET_CHANNEL appears.
+  const fnSequenceAfterSetBlock = captured
+    .filter((f) => f.fn === FN_SET_GET_CHANNEL || f.fn === FN_PARAMETER_SETGET)
+    .map((f) => f.fn);
+  assert(
+    'III channel-nested apply interleaves: [CHANNEL, PARAM, CHANNEL, PARAM]',
+    fnSequenceAfterSetBlock.length === 4 &&
+      fnSequenceAfterSetBlock[0] === FN_SET_GET_CHANNEL &&
+      fnSequenceAfterSetBlock[1] === FN_PARAMETER_SETGET &&
+      fnSequenceAfterSetBlock[2] === FN_SET_GET_CHANNEL &&
+      fnSequenceAfterSetBlock[3] === FN_PARAMETER_SETGET,
+    `got fn sequence: ${fnSequenceAfterSetBlock.map((f) => '0x' + f.toString(16)).join(' → ')}`,
+  );
+
+  // Verify the result.ok / result.steps reflect both channels' writes.
+  // Each channel produces 1 set_channel + 1 set_param = 2 steps; plus
+  // 1 set_block for placement = 5 total. The result.steps count is
+  // writes.length (every push to writes[] counts).
+  assert(
+    'III channel-nested apply: result.ok = true (all mock writes accepted)',
+    result.ok === true,
+    `result.ok=${result.ok}, warning=${result.warning ?? '(none)'}`,
+  );
+  assert(
+    'III channel-nested apply: result.steps counts both channels (set_block + 2×set_channel + 2×set_param = 5)',
+    result.steps === 5,
+    `result.steps=${result.steps}`,
+  );
+}
+
+async function testIIIChannelNestedApplyInvalidChannel(): Promise<void> {
+  // Spec: amp with channel key 'X' (II's vocabulary, not III's).
+  // Should surface a structured rejection without sending any wire
+  // frames for that channel.
+  const { ctx, captured } = buildMockIIICtx();
+  const spec = {
+    slots: [{
+      slot: { row: 2, col: 3 },
+      block_type: 'drive',
+      params: {
+        X: { drive: 5 }, // Wrong: III uses A/B/C/D, not X/Y.
+      },
+    }],
+  };
+  const result = await AXEFX3_DESCRIPTOR.writer.applyPreset!(
+    ctx,
+    spec as Parameters<NonNullable<typeof AXEFX3_DESCRIPTOR.writer.applyPreset>>[1],
+  );
+
+  // Verify no SET_CHANNEL was sent (channel key rejected before wire).
+  const channelFrames = captured.filter((f) => f.fn === FN_SET_GET_CHANNEL);
+  assert(
+    'III channel-nested apply rejects channel "X" without sending SET_CHANNEL',
+    channelFrames.length === 0,
+    `unexpected channel frames: ${channelFrames.length}`,
+  );
+
+  // Verify the failure is surfaced clearly.
+  assert(
+    'III channel-nested apply: result.ok = false on invalid channel key',
+    result.ok === false,
+    `result.ok=${result.ok}`,
+  );
+}
+
+async function testIIIChannelNestedApplyMixedShape(): Promise<void> {
+  // Spec: amp with mixed flat + nested params — should be rejected.
+  const { ctx, captured } = buildMockIIICtx();
+  const spec = {
+    slots: [{
+      slot: { row: 2, col: 3 },
+      block_type: 'drive',
+      params: {
+        bass: 5, // flat
+        A: { drive: 8 }, // nested
+      } as Record<string, number | Record<string, number>>,
+    }],
+  };
+  const result = await AXEFX3_DESCRIPTOR.writer.applyPreset!(
+    ctx,
+    spec as Parameters<NonNullable<typeof AXEFX3_DESCRIPTOR.writer.applyPreset>>[1],
+  );
+  // Mixed shape should be caught before any wire writes for this slot.
+  const channelFrames = captured.filter((f) => f.fn === FN_SET_GET_CHANNEL);
+  const paramFrames = captured.filter((f) => f.fn === FN_PARAMETER_SETGET);
+  assert(
+    'III channel-nested apply rejects mixed flat+nested shape (no channel or param frames)',
+    channelFrames.length === 0 && paramFrames.length === 0,
+    `unexpected frames: channel=${channelFrames.length}, param=${paramFrames.length}`,
+  );
+  assert(
+    'III channel-nested apply: result.ok = false on mixed shape',
+    result.ok === false,
+    `result.ok=${result.ok}`,
+  );
+}
+
+async function testIIIFlatParamsStillWork(): Promise<void> {
+  // Spec: amp with flat params (current-channel write). Should not
+  // emit SET_CHANNEL — just SET_PARAMETER.
+  const { ctx, captured } = buildMockIIICtx();
+  const spec = {
+    slots: [{
+      slot: { row: 2, col: 3 },
+      block_type: 'drive',
+      params: { drive: 5 },
+    }],
+  };
+  const result = await AXEFX3_DESCRIPTOR.writer.applyPreset!(
+    ctx,
+    spec as Parameters<NonNullable<typeof AXEFX3_DESCRIPTOR.writer.applyPreset>>[1],
+  );
+  const channelFrames = captured.filter((f) => f.fn === FN_SET_GET_CHANNEL);
+  const paramFrames = captured.filter((f) => f.fn === FN_PARAMETER_SETGET);
+  assert(
+    'III flat-shape apply: no SET_CHANNEL emitted (writes go to current channel)',
+    channelFrames.length === 0,
+    `unexpected SET_CHANNEL frames: ${channelFrames.length}`,
+  );
+  assert(
+    'III flat-shape apply: 1 SET_PARAMETER emitted for the one flat param',
+    paramFrames.length === 1,
+    `expected 1 param frame, got ${paramFrames.length}`,
+  );
+  assert(
+    'III flat-shape apply: result.ok = true',
+    result.ok === true,
+    `result.ok=${result.ok}, warning=${result.warning ?? '(none)'}`,
+  );
+}
+
+await testIIIChannelNestedApply();
+await testIIIChannelNestedApplyInvalidChannel();
+await testIIIChannelNestedApplyMixedShape();
+await testIIIFlatParamsStillWork();
 
 // Reporting ───────────────────────────────────────────────────────
 

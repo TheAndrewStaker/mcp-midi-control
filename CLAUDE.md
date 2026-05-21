@@ -146,10 +146,21 @@ claims that aren't byte-verified.
 ### Session start (read in this order)
 1. **`docs/_private/STATE.md`** â€” current phase, single next action,
    recent breakthroughs. Always first.
-2. **`npm run coverage-audit`** â€” code-state ground truth, not stale
+2. **`docs/_private/captured-artifacts.md`** if it exists â€” founder-
+   private manifest of decompile dumps + USB captures + factory dumps
+   that don't ship to OSS. **Always grep `samples/captured/decoded/`
+   before proposing a new Ghidra run** â€” the Axe-Fx III 25K-line
+   decompile dump already contains material that closes BK-070's III
+   equivalent without hardware.
+3. **`../fractal-midi/docs/research/cookbook/INDEX.md`** â€” the encoding
+   primitive Rosetta stone. Before researching any new wire shape,
+   scan the cookbook â€” the shape may already be a known primitive
+   (septet, XOR-fold, descriptor-table, etc.). Cookbook entries are
+   the canonical source for "how Fractal encodes X."
+4. **`npm run coverage-audit`** â€” code-state ground truth, not stale
    text (handled by the section above; restated here because RE
    sessions especially drift on this).
-3. **[`fractal-midi/docs/research/fractal-protocol-decode-status.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/research/fractal-protocol-decode-status.md)** â€” per-device decode
+5. **[`fractal-midi/docs/research/fractal-protocol-decode-status.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/research/fractal-protocol-decode-status.md)** â€” per-device decode
    status table. Last full sweep Session 82â€“83. Read before opening
    any new investigation so you know what's already named vs. open.
 4. **`docs/devices/captures-inventory.md`** â€” what `.pcapng` / `.syx`
@@ -282,6 +293,87 @@ When a probe rules a hypothesis OUT (e.g. Session 94 ruling that AM4's
 `docs/SYSEX-MAP-*.md` or `docs/_private/SESSIONS.md` with the search
 terms a future agent would use ("AM4 0x77 portable to II â€” no"). This
 saves a session every time someone re-asks the same question.
+
+Also register the negative in `fractal-midi/docs/research/cookbook/_negative/<name>.md`
+when it's a primitive-level claim ("this encoding scheme doesn't apply
+to device X" / "this technique was ruled out"). The cookbook's
+`_negative/` directory is the canonical "methods that don't work" home
+that the next agent grep-s before re-attempting.
+
+### Capability application discipline (5-check pre-flight)
+
+Before wiring a decoded primitive into a shipping tool path, the agent
+runs a 5-check pre-flight and cites the evidence in the commit body.
+Designed to catch the misapplication failure class (the `get_preset`
+regression: +1.5-2s latency, stale source-of-truth, wrong bug-fix
+mapping, scaffolding placeholders) and the N=1 generalization-claim
+trap (paramBase shipped as generalized when it only worked for Test
+Crunch). The four-check + N=1 protocol:
+
+1. **Latency check.** Estimate or measure round-trip cost; compare to
+   the < 1 s tool-call budget. State the number in the commit body.
+2. **Source-of-truth check.** Name which source the primitive reads
+   (working buffer / stored binary at active location / stored binary
+   at non-active location / cached snapshot / front-panel echo). If
+   the existing code path read source S1 and your change demotes it
+   to S2, that's a correctness regression — flip it back before
+   shipping.
+3. **Bug-fix mapping.** If claiming "this fixes bug X," name the code
+   path X lives in (file:line). Name the code path being changed
+   (file:line). If the two are different, the framing is wrong —
+   STOP. Cookbook `Misapplication failure modes` sections name common
+   bug-X-doesn't-live-here cases (e.g. `atomic-preset-dump` does NOT
+   fix BK-058 channel-Y; channel-Y is a write-path bug).
+4. **Scaffolding check.** Grep the diff for `0 ? undefined : undefined`,
+   `// TODO`, `// scaffolding`, hardcoded `0` returned for "real later",
+   typed-but-never-set fields. If any present, the change is WIP, not
+   shippable.
+5. **Generalization-claim check (N=1 trap).** When claiming a primitive
+   "generalizes" (across blocks / across presets / across firmwares /
+   across devices), cite ≥ 2 distinct test cases varying along the
+   generalization axis. N=1 is not generalization. If only N=1 verified,
+   ship as `cookbook/_partial/` with `status: partial-N1`; do NOT ship
+   as generalized. If a co-resident or cross-variant probe is cheap
+   (< 5 min wire time), run it BEFORE shipping.
+
+The cookbook + cookbook-verify build gate mechanically enforces checks
+3 + 5: any primitive marked `status: matched` with < 2 fixtures fails
+the build; any `status: scratch` entry whose golden unexpectedly passes
+fails the build (forces explicit promote-or-demote).
+
+### Cross-device transfer reflex (at session close)
+
+When you discover or refine a primitive on one device, scan the other
+three device wire-maps + `fractal-midi/docs/research/cookbook/` for
+analogous decode gaps. File same-session `[transfer-candidate]`
+follow-ups in each affected device's `STATE-<DEVICE>.md` (or
+`HARDWARE-TASKS-<DEVICE>.md`) naming the transfer hypothesis + the
+cheapest test to confirm.
+
+Real evidence: the Axe-Fx III preset binary envelope is byte-identical
+in shape to the II envelope (same `(tag, mid, byte_count)` descriptor
+table layout) — 5 sessions of II hardware-probe work could have been
+recognized as a III-decodable target months ago if the transfer reflex
+had been a session-close ritual. Don't repeat that miss. Cross-device
+transfer findings are the highest-yield decode moves in the codebase.
+
+### Same-session artifact registration
+
+Every new Ghidra script, decompile dump, capture-of-interest, OR
+encoding primitive must be registered in the appropriate index the
+SAME SESSION it's produced:
+
+- New Ghidra script → `fractal-midi/scripts/ghidra/README.md` registry
+- New decompile dump or capture-of-interest → `fractal-midi/docs/research/captured-artifacts.md`
+  (public) or `mcp-midi-tools/docs/_private/captured-artifacts.md`
+  (private; founder hardware + factory dumps)
+- New encoding primitive → `fractal-midi/docs/research/cookbook/<name>.md`
+  with a matching golden case in `scripts/cookbook-verify.ts`
+- New negative finding → `fractal-midi/docs/research/cookbook/_negative/<name>.md`
+
+Not "I'll add it later." Same-session registration is the same
+discipline as the existing "verify-msg golden per new pidHigh" rule —
+promoted one level up.
 
 ### Param-coverage audit discipline (Session 113 cont 3)
 

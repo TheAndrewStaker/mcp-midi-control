@@ -172,11 +172,14 @@ console.log('');
 // 16-bit native ushort spans 3 wire bytes. Decoding the chunks into
 // native ushorts (per BK-070 Ghidra finding) makes single-knob mutations
 // pinpoint exactly one ushort or one bit within an ushort.
+// Per descriptor 0xe04440: 14-bit count at payload[0..1], data at
+// payload[2]. Fixed Session 115; previously read from payload[1] and
+// used 7-bit count.
 function decodeChunkNative(payload: Uint8Array): Uint16Array {
-  const count = payload[0] & 0x7f;
+  const count = (payload[0] & 0x7f) | ((payload[1] & 0x7f) << 7);
   const out = new Uint16Array(count);
   for (let i = 0; i < count; i++) {
-    const off = 1 + i * 3;
+    const off = 2 + i * 3;
     const v =
       ((payload[off] & 0x7f) |
         ((payload[off + 1] & 0x7f) << 7) |

@@ -37,15 +37,23 @@ import {
 const FACTORY_BANK_A = 'samples/factory/Axe-Fx-II_XL+_Bank-A_Q8p02.syx';
 
 /**
- * Decode one chunk payload as the Ghidra-discovered shape:
- *   [count_septet] [N × 3-septet ushorts]
- * Returns an array of up to N 16-bit values.
+ * Decode one chunk payload as the Ghidra-discovered shape, per descriptor
+ * table 0xe04440 `(key=0, val_b=6, val_c=2) + (key=1, val_b=8, val_c=3072)`:
+ *   chunkPayload[0..1] = 14-bit septet count N
+ *   chunkPayload[2..]  = N × 3 wire bytes per ushort
+ * Returns an array of N 16-bit values (the 21-bit decoded value truncated
+ * to ushort by the firmware's `*(uint16_t *) = uVar2;` cast).
+ *
+ * NOTE: prior version used `count = payload[0] & 0x7f` (7-bit) and
+ * `off = 1 + i*3`. Both were wrong; the correct read offset for data is
+ * 2 (= wire offset 8, since envelope is 6 bytes long). The 7-bit count
+ * accidentally worked for factory presets where N=64 fits in 7 bits.
  */
 function decodeChunkNative(payload: Uint8Array): Uint16Array {
-  const count = payload[0] & 0x7f;
+  const count = (payload[0] & 0x7f) | ((payload[1] & 0x7f) << 7);
   const out = new Uint16Array(count);
   for (let i = 0; i < count; i++) {
-    const off = 1 + i * 3;
+    const off = 2 + i * 3;
     const v =
       ((payload[off] & 0x7f) |
         ((payload[off + 1] & 0x7f) << 7) |

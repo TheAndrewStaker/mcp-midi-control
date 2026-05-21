@@ -40,7 +40,10 @@
  *   - rename                     : 🟡 II's 0x09 SET_PRESET_NAME
  *   - set_block                  : 🟡 II's 0x05 SET_GRID_CELL
  *   - apply_preset               : 🟡 composes set_block + set_param
- *                                  across PresetSpec.slots, then
+ *                                  across PresetSpec.slots; honors
+ *                                  channel-nested params via 0x0A
+ *                                  SET_CHANNEL per channel (Session
+ *                                  116 cont 5 — AM4/II parity);
  *                                  optionally save_preset at target
  *
  * 🟡 ops are NOT in the v1.4 III spec — wire shapes are ported from
@@ -89,6 +92,7 @@ import {
 import { PARAMS_BY_FAMILY, type Param as AxeFxIIIParam } from 'fractal-midi/axe-fx-iii';
 import {
   buildGetParameter,
+  buildSetChannel,
   buildSetGridCell,
   buildSetParameter,
   buildSetPresetName,
@@ -102,6 +106,15 @@ import {
   parseSetGetParameterResponse,
   buildSetBypass,
 } from 'fractal-midi/axe-fx-iii';
+
+/**
+ * Axe-Fx III channel-letter → wire-byte mapping. The III supports 4
+ * channels (A/B/C/D) per block, matching AM4's vocabulary. Axe-Fx II
+ * is the outlier with only X/Y. Each device's descriptor validates its
+ * own legal channel keys in the apply_preset path.
+ */
+const AXEFX3_CHANNEL_VALUES = { A: 0, B: 1, C: 2, D: 3 } as const;
+type AxeFxIIIChannelLetter = keyof typeof AXEFX3_CHANNEL_VALUES;
 import { guardActiveBufferOrSave } from './tools/shared.js';
 import { markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 import { AXEFX3_LABEL } from '@mcp-midi-control/core/server-shared/connections.js';
@@ -755,28 +768,142 @@ const writer: DeviceWriter = {
       }
     }
 
-    // 2. Loop per-block params (set_param per entry — 🟡 0x02 untested on III)
+    // 2. Loop per-block params. Two shapes accepted:
+    //   - Flat (`{rate: 0.8}`) — writes to the block's current channel.
+    //   - Channel-nested (`{A: {gain: 6}, B: {gain: 9}}`) — for each
+    //     channel key, send SET_CHANNEL (fn 0x0A) then loop SET_PARAMETER
+    //     (fn 0x01) for each param. Brings III to AM4/II parity for
+    //     multi-channel apply (Session 116 cont 5).
+    //
+    // Mixed shape (some flat + some nested) is rejected as a spec error.
     for (const slotSpec of spec.slots) {
       if (slotSpec.params === undefined) continue;
-      // We don't unwrap channel-nested params here — the III's setParam
-      // takes a single block slug + name. A channel-nested apply_preset
-      // would need to set_channel between writes; left for a future pass.
       const blockSlug = slotSpec.block_type.trim().toLowerCase();
-      for (const [paramName, value] of Object.entries(slotSpec.params)) {
-        if (typeof value === 'object') {
-          // Channel-nested entry — skip with note. Per-channel apply is
-          // a follow-up.
+
+      // Detect the shape.
+      const entries = Object.entries(slotSpec.params);
+      let nestedCount = 0;
+      let flatCount = 0;
+      for (const [, v] of entries) {
+        if (typeof v === 'object' && v !== null && !Array.isArray(v)) nestedCount++;
+        else flatCount++;
+      }
+      if (nestedCount > 0 && flatCount > 0) {
+        writes.push({
+          op: 'set_param',
+          target: blockSlug,
+          acked: false,
+          warning:
+            `axe-fx-iii apply_preset: slot ${blockSlug} mixes flat values and channel-nested objects. ` +
+            'Use one shape per slot: flat `{gain: 6}` to write the current channel, ' +
+            'or channel-nested `{A: {gain: 6}, B: {gain: 9}}` to address A/B/C/D explicitly.',
+        });
+        anyFailed = true;
+        continue;
+      }
+
+      if (nestedCount > 0) {
+        // Channel-nested path. Resolve effectId once for SET_CHANNEL.
+        let effectId: number;
+        try {
+          ({ effectId } = resolveBlockOrThrow(blockSlug));
+        } catch (err) {
           writes.push({
-            op: 'set_param',
-            target: `${blockSlug}.${paramName}`,
+            op: 'set_channel',
+            target: blockSlug,
             acked: false,
-            warning:
-              `axe-fx-iii apply_preset: skipped channel-nested param ${blockSlug}.${paramName}: ` +
-              'per-channel apply not yet wired on the III. Use set_param with explicit channel instead.',
+            warning: `resolveBlock failed: ${err instanceof Error ? err.message : String(err)}`,
           });
           anyFailed = true;
           continue;
         }
+
+        for (const [channelKey, paramMap] of entries) {
+          const upper = channelKey.trim().toUpperCase();
+          if (upper !== 'A' && upper !== 'B' && upper !== 'C' && upper !== 'D') {
+            writes.push({
+              op: 'set_channel',
+              target: `${blockSlug} (channel "${channelKey}")`,
+              acked: false,
+              warning:
+                `axe-fx-iii apply_preset: unknown channel key "${channelKey}" on ${blockSlug}. ` +
+                'Valid channels: A, B, C, D (axe-fx-ii uses X/Y; AM4 uses A/B/C/D; this is the III).',
+            });
+            anyFailed = true;
+            continue;
+          }
+          const ch = upper as AxeFxIIIChannelLetter;
+          const wireChannel = AXEFX3_CHANNEL_VALUES[ch];
+
+          // Send SET_CHANNEL for this block. Per v1.4 spec function 0x0A;
+          // shape ported from II's encoder (no published III capture). The
+          // III's MULTIPURPOSE_RESPONSE channel catches malformed
+          // requests, so an unsupported envelope surfaces as a structured
+          // rejection rather than a silent corruption.
+          try {
+            const channelBytes = buildSetChannel(effectId, wireChannel);
+            const channelError = await sendAndWatchForError(ctx, channelBytes);
+            if (channelError !== undefined) {
+              writes.push({
+                op: 'set_channel',
+                target: `${blockSlug} (channel ${ch})`,
+                acked: false,
+                warning:
+                  `Axe-Fx III rejected set_channel via 0x64 MULTIPURPOSE_RESPONSE: ` +
+                  `${formatErrorCode(channelError)}. ${BETA_WARNING}`,
+              });
+              anyFailed = true;
+              continue;
+            }
+            writes.push({
+              op: 'set_channel',
+              target: `${blockSlug} (channel ${ch})`,
+              acked: true,
+              display_value: ch,
+              warning: BETA_WARNING,
+            });
+          } catch (err) {
+            writes.push({
+              op: 'set_channel',
+              target: `${blockSlug} (channel ${ch})`,
+              acked: false,
+              warning: `set_channel failed: ${err instanceof Error ? err.message : String(err)}`,
+            });
+            anyFailed = true;
+            continue;
+          }
+
+          // Loop SET_PARAMETER for each param under this channel. The
+          // device is now on channel `ch` for this block, so each
+          // setParam write lands in that channel's storage.
+          for (const [paramName, value] of Object.entries(paramMap as Record<string, number | string>)) {
+            try {
+              const wireValue = typeof value === 'number' ? value : Number(value);
+              if (!Number.isFinite(wireValue)) {
+                throw new Error(`Non-numeric value for ${blockSlug}.${ch}.${paramName}: ${value}`);
+              }
+              const result = await writer.setParam!(ctx, blockSlug, paramName, wireValue);
+              writes.push({
+                ...result,
+                target: `${blockSlug}.${ch}.${paramName}`,
+              });
+              if (!result.acked) anyFailed = true;
+            } catch (err) {
+              writes.push({
+                op: 'set_param',
+                target: `${blockSlug}.${ch}.${paramName}`,
+                acked: false,
+                warning: `set_param failed: ${err instanceof Error ? err.message : String(err)}`,
+              });
+              anyFailed = true;
+            }
+          }
+        }
+        continue;
+      }
+
+      // Flat-shape path — writes to the block's current channel.
+      for (const [paramName, value] of entries) {
         try {
           // The value is display-shaped; for III this is wire-passthrough
           // per the catalog's passthrough encode/decode contract.
