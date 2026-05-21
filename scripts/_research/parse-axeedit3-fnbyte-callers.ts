@@ -1,0 +1,252 @@
+// Parse the existing AxeEdit III message-builders trace to extract a
+// (fn_byte, caller_function, call_site_context) table. The trace is the
+// decompiled output of TraceAxeEditIIIMessageBuilders.java run against
+// `Axe-Edit III.exe`; it pre-batches callers of every generic SysEx
+// builder.
+//
+// We look for two generic builders found by hand on the III binary:
+//   - FUN_1403434b0  — 4-arg builder (buf, fn_byte, ?, payload_ptr)
+//   - FUN_1403437d0  — 5-arg builder (buf, fn_byte, payload_ptr, len, model)
+//
+// Each call inside a caller's body looks like `FUN_X(arg1,FN_BYTE,...)`.
+// We extract the FN_BYTE literal and tie it to the enclosing `## CALLER:`
+// header.
+//
+// Output: `samples/captured/decoded/axeedit3-fnbyte-callers.json` plus a
+// markdown summary `axeedit3-fnbyte-callers.md` ready to paste into the
+// fractal-midi III SYSEX-MAP.
+//
+// Usage:  npx tsx scripts/_research/parse-axeedit3-fnbyte-callers.ts
+
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const TRACE_PATH = 'samples/captured/decoded/ghidra-axeedit3-message-builders.txt';
+const OUT_JSON_PATH = 'samples/captured/decoded/axeedit3-fnbyte-callers.json';
+const OUT_MD_PATH = 'samples/captured/decoded/axeedit3-fnbyte-callers.md';
+
+const BUILDERS = ['FUN_1403434b0', 'FUN_1403437d0'] as const;
+
+type Caller = { name: string; entry: string };
+type CallSite = {
+    builder: string;
+    fnByte: number | null;
+    fnByteRaw: string;
+    caller: Caller;
+    line: number;
+    context: string;
+};
+
+function parseTrace(text: string): CallSite[] {
+    const lines = text.split('\n');
+    const sites: CallSite[] = [];
+
+    let currentBuilder: string | null = null;
+    let currentCaller: Caller | null = null;
+
+    const callerHdr = /^\s*-+\s*CALLER:\s+(FUN_[0-9a-f]+)\s+@\s+([0-9a-f]+)\s*-+/i;
+    const builderHdr = /^##\s+GENERIC BUILDER:\s+(FUN_[0-9a-f]+)\s+@\s+([0-9a-f]+)/i;
+
+    for (let i = 0; i < lines.length; i++) {
+        const ln = lines[i];
+
+        const bm = ln.match(builderHdr);
+        if (bm) {
+            currentBuilder = bm[1];
+            currentCaller = null;
+            continue;
+        }
+
+        const cm = ln.match(callerHdr);
+        if (cm) {
+            currentCaller = { name: cm[1], entry: cm[2] };
+            continue;
+        }
+
+        // Look for builder invocations.
+        if (!currentBuilder) continue;
+        for (const builder of BUILDERS) {
+            const idx = ln.indexOf(builder + '(');
+            if (idx < 0) continue;
+            // Extract args between the matching parens. The trace's
+            // decompile output keeps each call on a single line for our
+            // cases of interest.
+            const after = ln.slice(idx + builder.length + 1);
+            const closeIdx = matchingParen(after);
+            const argsRaw = closeIdx < 0 ? after : after.slice(0, closeIdx);
+            const args = splitTopLevelArgs(argsRaw);
+            const second = args[1] ?? '';
+            const fnByteRaw = second.trim();
+            const fnByte = parseLiteralByte(fnByteRaw);
+            sites.push({
+                builder,
+                fnByte,
+                fnByteRaw,
+                caller: currentCaller ?? { name: '(unknown)', entry: '?' },
+                line: i + 1,
+                context: ln.trim(),
+            });
+            break;
+        }
+    }
+    return sites;
+}
+
+function matchingParen(s: string): number {
+    let depth = 1;
+    for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (c === '(') depth++;
+        else if (c === ')') {
+            depth--;
+            if (depth === 0) return i;
+        }
+    }
+    return -1;
+}
+
+function splitTopLevelArgs(s: string): string[] {
+    const out: string[] = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (c === '(' || c === '[' || c === '{') depth++;
+        else if (c === ')' || c === ']' || c === '}') depth--;
+        else if (c === ',' && depth === 0) {
+            out.push(s.slice(start, i));
+            start = i + 1;
+        }
+    }
+    out.push(s.slice(start));
+    return out;
+}
+
+function parseLiteralByte(s: string): number | null {
+    const t = s.trim();
+    if (/^0x[0-9a-fA-F]+$/.test(t)) return parseInt(t, 16);
+    if (/^-?\d+$/.test(t)) return parseInt(t, 10);
+    return null;
+}
+
+function main() {
+    const text = readFileSync(TRACE_PATH, 'utf-8');
+    const sites = parseTrace(text);
+
+    // Aggregate by fn byte
+    const byFn = new Map<number, CallSite[]>();
+    const unresolved: CallSite[] = [];
+    for (const s of sites) {
+        if (s.fnByte == null) { unresolved.push(s); continue; }
+        if (!byFn.has(s.fnByte)) byFn.set(s.fnByte, []);
+        byFn.get(s.fnByte)!.push(s);
+    }
+
+    // Build summary
+    const sortedFnBytes = [...byFn.keys()].sort((a, b) => a - b);
+
+    const md: string[] = [];
+    md.push('# AxeEdit III — fn-byte → caller table');
+    md.push('');
+    md.push('Generated by `scripts/_research/parse-axeedit3-fnbyte-callers.ts`');
+    md.push('from `' + TRACE_PATH + '`.');
+    md.push('');
+    md.push('Each row is a SysEx function byte recovered from AxeEdit III.exe');
+    md.push('decompiled callers of the two generic builders `FUN_1403434b0`');
+    md.push('and `FUN_1403437d0` (each takes the fn byte as the 2nd argument).');
+    md.push('');
+    md.push('Cross-reference against:');
+    md.push('- Documented bytes in `fractal-midi/docs/devices/axe-fx-iii/SYSEX-MAP.md`');
+    md.push('- The 23 SYSEX_* strings at .rdata 0x1405abf80..0x1405ac298');
+    md.push('');
+    md.push(`Total distinct fn bytes recovered: **${sortedFnBytes.length}**`);
+    md.push(`Total call sites: ${sites.length}`);
+    md.push(`Unresolved literals (non-immediate args): ${unresolved.length}`);
+    md.push('');
+
+    // Documented mapping from v1.4 PDF for cross-reference
+    const v14Map: Record<number, string> = {
+        0x01: 'PRESET_NUM (current preset query/set)',
+        0x02: 'SCENE_NUM',
+        0x03: 'TUNER (legacy/long fn)',
+        0x04: 'TEMPO (per-spec PDF, fn 0x14 is alt)',
+        0x08: 'WHO_AM_I / MODEL_QUERY',
+        0x0A: 'SETGET_BYPASS',
+        0x0B: 'SETGET_CHANNEL',
+        0x0C: 'SETGET_SCENE',
+        0x0D: 'GET_PATCHNAME',
+        0x0E: 'GET_SCENENAME',
+        0x0F: 'SETGET_LOOPER',
+        0x13: 'PATCH_STATUS',
+        0x14: 'SETGET_TEMPO',
+        0x40: 'STORE_PRESET_ACK_OR_BEGIN (community RE)',
+        0x47: 'INIT / SESSION_START (Fractal-internal, observed II 0x47 too)',
+        0x64: 'GENERIC_ACK (status response)',
+        0x77: 'PRESET_DUMP_HEADER (II shape; III is similar)',
+        0x78: 'PRESET_DUMP_CHUNK',
+        0x79: 'PRESET_DUMP_FOOTER',
+    };
+
+    md.push('## fn byte table');
+    md.push('');
+    md.push('| fn byte | distinct callers | call sites | v1.4 PDF? | candidate name |');
+    md.push('|---|---|---|---|---|');
+    for (const fnByte of sortedFnBytes) {
+        const sitesForFn = byFn.get(fnByte)!;
+        const uniqueCallers = new Set(sitesForFn.map(s => s.caller.name));
+        const doc = v14Map[fnByte] ? '✓' : '';
+        const cand = v14Map[fnByte] ?? '';
+        md.push(`| 0x${fnByte.toString(16).padStart(2, '0').toUpperCase()} | ${uniqueCallers.size} | ${sitesForFn.length} | ${doc} | ${cand} |`);
+    }
+    md.push('');
+
+    md.push('## Per fn-byte detail');
+    md.push('');
+    for (const fnByte of sortedFnBytes) {
+        const sitesForFn = byFn.get(fnByte)!;
+        md.push(`### 0x${fnByte.toString(16).padStart(2, '0').toUpperCase()}`);
+        if (v14Map[fnByte]) {
+            md.push(`v1.4 PDF: ${v14Map[fnByte]}`);
+            md.push('');
+        }
+        const uniqueCallers = new Map<string, CallSite[]>();
+        for (const s of sitesForFn) {
+            if (!uniqueCallers.has(s.caller.name)) uniqueCallers.set(s.caller.name, []);
+            uniqueCallers.get(s.caller.name)!.push(s);
+        }
+        for (const [caller, callerSites] of uniqueCallers) {
+            md.push(`- **${caller}** @ ${callerSites[0].caller.entry} (${callerSites.length} call${callerSites.length === 1 ? '' : 's'})`);
+            for (const s of callerSites) md.push(`  - L${s.line} via \`${s.builder}\`: \`${s.context.slice(0, 200)}\``);
+        }
+        md.push('');
+    }
+
+    if (unresolved.length > 0) {
+        md.push('## Unresolved (non-immediate fn-byte args)');
+        md.push('');
+        md.push('These callers pass the fn byte as a variable rather than a literal,');
+        md.push('which means the caller is a thin wrapper over the builder. The next');
+        md.push('decompile step is to trace up one more level to find the literal.');
+        md.push('');
+        for (const s of unresolved) {
+            md.push(`- L${s.line} **${s.caller.name}** @ ${s.caller.entry}: fn=\`${s.fnByteRaw}\` via \`${s.builder}\``);
+            md.push(`  - context: \`${s.context.slice(0, 200)}\``);
+        }
+        md.push('');
+    }
+
+    writeFileSync(OUT_JSON_PATH, JSON.stringify({
+        traceFile: TRACE_PATH,
+        builders: BUILDERS,
+        sites,
+        byFn: Object.fromEntries(
+            [...byFn.entries()].map(([k, v]) => [`0x${k.toString(16).padStart(2, '0')}`, v]),
+        ),
+    }, null, 2));
+    writeFileSync(OUT_MD_PATH, md.join('\n'));
+
+    console.log(`Wrote ${OUT_JSON_PATH} (${sites.length} call sites)`);
+    console.log(`Wrote ${OUT_MD_PATH} (${sortedFnBytes.length} distinct fn bytes)`);
+}
+
+main();
