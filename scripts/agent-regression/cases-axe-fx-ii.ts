@@ -30,16 +30,20 @@ function ampChannelKeys(args: Record<string, unknown>): Set<string> {
   if (!Array.isArray(spec.slots)) return keys;
   for (const slot of spec.slots) {
     if (slot === null || typeof slot !== 'object') continue;
-    const s = slot as { block_type?: string; params?: unknown };
+    const s = slot as { block_type?: string; params?: unknown; params_by_channel?: unknown };
     if (s.block_type !== 'amp') continue;
-    const p = s.params;
-    if (p === null || typeof p !== 'object') continue;
-    for (const [k, v] of Object.entries(p as Record<string, unknown>)) {
-      // Channel-nested shape: {X: {...}, Y: {...}}. Flat shape:
-      // {gain: 6} — single-letter keys catch the channel-nested
-      // case without false-positives on flat param names.
-      if (v !== null && typeof v === 'object' && (k === 'X' || k === 'Y')) {
-        keys.add(k);
+    // T-5 (2026-05-21) hard-split: agents now author per-channel maps
+    // via params_by_channel ({X: {...}, Y: {...}}). The legacy nested-
+    // in-params shape is rejected at the MCP boundary; accept both
+    // here for tests that ran against the older surface (the validator
+    // job is to count distinct channels regardless of which field the
+    // agent used).
+    for (const candidate of [s.params_by_channel, s.params]) {
+      if (candidate === null || candidate === undefined || typeof candidate !== 'object') continue;
+      for (const [k, v] of Object.entries(candidate as Record<string, unknown>)) {
+        if (v !== null && typeof v === 'object' && (k === 'X' || k === 'Y')) {
+          keys.add(k);
+        }
       }
     }
   }
