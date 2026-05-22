@@ -96,19 +96,18 @@ For QUICK iteration (you're still drafting), `npm link` between the two
 repos avoids the pack/install cycle. Reset to a published version before
 committing.
 
-**Where protocol docs SHOULD live:** the wire-map docs
-(`SYSEX-MAP.md`, `axeedit-opcode-table.md`) are codec-domain â€” they
-belong in `C:/dev/fractal-midi/docs/`. They currently sit in this
-repo for historical reasons (predate the extraction); a doc-migration
-sweep is queued under [`fractal-midi/docs/devices/axe-fx-ii/ghidra-followups.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-ii/ghidra-followups.md)
-C5. Ghidra mining scripts in [`fractal-midi/scripts/ghidra/`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/scripts/ghidra/) are also codec-domain
-and will move with the docs.
+**Where protocol docs live:** the wire-map docs (`SYSEX-MAP.md`,
+`axeedit-opcode-table.md`) are codec-domain and live in
+[`fractal-midi/docs/devices/`](https://github.com/TheAndrewStaker/fractal-midi/tree/main/docs/devices),
+one subdir per device. Ghidra mining scripts live in
+[`fractal-midi/scripts/ghidra/`](https://github.com/TheAndrewStaker/fractal-midi/tree/main/scripts/ghidra/).
+Migration completed prior to Session 117 cont 2.
 
-**Where research docs SHOULD live:** captures + decoded artifacts in
+**Where research docs live:** captures + decoded artifacts in
 `samples/captured/` are project-scratch (gitignored). The committed
-research narratives (`docs/research/*-research.md`) are publishable
-OSS material â€” they'll likely move to `fractal-midi/docs/research/`
-too in the same sweep.
+research narratives live in
+[`fractal-midi/docs/research/`](https://github.com/TheAndrewStaker/fractal-midi/tree/main/docs/research)
+alongside the encoding cookbook. Migration completed in the same sweep.
 
 ## Target User
 A working guitarist with a Claude account â€” not a developer. Every UX,
