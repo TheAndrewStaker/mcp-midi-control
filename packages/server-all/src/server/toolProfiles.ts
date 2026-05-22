@@ -34,14 +34,14 @@ const VALID_PROFILES = new Set<ToolProfile>(['core', 'experimental', 'full']);
 
 /**
  * Read MCP_TOOLS_PROFILE from the environment. Empty / unset returns
- * 'core' (the subtraction-sprint v0.2 default, flipped from 'full' on
- * 2026-05-21). Unknown values log to stderr and fall back to 'core'
- * rather than fail-fast: a typo in claude_desktop_config.json should
- * not brick the server.
+ * 'core' (the subtraction-sprint default, flipped from 'full' on
+ * 2026-05-21 before the v0.1.0 announce). Unknown values log to
+ * stderr and fall back to 'core' rather than fail-fast: a typo in
+ * claude_desktop_config.json should not brick the server.
  *
- * To restore the legacy v0.1 surface (every registered tool, including
- * device-namespaced + diagnostic + debug tools), set
- * MCP_TOOLS_PROFILE=full in the config's env block.
+ * To expose the full registered surface (every device-namespaced
+ * tool + diagnostic + debug tools), set MCP_TOOLS_PROFILE=full in
+ * the config's env block.
  */
 export function readToolProfile(env: NodeJS.ProcessEnv = process.env): ToolProfile {
   const raw = (env.MCP_TOOLS_PROFILE ?? '').trim().toLowerCase();

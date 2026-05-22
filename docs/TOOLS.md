@@ -138,7 +138,7 @@ Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics.
 
 ## full profile (81 tools)
 
-Everything registered (current default; equivalent to no env var). Preserved as the v0.1 baseline so upgrades do not lose tools.
+Every registered tool, including device-namespaced wrappers + raw MIDI send_* primitives + diagnostic probes. Use when you need access to a tool the smaller profiles hide.
 
 | Tool | Description length | First sentence |
 |---|---|---|

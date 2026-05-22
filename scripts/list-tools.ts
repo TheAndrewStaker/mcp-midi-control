@@ -121,7 +121,7 @@ function bucketByProfile(all: ToolEntry[]): ProfileBucket[] {
     {
       name: 'full',
       description:
-        'Everything registered (current default; equivalent to no env var). Preserved as the v0.1 baseline so upgrades do not lose tools.',
+        'Every registered tool, including device-namespaced wrappers + raw MIDI send_* primitives + diagnostic probes. Use when you need access to a tool the smaller profiles hide.',
       tools: all,
     },
   ];
@@ -213,7 +213,7 @@ function renderReadmeRegion(buckets: ProfileBucket[], all: ToolEntry[]): string 
       ? 'Default. Smallest agent context; daily driver for tone-building and preset work.'
       : b.name === 'experimental'
         ? 'Hardware-specific control + diagnostic probes; raw MIDI send_* primitives.'
-        : 'Compatibility baseline matching the v0.1 surface.';
+        : 'Every registered tool. Use if you need a wrapper the smaller profiles hide.';
     lines.push(`| \`${b.name}\` | ${b.tools.length} | ${when} |`);
   }
   lines.push('');
