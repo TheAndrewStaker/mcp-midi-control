@@ -26,10 +26,29 @@
  *
  * Run:
  *   cd C:/dev/mcp-midi-tools && npx tsx scripts/_research/gen-axefx2-type-applicability.ts
+ *
+ * Flags:
+ *   --show-annotation-gaps   Additionally emit a markdown report at
+ *                            `samples/captured/decoded/axefx2-annotation-
+ *                            gaps.md` that, for each XML parameterName
+ *                            with no registry join, lists candidate
+ *                            same-block KNOWN_PARAMS entries that look
+ *                            like an annotation-only fix (the registry
+ *                            entry exists but lacks the
+ *                            `parameterName: "..."` annotation). Cheap
+ *                            fix: add the annotation. Distinguishes
+ *                            annotation-only gaps from true missing
+ *                            entries so the next backfill pass sizes
+ *                            correctly. Per
+ *                            [[feedback_shipped_capabilities_index]].
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { KNOWN_PARAMS } from 'fractal-midi/axe-fx-ii';
+
+const SHOW_ANNOTATION_GAPS = process.argv.includes('--show-annotation-gaps');
+const ANNOTATION_GAPS_OUT =
+  'samples/captured/decoded/axefx2-annotation-gaps.md';
 
 const XML_PATH =
   'samples/captured/decoded/binarydata/axe-edit-extracted/__block_layout.xml';
@@ -230,6 +249,11 @@ let skippedNoFriendlyBlock = 0;
 let skippedBlockHasNoRegistry = 0;
 let skippedNoMatchingParam = 0;
 const unmatchedSamples = new Map<string, Set<string>>();
+// Full unmatched set (block → parameterName → first-seen XML block name)
+// for the --show-annotation-gaps report. Separate from unmatchedSamples
+// because the per-block sample cap of 6 hides the long tail we need
+// here.
+const unmatchedAll = new Map<string, Set<string>>();
 
 const blockRe = /<EditorControls\s+([^>]*?)>([\s\S]*?)<\/EditorControls>/g;
 let bm;
@@ -270,6 +294,9 @@ while ((bm = blockRe.exec(xml)) !== null) {
       const sampleSet = unmatchedSamples.get(friendlyBlock) ?? new Set<string>();
       if (sampleSet.size < 6) sampleSet.add(parameterName);
       unmatchedSamples.set(friendlyBlock, sampleSet);
+      const allSet = unmatchedAll.get(friendlyBlock) ?? new Set<string>();
+      allSet.add(parameterName);
+      unmatchedAll.set(friendlyBlock, allSet);
       continue;
     }
     const key = `${friendlyBlock}.${friendlyName}`;
@@ -397,4 +424,213 @@ if (unmatchedSamples.size > 0) {
   for (const [block, names] of [...unmatchedSamples.entries()].sort()) {
     console.log(`  ${block}: ${[...names].join(', ')}`);
   }
+}
+
+// ─── --show-annotation-gaps mode ────────────────────────────────────
+//
+// For each unmatched XML parameterName, look for same-block
+// KNOWN_PARAMS entries whose `name` or `wikiName` looks like the
+// suffix of the XML parameterName after the block-family prefix
+// (DISTORT_, DELAY_, CHORUS_, etc.). When a candidate matches, the
+// gap is an annotation-only fix: the registry entry exists; it just
+// lacks the `parameterName: "..."` field. That distinction
+// dramatically shrinks the "true unmatched" count and lets a
+// backfill pass tackle the cheap fixes first.
+//
+// The block-family prefix is the leading token before the first
+// underscore in the XML parameterName. This is the JUCE __block_layout
+// convention (e.g. Drive block uses DISTORT_*, Delay block uses
+// DELAY_*, Chorus block uses CHORUS_*). Stripping the prefix gives
+// the per-knob token in upper-snake-case, which we compare against
+// the registry's `name` (snake-case) and `wikiName` (UPPER WITH
+// SPACES) — with whitespace normalized to underscores.
+//
+// Matching scoring (first hit wins):
+//   exact         — suffix === name OR suffix === wikiName-normalized
+//   levenshtein-1 — edit distance 1 (catches single-letter typos and
+//                   pluralization quirks like LEVELL vs LEVEL_L)
+//   substring     — suffix is a substring of name or vice versa
+//                   (catches OUTPUT_LEVEL vs level, etc.)
+//
+// Higher-score matches mean stronger annotation-only hypotheses.
+if (SHOW_ANNOTATION_GAPS) {
+  const allParams = Object.values(KNOWN_PARAMS) as readonly {
+    block: string;
+    name: string;
+    wikiName: string;
+    parameterName?: string;
+  }[];
+  const paramsByBlock = new Map<string, typeof allParams>();
+  for (const p of allParams) {
+    const arr = (paramsByBlock.get(p.block) ?? []) as typeof allParams;
+    paramsByBlock.set(p.block, [...arr, p]);
+  }
+
+  function normalizeUpper(s: string): string {
+    return s.toUpperCase().replace(/\s+/g, '_');
+  }
+
+  function levenshtein(a: string, b: string): number {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    const prev = new Array<number>(b.length + 1);
+    const curr = new Array<number>(b.length + 1);
+    for (let j = 0; j <= b.length; j++) prev[j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      curr[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      }
+      for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+    }
+    return prev[b.length];
+  }
+
+  type Candidate = {
+    xmlParameterName: string;
+    suffix: string;
+    matchKind: 'exact-name' | 'exact-wiki' | 'levenshtein-1' | 'substring';
+    matchedKey: string;
+    matchedName: string;
+    matchedWikiName: string;
+    alreadyAnnotated: boolean;
+  };
+
+  const gapsByBlock = new Map<string, Candidate[]>();
+  let trueMissingCount = 0;
+
+  for (const [block, names] of unmatchedAll) {
+    const blockParams = paramsByBlock.get(block) ?? [];
+    for (const xmlParameterName of names) {
+      // Strip leading block-family prefix at the first underscore. If
+      // no underscore present, use the whole name.
+      const underscoreIx = xmlParameterName.indexOf('_');
+      const suffix = underscoreIx === -1
+        ? xmlParameterName
+        : xmlParameterName.slice(underscoreIx + 1);
+      const suffixUpper = suffix.toUpperCase();
+      const suffixLower = suffix.toLowerCase();
+
+      let best: Candidate | undefined;
+      for (const p of blockParams) {
+        const nameUpper = p.name.toUpperCase();
+        const wikiNorm = normalizeUpper(p.wikiName);
+        let kind: Candidate['matchKind'] | undefined;
+        if (nameUpper === suffixUpper) kind = 'exact-name';
+        else if (wikiNorm === suffixUpper) kind = 'exact-wiki';
+        else if (
+          levenshtein(suffixUpper, nameUpper) <= 1 ||
+          levenshtein(suffixUpper, wikiNorm) <= 1
+        ) {
+          kind = 'levenshtein-1';
+        } else if (
+          nameUpper.includes(suffixUpper) ||
+          suffixUpper.includes(nameUpper) ||
+          wikiNorm.includes(suffixUpper) ||
+          suffixUpper.includes(wikiNorm)
+        ) {
+          kind = 'substring';
+        }
+        if (kind) {
+          const rank = (k: Candidate['matchKind']) =>
+            k === 'exact-name' ? 0
+            : k === 'exact-wiki' ? 1
+            : k === 'levenshtein-1' ? 2 : 3;
+          if (!best || rank(kind) < rank(best.matchKind)) {
+            best = {
+              xmlParameterName,
+              suffix,
+              matchKind: kind,
+              matchedKey: `${p.block}.${p.name}`,
+              matchedName: p.name,
+              matchedWikiName: p.wikiName,
+              alreadyAnnotated: p.parameterName !== undefined,
+            };
+          }
+        }
+      }
+      if (best) {
+        const arr = gapsByBlock.get(block) ?? [];
+        arr.push(best);
+        gapsByBlock.set(block, arr);
+      } else {
+        trueMissingCount++;
+        // Capture true-missing in a separate bucket so the report
+        // splits them out.
+        const arr = gapsByBlock.get(block) ?? [];
+        arr.push({
+          xmlParameterName,
+          suffix,
+          matchKind: 'substring', // placeholder; flagged via empty matchedKey
+          matchedKey: '',
+          matchedName: '',
+          matchedWikiName: '',
+          alreadyAnnotated: false,
+        });
+        gapsByBlock.set(block, arr);
+      }
+      void suffixLower;
+    }
+  }
+
+  // Emit markdown report
+  const totalUnmatched = [...unmatchedAll.values()].reduce((acc, s) => acc + s.size, 0);
+  const annotationOnly = totalUnmatched - trueMissingCount;
+  const md: string[] = [];
+  md.push('# Axe-Fx II type-applicability — annotation gap report');
+  md.push('');
+  md.push(`Generated: ${new Date().toISOString()}`);
+  md.push(`Source XML: \`${XML_PATH}\``);
+  md.push('');
+  md.push('## Summary');
+  md.push('');
+  md.push(`- **Total unmatched XML parameterNames**: ${totalUnmatched}`);
+  md.push(`- **Annotation-only gaps** (registry entry exists, lacks \`parameterName\` field): **${annotationOnly}**`);
+  md.push(`- **True missing entries** (no same-block registry candidate found): **${trueMissingCount}**`);
+  md.push('');
+  md.push('The annotation-only count is the cheap fix: add a `parameterName: "..."`');
+  md.push('annotation to each matched registry entry; no new param entries, no');
+  md.push('encoding research. Per [[feedback_shipped_capabilities_index]] the');
+  md.push('previous "188 unmatched" report was partially false-positive in this');
+  md.push('way (e.g. `amp.treble` IS shipped at `fractal-midi/src/axe-fx-ii/');
+  md.push('params.ts:1875` but lacks the `parameterName: "DISTORT_TREBLE"`');
+  md.push('annotation — the generator silently classifies it as missing).');
+  md.push('');
+  md.push('Match-kind precedence (higher rank = stronger annotation-only hypothesis):');
+  md.push('');
+  md.push('1. `exact-name` — XML suffix equals `name` field (case-insensitive)');
+  md.push('2. `exact-wiki` — XML suffix equals normalized `wikiName` (whitespace → underscore, upper)');
+  md.push('3. `levenshtein-1` — edit distance 1 against either');
+  md.push('4. `substring` — substring containment either direction');
+  md.push('');
+  md.push('## Per-block gaps');
+
+  const sortedBlocks = [...gapsByBlock.keys()].sort();
+  for (const block of sortedBlocks) {
+    const candidates = gapsByBlock.get(block)!.sort((a, b) =>
+      a.xmlParameterName.localeCompare(b.xmlParameterName),
+    );
+    const blockAnnotationOnly = candidates.filter((c) => c.matchedKey).length;
+    const blockTrueMissing = candidates.length - blockAnnotationOnly;
+    md.push('');
+    md.push(`### \`${block}\` — ${candidates.length} unmatched (${blockAnnotationOnly} annotation-only, ${blockTrueMissing} true-missing)`);
+    md.push('');
+    md.push('| XML parameterName | Suffix | Match kind | Candidate registry key | Already annotated? |');
+    md.push('|---|---|---|---|---|');
+    for (const c of candidates) {
+      if (c.matchedKey) {
+        md.push(`| \`${c.xmlParameterName}\` | \`${c.suffix}\` | ${c.matchKind} | \`${c.matchedKey}\` (\`${c.matchedWikiName}\`) | ${c.alreadyAnnotated ? 'yes — conflict, investigate' : 'no — annotation-only fix'} |`);
+      } else {
+        md.push(`| \`${c.xmlParameterName}\` | \`${c.suffix}\` | — | (no same-block candidate found — true missing) | n/a |`);
+      }
+    }
+  }
+
+  writeFileSync(ANNOTATION_GAPS_OUT, md.join('\n'));
+  console.log(`\n--show-annotation-gaps: wrote ${ANNOTATION_GAPS_OUT}`);
+  console.log(`  total unmatched: ${totalUnmatched}`);
+  console.log(`  annotation-only: ${annotationOnly}`);
+  console.log(`  true missing:    ${trueMissingCount}`);
 }
