@@ -163,6 +163,25 @@ async function main() {
     if (!v) throw new Error(`Leaf dep ${d} missing from root package.json`);
     leanDeps[d] = v;
   }
+  // fractal-midi is a `file:` dep at the project root (relative to
+  // C:/dev/mcp-midi-tools/). The path doesn't transpose to build/staging/
+  // (relative depth is different), and copying npm cache state across
+  // dirs is fragile. Resolve the source tarball ONCE here and copy it
+  // into staging, then rewrite the lean package.json to point at the
+  // local copy. Self-contained: no relative-path math, no broken installs.
+  const fractalMidiSpec = leanDeps['fractal-midi'];
+  if (typeof fractalMidiSpec === 'string' && fractalMidiSpec.startsWith('file:')) {
+    const relPath = fractalMidiSpec.slice('file:'.length);
+    const absPath = path.resolve(PROJECT_ROOT, relPath);
+    if (!fs.existsSync(absPath)) {
+      throw new Error(`fractal-midi tarball not found at ${absPath} (declared as ${fractalMidiSpec} in root package.json).`);
+    }
+    const tarballBasename = path.basename(absPath);
+    const stagedTarball = path.join(STAGING, tarballBasename);
+    fs.copyFileSync(absPath, stagedTarball);
+    leanDeps['fractal-midi'] = `file:./${tarballBasename}`;
+    console.log(`[build] Bundled fractal-midi tarball: ${tarballBasename}`);
+  }
   const leanPkg = {
     name: 'mcp-midi-control-bundle',
     version: VERSION,
