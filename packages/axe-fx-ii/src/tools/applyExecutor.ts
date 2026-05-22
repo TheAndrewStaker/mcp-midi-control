@@ -1,5 +1,5 @@
 /**
- * Axe-Fx II apply-preset executor — builds the wire-op sequence for a
+ * Axe-Fx II apply-preset executor, builds the wire-op sequence for a
  * single preset entry and runs it against a live connection. Shared by
  * axefx2_apply_preset, axefx2_apply_preset_at, axefx2_apply_setlist, AND
  * the BK-051 unified Axe-Fx II descriptor's `applyPreset` writer method
@@ -54,7 +54,7 @@ function listParamNamesForBlockGroup(groupCode: string): string[] {
 }
 
 /**
- * Minimal connection contract used by the executor — both
+ * Minimal connection contract used by the executor, both
  * `AxeFxIIConnection` (legacy `ensureConn()` callers) and `MidiConnection`
  * (BK-051 unified descriptor's `ctx.conn`) satisfy this. The executor only
  * needs `send` + `receiveSysExMatching`, so a narrow interface lets both
@@ -71,7 +71,7 @@ export interface ApplyConn {
 // -- apply_preset_at + apply_setlist shared helpers ------------------------
 
 /**
- * Shape of a single preset entry — used by both axefx2_apply_preset_at
+ * Shape of a single preset entry, used by both axefx2_apply_preset_at
  * (one entry at a time) and axefx2_apply_setlist (array of entries).
  * Mirrors the inputSchema of apply_preset_at minus the zod wrappers.
  */
@@ -114,7 +114,7 @@ export interface ApplyPresetAtBlockEntry {
 /**
  * v0.4: explicit cable between two placed blocks. Resolved by `id`
  * (auto-derived if omitted) at op-build time. `dstCol` MUST equal
- * `srcCol + 1` — the device rejects off-column cables.
+ * `srcCol + 1`, the device rejects off-column cables.
  */
 export interface ApplyPresetAtRoutingEdge {
   from: string;
@@ -128,7 +128,7 @@ export interface ApplyPresetAtInput {
   blocks: ApplyPresetAtBlockEntry[];
   /**
    * v0.4: explicit cabling. When supplied, the executor:
-   *   1. Places each block at its explicit (row, col) — every entry in
+   *   1. Places each block at its explicit (row, col), every entry in
    *      `blocks` must include `row` and `col`.
    *   2. Skips the auto-shunt-extension and auto-row-2-cabling.
    *   3. Emits a fn 0x06 SET_CELL_ROUTING write for each edge.
@@ -136,7 +136,7 @@ export interface ApplyPresetAtInput {
    */
   routing?: ApplyPresetAtRoutingEdge[];
   /**
-   * Single-scene shortcut — switch to this scene (0..7) before writing
+   * Single-scene shortcut, switch to this scene (0..7) before writing
    * block params. Kept for back-compat with pre-Session-68 callers.
    * For full per-scene authoring, use `scenes` instead.
    */
@@ -144,7 +144,7 @@ export interface ApplyPresetAtInput {
   /**
    * Per-scene state authoring (HW-106 closure, Session 68). The
    * Axe-Fx II carries per-scene state inside the preset's stored bytes
-   * via the switch-write-switch-back pattern — there's no separate
+   * via the switch-write-switch-back pattern, there's no separate
    * envelope for it. Each entry switches to its scene then writes the
    * per-block bypass + channel state for that scene.
    *
@@ -159,7 +159,7 @@ export interface ApplyPresetAtInput {
   }>;
   /**
    * Scene the device lands on after the build (1..8, display). Default
-   * 1 — user can audition the song's opening scene immediately. Override
+   * 1, user can audition the song's opening scene immediately. Override
    * for previewing a specific scene-section (e.g. land on solo scene
    * for an immediate lead test).
    */
@@ -172,7 +172,7 @@ export interface ApplyPresetAtOp {
   bytes: number[];
   summary: string;
   awaitResponse?: 'set_grid_cell' | 'set_cell_routing' | 'store_preset';
-  // For 'clear_cell' ops only — the (row, col) being cleared. The
+  // For 'clear_cell' ops only, the (row, col) being cleared. The
   // runtime uses this to skip clears for cells the device's GET_GRID_
   // LAYOUT read confirms are already empty (no point emitting ~40
   // grid writes when the target slot was an empty preset to begin with).
@@ -181,7 +181,7 @@ export interface ApplyPresetAtOp {
 
 /**
  * Pure-builder options. `wire: true` short-circuits the display/wire
- * auto-detect path — every param value is treated as a pre-encoded
+ * auto-detect path, every param value is treated as a pre-encoded
  * wire integer (0..65534). The BK-051 unified descriptor's
  * `applyPreset` always passes `wire: true` because the schema's
  * `encode` closure is the canonical display→wire path; legacy
@@ -193,7 +193,7 @@ export interface BuildOptions {
 }
 
 /**
- * Build the full wire-op sequence for one preset entry. Pure function —
+ * Build the full wire-op sequence for one preset entry. Pure function,
  * no I/O, no connection required. Throws on validation errors (unknown
  * block name, unknown param, out-of-range value).
  */
@@ -209,7 +209,7 @@ export function buildApplyPresetAtOps(
   // v0.4: each resolved entry now carries its (row, col) and `id` so
   // explicit-routing builds can address blocks by id and place them
   // away from row 2. Legacy callers (no explicit row/col on any block,
-  // no routing array) auto-fill row=2, col=index+1 — byte-identical to
+  // no routing array) auto-fill row=2, col=index+1, byte-identical to
   // the pre-v0.4 behavior.
   type ResolvedEntry = {
     target: AxeFxIIBlock;
@@ -243,7 +243,7 @@ export function buildApplyPresetAtOps(
     if (isShunt) {
       if (shuntCounter >= SHUNT_MAX) {
         throw new Error(
-          `blocks[${i}]: too many shunts (max ${SHUNT_MAX} per preset — firmware reserves blockIds ${SHUNT_BASE_ID_LOCAL}..${SHUNT_BASE_ID_LOCAL + SHUNT_MAX - 1}).`,
+          `blocks[${i}]: too many shunts (max ${SHUNT_MAX} per preset, firmware reserves blockIds ${SHUNT_BASE_ID_LOCAL}..${SHUNT_BASE_ID_LOCAL + SHUNT_MAX - 1}).`,
         );
       }
       const shuntId =
@@ -293,7 +293,7 @@ export function buildApplyPresetAtOps(
       const baseSlug = target.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
       // If only one instance of this slug exists in the entire blocks[]
       // array, the auto-derived id is just the slug. If multiple, the
-      // auto-derive includes a 1-indexed counter — but then the schema
+      // auto-derive includes a 1-indexed counter, but then the schema
       // requires the caller to disambiguate by supplying explicit ids
       // (we can't pick a stable counter from inspection alone). For
       // now: error if the same auto-slug shows up twice without explicit ids.
@@ -349,7 +349,7 @@ export function buildApplyPresetAtOps(
     });
   }
 
-  // Set of (row, col) cells the user explicitly placed — used by the
+  // Set of (row, col) cells the user explicitly placed, used by the
   // clear-cell pre-pass to skip cells we're about to overwrite.
   const placedCells = new Set<string>();
   for (const r of resolved) placedCells.add(`${r.row},${r.col}`);
@@ -404,7 +404,7 @@ export function buildApplyPresetAtOps(
       // its legacy back-compat shape: when the param has calibration AND
       // value <= displayMax, encode as display; otherwise pass through
       // as wire (so callers mixing wire+display in one apply still work
-      // — the original wireMode-false invariant).
+      //, the original wireMode-false invariant).
       const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
       const useDisplay =
         kind.encodeDisplay !== undefined
@@ -462,19 +462,19 @@ export function buildApplyPresetAtOps(
   //
   // Why all cells, not just row 2 beyond chain length:
   //
-  // The previous occupant's blocks on rows 1/3/4 — or on row 2 beyond
-  // the chain end — would otherwise stay in the saved preset. HW-105
+  // The previous occupant's blocks on rows 1/3/4, or on row 2 beyond
+  // the chain end, would otherwise stay in the saved preset. HW-105
   // attempt (2026-05-12) surfaced this: a target slot whose previous
   // occupant had MultiDly + Chorus on a non-row-2 position kept those
   // blocks in the saved "Test Clean" preset, even though the user's
   // spec only mentioned Comp + Amp + Cab + Reverb. Wiping every cell
   // first guarantees a fresh canvas; the placement loop then fills
   // row 2 cols 1..N with the user's chain. ~48 grid-cell writes at
-  // ~30ms each = ~1.4s of extra wall time per preset — acceptable for
+  // ~30ms each = ~1.4s of extra wall time per preset, acceptable for
   // the "load before the show" workflow that apply_preset_at is for.
   for (let row = 1; row <= 4; row++) {
     for (let col = 1; col <= 12; col++) {
-      // Skip cells we're about to place INTO — placement overwrites.
+      // Skip cells we're about to place INTO, placement overwrites.
       if (placedCells.has(`${row},${col}`)) continue;
       ops.push({
         kind: 'clear_cell',
@@ -498,7 +498,7 @@ export function buildApplyPresetAtOps(
     });
   }
 
-  // Silent-preset fix — wire row 2 end-to-end with explicit cables.
+  // Silent-preset fix, wire row 2 end-to-end with explicit cables.
   //
   // The device's OUTPUT pulls from col 12 of the routing grid. Two
   // separate cabling problems must be solved for a fresh-empty slot
@@ -506,7 +506,7 @@ export function buildApplyPresetAtOps(
   //
   //   (1) Content-block cabling: cols 1→2, 2→3, ..., N-1→N. Despite
   //       earlier assumptions, the device does NOT auto-route content
-  //       blocks placed via fn 0x05 — Session 70 hardware test
+  //       blocks placed via fn 0x05, Session 70 hardware test
   //       (slot 601) showed Comp/Amp/Cab/Reverb sitting in row 2 with
   //       all routing_mask=0 even after fn 0x05 placement. The agent
   //       pinpointed it: AxeEdit fires fn 0x06 SET_CELL_ROUTING on
@@ -519,7 +519,7 @@ export function buildApplyPresetAtOps(
   // Both are solved by the same primitive: `buildSetCellRouting({
   // srcRow, srcCol, dstRow, dstCol, connect: true})` writes fn 0x06
   // (decoded Session 70, captured from AxeEdit Amp→Cab click-to-connect).
-  // Sets dst_cell's input-mask bit at src_row_index — for all-row-2
+  // Sets dst_cell's input-mask bit at src_row_index, for all-row-2
   // chains, that's 0x02 ("feed from row 2 of prev col") on every cell.
   //
   // Op ordering: place all cells first (chain blocks already done +
@@ -533,18 +533,18 @@ export function buildApplyPresetAtOps(
   // Each shunt position needs a UNIQUE block instance ID. SHUNT 1 =
   // blockId 200, SHUNT 2 = 201, ..., SHUNT 36 = 235 (per Q8.02 wire
   // capture range). Reusing the same blockId across positions triggers
-  // the device's "move on duplicate" behavior — only the LAST
+  // the device's "move on duplicate" behavior, only the LAST
   // placement persists, all earlier cells get cleared as a side
   // effect, leaving the row-2 chain riddled with empty cells (silent
   // preset even after cabling). Confirmed by AxeEdit's session-71
   // in-to-out-route capture: 6 shunt placements at cols 7-12 used
-  // blockIds 200, 201, 202, 203, 204, 205 — one unique instance per
+  // blockIds 200, 201, 202, 203, 204, 205, one unique instance per
   // cell.
   const SHUNT_BASE_ID = 200;
   if (explicitRouting) {
     // v0.4 explicit-routing mode. The agent supplied the full topology
     // via routing[]; we trust it verbatim. Auto-shunt-extension and
-    // row-2 auto-cabling are SKIPPED — the caller is responsible for
+    // row-2 auto-cabling are SKIPPED, the caller is responsible for
     // any shunts and cables needed to reach col 12 (OUTPUT terminator).
     //
     // Each routing edge becomes one fn 0x06 SET_CELL_ROUTING write.
@@ -591,7 +591,7 @@ export function buildApplyPresetAtOps(
     // Legacy row-2 auto-chain mode. Pre-v0.4 callers don't supply
     // routing[]; we auto-extend with shunts to col 12 and cable every
     // adjacent pair on row 2. Byte-identical to the pre-v0.4
-    // behavior — every existing test (slot 600/601/602/608/609) stays
+    // behavior, every existing test (slot 600/601/602/608/609) stays
     // green.
     //
     // Pass 1: place all shunts (content blocks were placed above).
@@ -605,7 +605,7 @@ export function buildApplyPresetAtOps(
         awaitResponse: 'set_grid_cell',
       });
     }
-    // Pass 2: cable every adjacent pair in row 2 — content blocks AND
+    // Pass 2: cable every adjacent pair in row 2, content blocks AND
     // shunts. Col 1 (first cell) receives input from the implicit INPUT
     // column and needs no cable. All other cells (cols 2..12) need a
     // cable from their left neighbor.
@@ -682,7 +682,7 @@ export function buildApplyPresetAtOps(
   //
   // Closes HW-106 (Session 68): the Axe-Fx II carries per-scene state
   // inside the preset's stored bytes. Writes always target the active
-  // scene only — there's no separate per-scene envelope. To author
+  // scene only, there's no separate per-scene envelope. To author
   // each scene's bypass + channel state, walk scenes one at a time:
   //
   //   for each scene:
@@ -695,7 +695,7 @@ export function buildApplyPresetAtOps(
   // captured 0x29 echoes in session-68-scene-broadcast.syx confirm the
   // device accepts back-to-back scene switches without ack delay.
   //
-  // Scene-name writes are deferred — Q8.02 surfaces scene names in
+  // Scene-name writes are deferred, Q8.02 surfaces scene names in
   // AxeEdit but the SET envelope isn't documented in any OSS corpus.
   // Add later once decoded.
 
@@ -708,7 +708,7 @@ export function buildApplyPresetAtOps(
         );
       }
     }
-    // Resolve all referenced block names up front — fail before any wire.
+    // Resolve all referenced block names up front, fail before any wire.
     const sceneBlockResolutions = new Map<string, AxeFxIIBlock>();
     for (const s of input.scenes) {
       for (const blockKey of Object.keys({ ...(s.bypass ?? {}), ...(s.channels ?? {}) })) {
@@ -721,7 +721,7 @@ export function buildApplyPresetAtOps(
       ops.push({
         kind: 'switch_scene',
         bytes: buildSetSceneNumber(wireScene),
-        summary: `SET_SCENE → ${wireScene} (display: scene ${s.index}) — per-scene state walk`,
+        summary: `SET_SCENE → ${wireScene} (display: scene ${s.index}), per-scene state walk`,
       });
       // Walk this scene's bypass map.
       for (const [blockKey, bypassed] of Object.entries(s.bypass ?? {})) {
@@ -756,7 +756,7 @@ export function buildApplyPresetAtOps(
     ops.push({
       kind: 'switch_scene',
       bytes: buildSetSceneNumber(landing - 1),
-      summary: `SET_SCENE → ${landing - 1} (display: scene ${landing}) — landing scene`,
+      summary: `SET_SCENE → ${landing - 1} (display: scene ${landing}), landing scene`,
     });
   }
 
@@ -782,7 +782,7 @@ export function buildApplyPresetAtOps(
  * grid-place + per-block param / channel / bypass / scene / name shape,
  * MINUS the leading switch_preset and the trailing STORE_PRESET. Used
  * by the BK-051 unified descriptor's `applyPreset(spec)` path when no
- * target location is supplied — i.e. the CLAUDE.md MVP "conversational
+ * target location is supplied, i.e. the CLAUDE.md MVP "conversational
  * preset, working buffer only" workflow.
  *
  * Re-uses {@link buildApplyPresetAtOps} by passing a stub preset_number
@@ -839,7 +839,7 @@ export async function runApplyPresetAtOps(
   let totalBytes = 0;
   let acks = 0;
   let lastNack: { summary: string; resultCode: number } | undefined;
-  // Working-buffer sequences (buildApplyPresetOps) have no `save` op —
+  // Working-buffer sequences (buildApplyPresetOps) have no `save` op,
   // for those, `ok` reduces to "no non-recoverable failures along the
   // way." When a `save` op IS in the sequence (apply_preset_at /
   // apply_setlist), `ok` only flips true once STORE_PRESET acks 0x00.
@@ -849,7 +849,7 @@ export async function runApplyPresetAtOps(
 
   // After switch_preset (if present), read the grid layout once and
   // build a "skip set" of already-empty cells. Clear_cell ops targeting
-  // those cells are no-ops on the device — skipping them is pure
+  // those cells are no-ops on the device, skipping them is pure
   // wall-time savings. An empty target preset goes from 42 writes →
   // 0 writes (~1.3s saved); a fully-loaded slot pays only the one-time
   // ~100ms grid read.
@@ -861,7 +861,7 @@ export async function runApplyPresetAtOps(
     gridReadDone = true;
     try {
       if (afterSwitch) {
-        // Settle: switch_preset is async — must wait for load before read.
+        // Settle: switch_preset is async, must wait for load before read.
         await new Promise((res) => setTimeout(res, POST_SWITCH_SETTLE_MS));
       }
       const ackP = conn.receiveSysExMatching(
@@ -875,12 +875,12 @@ export async function runApplyPresetAtOps(
         if (c.blockId === 0) emptyCells.add(`${c.row},${c.col}`);
       }
       summaries.push(
-        `  GRID_READ (skip-empty optimization): ${emptyCells.size}/48 cells already empty — those clears will be skipped`,
+        `  GRID_READ (skip-empty optimization): ${emptyCells.size}/48 cells already empty, those clears will be skipped`,
       );
     } catch (err) {
       // Fall through; we'll emit all clears defensively.
       summaries.push(
-        `  GRID_READ failed (${err instanceof Error ? err.message : String(err)}) — emitting all clears defensively`,
+        `  GRID_READ failed (${err instanceof Error ? err.message : String(err)}), emitting all clears defensively`,
       );
     }
   }
@@ -888,7 +888,7 @@ export async function runApplyPresetAtOps(
   for (const op of ops) {
     // After the switch_preset op (if it ran), do a grid read so we can
     // skip clear_cell ops that target already-empty cells. This is the
-    // "merge empty values" optimization — one ~100ms read replaces up
+    // "merge empty values" optimization, one ~100ms read replaces up
     // to 42 wasted clear writes for a freshly-empty target slot.
     if (op.kind === 'switch_preset' && !gridReadDone) {
       // Fire the switch first (so the device starts loading), THEN read
@@ -900,7 +900,7 @@ export async function runApplyPresetAtOps(
       continue;
     }
     // For working-buffer-only sequences (no switch_preset op), still do
-    // the grid read once before the first clear_cell — no settle needed
+    // the grid read once before the first clear_cell, no settle needed
     // because the working buffer is already current.
     if (op.kind === 'clear_cell' && !gridReadDone) {
       await readGridIntoSkipSet(/* afterSwitch */ false);

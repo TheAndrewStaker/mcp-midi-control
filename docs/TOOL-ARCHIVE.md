@@ -37,11 +37,12 @@ The project ships a single MCP server with a fixed registered tool list. When a 
 
 ## Documented exceptions to description-budget cap
 
-Tools listed here are allowed to exceed the 1000-char hard cap or 600-char warn threshold for the cited reason. Each exception requires a `// description-budget-override: <chars> <reason>` comment adjacent to the registration. Linter (T-19) reads this list.
+Tools listed here are allowed to exceed the 1000-char hard cap for the cited reason. Each exception has a matching entry in `DESCRIPTION_BUDGET_OVERRIDES` (`scripts/list-tools.ts`) so the preflight lint (T-19, 2026-05-22) does not block on them. Adding an entry to either side without the other will fail preflight.
 
-| Tool | Allowed chars | Reason | Override site |
-|---|---|---|---|
-| _(none yet)_ | | | |
+| Tool | Allowed chars | Reason |
+|---|---|---|
+| `hydra_apply_patch` | 6000 | Full NRPN patch surface (1175 params, per-module sections, save-auth semantics, scene-leveling discipline). Migration to `describe_device.agent_guidance` queued; not on the subtraction-sprint critical path. |
+| `axefx3_set_parameter` | 1600 | `[III BETA]` prefix + raw-wire EXCEPTION-TO-DISPLAY-FIRST callout + GET hypothesis banner inflate the description while the III is in community beta. Trim when III moves to hardware-verified status. |
 
 ## Removed tools
 

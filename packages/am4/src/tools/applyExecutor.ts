@@ -1,5 +1,5 @@
 /**
- * AM4 apply-preset executor — hoisted from `apply.ts` so the BK-051 unified
+ * AM4 apply-preset executor, hoisted from `apply.ts` so the BK-051 unified
  * tool surface (`src/protocol/generic/{dispatcher,tools}.ts`) can reuse the
  * same validate + wire-send + result-format pipeline without duplicating
  * 700+ LOC.
@@ -14,7 +14,7 @@
  *     tools dispatch through the same executor.
  *
  * The legacy device-namespaced am4_apply_* tools and the unified surface
- * therefore share one executor — same validation rules, same wire output,
+ * therefore share one executor, same validation rules, same wire output,
  * same ack semantics. Adding a new validation rule lands in both surfaces
  * simultaneously.
  */
@@ -79,11 +79,11 @@ export type ApplyPresetPreparedWrite =
 /**
  * A param-write the validator dropped because its applies_only_when
  * gate excludes the active (or in-batch) block type. The wire write
- * was NEVER sent — surfaced to the caller so its response can name
+ * was NEVER sent, surfaced to the caller so its response can name
  * exactly what didn't land, instead of letting the agent claim a write
  * landed that the device silently no-op'd.
  *
- * Example: `{type: "Deluxe Verb Vibrato", mid: 6}` — the AB763 Vibrato
+ * Example: `{type: "Deluxe Verb Vibrato", mid: 6}`, the AB763 Vibrato
  * channel has Bass/Treble only, no Mid. The mid write would have been
  * acked by the device and produced no audible change; the gate skips
  * it and the response says "dropped amp.mid because Deluxe Verb
@@ -150,7 +150,7 @@ export function prepareApplyPresetWrites(
     // with channels-only, the AM4 retained scene 1's bypass state from the
     // previously-loaded U1 preset (comp + delay bypassed), silently
     // breaking the rhythm tone. Placing a block in a fresh-preset call
-    // implies the user wants it ACTIVE in the configured scenes — defaulting
+    // implies the user wants it ACTIVE in the configured scenes, defaulting
     // to active matches that intent and avoids stale-state leakage.
     const placedBlocks = new Map<string, number>();
 
@@ -159,7 +159,7 @@ export function prepareApplyPresetWrites(
     // post-change type. Track resolved type writes per block as we
     // prepare them; refuse subsequent knob writes whose applicability
     // gate excludes that type. Catches the 2026-05-13 Z4 Fender test
-    // case: `params: { type: "Deluxe Verb Vibrato", mid: 6 }` — the AB763
+    // case: `params: { type: "Deluxe Verb Vibrato", mid: 6 }`, the AB763
     // Vibrato channel has no Mid knob, AM4 silently no-ops the write.
     // Without this gate the agent sees a successful ack and reports the
     // mid value to the user; the device shows the previous mid.
@@ -168,8 +168,8 @@ export function prepareApplyPresetWrites(
     /**
      * Build a single param write, OR return `null` when the validator
      * decides to skip the write (because the param doesn't apply on
-     * the active block type — see applicability gate below). Hard
-     * errors (unknown param name, out-of-range value) still throw —
+     * the active block type, see applicability gate below). Hard
+     * errors (unknown param name, out-of-range value) still throw,
      * those are caller mistakes, not silent-no-op risks.
      *
      * On skip, the reason is pushed to the shared `skipped` list and
@@ -221,7 +221,7 @@ export function prepareApplyPresetWrites(
         }
         // Applicability gate. Skip for the type write itself (the type
         // can never be gated against itself); enforce for every other
-        // param against the in-batch type (preferred — known to be
+        // param against the in-batch type (preferred, known to be
         // accurate, since type writes are ordered first in this loop)
         // or the cross-call lastKnownType cache when no in-batch type
         // is set.
@@ -245,7 +245,7 @@ export function prepareApplyPresetWrites(
                     paramName,
                     reason:
                         `Does not apply on ${canonicalBlock}.type wire ${activeWire} ` +
-                        `(real-gear parity — the active type does not expose this knob; ` +
+                        `(real-gear parity, the active type does not expose this knob; ` +
                         `the AM4 silently no-ops writes to it). Call ` +
                         `list_params(${canonicalBlock}) to see which knobs the active type ` +
                         `exposes.`,
@@ -277,7 +277,7 @@ export function prepareApplyPresetWrites(
     slots.forEach((slot, i) => {
         const at = `slots[${i}] (position ${slot.position}, ${slot.block_type})`;
         if (seenPositions.has(slot.position)) {
-            throw new Error(`${at}: position ${slot.position} used twice — each slot may appear at most once per call`);
+            throw new Error(`${at}: position ${slot.position} used twice, each slot may appear at most once per call`);
         }
         seenPositions.add(slot.position);
 
@@ -417,7 +417,7 @@ export function prepareApplyPresetWrites(
         scenes.forEach((sc, i) => {
             const at = `scenes[${i}] (scene ${sc.index})`;
             if (seenSceneIndices.has(sc.index)) {
-                throw new Error(`${at}: scene index ${sc.index} used twice — each scene may appear at most once per call`);
+                throw new Error(`${at}: scene index ${sc.index} used twice, each scene may appear at most once per call`);
             }
             seenSceneIndices.add(sc.index);
 
@@ -426,7 +426,7 @@ export function prepareApplyPresetWrites(
                 || (sc.channels !== undefined && Object.keys(sc.channels).length > 0)
                 || (sc.bypass !== undefined && Object.keys(sc.bypass).length > 0);
             if (!hasAny) {
-                throw new Error(`${at}: supply at least one of channels / bypass / name — an empty scene entry is a no-op.`);
+                throw new Error(`${at}: supply at least one of channels / bypass / name, an empty scene entry is a no-op.`);
             }
 
             const chList: PreparedScene['channels'] = [];
@@ -607,7 +607,7 @@ export interface ApplyPresetWireResult {
  * the channel cache and the stale-handle counter as side effects.
  *
  * Caller is responsible for the inbound-MIDI capture lifecycle (subscribe
- * before the call, unsubscribe in a finally) — this lets the setlist tool
+ * before the call, unsubscribe in a finally), this lets the setlist tool
  * span a capture across multiple apply-preset+save cycles for one entry.
  */
 export async function runApplyPresetWires(
@@ -658,7 +658,7 @@ export async function runApplyPresetWires(
         } catch {
             unacked++;
             recordAckOutcome(false);
-            lines.push(`  ? ${label} — no ack within ${WRITE_ECHO_TIMEOUT_MS} ms`);
+            lines.push(`  ? ${label}, no ack within ${WRITE_ECHO_TIMEOUT_MS} ms`);
         }
     }
     if (nameWriteBytes !== undefined) {
@@ -670,7 +670,7 @@ export async function runApplyPresetWires(
             lines.push(`  ✓ ${label}`);
         } else {
             unacked++;
-            lines.push(`  ? ${label} — no ack within ${WRITE_ECHO_TIMEOUT_MS} ms`);
+            lines.push(`  ? ${label}, no ack within ${WRITE_ECHO_TIMEOUT_MS} ms`);
         }
     }
 
@@ -713,7 +713,7 @@ export function formatApplyPresetResult(result: ApplyPresetWireResult): {
     }
 
     const header = unacked === 0
-        ? `Applied preset: ${totalWrites} writes, all wire-acked. Acks don't confirm audible change — cross-check on the AM4 if it matters. Working buffer only — the user can discard by switching presets, or ask to save/persist to a preset location.`
+        ? `Applied preset: ${totalWrites} writes, all wire-acked. Acks don't confirm audible change, cross-check on the AM4 if it matters. Working buffer only, the user can discard by switching presets, or ask to save/persist to a preset location.`
         : `Applied preset: ${totalWrites} writes, ${acked} acked, ${unacked} un-acked (server auto-reconnects after ${STALE_HANDLE_TIMEOUT_THRESHOLD} consecutive ack-less writes; or call reconnect_midi).`;
     return { header, stateLines, lines };
 }
@@ -749,7 +749,7 @@ export type ApplyPresetAtResult = ApplyPresetAtSuccess | ApplyPresetAtFailure;
 export interface RunApplyPresetAtOptions {
     /**
      * When true (default), the executor runs switch + apply + save. When
-     * false, only switch + apply runs — the preset lives in the working
+     * false, only switch + apply runs, the preset lives in the working
      * buffer at the target location and is reversible by switching
      * presets. The user explicitly saves with `save_preset` (or by re-
      * calling apply_preset with save:true).
@@ -824,7 +824,7 @@ export async function runApplyPresetAt(
     if (!shouldSave) {
         // Audition-at-target: leave the working buffer at the target,
         // unsaved. Reversible by switching presets. The save step is
-        // skipped entirely — caller invokes save_preset when the user
+        // skipped entirely, caller invokes save_preset when the user
         // explicitly asks to persist.
         return {
             ok: true,

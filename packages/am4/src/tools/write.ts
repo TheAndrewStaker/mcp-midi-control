@@ -1,5 +1,5 @@
 /**
- * AM4 write tools — all device-namespaced write tools removed v0.3.
+ * AM4 write tools, all device-namespaced write tools removed v0.3.
  *
  * Migrations:
  *   - am4_set_param         → set_param({port:'am4',block,name,value,channel?})
@@ -17,7 +17,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function registerWriteTools(_server: McpServer): void {
-    // intentionally empty — all AM4 device-namespaced write tools
+    // intentionally empty, all AM4 device-namespaced write tools
     // removed v0.3 (use unified set_param / set_params / set_block /
     // set_bypass with port='am4').
 }

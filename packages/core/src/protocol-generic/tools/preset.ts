@@ -1,5 +1,5 @@
 /**
- * Preset tools — full-preset apply, batch setlist apply, and factory
+ * Preset tools, full-preset apply, batch setlist apply, and factory
  * restore. These tools wrap the device's preset executor; the AM4
  * implementation lives in `src/fractal/am4/tools/applyExecutor.ts` and
  * is invoked by the descriptor's `writer.applyPreset` /

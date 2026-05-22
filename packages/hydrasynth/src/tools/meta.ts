@@ -1,10 +1,10 @@
 /**
- * Hydrasynth meta tools — reconnect_midi, get_active_patch, and the
+ * Hydrasynth meta tools, reconnect_midi, get_active_patch, and the
  * `describeHydrasynthPortStatus` startup-banner helper.
  *
  * 2 tools:
- *   - hydra_reconnect_midi    — drop cached MIDI handle, re-attempt connect
- *   - hydra_get_active_patch  — informational; Hydrasynth has no SysEx
+ *   - hydra_reconnect_midi   , drop cached MIDI handle, re-attempt connect
+ *   - hydra_get_active_patch , informational; Hydrasynth has no SysEx
  *                               read for the active slot, so this just
  *                               explains the workaround
  */
@@ -78,15 +78,15 @@ server.registerTool('hydra_get_active_patch', {
         'the device. The only ways to know which slot is active:',
         '',
         '  1. Ask the user (they can look at the front-panel display).',
-        '  2. Track our own navigations — if `hydra_navigate_to({slot:',
+        '  2. Track our own navigations, if `hydra_navigate_to({slot:',
         '     "X"})` was called earlier in this session, the device is',
         '     now on X (assuming the user hasn\'t manually navigated).',
-        '  3. Don\'t care about the current slot — call hydra_apply_patch',
+        '  3. Don\'t care about the current slot, call hydra_apply_patch',
         '     with `slot` OMITTED. The tool defaults to the H128 scratch',
         '     slot with `dance: "both"`, navigating the device there and',
         '     applying audibly. Recommended for test/iconic-tone workflows.',
         '',
-        'The AM4\'s `am4_get_active_location` tool is FOR THE AM4 ONLY —',
+        'The AM4\'s `am4_get_active_location` tool is FOR THE AM4 ONLY,',
         'do not call it expecting a Hydrasynth answer.',
       ].join('\n'),
     }],

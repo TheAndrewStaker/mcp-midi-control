@@ -1,5 +1,5 @@
 /**
- * AM4 safe-edit guard — pre-navigation dirty check.
+ * AM4 safe-edit guard, pre-navigation dirty check.
  *
  * Single-source-of-truth model: the working-buffer fingerprint cache.
  * Before navigating away from the active preset, dump the working
@@ -14,8 +14,8 @@
  *     blind to front-panel and parallel-editor edits, so we'd still
  *     need the poll. Maintaining both is redundant complexity for
  *     ~200 ms of saved latency on the classifier-fast-path.
- *   - One round-trip on the navigation seam — the only moment the
- *     dirty answer actually matters — is cheap enough to always run.
+ *   - One round-trip on the navigation seam, the only moment the
+ *     dirty answer actually matters, is cheap enough to always run.
  *
  * Cache baselines are refreshed after every clean transition
  * (post-switch, post-save) by `refreshAM4Fingerprint()`. First visit
@@ -23,11 +23,11 @@
  * proceeds. The post-switch refresh establishes the baseline for
  * the next navigation.
  *
- * Modes (cross-device contract — see `docs/SAFE-EDIT-WORKFLOW.md`):
- *   - `'warn'` (default) — dirty → refuse with a structured warning.
- *   - `'discard'` — caller already opted in to losing edits; skip the
+ * Modes (cross-device contract, see `docs/SAFE-EDIT-WORKFLOW.md`):
+ *   - `'warn'` (default), dirty → refuse with a structured warning.
+ *   - `'discard'`, caller already opted in to losing edits; skip the
  *     poll entirely and proceed.
- *   - `'save_active_first'` — dirty → save the working buffer to the
+ *   - `'save_active_first'`, dirty → save the working buffer to the
  *     active location, then proceed.
  */
 
@@ -58,7 +58,7 @@ const BUFFER_DUMP_TIMEOUT_MS = 1500;
  * (post-save, post-switch) so the next dirty-gate poll has a known-
  * good baseline to compare against.
  *
- * Best-effort: failures are swallowed — the next gate check will see
+ * Best-effort: failures are swallowed, the next gate check will see
  * no cache and proceed gracefully rather than block the user's
  * navigation on a non-critical side task.
  */
@@ -73,14 +73,14 @@ export async function refreshAM4Fingerprint(
     const hash = fingerprintDump(stream.chunkBytes);
     cacheFingerprint(locationIndex, hash);
   } catch {
-    // Best-effort — see jsdoc.
+    // Best-effort, see jsdoc.
   }
 }
 
 /**
  * Connections we have already attempted to baseline-warm at least once.
  * Tracked via WeakSet so reconnects (forceReconnect) get a fresh warm-up
- * automatically — the old connection's reference dies, the new
+ * automatically, the old connection's reference dies, the new
  * connection isn't in the set yet.
  */
 const warmedConnections = new WeakSet<MidiConnection>();
@@ -92,7 +92,7 @@ const warmedConnections = new WeakSet<MidiConnection>();
  *
  * Closes the "first navigation after server restart silently proceeds"
  * gap. Without warm-up, the cache is empty until the first
- * post-switch refresh runs — so a `set_param` followed by an
+ * post-switch refresh runs, so a `set_param` followed by an
  * unflagged `switch_preset` as the first two AM4 calls of a session
  * would lose the edit silently. With warm-up, the baseline is in
  * place before any edit can happen, so the gate refuses correctly.
@@ -110,7 +110,7 @@ export async function warmupAM4BaselineIfNeeded(
 ): Promise<void> {
   if (warmedConnections.has(conn)) return;
   // Mark attempted up front so a failed warm-up doesn't get retried on
-  // every subsequent tool call — the gate's no-baseline branch will
+  // every subsequent tool call, the gate's no-baseline branch will
   // still degrade gracefully if this read failed.
   warmedConnections.add(conn);
   try {
@@ -118,7 +118,7 @@ export async function warmupAM4BaselineIfNeeded(
     const idx = parsed.asUInt32LE();
     if (!Number.isInteger(idx) || idx < 0 || idx > 103) return;
     // If a baseline was already cached for this location (e.g. test
-    // setup seeded one), respect it — don't overwrite with a fresh
+    // setup seeded one), respect it, don't overwrite with a fresh
     // read that might capture a different state.
     if (getCachedFingerprint(idx)) return;
     const streamPromise = receivePresetDumpStream(conn, { timeoutMs: BUFFER_DUMP_TIMEOUT_MS });
@@ -127,7 +127,7 @@ export async function warmupAM4BaselineIfNeeded(
     const hash = fingerprintDump(stream.chunkBytes);
     cacheFingerprint(idx, hash);
   } catch {
-    // Best-effort — see jsdoc.
+    // Best-effort, see jsdoc.
   }
 }
 
@@ -153,7 +153,7 @@ async function readAM4Fingerprint(conn: MidiConnection): Promise<string | undefi
  * Mirrors `guardActiveBufferOrSave` from the Axe-Fx II implementation
  * but uses AM4's location-code naming (A01–Z04), AM4's READ_PRESET_NAME
  * wire path for warning text, and the working-buffer fingerprint poll
- * (since AM4 has no device-broadcast dirty signal — HW-107 Session 74).
+ * (since AM4 has no device-broadcast dirty signal, HW-107 Session 74).
  *
  * - Clean buffer → `proceed: true` regardless of mode.
  * - Dirty + `mode='warn'` (default) → `proceed: false` with warning.
@@ -165,7 +165,7 @@ export async function guardActiveAM4BufferOrSave(
   conn: MidiConnection,
   mode: OnEditedMode,
 ): Promise<DirtyGuardResult> {
-  // The user already opted in to losing edits — skip the dump
+  // The user already opted in to losing edits, skip the dump
   // round-trip entirely and proceed.
   if (mode === 'discard') {
     return { proceed: true };
@@ -197,13 +197,13 @@ export async function guardActiveAM4BufferOrSave(
 
   const currentHash = await readAM4Fingerprint(conn);
   if (currentHash === undefined) {
-    // Dump failed — proceed rather than block on a non-critical
+    // Dump failed, proceed rather than block on a non-critical
     // side check.
     return { proceed: true };
   }
 
   if (currentHash === cached.hash) {
-    // Buffer matches the cached clean fingerprint — no edits since
+    // Buffer matches the cached clean fingerprint, no edits since
     // the last clean transition.
     return { proceed: true };
   }
@@ -243,7 +243,7 @@ export async function guardActiveAM4BufferOrSave(
   // save_active_first path.
   try {
     // AM4 save_to_location is fire-and-forget (no ack); we send the bytes
-    // and assume success. There's no inbound ack to await — the founder
+    // and assume success. There's no inbound ack to await, the founder
     // verifies by hearing/seeing the change.
     const locationCode = formatLocationDisplay(activeIndex);
     conn.send(buildSaveToLocation(activeIndex));

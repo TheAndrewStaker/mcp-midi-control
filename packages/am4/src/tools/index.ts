@@ -1,5 +1,5 @@
 /**
- * AM4 MCP tool aggregator — `registerAM4Tools(server)`.
+ * AM4 MCP tool aggregator, `registerAM4Tools(server)`.
  *
  * The AM4 tool surface is split across multiple files (one per tool
  * family) because the family-specific internals are too big to share a

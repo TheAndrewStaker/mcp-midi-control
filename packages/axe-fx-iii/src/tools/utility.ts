@@ -1,5 +1,5 @@
 /**
- * Axe-Fx III utility tools — tempo, tuner, looper.
+ * Axe-Fx III utility tools,tempo, tuner, looper.
  *
  * Tools registered:
  *   - axefx3_tempo_tap                (function 0x10)

@@ -1,5 +1,5 @@
 /**
- * Param tools — single- and batch-shaped reads and writes of named
+ * Param tools, single- and batch-shaped reads and writes of named
  * parameters within a device's block schema.
  *
  * Tools registered here:
@@ -61,12 +61,10 @@ export function registerParamTools(server: McpServer): void {
   server.registerTool('set_param', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
-      'Write one parameter on a device, addressed by (block, name) in display units (knob 0..10, dB, ms, %, enum name or wire index).',
-      'Call describe_device({port}) once per session first; its agent_guidance covers relative-change, tempo/time sync, applicability gates, and enum-naming conventions that decide whether the write actually does anything.',
-      '- Pass `channel` to target a specific A/B/C/D or X/Y; the server switches first, then writes.',
-      '- Nearby names resolve silently: cross-device aliases (drive.volume ↔ drive.level on AM4, amp.master ↔ amp.master_volume on II) and tolerant enum matching (case + whitespace, plus concept-key normalisation like "USA IIC+" ↔ "USA MK IIC+") auto-correct. The response echoes the canonical name; quote that back in user-facing summaries.',
-      '- Wire-ack confirms the device received the bytes; it does NOT confirm audible change. A param on an unplaced block acks silently with no sound.',
-      '- Type-gated params silently no-op when the active block.type doesn\'t expose them (e.g. amp.master on a non-master Marshall). Use find_compatible_types before writing a type + a specific knob.',
+      'Write one parameter, addressed by (block, name) in display units (knob 0..10, dB, ms, %, enum name or wire index). Call describe_device({port}) first for per-device idioms; agent_guidance covers relative-change, tempo sync, applicability gates, enum conventions.',
+      'Pass `channel` to target a specific A/B/C/D or X/Y; server switches first, then writes.',
+      'Aliases + enum matching auto-correct (drive.volume <-> drive.level on AM4; case + whitespace + concept-keys like "USA IIC+" <-> "USA MK IIC+"). Response echoes the canonical name; quote that back.',
+      'Wire-ack is NOT audible confirmation. Unplaced blocks ack silently; type-gated knobs (amp.master on non-master Marshalls) silently no-op. Call find_compatible_types before writing a type + a specific knob.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),

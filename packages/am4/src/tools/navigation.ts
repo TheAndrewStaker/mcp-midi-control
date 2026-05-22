@@ -1,7 +1,7 @@
 /**
- * AM4 navigation tools — v0.3 cleanup.
+ * AM4 navigation tools, v0.3 cleanup.
  *
- * Only `am4_request_active_buffer_dump` survives — it's a unique
+ * Only `am4_request_active_buffer_dump` survives, it's a unique
  * diagnostic probe with no unified equivalent (BK-036 binary-format
  * probe series, HW-045).
  *
@@ -65,13 +65,13 @@ export function registerNavigationTools(server: McpServer): void {
     // working buffer export). Wire shape: F0 00 01 74 15 03 7F 7F 00 13 F7,
     // fn=0x03, payload `7F 7F 00`. Response is the canonical 6-message
     // 0x77 / 0x78 / 0x79 stream (header + 4 chunks + footer, 12,352 bytes
-    // total) — same shape as a single preset's slice in the factory bank file
+    // total), same shape as a single preset's slice in the factory bank file
     // (see SYSEX-MAP §10b and §6o).
     //
     // Primary purpose: BK-036 binary-format probe series. apply_preset sets
     // the working buffer to a known state; this tool dumps the masked
     // stored-form bytes; the harness diffs against a baseline to map byte-
-    // to-param relationships. The chunk content is NOT decoded here — v0.1.0
+    // to-param relationships. The chunk content is NOT decoded here, v0.1.0
     // surfaces the raw bytes for the probe harness.
     server.registerTool('am4_request_active_buffer_dump', {
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
@@ -94,7 +94,7 @@ export function registerNavigationTools(server: McpServer): void {
             conn.send(bytes);
             const stream = await streamPromise;
             // Best-effort name decode. A failure here doesn't kill the dump
-            // response — the raw bytes are still useful for probe diffs.
+            // response, the raw bytes are still useful for probe diffs.
             let presetName: string | undefined;
             let presetNameError: string | undefined;
             try {

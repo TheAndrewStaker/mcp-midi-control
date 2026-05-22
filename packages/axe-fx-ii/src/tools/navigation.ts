@@ -1,12 +1,12 @@
 /**
- * Axe-Fx II navigation tools — v0.3 cleanup.
+ * Axe-Fx II navigation tools, v0.3 cleanup.
  *
  * Surviving device-namespaced tools (unique semantics, no unified
  * equivalent):
- *   - axefx2_get_preset_name        — name read (function 0x0F)
- *   - axefx2_get_active_preset_number — slot read (function 0x14)
- *   - axefx2_set_block_channel      — X/Y channel write (function 0x11)
- *   - axefx2_get_block_channel      — X/Y channel read (function 0x11 action 0)
+ *   - axefx2_get_preset_name       , name read (function 0x0F)
+ *   - axefx2_get_active_preset_number, slot read (function 0x14)
+ *   - axefx2_set_block_channel     , X/Y channel write (function 0x11)
+ *   - axefx2_get_block_channel     , X/Y channel read (function 0x11 action 0)
  *
  * Removed v0.3 (use unified equivalents):
  *   - axefx2_switch_preset      → switch_preset({port:'axe-fx-ii',location,on_active_preset_edited?})
@@ -129,10 +129,10 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
     ].join('\n'),
     inputSchema: {
       block: z.union([z.string(), z.number()]).describe(
-        'Block instance — display name ("Amp 1" / "Reverb 1") or numeric effectId.',
+        'Block instance, display name ("Amp 1" / "Reverb 1") or numeric effectId.',
       ),
       channel: z.enum(['X', 'Y']).describe(
-        'Target channel — "X" or "Y". Each block has these two channels and only these two.',
+        'Target channel, "X" or "Y". Each block has these two channels and only these two.',
       ),
     },
     outputSchema: {
@@ -176,7 +176,7 @@ export function registerAxeFxIINavigationTools(server: McpServer): void {
     ].join('\n'),
     inputSchema: {
       block: z.union([z.string(), z.number()]).describe(
-        'Block instance — display name or numeric effectId.',
+        'Block instance, display name or numeric effectId.',
       ),
     },
     outputSchema: {

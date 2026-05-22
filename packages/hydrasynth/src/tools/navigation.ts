@@ -2,13 +2,13 @@
  * Hydrasynth navigation tools.
  *
  * 1 tool:
- *   - hydra_navigate_to   — diagnostic primitive (bank/PC, no SysEx) with
+ *   - hydra_navigate_to  , diagnostic primitive (bank/PC, no SysEx) with
  *                           inbound MIDI capture
  *
- * hydra_switch_patch removed v0.3 — use unified
+ * hydra_switch_patch removed v0.3, use unified
  *   switch_preset({ port:'hydrasynth', location })
  *
- * hydra_play_note removed — use unified
+ * hydra_play_note removed, use unified
  *   play_note({ port:'hydrasynth', note, velocity?, duration_ms?, channel? })
  * The unified primitive sends the same Note On/Off bytes and works for
  * every registered device (default impl in dispatcher/audition.ts).
@@ -110,9 +110,9 @@ server.registerTool('hydra_navigate_to', {
   lines.push('');
   lines.push(`Inbound MIDI (hasInput=${conn.hasInput}, ${observed.length} message${observed.length === 1 ? '' : 's'}):`);
   if (!conn.hasInput) {
-    lines.push('  (no input port open — can\'t observe device-side responses)');
+    lines.push('  (no input port open, can\'t observe device-side responses)');
   } else if (observed.length === 0) {
-    lines.push('  (none — device sent nothing back. PC echoes are not standard, so absence does not prove anything.)');
+    lines.push('  (none, device sent nothing back. PC echoes are not standard, so absence does not prove anything.)');
   } else {
     for (const { ms, bytes } of observed) {
       lines.push(`  [+${ms.toString().padStart(4)}ms] ${describeInboundMessage(bytes)}`);

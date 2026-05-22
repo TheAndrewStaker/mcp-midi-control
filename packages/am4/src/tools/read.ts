@@ -1,13 +1,13 @@
 /**
  * AM4 working-buffer + device-state read tools (4 tools).
  *
- * - `am4_get_block_layout` — 4-slot block-type read (HW-044).
- * - `am4_get_active_scene` / `am4_get_active_location` — device-state reads
+ * - `am4_get_block_layout`, 4-slot block-type read (HW-044).
+ * - `am4_get_active_scene` / `am4_get_active_location`, device-state reads
  *   (HW-047).
- * - `am4_get_block_bypass` — long-form bypass-flag read (HW-066).
+ * - `am4_get_block_bypass`, long-form bypass-flag read (HW-066).
  *
  * Param reads (am4_get_param / am4_get_params) and bulk name scans
- * (am4_scan_locations) were removed v0.3 — use the unified
+ * (am4_scan_locations) were removed v0.3, use the unified
  * get_param / get_params / scan_locations tools with port="am4".
  *
  * Remaining tools share `sendReadAndParse` from `@/server/shared/readOps.js`.
@@ -44,7 +44,7 @@ import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js
 // uses a different encoding (scene + preset = raw u32 LE int; bypass =
 // inverted Q15-ish where 0 = bypassed, 32767 = active). The fourth
 // register we tried (per-block channel at pidHigh=0x07D2) returned an
-// encoding we couldn't decode in HW-047 — `get_active_channel` is queued
+// encoding we couldn't decode in HW-047, `get_active_channel` is queued
 // as HW-048 for follow-up.
 
 const SCENE_STATE_PID_LOW = 0x00ce;
@@ -102,7 +102,7 @@ export function registerReadTools(server: McpServer): void {
         };
     });
 
-    // am4_get_param / am4_get_params removed v0.3 — use unified
+    // am4_get_param / am4_get_params removed v0.3, use unified
     // get_param({ port: 'am4', block, name, channel? }) and
     // get_params({ port: 'am4', queries: [...] }). The relative-change /
     // tempo-pairing guidance migrated into describe_device.agent_guidance
@@ -185,14 +185,14 @@ export function registerReadTools(server: McpServer): void {
         }
     });
 
-    // am4_get_preset_name removed Phase G — same data via
+    // am4_get_preset_name removed Phase G, same data via
     // scan_locations({ port: 'am4', from: 'M03', to: 'M03' }) which
     // returns a single-entry results array with the same shape. The
     // unified scan_locations handles single-location reads; the
     // device-namespaced tool was a thin convenience that's no longer
     // load-bearing.
 
-    // am4_scan_locations removed v0.3 — use unified
+    // am4_scan_locations removed v0.3, use unified
     // scan_locations({ port: 'am4', from, to }).
 
     server.registerTool('am4_get_block_bypass', {

@@ -1,5 +1,5 @@
 /**
- * Axe-Fx III navigation tools — read tools per v1.4 PDF spec.
+ * Axe-Fx III navigation tools,read tools per v1.4 PDF spec.
  *
  * NOTE: there is NO `axefx3_switch_preset` tool because the III's
  * v1.4 spec does NOT include a SysEx preset-switch function. III
@@ -7,13 +7,13 @@
  * CC 0 / CC 32 Bank Select for slots > 127), which is outside this
  * SysEx-focused tool surface.
  *
- * `axefx3_switch_scene` was removed 2026-05-18 — the unified
+ * `axefx3_switch_scene` was removed 2026-05-18,the unified
  * `switch_scene({port:'axe-fx-iii', scene})` covers it via the
  * descriptor writer.switchScene path.
  *
  * Tools registered:
  *   - axefx3_get_active_scene   (function 0x0C query)
- *   - axefx3_get_preset_name    (function 0x0D — returns preset # + name)
+ *   - axefx3_get_preset_name    (function 0x0D,returns preset # + name)
  *   - axefx3_get_scene_name     (function 0x0E)
  */
 

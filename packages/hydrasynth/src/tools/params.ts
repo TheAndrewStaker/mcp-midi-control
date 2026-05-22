@@ -1,14 +1,14 @@
 /**
- * Hydrasynth param tools — system CC + macro CC writes.
+ * Hydrasynth param tools, system CC + macro CC writes.
  *
  * `hydra_set_engine_param` / `hydra_set_engine_params` removed
- * 2026-05-18 — the unified `set_param({port:'hydrasynth', block,
+ * 2026-05-18, the unified `set_param({port:'hydrasynth', block,
  * name, value})` / `set_params(...)` cover engine NRPN via the
  * descriptor writer.setParam path.
  *
  * Tools registered:
- *   - hydra_set_param          — system CCs (master vol, sustain, …)
- *   - hydra_set_macro          — Macros 1-8 (CCs 16-23)
+ *   - hydra_set_param         , system CCs (master vol, sustain, …)
+ *   - hydra_set_macro         , Macros 1-8 (CCs 16-23)
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -38,7 +38,7 @@ server.registerTool('hydra_set_param', {
   ].join('\n'),
   inputSchema: {
     id: z.string().describe(
-      'System parameter id — one of: system.master_volume, system.modulation_wheel, system.sustain_pedal, system.expression_pedal, system.bank_select_msb, system.bank_select_lsb, system.all_notes_off.',
+      'System parameter id, one of: system.master_volume, system.modulation_wheel, system.sustain_pedal, system.expression_pedal, system.bank_select_msb, system.bank_select_lsb, system.all_notes_off.',
     ),
     value: z.number().int().min(0).max(127).describe(
       'Raw MIDI CC value 0..127.',

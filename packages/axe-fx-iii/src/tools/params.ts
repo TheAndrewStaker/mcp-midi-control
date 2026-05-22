@@ -7,16 +7,16 @@
  * `docs/devices/axe-fx-iii/set-parameter-captures.md` for the captured frames and
  * `../setParam.ts` on `FN_PARAMETER_SETGET` for the evidence chain.
  *
- * 🟡 GET wire shape is hypothesis-only — no public captures of a
+ * 🟡 GET wire shape is hypothesis-only,no public captures of a
  * device-emitted SET response (only outbound SET frames). The III's
  * actual state-feedback channel appears to be the unsolicited `04 01`
  * STATE_BROADCAST sub-action; callers should treat a GET timeout as
  * "device doesn't honor sync GET on this firmware," not a tool error.
  *
  * Tools registered:
- *   - axefx3_set_parameter(block, param_id, value) — write a raw 16-bit
+ *   - axefx3_set_parameter(block, param_id, value),write a raw 16-bit
  *     wire value into one paramId on one block instance.
- *   - axefx3_get_parameter(block, param_id) — query the same (hypothesis).
+ *   - axefx3_get_parameter(block, param_id),query the same (hypothesis).
  *
  * Why "raw wire value" not "display value": the III has no public
  * per-param display calibration (the v1.4 PDF documents zero
@@ -59,12 +59,12 @@ import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js
 
 const BLOCK_INPUT_DESCRIPTION = [
   'Block reference. Accepts:',
-  '  - "Reverb 1", "Drive 2", "Compressor 4" — name + instance number',
+  '  - "Reverb 1", "Drive 2", "Compressor 4",name + instance number',
   '  - "Reverb" (no instance defaults to instance 1)',
-  '  - "REV", "DRV", "CMP" — 3-letter group code',
+  '  - "REV", "DRV", "CMP",3-letter group code',
   '',
   "AMP / Dynamic Distortion / NAM / Global Block / Shunt aren't",
-  "addressable from the v1.4 spec (no effect ID) — these will refuse.",
+  "addressable from the v1.4 spec (no effect ID),these will refuse.",
   'Call axefx3_list_blocks for the full catalog.',
 ].join('\n');
 
@@ -97,7 +97,7 @@ export function registerAxeFxIIIParamTools(server: McpServer): void {
       ),
       value: z.number().int().min(0).max(65534).describe(
         'Raw 16-bit wire value (0..65534). Display→wire conversion is the ' +
-        "caller's responsibility — III has no published display calibration.",
+        "caller's responsibility,III has no published display calibration.",
       ),
     },
     outputSchema: {

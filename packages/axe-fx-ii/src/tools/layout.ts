@@ -1,5 +1,5 @@
 /**
- * Axe-Fx II layout tools — bypass writes, grid reads, and per-cell
+ * Axe-Fx II layout tools, bypass writes, grid reads, and per-cell
  * block placement on the 4×12 routing grid.
  */
 
@@ -33,7 +33,7 @@ import {
 export function registerAxeFxIILayoutTools(server: McpServer): void {
 
 
-  // axefx2_set_block_bypass removed v0.3 — use unified
+  // axefx2_set_block_bypass removed v0.3, use unified
   // set_bypass({ port: 'axe-fx-ii', block, bypassed }) which routes
   // through descriptor.writer.setBypass (same paramId-255 wire write).
 
@@ -156,7 +156,7 @@ export function registerAxeFxIILayoutTools(server: McpServer): void {
         ackText =
           `Device NACK: 0x64 echoed_fn=0x05 result_code=0x` +
           `${parsed.resultCode.toString(16).padStart(2, '0')} ` +
-          `(NOT OK — the device parsed the frame but rejected it).\n` +
+          `(NOT OK, the device parsed the frame but rejected it).\n` +
           `Recv (${ack.length}B): ${toHex(ack)}\n` +
           `Common cause: device firmware refused the placement. The` +
           ` working buffer is likely unchanged; verify with` +
@@ -183,7 +183,7 @@ export function registerAxeFxIILayoutTools(server: McpServer): void {
           ackText + '\n\n' +
           `Next step: call axefx2_get_grid_layout to see the new grid` +
           ` state. Note: routing/cabling is NOT auto-propagated to` +
-          ` downstream cells — if you modified an existing chain, you` +
+          ` downstream cells, if you modified an existing chain, you` +
           ` may need to re-place downstream blocks to restore their` +
           ` input masks.`,
       }],
@@ -252,7 +252,7 @@ export function registerAxeFxIILayoutTools(server: McpServer): void {
         ackText =
           `Device NACK: 0x64 echoed_fn=0x06 result_code=0x` +
           `${parsed.resultCode.toString(16).padStart(2, '0')} ` +
-          `(NOT OK — frame parsed, write rejected).\n` +
+          `(NOT OK, frame parsed, write rejected).\n` +
           `Recv (${ack.length}B): ${toHex(ack)}\n` +
           `Common cause: dstCol !== srcCol+1, or one of the cells is empty.`;
       }

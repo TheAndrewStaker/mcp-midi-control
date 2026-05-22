@@ -40,6 +40,29 @@ const README_REGION_END = '<!-- tool-inventory:generated:end -->';
 const DESCRIPTION_WARN_CHARS = 600;
 const DESCRIPTION_HARD_CAP_CHARS = 1000;
 
+/**
+ * T-19 (2026-05-22): per-tool description-budget overrides. Each entry
+ * lifts the hard cap for one tool with a documented reason. Adding a
+ * tool here requires a matching row in docs/TOOL-ARCHIVE.md's
+ * "Documented exceptions to description-budget cap" section so the
+ * exception lives outside the source as well.
+ *
+ * Membership is intentionally tight: every new entry is a flag that
+ * the description should be migrated to structured response fields.
+ */
+const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
+  // hydra_apply_patch: ships the full NRPN patch surface (1175 params,
+  // per-module sections, save-auth semantics, scene-leveling
+  // discipline). Migration to describe_device.agent_guidance is queued
+  // but not on this sprint's path. Honest cap until then.
+  ['hydra_apply_patch', 6000],
+  // axefx3_set_parameter: BETA prefix + raw-wire-value EXCEPTION-TO-
+  // DISPLAY-FIRST callout + GET hypothesis banner inflate the
+  // description. Migration to describe_device.agent_guidance lands when
+  // III moves out of community beta.
+  ['axefx3_set_parameter', 1600],
+]);
+
 interface ToolEntry {
   name: string;
   description: string;
@@ -221,23 +244,81 @@ async function main(): Promise<void> {
   const { updated: newReadme, existed } = spliceReadmeRegion(readme, readmeRegion);
 
   if (checkMode) {
-    let drift = false;
+    let failed = false;
     const currentTools = (() => {
       try { return readFileSync(TOOLS_MD_PATH, 'utf8'); } catch { return ''; }
     })();
     if (currentTools !== toolsMd) {
       console.error(`Drift: docs/TOOLS.md is out of sync. Run npm run tools:inventory.`);
-      drift = true;
+      failed = true;
     }
     if (!existed) {
       console.error(`Drift: README.md is missing the generated region markers. Run npm run tools:inventory.`);
-      drift = true;
+      failed = true;
     } else if (newReadme !== readme) {
       console.error(`Drift: README.md's tool-inventory region is out of sync. Run npm run tools:inventory.`);
-      drift = true;
+      failed = true;
     }
-    if (drift) process.exit(1);
-    console.log(`No drift: docs/TOOLS.md and README.md are up to date (${all.length} tools).`);
+    // T-19 (2026-05-22): description budget lint. Fails on any tool over
+    // the 1000-char hard cap (unless explicitly overridden in
+    // DESCRIPTION_BUDGET_OVERRIDES). Warns over 600. Catches the
+    // failure mode the original reviewer named: prose creeping back
+    // into tool descriptions across sessions with no automated guard.
+    const offenders: { name: string; chars: number; cap: number }[] = [];
+    const warnings: { name: string; chars: number }[] = [];
+    for (const tool of all) {
+      const cap = DESCRIPTION_BUDGET_OVERRIDES.get(tool.name) ?? DESCRIPTION_HARD_CAP_CHARS;
+      if (tool.charCount > cap) {
+        offenders.push({ name: tool.name, chars: tool.charCount, cap });
+      } else if (tool.charCount > DESCRIPTION_WARN_CHARS) {
+        warnings.push({ name: tool.name, chars: tool.charCount });
+      }
+    }
+    // T-9 (2026-05-22): em-dash lint on agent-visible text. Em-dashes
+    // are an AI tell per the global no-em-dash rule (substitute commas,
+    // periods, colons, or parens). Scans actual tool descriptions as
+    // returned by tools/list, not source files, so it catches what the
+    // agent sees regardless of how the description was authored.
+    const emDashOffenders: { name: string; count: number }[] = [];
+    for (const tool of all) {
+      const count = (tool.description.match(/—/g) || []).length;
+      if (count > 0) emDashOffenders.push({ name: tool.name, count });
+    }
+    if (emDashOffenders.length > 0) {
+      console.error(
+        `Em-dash lint: ${emDashOffenders.length} tool description(s) contain em-dashes. ` +
+        `Substitute commas, periods, colons, or parens per the global no-em-dash rule.`,
+      );
+      for (const o of emDashOffenders) {
+        console.error(`  - ${o.name}: ${o.count} em-dash(es)`);
+      }
+      failed = true;
+    }
+    if (offenders.length > 0) {
+      console.error(
+        `Description budget: ${offenders.length} tool(s) exceed their cap. ` +
+        `Trim the description or add an override in scripts/list-tools.ts ` +
+        `DESCRIPTION_BUDGET_OVERRIDES (with a matching row in ` +
+        `docs/TOOL-ARCHIVE.md "Documented exceptions").`,
+      );
+      for (const o of offenders) {
+        const overrideNote = DESCRIPTION_BUDGET_OVERRIDES.has(o.name)
+          ? ` (override cap ${o.cap})`
+          : '';
+        console.error(`  - ${o.name}: ${o.chars} chars${overrideNote}`);
+      }
+      failed = true;
+    }
+    if (warnings.length > 0) {
+      console.error(
+        `Description budget warning: ${warnings.length} tool(s) over ${DESCRIPTION_WARN_CHARS} chars (under 1000 hard cap; not blocking).`,
+      );
+      for (const w of warnings) {
+        console.error(`  - ${w.name}: ${w.chars} chars`);
+      }
+    }
+    if (failed) process.exit(1);
+    console.log(`No drift, ${offenders.length} budget violations, ${warnings.length} warnings (${all.length} tools).`);
     return;
   }
 

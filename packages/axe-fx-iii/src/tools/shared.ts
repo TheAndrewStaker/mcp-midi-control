@@ -1,5 +1,5 @@
 /**
- * Axe-Fx III tools — shared helpers, MIDI lazy-init, and constants.
+ * Axe-Fx III tools,shared helpers, MIDI lazy-init, and constants.
  *
  * Mirrors the Axe-Fx II tools/shared.ts pattern: every per-family file
  * under `packages/axe-fx-iii/src/tools/` imports from here. The
@@ -10,7 +10,7 @@
  * this surface (switch_preset, switch_scene, get_preset_name,
  * get_scene_name, status_dump) ride on spec-documented wire envelopes
  * from Fractal's "Axe-Fx III MIDI for Third-Party Devices" v1.4 PDF,
- * but have NOT been hardware-verified end-to-end — no maintainer owns
+ * but have NOT been hardware-verified end-to-end,no maintainer owns
  * an Axe-Fx III. Tool descriptions surface this caveat to the agent.
  */
 
@@ -46,18 +46,18 @@ export const GET_RESPONSE_TIMEOUT_MS = 800;
 /**
  * Caveat appended to SET tool responses (switch_preset, switch_scene).
  * The III's SET semantics for these functions don't generate explicit
- * ack frames on the wire — verification is by audible/visible response
+ * ack frames on the wire,verification is by audible/visible response
  * on the device.
  */
 export const NO_ACK_NOTE = [
-  'Note: this tool is fire-and-forget — the Axe-Fx III protocol does not',
+  'Note: this tool is fire-and-forget,the Axe-Fx III protocol does not',
   'ack these writes. Verify the change by audible/visible response on the',
   'device (front panel preset / scene readout, audio output).',
 ].join('\n');
 
 /**
  * Banner appended to every axefx3_* tool result. The III ships as a
- * 🟡 community beta — wire shapes are byte-verified against the v1.4
+ * 🟡 community beta,wire shapes are byte-verified against the v1.4
  * spec + 10 public captures (Session 97), but no III owner has yet
  * confirmed the implementation works end-to-end on real hardware.
  * Every tool response carries this banner until a beta-tester report
@@ -65,7 +65,7 @@ export const NO_ACK_NOTE = [
  * not to drown out the actual response.
  */
 export const BETA_NOTE = [
-  '🟡 axe-fx-iii community beta — wire shape verified against public',
+  '🟡 axe-fx-iii community beta,wire shape verified against public',
   'captures + v1.4 spec, not yet confirmed against real III hardware.',
   'If the response disagrees with what the front panel shows, please',
   'open an issue with the tool call + JSON response',
@@ -152,7 +152,7 @@ export function resolveBlockOrThrow(blockName: string): number {
  * a `0x64 MULTIPURPOSE_RESPONSE` from the III. The III emits 0x64 within
  * ~30–60 ms over USB when it rejects a frame; 250 ms is generous enough
  * to absorb scheduler jitter without slowing successful writes meaningfully
- * (success path still returns immediately on timeout — the cost is the
+ * (success path still returns immediately on timeout,the cost is the
  * timeout itself when nothing comes back, which is the common case).
  */
 export const ERROR_RESPONSE_TIMEOUT_MS = 250;
@@ -197,14 +197,14 @@ export async function sendAndWatchForError(
 
 /**
  * Format a `MultipurposeErrorReport` into the warning string we append
- * to a tool's response text. Keep terse — agents read the whole response.
+ * to a tool's response text. Keep terse,agents read the whole response.
  */
 export function formatMultipurposeError(err: MultipurposeErrorReport): string {
   const fnHex = err.echoedFn.toString(16).padStart(2, '0').toUpperCase();
   const codeHex = err.resultCode.toString(16).padStart(2, '0').toUpperCase();
   const label = err.description ?? `(unknown code)`;
   return [
-    `⚠ Device rejected the write — 0x64 MULTIPURPOSE_RESPONSE received.`,
+    `⚠ Device rejected the write,0x64 MULTIPURPOSE_RESPONSE received.`,
     `   echoed_fn=0x${fnHex}, result_code=0x${codeHex} (${label}).`,
     `   Recv (${err.rawBytes.length}B): ${toHex(err.rawBytes)}`,
   ].join('\n');
@@ -216,7 +216,7 @@ export function formatMultipurposeError(err: MultipurposeErrorReport): string {
 // (apply_preset_at, switch_preset). Mirrors the Axe-Fx II pattern at
 // `packages/axe-fx-ii/src/tools/shared.ts:guardActiveBufferOrSave`. Dirty
 // classification happens at the connection layer (`packages/axe-fx-iii/
-// src/midi.ts:wrapWithDirtyClassification`) — STATE_BROADCAST inbound
+// src/midi.ts:wrapWithDirtyClassification`),STATE_BROADCAST inbound
 // frames mark dirty; STORE_PRESET / PC outbound mark clean. See
 // `docs/devices/axe-fx-iii/dirty-state-research.md` for evidence.
 
@@ -300,7 +300,7 @@ export async function guardActiveBufferOrSave(
     return {
       proceed: false,
       warningText:
-        `Could not read the active preset number — refusing to navigate to avoid losing ` +
+        `Could not read the active preset number,refusing to navigate to avoid losing ` +
         `edits silently. Try axefx3_reconnect_midi, then retry. If the device is in an ` +
         `unusual state, the user can save manually on the front panel before this tool retries.`,
     };
@@ -327,7 +327,7 @@ export async function guardActiveBufferOrSave(
       proceed: true,
       savedSlot: presetNumber,
       savedDetail: `Saved working buffer to ${activeDescriptor} before navigating ` +
-        `(🟡 via the III's II-ported 0x1D STORE_PRESET envelope — confirm by checking ` +
+        `(🟡 via the III's II-ported 0x1D STORE_PRESET envelope,confirm by checking ` +
         `the device front panel).`,
     };
   } catch (err) {

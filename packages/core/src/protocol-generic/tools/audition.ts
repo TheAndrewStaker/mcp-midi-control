@@ -1,13 +1,13 @@
 /**
- * Audition tools — `play_note` and `play_chord`.
+ * Audition tools, `play_note` and `play_chord`.
  *
  * Tools registered here:
- *   - `play_note(port, note, velocity?, duration_ms?, channel?)` — single-
+ *   - `play_note(port, note, velocity?, duration_ms?, channel?)`, single-
  *                                                                  note audition
  *   - `play_chord(port, notes[], velocity?, duration_ms?, strum_ms?, channel?)`
- *                                                                — multi-note audition
+ *                                                               , multi-note audition
  *
- * Both are vendor-agnostic — every MIDI device accepts Note On/Off as
+ * Both are vendor-agnostic, every MIDI device accepts Note On/Off as
  * valid input. Whether the bytes produce audible sound is per-device;
  * see `describe_device.agent_guidance.note_response` for the expected
  * behavior of each registered device before calling.
@@ -34,7 +34,7 @@ const SEMITONE_BY_LETTER: Record<string, number> = {
  * convention, matches Hydrasynth manual and most DAWs).
  *
  * Mirrors `parseNote` in `packages/hydrasynth/src/tools/shared.ts`
- * — kept inline here so the unified surface has no cross-device package
+ *, kept inline here so the unified surface has no cross-device package
  * dependency for a primitive that's fundamentally vendor-agnostic.
  */
 function parseNoteInput(input: string | number): number {
@@ -81,7 +81,7 @@ export function registerAuditionTools(server: McpServer): void {
         'How long to hold the note before releasing, in milliseconds. Capped at 5000 ms to prevent runaway.',
       ),
       channel: z.number().int().min(1).max(16).default(1).describe(
-        'MIDI channel 1..16. Default 1 — matches every current device. Override only for MPE or multi-timbral setups.',
+        'MIDI channel 1..16. Default 1, matches every current device. Override only for MPE or multi-timbral setups.',
       ),
     },
   }, async ({ port, note, velocity, duration_ms, channel }) => {
@@ -111,7 +111,7 @@ export function registerAuditionTools(server: McpServer): void {
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       notes: z.array(z.union([z.string(), z.number()])).min(1).max(16).describe(
-        'Notes as an array of MIDI numbers or pitch names — e.g. ["C3","Eb3","G3"] or [48,51,55]. 1..16 notes; most patches sound best with 3..6.',
+        'Notes as an array of MIDI numbers or pitch names, e.g. ["C3","Eb3","G3"] or [48,51,55]. 1..16 notes; most patches sound best with 3..6.',
       ),
       velocity: z.number().int().min(1).max(127).default(96).describe(
         'Note velocity 1..127, applied uniformly to every note. Default 96.',
@@ -123,7 +123,7 @@ export function registerAuditionTools(server: McpServer): void {
         'Delay between successive Note Ons, in milliseconds. 0 = simultaneous (block chord). 20..50 = subtle strum. 80..200 = arpeggio attack.',
       ),
       channel: z.number().int().min(1).max(16).default(1).describe(
-        'MIDI channel 1..16. Default 1. All notes share the channel — MPE / multi-timbral splits not supported on this primitive.',
+        'MIDI channel 1..16. Default 1. All notes share the channel, MPE / multi-timbral splits not supported on this primitive.',
       ),
     },
   }, async ({ port, notes, velocity, duration_ms, strum_ms, channel }) => {

@@ -1,5 +1,5 @@
 /**
- * Axe-Fx III meta tools — reconnect_midi + probe_sysex.
+ * Axe-Fx III meta tools,reconnect_midi + probe_sysex.
  *
  * Mirrors axe-fx-ii/tools/meta.ts. `axefx3_probe_sysex` is the
  * workhorse for the community-capture decode workflow: testers can
@@ -61,7 +61,7 @@ export function registerAxeFxIIIMetaTools(server: McpServer): void {
         'SysEx byte sequence as a hex string. Spaces / commas / 0x prefixes tolerated. Must start with F0 and end with F7. Example: "F0 00 01 74 10 13 06 F7" (STATUS_DUMP).',
       ),
       capture_ms: z.number().int().min(50).max(2000).optional().describe(
-        'How long (ms) to listen for the device\'s response after sending. Default 250 ms — enough for a typical ACK or STATUS_DUMP; bump to 500-1000 ms for whole-preset dumps. Capped at 2000 ms to prevent runaway.',
+        'How long (ms) to listen for the device\'s response after sending. Default 250 ms,enough for a typical ACK or STATUS_DUMP; bump to 500-1000 ms for whole-preset dumps. Capped at 2000 ms to prevent runaway.',
       ),
     },
   }, async ({ bytes, capture_ms }) => {
@@ -72,13 +72,13 @@ export function registerAxeFxIIIMetaTools(server: McpServer): void {
       .toLowerCase();
     if (!/^[0-9a-f]*$/.test(cleaned)) {
       return {
-        content: [{ type: 'text', text: `Invalid hex string — non-hex characters present. Cleaned input: "${cleaned}".` }],
+        content: [{ type: 'text', text: `Invalid hex string,non-hex characters present. Cleaned input: "${cleaned}".` }],
         isError: true,
       };
     }
     if (cleaned.length === 0 || cleaned.length % 2 !== 0) {
       return {
-        content: [{ type: 'text', text: `Invalid hex string — empty or odd character count after stripping whitespace. Cleaned length: ${cleaned.length}.` }],
+        content: [{ type: 'text', text: `Invalid hex string,empty or odd character count after stripping whitespace. Cleaned length: ${cleaned.length}.` }],
         isError: true,
       };
     }
@@ -88,7 +88,7 @@ export function registerAxeFxIIIMetaTools(server: McpServer): void {
     }
     if (sendBytes[0] !== 0xf0 || sendBytes[sendBytes.length - 1] !== 0xf7) {
       return {
-        content: [{ type: 'text', text: `SysEx framing invalid — must start with F0 and end with F7. Got [${toHex(sendBytes.slice(0, 3))}…${toHex(sendBytes.slice(-2))}].` }],
+        content: [{ type: 'text', text: `SysEx framing invalid,must start with F0 and end with F7. Got [${toHex(sendBytes.slice(0, 3))}…${toHex(sendBytes.slice(-2))}].` }],
         isError: true,
       };
     }
@@ -99,9 +99,9 @@ export function registerAxeFxIIIMetaTools(server: McpServer): void {
         content: [{
           type: 'text',
           text:
-            'No input port available — can\'t capture inbound. Sending bytes anyway as fire-and-forget.\n' +
+            'No input port available,can\'t capture inbound. Sending bytes anyway as fire-and-forget.\n' +
             `Sent (${sendBytes.length}B): ${toHex(sendBytes)}\n` +
-            '\nFor probe work the input port MUST be open. Check list_midi_ports — Axe-Fx III should expose both an input and an output port.',
+            '\nFor probe work the input port MUST be open. Check list_midi_ports,Axe-Fx III should expose both an input and an output port.',
         }],
       };
     }
@@ -124,11 +124,11 @@ export function registerAxeFxIIIMetaTools(server: McpServer): void {
     lines.push('');
     lines.push(`Inbound capture (${captureMs}ms window, ${observed.length} message${observed.length === 1 ? '' : 's'}):`);
     if (observed.length === 0) {
-      lines.push('  (none — device sent nothing back during the window)');
+      lines.push('  (none,device sent nothing back during the window)');
       lines.push('');
       lines.push('Three possible interpretations:');
       lines.push('  1. Device silently ignored the function byte (unknown to firmware).');
-      lines.push('  2. Response arrived AFTER the window closed — bump capture_ms and retry.');
+      lines.push('  2. Response arrived AFTER the window closed,bump capture_ms and retry.');
       lines.push('  3. Function ran successfully with no return value (rare).');
     } else {
       for (const { ms, bytes: b } of observed) {

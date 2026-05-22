@@ -1,5 +1,5 @@
 /**
- * axefx2_set_scene_channels — atomic per-scene channel setter.
+ * axefx2_set_scene_channels, atomic per-scene channel setter.
  *
  * Kills BK-058 (channel-Y write loss) at the protocol level. Instead of
  * sending individual SET_BLOCK_CHANNEL (fn 0x11) frames per scene (the
@@ -98,7 +98,7 @@ function readUshortAt(payload: Uint8Array, ushortIdx: number): number {
  * The high 5 bits (= bits 16-20) sometimes encode device-private state
  * (similar to the footer's byte-2 high bits). Overwriting them with
  * zeros caused fn 0x79 NACK 0x13 in multi-chunk modifications during
- * Session 115 testing — we now preserve them.
+ * Session 115 testing, we now preserve them.
  */
 function writeUshortAt(payload: Uint8Array, ushortIdx: number, value: number): void {
   const off = 2 + ushortIdx * 3;

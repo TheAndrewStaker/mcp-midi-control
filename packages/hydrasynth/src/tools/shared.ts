@@ -1,5 +1,5 @@
 /**
- * Hydrasynth tools — shared helpers, MIDI lazy-init, constants, and the
+ * Hydrasynth tools, shared helpers, MIDI lazy-init, constants, and the
  * long preamble / cheat-sheet strings prepended to most tool descriptions.
  *
  * Every per-family file under `src/asm/hydrasynth-explorer/tools/` imports
@@ -33,7 +33,7 @@ export function ensureMidi(): HydrasynthConnection {
 
 /**
  * Last successful `hydra_apply_patch` call's overrides + timestamp.
- * Used to flag near-duplicate retries — Session 48 ambient-pad bug:
+ * Used to flag near-duplicate retries, Session 48 ambient-pad bug:
  * Claude Desktop misread the missing chunk-acks as failure and looped
  * the same call four times. The retry detection is a soft signal in
  * the response text only; the wire write still happens (the user
@@ -50,7 +50,7 @@ export const APPLY_PATCH_DUP_WINDOW_MS = 30_000;
 /**
  * Reset cached MIDI state so the next `ensureMidi()` re-attempts connect.
  * Used by `hydra_reconnect_midi` when the user plugs in the device after
- * the server has already cached "not connected" — without this, every
+ * the server has already cached "not connected", without this, every
  * subsequent tool call keeps throwing the same stale error forever.
  *
  * Session 47 / HW-060 follow-up: founder reported the device-plugged-
@@ -65,7 +65,7 @@ export function resetMidiHandle(): { wasConnected: boolean; previousError: strin
     try {
       midi.close?.();
     } catch {
-      // best-effort close — if it throws, the underlying handle is
+      // best-effort close, if it throws, the underlying handle is
       // dead anyway and we want to reset on the way out.
     }
   }
@@ -84,7 +84,7 @@ export function ccBytes(channel: number, cc: number, value: number): number[] {
 }
 
 /**
- * Send a Hydrasynth NRPN write — 4 sequential CC messages.
+ * Send a Hydrasynth NRPN write, 4 sequential CC messages.
  *
  * Each CC must be its own `sendMessage()` call. node-midi expects one
  * MIDI message per invocation; bundling 12 bytes into one call makes
@@ -139,7 +139,7 @@ export function parseSlot(s: string): { bank: number; patch: number; display: st
  * Pacing between SysEx chunks in milliseconds. The Hydrasynth ack-replies
  * after each chunk per `SysexEncoding.txt:351-352`. Diagnostic-mode
  * `hydra_apply_init` now records every inbound message so we can see
- * whether acks arrive — but the send loop still uses time-based pacing,
+ * whether acks arrive, but the send loop still uses time-based pacing,
  * not ack-driven flow control. 5 ms is conservative: above MIDI 1.0's
  * bandwidth floor and slow enough that the device's per-chunk processing
  * should keep up. If the HW-040 capture shows acks but missing chunks,
@@ -230,7 +230,7 @@ export const SCRATCH_PATCH = 127; // displayed 128
  * current bank) AND different patch from 128 (so the PC is effective
  * regardless of current patch). E064 is far from any plausible "user
  * just pressed INIT" starting location (A001), so the dance won't
- * NOOP if the founder presses INIT before testing — the failure mode
+ * NOOP if the founder presses INIT before testing, the failure mode
  * we hit on the first HW-040 test 1 run.
  */
 export const BOUNCE_BANK = 4; // E
@@ -243,7 +243,7 @@ export const BOUNCE_PATCH = 63; // displayed 64
  *
  * Used by `hydra_apply_init` (settle on the scratch slot H128) and by
  * `hydra_apply_init_to` (settle on a caller-chosen slot for diagnostic
- * tests — typically the user's currently-active patch).
+ * tests, typically the user's currently-active patch).
  *
  * Bank MSB is always 0 on the Explorer. Bank LSB selects 0..7 = A..H.
  */
@@ -266,7 +266,7 @@ export async function bankPcDance(
 /**
  * Single-line dev-mode preamble prepended to every Hydrasynth tool's
  * description. Tells the calling LLM (Claude Desktop, primarily) that
- * the surface is changing — memorized param names, ranges, or behaviors
+ * the surface is changing, memorized param names, ranges, or behaviors
  * from prior sessions may be stale. Live tool descriptions and error
  * messages are authoritative.
  *
@@ -285,12 +285,12 @@ export const HYDRA_DEV_MODE_PREAMBLE = [
 ].join('\n');
 
 /**
- * Inline cheat sheet of common engine parameter names — shared by both
+ * Inline cheat sheet of common engine parameter names, shared by both
  * `hydra_set_engine_param` and `hydra_set_engine_params` descriptions.
  *
  * The catalog is large (1175 entries) but most patch-design work uses
  * the same ~50 parameters. Listing them in the tool description means
- * Claude doesn't need to call `hydra_param_catalog` to discover names —
+ * Claude doesn't need to call `hydra_param_catalog` to discover names,
  * which was burning multiple round-trips per patch build.
  *
  * Naming patterns to deduce the rest:
@@ -298,10 +298,10 @@ export const HYDRA_DEV_MODE_PREAMBLE = [
  *     mutator1/2/3/4, mod1..32) follow {family}{slot}{field} convention:
  *     osc1type, env3decaysyncoff, lfo2gain, etc.
  *   - Time-domain envelope+lfo params have *syncoff* (free-running ms)
- *     and *syncon* (BPM-synced) variants — use *syncoff* by default.
+ *     and *syncon* (BPM-synced) variants, use *syncoff* by default.
  *   - CC-style dot names ("env1.attack", "mixer.osc1_vol", "filter1.res")
  *     are accepted as aliases everywhere alongside the canonical NRPN
- *     names — pick whichever feels natural.
+ *     names, pick whichever feels natural.
  */
 export const ENGINE_PARAM_CHEAT_SHEET = `
 Common parameter names (both styles work; pick whichever):
@@ -452,7 +452,7 @@ export async function runEngineParamBatch(
       const closest = hits.length > 0
         ? ` (closest: ${hits.map((h) => h.entry.name).join(', ')})`
         : '';
-      errors.push(`[${i}] "${name}" — unknown${closest}`);
+      errors.push(`[${i}] "${name}", unknown${closest}`);
       continue;
     }
     let resolved: number;
@@ -464,7 +464,7 @@ export async function runEngineParamBatch(
       scaled = r.scaled;
       bipolar = r.bipolar;
     } catch (err) {
-      errors.push(`[${i}] "${name}" — ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(`[${i}] "${name}", ${err instanceof Error ? err.message : String(err)}`);
       continue;
     }
     sendNrpn(conn, DEFAULT_CHANNEL, entry, resolved);

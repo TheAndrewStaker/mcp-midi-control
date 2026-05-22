@@ -1,11 +1,11 @@
 /**
- * Axe-Fx III block-level effect tools — channel + bypass read
+ * Axe-Fx III block-level effect tools,channel + bypass read
  * using v1.4 spec Appendix 1 effect IDs.
  *
- * These operate on the ACTIVE scene only (per v1.4 spec — the III
+ * These operate on the ACTIVE scene only (per v1.4 spec,the III
  * has no per-scene bypass / channel writes in the public spec).
  *
- * `axefx3_set_bypass` was removed 2026-05-18 — the unified
+ * `axefx3_set_bypass` was removed 2026-05-18,the unified
  * `set_bypass({port:'axe-fx-iii', block, bypassed})` covers it via
  * the descriptor writer.setBypass path.
  *
@@ -43,12 +43,12 @@ import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js
 
 const BLOCK_INPUT_DESCRIPTION = [
   'Block reference. Accepts:',
-  '  - "Reverb 1", "Drive 2", "Compressor 4" — name + instance number',
+  '  - "Reverb 1", "Drive 2", "Compressor 4",name + instance number',
   '  - "Reverb" (no instance defaults to instance 1)',
-  '  - "REV", "DRV", "CMP" — 3-letter group code',
+  '  - "REV", "DRV", "CMP",3-letter group code',
   '',
   "AMP / Dynamic Distortion / NAM / Global Block / Shunt aren't",
-  "addressable from the v1.4 spec (no effect ID) — these will refuse.",
+  "addressable from the v1.4 spec (no effect ID),these will refuse.",
   'Call axefx3_list_blocks for the full catalog.',
 ].join('\n');
 
@@ -124,7 +124,7 @@ export function registerAxeFxIIIEffectTools(server: McpServer): void {
     inputSchema: {
       block: z.string().describe(BLOCK_INPUT_DESCRIPTION),
       channel: z.enum(['A', 'B', 'C', 'D']).describe(
-        'Target channel — A, B, C, or D.',
+        'Target channel,A, B, C, or D.',
       ),
     },
     outputSchema: {

@@ -1,5 +1,5 @@
 /**
- * Axe-Fx II grid-rendering helpers — ASCII / markdown / JSON / summary
+ * Axe-Fx II grid-rendering helpers, ASCII / markdown / JSON / summary
  * formats for the 4×12 routing grid. Used by axefx2_get_grid_layout.
  */
 
@@ -44,7 +44,7 @@ export function renderGridAscii(cells: GridCell[]): string {
     const row = `R${r + 1} | ` + grid[r].map((cell, c) => cell.padStart(widths[c])).join(' ');
     lines.push(row);
   }
-  // Quick block roster — distinct (groupCode, instance) summary, so the
+  // Quick block roster, distinct (groupCode, instance) summary, so the
   // agent can reference what's actually placed without re-scanning the grid.
   const placed = cells
     .filter((c) => c.blockId >= 100 && c.blockId <= 170)
@@ -66,7 +66,7 @@ export function renderGridAscii(cells: GridCell[]): string {
 }
 
 /**
- * One-line-per-row summary — readable on any chat width, doesn't depend
+ * One-line-per-row summary, readable on any chat width, doesn't depend
  * on a fixed-width font, and surfaces the iconic "single serial chain
  * on row 2" case as natural prose. Best default for chat UX.
  *
@@ -101,7 +101,7 @@ export function renderGridSummary(cells: GridCell[]): string {
         const labels = blockCells.map((c) => describeCell(c).label);
         const shuntNote = shuntCount > 0 ? ` (+ ${shuntCount} shunt${shuntCount === 1 ? '' : 's'})` : '';
         lines.push(
-            `Row ${row} — serial chain, ${blockCells.length} block${blockCells.length === 1 ? '' : 's'}${shuntNote}:`,
+            `Row ${row}, serial chain, ${blockCells.length} block${blockCells.length === 1 ? '' : 's'}${shuntNote}:`,
         );
         lines.push('  ' + labels.join(' → '));
 
@@ -116,11 +116,11 @@ export function renderGridSummary(cells: GridCell[]): string {
         if (broken.length > 0) {
             lines.push('');
             lines.push(
-                `⚠ CHAIN BREAK — ${broken.length} cell${broken.length === 1 ? '' : 's'} in this chain ${broken.length === 1 ? 'has' : 'have'} no input cable (routing_mask = 0):`,
+                `⚠ CHAIN BREAK, ${broken.length} cell${broken.length === 1 ? '' : 's'} in this chain ${broken.length === 1 ? 'has' : 'have'} no input cable (routing_mask = 0):`,
             );
             for (const c of broken) {
                 const { label } = describeCell(c);
-                lines.push(`  - ${label} at row ${c.row} col ${c.col} — expected mask 0x${(1 << (c.row - 1)).toString(16)} (feed from row ${c.row} of col ${c.col - 1})`);
+                lines.push(`  - ${label} at row ${c.row} col ${c.col}, expected mask 0x${(1 << (c.row - 1)).toString(16)} (feed from row ${c.row} of col ${c.col - 1})`);
             }
             lines.push(
                 'Signal will not flow past the first break. If this is the result of an apply_preset_at, re-run the apply or surface the issue to the user.',
@@ -141,7 +141,7 @@ export function renderGridSummary(cells: GridCell[]): string {
         }
         lines.push('');
         lines.push(
-            'Multi-row layout — signal flow follows the routing masks (←rN = receives from row N of the previous column). Use `format: "markdown"` or `"ascii"` for a 2-D view.',
+            'Multi-row layout, signal flow follows the routing masks (←rN = receives from row N of the previous column). Use `format: "markdown"` or `"ascii"` for a 2-D view.',
         );
     }
 
@@ -157,7 +157,7 @@ export function renderGridSummary(cells: GridCell[]): string {
     }
     lines.push('');
     lines.push(
-        'NOTE: this read shows BLOCK PLACEMENT only. Bypass / scene state per block is a separate concern — most presets have several placed blocks bypassed in the active scene. A consolidated preset-state read is a planned next-session improvement.',
+        'NOTE: this read shows BLOCK PLACEMENT only. Bypass / scene state per block is a separate concern, most presets have several placed blocks bypassed in the active scene. A consolidated preset-state read is a planned next-session improvement.',
     );
 
     return lines.join('\n');
@@ -174,7 +174,7 @@ function maskToRowList(mask: number): string {
 }
 
 /**
- * Markdown table — renders as a real HTML table in Claude Desktop chat
+ * Markdown table, renders as a real HTML table in Claude Desktop chat
  * and most MCP-host UIs (Cursor, Continue, etc. all render markdown).
  * Responsive to chat width because the host's table layout reflows.
  * Best when the grid is non-trivial (multi-row, parallel paths).

@@ -1,5 +1,5 @@
 /**
- * AM4 apply tools removed v0.3 — use the unified surface:
+ * AM4 apply tools removed v0.3, use the unified surface:
  *
  *   apply_preset({ port:'am4', spec, target_location?, save_authorized?,
  *                  on_active_preset_edited? })
@@ -19,7 +19,7 @@
  * naming conventions, fresh-build clearing semantics, save-intent rule)
  * migrated into describe_device.agent_guidance in chunk 1.
  *
- * applyExecutor.ts is retained — it's the shared executor for the unified
+ * applyExecutor.ts is retained, it's the shared executor for the unified
  * surface.
  */
 
@@ -27,6 +27,6 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function registerApplyTools(_server: McpServer): void {
-    // intentionally empty — am4_apply_preset, am4_apply_preset_at,
+    // intentionally empty, am4_apply_preset, am4_apply_preset_at,
     // am4_apply_setlist removed v0.3 (use unified apply_preset / apply_setlist).
 }

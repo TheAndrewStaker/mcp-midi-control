@@ -1,9 +1,9 @@
 /**
- * Axe-Fx III discovery tools — STATUS_DUMP + block roster.
+ * Axe-Fx III discovery tools:STATUS_DUMP + block roster.
  *
  * Tools registered:
  *   - axefx3_status_dump   (function 0x13)
- *   - axefx3_list_blocks   (pure data — block roster from blockTypes.ts)
+ *   - axefx3_list_blocks   (pure data:block roster from blockTypes.ts)
  *
  * STATUS_DUMP returns one row per block currently placed in the
  * active preset. Per v1.4 spec, each row carries the effect ID
@@ -83,7 +83,7 @@ export function registerAxeFxIIIDiscoveryTools(server: McpServer): void {
     }
 
     const lines: string[] = [];
-    lines.push(`STATUS_DUMP — ${entries.length} block${entries.length === 1 ? '' : 's'} in active preset.`);
+    lines.push(`STATUS_DUMP:${entries.length} block${entries.length === 1 ? '' : 's'} in active preset.`);
     lines.push('');
     lines.push('  effect_id | block (resolved)              | bypassed | channel');
     lines.push('  ' + '-'.repeat(68));
@@ -143,7 +143,7 @@ export function registerAxeFxIIIDiscoveryTools(server: McpServer): void {
     lines.push('block name + instance number to axefx3_set_bypass / axefx3_set_channel.');
     lines.push('Effect IDs are resolved internally from this table. Blocks marked');
     lines.push('"no (FC-only)" are listed in v1.4 but only respond to the Foot');
-    lines.push('Controller interface — set_bypass / set_channel refuse for these.');
+    lines.push('Controller interface:set_bypass / set_channel refuse for these.');
     lines.push('');
     lines.push(BETA_NOTE);
     return {

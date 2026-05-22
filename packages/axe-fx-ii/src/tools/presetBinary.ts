@@ -1,15 +1,15 @@
 /**
- * Axe-Fx II byte-exact preset binary tools — BK-083.
+ * Axe-Fx II byte-exact preset binary tools, BK-083.
  *
  * Built on BK-070's atomic-apply finding (Session 115). The 12,951-byte
  * preset binary is fully decodable and modifiable:
  *
- *   - `axefx2_dump_preset` — read any stored preset (or the active
+ *   - `axefx2_dump_preset`, read any stored preset (or the active
  *     working buffer) as raw bytes plus a parsed metadata snapshot
  *     (name, block-record list, footer hash). The raw bytes can be
  *     archived as a .syx for byte-exact backup.
  *
- *   - `axefx2_restore_preset` — push a 12,951-byte binary back to the
+ *   - `axefx2_restore_preset`, push a 12,951-byte binary back to the
  *     device, optionally saving to a target slot. Validates the footer
  *     hash before pushing so corrupted bytes never reach the device.
  *
@@ -64,7 +64,7 @@ function fractalChecksum(bytes: number[]): number {
 
 function buildPatchDumpRequest(wirePreset: number): number[] {
   // MSB-first per fractal-midi/buildSwitchPreset convention. LSB-first
-  // silently fails for any preset ≥ 128 — confirmed Session 115.
+  // silently fails for any preset ≥ 128, confirmed Session 115.
   const hi = (wirePreset >> 7) & 0x7f;
   const lo = wirePreset & 0x7f;
   const head = [SYSEX_START, ...FRACTAL_MFR, AXEFX2_MODEL, FN_PATCH_DUMP, hi, lo];
@@ -239,13 +239,13 @@ async function pushPresetBinary(bytes: Uint8Array): Promise<{
   unsub();
 
   const nacks: Array<{ frame: number; bytes: number[] }> = [];
-  // ACK frames are short — we look at any incoming with a non-zero result
+  // ACK frames are short, we look at any incoming with a non-zero result
   // byte after the function byte. Result is at offset 7..8 for the
   // ack/nack frame shape.
   for (let k = 0; k < responses.length; k++) {
     const r = responses[k];
     // Length > 7 and the byte at offset 7 (just after fn byte) is non-zero
-    // = candidate NACK. Conservative heuristic — better than misclassifying.
+    // = candidate NACK. Conservative heuristic, better than misclassifying.
     if (r.length > 7 && r[7] !== 0x00 && r[5] === 0x64) {
       nacks.push({ frame: k, bytes: [...r] });
     }
@@ -272,7 +272,7 @@ export function registerAxeFxIIPresetBinaryTools(server: McpServer): void {
       'The raw bytes (base64) can be archived as a `.syx` file for backup or shared between users. `axefx2_restore_preset` accepts those exact bytes back.',
       'Returns: `{ bytes_base64, byte_length, location_display, location_wire, name, blocks[], footer_hash, footer_bytes }`.',
       'Performance: ~1.5-2 s (66-message round-trip).',
-      'Non-destructive — does not change the active preset, does not write to flash.',
+      'Non-destructive, does not change the active preset, does not write to flash.',
     ].join(' '),
     inputSchema: {
       location: z.union([z.number().int().min(1).max(768), z.literal('active')]).describe(
@@ -320,7 +320,7 @@ export function registerAxeFxIIPresetBinaryTools(server: McpServer): void {
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Push a 12,951-byte preset binary back to the Axe-Fx II. With `save_authorized: true`, commits to the target `location` via STORE_PRESET. Without it, pushes to the working buffer only (reverts on next preset switch).',
-      'Validates the footer hash against the XOR-fold of decoded native ushorts BEFORE pushing — corrupted bytes are rejected client-side.',
+      'Validates the footer hash against the XOR-fold of decoded native ushorts BEFORE pushing, corrupted bytes are rejected client-side.',
       'WARNING: writing to a non-empty location overwrites it. Read the target via axefx2_dump_preset first if you need to confirm what is there.',
       'Returns: `{ ok, frames_sent, acks_received, nacks[], saved_to_location?, name }`.',
       'Performance: ~600 ms for push + ~250 ms for save when save_authorized=true.',
@@ -348,7 +348,7 @@ export function registerAxeFxIIPresetBinaryTools(server: McpServer): void {
       const footerHash = parseFooterValue(parsed.footerPayload) & 0xffff;
       if (computedHash !== footerHash) {
         return asError(new Error(
-          `Footer hash mismatch — computed XOR-fold=0x${computedHash.toString(16).padStart(4, '0')} ` +
+          `Footer hash mismatch, computed XOR-fold=0x${computedHash.toString(16).padStart(4, '0')} ` +
             `vs footer-encoded=0x${footerHash.toString(16).padStart(4, '0')}. ` +
             `Bytes are corrupted or the hash was not recomputed after editing.`,
         ));

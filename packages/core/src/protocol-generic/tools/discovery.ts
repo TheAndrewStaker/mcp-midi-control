@@ -1,12 +1,12 @@
 /**
- * Discovery tools — pure-introspection MCP tools that surface device
+ * Discovery tools, pure-introspection MCP tools that surface device
  * capabilities, parameter catalogs, and authored block-type lineage. None
  * of these tools touch MIDI; they read the descriptor's static schema.
  *
  * Tools registered here:
- *   - `describe_device(port)` — capabilities + canonical terms + block roster
- *   - `list_params(port, block?, name?)` — param catalog + enum tables
- *   - `lookup_lineage(port, block_type, ...)` — Fractal-style real-gear lineage
+ *   - `describe_device(port)`, capabilities + canonical terms + block roster
+ *   - `list_params(port, block?, name?)`, param catalog + enum tables
+ *   - `lookup_lineage(port, block_type, ...)`, Fractal-style real-gear lineage
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -26,7 +26,7 @@ export function registerDiscoveryTools(server: McpServer): void {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'REQUIRED first call for any device question or apply_preset call. Pure introspection, no MIDI I/O, safe to call repeatedly.',
-      'Response: `capabilities` (channels/scenes/save/atomic_read), `blocks` + `block_types` roster, `canonical_terms` (AM4 channel A/B/C/D, II X/Y, Hydra "patch"), `example_spec` (clone-and-swap apply_preset literal with canonical names + slot shape — bare int on AM4, {row,col} on grid devices), `block_params_summary` (curated top-N first-page knobs per block; FIRST stop for knob names — fall back to list_params for GEQ/enum tables), `concept_keys` (cross-device aliases like `drive.output_level`), `agent_guidance`, and `recipes` — frozen knob bundles for common tone vocab (single-block: auto_wah/pitch/wah/filter/scene_leveling carry target_block + params; block-stack: e.g. edge_dotted_eighth_lead carries a slots array — paste into apply_preset.spec.slots, override individual knobs in the same call). Scan recipes[] for matching id BEFORE authoring from scratch.',
+      'Response: `capabilities` (channels/scenes/save/atomic_read), `blocks` + `block_types` roster, `canonical_terms` (AM4 channel A/B/C/D, II X/Y, Hydra "patch"), `example_spec` (clone-and-swap apply_preset literal with canonical names + slot shape, bare int on AM4, {row,col} on grid devices), `block_params_summary` (curated top-N first-page knobs per block; FIRST stop for knob names, fall back to list_params for GEQ/enum tables), `concept_keys` (cross-device aliases like `drive.output_level`), `agent_guidance`, and `recipes`, frozen knob bundles for common tone vocab (single-block: auto_wah/pitch/wah/filter/scene_leveling carry target_block + params; block-stack: e.g. edge_dotted_eighth_lead carries a slots array, paste into apply_preset.spec.slots, override individual knobs in the same call). Scan recipes[] for matching id BEFORE authoring from scratch.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
@@ -47,15 +47,15 @@ export function registerDiscoveryTools(server: McpServer): void {
       '- No filter: every (block, name) the device exposes. With `block`: scoped to that block. With both `block` and `name`: full enum table for enum-typed params.',
       '- Batch form: both `block` and `name` accept arrays. `block: ["amp","drive","reverb"]` surveys 3 blocks in one call.',
       '- `include_descriptions: true` attaches a Blocks-Guide / Owner\'s-Manual excerpt per param; default false.',
-      '- For `amp.type` and `drive.type`, the response carries `enum_value_loudness_offsets_db` — per-model dB offsets vs the reference amp/drive (Twin Reverb at master=6 = 0 dB; T808 OD at level=7 = +6 dB). Add these on top of the conventional scene-leveling spread when balancing per-amp loudness.',
+      '- For `amp.type` and `drive.type`, the response carries `enum_value_loudness_offsets_db`, per-model dB offsets vs the reference amp/drive (Twin Reverb at master=6 = 0 dB; T808 OD at level=7 = +6 dB). Add these on top of the conventional scene-leveling spread when balancing per-amp loudness.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       block: z.union([z.string(), z.array(z.string()).min(1)]).optional().describe(
-        'Optional block-name filter. Single string ("amp") OR array of names (["amp", "drive", "pitch"]) — the array form returns params across every listed block in one call.',
+        'Optional block-name filter. Single string ("amp") OR array of names (["amp", "drive", "pitch"]), the array form returns params across every listed block in one call.',
       ),
       name: z.union([z.string(), z.array(z.string()).min(1)]).optional().describe(
-        'Optional param-name filter (requires `block`). Single string OR array. For enum params, returns the full enum table for each matching name — pass an array to fetch every enum dropdown in one call instead of N sequential calls.',
+        'Optional param-name filter (requires `block`). Single string OR array. For enum params, returns the full enum table for each matching name, pass an array to fetch every enum dropdown in one call instead of N sequential calls.',
       ),
       include_descriptions: z.boolean().optional().describe(
         'When true, each param entry carries a `description` field (verbatim Blocks Guide / Owner\'s Manual excerpt). Default false; turn on when you need prose to disambiguate similarly-named knobs or answer the user\'s "what does X do" question.',

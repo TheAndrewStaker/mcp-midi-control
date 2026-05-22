@@ -1,5 +1,5 @@
 /**
- * Axe-Fx II tools — shared helpers, MIDI lazy-init, and constants.
+ * Axe-Fx II tools, shared helpers, MIDI lazy-init, and constants.
  *
  * Every per-family file under src/fractal/axe-fx-ii/tools/ imports from
  * here. The lazy-MIDI surface (ensureConn / resetAxeFxIIConnection)
@@ -86,18 +86,18 @@ export function resetAxeFxIIConnection(): { wasConnected: boolean; previousError
 // -- Helpers --------------------------------------------------------------
 
 /**
- * Terse caveat appended to SET tool responses only — writes on the
+ * Terse caveat appended to SET tool responses only, writes on the
  * Axe-Fx II don't ack on the wire (the protocol is fire-and-forget for
  * SET_BLOCK_PARAMETER_VALUE), so the only verification path is the user
  * hearing or seeing the change on the device. NOT appended to GET tool
- * responses (the response itself IS the verification — a successful
+ * responses (the response itself IS the verification, a successful
  * decode of a 40-byte name frame proves the read works) nor to pure
  * data tools like list_block_types / list_params.
  *
  * Hardware-verification status across the axefx2_* surface is tracked
  * in HARDWARE-TASKS-AXEFX2.md, not here. Earlier versions of this
  * banner included a longer "🟡 wiki-documented" hedge appended to
- * every response — that made the tool look unreliable when reads were
+ * every response, that made the tool look unreliable when reads were
  * actually self-verifying. See Session 56 commit `<TBD>` for context.
  */
 export const NO_ACK_NOTE = 'Note: SET tools on Axe-Fx II are fire-and-forget; the protocol does not ack writes. Verify the change by audible/visible response on the device.';
@@ -108,14 +108,14 @@ export const NO_ACK_NOTE = 'Note: SET tools on Axe-Fx II are fire-and-forget; th
  * The registry is keyed `<block-slug>.<param-name>` (e.g. `volpan.volume`,
  * `compressor.ratio`) but the agent addresses blocks by group code
  * (`VOL`, `CPR`) or display name (`Volume/Pan 1`). We resolve by
- * matching (groupCode, name) against the registry — that way both
+ * matching (groupCode, name) against the registry, that way both
  * `axefx2_list_params` (which filters by groupCode + slug) and
  * `axefx2_get_param` / `axefx2_set_param` (this resolver) see the
  * same set of valid names.
  *
  * Historically there was a `paramKey(group, name)` that built
  * `<group>.<name>` and looked it up directly, but it broke any
- * block where the groupCode (3-letter) differs from the block slug —
+ * block where the groupCode (3-letter) differs from the block slug,
  * e.g. VOL/volpan, CPR/compressor, CHO/chorus, DLY/delay, REV/reverb.
  */
 export function findParam(target: AxeFxIIBlock, name: string): AxeFxIIParam | undefined {
@@ -228,7 +228,7 @@ export async function guardActiveBufferOrSave(
     return {
       proceed: false,
       warningText:
-        `Could not read the active preset number — refusing to navigate to avoid losing edits silently.\n` +
+        `Could not read the active preset number, refusing to navigate to avoid losing edits silently.\n` +
         `Try axefx2_reconnect_midi, then retry. If the device is in an unusual state, ` +
         `the user can save manually on the front panel before this tool retries.`,
     };

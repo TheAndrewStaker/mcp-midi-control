@@ -2,7 +2,7 @@
  * Shared helpers and zod sub-schemas for the BK-051 unified tool surface.
  *
  * Every family file under `src/protocol/generic/tools/` imports these helpers
- * — `PORT_DESC` (the canonical description string for the `port` argument),
+ *, `PORT_DESC` (the canonical description string for the `port` argument),
  * `asText` / `asError` (MCP response shapers), and `presetSlotShape` /
  * `presetSceneShape` / `presetShape` (zod schemas reused by apply_preset and
  * apply_setlist).
@@ -33,13 +33,13 @@ export const BLOCK_PARAMS_SUMMARY_HINT =
 
 /**
  * Shape a unified-surface tool result. Returns both:
- *   - `content` — human-readable text (the stringified payload), kept
+ *   - `content`, human-readable text (the stringified payload), kept
  *     for back-compat with agents that read text responses verbatim.
- *   - `structuredContent` — the typed object payload, per the 2025
+ *   - `structuredContent`, the typed object payload, per the 2025
  *     MCP spec. Agents that consume structuredContent get the typed
  *     object directly instead of having to re-parse a JSON string.
  *
- * String payloads (already textual — no structure) skip structuredContent.
+ * String payloads (already textual, no structure) skip structuredContent.
  */
 export function asText(payload: unknown): {
   content: { type: 'text'; text: string }[];
@@ -50,7 +50,7 @@ export function asText(payload: unknown): {
   }
   const text = JSON.stringify(payload, null, 2);
   // structuredContent must be a JSON object (record). Arrays and
-  // primitives don't qualify per the spec — only emit the field when
+  // primitives don't qualify per the spec, only emit the field when
   // the payload is a plain object.
   const isPlainObject = typeof payload === 'object'
     && payload !== null

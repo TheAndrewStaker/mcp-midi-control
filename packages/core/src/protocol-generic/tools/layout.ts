@@ -1,9 +1,9 @@
 /**
- * Layout tools — block placement and bypass writes.
+ * Layout tools, block placement and bypass writes.
  *
  * Tools registered here:
- *   - `set_block(port, slot, block_type)` — place / clear a block at a slot
- *   - `set_bypass(port, block, bypassed)` — silence / activate a placed block
+ *   - `set_block(port, slot, block_type)`, place / clear a block at a slot
+ *   - `set_bypass(port, block, bypassed)`, silence / activate a placed block
  *
  * `set_block` mutates the signal-chain layout; `set_bypass` mutates the
  * active scene's per-block bypass register. To set bypass on a non-active

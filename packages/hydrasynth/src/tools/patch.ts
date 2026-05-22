@@ -1,10 +1,10 @@
 /**
- * Hydrasynth patch-dump tools — atomic SysEx whole-patch writes.
+ * Hydrasynth patch-dump tools, atomic SysEx whole-patch writes.
  *
  * 3 tools:
- *   - hydra_apply_init     — recovery primitive: load factory INIT into H128
- *   - hydra_apply_init_to  — diagnostic: dump INIT to a caller-named slot
- *   - hydra_apply_patch    — milestone-3: sparse override map applied on top
+ *   - hydra_apply_init    , recovery primitive: load factory INIT into H128
+ *   - hydra_apply_init_to , diagnostic: dump INIT to a caller-named slot
+ *   - hydra_apply_patch   , milestone-3: sparse override map applied on top
  *                            of the factory INIT buffer + atomic SysEx dump
  *
  * All three reuse the bank/PC dance + chunk-pacing helpers in shared.ts.
@@ -92,7 +92,7 @@ server.registerTool('hydra_apply_init', {
     buf[2] = SCRATCH_BANK;
     buf[3] = SCRATCH_PATCH;
 
-    // 2. Header (`18 00`) — initiates the patch-dump handshake.
+    // 2. Header (`18 00`), initiates the patch-dump handshake.
     conn.send(wrapSysex([0x18, 0x00]));
 
     // 3. 22 chunk dumps. Each chunk is `[0x16, 0x00, INDEX, 0x16, …data…]`,
@@ -104,7 +104,7 @@ server.registerTool('hydra_apply_init', {
     }
 
     // 4. Footer (`1A 00`). Deliberately skip the Write Request (`14 00`)
-    //    — that makes this a recovery primitive instead of a destructive
+    //   , that makes this a recovery primitive instead of a destructive
     //    flash write. Per `SysexEncoding.txt:381-382`: "without the Write
     //    Request, the patch isn't written to Flash. Instead it stays in RAM."
     conn.send(wrapSysex([0x1a, 0x00]));
@@ -158,11 +158,11 @@ server.registerTool('hydra_apply_init', {
   lines.push('');
   lines.push('Active patch is now H128 = "Init". Press a key to confirm audible.');
   lines.push('');
-  lines.push(`Diagnostic — inbound MIDI capture (hasInput=${conn.hasInput}, ${observed.length} message${observed.length === 1 ? '' : 's'}):`);
+  lines.push(`Diagnostic, inbound MIDI capture (hasInput=${conn.hasInput}, ${observed.length} message${observed.length === 1 ? '' : 's'}):`);
   if (!conn.hasInput) {
-    lines.push('  (no Hydrasynth input port found — capture is empty by construction; reconnect or check OS MIDI enumeration)');
+    lines.push('  (no Hydrasynth input port found, capture is empty by construction; reconnect or check OS MIDI enumeration)');
   } else if (observed.length === 0) {
-    lines.push('  (none — device is fully silent on the MIDI input. Either acks are not being emitted, or the input port is to a different device.)');
+    lines.push('  (none, device is fully silent on the MIDI input. Either acks are not being emitted, or the input port is to a different device.)');
   } else {
     for (const { ms, bytes } of observed) {
       lines.push(`  [+${ms.toString().padStart(4)}ms] ${describeInboundMessage(bytes)}`);
@@ -207,7 +207,7 @@ server.registerTool('hydra_apply_init_to', {
   ].join('\n'),
   inputSchema: {
     slot: z.string().describe(
-      'Target slot in "A001".."H128" form. Set this to whatever the device\'s display currently reads — that\'s the active patch the dump can actually modify.',
+      'Target slot in "A001".."H128" form. Set this to whatever the device\'s display currently reads, that\'s the active patch the dump can actually modify.',
     ),
     dance: z.enum(['none', 'post', 'both']).optional().describe(
       '`none` (default) = pure dump, no bank/PC navigation. `post` = bounce off E064 + return to target after the dump. `both` = same dance before AND after.',
@@ -366,23 +366,23 @@ server.registerTool('hydra_apply_patch', {
   ].join('\n'),
   inputSchema: {
     slot: z.string().optional().describe(
-      'Target slot in "A001".."H128" form. Should match the device\'s currently-active patch — only that bank\'s working memory will be modified. OMIT to use the H128 scratch slot (in-place test workflow): the tool will navigate to H128 first via dance:"both" so the patch lands audibly without you needing to know which slot the device is on. The Hydrasynth has no SysEx query for current patch (per SysexEncoding.txt — "request from current working memory" is not supported), so omit + scratch is the recommended path when you don\'t know.',
+      'Target slot in "A001".."H128" form. Should match the device\'s currently-active patch, only that bank\'s working memory will be modified. OMIT to use the H128 scratch slot (in-place test workflow): the tool will navigate to H128 first via dance:"both" so the patch lands audibly without you needing to know which slot the device is on. The Hydrasynth has no SysEx query for current patch (per SysexEncoding.txt, "request from current working memory" is not supported), so omit + scratch is the recommended path when you don\'t know.',
     ),
     params: z.array(z.object({
       name: z.string().describe('Canonical patch-buffer parameter name (e.g. "filter1cutoff", "osc1type", "mixer.osc1_vol"). Must appear in PATCH_OFFSETS.'),
-      value: z.union([z.number(), z.string()]).describe('Display value (e.g. 64 for filter cutoff, +25 for bipolar env amount, -12 for osc semitones) OR enum string ("Sawtooth", "Lo-Fi", "Vowel"). Auto-routed through resolveNrpnValue — same semantics as hydra_set_param.'),
+      value: z.union([z.number(), z.string()]).describe('Display value (e.g. 64 for filter cutoff, +25 for bipolar env amount, -12 for osc semitones) OR enum string ("Sawtooth", "Lo-Fi", "Vowel"). Auto-routed through resolveNrpnValue, same semantics as hydra_set_param.'),
     })).min(1).describe('Sparse override map applied on top of the factory INIT buffer.'),
     dance: z.enum(['none', 'post', 'both']).optional().describe(
-      '`both` (default) = pre-navigate to target slot + dump + post-navigate to make audible. Always works regardless of where the device started. `post` = post-dump bounce only — assumes you already navigated to the target via `hydra_navigate_to`; faster (~600ms saved) but if you didn\'t navigate, the SysEx writes land on a non-active bank\'s working memory and silently disappear. `none` = pure dump, no PC at all (advanced; for diagnostic use). When `slot` is omitted, defaults to H128 scratch.',
+      '`both` (default) = pre-navigate to target slot + dump + post-navigate to make audible. Always works regardless of where the device started. `post` = post-dump bounce only, assumes you already navigated to the target via `hydra_navigate_to`; faster (~600ms saved) but if you didn\'t navigate, the SysEx writes land on a non-active bank\'s working memory and silently disappear. `none` = pure dump, no PC at all (advanced; for diagnostic use). When `slot` is omitted, defaults to H128 scratch.',
     ),
     name: z.string().max(16).optional().describe(
-      'Optional patch name (max 16 ASCII chars per Owners Manual page 4369; longer names truncated, shorter ones zero-padded). **The name is only embedded in the patch buffer when `save: true` is also set.** Hydrasynth\'s on-screen patch-name display reads from flash, not from working memory, so a name written to a RAM-only dump never appears anywhere visible — by suppressing the name on no-save calls we avoid clobbering whatever name happens to be in the working buffer from a prior recipe. Pair `name` with `save: true` for the canonical "build + persist this recipe with a label" flow. Example: `{ params: [...], name: "Eno Wash", save: true }`. If `name` is provided without `save`, it is silently dropped (the response will note this).',
+      'Optional patch name (max 16 ASCII chars per Owners Manual page 4369; longer names truncated, shorter ones zero-padded). **The name is only embedded in the patch buffer when `save: true` is also set.** Hydrasynth\'s on-screen patch-name display reads from flash, not from working memory, so a name written to a RAM-only dump never appears anywhere visible, by suppressing the name on no-save calls we avoid clobbering whatever name happens to be in the working buffer from a prior recipe. Pair `name` with `save: true` for the canonical "build + persist this recipe with a label" flow. Example: `{ params: [...], name: "Eno Wash", save: true }`. If `name` is provided without `save`, it is silently dropped (the response will note this).',
     ),
     save: z.boolean().optional().describe(
-      'When true, sends a Write Request (`14 00`) after the chunks, persisting THE RECIPE in `params` to flash. **Costs ~3.5 seconds of additional wire time**. Default false. **CLOBBER WARNING — this re-dumps the recipe; any manual front-panel tweaks the user made on the device between the last apply_patch call and this one ARE LOST.** Hydrasynth has no SysEx read flow that surfaces working memory, so this tool has no way to preserve unknown tweaks. If the user just turned knobs and now says "save it", tell them to press the device\'s SAVE button (or Shift+Save) — DO NOT call apply_patch+save:true, because it will overwrite their tweaks with the agent\'s last-known recipe. Reserve save:true for "build this exact recipe and persist it" (the recipe IS the saved state). Also note: silently no-ops if System Menu → Protect is ON; the tool cannot detect that — verify off the device.',
+      'When true, sends a Write Request (`14 00`) after the chunks, persisting THE RECIPE in `params` to flash. **Costs ~3.5 seconds of additional wire time**. Default false. **CLOBBER WARNING, this re-dumps the recipe; any manual front-panel tweaks the user made on the device between the last apply_patch call and this one ARE LOST.** Hydrasynth has no SysEx read flow that surfaces working memory, so this tool has no way to preserve unknown tweaks. If the user just turned knobs and now says "save it", tell them to press the device\'s SAVE button (or Shift+Save), DO NOT call apply_patch+save:true, because it will overwrite their tweaks with the agent\'s last-known recipe. Reserve save:true for "build this exact recipe and persist it" (the recipe IS the saved state). Also note: silently no-ops if System Menu → Protect is ON; the tool cannot detect that, verify off the device.',
     ),
     save_authorized: z.boolean().optional().describe(
-      'Cross-device safe-edit gate (see docs/SAFE-EDIT-WORKFLOW.md). When `save: true` is set, this MUST also be true. Description-only enforcement isn\'t enough — agents can misread "build a patch at A005" as save intent. The runtime gate makes the refusal explicit. Authorize ONLY when the user uses save/store/keep/persist language. For "build a patch" / "design a sound" without save language, omit `save` entirely (RAM-only dump, reversible by navigating). The gate fires BEFORE any wire I/O so refusals are zero-cost.',
+      'Cross-device safe-edit gate (see docs/SAFE-EDIT-WORKFLOW.md). When `save: true` is set, this MUST also be true. Description-only enforcement isn\'t enough, agents can misread "build a patch at A005" as save intent. The runtime gate makes the refusal explicit. Authorize ONLY when the user uses save/store/keep/persist language. For "build a patch" / "design a sound" without save language, omit `save` entirely (RAM-only dump, reversible by navigating). The gate fires BEFORE any wire I/O so refusals are zero-cost.',
     ),
   },
 }, async ({ slot, params, dance, name, save, save_authorized }) => {
@@ -398,12 +398,12 @@ server.registerTool('hydra_apply_patch', {
         text:
           `REFUSING TO SAVE: hydra_apply_patch was called with save: true but ` +
           `save_authorized was not explicitly set. The default policy refuses ` +
-          `silent saves — agents can misread "build a patch at A005" as save ` +
+          `silent saves, agents can misread "build a patch at A005" as save ` +
           `intent.\n` +
           `\n` +
           `If the user said something like "build a patch for X" / "design a ` +
           `sound" without naming a save action, drop save: true entirely. The ` +
-          `tool will dump to RAM only — fully reversible by navigating away. ` +
+          `tool will dump to RAM only, fully reversible by navigating away. ` +
           `Let the user audition the patch, then ASK "want me to save it to ` +
           `${slot ?? 'H128'}?" before retrying with save: true AND ` +
           `save_authorized: true.\n` +
@@ -424,7 +424,7 @@ server.registerTool('hydra_apply_patch', {
 
   const conn = ensureMidi();
   // In-place workflow: when caller omits slot, default to H128 (the
-  // designated scratch slot). Either way, default dance is "both" —
+  // designated scratch slot). Either way, default dance is "both",
   // pre-navigates to the target before the dump so writes land on
   // the correct bank's working memory regardless of what the device
   // was doing before. Session 47 HW-058: founder confirmed apply_patch
@@ -442,7 +442,7 @@ server.registerTool('hydra_apply_patch', {
   // expects wire NRPN values and applies its /8 patch-buffer scaling
   // internally for u16le params.
   //
-  // PASS 1 — pre-scan for prefxtype / postfxtype so FX sub-params
+  // PASS 1, pre-scan for prefxtype / postfxtype so FX sub-params
   // (prefxparam1..5 / postfxparam1..5) can be routed to the correct
   // per-type entry (fx5param1 = Lo-Fi Cutoff Hz, fx1param1 = Chorus
   // Rate Hz, etc.). Without this, the generic prefxparam1 entry has
@@ -476,7 +476,7 @@ server.registerTool('hydra_apply_patch', {
     .sort();
   const dupSignature = `${name ?? ''}|${save ? '1' : '0'}|${dupSignatureParts.join(';')}`;
 
-  // PASS 2 — resolve each value.
+  // PASS 2, resolve each value.
   for (const { name, value } of params) {
     if (typeof value === 'number' && !Number.isFinite(value)) {
       throw new DispatchError(
@@ -490,12 +490,12 @@ server.registerTool('hydra_apply_patch', {
     if (sub) {
       // Per-FX-type route. If the user didn't set prefxtype/postfxtype
       // in the same call, we can't know which FX type's sub-params
-      // they want — fall through to the generic entry, but flag the
+      // they want, fall through to the generic entry, but flag the
       // ambiguity in the response so the agent learns to include the
       // type next time.
       const typeIdx = sub.surface === 'pre' ? prefxTypeIdx : postfxTypeIdx;
       if (typeIdx === undefined) {
-        // No type context — likely a tweak-on-top of an already-loaded
+        // No type context, likely a tweak-on-top of an already-loaded
         // FX type. Use the generic entry but note the imprecision.
         const entry = findHydraNrpn(name);
         if (!entry) {
@@ -514,7 +514,7 @@ server.registerTool('hydra_apply_patch', {
         try {
           resolved = resolveNrpnValue(entry, value);
         } catch (err) {
-          throw new Error(`hydra_apply_patch: param "${name}" — ${err instanceof Error ? err.message : String(err)}`);
+          throw new Error(`hydra_apply_patch: param "${name}", ${err instanceof Error ? err.message : String(err)}`);
         }
         overrides.set(name, resolved.wire);
         resolutions.push({
@@ -523,7 +523,7 @@ server.registerTool('hydra_apply_patch', {
           wire: resolved.wire,
           scaled: resolved.scaled,
           bipolar: resolved.bipolar,
-          fxLabel: `${sub.surface}fx (type not in batch — using generic encoding; pass ${sub.surface}fxtype for accurate scaling)`,
+          fxLabel: `${sub.surface}fx (type not in batch, using generic encoding; pass ${sub.surface}fxtype for accurate scaling)`,
         });
         continue;
       }
@@ -531,7 +531,7 @@ server.registerTool('hydra_apply_patch', {
       try {
         resolved = resolveFxAwareValue(name, value, { prefxTypeIdx, postfxTypeIdx });
       } catch (err) {
-        throw new Error(`hydra_apply_patch: param "${name}" — ${err instanceof Error ? err.message : String(err)}`);
+        throw new Error(`hydra_apply_patch: param "${name}", ${err instanceof Error ? err.message : String(err)}`);
       }
       // Write under the GENERIC name so the patch-buffer encoder
       // finds the right byte offset (PATCH_OFFSETS keys are
@@ -568,7 +568,7 @@ server.registerTool('hydra_apply_patch', {
     try {
       resolved = resolveNrpnValue(entry, value);
     } catch (err) {
-      throw new Error(`hydra_apply_patch: param "${name}" — ${err instanceof Error ? err.message : String(err)}`);
+      throw new Error(`hydra_apply_patch: param "${name}", ${err instanceof Error ? err.message : String(err)}`);
     }
     overrides.set(name, resolved.wire);
     resolutions.push({ name, raw: value, wire: resolved.wire, scaled: resolved.scaled, bipolar: resolved.bipolar });
@@ -580,7 +580,7 @@ server.registerTool('hydra_apply_patch', {
   //
   // **Name is only embedded when save:true.** The Hydrasynth's
   // on-screen patch-name display is sourced from flash, not RAM, so
-  // a name written to a working-memory dump never shows up — only
+  // a name written to a working-memory dump never shows up, only
   // the flash-persist path (save:true → Write Request) refreshes the
   // displayed name. If we wrote the name to RAM-only dumps it would
   // be silently discarded the first time the user navigates away.
@@ -592,7 +592,7 @@ server.registerTool('hydra_apply_patch', {
   try {
     buf = encodePatch(overrides, { base: INIT_PATCH_BUFFER, name: nameForBuffer });
   } catch (err) {
-    throw new Error(`hydra_apply_patch: encodePatch failed — ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`hydra_apply_patch: encodePatch failed, ${err instanceof Error ? err.message : String(err)}`);
   }
   buf[2] = target.bank;
   buf[3] = target.patch;
@@ -611,7 +611,7 @@ server.registerTool('hydra_apply_patch', {
     const headerErr = conn.lastSendError;
     if (headerErr) {
       throw new Error(
-        `hydra_apply_patch: MIDI output handle is stale — header SysEx failed (${headerErr.message}). Call hydra_reconnect_midi and retry.`,
+        `hydra_apply_patch: MIDI output handle is stale, header SysEx failed (${headerErr.message}). Call hydra_reconnect_midi and retry.`,
       );
     }
     const chunks = splitIntoChunks(buf);
@@ -629,10 +629,10 @@ server.registerTool('hydra_apply_patch', {
       }
       if (i < chunks.length - 1) await sleep(SYSEX_CHUNK_PACING_MS);
     }
-    // Write Request — persist to flash. Per spec, sent BEFORE the
+    // Write Request, persist to flash. Per spec, sent BEFORE the
     // footer when persistence is desired. Without this, the patch
     // stays in RAM only. Spec also requires a long pause (~3500 ms)
-    // after the Write Request before any further MIDI is sent —
+    // after the Write Request before any further MIDI is sent,
     // we honour that with the post-Write-Request sleep.
     if (save) {
       conn.send(wrapSysex([0x14, 0x00]));
@@ -683,7 +683,7 @@ server.registerTool('hydra_apply_patch', {
 
   // Soft duplicate-call detection. Same inputs within 30s of the last
   // successful call probably means the upstream agent looped on a
-  // misread response — flag it in text, don't gate the write.
+  // misread response, flag it in text, don't gate the write.
   const now = Date.now();
   const isDuplicate =
     lastApplyPatch !== undefined
@@ -705,13 +705,13 @@ server.registerTool('hydra_apply_patch', {
     headerResponses === 0 &&
     others.length === 0;
 
-  // Lead with the success signal — value-applied summary is the truth
+  // Lead with the success signal, value-applied summary is the truth
   // of "the patch landed". Chunk acks are unreliable on this device
   // (Session 48: agent looped after misreading missing acks as failure).
   if (suspiciousSilence) {
-    lines.push(`Patch SENT to ${target.display} (${params.length} override${params.length === 1 ? '' : 's'}, ${elapsedMs} ms), BUT the device acknowledged 0/22 chunks despite the input port being open. The dump may have been ignored — verify on the front-panel display before relying on the new state. If the patch isn't audible, call hydra_reconnect_midi and retry.`);
+    lines.push(`Patch SENT to ${target.display} (${params.length} override${params.length === 1 ? '' : 's'}, ${elapsedMs} ms), BUT the device acknowledged 0/22 chunks despite the input port being open. The dump may have been ignored, verify on the front-panel display before relying on the new state. If the patch isn't audible, call hydra_reconnect_midi and retry.`);
   } else {
-    lines.push(`Patch applied successfully to ${target.display} — ${params.length} override${params.length === 1 ? '' : 's'} written via SysEx in ${elapsedMs} ms. The device is now at the requested state.`);
+    lines.push(`Patch applied successfully to ${target.display}, ${params.length} override${params.length === 1 ? '' : 's'} written via SysEx in ${elapsedMs} ms. The device is now at the requested state.`);
   }
   if (name !== undefined && !save) {
     lines.push('');
@@ -719,7 +719,7 @@ server.registerTool('hydra_apply_patch', {
   }
   if (isDuplicate) {
     lines.push('');
-    lines.push(`(Note: this is the same patch you applied ${dupAgeSec}s ago. It re-landed cleanly, but if you're checking because the previous call looked like it failed, it didn't — the Hydrasynth doesn't ack chunk dumps reliably. No further action is needed.)`);
+    lines.push(`(Note: this is the same patch you applied ${dupAgeSec}s ago. It re-landed cleanly, but if you're checking because the previous call looked like it failed, it didn't, the Hydrasynth doesn't ack chunk dumps reliably. No further action is needed.)`);
   }
   lines.push('');
   lines.push('Overrides applied (values are what the device will display):');
@@ -729,7 +729,7 @@ server.registerTool('hydra_apply_patch', {
     //   1. FX-routed: try the per-FX-type formula by encoding entry name
     //   2. Curated per-canonical-name formula in NRPN_DISPLAY
     //   3. Enum table (when the entry references one)
-    //   4. None — fall back to wire passthrough
+    //   4. None, fall back to wire passthrough
     let deviceLabel: string | undefined;
     if (r.encodingEntryName) {
       deviceLabel = decodeFxNrpnDisplay(r.encodingEntryName, r.wire);
@@ -770,7 +770,7 @@ server.registerTool('hydra_apply_patch', {
   lines.push('');
   lines.push(`Press a key. The active patch reflects your overrides on top of an INIT base.`);
   lines.push('');
-  lines.push(`(Informational — Hydrasynth doesn't reliably ack chunk dumps; the patch landed via the SysEx writes above regardless of these counters. Do NOT treat zero counts as failure.)`);
+  lines.push(`(Informational, Hydrasynth doesn't reliably ack chunk dumps; the patch landed via the SysEx writes above regardless of these counters. Do NOT treat zero counts as failure.)`);
   lines.push(`  Header Response (19 00):   ${headerResponses} seen`);
   lines.push(`  Chunk Acks (17 00 NN 16):  ${chunkAcksSeen.size}/${PATCH_CHUNK_COUNT}`);
   lines.push(`  Patch Saved (07 00 BB PP): ${patchSaveds} seen`);

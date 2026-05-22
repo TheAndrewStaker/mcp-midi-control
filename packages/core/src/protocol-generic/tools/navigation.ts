@@ -1,12 +1,12 @@
 /**
- * Navigation tools — preset / scene / location moves and bulk scanning.
+ * Navigation tools, preset / scene / location moves and bulk scanning.
  *
  * Tools registered here:
- *   - `switch_preset(port, location)` — load a stored preset into working buffer
- *   - `save_preset(port, location, name?)` — persist working buffer to a location
- *   - `switch_scene(port, scene)` — change active scene
- *   - `rename(port, target, name)` — rename the working-buffer preset or a scene
- *   - `scan_locations(port, from, to)` — bulk-scan stored preset names
+ *   - `switch_preset(port, location)`, load a stored preset into working buffer
+ *   - `save_preset(port, location, name?)`, persist working buffer to a location
+ *   - `switch_scene(port, scene)`, change active scene
+ *   - `rename(port, target, name)`, rename the working-buffer preset or a scene
+ *   - `scan_locations(port, from, to)`, bulk-scan stored preset names
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -93,7 +93,7 @@ export function registerNavigationTools(server: McpServer): void {
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       scene: z.number().int().describe(
-        'Scene number (1-indexed). Range depends on the device — AM4: 1..4; Axe-Fx II: 1..8.',
+        'Scene number (1-indexed). Range depends on the device, AM4: 1..4; Axe-Fx II: 1..8.',
       ),
     },
   }, async ({ port, scene }) => {
@@ -116,7 +116,7 @@ export function registerNavigationTools(server: McpServer): void {
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       target: z.string().describe(
-        'Rename target — "preset" or "scene:N" (1-indexed).',
+        'Rename target, "preset" or "scene:N" (1-indexed).',
       ),
       name: z.string().min(1).max(32).describe(
         'New name (1..32 chars). Shorter names are space-padded on the wire by the device.',

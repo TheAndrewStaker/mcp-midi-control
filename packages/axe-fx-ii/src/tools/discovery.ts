@@ -1,9 +1,9 @@
 /**
- * Axe-Fx II discovery tools removed v0.3 — use the unified surface:
+ * Axe-Fx II discovery tools removed v0.3, use the unified surface:
  *
- *   describe_device({ port:'axe-fx-ii' })        — capabilities + blocks
- *   list_params({ port:'axe-fx-ii', block? })     — param catalog
- *   list_params({ port:'axe-fx-ii', block, name })— enum table for that param
+ *   describe_device({ port:'axe-fx-ii' })       , capabilities + blocks
+ *   list_params({ port:'axe-fx-ii', block? })    , param catalog
+ *   list_params({ port:'axe-fx-ii', block, name }), enum table for that param
  *   lookup_lineage({ port:'axe-fx-ii', block_type, name?, real_gear?,
  *                    manufacturer?, model?, include_quotes? })
  *
@@ -21,7 +21,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function registerAxeFxIIDiscoveryTools(_server: McpServer): void {
-    // intentionally empty — axefx2_list_params, axefx2_list_enum_values,
+    // intentionally empty, axefx2_list_params, axefx2_list_enum_values,
     // axefx2_lookup_lineage removed v0.3 (use unified list_params /
     // lookup_lineage with port='axe-fx-ii').
 }
