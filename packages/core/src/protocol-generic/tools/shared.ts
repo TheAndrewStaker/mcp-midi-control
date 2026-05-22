@@ -175,41 +175,181 @@ export function blockTypeSchema(): z.ZodEnum<Record<string, string>> | z.ZodStri
   return z.enum(union as [string, ...string[]]);
 }
 
+// ── BK-086 Option B: per-block params.type enum union ───────────────
+//
+// Option A enum-constrained `block_type` itself. Option B extends the
+// constraint into the slot's `params.type` field: when the block_type
+// is one with a known type-knob enum (AM4 amp/drive/reverb/delay/
+// chorus/flanger/phaser/wah/compressor/geq/filter/tremolo/enhancer/
+// gate/ingate), the schema rejects type values that aren't in the
+// device's `params.type.enum_values` table.
+//
+// Cross-device contract:
+//   - The discriminator is `block_type` per variant. Each AM4-
+//     canonical block_type with a typed `params.type` gets its own
+//     variant carrying the enum. Indexed II/III slugs ('amp 1',
+//     'reverb 2') fall through to the fallback variant (loose params
+//     shape) because II/III use different param names (II reverb
+//     uses `effect_type`, not `type`); the cross-device alias layer
+//     (BK-065) resolves those at the dispatcher. Schema-typing II's
+//     effect_type is a separate refinement (tracked as Option C).
+//
+// Edge case: if NO devices are registered, fall back to the flat
+// shape with z.string() block_type and loose params (same as the
+// pre-BK-086 behavior).
+//
+// Token budget: founder confirmed not a concern. Variant for amp.type
+// carries the full 248-entry enum; this is the load-bearing win.
+
+/**
+ * Collect every block_type with a `params.type` enum across registered
+ * devices, keyed by block_type slug. Values are the cross-device union
+ * of legal type strings, deduped and sorted.
+ *
+ * Devices that don't expose `params.type.enum_values` for a block
+ * (e.g. Axe-Fx II uses `effect_type` instead) contribute nothing for
+ * that block; their callers go through the fallback variant.
+ */
+export function buildBlockTypeParamEnums(): ReadonlyMap<string, readonly string[]> {
+  const acc = new Map<string, Set<string>>();
+  for (const desc of listRegisteredDevices()) {
+    for (const [blockKey, blockSchema] of Object.entries(desc.blocks)) {
+      const typeParam = blockSchema.params?.type;
+      if (!typeParam || typeParam.unit !== 'enum') continue;
+      const enumValues = typeParam.enum_values;
+      if (!enumValues) continue;
+      const values = Object.values(enumValues);
+      if (values.length === 0) continue;
+      const set = acc.get(blockKey) ?? new Set<string>();
+      for (const v of values) set.add(v);
+      acc.set(blockKey, set);
+    }
+  }
+  const out = new Map<string, readonly string[]>();
+  for (const [k, s] of acc) out.set(k, [...s].sort());
+  return out;
+}
+
 // ── PresetSpec zod schemas (shared by apply_preset + apply_setlist) ─
 //
 // `presetSlotShape` and `presetShape` are FACTORIES rather than
-// constants so the `block_type` field inside picks up the current
-// registry state at tool-registration time. See `buildBlockTypeUnion`
-// above for the rationale.
+// constants so the embedded enums (block_type union + per-block
+// params.type) pick up the current registry state at tool-
+// registration time. See `buildBlockTypeUnion` /
+// `buildBlockTypeParamEnums` above for the rationale.
 
-export function buildPresetSlotShape(): z.ZodObject {
-  return z.object({
+// Common describe text reused across slot variants. Kept as constants
+// so a future tweak doesn't require touching every variant in lockstep.
+const SLOT_LOCATION_DESC =
+  'Slot location. Linear devices (AM4): 1-based slot index 1..4. ' +
+  'Grid devices (Axe-Fx II): {row,col} 1-based, or a bare number as ' +
+  'shorthand for {row:2, col:N} (row-2 linear chain).';
+
+const PARAMS_BY_CHANNEL_DESC =
+  'Per-channel param maps for channel blocks (`{ A: { gain: 6 }, D: { gain: 8 } }` on AM4; `X` / `Y` on II / III). ' +
+  'Each top-level key is a channel name; each value is a flat param map for that channel. ' +
+  'See describe_device.capabilities.channel_blocks for the per-device channel list. ' +
+  'Non-channel blocks reject this field; use `params` (flat) there.';
+
+const ID_DESC =
+  'v0.4: stable identifier for this block, used by routing edges and scene maps. ' +
+  'Default: auto-derived `<block_type>_<instance>` (e.g. amp_1). ' +
+  'Required when two blocks of the same type exist in the same preset.';
+
+const INSTANCE_DESC =
+  'v0.4: instance number on grid devices that support multiple of the same block type ' +
+  '(Amp 1, Amp 2). Default 1. AM4 only accepts 1.';
+
+const PARAMS_LOOSE_DESC =
+  'Flat param map for non-channel blocks OR the active channel of channel blocks ' +
+  '(`{ rate: 0.8, depth: 35 }`). For multi-channel authoring on channel blocks ' +
+  '(amp / drive / reverb / delay on AM4; every block on II / III), use ' +
+  '`params_by_channel` instead. T-5 (2026-05-21): nested-in-params (`{A:{...}}`) ' +
+  'used to be accepted; pass that shape via `params_by_channel` now. Setting both ' +
+  '`params` and `params_by_channel` on the same slot is rejected.';
+
+const PARAMS_TYPED_DESC =
+  'Flat param map with `type` enum-constrained to the device catalog for this ' +
+  'block_type (BK-086 Option B). Other knobs flow through loosely. For multi-' +
+  'channel authoring, use `params_by_channel` instead.';
+
+function commonSlotFields() {
+  return {
     slot: z.union([
       z.number().int().min(1),
       z.object({ row: z.number().int().min(1), col: z.number().int().min(1) }),
-    ]).describe(
-      'Slot location. Linear devices (AM4): 1-based slot index 1..4. Grid devices (Axe-Fx II): {row,col} 1-based, or a bare number as shorthand for {row:2, col:N} (row-2 linear chain).',
-    ),
-    block_type: blockTypeSchema().describe(
-      'Block to place (e.g. "amp", "drive", "reverb", "none"). See describe_device.block_types. ' +
-      'BK-086: schema enum constrained to the union of every registered device\'s legal placements ' +
-      '(AM4 bare slugs + Axe-Fx II indexed slugs). Schema-layer rejection beats dispatcher rejection — ' +
-      'the agent gets `Valid options:` from Zod before allocating a wire writer.',
-    ),
-    params: z.record(z.string(), z.union([z.number(), z.string()])).optional().describe(
-      'Flat param map for non-channel blocks OR the active channel of channel blocks (`{ rate: 0.8, depth: 35 }`). For multi-channel authoring on channel blocks (amp / drive / reverb / delay on AM4; every block on II / III), use `params_by_channel` instead. T-5 (2026-05-21): nested-in-params (`{A:{...}}`) used to be accepted; pass that shape via `params_by_channel` now. Setting both `params` and `params_by_channel` on the same slot is rejected.',
-    ),
-    params_by_channel: z.record(z.string(), z.record(z.string(), z.union([z.number(), z.string()]))).optional().describe(
-      'Per-channel param maps for channel blocks (`{ A: { gain: 6 }, D: { gain: 8 } }` on AM4; `X` / `Y` on II / III). Each top-level key is a channel name; each value is a flat param map for that channel. See describe_device.capabilities.channel_blocks for the per-device channel list. Non-channel blocks reject this field; use `params` (flat) there.',
-    ),
+    ]).describe(SLOT_LOCATION_DESC),
+    params_by_channel: z.record(
+      z.string(),
+      z.record(z.string(), z.union([z.number(), z.string()])),
+    ).optional().describe(PARAMS_BY_CHANNEL_DESC),
     bypassed: z.boolean().optional(),
-    id: z.string().optional().describe(
-      'v0.4: stable identifier for this block, used by routing edges and scene maps. Default: auto-derived `<block_type>_<instance>` (e.g. amp_1). Required when two blocks of the same type exist in the same preset.',
-    ),
-    instance: z.number().int().min(1).optional().describe(
-      'v0.4: instance number on grid devices that support multiple of the same block type (Amp 1, Amp 2). Default 1. AM4 only accepts 1.',
-    ),
-  });
+    id: z.string().optional().describe(ID_DESC),
+    instance: z.number().int().min(1).optional().describe(INSTANCE_DESC),
+  };
+}
+
+export function buildPresetSlotShape(): z.ZodTypeAny {
+  const blockTypeUnion = buildBlockTypeUnion();
+  const typedEnums = buildBlockTypeParamEnums();
+
+  // Empty-registry fallback: return the legacy flat shape. Schema
+  // accepts arbitrary block_type strings; downstream validation
+  // still runs at the dispatcher.
+  if (blockTypeUnion.length === 0) {
+    return z.object({
+      ...commonSlotFields(),
+      block_type: z.string().describe(
+        'Block to place (e.g. "amp", "drive", "reverb", "none"). See describe_device.block_types.',
+      ),
+      params: z.record(z.string(), z.union([z.number(), z.string()])).optional().describe(PARAMS_LOOSE_DESC),
+    });
+  }
+
+  const variants: z.ZodObject[] = [];
+  const typedBlockKeys = new Set<string>();
+
+  // Typed variants: one per block_type that has a `params.type` enum
+  // in at least one registered descriptor. The cross-device union of
+  // legal type values applies (e.g. AM4 reverb catalog + II reverb
+  // catalog when both expose params.type — today only AM4 does, but
+  // the design future-proofs for II/III when they switch to a typed
+  // params.type shape).
+  for (const [blockKey, enumValues] of typedEnums) {
+    if (!blockTypeUnion.includes(blockKey)) continue;
+    typedBlockKeys.add(blockKey);
+    variants.push(z.object({
+      ...commonSlotFields(),
+      block_type: z.literal(blockKey),
+      params: z.object({
+        type: z.enum(enumValues as [string, ...string[]]).optional()
+          .describe(
+            `Block-type catalog enum (BK-086 Option B). Cross-device union ` +
+            `of every registered device's ${blockKey}.type values (${enumValues.length} entries). ` +
+            `Use describe_device.block_params_summary or list_params to see the device-specific subset.`,
+          ),
+      }).catchall(z.union([z.number(), z.string()])).optional().describe(PARAMS_TYPED_DESC),
+    }));
+  }
+
+  // Fallback variant: block_types in the union that don't have a
+  // typed `params.type`. Includes indexed II/III slugs, any device-
+  // declared block_type without a type-knob enum, and edge slugs
+  // like 'none' (clear-slot sentinel) where params don't apply.
+  const fallbackTypes = blockTypeUnion.filter((t) => !typedBlockKeys.has(t));
+  if (fallbackTypes.length > 0) {
+    variants.push(z.object({
+      ...commonSlotFields(),
+      block_type: z.enum(fallbackTypes as [string, ...string[]]),
+      params: z.record(z.string(), z.union([z.number(), z.string()])).optional().describe(PARAMS_LOOSE_DESC),
+    }));
+  }
+
+  if (variants.length === 1) return variants[0];
+  return z.discriminatedUnion(
+    'block_type',
+    variants as [z.ZodObject, z.ZodObject, ...z.ZodObject[]],
+  );
 }
 
 export const presetSceneShape = z.object({

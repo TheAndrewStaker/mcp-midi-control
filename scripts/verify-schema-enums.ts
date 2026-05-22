@@ -34,6 +34,7 @@ import { clearRegistry, registerDevice } from '@mcp-midi-control/core/protocol-g
 import {
   buildBlockTypeUnion,
   blockTypeSchema,
+  buildBlockTypeParamEnums,
   buildPresetShape,
 } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
@@ -166,16 +167,103 @@ console.log('\n── buildPresetShape() integration ──');
   check('presetShape accepts mixed-slot spec without crashing', mixed.success || !mixed.success);
 }
 
-// ─── Case 5: union snapshot for catalog-drift detection ────────────
+// ─── Case 5: BK-086 Option B — per-block params.type enum ──────────
+console.log('\n── Option B: per-block params.type enum ──');
+{
+  const typedEnums = buildBlockTypeParamEnums();
+  check('amp.type enum is registered', typedEnums.has('amp'));
+  check('reverb.type enum is registered', typedEnums.has('reverb'));
+  check('delay.type enum is registered', typedEnums.has('delay'));
+  check('compressor.type enum is registered', typedEnums.has('compressor'));
+
+  const ampTypes = typedEnums.get('amp') ?? [];
+  check('amp.type enum is non-empty', ampTypes.length > 0, `got ${ampTypes.length} entries`);
+  check('amp.type enum includes "Plexi 100W Normal"', ampTypes.includes('Plexi 100W Normal'));
+
+  const reverbTypes = typedEnums.get('reverb') ?? [];
+  check('reverb.type enum includes "Room, Small"', reverbTypes.includes('Room, Small'));
+
+  // II's reverb uses `effect_type`, not `type`. The typed-enum map
+  // should NOT carry an `effect_type` key — that's resolved at the
+  // dispatcher's alias layer (BK-065), not the schema.
+  check('typed-enum map does not erroneously carry `effect_type` key', !typedEnums.has('effect_type'));
+}
+
+// ─── Case 6: presetShape rejects bad type values inline ────────────
+console.log('\n── Option B: schema rejects invalid params.type ──');
+{
+  const shape = buildPresetShape();
+
+  // VALID: AM4 amp.type from the catalog passes.
+  const validAmp = {
+    slots: [{ slot: 1, block_type: 'amp', params: { type: 'Plexi 100W Normal', gain: 5 } }],
+  };
+  check('presetShape accepts valid amp.type from catalog', shape.safeParse(validAmp).success);
+
+  // INVALID: amp.type not in the catalog must reject at schema layer.
+  const invalidAmp = {
+    slots: [{ slot: 1, block_type: 'amp', params: { type: 'NOT_A_REAL_AMP_TYPE_2026' } }],
+  };
+  const ampReject = shape.safeParse(invalidAmp);
+  check('presetShape rejects amp.type not in catalog', !ampReject.success);
+
+  // VALID: reverb.type from the AM4 catalog.
+  const validReverb = {
+    slots: [{ slot: 1, block_type: 'reverb', params: { type: 'Room, Small', time: 5 } }],
+  };
+  check('presetShape accepts valid reverb.type', shape.safeParse(validReverb).success);
+
+  // INVALID: reverb.type not in the catalog.
+  const invalidReverb = {
+    slots: [{ slot: 1, block_type: 'reverb', params: { type: 'BAZINGA_REVERB' } }],
+  };
+  check('presetShape rejects reverb.type not in catalog', !shape.safeParse(invalidReverb).success);
+
+  // VALID: a typed block_type with NO params.type (type knob omitted)
+  // is fine — type is optional within the typed variant.
+  const ampNoType = {
+    slots: [{ slot: 1, block_type: 'amp', params: { gain: 5, bass: 4 } }],
+  };
+  check('presetShape accepts typed block without params.type', shape.safeParse(ampNoType).success);
+
+  // VALID: typed block accepts OTHER params loosely via catchall.
+  const ampWithExtras = {
+    slots: [{ slot: 1, block_type: 'amp', params: { type: 'Plexi 100W Normal', master_volume: 7, presence: 4.5 } }],
+  };
+  check('presetShape accepts loose extra params on typed block', shape.safeParse(ampWithExtras).success);
+
+  // FALLBACK: II indexed slug ('amp 1') falls to the fallback variant
+  // where params.type is loose — any string accepted.
+  const iiAmp = {
+    slots: [{ slot: 1, block_type: 'amp 1', params: { type: 'whatever-II-accepts', input_drive: 4 } }],
+  };
+  check('presetShape accepts II indexed slug with arbitrary params.type (fallback variant)',
+    shape.safeParse(iiAmp).success);
+
+  // EDGE: 'none' (clear-slot sentinel) — fallback variant, params optional.
+  const noneSlot = {
+    slots: [{ slot: 1, block_type: 'none' }],
+  };
+  check("presetShape accepts 'none' clear-slot sentinel", shape.safeParse(noneSlot).success);
+}
+
+// ─── Case 7: union snapshot for catalog-drift detection ────────────
 console.log('\n── Snapshot details (for catalog-drift awareness) ──');
 {
   const union = buildBlockTypeUnion();
-  console.log(`    union size: ${union.length}`);
+  console.log(`    block_type union size: ${union.length}`);
   console.log(`    first 12 entries: ${union.slice(0, 12).join(', ')}`);
   console.log(`    last 6 entries:   ${union.slice(-6).join(', ')}`);
-  // Soft floor / ceiling — if the union shrinks past ~40 or grows past ~250,
-  // something material changed in a descriptor and a human should look.
   check('union size in plausible range (40..250)', union.length >= 40 && union.length <= 250);
+
+  const typedEnums = buildBlockTypeParamEnums();
+  const typedSummary = [...typedEnums.entries()]
+    .map(([k, v]) => `${k}=${v.length}`)
+    .sort()
+    .join(', ');
+  console.log(`    typed params.type enums: ${typedSummary}`);
+  check('at least 8 type-bearing blocks have schema enums', typedEnums.size >= 8,
+    `got ${typedEnums.size} typed blocks`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed.`);
