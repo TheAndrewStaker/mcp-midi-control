@@ -5,10 +5,12 @@
  * The Ghidra catalog (`samples/captured/decoded/ghidra-axeedit2-
  * paramtables.json`, produced by `scripts/ghidra/SeekParamTablesII.java`)
  * holds 1,113 family-pure (paramId, symbolicName) pairs recovered
- * from Axe-Edit.exe. 643 of these already ship in
- * `packages/axe-fx-ii/src/params.ts` via wiki + editor-catalog joins.
- * The remaining 470 entries are NEW — the editor binary knows the
- * params, the wiki never indexed them.
+ * from Axe-Edit.exe. 643 of these already ship in the codec's
+ * `fractal-midi/src/axe-fx-ii/params.ts` (Session 98 extraction moved
+ * the param registry into the sibling `fractal-midi` repo; before
+ * that it lived at `packages/axe-fx-ii/src/params.ts`). The remaining
+ * 470 entries are NEW — the editor binary knows the params, the wiki
+ * never indexed them.
  *
  * This script identifies the 470 NEW entries, joins each against
  * `samples/captured/decoded/labels/axe-edit-catalog.json` for display
@@ -20,8 +22,10 @@
  *          controlType, parameterName, xmlLabel?, sourceFamily }
  *
  *   2. samples/captured/decoded/axefx2-ghidra-addendum.ts.txt
- *      Paste-ready TypeScript snippet for direct insertion into
- *      `packages/axe-fx-ii/src/params.ts` as an addendum block.
+ *      Paste-ready TypeScript snippet for direct insertion into the
+ *      codec's `fractal-midi/src/axe-fx-ii/params.ts` as an addendum
+ *      block. The merge happens in the fractal-midi repo, then
+ *      pack+install back here.
  *
  * **Why an addendum, not a generator-merge.** The parallel agent
  * (2026-05-17) is actively editing `scripts/extract-axe-fx-ii-params.ts`
@@ -52,7 +56,12 @@ const GHIDRA_JSON =
   'samples/captured/decoded/ghidra-axeedit2-paramtables.json';
 const XML_CATALOG_JSON =
   'samples/captured/decoded/labels/axe-edit-catalog.json';
-const PARAMS_TS = 'packages/axe-fx-ii/src/params.ts';
+// Session 98 (fractal-midi extraction): params.ts moved out of this
+// repo into the sibling codec repo. The research script runs locally
+// on a checkout where both repos are side-by-side at C:/dev/. If you
+// have fractal-midi elsewhere, set FRACTAL_MIDI_REPO env var.
+const FRACTAL_MIDI_REPO = process.env.FRACTAL_MIDI_REPO ?? '../fractal-midi';
+const PARAMS_TS = `${FRACTAL_MIDI_REPO}/src/axe-fx-ii/params.ts`;
 const OUT_JSON =
   'samples/captured/decoded/axefx2-ghidra-addendum.json';
 const OUT_SNIPPET =
