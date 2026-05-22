@@ -144,7 +144,12 @@ claims that aren't byte-verified.
 
 ### Session start (read in this order)
 1. **`docs/_private/STATE.md`** â€” current phase, single next action,
-   recent breakthroughs. Always first.
+   recent breakthroughs. Always first. Cross-device sessions stay here;
+   device-specific session logs live in shards `STATE-AM4.md`,
+   `STATE-AXEFX2.md`, `STATE-AXEFX3.md`, `STATE-HYDRA.md` (same pattern
+   as `HARDWARE-TASKS-*.md`). If the work targets one device, open that
+   device's shard too â€” main STATE.md only holds cross-device material
+   since the 2026-05-22 split.
 2. **`docs/_private/captured-artifacts.md`** if it exists â€” founder-
    private manifest of decompile dumps + USB captures + factory dumps
    that don't ship to OSS. **Always grep `samples/captured/decoded/`
@@ -705,7 +710,7 @@ Cheaper than discovering drift later.
 
 | Doc | Update whenâ€¦ |
 |---|---|
-| `docs/_private/STATE.md` | A substantive session happens. Always â€” it's the session-start orientation doc. Update "single next action" and any relevant "recent breakthroughs" entry. |
+| `docs/_private/STATE.md` | A substantive session happens. Always â€” it's the session-start orientation doc. Update "single next action" and any relevant "recent breakthroughs" entry. Device-specific session writeups go in the matching `STATE-<DEVICE>.md` shard; cross-device + cookbook + MCP-architecture sessions stay in main STATE.md. |
 | `docs/_private/PROMPT-COVERAGE.md` | A new MCP tool ships, a protocol decode lands, or founder testing surfaces a new user prompt pattern. Flip âš  â†’ âœ… when the blocker clears; flip âŒ â†’ âš  when a research item gets a concrete decode plan; add new rows for unanticipated prompts. |
 | `docs/_private/HARDWARE-TASKS.md` | A HW-NNN item completes (mark âœ… + capture outcome), or a new hardware action is identified that Claude can't perform alone (append HW-NNN with step-by-step instructions). |
 | `docs/_private/04-BACKLOG.md` | A new backlog item is identified, an existing item ships / re-scopes / is superseded, or a cross-reference between items is worth recording. |
