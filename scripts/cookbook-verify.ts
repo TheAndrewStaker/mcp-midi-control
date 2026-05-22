@@ -479,6 +479,55 @@ function caseVendorEnvelopeDescriptorTable(): string | null {
   return null;
 }
 
+function caseIiiBlockNameStringCascade(): string | null {
+  // Negative-finding drift guard. The cookbook entry
+  // `_negative/iii-block-name-string-cascade.md` claims the III editor
+  // binary has NO inline `strcmp(name, "Amp"/"Cab"/"Chorus"/...)` cascade
+  // for preset-binary block ordering. If the III dumps are regenerated
+  // and the cascade pattern DOES appear, this test fails and forces the
+  // cookbook entry to be re-classified (promoted to a real transfer or
+  // moved to scratch). False-positive guard: `PresetCabBundleImport` is a
+  // single known import-function symbol containing "Cab" as a substring
+  // — not a block-name string-table reference.
+  const dump = path.join(
+    FRACTAL_MIDI_ROOT,
+    'samples',
+    'captured',
+    'decoded',
+    'ghidra-axe-edit-iii-preset-receiver.txt',
+  );
+  if (!existsSync(dump)) {
+    return `III preset-receiver dump not found at ${dump}. ` +
+      `Regenerate via fractal-midi/scripts/ghidra/DumpAxeEditIIIPresetReceiver.java.`;
+  }
+  const src = readFileSync(dump, 'utf8');
+  // Look for `,"<BlockName>"` followed by `)` — the strcmp-style call
+  // pattern AEImageDepot uses on II. Quoting the needle keeps it from
+  // matching unrelated identifiers like `PresetCab*`.
+  const needles = [
+    'Amp', 'Cab', 'Chorus', 'Compressor', 'Drive', 'Reverb', 'Flanger',
+    'Phaser', 'Delay', 'Pitch', 'Vocoder', 'Tremolo', 'Filter', 'Rotary',
+    'QuadChorus', 'Resonator', 'RingMod', 'Synth', 'GateExpander',
+    'GraphicEQ', 'ParametricEQ', 'MultibandComp', 'MultiDelay',
+    'PanTrem', 'Looper', 'Noisegate',
+  ];
+  const matches: string[] = [];
+  for (const n of needles) {
+    // Pattern: ,"Name") — strcmp-style call argument
+    const re = new RegExp(`,\\s*"${n}"\\s*\\)`, 'g');
+    const hits = src.match(re);
+    if (hits && hits.length > 0) {
+      matches.push(`${n} (${hits.length} hits)`);
+    }
+  }
+  if (matches.length > 0) {
+    return `cookbook negative-finding CONTRADICTED: III preset-receiver dump ` +
+      `now contains strcmp-style block-name cascade matches: ${matches.join(', ')}. ` +
+      `Update _negative/iii-block-name-string-cascade.md (promote to transfer or scratch).`;
+  }
+  return null;
+}
+
 function caseXorFoldHash(): string | null {
   // Trivial XOR-fold over a known ushort array; the algorithm matches
   // FUN_00544cc0 from AxeEdit II.
@@ -506,6 +555,7 @@ const FUNCTIONAL_CASES: Record<string, () => string | null> = {
   'septet-21bit-byte2-mask-preservation': caseSeptet21bitByte2MaskPreservation,
   'vendor-envelope-descriptor-table': caseVendorEnvelopeDescriptorTable,
   'xor-fold-hash': caseXorFoldHash,
+  'iii-block-name-string-cascade': caseIiiBlockNameStringCascade,
 };
 
 // -----------------------------------------------------------------------------
