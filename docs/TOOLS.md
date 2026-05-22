@@ -13,9 +13,9 @@ See [README.md § Configuring tool profiles](../README.md#configuring-tool-profi
 
 | Profile | Tool count | Average description length | Tools over 600 chars | Tools over 1000 chars |
 |---|---|---|---|---|
-| `core` | 26 | 952 chars | 12 | 5 |
-| `experimental` | 81 | 703 chars | 33 | 7 |
-| `full` | 81 | 703 chars | 33 | 7 |
+| `core` | 26 | 767 chars | 12 | 4 |
+| `experimental` | 81 | 644 chars | 33 | 6 |
+| `full` | 81 | 644 chars | 33 | 6 |
 
 ## core profile (26 tools)
 
@@ -23,7 +23,7 @@ Default-recommended unified surface for conversational tone-building. Smallest a
 
 | Tool | Description length | First sentence |
 |---|---|---|
-| `apply_preset` | 5808 ⚠️ over 1000 | Build a fresh preset in one structured call (replaces a sequence of set_block + set_param + switch_scene). |
+| `apply_preset` | 993 ⚠ | Build a fresh preset in one structured call. |
 | `apply_setlist` | 702 ⚠ | DESTRUCTIVE: bulk switch + apply + save per entry across a list. |
 | `describe_device` | 2623 ⚠️ over 1000 | REQUIRED first call for any device question or any apply_preset that uses recipe-style language (auto-wah, parked wah, octave-up, telephone filter, scene-lev... |
 | `find_compatible_types` | 746 ⚠ | Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics). |
@@ -61,7 +61,7 @@ Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics.
 | `am4_get_block_bypass` | 306 | Read whether an AM4 block is bypassed or active in the currently-selected scene. |
 | `am4_get_block_layout` | 399 | Read the AM4 working-buffer block layout (4 slots). |
 | `am4_request_active_buffer_dump` | 377 | Dump the AM4 working buffer as raw stored-form bytes (6-message stream: 0x77 header + 4x 0x78 chunks + 0x79 footer). |
-| `apply_preset` | 5808 ⚠️ over 1000 | Build a fresh preset in one structured call (replaces a sequence of set_block + set_param + switch_scene). |
+| `apply_preset` | 993 ⚠ | Build a fresh preset in one structured call. |
 | `apply_setlist` | 702 ⚠ | DESTRUCTIVE: bulk switch + apply + save per entry across a list. |
 | `axefx2_dump_preset` | 595 | Byte-exact dump of an Axe-Fx II preset (12,951 wire bytes), plus a parsed metadata snapshot. |
 | `axefx2_get_active_preset_number` | 184 | Read the active preset slot (1..16384) on the Axe-Fx II, matching the front-panel display. |
@@ -149,7 +149,7 @@ Everything registered (current default; equivalent to no env var). Preserved as 
 | `am4_get_block_bypass` | 306 | Read whether an AM4 block is bypassed or active in the currently-selected scene. |
 | `am4_get_block_layout` | 399 | Read the AM4 working-buffer block layout (4 slots). |
 | `am4_request_active_buffer_dump` | 377 | Dump the AM4 working buffer as raw stored-form bytes (6-message stream: 0x77 header + 4x 0x78 chunks + 0x79 footer). |
-| `apply_preset` | 5808 ⚠️ over 1000 | Build a fresh preset in one structured call (replaces a sequence of set_block + set_param + switch_scene). |
+| `apply_preset` | 993 ⚠ | Build a fresh preset in one structured call. |
 | `apply_setlist` | 702 ⚠ | DESTRUCTIVE: bulk switch + apply + save per entry across a list. |
 | `axefx2_dump_preset` | 595 | Byte-exact dump of an Axe-Fx II preset (12,951 wire bytes), plus a parsed metadata snapshot. |
 | `axefx2_get_active_preset_number` | 184 | Read the active preset slot (1..16384) on the Axe-Fx II, matching the front-panel display. |
@@ -233,7 +233,6 @@ Tools with descriptions over 1000 chars. T-4 / T-13 target these for migration i
 | Tool | Description length |
 |---|---|
 | `hydra_apply_patch` | 5834 chars |
-| `apply_preset` | 5808 chars |
 | `describe_device` | 2623 chars |
 | `get_preset` | 2131 chars |
 | `nudge_param` | 1571 chars |
