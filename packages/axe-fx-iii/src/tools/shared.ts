@@ -72,6 +72,16 @@ export const BETA_NOTE = [
   '(see docs/AXEFX3-BETA-TESTING.md).',
 ].join('\n');
 
+/**
+ * T-23 (2026-05-21): prefix every Axe-Fx III tool description's first
+ * line so the BETA status is visible BEFORE the substantive prose. The
+ * existing BETA_NOTE at the end of each description carries the full
+ * explanation, but an agent scanning tools/list top-down may decide to
+ * call the tool before reaching the end. The prefix lands in the
+ * first ~15 chars the agent reads.
+ */
+export const BETA_PREFIX = '[III BETA — unverified on hardware] ';
+
 // -- MIDI lazy-init -------------------------------------------------------
 
 let conn: MidiConnection | undefined;

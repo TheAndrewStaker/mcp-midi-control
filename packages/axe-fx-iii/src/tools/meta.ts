@@ -12,7 +12,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 
 import { describeAxeFxIIIPortStatus } from '../midi.js';
-import { BETA_NOTE, ensureConn, resetAxeFxIIIConnection, toHex } from './shared.js';
+import { BETA_NOTE, BETA_PREFIX, ensureConn, resetAxeFxIIIConnection, toHex } from './shared.js';
 
 export { describeAxeFxIIIPortStatus };
 
@@ -21,7 +21,7 @@ export function registerAxeFxIIIMetaTools(server: McpServer): void {
   server.registerTool('axefx3_reconnect_midi', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
-      'Drop the cached Axe-Fx III MIDI handle and force a fresh port-open on the next axefx3_* call. Use after a mid-session replug or a timeout that left the USB handle stale. Does NOT affect AM4 / II / Hydrasynth.',
+      BETA_PREFIX + 'Drop the cached Axe-Fx III MIDI handle and force a fresh port-open on the next axefx3_* call. Use after a mid-session replug or a timeout that left the USB handle stale. Does NOT affect AM4 / II / Hydrasynth.',
       BETA_NOTE,
     ].join('\n'),
     inputSchema: {},
@@ -49,7 +49,7 @@ export function registerAxeFxIIIMetaTools(server: McpServer): void {
   server.registerTool('axefx3_probe_sysex', {
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     description: [
-      'Send raw SysEx to the Axe-Fx III AND capture inbound MIDI in the response window. Primary tool for the community-capture decode workflow; not for production preset edits.',
+      BETA_PREFIX + 'Send raw SysEx to the Axe-Fx III AND capture inbound MIDI in the response window. Primary tool for the community-capture decode workflow; not for production preset edits.',
       'Workflow: subscribes to inbound BEFORE sending so responses can\'t race ahead, sends, drains for capture_ms, returns each message with timestamps.',
       '- bytes: hex string, F0..F7 framing. Caller owns the checksum (XOR of body, AND 0x7F).',
       '- capture_ms: 50..2000, default 250.',
