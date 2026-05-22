@@ -139,7 +139,7 @@
     "@types/jest": "^29.0.0",
     "@types/node": "^20.0.0",
     "adm-zip": "^0.5.17",
-    "fractal-midi": "file:../fractal-midi/fractal-midi-0.1.0-alpha.8.tgz",
+    "fractal-midi": "file:../fractal-midi/fractal-midi-0.1.0-alpha.9.tgz",
     "jest": "^29.0.0",
     "midi": "^2.0.0",
     "ts-jest": "^29.0.0",

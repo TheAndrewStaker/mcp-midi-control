@@ -168,6 +168,12 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
     supports_save: true,
     supports_factory_restore: true,
     supports_lineage: true,
+    // atomic_read stays false: the fn 0x1F wire primitive ships in
+    // `packages/am4/src/shared/readOps.ts` `readAllParams` (HW-AM4-FN1F,
+    // 2026-05-22), but the chunk-position-to-paramId mapping is not
+    // yet decoded. The dispatcher's `get_preset` path needs that
+    // mapping to use the primitive; until it ships, the per-paramId
+    // loop is canonical. Flip to true once the mapping is established.
     atomic_read: false,
   },
   canonical_terms: {

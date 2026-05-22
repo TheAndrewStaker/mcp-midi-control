@@ -10,7 +10,7 @@
   "dependencies": {
     "@mcp-midi-control/core": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "fractal-midi": "file:../../../fractal-midi/fractal-midi-0.1.0-alpha.8.tgz",
+    "fractal-midi": "file:../../../fractal-midi/fractal-midi-0.1.0-alpha.9.tgz",
     "zod": "^4.4.2"
   },
   "scripts": {
