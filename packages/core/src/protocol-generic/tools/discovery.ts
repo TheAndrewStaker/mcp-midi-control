@@ -141,6 +141,7 @@ export function registerDiscoveryTools(server: McpServer): void {
       '- forward: { block_type, name } exact-match the canonical model name.',
       '- reverse: { block_type, real_gear } substring search across basedOn / description / quotes. Use for "1176", "Tube Screamer", "Keith Urban tone".',
       '- structured: { block_type, manufacturer?, model? } exact-match structured fields.',
+      'LOUDNESS DATA. When forward-querying an amp or drive by name, the response carries a structured `loudness` field with master_sweet_spot_display + relative_loudness_dB for amps, or default_level_display + boost_response_dB for drives. Call before apply_preset when authoring solo/lead scenes so the level compensation is computed from data, not guessed.',
       'Devices without lineage refuse via a capability error; see describe_device.capabilities.supports_lineage.',
     ].join(' '),
     inputSchema: {

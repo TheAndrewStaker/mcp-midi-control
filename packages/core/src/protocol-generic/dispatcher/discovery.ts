@@ -16,6 +16,8 @@ import {
 import {
   lookupAmpLoudness,
   lookupDriveLoudness,
+  type AmpLoudnessEntry,
+  type DriveLoudnessEntry,
 } from '../../fractal-shared/loudness.js';
 import { resolveEnumAlias } from '../cross-device-enums.js';
 import { resolveParamAlias } from '../cross-device-aliases.js';
@@ -341,6 +343,15 @@ export function findCompatibleTypes(args: {
 /**
  * Pure lookup for `lookup_lineage`. No MIDI I/O — purely a query against
  * the descriptor's static lineage corpus.
+ *
+ * T-24 (2026-05-21): when `args.name` resolves to an entry in the
+ * cross-device loudness corpus (per-amp master sweet-spot + relative
+ * loudness, per-drive default level + boost response dB), the response
+ * carries structured `loudness` data alongside the text blob. Closes
+ * the apply_preset description's loudness-discipline paragraph: agents
+ * can call `lookup_lineage` once per amp/drive to get the numbers
+ * directly instead of reading the prose from the apply_preset tool
+ * description on every session.
  */
 export function executeLookupLineage(args: {
   port: string;
@@ -350,7 +361,13 @@ export function executeLookupLineage(args: {
   manufacturer?: string;
   model?: string;
   include_quotes?: boolean;
-}): { device: string; ok: boolean; text: string } {
+}): {
+  device: string;
+  ok: boolean;
+  text: string;
+  loudness?: AmpLoudnessEntry | DriveLoudnessEntry;
+  loudness_kind?: 'amp' | 'drive';
+} {
   const descriptor = requireDevice(args.port);
   if (!descriptor.capabilities.supports_lineage) {
     throw new DispatchError(
@@ -367,5 +384,33 @@ export function executeLookupLineage(args: {
     );
   }
   const result = descriptor.reader.lookupLineage(args);
-  return { ...result, device: descriptor.display_name };
+  // T-24: attach structured loudness data when the caller's name+block
+  // resolve to a corpus entry. The corpus is keyed by AM4 display name
+  // (matches Axe-Fx II / III lineage records' `am4Name` field), so
+  // exact-match works on AM4 callers directly and on II / III callers
+  // when they pass the AM4-equivalent name (which describe_device + the
+  // lineage text already surface).
+  let loudness: AmpLoudnessEntry | DriveLoudnessEntry | undefined;
+  let loudnessKind: 'amp' | 'drive' | undefined;
+  if (typeof args.name === 'string' && args.name.length > 0) {
+    const blockTypeLower = args.block_type.toLowerCase();
+    if (blockTypeLower === 'amp' || blockTypeLower.startsWith('amp ')) {
+      const entry = lookupAmpLoudness(args.name);
+      if (entry !== undefined) {
+        loudness = entry;
+        loudnessKind = 'amp';
+      }
+    } else if (blockTypeLower === 'drive' || blockTypeLower.startsWith('drive ')) {
+      const entry = lookupDriveLoudness(args.name);
+      if (entry !== undefined) {
+        loudness = entry;
+        loudnessKind = 'drive';
+      }
+    }
+  }
+  return {
+    ...result,
+    device: descriptor.display_name,
+    ...(loudness !== undefined ? { loudness, loudness_kind: loudnessKind } : {}),
+  };
 }

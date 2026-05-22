@@ -13,9 +13,9 @@ See [README.md § Configuring tool profiles](../README.md#configuring-tool-profi
 
 | Profile | Tool count | Average description length | Tools over 600 chars | Tools over 1000 chars |
 |---|---|---|---|---|
-| `core` | 26 | 939 chars | 11 | 5 |
-| `experimental` | 81 | 699 chars | 32 | 7 |
-| `full` | 81 | 699 chars | 32 | 7 |
+| `core` | 26 | 952 chars | 12 | 5 |
+| `experimental` | 81 | 703 chars | 33 | 7 |
+| `full` | 81 | 703 chars | 33 | 7 |
 
 ## core profile (26 tools)
 
@@ -32,7 +32,7 @@ Default-recommended unified surface for conversational tone-building. Smallest a
 | `get_preset` | 2131 ⚠️ over 1000 | Snapshot the active working buffer in one tool call. |
 | `list_midi_ports` | 460 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 838 ⚠ | Enumerate a device's parameters with units and display ranges. |
-| `lookup_lineage` | 587 | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
+| `lookup_lineage` | 940 ⚠ | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
 | `nudge_param` | 1571 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
@@ -107,7 +107,7 @@ Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics.
 | `hydra_set_param` | 899 ⚠ | ⚠ This Hydrasynth tool surface is in active development. |
 | `list_midi_ports` | 460 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 838 ⚠ | Enumerate a device's parameters with units and display ranges. |
-| `lookup_lineage` | 587 | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
+| `lookup_lineage` | 940 ⚠ | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
 | `nudge_param` | 1571 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
@@ -195,7 +195,7 @@ Everything registered (current default; equivalent to no env var). Preserved as 
 | `hydra_set_param` | 899 ⚠ | ⚠ This Hydrasynth tool surface is in active development. |
 | `list_midi_ports` | 460 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 838 ⚠ | Enumerate a device's parameters with units and display ranges. |
-| `lookup_lineage` | 587 | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
+| `lookup_lineage` | 940 ⚠ | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
 | `nudge_param` | 1571 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
