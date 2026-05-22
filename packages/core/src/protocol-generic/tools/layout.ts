@@ -15,9 +15,14 @@ import * as z from 'zod/v4';
 
 import { executeSetBlock, executeSetBypass, executeToggleBypass } from '../dispatcher.js';
 
-import { PORT_DESC, asError, asText } from './shared.js';
+import { PORT_DESC, asError, asText, blockTypeSchema } from './shared.js';
 
 export function registerLayoutTools(server: McpServer): void {
+  // BK-086 Option A: capture the block-type union once at boot. See
+  // tools/shared.ts for the rationale (runtime union from registered
+  // descriptors, falls back to z.string() on empty registry).
+  const blockTypeArg = blockTypeSchema();
+
   server.registerTool('set_block', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
@@ -31,8 +36,9 @@ export function registerLayoutTools(server: McpServer): void {
       slot: z.number().int().describe(
         'Slot index (1-based) on linear devices. Grid-device support is Wave 2.',
       ),
-      block_type: z.string().describe(
-        'Block type to place. Pass "none" to clear the slot. See describe_device.block_types.',
+      block_type: blockTypeArg.describe(
+        'Block type to place. Pass "none" to clear the slot. See describe_device.block_types. ' +
+        'BK-086: schema enum constrained to the union of every registered device\'s legal placements.',
       ),
     },
   }, async ({ port, slot, block_type }) => {

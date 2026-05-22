@@ -29,9 +29,15 @@ import {
   buildSaveAuthorizedDescription,
 } from '../../server-shared/safeEdit.js';
 
-import { PORT_DESC, asError, asText, presetShape } from './shared.js';
+import { PORT_DESC, asError, asText, buildPresetShape } from './shared.js';
 
 export function registerPresetTools(server: McpServer): void {
+  // BK-086 Option A: capture the block-type union ONCE at boot, when
+  // every device descriptor is already registered. Reusing the same
+  // schema across the three tools below keeps schema serialization
+  // cheap and ensures their `spec.slots[].block_type` enums stay
+  // synchronized.
+  const presetShape = buildPresetShape();
   server.registerTool('get_preset', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
@@ -86,7 +92,7 @@ export function registerPresetTools(server: McpServer): void {
     try {
       const result = await executeApplyPreset({
         port,
-        spec: spec as PresetSpec,
+        spec: spec as unknown as PresetSpec,
         target_location,
         save_authorized,
         on_active_preset_edited,
@@ -165,7 +171,7 @@ export function registerPresetTools(server: McpServer): void {
     try {
       const result = await executePortPreset({
         source_port,
-        source_spec: source_spec as PresetSpec,
+        source_spec: source_spec as unknown as PresetSpec,
         target_port,
         target_location,
         dry_run,

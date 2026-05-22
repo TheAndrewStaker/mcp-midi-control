@@ -11,6 +11,7 @@
 import * as z from 'zod/v4';
 
 import { DispatchError } from '../types.js';
+import { listRegisteredDevices } from '../registry.js';
 
 export const PORT_DESC =
   'Device port. Accepts the device id (e.g. "am4", "axe-fx-ii"), display ' +
@@ -105,32 +106,111 @@ export function asError(err: unknown): { content: { type: 'text'; text: string }
   return { content: [{ type: 'text', text }], isError: true };
 }
 
-// ── PresetSpec zod schemas (shared by apply_preset + apply_setlist) ─
+// ── Block-type schema union (BK-086 Option A) ───────────────────────
+//
+// At server boot, after every device descriptor is registered (see
+// `packages/server-all/src/server/index.ts` — `registerMcpDevice`
+// runs BEFORE `registerUnifiedTools`), we union every registered
+// descriptor's legal `block_type` inputs into a single Zod enum and
+// stamp it onto every tool that takes a `block_type` argument.
+//
+// Why a runtime union, not a static list:
+//   - Each device contributes its own `block_types` (AM4: bare slugs
+//     like 'amp'; Axe-Fx II: indexed slugs like 'amp 1'). The legal
+//     set is the union of both forms across every registered device.
+//   - New devices added later get picked up automatically the next
+//     time the server boots. No hand-maintained list to fall stale.
+//
+// What goes in:
+//   - `Object.keys(desc.block_types)` for every descriptor that
+//     declares a non-empty `block_types`. Devices with empty
+//     `block_types` (Axe-Fx III, Hydrasynth) don't support set_block
+//     today, so they contribute nothing to the placement vocabulary.
+//   - `Object.keys(desc.blocks)` for those same descriptors, to
+//     cover the bare-slug form (II's `block_types` only carries
+//     indexed slugs; bare `amp` resolves at the writer via group-
+//     code lookup but is still a valid agent input).
+//
+// What this catches vs. the prior `z.string()` shape:
+//   - Schema-layer rejects unknown block_type strings BEFORE the
+//     dispatcher allocates a writer / opens a port. The error path
+//     today is "tool call → dispatcher → preflight reject"; with
+//     the enum the rejection lands in the MCP layer itself with
+//     valid-options surfaced inline by Zod.
+//   - Reduces the "agent guesses a block_type name" retry loop
+//     measured in prod logs (~13/1005 tool calls = 1.3%).
+//
+// Edge case: if NO devices are registered (e.g. unit-test boot with
+// an empty registry), fall back to `z.string()` so we don't crash
+// the boot loop with an empty z.enum.
 
-export const presetSlotShape = z.object({
-  slot: z.union([
-    z.number().int().min(1),
-    z.object({ row: z.number().int().min(1), col: z.number().int().min(1) }),
-  ]).describe(
-    'Slot location. Linear devices (AM4): 1-based slot index 1..4. Grid devices (Axe-Fx II): {row,col} 1-based, or a bare number as shorthand for {row:2, col:N} (row-2 linear chain).',
-  ),
-  block_type: z.string().describe(
-    'Block to place (e.g. "amp", "drive", "reverb", "none"). See describe_device.block_types.',
-  ),
-  params: z.record(z.string(), z.union([z.number(), z.string()])).optional().describe(
-    'Flat param map for non-channel blocks OR the active channel of channel blocks (`{ rate: 0.8, depth: 35 }`). For multi-channel authoring on channel blocks (amp / drive / reverb / delay on AM4; every block on II / III), use `params_by_channel` instead. T-5 (2026-05-21): nested-in-params (`{A:{...}}`) used to be accepted; pass that shape via `params_by_channel` now. Setting both `params` and `params_by_channel` on the same slot is rejected.',
-  ),
-  params_by_channel: z.record(z.string(), z.record(z.string(), z.union([z.number(), z.string()]))).optional().describe(
-    'Per-channel param maps for channel blocks (`{ A: { gain: 6 }, D: { gain: 8 } }` on AM4; `X` / `Y` on II / III). Each top-level key is a channel name; each value is a flat param map for that channel. See describe_device.capabilities.channel_blocks for the per-device channel list. Non-channel blocks reject this field; use `params` (flat) there.',
-  ),
-  bypassed: z.boolean().optional(),
-  id: z.string().optional().describe(
-    'v0.4: stable identifier for this block, used by routing edges and scene maps. Default: auto-derived `<block_type>_<instance>` (e.g. amp_1). Required when two blocks of the same type exist in the same preset.',
-  ),
-  instance: z.number().int().min(1).optional().describe(
-    'v0.4: instance number on grid devices that support multiple of the same block type (Amp 1, Amp 2). Default 1. AM4 only accepts 1.',
-  ),
-});
+export function buildBlockTypeUnion(): readonly string[] {
+  const out = new Set<string>();
+  for (const desc of listRegisteredDevices()) {
+    if (!desc.block_types) continue;
+    const placementKeys = Object.keys(desc.block_types);
+    if (placementKeys.length === 0) continue;
+    for (const k of placementKeys) out.add(k);
+    // Add bare-slug forms (II canonical input is 'amp'; block_types
+    // for II carries indexed 'amp 1' / 'amp 2' but the writer
+    // accepts the bare slug via group-code resolution). Restricted
+    // to descriptors that already declare block_types so we don't
+    // pollute the union with synth-voice / param-only blocks from
+    // Hydra or III.
+    for (const k of Object.keys(desc.blocks)) out.add(k);
+  }
+  return [...out].sort();
+}
+
+/**
+ * Convenience: return a Zod schema for `block_type` that's a strict
+ * enum when at least one device is registered, or a plain string
+ * (legacy behavior) when the registry is empty. Callers should use
+ * this AT TOOL REGISTRATION TIME so the union reflects every
+ * registered device.
+ */
+export function blockTypeSchema(): z.ZodEnum<Record<string, string>> | z.ZodString {
+  const union = buildBlockTypeUnion();
+  if (union.length === 0) return z.string();
+  return z.enum(union as [string, ...string[]]);
+}
+
+// ── PresetSpec zod schemas (shared by apply_preset + apply_setlist) ─
+//
+// `presetSlotShape` and `presetShape` are FACTORIES rather than
+// constants so the `block_type` field inside picks up the current
+// registry state at tool-registration time. See `buildBlockTypeUnion`
+// above for the rationale.
+
+export function buildPresetSlotShape(): z.ZodObject {
+  return z.object({
+    slot: z.union([
+      z.number().int().min(1),
+      z.object({ row: z.number().int().min(1), col: z.number().int().min(1) }),
+    ]).describe(
+      'Slot location. Linear devices (AM4): 1-based slot index 1..4. Grid devices (Axe-Fx II): {row,col} 1-based, or a bare number as shorthand for {row:2, col:N} (row-2 linear chain).',
+    ),
+    block_type: blockTypeSchema().describe(
+      'Block to place (e.g. "amp", "drive", "reverb", "none"). See describe_device.block_types. ' +
+      'BK-086: schema enum constrained to the union of every registered device\'s legal placements ' +
+      '(AM4 bare slugs + Axe-Fx II indexed slugs). Schema-layer rejection beats dispatcher rejection — ' +
+      'the agent gets `Valid options:` from Zod before allocating a wire writer.',
+    ),
+    params: z.record(z.string(), z.union([z.number(), z.string()])).optional().describe(
+      'Flat param map for non-channel blocks OR the active channel of channel blocks (`{ rate: 0.8, depth: 35 }`). For multi-channel authoring on channel blocks (amp / drive / reverb / delay on AM4; every block on II / III), use `params_by_channel` instead. T-5 (2026-05-21): nested-in-params (`{A:{...}}`) used to be accepted; pass that shape via `params_by_channel` now. Setting both `params` and `params_by_channel` on the same slot is rejected.',
+    ),
+    params_by_channel: z.record(z.string(), z.record(z.string(), z.union([z.number(), z.string()]))).optional().describe(
+      'Per-channel param maps for channel blocks (`{ A: { gain: 6 }, D: { gain: 8 } }` on AM4; `X` / `Y` on II / III). Each top-level key is a channel name; each value is a flat param map for that channel. See describe_device.capabilities.channel_blocks for the per-device channel list. Non-channel blocks reject this field; use `params` (flat) there.',
+    ),
+    bypassed: z.boolean().optional(),
+    id: z.string().optional().describe(
+      'v0.4: stable identifier for this block, used by routing edges and scene maps. Default: auto-derived `<block_type>_<instance>` (e.g. amp_1). Required when two blocks of the same type exist in the same preset.',
+    ),
+    instance: z.number().int().min(1).optional().describe(
+      'v0.4: instance number on grid devices that support multiple of the same block type (Amp 1, Amp 2). Default 1. AM4 only accepts 1.',
+    ),
+  });
+}
 
 export const presetSceneShape = z.object({
   scene: z.number().int().min(1).describe('Scene number (1-indexed).'),
@@ -155,16 +235,31 @@ export const routingEdgeShape = z.object({
   ),
 });
 
-export const presetShape = z.object({
-  slots: z.array(presetSlotShape).min(1),
-  scenes: z.array(presetSceneShape).optional(),
-  name: z.string().max(32).optional(),
-  landingScene: z.number().int().min(1).optional().describe(
-    'Scene the device lands on after the build (1-indexed, device-clamped). ' +
-    'Default 1. Lets the agent preview a specific scene-section ' +
-    '(e.g. land on solo scene for an immediate lead test). Devices without scenes ignore this.',
-  ),
-  routing: z.array(routingEdgeShape).optional().describe(
-    'v0.4: explicit routing edges for grid devices (parallel chains, FX loops, wet/dry splits). When omitted on a grid device, the descriptor infers a row-2 linear chain. Linear devices (AM4) reject this field; they route implicitly by slot order. See docs/FRACTAL-PRESET-SCHEMA.md for worked examples.',
-  ),
-});
+/**
+ * Build the top-level `spec` schema used by apply_preset / apply_setlist /
+ * translate_preset. Factory rather than const so the embedded slot shape
+ * picks up the current block-type union (see `buildBlockTypeUnion`).
+ */
+export function buildPresetShape(): z.ZodObject {
+  return z.object({
+    slots: z.array(buildPresetSlotShape()).min(1),
+    scenes: z.array(presetSceneShape).optional(),
+    name: z.string().max(32).optional(),
+    landingScene: z.number().int().min(1).optional().describe(
+      'Scene the device lands on after the build (1-indexed, device-clamped). ' +
+      'Default 1. Lets the agent preview a specific scene-section ' +
+      '(e.g. land on solo scene for an immediate lead test). Devices without scenes ignore this.',
+    ),
+    routing: z.array(routingEdgeShape).optional().describe(
+      'v0.4: explicit routing edges for grid devices (parallel chains, FX loops, wet/dry splits). When omitted on a grid device, the descriptor infers a row-2 linear chain. Linear devices (AM4) reject this field; they route implicitly by slot order. See docs/FRACTAL-PRESET-SCHEMA.md for worked examples.',
+    ),
+  });
+}
+
+// Legacy const exports — kept for any direct importer outside the tool
+// registration path. These freeze the union at module load time (when
+// the registry is empty), so they fall back to z.string() for
+// block_type. Tool registrations use `buildPresetShape()` to capture
+// the live union at boot.
+export const presetSlotShape = buildPresetSlotShape();
+export const presetShape = buildPresetShape();
