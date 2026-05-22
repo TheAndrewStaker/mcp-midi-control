@@ -1,11 +1,35 @@
 # MCP MIDI Control: Project Vision
 
 ## One-Line Pitch
-Talk to Claude, get authentic tones instantly loaded onto your USB MIDI gear:
-Fractal AM4, Axe-Fx II XL+, Axe-Fx III (community beta), ASM Hydrasynth
-Explorer, plus any device reachable over generic MIDI.
+Conversational, lineage-aware preset building for Fractal. Talk to Claude
+the way you'd describe a tone to another player, and the right SysEx /
+NRPN / CC lands on your gear (AM4, Axe-Fx II XL+, Axe-Fx III community
+beta, ASM Hydrasynth Explorer, plus any USB MIDI device for generic
+primitives).
 
-## The Problem
+## What this gives you that AxeEdit doesn't
+AxeEdit is the right tool when you want to see every knob at once and
+click your way to a tone you can already picture. This MCP server is the
+right tool when:
+
+- **You want to describe the tone, not build it knob-by-knob.** "Edge-
+  style dotted-eighth lead with Plexi grit" lands a calibrated starting
+  point in one chat turn instead of a 20-minute panel session.
+- **You want lineage data informing the build.** `lookup_lineage` knows
+  which Fractal amp models which real amp, the per-amp master sweet-
+  spot, the per-drive boost dB, the iconic-tone cluster a model lives
+  in. AxeEdit ships none of that.
+- **You want to translate a tone to a different device.** `translate_preset`
+  walks block roles, param-name aliases (drive.volume vs drive.level),
+  enum mappings (USA IIC+ vs USA MK IIC+), and scene/channel cardinality
+  (AM4 4x4 vs II 8x2 vs III 8x4). One chat turn, no manual re-authoring.
+- **You want one-shot setlist builds.** `apply_setlist` runs a batch
+  switch + apply + save across N locations from one chat turn.
+
+The unifying product story: AxeEdit is for the editor's-eye-view; this
+is for the player's-ear-language. Both have a place.
+
+## The Problem (sub-version: tone description vs tone authoring)
 Building presets on a hardware amp modeler or synth requires deep technical
 knowledge of parameter names, signal chains, and effect types. Even experienced
 players spend hours dialing in a tone that could be described in one sentence.

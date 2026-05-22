@@ -1,14 +1,34 @@
 # MCP MIDI Control
 
-Talk to Claude. Control your MIDI gear.
+**Conversational, lineage-aware preset building for Fractal.**
 
 MCP MIDI Control is a local [Model Context Protocol](https://modelcontextprotocol.io)
-(MCP) server that lets Claude drive USB MIDI hardware in plain English.
+(MCP) server that turns Claude into a working guitarist's preset assistant.
+Ask for a tone the way you'd describe it to another player ("Edge-style
+dotted-eighth lead with the Plexi grit", "Comfortably Numb solo, all four
+scenes", "translate my AM4 build to the Axe-Fx II at slot 614, no save yet")
+and Claude reaches for the right blocks, knobs, and scenes via SysEx /
+NRPN / CC against the gear plugged into your USB port.
+
+What makes that worth doing instead of clicking around in AxeEdit:
+
+- **Lineage corpus.** `lookup_lineage` knows which Fractal amp models
+  what real amp, which drive boosts how many dB, and which iconic-tone
+  cluster a given model lives in. Asking for "the Vox AC30 sound at
+  Brian May's "39" gain level" lands on a calibrated starting point,
+  not a guess.
+- **Cross-device translation.** `translate_preset` maps block roles
+  and translates param vocabularies between AM4 / Axe-Fx II / Axe-Fx III,
+  so a tone you built on one device ports to a sibling without re-
+  authoring from scratch.
+- **One-shot setlist building.** `apply_setlist` runs a batch
+  switch + apply + save across N preset locations from a single chat
+  turn. Useful when you're prepping the night's setlist after a band
+  practice.
+
 First-class support today for the **Fractal Audio AM4**, **Fractal
 Axe-Fx II XL+**, **Fractal Axe-Fx III** (community beta), and **ASM
-Hydrasynth Explorer**: block layout, amp/oscillator/filter type, drive/
-cutoff, delay/envelopes, reverb/mutators, scenes, and preset names all
-updateable in real time. Generic-MIDI primitives (CC, NRPN, SysEx,
+Hydrasynth Explorer**. Generic-MIDI primitives (CC, NRPN, SysEx,
 program change, note play, ...) work against any USB MIDI device, so
 synths, looper pedals, and other gear are reachable from day one.
 
@@ -83,6 +103,22 @@ Full per-profile tool list with description-length stats: [`docs/TOOLS.md`](docs
 
 Distribution is a Windows ZIP that bundles a Node runtime plus the
 server. No Node or developer tooling required.
+
+---
+
+## A 30-second demo
+
+Plug your AM4 in, relaunch Claude Desktop with this MCP server connected, then:
+
+> **You:** Build me a Vox-AC30-platform clean on Z04 with mild break-up, slow tremolo, and a plate reverb sitting behind a lead scene. Don't save yet, just let me audition.
+>
+> **Claude:** *Calls `describe_device({port:'am4'})` to pull the AM4's canonical block + enum vocabulary; calls `lookup_lineage({port:'am4', block_type:'amp', name:'Class-A 30W TB'})` to get the master sweet-spot for AC30 (master=6 = 0 dB reference), then applies a 4-block preset with scene 1 named "Verse", scene 2 named "Solo", drive engaged on scene 2, and reverb mix at 28%. Surfaces a one-paragraph summary of what landed.*
+>
+> **You:** Now port that to my Axe-Fx II at slot 614.
+>
+> **Claude:** *Calls `translate_preset({source_port:'am4', target_port:'axe-fx-ii', source_spec:<the spec from a moment ago>, target_location:614})` and walks you through the cross-device substitutions (drive.level → drive.volume; "USA Pre Clean" → "USA CLEAN"; channel A → channel X) so you can audition the same tone on a different amp.*
+
+The whole exchange is one chat turn each. No JSON, no menu navigation, no preset editor.
 
 ---
 
