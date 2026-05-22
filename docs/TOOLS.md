@@ -13,9 +13,9 @@ See [README.md § Configuring tool profiles](../README.md#configuring-tool-profi
 
 | Profile | Tool count | Average description length | Tools over 600 chars | Tools over 1000 chars |
 |---|---|---|---|---|
-| `core` | 26 | 767 chars | 12 | 4 |
-| `experimental` | 81 | 644 chars | 33 | 6 |
-| `full` | 81 | 644 chars | 33 | 6 |
+| `core` | 26 | 704 chars | 12 | 3 |
+| `experimental` | 81 | 624 chars | 33 | 5 |
+| `full` | 81 | 624 chars | 33 | 5 |
 
 ## core profile (26 tools)
 
@@ -25,7 +25,7 @@ Default-recommended unified surface for conversational tone-building. Smallest a
 |---|---|---|
 | `apply_preset` | 993 ⚠ | Build a fresh preset in one structured call. |
 | `apply_setlist` | 702 ⚠ | DESTRUCTIVE: bulk switch + apply + save per entry across a list. |
-| `describe_device` | 2623 ⚠️ over 1000 | REQUIRED first call for any device question or any apply_preset that uses recipe-style language (auto-wah, parked wah, octave-up, telephone filter, scene-lev... |
+| `describe_device` | 990 ⚠ | REQUIRED first call for any device question or apply_preset call. |
 | `find_compatible_types` | 746 ⚠ | Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics). |
 | `get_param` | 631 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 303 | Batch-read parameters from a device. |
@@ -92,7 +92,7 @@ Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics.
 | `axefx3_set_tuner` | 563 | [III BETA — unverified on hardware] Turn the Axe-Fx III tuner display on or off. |
 | `axefx3_status_dump` | 624 ⚠ | [III BETA — unverified on hardware] Status dump of every block in the active preset on the Axe-Fx III. |
 | `axefx3_tempo_tap` | 660 ⚠ | [III BETA — unverified on hardware] Send one tempo-tap to the Axe-Fx III, equivalent to pressing the front-panel TAP button. |
-| `describe_device` | 2623 ⚠️ over 1000 | REQUIRED first call for any device question or any apply_preset that uses recipe-style language (auto-wah, parked wah, octave-up, telephone filter, scene-lev... |
+| `describe_device` | 990 ⚠ | REQUIRED first call for any device question or apply_preset call. |
 | `find_compatible_types` | 746 ⚠ | Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics). |
 | `get_param` | 631 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 303 | Batch-read parameters from a device. |
@@ -180,7 +180,7 @@ Everything registered (current default; equivalent to no env var). Preserved as 
 | `axefx3_set_tuner` | 563 | [III BETA — unverified on hardware] Turn the Axe-Fx III tuner display on or off. |
 | `axefx3_status_dump` | 624 ⚠ | [III BETA — unverified on hardware] Status dump of every block in the active preset on the Axe-Fx III. |
 | `axefx3_tempo_tap` | 660 ⚠ | [III BETA — unverified on hardware] Send one tempo-tap to the Axe-Fx III, equivalent to pressing the front-panel TAP button. |
-| `describe_device` | 2623 ⚠️ over 1000 | REQUIRED first call for any device question or any apply_preset that uses recipe-style language (auto-wah, parked wah, octave-up, telephone filter, scene-lev... |
+| `describe_device` | 990 ⚠ | REQUIRED first call for any device question or apply_preset call. |
 | `find_compatible_types` | 746 ⚠ | Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics). |
 | `get_param` | 631 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 303 | Batch-read parameters from a device. |
@@ -233,7 +233,6 @@ Tools with descriptions over 1000 chars. T-4 / T-13 target these for migration i
 | Tool | Description length |
 |---|---|
 | `hydra_apply_patch` | 5834 chars |
-| `describe_device` | 2623 chars |
 | `get_preset` | 2131 chars |
 | `nudge_param` | 1571 chars |
 | `axefx3_set_parameter` | 1540 chars |
