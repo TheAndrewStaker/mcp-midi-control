@@ -611,6 +611,7 @@ const FUNCTIONAL_CASES: Record<string, () => string | null> = {
 // -----------------------------------------------------------------------------
 
 function main(): void {
+  const verbose = process.argv.includes('--verbose');
   const entries = loadEntries();
   const slugSet = new Set(entries.map((e) => e.slug));
   const violations: Violation[] = [];
@@ -630,43 +631,38 @@ function main(): void {
     }
     functionalResults.push({ slug, ok: err === null, message: err });
   }
-  // Inventory: count entries by status
-  const statusCounts = new Map<string, number>();
-  for (const e of entries) {
-    const s = typeof e.frontmatter.status === 'string' ? e.frontmatter.status : '<missing>';
-    statusCounts.set(s, (statusCounts.get(s) ?? 0) + 1);
-  }
-  // Inventory: which cookbook entries have inline fixture coverage vs STUB
-  const withInline = new Set(Object.keys(FUNCTIONAL_CASES));
-  const stubbed = entries.filter(
-    (e) => !withInline.has(e.slug) && typeof e.frontmatter.status === 'string' && e.frontmatter.status !== 'scratch',
-  ).map((e) => e.slug);
 
-  // -----------------------------------------------------------------------
-  // Report
-  // -----------------------------------------------------------------------
-  console.log('cookbook-verify');
-  console.log('===============');
-  console.log(`entries scanned:       ${entries.length}`);
-  console.log(`structural pass:       ${structuralOk} / ${entries.length}`);
-  console.log('status breakdown:');
-  for (const [s, n] of [...statusCounts.entries()].sort()) {
-    console.log(`  ${s.padEnd(20)} ${n}`);
-  }
-  console.log('');
-  console.log('functional fixture cases:');
-  for (const r of functionalResults) {
-    if (r.ok) {
-      console.log(`  PASS   case-${r.slug}`);
-    } else {
-      console.log(`  FAIL   case-${r.slug}`);
-      console.log(`         ${r.message}`);
+  // Verbose diagnostics: status breakdown + STUB inventory. These don't
+  // catch bugs — they're orientation aids when working on the cookbook
+  // directly. Hidden behind --verbose so preflight output stays terse.
+  if (verbose) {
+    const statusCounts = new Map<string, number>();
+    for (const e of entries) {
+      const s = typeof e.frontmatter.status === 'string' ? e.frontmatter.status : '<missing>';
+      statusCounts.set(s, (statusCounts.get(s) ?? 0) + 1);
     }
+    const withInline = new Set(Object.keys(FUNCTIONAL_CASES));
+    const stubbed = entries.filter(
+      (e) => !withInline.has(e.slug) && typeof e.frontmatter.status === 'string' && e.frontmatter.status !== 'scratch',
+    ).map((e) => e.slug);
+
+    console.log('cookbook-verify (verbose)');
+    console.log('=========================');
+    console.log(`entries scanned:       ${entries.length}`);
+    console.log(`structural pass:       ${structuralOk} / ${entries.length}`);
+    console.log('status breakdown:');
+    for (const [s, n] of [...statusCounts.entries()].sort()) {
+      console.log(`  ${s.padEnd(20)} ${n}`);
+    }
+    console.log('functional fixture cases:');
+    for (const r of functionalResults) {
+      if (r.ok) console.log(`  PASS   case-${r.slug}`);
+      else console.log(`  FAIL   case-${r.slug}\n         ${r.message}`);
+    }
+    console.log(`primitives without inline fixture (covered via existing verify-* scripts):`);
+    for (const s of stubbed) console.log(`  STUB   case-${s}`);
+    console.log('');
   }
-  console.log('');
-  console.log(`primitives without inline fixture (covered via existing verify-* scripts):`);
-  for (const s of stubbed) console.log(`  STUB   case-${s}`);
-  console.log('');
 
   const functionalFails = functionalResults.filter((r) => !r.ok);
   const fails = violations.filter((v) => v.severity === 'fail');

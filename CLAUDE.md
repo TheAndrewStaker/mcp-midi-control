@@ -374,6 +374,10 @@ SAME SESSION it's produced:
 - New encoding primitive → `fractal-midi/docs/research/cookbook/<name>.md`
   with a matching golden case in `scripts/cookbook-verify.ts`
 - New negative finding → `fractal-midi/docs/research/cookbook/_negative/<name>.md`
+- New synthesis-review output → `fractal-midi/docs/research/synthesis-log/<slug>.md`
+  committed the same session it's produced. The log is the only evidence
+  the synthesis cadence is alive; without committed artifacts the
+  cadence-rot fail-mode the discipline warns about is invisible.
 
 Not "I'll add it later." Same-session registration is the same
 discipline as the existing "verify-msg golden per new pidHigh" rule —

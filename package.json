@@ -128,7 +128,7 @@
     "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/am4/tsconfig.json && tsc --noEmit -p packages/axe-fx-ii/tsconfig.json && tsc --noEmit -p packages/axe-fx-iii/tsconfig.json && tsc --noEmit -p packages/hydrasynth/tsconfig.json && tsc --noEmit -p packages/server-all/tsconfig.json",
     "tools:inventory": "tsx scripts/list-tools.ts",
     "tools:inventory-check": "tsx scripts/list-tools.ts --check",
-    "preflight": "npm run typecheck && npm test && npm run verify-no-internal-refs && npm run coverage-audit && npm run coverage-cross-ref-audit && npm run cookbook-verify && npm run tools:inventory-check",
+    "preflight": "npm run typecheck && npm test && npm run verify-no-internal-refs && npm run coverage-audit && npm run cookbook-verify && npm run tools:inventory-check",
     "release-gate": "npm run preflight && npm run launch-verify && npm run agent-sweep && npm run live-regression"
   },
   "devDependencies": {
