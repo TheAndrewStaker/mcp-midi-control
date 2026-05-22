@@ -79,8 +79,8 @@ async function main(): Promise<void> {
               },
             },
             { slot: 4, block_type: 'cab' },
-            { slot: 5, block_type: 'delay', params: { X: { mix: 25 } } },
-            { slot: 6, block_type: 'reverb', params: { X: { mix: 30 } } },
+            { slot: 5, block_type: 'delay', params_by_channel: { X: { mix: 25 } } },
+            { slot: 6, block_type: 'reverb', params_by_channel: { X: { mix: 30 } } },
           ],
           // The chunk 11 parity restoration — every entry walked through
           // switch-write-switch-back. If the bug had stayed, only scenes[0]

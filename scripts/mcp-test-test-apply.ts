@@ -1,8 +1,13 @@
 /**
- * Hardware smoke test for the new `axefx2_test_apply` MCP tool — one-
- * call build-and-verify. Spawns the MCP server via StdioClientTransport
- * just like Claude Desktop would, calls the tool, parses the JSON
- * verdict, prints it.
+ * Hardware smoke test for the unified `apply_preset({port:'axe-fx-ii',
+ * verify_chain:true})` call. One-call build-and-verify against the
+ * working buffer. Spawns the MCP server via StdioClientTransport just
+ * like Claude Desktop would, calls the tool, parses the response,
+ * prints the chain-integrity verdict.
+ *
+ * Originally written against `axefx2_test_apply` (removed T-2,
+ * 2026-05-21); the call shape ports to the unified surface 1:1 via
+ * verify_chain.
  *
  * Run: npm run build && npx tsx scripts/mcp-test-test-apply.ts
  */
@@ -39,28 +44,35 @@ async function main(): Promise<void> {
   try {
     await client.connect(transport);
 
-    // Sanity check that the new tool is registered.
+    // T-2 (2026-05-21): ported from removed `axefx2_test_apply` to the
+    // unified `apply_preset({port:'axe-fx-ii', spec, verify_chain:true})`.
+    // Same wire path, same chain-integrity verdict, but the call shape
+    // matches the unified surface every device uses.
     const { tools } = await client.listTools();
-    const tool = tools.find((t) => t.name === 'axefx2_test_apply');
+    const tool = tools.find((t) => t.name === 'apply_preset');
     if (!tool) {
-      console.error('❌ axefx2_test_apply not registered. Rebuild dist?');
+      console.error('❌ apply_preset not registered. Rebuild dist?');
       process.exit(1);
     }
-    console.log(`✓ axefx2_test_apply registered. Description length: ${(tool.description ?? '').length} chars.\n`);
+    console.log(`✓ apply_preset registered. Description length: ${(tool.description ?? '').length} chars.\n`);
 
-    // Call it with a 4-block chain. Working-buffer only — no slot, no save.
-    console.log('Calling axefx2_test_apply with Comp + Amp + Cab + Reverb (working buffer)…\n');
+    // Call it with a 4-block chain. Working-buffer only (no target_location, no save).
+    console.log('Calling apply_preset({port:"axe-fx-ii", verify_chain:true}) with Comp + Amp + Cab + Reverb (working buffer)…\n');
     const resp = await client.callTool({
-      name: 'axefx2_test_apply',
+      name: 'apply_preset',
       arguments: {
-        name: 'Verify Build',
+        port: 'axe-fx-ii',
+        verify_chain: true,
         on_active_preset_edited: 'discard',
-        blocks: [
-          { block: 'Compressor 1' },
-          { block: 'Amp 1', params: { input_drive: 4, master_volume: 5 } },
-          { block: 'Cab 1' },
-          { block: 'Reverb 1', params: { mix: 25 } },
-        ],
+        spec: {
+          name: 'Verify Build',
+          slots: [
+            { slot: { row: 2, col: 1 }, block_type: 'compressor' },
+            { slot: { row: 2, col: 2 }, block_type: 'amp', params_by_channel: { X: { input_drive: 4, master_volume: 5 } } },
+            { slot: { row: 2, col: 3 }, block_type: 'cab' },
+            { slot: { row: 2, col: 4 }, block_type: 'reverb', params_by_channel: { X: { mix: 25 } } },
+          ],
+        },
       },
     });
 
@@ -78,14 +90,18 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(parsed, null, 2));
     console.log('');
 
-    const r = parsed as { ok?: boolean; verdict?: string; chainBreaks?: unknown[] };
-    if (r.ok === true) {
-      console.log('🎯 PASS — test_apply returned ok=true.');
-      console.log(`   Verdict: ${r.verdict}`);
+    // ApplyResult shape: { ok, chain_integrity?: { ok, breaks, summary } }.
+    // Map to the legacy verdict / chainBreaks language for log continuity.
+    const r = parsed as { ok?: boolean; chain_integrity?: { ok?: boolean; breaks?: unknown[]; summary?: string } };
+    const chainOk = r.chain_integrity?.ok !== false;
+    const breaks = r.chain_integrity?.breaks ?? [];
+    if (r.ok === true && chainOk) {
+      console.log('🎯 PASS — apply_preset returned ok=true with chain_integrity.ok=true.');
+      if (r.chain_integrity?.summary) console.log(`   Chain summary: ${r.chain_integrity.summary}`);
     } else {
-      console.log('❌ FAIL — test_apply returned ok=false.');
-      console.log(`   Verdict: ${r.verdict}`);
-      console.log(`   chainBreaks: ${JSON.stringify(r.chainBreaks)}`);
+      console.log('❌ FAIL — apply_preset rejected or chain broken.');
+      console.log(`   ok=${r.ok} chain_integrity.ok=${chainOk}`);
+      console.log(`   breaks: ${JSON.stringify(breaks)}`);
       process.exit(3);
     }
   } finally {

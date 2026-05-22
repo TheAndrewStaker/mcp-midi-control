@@ -107,12 +107,20 @@ export const CORE_TOOLS: ReadonlySet<string> = new Set([
 /**
  * Tools EXCLUDED from the experimental profile. Reserved for tools that
  * exist only for short-lived debugging or one-off captures and should
- * never appear in either core or experimental. Empty at sprint kick-off;
- * future entries get a one-line comment naming the reason.
+ * never appear in either core or experimental. The membership is
+ * intentionally small: experimental is the "dev surface" and should
+ * still expose anything a device owner might want for diagnostics,
+ * just not raw byte-banging.
+ *
+ * Each entry carries a one-line reason for the exclusion so a future
+ * agent can decide whether to promote it back.
  */
 export const EXPERIMENTAL_EXCLUDED: ReadonlySet<string> = new Set<string>([
-  // (none yet — add tools here when a debug/probe tool should not even
-  // appear under MCP_TOOLS_PROFILE=experimental)
+  // Raw SysEx probes used for protocol RE only. Not a tool a device
+  // owner calls in normal play. Hidden by default; flip
+  // MCP_TOOLS_PROFILE=full to expose.
+  'axefx2_probe_sysex',
+  'axefx3_probe_sysex',
 ]);
 
 export function isToolInProfile(name: string, profile: ToolProfile): boolean {

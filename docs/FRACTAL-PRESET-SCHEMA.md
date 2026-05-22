@@ -158,20 +158,28 @@ interface FractalBlock {
   bypassed?: boolean;
 
   /**
-   * Per-channel parameter map. Channel letters are device-specific —
-   * AM4 = A/B/C/D, Axe-Fx II = X/Y, Axe-Fx III/FM = A/B/C/D.
+   * Block parameters in display units. Two named fields, never
+   * both on the same slot:
    *
-   * Two shorthand forms accepted:
-   *   - `params: { gain: 5, bass: 6 }` — applies to channel A (or X
-   *     on Axe-Fx II), the device's first channel.
-   *   - `params: { A: { gain: 5 }, B: { gain: 8 } }` — explicit per-
-   *     channel.
+   *   - `params: { gain: 5, bass: 6 }` — FLAT map for non-channel
+   *     blocks (filter, chorus, comp, ...) or for the active channel
+   *     of a channel block.
+   *   - `params_by_channel: { A: { gain: 5 }, B: { gain: 8 } }` —
+   *     PER-CHANNEL map for multi-channel authoring on channel
+   *     blocks. Channel letters are device-specific: AM4 = A/B/C/D,
+   *     Axe-Fx II = X/Y, Axe-Fx III/FM = A/B/C/D.
+   *
+   * Setting both `params` and `params_by_channel` on the same slot
+   * is rejected at preflight (T-5, 2026-05-21). Earlier nested-in-
+   * params (`{A: {...}}`) shorthand was accepted via a zod union;
+   * pass that shape via `params_by_channel` now.
    *
    * Values are display units (knob 0..10, dB, ms, %); enum dropdowns
    * accept the canonical name as a string ("Plexi 100W High") or
    * the wire index as a number.
    */
-  params?: ParamMap | Record<ChannelLetter, ParamMap>;
+  params?: ParamMap;
+  params_by_channel?: Record<ChannelLetter, ParamMap>;
 }
 
 interface RoutingEdge {
@@ -241,9 +249,10 @@ AM4 descriptor:
 - Ignores `routing` if present (linear is implicit)
 - Walks `scenes[]` and writes per-scene channel + bypass via the
   switch-write-switch-back pattern
-- `params: { gain: 5 }` (shorthand, no channel key) → writes to the
-  currently-active channel; explicit `params: { A: {gain:5}, B: {gain:8} }`
-  walks each channel
+- `params: { gain: 5 }` → flat map; writes to the currently-active
+  channel on channel blocks (or the sole register on non-channel
+  blocks). `params_by_channel: { A: {gain:5}, B: {gain:8} }` is the
+  multi-channel form (T-5, 2026-05-21): the writer walks each channel
 
 ### Axe-Fx II (grid, row-2 linear chain — Level 1)
 
@@ -405,13 +414,14 @@ schema unchanged.
    the descriptor's automatic linear-chain inference (when `routing`
    omitted) is enough.
 
-2. **How does `params` shorthand interact with multi-channel devices?**
+2. **How does flat `params` interact with multi-channel devices?**
    AM4's "active channel" is whatever the user last selected on the
-   device. If a caller passes `params: { gain: 5 }` without specifying
-   channel, the descriptor writes to whatever's active — which may
-   not be what the caller intended. Recommended: when channels exist,
-   require explicit channel keys; emit a warning if the caller omits
-   and the device has channels.
+   device. If a caller passes flat `params: { gain: 5 }` without
+   specifying channel, the descriptor writes to whatever's active,
+   which may not be what the caller intended. When the caller needs
+   a specific channel, pass `params_by_channel: { A: { gain: 5 } }`
+   instead. T-5 split (2026-05-21) made the two fields distinct so
+   the shape is unambiguous at the schema layer.
 
 3. **Should `routing` be allowed on linear devices?** If a caller
    accidentally passes `routing` to AM4, do we error or silently

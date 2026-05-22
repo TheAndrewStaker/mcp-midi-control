@@ -80,7 +80,7 @@ export const BETA_NOTE = [
  * call the tool before reaching the end. The prefix lands in the
  * first ~15 chars the agent reads.
  */
-export const BETA_PREFIX = '[III BETA — unverified on hardware] ';
+export const BETA_PREFIX = '[III BETA, unverified on hardware] ';
 
 // -- MIDI lazy-init -------------------------------------------------------
 

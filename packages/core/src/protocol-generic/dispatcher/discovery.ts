@@ -384,27 +384,35 @@ export function executeLookupLineage(args: {
     );
   }
   const result = descriptor.reader.lookupLineage(args);
-  // T-24: attach structured loudness data when the caller's name+block
-  // resolve to a corpus entry. The corpus is keyed by AM4 display name
-  // (matches Axe-Fx II / III lineage records' `am4Name` field), so
-  // exact-match works on AM4 callers directly and on II / III callers
-  // when they pass the AM4-equivalent name (which describe_device + the
-  // lineage text already surface).
+  // T-24 (cross-device fix, 2026-05-21 follow-up): attach structured
+  // loudness data when the caller's name+block resolve to a corpus
+  // entry. The corpus is keyed by AM4 display names, so II / III
+  // callers passing a device-local enum string (e.g. "USA IIC+" on
+  // II vs "USA MK IIC+" on AM4) need translation through the
+  // cross-device enum alias table first. Mirrors the
+  // listParams.loudnessOffsetsForEnum pattern at line 154 of this file.
   let loudness: AmpLoudnessEntry | DriveLoudnessEntry | undefined;
   let loudnessKind: 'amp' | 'drive' | undefined;
   if (typeof args.name === 'string' && args.name.length > 0) {
     const blockTypeLower = args.block_type.toLowerCase();
-    if (blockTypeLower === 'amp' || blockTypeLower.startsWith('amp ')) {
-      const entry = lookupAmpLoudness(args.name);
+    const isAmpQuery = blockTypeLower === 'amp' || blockTypeLower.startsWith('amp ');
+    const isDriveQuery = blockTypeLower === 'drive' || blockTypeLower.startsWith('drive ');
+    if (isAmpQuery || isDriveQuery) {
+      // Translate this device's enum label to its AM4 canonical form
+      // (the corpus key). For AM4 callers the resolver returns the
+      // label unchanged when it's already AM4-canonical. Devices
+      // missing from the cross-device table fall through to lookup-
+      // by-original-label so a direct match still hits.
+      const paramName = isAmpQuery ? 'type' : 'type';
+      const am4Label = args.port === 'am4'
+        ? args.name
+        : resolveEnumAlias('am4', isAmpQuery ? 'amp' : 'drive', paramName, args.name).canonical;
+      const entry = isAmpQuery
+        ? lookupAmpLoudness(am4Label) ?? lookupAmpLoudness(args.name)
+        : lookupDriveLoudness(am4Label) ?? lookupDriveLoudness(args.name);
       if (entry !== undefined) {
         loudness = entry;
-        loudnessKind = 'amp';
-      }
-    } else if (blockTypeLower === 'drive' || blockTypeLower.startsWith('drive ')) {
-      const entry = lookupDriveLoudness(args.name);
-      if (entry !== undefined) {
-        loudness = entry;
-        loudnessKind = 'drive';
+        loudnessKind = isAmpQuery ? 'amp' : 'drive';
       }
     }
   }

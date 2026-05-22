@@ -197,8 +197,8 @@ async function verifyAm4(client: Client): Promise<void> {
         spec: {
           name: 'AUDITION',
           slots: [
-            { slot: 1, block_type: 'amp', params: { A: { type: 'Plexi 100W High', gain: 4 } } },
-            { slot: 2, block_type: 'reverb', params: { A: { type: 'Room, Medium', mix: 25 } } },
+            { slot: 1, block_type: 'amp', params_by_channel: { A: { type: 'Plexi 100W High', gain: 4 } } },
+            { slot: 2, block_type: 'reverb', params_by_channel: { A: { type: 'Room, Medium', mix: 25 } } },
           ],
         },
         on_active_preset_edited: 'discard',
@@ -227,7 +227,7 @@ async function verifyAm4(client: Client): Promise<void> {
         spec: {
           name: 'AUD-AT-Z4',
           slots: [
-            { slot: 1, block_type: 'amp', params: { A: { type: '1959SLP Normal', gain: 5 } } },
+            { slot: 1, block_type: 'amp', params_by_channel: { A: { type: '1959SLP Normal', gain: 5 } } },
           ],
         },
         on_active_preset_edited: 'discard',
@@ -351,7 +351,7 @@ async function verifyAm4(client: Client): Promise<void> {
             {
               slot: 1,
               block_type: 'amp',
-              params: { A: { type: '5F8 Tweed Normal', gain: 5, master: 5 } },
+              params_by_channel: { A: { type: '5F8 Tweed Normal', gain: 5, master: 5 } },
             },
           ],
         },
@@ -458,9 +458,9 @@ async function verifyAxefx2(client: Client): Promise<void> {
         spec: {
           name: 'AUDITION',
           slots: [
-            { slot: 1, block_type: 'amp', params: { X: { input_drive: 4, master_volume: 5 } } },
+            { slot: 1, block_type: 'amp', params_by_channel: { X: { input_drive: 4, master_volume: 5 } } },
             { slot: 2, block_type: 'cab' },
-            { slot: 3, block_type: 'reverb', params: { X: { mix: 25 } } },
+            { slot: 3, block_type: 'reverb', params_by_channel: { X: { mix: 25 } } },
           ],
         },
         on_active_preset_edited: 'discard',
@@ -487,7 +487,7 @@ async function verifyAxefx2(client: Client): Promise<void> {
         spec: {
           name: 'YINACTIVE',
           slots: [
-            { slot: 1, block_type: 'amp', params: { X: { input_drive: 3, master_volume: 5 }, Y: { input_drive: 8, master_volume: 6 } } },
+            { slot: 1, block_type: 'amp', params_by_channel: { X: { input_drive: 3, master_volume: 5 }, Y: { input_drive: 8, master_volume: 6 } } },
             { slot: 2, block_type: 'cab' },
           ],
           scenes: [{ scene: 1, channels: { amp: 'X' } }],
@@ -520,7 +520,7 @@ async function verifyAxefx2(client: Client): Promise<void> {
         spec: {
           name: 'XYACTIVE',
           slots: [
-            { slot: 1, block_type: 'amp', params: { X: { input_drive: 3, master_volume: 5 }, Y: { input_drive: 8, master_volume: 6 } } },
+            { slot: 1, block_type: 'amp', params_by_channel: { X: { input_drive: 3, master_volume: 5 }, Y: { input_drive: 8, master_volume: 6 } } },
             { slot: 2, block_type: 'cab' },
           ],
           scenes: [

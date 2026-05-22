@@ -117,13 +117,10 @@ export function registerParamTools(server: McpServer): void {
   server.registerTool('nudge_param', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     description: [
-      'Nudge a continuous param up or down by one device-defined step. Use for the conversational "turn it up a touch", "a hair less drive", "a lot more reverb" UX, where no target value is computed.',
-      'Map user intensity language to granularity: "a touch / a hair / a bit" picks "fine" (default, roughly 1% of the param\'s full range, ~0.1 on a 0..10 knob). "A lot / way more / way less" picks "coarse" (roughly 10% of full range, ~1.0 on a 0..10 knob). The exact quantum varies per param; the response carries the landed display value so you can confirm the user\'s intensity language matched their ear.',
-      '- For a specific target ("set gain to 7"), use set_param with the explicit value.',
-      '- NOT idempotent: each call shifts state by one step. The wire is payload-free so it\'s cheap to call in a tight UX loop.',
-      '- Channel-bearing blocks: pass `channel` to nudge a specific A/B/C/D (AM4) or X/Y (II). Omit to nudge the active channel.',
-      '- The response carries the new display value, so a follow-up get_param is not needed for confirmation.',
-      '- AM4 ONLY today — wire-native nudge primitive (action bytes 0x03 / 0x04 / 0x05 / 0x06; one round-trip, ~50 ms). II / III / Hydra return capability_not_supported; their wire formats do not currently expose a relative-change opcode. Fall back to get_param + set_param with a computed delta on those devices. The unrealized II / III / Hydra parity hypothesis is documented in docs/TOOL-ARCHIVE.md under "Unrealized capabilities" — when a future capture confirms a relative-change opcode on those devices, the unified surface picks it up automatically.',
+      'Nudge a continuous param up or down by one device-defined step. Use for conversational "turn it up a touch", "a hair less drive", "a lot more reverb". For a specific target ("set gain to 7"), use set_param.',
+      'Granularity: "fine" (default) ≈ 1% of range (~0.1 on a 0..10 knob), maps to "a touch / a hair / a bit". "coarse" ≈ 10% of range (~1.0), maps to "a lot / way more / way less". Response carries the landed display value; no follow-up get_param needed.',
+      'AM4 ONLY (wire-native action bytes 0x03 / 0x04 / 0x05 / 0x06, one round-trip ~50 ms). II / III / Hydra return capability_not_supported; fall back to get_param + set_param with a computed delta. Cross-device parity is filed under "Unrealized capabilities" in docs/TOOL-ARCHIVE.md.',
+      'NOT idempotent (each call shifts by one step). Pass `channel` to target a specific A/B/C/D on channel-bearing blocks; omit to nudge the active channel.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),

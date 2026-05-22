@@ -50,7 +50,7 @@ async function main(): Promise<void> {
       name: 'apply_preset',
       arguments: {
         port: 'axe-fx-ii',
-        spec: { slots: [{ slot: 1, block_type: 'amp', params: { X: { input_drive: 5 } } }] },
+        spec: { slots: [{ slot: 1, block_type: 'amp', params_by_channel: { X: { input_drive: 5 } } }] },
         target_location: 603,
       },
     });

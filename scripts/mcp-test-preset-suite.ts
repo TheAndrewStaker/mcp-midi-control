@@ -1,11 +1,17 @@
 /**
- * MCP regression suite: runs every preset shape through `axefx2_test_apply`
- * (non-destructive, working-buffer-only) and reports pass/fail for each.
+ * MCP regression suite: runs every preset shape through the unified
+ * `apply_preset({port:'axe-fx-ii', verify_chain:true})` call against
+ * the working buffer (non-destructive, no target_location, no save).
  *
  * Use this as a pre-commit / pre-release regression check for changes
  * affecting `applyExecutor`, `setParam.ts`, or the descriptor's apply
  * path. Doesn't overwrite any saved slot — each shape lands in the
  * working buffer, gets verified, then the next shape overwrites it.
+ *
+ * Originally written against `axefx2_test_apply` (removed T-2,
+ * 2026-05-21). Ported to apply_preset via a thin `toSpec()` adapter
+ * that turns each BlockSpec[] into the row-2-linear slots[] the
+ * unified surface expects.
  *
  * Run: npm run build && npx tsx scripts/mcp-test-preset-suite.ts
  *
@@ -115,6 +121,51 @@ function extractText(callResult: unknown): string {
   return parts.join('\n') + (r.isError ? '\n  [tool returned isError=true]' : '');
 }
 
+/**
+ * Translate the legacy BlockSpec[] authoring shape into the unified
+ * apply_preset spec. Each block lands on row 2 (the audio chain) in
+ * the order given. `params` becomes channel-X nested via params_by_channel
+ * since every II block has X/Y channels.
+ */
+function toSpec(preset: PresetSpec): {
+  name: string;
+  slots: Array<{
+    slot: { row: number; col: number };
+    block_type: string;
+    instance?: number;
+    bypassed?: boolean;
+    params_by_channel?: Record<string, Record<string, number>>;
+  }>;
+} {
+  return {
+    name: preset.name,
+    slots: preset.blocks.map((b, i): {
+      slot: { row: number; col: number };
+      block_type: string;
+      instance?: number;
+      bypassed?: boolean;
+      params_by_channel?: Record<string, Record<string, number>>;
+    } => {
+      const label = typeof b.block === 'string' ? b.block : `effectId-${b.block}`;
+      // Split "Amp 1" into (block_type='amp', instance=1).
+      const m = /^([A-Za-z][A-Za-z _0-9-]*?)(?:\s+(\d+))?$/.exec(label);
+      const block_type = (m?.[1] ?? label).trim().toLowerCase().replace(/\s+/g, '_');
+      const instance = m?.[2] !== undefined ? parseInt(m[2], 10) : 1;
+      const channel = b.channel ?? 'X';
+      const out: ReturnType<typeof toSpec>['slots'][number] = {
+        slot: { row: 2, col: i + 1 },
+        block_type,
+        instance,
+      };
+      if (b.bypass !== undefined) out.bypassed = b.bypass;
+      if (b.params !== undefined) {
+        out.params_by_channel = { [channel]: b.params };
+      }
+      return out;
+    }),
+  };
+}
+
 interface ShapeResult {
   shape: string;
   ok: boolean;
@@ -142,21 +193,22 @@ async function main(): Promise<void> {
   const results: ShapeResult[] = [];
   try {
     await client.connect(transport);
-    console.log(`MCP preset suite — ${Object.keys(SUITE).length} shapes via axefx2_test_apply (non-destructive)\n`);
+    console.log(`MCP preset suite — ${Object.keys(SUITE).length} shapes via apply_preset({port:'axe-fx-ii', verify_chain:true}) (non-destructive)\n`);
 
     for (const [key, preset] of Object.entries(SUITE)) {
       process.stdout.write(`${key.padEnd(20)} (${preset.blocks.length.toString().padStart(2)} blocks) …`);
       const t0 = Date.now();
       const resp = await client.callTool({
-        name: 'axefx2_test_apply',
+        name: 'apply_preset',
         arguments: {
-          name: preset.name,
-          blocks: preset.blocks,
+          port: 'axe-fx-ii',
+          verify_chain: true,
           on_active_preset_edited: 'discard',
+          spec: toSpec(preset),
         },
       });
       const text = extractText(resp);
-      let parsed: { ok?: boolean; verdict?: string; chainBreaks?: unknown[]; elapsedMs?: number; opsTotal?: number };
+      let parsed: { ok?: boolean; duration_ms?: number; steps?: number; chain_integrity?: { ok?: boolean; breaks?: unknown[]; summary?: string } };
       try {
         parsed = JSON.parse(text);
       } catch {
@@ -164,14 +216,15 @@ async function main(): Promise<void> {
         console.log(' ❌ unparseable');
         continue;
       }
+      const chainOk = parsed.chain_integrity?.ok !== false;
       const r: ShapeResult = {
         shape: key,
-        ok: !!parsed.ok,
+        ok: !!parsed.ok && chainOk,
         blockCount: preset.blocks.length,
-        verdict: parsed.verdict ?? '(no verdict)',
-        chainBreaks: Array.isArray(parsed.chainBreaks) ? parsed.chainBreaks.length : -1,
-        elapsedMs: parsed.elapsedMs ?? Date.now() - t0,
-        opsTotal: parsed.opsTotal ?? 0,
+        verdict: parsed.chain_integrity?.summary ?? (parsed.ok ? 'ok' : '(failed)'),
+        chainBreaks: Array.isArray(parsed.chain_integrity?.breaks) ? parsed.chain_integrity!.breaks!.length : 0,
+        elapsedMs: parsed.duration_ms ?? Date.now() - t0,
+        opsTotal: parsed.steps ?? 0,
       };
       results.push(r);
       console.log(` ${r.ok ? '✓' : '✗'}  ${r.elapsedMs}ms  ${r.opsTotal} ops  ${r.chainBreaks > 0 ? `${r.chainBreaks} breaks` : 'clean'}`);

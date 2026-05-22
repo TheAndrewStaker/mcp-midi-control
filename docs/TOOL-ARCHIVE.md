@@ -97,3 +97,20 @@ Tools that were considered but never shipped, captured here so future agents do 
 - Negative-finding fallback: if the capture proves no opcode exists (matching the cookbook negative-findings pattern), file `fractal-midi/docs/research/cookbook/_negative/<device>-no-relative-change.md` so a future agent does not re-attempt the same probe.
 
 **Stability note:** AM4 implementation is shipping and wire-byte-verified. II / III / Hydra parity is a one-capture hypothesis (~5 min per device with hardware connected); no decode work in flight today.
+
+### get_preset v2 — atomic-read via PRESET_DUMP envelope (deferred; 2026-05-21)
+
+**Wire function:** FN_PATCH_HEADER (0x77), FN_PATCH_CHUNK (0x78), FN_PATCH_FOOTER (0x79) on Axe-Fx II. 66-message stream, ~13 KB payload encoded as septet-packed ushorts. Same envelope shape on Axe-Fx III (49,336 bytes; T-6 follow-up commit `e5501d7` shipped the III parser).
+
+**Original use case:** Replace `get_preset` v1's 25 serial SysEx round-trips (1 grid + 1 name + N×fn 0x11 channel reads + N×fn 0x1F param dumps + 1 scene) with a single atomic dump+parse. Target latency ≤ 500 ms on II for any preset composition. Bonus: read per-scene + per-channel state in one round-trip instead of being limited to the active scene.
+
+**Why not implemented as v1:**
+- Codec scaffold `packages/axe-fx-ii/src/presetDump.ts` already parses the envelope (used by `axefx2_dump_preset` / `axefx2_restore_preset`) but the per-block layout decode is still calibration-limited to the Test Crunch 6-block composition (see T-6's atomic_apply archive entry; same `BLOCK_LAYOUT_MAP` constraint).
+- T-3 Phase A (2026-05-21) shipped the cheap latency win (drop the fn 0x11 channel-read loop unless `include_channel_state:true`); ~700-900 ms typical. v2 PRESET_DUMP is the deferred endgame.
+
+**Resurrection instructions:**
+- Source preserved at `packages/axe-fx-ii/src/presetDump.ts` (dump + parse + serialize already implemented).
+- Resurrection prerequisite: a layout-discovery step that resolves (chunk, ushort) coordinates per-preset, OR mining the AxeEdit III binary for the firmware-side layout encoder. Same blocker as the `axefx2_atomic_apply` archive entry above.
+- When the layout discovery lands, port `reader.getPreset` to call `parsePresetDump` instead of looping fn 0x1F; the existing T-3 `include_channel_state` flag becomes a no-op (PRESET_DUMP always carries channel state).
+
+**Stability note:** wire format is settled; layout decode is N=1 calibration. Same constraint as `axefx2_atomic_apply` resurrection. The cheap T-3 Phase A win shipped; Phase B waits on the layout-encoder decode.

@@ -35,14 +35,10 @@ export function registerPresetTools(server: McpServer): void {
   server.registerTool('get_preset', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
-      'Snapshot the active working buffer in one tool call. Returns every placed block with its current params under a PresetSpec-shaped envelope.',
-      'Use for state-anchoring before a tone-edit conversation: read what is on the device, summarize what is placed, propose changes, then call set_param or set_params for the targeted edits.',
-      'PERFORMANCE. ~1-1.5 s on Axe-Fx II for a typical 11-block preset (one fn 0x1F per placed block, serial). Pass include_channel_state:true to ALSO nest params under the active channel key on channel-bearing blocks; that adds ~50 ms per channel-bearing block (≈ +450 ms on an 11-block preset with 9 channel blocks). Default OFF saves the round-trips on inspection workflows. AM4 / III / Hydra return capability_not_supported until their atomic-read primitives land; on those devices fall back to get_param + get_params.',
-      'RESPONSE SCOPE. Active scene only. By default channel-bearing blocks return FLAT params with channel_status:"unknown" and _meta.channel_state_omitted:true. Set include_channel_state:true to nest under the active channel (channel_status:"active", _meta.channel_state_omitted:false) when you need round-trippable shapes. Scenes 2..N, non-active channels, and routing edges are NOT included.',
-      'DO NOT FEED THE WHOLE RESPONSE INTO apply_preset. apply_preset has FRESH-BUILD CLEARING semantics: unlisted slots clear to none, unlisted scenes reset to defaults. Round-tripping the snapshot would reset scenes 2..N and drop routing. For read-mutate-write, use set_param / set_params for the specific knobs you changed.',
-      'TO CLONE A SLOT INTO apply_preset. With include_channel_state:true, copy {slot, block_type, instance, params} from a snapshot entry and drop channel_status. The shape is otherwise compatible with PresetSlotSpec.',
-      'POST-WRITE VALIDATION. After set_param / set_params / apply_preset, call get_preset again and diff against your intent on the slots and params you actually wrote. Catches type-gated params that silently no-op (wire ack does not mean audible change).',
-      'CAPABILITY GATE. describe_device(port).capabilities.atomic_read is true when this tool is supported, false otherwise.',
+      'Snapshot the active working buffer in one tool call. Returns every placed block with its current params under a PresetSpec-shaped envelope. Use for state-anchoring before a tone edit: read, summarize, propose changes, then targeted set_param / set_params.',
+      'Scope: active scene only; no scenes 2..N, no routing. Channel-bearing blocks default to flat params with channel_status:"unknown"; pass include_channel_state:true to nest under the active channel (+~50 ms per channel block).',
+      'Performance: ~1-1.5 s on II for an 11-block preset (+~450 ms with include_channel_state). AM4 / III / Hydra: capability_not_supported (use get_param / get_params); describe_device.capabilities.atomic_read gates support.',
+      'DO NOT feed the whole snapshot back into apply_preset (FRESH-BUILD-CLEARS unlisted slots + scenes). Use set_param / set_params for changed knobs. Re-call get_preset to verify; catches type-gated silent no-ops.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),

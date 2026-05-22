@@ -61,9 +61,9 @@ async function main(): Promise<void> {
           name: 'Unified Test',
           slots: [
             { slot: 1, block_type: 'compressor' },
-            { slot: 2, block_type: 'amp', params: { X: { input_drive: 3.5, bass: 4.5, middle: 5, treble: 6.5, presence: 6, master_volume: 5 } } },
+            { slot: 2, block_type: 'amp', params_by_channel: { X: { input_drive: 3.5, bass: 4.5, middle: 5, treble: 6.5, presence: 6, master_volume: 5 } } },
             { slot: 3, block_type: 'cab' },
-            { slot: 4, block_type: 'reverb', params: { X: { mix: 25 } } },
+            { slot: 4, block_type: 'reverb', params_by_channel: { X: { mix: 25 } } },
           ],
         },
       },

@@ -13,9 +13,9 @@ See [README.md § Configuring tool profiles](../README.md#configuring-tool-profi
 
 | Profile | Tool count | Average description length | Tools over 600 chars | Tools over 1000 chars |
 |---|---|---|---|---|
-| `core` | 26 | 704 chars | 12 | 3 |
-| `experimental` | 81 | 624 chars | 33 | 5 |
-| `full` | 81 | 624 chars | 33 | 5 |
+| `core` | 26 | 631 chars | 12 | 1 |
+| `experimental` | 79 | 597 chars | 32 | 3 |
+| `full` | 81 | 600 chars | 33 | 3 |
 
 ## core profile (26 tools)
 
@@ -29,11 +29,11 @@ Default-recommended unified surface for conversational tone-building. Smallest a
 | `find_compatible_types` | 746 ⚠ | Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics). |
 | `get_param` | 631 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 303 | Batch-read parameters from a device. |
-| `get_preset` | 2131 ⚠️ over 1000 | Snapshot the active working buffer in one tool call. |
+| `get_preset` | 910 ⚠ | Snapshot the active working buffer in one tool call. |
 | `list_midi_ports` | 460 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 838 ⚠ | Enumerate a device's parameters with units and display ranges. |
 | `lookup_lineage` | 940 ⚠ | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
-| `nudge_param` | 1571 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
+| `nudge_param` | 887 ⚠ | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
 | `port_preset` | 989 ⚠ | Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III). |
@@ -50,7 +50,7 @@ Default-recommended unified surface for conversational tone-building. Smallest a
 | `switch_scene` | 336 | Change the active scene within the current preset. |
 | `toggle_bypass` | 600 | Atomically flip a block's bypass state in one wire round-trip, no value to pass. |
 
-## experimental profile (81 tools)
+## experimental profile (79 tools)
 
 Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics. Used during dev when poking hardware-specific capabilities. Set `MCP_TOOLS_PROFILE=experimental` to select.
 
@@ -68,35 +68,33 @@ Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics.
 | `axefx2_get_block_channel` | 146 | Read a block's current channel (X or Y) on the Axe-Fx II. |
 | `axefx2_get_grid_layout` | 694 ⚠ | Read the active preset's 4-row x 12-column block-placement grid on the Axe-Fx II. |
 | `axefx2_get_preset_name` | 142 | Read the active preset name from the Axe-Fx II working buffer (matches the front-panel display). |
-| `axefx2_probe_sysex` | 592 | Send raw SysEx to the Axe-Fx II AND capture inbound MIDI in the response window. |
 | `axefx2_reconnect_midi` | 251 | Drop the cached Axe-Fx II MIDI handle and force a fresh port-open on the next axefx2_* call. |
 | `axefx2_restore_preset` | 644 ⚠ | Push a 12,951-byte preset binary back to the Axe-Fx II. |
 | `axefx2_set_block_at_cell` | 671 ⚠ | Place (or clear) a block at a grid cell (row 1..4, col 1..12) on the Axe-Fx II. |
 | `axefx2_set_block_channel` | 390 | Switch a block between its X and Y channels on the Axe-Fx II. |
 | `axefx2_set_cell_routing` | 667 ⚠ | Add or remove a cable between two adjacent-column grid cells on the Axe-Fx II. |
-| `axefx3_get_active_scene` | 397 | [III BETA — unverified on hardware] Read the currently-active scene (1-based) within the active Axe-Fx III preset. |
-| `axefx3_get_bypass` | 402 | [III BETA — unverified on hardware] Read a block's current bypass state on the Axe-Fx III. |
-| `axefx3_get_channel` | 378 | [III BETA — unverified on hardware] Read a block's current channel (A/B/C/D) on the Axe-Fx III. |
-| `axefx3_get_looper_state` | 427 | [III BETA — unverified on hardware] Read the Axe-Fx III Looper state. |
-| `axefx3_get_parameter` | 781 ⚠ | [III BETA — unverified on hardware] Query the wire-level value of one paramId on one block on the Axe-Fx III. |
-| `axefx3_get_preset_name` | 568 | [III BETA — unverified on hardware] Read a preset's name + number on the Axe-Fx III in one round-trip. |
-| `axefx3_get_scene_name` | 483 | [III BETA — unverified on hardware] Read a scene's name (1..8) in the active Axe-Fx III preset, or pass scene="current" for the active scene. |
-| `axefx3_get_tempo` | 375 | [III BETA — unverified on hardware] Read the current master tempo (BPM) from the Axe-Fx III. |
-| `axefx3_list_blocks` | 628 ⚠ | [III BETA — unverified on hardware] Return the Axe-Fx III block roster: every block type the editor recognises, with names, group codes, and effect IDs where... |
-| `axefx3_probe_sysex` | 879 ⚠ | [III BETA — unverified on hardware] Send raw SysEx to the Axe-Fx III AND capture inbound MIDI in the response window. |
-| `axefx3_reconnect_midi` | 527 | [III BETA — unverified on hardware] Drop the cached Axe-Fx III MIDI handle and force a fresh port-open on the next axefx3_* call. |
-| `axefx3_set_channel` | 659 ⚠ | [III BETA — unverified on hardware] Switch a block's active channel (A/B/C/D) on the Axe-Fx III. |
-| `axefx3_set_looper` | 690 ⚠ | [III BETA — unverified on hardware] Trigger a Looper button-press on the Axe-Fx III. |
-| `axefx3_set_parameter` | 1540 ⚠️ over 1000 | [III BETA — unverified on hardware] Write a raw 16-bit wire value to one paramId on one block on the Axe-Fx III. |
-| `axefx3_set_tempo` | 641 ⚠ | [III BETA — unverified on hardware] Set the master tempo (BPM) on the Axe-Fx III. |
-| `axefx3_set_tuner` | 563 | [III BETA — unverified on hardware] Turn the Axe-Fx III tuner display on or off. |
-| `axefx3_status_dump` | 624 ⚠ | [III BETA — unverified on hardware] Status dump of every block in the active preset on the Axe-Fx III. |
-| `axefx3_tempo_tap` | 660 ⚠ | [III BETA — unverified on hardware] Send one tempo-tap to the Axe-Fx III, equivalent to pressing the front-panel TAP button. |
+| `axefx3_get_active_scene` | 396 | [III BETA, unverified on hardware] Read the currently-active scene (1-based) within the active Axe-Fx III preset. |
+| `axefx3_get_bypass` | 401 | [III BETA, unverified on hardware] Read a block's current bypass state on the Axe-Fx III. |
+| `axefx3_get_channel` | 377 | [III BETA, unverified on hardware] Read a block's current channel (A/B/C/D) on the Axe-Fx III. |
+| `axefx3_get_looper_state` | 426 | [III BETA, unverified on hardware] Read the Axe-Fx III Looper state. |
+| `axefx3_get_parameter` | 780 ⚠ | [III BETA, unverified on hardware] Query the wire-level value of one paramId on one block on the Axe-Fx III. |
+| `axefx3_get_preset_name` | 567 | [III BETA, unverified on hardware] Read a preset's name + number on the Axe-Fx III in one round-trip. |
+| `axefx3_get_scene_name` | 482 | [III BETA, unverified on hardware] Read a scene's name (1..8) in the active Axe-Fx III preset, or pass scene="current" for the active scene. |
+| `axefx3_get_tempo` | 374 | [III BETA, unverified on hardware] Read the current master tempo (BPM) from the Axe-Fx III. |
+| `axefx3_list_blocks` | 627 ⚠ | [III BETA, unverified on hardware] Return the Axe-Fx III block roster: every block type the editor recognises, with names, group codes, and effect IDs where ... |
+| `axefx3_reconnect_midi` | 526 | [III BETA, unverified on hardware] Drop the cached Axe-Fx III MIDI handle and force a fresh port-open on the next axefx3_* call. |
+| `axefx3_set_channel` | 658 ⚠ | [III BETA, unverified on hardware] Switch a block's active channel (A/B/C/D) on the Axe-Fx III. |
+| `axefx3_set_looper` | 689 ⚠ | [III BETA, unverified on hardware] Trigger a Looper button-press on the Axe-Fx III. |
+| `axefx3_set_parameter` | 1539 ⚠️ over 1000 | [III BETA, unverified on hardware] Write a raw 16-bit wire value to one paramId on one block on the Axe-Fx III. |
+| `axefx3_set_tempo` | 640 ⚠ | [III BETA, unverified on hardware] Set the master tempo (BPM) on the Axe-Fx III. |
+| `axefx3_set_tuner` | 562 | [III BETA, unverified on hardware] Turn the Axe-Fx III tuner display on or off. |
+| `axefx3_status_dump` | 623 ⚠ | [III BETA, unverified on hardware] Status dump of every block in the active preset on the Axe-Fx III. |
+| `axefx3_tempo_tap` | 659 ⚠ | [III BETA, unverified on hardware] Send one tempo-tap to the Axe-Fx III, equivalent to pressing the front-panel TAP button. |
 | `describe_device` | 990 ⚠ | REQUIRED first call for any device question or apply_preset call. |
 | `find_compatible_types` | 746 ⚠ | Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics). |
 | `get_param` | 631 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 303 | Batch-read parameters from a device. |
-| `get_preset` | 2131 ⚠️ over 1000 | Snapshot the active working buffer in one tool call. |
+| `get_preset` | 910 ⚠ | Snapshot the active working buffer in one tool call. |
 | `hydra_apply_init` | 903 ⚠ | ⚠ This Hydrasynth tool surface is in active development. |
 | `hydra_apply_init_to` | 891 ⚠ | ⚠ This Hydrasynth tool surface is in active development. |
 | `hydra_apply_patch` | 5834 ⚠️ over 1000 | ⚠ This Hydrasynth tool surface is in active development. |
@@ -108,7 +106,7 @@ Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics.
 | `list_midi_ports` | 460 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 838 ⚠ | Enumerate a device's parameters with units and display ranges. |
 | `lookup_lineage` | 940 ⚠ | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
-| `nudge_param` | 1571 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
+| `nudge_param` | 887 ⚠ | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
 | `port_preset` | 989 ⚠ | Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III). |
@@ -162,29 +160,29 @@ Everything registered (current default; equivalent to no env var). Preserved as 
 | `axefx2_set_block_at_cell` | 671 ⚠ | Place (or clear) a block at a grid cell (row 1..4, col 1..12) on the Axe-Fx II. |
 | `axefx2_set_block_channel` | 390 | Switch a block between its X and Y channels on the Axe-Fx II. |
 | `axefx2_set_cell_routing` | 667 ⚠ | Add or remove a cable between two adjacent-column grid cells on the Axe-Fx II. |
-| `axefx3_get_active_scene` | 397 | [III BETA — unverified on hardware] Read the currently-active scene (1-based) within the active Axe-Fx III preset. |
-| `axefx3_get_bypass` | 402 | [III BETA — unverified on hardware] Read a block's current bypass state on the Axe-Fx III. |
-| `axefx3_get_channel` | 378 | [III BETA — unverified on hardware] Read a block's current channel (A/B/C/D) on the Axe-Fx III. |
-| `axefx3_get_looper_state` | 427 | [III BETA — unverified on hardware] Read the Axe-Fx III Looper state. |
-| `axefx3_get_parameter` | 781 ⚠ | [III BETA — unverified on hardware] Query the wire-level value of one paramId on one block on the Axe-Fx III. |
-| `axefx3_get_preset_name` | 568 | [III BETA — unverified on hardware] Read a preset's name + number on the Axe-Fx III in one round-trip. |
-| `axefx3_get_scene_name` | 483 | [III BETA — unverified on hardware] Read a scene's name (1..8) in the active Axe-Fx III preset, or pass scene="current" for the active scene. |
-| `axefx3_get_tempo` | 375 | [III BETA — unverified on hardware] Read the current master tempo (BPM) from the Axe-Fx III. |
-| `axefx3_list_blocks` | 628 ⚠ | [III BETA — unverified on hardware] Return the Axe-Fx III block roster: every block type the editor recognises, with names, group codes, and effect IDs where... |
-| `axefx3_probe_sysex` | 879 ⚠ | [III BETA — unverified on hardware] Send raw SysEx to the Axe-Fx III AND capture inbound MIDI in the response window. |
-| `axefx3_reconnect_midi` | 527 | [III BETA — unverified on hardware] Drop the cached Axe-Fx III MIDI handle and force a fresh port-open on the next axefx3_* call. |
-| `axefx3_set_channel` | 659 ⚠ | [III BETA — unverified on hardware] Switch a block's active channel (A/B/C/D) on the Axe-Fx III. |
-| `axefx3_set_looper` | 690 ⚠ | [III BETA — unverified on hardware] Trigger a Looper button-press on the Axe-Fx III. |
-| `axefx3_set_parameter` | 1540 ⚠️ over 1000 | [III BETA — unverified on hardware] Write a raw 16-bit wire value to one paramId on one block on the Axe-Fx III. |
-| `axefx3_set_tempo` | 641 ⚠ | [III BETA — unverified on hardware] Set the master tempo (BPM) on the Axe-Fx III. |
-| `axefx3_set_tuner` | 563 | [III BETA — unverified on hardware] Turn the Axe-Fx III tuner display on or off. |
-| `axefx3_status_dump` | 624 ⚠ | [III BETA — unverified on hardware] Status dump of every block in the active preset on the Axe-Fx III. |
-| `axefx3_tempo_tap` | 660 ⚠ | [III BETA — unverified on hardware] Send one tempo-tap to the Axe-Fx III, equivalent to pressing the front-panel TAP button. |
+| `axefx3_get_active_scene` | 396 | [III BETA, unverified on hardware] Read the currently-active scene (1-based) within the active Axe-Fx III preset. |
+| `axefx3_get_bypass` | 401 | [III BETA, unverified on hardware] Read a block's current bypass state on the Axe-Fx III. |
+| `axefx3_get_channel` | 377 | [III BETA, unverified on hardware] Read a block's current channel (A/B/C/D) on the Axe-Fx III. |
+| `axefx3_get_looper_state` | 426 | [III BETA, unverified on hardware] Read the Axe-Fx III Looper state. |
+| `axefx3_get_parameter` | 780 ⚠ | [III BETA, unverified on hardware] Query the wire-level value of one paramId on one block on the Axe-Fx III. |
+| `axefx3_get_preset_name` | 567 | [III BETA, unverified on hardware] Read a preset's name + number on the Axe-Fx III in one round-trip. |
+| `axefx3_get_scene_name` | 482 | [III BETA, unverified on hardware] Read a scene's name (1..8) in the active Axe-Fx III preset, or pass scene="current" for the active scene. |
+| `axefx3_get_tempo` | 374 | [III BETA, unverified on hardware] Read the current master tempo (BPM) from the Axe-Fx III. |
+| `axefx3_list_blocks` | 627 ⚠ | [III BETA, unverified on hardware] Return the Axe-Fx III block roster: every block type the editor recognises, with names, group codes, and effect IDs where ... |
+| `axefx3_probe_sysex` | 878 ⚠ | [III BETA, unverified on hardware] Send raw SysEx to the Axe-Fx III AND capture inbound MIDI in the response window. |
+| `axefx3_reconnect_midi` | 526 | [III BETA, unverified on hardware] Drop the cached Axe-Fx III MIDI handle and force a fresh port-open on the next axefx3_* call. |
+| `axefx3_set_channel` | 658 ⚠ | [III BETA, unverified on hardware] Switch a block's active channel (A/B/C/D) on the Axe-Fx III. |
+| `axefx3_set_looper` | 689 ⚠ | [III BETA, unverified on hardware] Trigger a Looper button-press on the Axe-Fx III. |
+| `axefx3_set_parameter` | 1539 ⚠️ over 1000 | [III BETA, unverified on hardware] Write a raw 16-bit wire value to one paramId on one block on the Axe-Fx III. |
+| `axefx3_set_tempo` | 640 ⚠ | [III BETA, unverified on hardware] Set the master tempo (BPM) on the Axe-Fx III. |
+| `axefx3_set_tuner` | 562 | [III BETA, unverified on hardware] Turn the Axe-Fx III tuner display on or off. |
+| `axefx3_status_dump` | 623 ⚠ | [III BETA, unverified on hardware] Status dump of every block in the active preset on the Axe-Fx III. |
+| `axefx3_tempo_tap` | 659 ⚠ | [III BETA, unverified on hardware] Send one tempo-tap to the Axe-Fx III, equivalent to pressing the front-panel TAP button. |
 | `describe_device` | 990 ⚠ | REQUIRED first call for any device question or apply_preset call. |
 | `find_compatible_types` | 746 ⚠ | Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics). |
 | `get_param` | 631 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 303 | Batch-read parameters from a device. |
-| `get_preset` | 2131 ⚠️ over 1000 | Snapshot the active working buffer in one tool call. |
+| `get_preset` | 910 ⚠ | Snapshot the active working buffer in one tool call. |
 | `hydra_apply_init` | 903 ⚠ | ⚠ This Hydrasynth tool surface is in active development. |
 | `hydra_apply_init_to` | 891 ⚠ | ⚠ This Hydrasynth tool surface is in active development. |
 | `hydra_apply_patch` | 5834 ⚠️ over 1000 | ⚠ This Hydrasynth tool surface is in active development. |
@@ -196,7 +194,7 @@ Everything registered (current default; equivalent to no env var). Preserved as 
 | `list_midi_ports` | 460 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 838 ⚠ | Enumerate a device's parameters with units and display ranges. |
 | `lookup_lineage` | 940 ⚠ | Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. |
-| `nudge_param` | 1571 ⚠️ over 1000 | Nudge a continuous param up or down by one device-defined step. |
+| `nudge_param` | 887 ⚠ | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
 | `port_preset` | 989 ⚠ | Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III). |
@@ -233,7 +231,5 @@ Tools with descriptions over 1000 chars. T-4 / T-13 target these for migration i
 | Tool | Description length |
 |---|---|
 | `hydra_apply_patch` | 5834 chars |
-| `get_preset` | 2131 chars |
-| `nudge_param` | 1571 chars |
-| `axefx3_set_parameter` | 1540 chars |
+| `axefx3_set_parameter` | 1539 chars |
 | `set_param` | 1109 chars |
