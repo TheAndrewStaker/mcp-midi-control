@@ -64,6 +64,8 @@ export function registerPresetTools(server: McpServer): void {
       'FRESH-BUILD CLEARING: unlisted slots clear; unlisted scenes reset. Song-tone prompts: name scenes Verse/Chorus/Bridge/Solo for footswitch use.',
       'On response, scan validation_info[]: type-knob dropped_param (write suppressed pre-flight, pick a type via find_compatible_types), enum "Valid options:" lists (re-invoke verbatim), alias/case fixes, channel-Y inactive.',
       'For solo/lead loudness compensation, call lookup_lineage to read amp.master_sweet_spot + drive.boost_response_dB.',
+      'When the user names SPECIFIC knobs (e.g. "slow chorus" implies rate/depth, "long reverb" implies time), call find_compatible_types({block, params:[knobs]}) BEFORE the first apply_preset to pick a type that exposes them. Known silent-no-op traps on AM4: Hall reverb has fixed decay (no `time`); Analog Stereo chorus has no rate/depth/tempo knobs.',
+      'Do not re-call apply_preset to verify a previous apply. The result envelope\'s steps, duration_ms, and validation_info[] are sufficient. To check a specific landed value, call get_param.',
       'Performance: 1-3 s; +250 ms on save.',
     ].join(' '),
     inputSchema: {

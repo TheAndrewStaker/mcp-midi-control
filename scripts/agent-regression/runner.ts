@@ -136,6 +136,17 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
     '--mcp-config', MCP_CONFIG_PATH,
     '--model', model,
     '--permission-mode', 'bypassPermissions',
+    // Suppress the "read STATE.md first" reflex inherited from the
+    // project CLAUDE.md. CLAUDE.md is written for engineer-driven
+    // sessions; agent-regression spawns claude -p with no Read/Bash
+    // tool, so the agent that tries to follow CLAUDE.md emits raw
+    // `<function_calls>` XML as text instead of using MCP tool_use
+    // blocks, and the case times out with 0 tool calls. Affirmative
+    // voice only — no "do NOT read X" negations (Sonnet treats those
+    // as emphasis), no describe_device prescription (would bias
+    // single-tool cases that should NOT front-load orientation).
+    '--append-system-prompt',
+    'You are a tone-build assistant operating a real guitar device exclusively via MCP tools. You have only the tools in your MCP tool surface; use them directly.',
     // `--tools ""` removes every Claude Code built-in (Bash/Edit/Read/
     // Grep/Glob/Skill/Task*/ToolSearch/etc.) from the agent's tool
     // surface. MCP-server tools pass through independently via

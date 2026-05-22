@@ -209,14 +209,20 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
           if (Array.isArray((args.spec as { slots?: unknown[] }).slots)) {
             for (const slot of (args.spec as { slots: unknown[] }).slots) {
               if (slot === null || typeof slot !== 'object') continue;
-              const s = slot as { block_type?: string; params?: unknown };
+              const s = slot as { block_type?: string; params?: unknown; params_by_channel?: unknown };
               if (s.block_type !== 'amp') continue;
-              const p = s.params;
-              if (p === null || typeof p !== 'object') continue;
-              for (const v of Object.values(p as Record<string, unknown>)) {
-                if (v === null || typeof v !== 'object') continue;
-                const mv = (v as Record<string, unknown>).master_volume ?? (v as Record<string, unknown>).master;
-                if (typeof mv === 'number' && mv < 2) muted = true;
+              // T-5 hard-split: agents author per-channel amp params via
+              // params_by_channel post-2026-05-21. Reading only params
+              // would mean a muted master under params_by_channel.X
+              // slips past the silent-mute safety check. Mirrors the
+              // ampChannelKeys fix (bf71aea).
+              for (const candidate of [s.params_by_channel, s.params]) {
+                if (candidate === null || candidate === undefined || typeof candidate !== 'object') continue;
+                for (const v of Object.values(candidate as Record<string, unknown>)) {
+                  if (v === null || typeof v !== 'object') continue;
+                  const mv = (v as Record<string, unknown>).master_volume ?? (v as Record<string, unknown>).master;
+                  if (typeof mv === 'number' && mv < 2) muted = true;
+                }
               }
             }
           }
@@ -238,7 +244,14 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
         'now persisted to',
         'now stored to',
       ],
-      max_wall_seconds: 240,
+      // Session 121: bumped 240 → 300. Sonnet under the runner system
+      // prompt does more loudness-compensation research (lookup_lineage
+      // × 2 on hot/clean amp pairs + reasoning) before emitting the
+      // 4-scene spec. Real cost: ~5s describe + 20s lineage×2 +
+      // 10s list + 60-100s apply_preset on slow II hardware + Sonnet
+      // reasoning gaps ≈ 270-300s. 240s clipped mid-apply_preset
+      // generation.
+      max_wall_seconds: 300,
     },
   },
 

@@ -409,10 +409,18 @@ async function verifyAm4(client: Client): Promise<void> {
     );
   }
 
-  // BK-075 negative case: set_param on a PLACED block (amp is in slot 1
-  // by mock default) should NOT carry a phantom-param warning. The happy-
-  // path response stays unchanged.
+  // BK-075 negative case: set_param on a PLACED block should NOT carry a
+  // phantom-param warning. Deterministically place amp at slot 1 first —
+  // the battery may run against real hardware whose stored Z3 preset
+  // doesn't include amp (the mock invariant places amp/chorus/reverb/
+  // delay, but a user-edited Z3 carries whatever the founder last saved).
+  // set_block invalidates the block-layout cache, so the next set_param
+  // re-reads placement and observes the just-placed amp.
   {
+    await client.callTool({
+      name: 'set_block',
+      arguments: { port: 'am4', slot: 1, block_type: 'amp' },
+    });
     const r = await client.callTool({
       name: 'set_param',
       arguments: { port: 'am4', block: 'amp', name: 'gain', value: 5 },

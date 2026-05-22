@@ -31,7 +31,7 @@ import type { AgentRegressionCase, CaseResult, Device, Tier } from './types.js';
  * the corresponding device isn't connected — release-gate works
  * whether the founder is at the bench or not.
  */
-async function detectAvailableDevices(): Promise<Set<Device>> {
+async function detectAvailableDevices(): Promise<{ devices: Set<Device>; probeError?: string }> {
   const SERVER_ENTRY = path.resolve('packages', 'server-all', 'dist', 'server', 'index.js');
   const transport = new StdioClientTransport({
     command: process.execPath,
@@ -40,6 +40,7 @@ async function detectAvailableDevices(): Promise<Set<Device>> {
   });
   const client = new Client({ name: 'agent-regression-port-probe', version: '0.1.0' });
   const available = new Set<Device>();
+  let probeError: string | undefined;
   try {
     await client.connect(transport);
     const result = await client.callTool({ name: 'list_midi_ports', arguments: {} });
@@ -48,12 +49,16 @@ async function detectAvailableDevices(): Promise<Set<Device>> {
     if (/axe[- ]?fx ?ii(?!i)/i.test(text)) available.add('axe-fx-ii');
     if (/axe[- ]?fx ?iii|axefx ?3/i.test(text)) available.add('axe-fx-iii');
     if (/hydrasynth|hydra/i.test(text)) available.add('hydrasynth');
-  } catch {
-    // Probe failure ⇒ assume nothing connected. Hardware-tier cases skip.
+  } catch (err) {
+    // Probe failure: capture the error so the sweep header can flag it.
+    // Without surfacing this, a server crash / list_midi_ports throw /
+    // MCP-client-connect timeout makes every hardware case skip silently
+    // with the misleading "not visible via list_midi_ports" message.
+    probeError = err instanceof Error ? `${err.message}` : String(err);
   } finally {
     try { await client.close(); } catch { /* ignore */ }
   }
-  return available;
+  return { devices: available, probeError };
 }
 
 interface CliArgs {
@@ -114,12 +119,29 @@ async function main(): Promise<void> {
   // Detect connected hardware once; skip hardware-tier cases whose
   // device isn't visible. Keeps release-gate green when run away from
   // the bench (the founder can still test no-hardware coverage).
-  const availableDevices = await detectAvailableDevices();
+  const { devices: availableDevices, probeError } = await detectAvailableDevices();
+  if (probeError !== undefined) {
+    console.error(`\n⚠ Hardware-port probe failed: ${probeError}`);
+    console.error('  All hardware-tier cases will be skipped with this reason.');
+    console.error('  Diagnose: run `npm run launch-verify` to confirm the MCP server itself starts and can see ports.\n');
+  }
   const runnable: AgentRegressionCase[] = [];
   const skipped: { case: AgentRegressionCase; reason: string }[] = [];
   for (const c of cases) {
     if (c.tier === 'hardware' && !availableDevices.has(c.device)) {
-      skipped.push({ case: c, reason: `${c.device} not visible via list_midi_ports` });
+      const reason = probeError !== undefined
+        ? `port probe failed (${probeError.slice(0, 80)})`
+        : `${c.device} not visible via list_midi_ports`;
+      skipped.push({ case: c, reason });
+      continue;
+    }
+    // mockFixture declarations are a hard dependency on MCP_MOCK_TRANSPORT=1.
+    // Under --real-hardware the runner sets MCP_MOCK_TRANSPORT=0 so the mock
+    // module never activates, the fixture has no effect, and the case's
+    // pre-conditions ("Z01 carries 'My Clean Build'", "scene read returns
+    // 0x7fff") cannot hold. Skip cleanly rather than false-fail.
+    if (args.realHardware && c.mockFixture !== undefined) {
+      skipped.push({ case: c, reason: `mockFixture requires mock transport — skip in --real-hardware` });
       continue;
     }
     runnable.push(c);
