@@ -85,7 +85,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   'restore_defaults',
   'apply_setlist',
   'apply_preset',
-  'port_preset',
+  'translate_preset',
   'hydra_apply_patch',
   'send_sysex',
   'axefx2_probe_sysex',

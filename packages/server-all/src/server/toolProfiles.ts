@@ -85,7 +85,7 @@ export const CORE_TOOLS: ReadonlySet<string> = new Set([
   'list_params',
   'lookup_lineage',
   'nudge_param',
-  'port_preset', // renames to translate_preset in T-10; core membership migrates with the rename
+  'translate_preset', // renamed from port_preset (T-10, 2026-05-22) to match what it does
   'rename',
   'restore_defaults',
   'save_preset',

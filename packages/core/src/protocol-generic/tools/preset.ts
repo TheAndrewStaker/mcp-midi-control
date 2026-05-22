@@ -136,16 +136,12 @@ export function registerPresetTools(server: McpServer): void {
     }
   });
 
-  server.registerTool('port_preset', {
+  server.registerTool('translate_preset', {
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
-      'Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III).',
-      'Translation covers chain topology, block availability (II/III cab vs AM4 integrated), param-name aliases (drive.volume ↔ drive.level), enum mappings (USA IIC+ ↔ USA MK IIC+), and scene/channel cardinality (AM4 4×4 ↔ II 8×2 ↔ III 8×4). Modifier wiring is deferred.',
-      'Three modes mirror apply_preset:',
-      '- dry_run=true OR no target_location: translator-only preview. No wire ops. Use first to inspect warnings.',
-      '- target_location, save_authorized=false: translate + audition at target. Reversible.',
-      '- target_location, save_authorized=true: translate + apply + SAVE. DESTRUCTIVE. Explicit save vocab only.',
-      'Caller passes `source_spec` explicitly (v1 doesn\'t read from the source device). Construct it via get_block_layout / get_params, or reuse a prior apply_preset spec.',
+      'Translate a Fractal preset spec from one device to a sibling device (AM4 / Axe-Fx II / III). Caller passes `source_spec` explicitly; v1 does not read from the source device (renamed from port_preset 2026-05-22 because "port" implied source-read, "translate" matches what it actually does).',
+      'Translation covers chain topology, block availability (II/III cab vs AM4 integrated), param-name aliases (drive.volume / drive.level), enum mappings (USA IIC+ / USA MK IIC+), and scene/channel cardinality (AM4 4x4 / II 8x2 / III 8x4). Modifier wiring is deferred.',
+      'Three modes mirror apply_preset: dry_run=true OR no target_location = translator-only preview (no wire ops); target_location + save_authorized:false = translate + audition; target_location + save_authorized:true = translate + apply + SAVE (DESTRUCTIVE, explicit save vocab only).',
       'Returns {ok, port_summary, applied_spec, warnings, apply_result?}. Performance: ~5 ms translator + ~1-3 s apply when target_location is set.',
     ].join(' '),
     inputSchema: {

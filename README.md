@@ -39,7 +39,7 @@ no manual re-routing in AxeEdit required. Multi-scene authoring
 `apply_preset` now configures all block types (including non-channel
 blocks like filter, chorus, and compressor) in a single call, so a
 full song preset builds cleanly in one conversational turn. A new
-`port_preset` tool ports a tone across devices (e.g. AM4 to Axe-Fx II)
+`translate_preset` tool ports a tone across devices (e.g. AM4 to Axe-Fx II)
 by mapping block roles and translating params, and `apply_preset`
 gained a `verify_chain` flag that reads back every written param to
 confirm the device matches intent.
@@ -104,7 +104,7 @@ Once connected, Claude can:
 - **Research tones by real gear.** *"What's the closest drive to a
   Klon?"* / *"Which amp on the AM4 is inspired by a Matchless DC-30?"*
 - **Port a tone across devices.** *"Take my AM4 preset at A1 and rebuild
-  it on the Axe-Fx II at slot 614."* (`port_preset` maps block roles
+  it on the Axe-Fx II at slot 614."* (`translate_preset` maps block roles
   and translates params between Fractal devices.)
 - **Verify the device matches intent.** Pass `verify_chain: true` to
   `apply_preset` and the server reads back every written param,
@@ -452,7 +452,7 @@ at the end.
 > device uses that name) and fuzzy enum names (e.g. *"Plexi 100W"* maps
 > to whichever exact enum string the target device uses), so the same
 > conversational instruction works across AM4 / Axe-Fx II / Axe-Fx III
-> without per-device rewording. `port_preset` leans on both to port a
+> without per-device rewording. `translate_preset` leans on both to port a
 > tone between devices in one call.
 
 ### Unified surface (18 tools): same name, every device
@@ -473,7 +473,7 @@ descriptor + wire adapter; no new tools.
 | `set_bypass(port, block, bypassed)` | Silence/activate a block on the active scene. |
 | `apply_preset(port, spec, target_location?, verify_chain?)` | Build a whole preset in one call (blocks + params + scenes + name). Without `target_location`, writes to the working buffer only; with it, switches to the target slot and saves. `verify_chain: true` reads back every written param after apply and returns drift detail. |
 | `apply_setlist(port, entries[])` | Batch preset write across N entries. Each entry has the same shape as `apply_preset`. |
-| `port_preset(from_port, to_port, source, target?)` | Port a tone across devices: read the source preset (or working buffer), map block roles, translate params, and apply to the destination. Same Fractal lineage = high-fidelity port; Fractal -> Hydrasynth surfaces what can/can't translate. |
+| `translate_preset(from_port, to_port, source, target?)` | Port a tone across devices: read the source preset (or working buffer), map block roles, translate params, and apply to the destination. Same Fractal lineage = high-fidelity port; Fractal -> Hydrasynth surfaces what can/can't translate. |
 | `switch_preset(port, location)` | Load a stored preset into the working buffer. |
 | `save_preset(port, location, name?)` | Persist working buffer (optional rename first). Only on explicit user save phrase; apply_preset is reversible, save_preset is not. |
 | `switch_scene(port, scene)` | Switch scene. Capability-gated (devices without scenes reject). |

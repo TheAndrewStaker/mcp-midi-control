@@ -264,7 +264,26 @@ function asList(value: string | string[] | undefined): string[] {
   return Array.isArray(value) ? value : [value];
 }
 
-function validateStructural(entry: CookbookEntry, violations: Violation[]): void {
+/**
+ * Parse `[[slug]]` markdown wikilinks out of the entry body. The cookbook
+ * uses kebab-case slugs exclusively (lowercase a-z, digits, hyphens). This
+ * is intentionally narrow — it won't match prose links like `[label](url)`.
+ */
+function extractWikilinks(body: string): string[] {
+  const out: string[] = [];
+  const re = /\[\[([a-z0-9][a-z0-9-]*)\]\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    out.push(m[1]);
+  }
+  return out;
+}
+
+function validateStructural(
+  entry: CookbookEntry,
+  violations: Violation[],
+  slugSet: Set<string>,
+): void {
   const fm = entry.frontmatter;
   // Required keys
   for (const k of REQUIRED_FRONTMATTER_KEYS) {
@@ -342,6 +361,35 @@ function validateStructural(entry: CookbookEntry, violations: Violation[]): void
         entry: entry.slug,
         severity: 'warn',
         message: `consumed_in speculative path not found: '${ci}' (${resolved.reason})`,
+      });
+    }
+  }
+  // Cross-reference integrity: relates_to + body wikilinks. Cookbook entries
+  // navigate via [[slug]] wikilinks and `relates_to:` frontmatter lists; if
+  // either points at a slug that no longer exists, readers chase ghosts.
+  // Self-references are allowed (some refinement-history footers cite the
+  // entry's own slug for clarity).
+  const relatesTo = asList(fm.relates_to);
+  for (const ref of relatesTo) {
+    if (ref === '' || ref === entry.slug) continue;
+    if (!slugSet.has(ref)) {
+      violations.push({
+        entry: entry.slug,
+        severity: 'fail',
+        message: `relates_to references unknown cookbook slug '${ref}'`,
+      });
+    }
+  }
+  const wikilinks = extractWikilinks(entry.body);
+  const reported = new Set<string>();
+  for (const ref of wikilinks) {
+    if (ref === entry.slug || reported.has(ref)) continue;
+    if (!slugSet.has(ref)) {
+      reported.add(ref);
+      violations.push({
+        entry: entry.slug,
+        severity: 'fail',
+        message: `body [[wikilink]] references unknown cookbook slug '${ref}'`,
       });
     }
   }
@@ -564,11 +612,12 @@ const FUNCTIONAL_CASES: Record<string, () => string | null> = {
 
 function main(): void {
   const entries = loadEntries();
+  const slugSet = new Set(entries.map((e) => e.slug));
   const violations: Violation[] = [];
   let structuralOk = 0;
   for (const entry of entries) {
     const before = violations.length;
-    validateStructural(entry, violations);
+    validateStructural(entry, violations, slugSet);
     if (violations.length === before) structuralOk += 1;
   }
   const functionalResults: { slug: string; ok: boolean; message: string | null }[] = [];

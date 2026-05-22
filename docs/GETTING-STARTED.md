@@ -100,7 +100,7 @@ Hydrasynth surfaces what does and doesn't translate.
 > Take whatever's in my AM4's working buffer and port it to the Axe-Fx II
 > at slot 614. Don't save yet, just let me audition.
 
-Claude calls `port_preset` with `from_port: "am4"`, `to_port:
+Claude calls `translate_preset` with `source_port: "am4"`, `target_port:
 "axe-fx-ii"`, maps block roles (drive to drive, amp to amp, etc.),
 translates params, and applies to the II's working buffer. The
 response tells you what mapped cleanly, what was approximated, and

@@ -36,7 +36,6 @@ Default-recommended unified surface for conversational tone-building. Smallest a
 | `nudge_param` | 887 ⚠ | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
-| `port_preset` | 989 ⚠ | Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III). |
 | `reconnect_midi` | 341 | Reset the MIDI connection: close the cached handle and open a fresh one. |
 | `rename` | 353 | Rename the working-buffer preset or one of its scenes. |
 | `restore_defaults` | 650 ⚠ | DESTRUCTIVE: reset preset locations to factory state. |
@@ -49,6 +48,7 @@ Default-recommended unified surface for conversational tone-building. Smallest a
 | `switch_preset` | 402 | Load a stored preset into the working buffer. |
 | `switch_scene` | 336 | Change the active scene within the current preset. |
 | `toggle_bypass` | 600 | Atomically flip a block's bypass state in one wire round-trip, no value to pass. |
+| `translate_preset` | 974 ⚠ | Translate a Fractal preset spec from one device to a sibling device (AM4 / Axe-Fx II / III). |
 
 ## experimental profile (79 tools)
 
@@ -109,7 +109,6 @@ Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics.
 | `nudge_param` | 887 ⚠ | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
-| `port_preset` | 989 ⚠ | Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III). |
 | `reconnect_midi` | 341 | Reset the MIDI connection: close the cached handle and open a fresh one. |
 | `rename` | 353 | Rename the working-buffer preset or one of its scenes. |
 | `restore_defaults` | 650 ⚠ | DESTRUCTIVE: reset preset locations to factory state. |
@@ -135,6 +134,7 @@ Core + every device-namespaced tool + raw generic-MIDI primitives + diagnostics.
 | `switch_preset` | 402 | Load a stored preset into the working buffer. |
 | `switch_scene` | 336 | Change the active scene within the current preset. |
 | `toggle_bypass` | 600 | Atomically flip a block's bypass state in one wire round-trip, no value to pass. |
+| `translate_preset` | 974 ⚠ | Translate a Fractal preset spec from one device to a sibling device (AM4 / Axe-Fx II / III). |
 
 ## full profile (81 tools)
 
@@ -197,7 +197,6 @@ Everything registered (current default; equivalent to no env var). Preserved as 
 | `nudge_param` | 887 ⚠ | Nudge a continuous param up or down by one device-defined step. |
 | `play_chord` | 485 | Audition the active patch by playing simultaneous MIDI notes (optionally staggered by `strum_ms`). |
 | `play_note` | 543 | Audition the active patch by playing one MIDI note (Note On, wait, Note Off). |
-| `port_preset` | 989 ⚠ | Translate a Fractal preset from one device to a sibling device (AM4 / Axe-Fx II / III). |
 | `reconnect_midi` | 341 | Reset the MIDI connection: close the cached handle and open a fresh one. |
 | `rename` | 353 | Rename the working-buffer preset or one of its scenes. |
 | `restore_defaults` | 650 ⚠ | DESTRUCTIVE: reset preset locations to factory state. |
@@ -223,6 +222,7 @@ Everything registered (current default; equivalent to no env var). Preserved as 
 | `switch_preset` | 402 | Load a stored preset into the working buffer. |
 | `switch_scene` | 336 | Change the active scene within the current preset. |
 | `toggle_bypass` | 600 | Atomically flip a block's bypass state in one wire round-trip, no value to pass. |
+| `translate_preset` | 974 ⚠ | Translate a Fractal preset spec from one device to a sibling device (AM4 / Axe-Fx II / III). |
 
 ## Description budget outliers
 
