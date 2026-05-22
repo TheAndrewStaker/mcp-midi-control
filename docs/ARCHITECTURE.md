@@ -80,9 +80,24 @@ packages/core/src/
     safeEdit.ts               ← save_authorized + on_active_preset_edited
                                   guard helpers
   fractal-shared/
-    lineage/                  ← Fractal amp/drive/etc. lineage JSON data
-    lineageLookup.ts          ← lookup_lineage engine
+    lineage/loudness.json     ← per-amp / per-drive loudness corpus
+                                  (the rest of the lineage data lives
+                                  in fractal-midi; see below)
 ```
+
+**Lineage data lives in the codec repo.** The amp / drive / cab / wah
+lineage JSON (the bulk of the corpus, hundreds of entries with
+Cliff Chase quotes + Fractal Cab Pack attributions) is in the
+separate [`fractal-midi`](https://github.com/TheAndrewStaker/fractal-midi)
+package at `src/shared/lineage/`. This MCP server consumes it via
+the `fractal-midi` npm dep. Editing lineage data is a fractal-midi
+PR, not a mcp-midi-tools PR; see [`CONTRIBUTING.md` § Two-repo
+layout](../CONTRIBUTING.md#two-repo-layout-read-this-first).
+
+The `lookup_lineage` engine (the search + format step) lives at
+`packages/core/src/protocol-generic/dispatcher/discovery.ts`
+(executeLookupLineage); per-device readers contribute a
+`reader.lookupLineage` hook in their descriptor.
 
 ### 3. Device packages
 

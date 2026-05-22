@@ -68,17 +68,17 @@ confirm the device matches intent.
 > scaffolded from Fractal's published "Axe-Fx III MIDI for Third-Party
 > Devices" v1.4 PDF and the AxeEdit III editor assets (47-block roster
 > verified). Device identification, `describe_device`, `switch_preset`,
-> and `switch_scene` work today; write tools (set_param, apply_preset,
-> save_preset) refuse with structured "pending community capture"
-> errors because Fractal deliberately omits per-block parameter IDs
-> from the public spec. **III owners: we need your help.** Five
-> 5-minute test sessions per the
+> and `switch_scene` work today. Write tools (`set_param`, `apply_preset`,
+> `save_preset`) DO send wire bytes: the wire shape is byte-verified
+> against the v1.4 spec + 10 public captures, but unverified end-to-end
+> on real III hardware. Every III tool response carries a `[III BETA,
+> unverified on hardware]` notice so the agent (and you) know the call
+> is hypothesis until someone with a III confirms front-panel behavior.
+> **III owners: we need your help.** Five 5-minute test sessions per the
 > [community beta-testing guide](./docs/AXEFX3-BETA-TESTING.md)
-> take the III from 🟡 community-beta to 🟢 hardware-verified. The wire
-> shapes are already decoded from public captures; what's missing is
-> someone with a real III running the calls and pasting the JSON
-> responses into a GitHub issue. No capture tools, no Wireshark, no
-> developer setup required.
+> take the III from 🟡 community-beta to 🟢 hardware-verified. No
+> capture tools, no Wireshark, no developer setup required, just plug
+> in, run a call, paste the JSON response into a GitHub issue.
 
 <!-- tool-inventory:generated:start -->
 
@@ -509,7 +509,7 @@ descriptor + wire adapter; no new tools.
 | `set_bypass(port, block, bypassed)` | Silence/activate a block on the active scene. |
 | `apply_preset(port, spec, target_location?, verify_chain?)` | Build a whole preset in one call (blocks + params + scenes + name). Without `target_location`, writes to the working buffer only; with it, switches to the target slot and saves. `verify_chain: true` reads back every written param after apply and returns drift detail. |
 | `apply_setlist(port, entries[])` | Batch preset write across N entries. Each entry has the same shape as `apply_preset`. |
-| `translate_preset(from_port, to_port, source, target?)` | Port a tone across devices: read the source preset (or working buffer), map block roles, translate params, and apply to the destination. Same Fractal lineage = high-fidelity port; Fractal -> Hydrasynth surfaces what can/can't translate. |
+| `translate_preset(source_port, source_spec, target_port, target_location?, save_authorized?, dry_run?)` | Translate a preset SPEC across devices: map block roles + translate params + apply to the destination. The caller passes `source_spec` explicitly; v1 does NOT auto-read from the source device (a future minor adds that as a chain of get_preset + translate_preset + apply_preset). Same Fractal lineage = high-fidelity port; Fractal -> Hydrasynth surfaces what can / can't translate. Three modes mirror apply_preset (dry_run / audition / save). |
 | `switch_preset(port, location)` | Load a stored preset into the working buffer. |
 | `save_preset(port, location, name?)` | Persist working buffer (optional rename first). Only on explicit user save phrase; apply_preset is reversible, save_preset is not. |
 | `switch_scene(port, scene)` | Switch scene. Capability-gated (devices without scenes reject). |

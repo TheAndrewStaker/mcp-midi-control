@@ -119,6 +119,31 @@ function resolveParamKey(
  * are reported as a validation error; the caller stops walking that
  * slot's params after pushing the error.
  */
+/**
+ * SHAPE CONTRACT (T-5, 2026-05-21, hardened 2026-05-22): there are two
+ * layers in this codebase.
+ *
+ *   - PUBLIC (MCP tool boundary, zod-enforced): `params` is FLAT only;
+ *     channel-nested authoring goes through `params_by_channel`. The
+ *     schema rejects nested-in-params at zod parse time.
+ *
+ *   - INTERNAL (post-preflight-merge): the merge step earlier in
+ *     `collectApplyPresetPreflight` folds `params_by_channel` INTO
+ *     `slot.params` (preserving the legacy polymorphic shape — flat
+ *     OR nested record-of-records). Every downstream walker (this
+ *     classifier, validateParamMap, the descriptor writers) sees that
+ *     merged shape. Direct internal callers (tests bypassing the MCP
+ *     boundary) MAY author the post-merge shape directly because they
+ *     are past the boundary; that is not a layering bug, it is the
+ *     two-layer contract.
+ *
+ * If you want to TIGHTEN the internal layer to reject nested-in-params
+ * too, the migration cost is ~15 test fixtures in
+ * scripts/verify-apply-preflight.ts + scripts/verify-dispatcher.ts. The
+ * trade is: stricter internal invariants vs more test churn. Today the
+ * boundary enforces the contract for agents (who are the actual
+ * consumers); internal flexibility is fine.
+ */
 function classifyParamsShape(
   params: PresetSlotSpec['params'] | undefined,
 ): { shape: 'empty' | 'flat' | 'nested' | 'mixed'; entries: [string, unknown][] } {

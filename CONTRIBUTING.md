@@ -19,6 +19,64 @@ from "no code" to "deep RE work":
    the envelope, and add a byte-exact golden. See
    [Capturing MIDI traffic](#capturing-midi-traffic) below.
 
+## Two-repo layout (read this first)
+
+The codec lives in a **separate** repository, `fractal-midi`. Wire
+builders / parsers, the param dictionaries, the amp/drive/cab lineage
+JSON, block tables, and any other "what the device speaks" data live
+there, not in this repo.
+
+| Lives in | What |
+|---|---|
+| `C:/dev/fractal-midi/` (separate repo) | Pure-TypeScript codec. Builders, parsers, param dictionaries, block tables, lineage JSON (`amp-lineage.json`, `cab-lineage.json`, etc.). NO MIDI transport, NO MCP server. |
+| `C:/dev/mcp-midi-tools/` (this repo) | MCP server, descriptors, dispatcher, agent guidance, tool registrations. Imports from `fractal-midi/*`. Consumes the codec; does not define it. |
+
+**If your contribution edits ANY of these, you are working in the codec repo, not here:**
+- `amp-lineage.json` / `cab-lineage.json` / `drive-lineage.json` / similar
+- A `KNOWN_PARAMS` table
+- A SysEx builder or parser
+- A block-type table
+
+Workflow for a cross-repo change:
+1. `cd C:/dev/fractal-midi`, edit the source.
+2. Run `npm test` in the codec repo.
+3. Bump the version in `package.json` (alpha bump is fine pre-1.0).
+4. `npm pack` produces a `.tgz`.
+5. `cd C:/dev/mcp-midi-tools` and `npm install /path/to/the/.tgz`.
+6. Test the integration here, commit both repos, then push.
+
+For drafting (you are iterating quickly), `npm link` between the two
+repos avoids the pack-install cycle. Reset to a published version
+before opening the PR.
+
+## Common contribution recipes
+
+Pick the row that matches your PR; that names the file to edit. If
+your edit lands in the codec repo (`fractal-midi`), see the two-repo
+section above for the workflow.
+
+| Goal | File to edit | Repo |
+|---|---|---|
+| Add an amp model to the AM4 lineage | `src/shared/lineage/amp-lineage.json` | `fractal-midi` |
+| Add an amp model to the Axe-Fx II lineage | `src/shared/lineage/axefx2-amp-lineage.json` | `fractal-midi` |
+| Add a cab attribution | `src/shared/lineage/cab-lineage.json` | `fractal-midi` |
+| Add a drive / wah lineage entry | `src/shared/lineage/{drive,wah}-lineage.json` | `fractal-midi` |
+| Add a recipe (tone preset, auto-wah, scene-leveling) | `packages/core/src/protocol-generic/recipes/` | this repo |
+| Fix a tool description | `packages/<device>/src/tools/*.ts` | this repo |
+| Add a new tool to the unified surface | `packages/core/src/protocol-generic/tools/*.ts` | this repo |
+| Add a new param to a device's catalog | `src/<device>/params.ts` in `fractal-midi`, then `npm pack` + reinstall | `fractal-midi` |
+
+## What to run before opening a PR
+
+| Command | When to run | Requires |
+|---|---|---|
+| `npm run preflight` | Before every PR. Runs typecheck + 12 verifiers + cookbook gate + tool inventory lint. | Nothing. ~1 minute. |
+| `npm run build` | If you touched TypeScript under `packages/*/src/`. Pre-installs the dist Claude Desktop spawns. | Nothing. ~30 s. |
+| `npm run launch-verify` | If you touched anything wire-protocol related (wire builders, parsers, dispatcher, descriptor reader/writer). Runs the actual server against connected hardware. | A supported device on USB. |
+| `npm run live-regression` | Same as launch-verify but covers more scenarios. | A supported device on USB. |
+| `npm run agent-sweep` | **DO NOT** run casually. Spawns the `claude` CLI per case and **incurs billed Anthropic API calls**. Only run when changing agent-routing assumptions, and with founder permission. | `claude` CLI + API key. |
+| `npm run release-gate` | Founder-only, pre-announce. Runs preflight + launch-verify + agent-sweep + live-regression in sequence. **Billed.** | Hardware + API key. |
+
 ## License and contributor grant
 
 By submitting a contribution (pull request, patch, issue with a code

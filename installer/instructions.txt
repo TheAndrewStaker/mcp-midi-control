@@ -113,6 +113,19 @@ A: Make sure you fully quit Claude Desktop (system tray right-click
    running in the background, and it only reads the config at
    startup.
 
+Q: I see fewer tools than I expected.
+A: The default tool profile is "core" (26 tools): the unified
+   surface essentials + conversational MIDI primitives. Device-
+   specific tools (like axefx2_get_grid_layout, hydra_apply_patch,
+   raw send_sysex / send_nrpn) are hidden by default to keep the
+   agent's tool list focused. To expose everything, edit your
+   claude_desktop_config.json and add:
+       "env": { "MCP_TOOLS_PROFILE": "full" }
+   inside the mcp-midi-control entry, then fully quit + relaunch
+   Claude Desktop. The full surface has 81 tools. See README's
+   "Configuring tool profiles" section for the intermediate
+   "experimental" profile.
+
 Q: Will the AI delete my custom presets?
 A: It can't, by default. Saves require explicit save-language from
    you, and the server refuses silent saves. See "WILL THIS WRECK MY
@@ -142,4 +155,3 @@ LINKS
 
 - Source + issues: https://github.com/TheAndrewStaker/mcp-midi-control
 - Safety guide:    https://github.com/TheAndrewStaker/mcp-midi-control/blob/main/docs/SAFETY-FOR-MUSICIANS.md
-- Forum thread:    [link goes in the launch post]

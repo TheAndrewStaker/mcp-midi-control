@@ -73,7 +73,7 @@ async function main(): Promise<void> {
               block_type: 'amp',
               // Different params on X vs Y channel — proves per-channel
               // routing through the unified surface.
-              params: {
+              params_by_channel: {
                 X: { input_drive: 3.5, bass: 4.5, middle: 5, treble: 6.5, master_volume: 5 },
                 Y: { input_drive: 6.5, bass: 5, middle: 4, treble: 6, master_volume: 5 },
               },

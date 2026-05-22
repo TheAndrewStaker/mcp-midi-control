@@ -591,23 +591,30 @@ export const reader: DeviceReader = {
           flatParams[p.name] = display;
         }
 
-        // Shape decision: channel-bearing blocks get the nested shape
-        // (e.g. {X: {...}}) so the agent can identify which channel the
-        // snapshot reflects. Non-channel blocks use the flat shape.
-        // When the channel read failed (rare), fall back to flat with
-        // channel_status: 'unknown' so the agent doesn't accidentally
-        // feed the slot back to apply_preset on the wrong channel.
+        // Shape decision (post-T-5, 2026-05-22):
+        //   - non-channel block: flat `params: {...}`, channel_status omitted.
+        //   - channel block + channel read succeeded: `params_by_channel:
+        //     {[ch]: {...}}` so the slot round-trips through apply_preset's
+        //     new schema. The legacy nested-in-params shape is rejected at
+        //     the MCP boundary; emitting it here would break the documented
+        //     snapshot,edit,re-apply workflow.
+        //   - channel block + channel read failed: fall back to flat `params`
+        //     with channel_status='unknown' so the caller knows the snapshot
+        //     can't be round-tripped without picking a channel explicitly.
         let params: PresetSlotSpec['params'];
+        let paramsByChannel: PresetSlotSpec['params_by_channel'];
         let channelStatus: PresetSnapshotSlot['channel_status'];
         if (!block.canBypass) {
-          // Non-channel block: flat is correct, channel_status omitted.
           params = flatParams;
+          paramsByChannel = undefined;
           channelStatus = undefined;
         } else if (activeChannel !== undefined) {
-          params = { [activeChannel]: flatParams };
+          params = undefined;
+          paramsByChannel = { [activeChannel]: flatParams };
           channelStatus = 'active';
         } else {
           params = flatParams;
+          paramsByChannel = undefined;
           channelStatus = 'unknown';
         }
 
@@ -615,7 +622,8 @@ export const reader: DeviceReader = {
           slot: block.slot,
           block_type: block.blockType,
           instance: block.instance,
-          params,
+          ...(params !== undefined ? { params } : {}),
+          ...(paramsByChannel !== undefined ? { params_by_channel: paramsByChannel } : {}),
           channel_status: channelStatus,
         });
       } catch (err) {
