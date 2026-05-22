@@ -117,14 +117,11 @@ export const presetSlotShape = z.object({
   block_type: z.string().describe(
     'Block to place (e.g. "amp", "drive", "reverb", "none"). See describe_device.block_types.',
   ),
-  params: z.union([
-    z.record(z.string(), z.union([z.number(), z.string()])),
-    z.record(z.string(), z.record(z.string(), z.union([z.number(), z.string()]))),
-  ]).optional().describe(
-    'Block params. TWO SHAPES accepted; PICK BY BLOCK: ' +
-    '(1) FLAT `{ rate: 0.8, depth: 35 }` for NON-channel blocks (AM4: filter, chorus, flanger, phaser, comp, geq, peq, tremolo, rotary, wah, enhancer, gate, volpan, ingate). Channel blocks on Axe-Fx II/III accept flat too: writes land on the currently-active channel. ' +
-    '(2) CHANNEL-NESTED `{ A: { gain: 6 }, D: { gain: 8 } }` for CHANNEL blocks. AM4 channel blocks are amp/drive/reverb/delay (A/B/C/D). Axe-Fx II/III use X/Y. ' +
-    'AM4 rejects channel-nested params on non-channel blocks; use the flat shape there. See describe_device.capabilities.channel_blocks for the per-device list.',
+  params: z.record(z.string(), z.union([z.number(), z.string()])).optional().describe(
+    'Flat param map for non-channel blocks OR the active channel of channel blocks (`{ rate: 0.8, depth: 35 }`). For multi-channel authoring on channel blocks (amp / drive / reverb / delay on AM4; every block on II / III), use `params_by_channel` instead. T-5 (2026-05-21): nested-in-params (`{A:{...}}`) used to be accepted; pass that shape via `params_by_channel` now. Setting both `params` and `params_by_channel` on the same slot is rejected.',
+  ),
+  params_by_channel: z.record(z.string(), z.record(z.string(), z.union([z.number(), z.string()]))).optional().describe(
+    'Per-channel param maps for channel blocks (`{ A: { gain: 6 }, D: { gain: 8 } }` on AM4; `X` / `Y` on II / III). Each top-level key is a channel name; each value is a flat param map for that channel. See describe_device.capabilities.channel_blocks for the per-device channel list. Non-channel blocks reject this field; use `params` (flat) there.',
   ),
   bypassed: z.boolean().optional(),
   id: z.string().optional().describe(

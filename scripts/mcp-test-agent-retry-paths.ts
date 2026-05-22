@@ -64,7 +64,7 @@ function record(name: string, pass: boolean, notes: string[]): void {
 }
 
 async function main(): Promise<void> {
-  const env: Record<string, string> = { ...process.env as Record<string, string>, MCP_MOCK_TRANSPORT: '1' };
+  const env: Record<string, string> = { ...process.env as Record<string, string>, MCP_MOCK_TRANSPORT: '1', MCP_TOOLS_PROFILE: 'full' };
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [SERVER_ENTRY],

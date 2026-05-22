@@ -146,6 +146,9 @@ async function main(): Promise<void> {
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
     MCP_MOCK_TRANSPORT: '1',
+    // Annotation check covers the entire registered surface, not just
+    // the default `core` profile. Force `full` so every tool is visible.
+    MCP_TOOLS_PROFILE: 'full',
   };
   const transport = new StdioClientTransport({
     command: process.execPath,

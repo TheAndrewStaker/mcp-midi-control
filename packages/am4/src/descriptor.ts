@@ -81,14 +81,14 @@ const AM4_EXAMPLE_SPEC: PresetSpec = {
     {
       slot: 1,
       block_type: 'drive',
-      params: {
+      params_by_channel: {
         A: { type: 'Tube Drive 3-Knob', drive: 3, tone: 6, level: 5 },
       },
     },
     {
       slot: 2,
       block_type: 'amp',
-      params: {
+      params_by_channel: {
         A: { type: 'USA Pre Clean', gain: 3, master: 5 },
         B: { type: 'USA MK IIC+', gain: 6, master: 4 },
       },
@@ -96,14 +96,14 @@ const AM4_EXAMPLE_SPEC: PresetSpec = {
     {
       slot: 3,
       block_type: 'reverb',
-      params: {
+      params_by_channel: {
         A: { type: 'Hall, Medium', mix: 25 },
       },
     },
     {
       slot: 4,
       block_type: 'delay',
-      params: {
+      params_by_channel: {
         A: { type: 'Digital Stereo', mix: 15 },
       },
     },

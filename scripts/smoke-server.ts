@@ -20,9 +20,14 @@ interface JsonRpc {
 }
 
 async function main(): Promise<void> {
+  // Smoke test verifies the FULL registered tool surface, not the
+  // default `core` profile (T-17 / T-5 / Pass 3 default flip). Set
+  // MCP_TOOLS_PROFILE=full on the spawned server so this check sees
+  // every tool ever registered.
   const child = spawn('npx', ['tsx', 'packages/server-all/src/server/index.ts'], {
     stdio: ['pipe', 'pipe', 'pipe'],
     shell: process.platform === 'win32', // Windows needs shell=true for npx
+    env: { ...process.env, MCP_TOOLS_PROFILE: 'full' },
   });
 
   const stderrChunks: Buffer[] = [];
@@ -375,21 +380,21 @@ async function main(): Promise<void> {
 
   await assertApplyPresetError(
     'channels on a block without channels',
-    { slots: [{ slot: 1, block_type: 'compressor', params: { A: { ratio: 4 } } }] },
+    { slots: [{ slot: 1, block_type: 'compressor', params_by_channel: { A: { ratio: 4 } } }] },
     'does not expose channels',
   );
   console.log(`✓ apply_preset rejects channels on compressor (no channel register)`);
 
   await assertApplyPresetError(
     'unknown channel letter',
-    { slots: [{ slot: 1, block_type: 'amp', params: { E: { gain: 6 } } }] },
+    { slots: [{ slot: 1, block_type: 'amp', params_by_channel: { E: { gain: 6 } } }] },
     'unknown channel "E"',
   );
   console.log(`✓ apply_preset rejects unknown channel letter E`);
 
   await assertApplyPresetError(
     'unknown param inside channels.<letter>',
-    { slots: [{ slot: 1, block_type: 'amp', params: { A: { not_a_real_param: 6 } } }] },
+    { slots: [{ slot: 1, block_type: 'amp', params_by_channel: { A: { not_a_real_param: 6 } } }] },
     'slots[0].params.A.not_a_real_param',
   );
   console.log(`✓ apply_preset surfaces path-like error for unknown param inside channels`);

@@ -351,9 +351,35 @@ export interface PresetSlotSpec {
    * has no register to write them to; the flat form is the only valid
    * shape for filter/chorus/comp/etc.
    */
+  /**
+   * Block params.
+   *
+   * SCHEMA boundary (apply_preset tool input): callers pass either
+   *   - `params: { rate: 0.8 }` — flat record, for non-channel blocks
+   *     or active-channel-only writes on channel blocks
+   *   - `params_by_channel: { A: { gain: 6 } }` — nested per-channel,
+   *     for multi-channel authoring on channel blocks
+   * The schema (presetSlotShape) rejects nested values inside `params`
+   * and rejects setting both fields on the same slot (T-5, 2026-05-21).
+   *
+   * INTERNAL shape (after preflight normalization): the preflight
+   * merges `params_by_channel` into `params`, so downstream dispatcher
+   * walkers see a single polymorphic `params` field accepting either
+   * shape. This is why the internal type stays permissive — only the
+   * schema layer enforces the split. Downstream consumers continue to
+   * branch on shape via the existing `classifyParamsShape` helper.
+   */
   params?:
     | Readonly<Record<string, number | string>>
     | Readonly<Record<string, Readonly<Record<string, number | string>>>>;
+  /**
+   * SCHEMA-ONLY field: when authoring an apply_preset call, pass per-
+   * channel param maps here instead of nesting them in `params`. The
+   * preflight folds this into the internal `params` shape before any
+   * walker sees the spec; downstream descriptor writers continue to
+   * receive the nested shape via `params`.
+   */
+  params_by_channel?: Readonly<Record<string, Readonly<Record<string, number | string>>>>;
   bypassed?: boolean;
   /**
    * v0.4: stable identifier for this block within the preset. Used by

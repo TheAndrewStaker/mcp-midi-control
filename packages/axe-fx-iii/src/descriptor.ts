@@ -1389,7 +1389,7 @@ const AXEFX3_EXAMPLE_SPEC: PresetSpec = {
     {
       slot: { row: 2, col: 1 },
       block_type: 'drive',
-      params: {
+      params_by_channel: {
         A: { type: 3, bass: 5, mid: 5, treble: 5, master: 5 },
       },
     },
@@ -1398,7 +1398,7 @@ const AXEFX3_EXAMPLE_SPEC: PresetSpec = {
     {
       slot: { row: 2, col: 4 },
       block_type: 'reverb',
-      params: {
+      params_by_channel: {
         A: { type: 3, time: 5, mix: 25 },
       },
     },

@@ -84,14 +84,14 @@ const AXEFX2_EXAMPLE_SPEC: PresetSpec = {
     {
       slot: { row: 2, col: 1 },
       block_type: 'drive',
-      params: {
+      params_by_channel: {
         X: { effect_type: 'TUBE DRV 3-KNOB', gain: 3, tone: 6, volume: 5 },
       },
     },
     {
       slot: { row: 2, col: 2 },
       block_type: 'amp',
-      params: {
+      params_by_channel: {
         X: { effect_type: 'USA CLEAN', input_drive: 3, master_volume: 5 },
         Y: { effect_type: 'USA IIC+', input_drive: 6, master_volume: 4 },
       },
@@ -100,7 +100,7 @@ const AXEFX2_EXAMPLE_SPEC: PresetSpec = {
     {
       slot: { row: 2, col: 4 },
       block_type: 'reverb',
-      params: {
+      params_by_channel: {
         X: { effect_type: 'MEDIUM PLATE', mix: 25 },
       },
     },

@@ -642,12 +642,15 @@ for (const descriptor of registered) {
     const firstChannel = channelNames[0];
 
     if (blockIsChannelBlock) {
-      // Channel block: both flat AND nested shapes must parse and validate.
+      // Channel block: flat (active-channel) on `params` AND nested on
+      // `params_by_channel` must both parse + validate (T-5, 2026-05-21:
+      // schema split. Nested-in-params is no longer accepted at the
+      // schema layer; agents author multi-channel via params_by_channel.)
       const flatSpec = {
         slots: [{ slot: 1, block_type: blockName, params: { [paramName]: midValue } }],
       };
       const nestedSpec = {
-        slots: [{ slot: 1, block_type: blockName, params: { [firstChannel]: { [paramName]: midValue } } }],
+        slots: [{ slot: 1, block_type: blockName, params_by_channel: { [firstChannel]: { [paramName]: midValue } } }],
       };
 
       const flatParsed = presetShape.safeParse(flatSpec);
@@ -658,7 +661,7 @@ for (const descriptor of registered) {
       );
       const nestedParsed = presetShape.safeParse(nestedSpec);
       assert(
-        `${descriptor.id}/${blockName}: nested params {${firstChannel}: {${paramName}=${midValue}}} parses via Zod`,
+        `${descriptor.id}/${blockName}: params_by_channel {${firstChannel}: {${paramName}=${midValue}}} parses via Zod`,
         nestedParsed.success,
         nestedParsed.success ? undefined : JSON.stringify((nestedParsed as z.ZodSafeParseError<unknown>).error.issues),
       );
@@ -684,7 +687,7 @@ for (const descriptor of registered) {
           passed++;
         } catch (err) {
           failed++;
-          console.error(`  ✗ ${descriptor.id}/${blockName}: nested params on channel block — executor rejected\n      ${err instanceof Error ? err.message : String(err)}`);
+          console.error(`  ✗ ${descriptor.id}/${blockName}: params_by_channel on channel block — executor rejected\n      ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     } else {
@@ -711,31 +714,44 @@ for (const descriptor of registered) {
         }
       }
 
-      // AM4 explicitly rejects channel-nested params on non-channel blocks.
-      // Axe-Fx II accepts both because every block has X/Y, so we only
-      // gate this assertion on AM4.
+      // AM4 explicitly rejects params_by_channel on non-channel blocks.
+      // Axe-Fx II accepts on every block because every II block has X/Y,
+      // so we only gate this assertion on AM4. T-5 (2026-05-21): the
+      // schema accepts params_by_channel structurally; the per-device
+      // executor refuses based on the block's channel capability.
+      //
+      // Run the preflight before validatePreset so the dispatcher's
+      // params_by_channel-into-params merge happens first; the executor
+      // never sees params_by_channel directly (preflight contract).
       if (descriptor.id === 'am4') {
         const nestedSpec = {
-          slots: [{ slot: 1, block_type: blockName, params: { [firstChannel]: { [paramName]: midValue } } }],
+          slots: [{ slot: 1, block_type: blockName, params_by_channel: { [firstChannel]: { [paramName]: midValue } } }],
         };
         const nestedParsed = presetShape.safeParse(nestedSpec);
         assert(
-          `${descriptor.id}/${blockName}: nested params parse via Zod (schema accepts both shapes)`,
+          `${descriptor.id}/${blockName}: params_by_channel parses via Zod (schema accepts on all blocks)`,
           nestedParsed.success,
           nestedParsed.success ? undefined : JSON.stringify((nestedParsed as z.ZodSafeParseError<unknown>).error.issues),
         );
         if (nestedParsed.success) {
+          const { collectApplyPresetPreflight } = await import(
+            '@mcp-midi-control/core/protocol-generic/dispatcher/preflight.js'
+          );
+          const preflight = collectApplyPresetPreflight(
+            nestedParsed.data as Parameters<typeof collectApplyPresetPreflight>[0],
+            descriptor,
+          );
           try {
-            descriptor.writer.validatePreset!(nestedParsed.data as Parameters<NonNullable<typeof descriptor.writer.validatePreset>>[0]);
+            descriptor.writer.validatePreset!(preflight.normalized_spec as Parameters<NonNullable<typeof descriptor.writer.validatePreset>>[0]);
             failed++;
-            console.error(`  ✗ ${descriptor.id}/${blockName}: nested params on non-channel block — executor accepted (should reject with clear error)`);
+            console.error(`  ✗ ${descriptor.id}/${blockName}: params_by_channel on non-channel block — executor accepted (should reject with clear error)`);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             if (msg.includes("doesn't have channels")) {
               passed++;
             } else {
               failed++;
-              console.error(`  ✗ ${descriptor.id}/${blockName}: nested params on non-channel block — wrong error message\n      expected "doesn't have channels", got: ${msg}`);
+              console.error(`  ✗ ${descriptor.id}/${blockName}: params_by_channel on non-channel block — wrong error message\n      expected "doesn't have channels", got: ${msg}`);
             }
           }
         }

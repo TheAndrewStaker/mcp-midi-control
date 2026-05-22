@@ -179,16 +179,18 @@ function renderReadmeRegion(buckets: ProfileBucket[], all: ToolEntry[]): string 
   const lines: string[] = [];
   lines.push(README_REGION_START);
   lines.push('');
-  lines.push(`**${all.length} MCP tools registered across 3 profiles.** Defaults to \`full\` so upgrades preserve every tool; set \`MCP_TOOLS_PROFILE\` in \`claude_desktop_config.json\` env to opt into the smaller surfaces.`);
+  const core = buckets.find((b) => b.name === 'core');
+  const coreCount = core ? core.tools.length : 0;
+  lines.push(`**${all.length} MCP tools registered. The default \`core\` profile exposes ${coreCount} of them** (unified surface essentials + conversational generic-MIDI). Set \`MCP_TOOLS_PROFILE=experimental\` or \`=full\` in \`claude_desktop_config.json\` env to expose the larger surfaces (device-namespaced tools, raw MIDI primitives, diagnostics).`);
   lines.push('');
   lines.push('| Profile | Tool count | When to use |');
   lines.push('|---|---|---|');
   for (const b of buckets) {
     const when = b.name === 'core'
-      ? 'Default-recommended: smallest agent context, unified surface only.'
+      ? 'Default. Smallest agent context; daily driver for tone-building and preset work.'
       : b.name === 'experimental'
-        ? 'Dev / diagnostic surface: every device-namespaced tool + raw MIDI primitives.'
-        : 'Compatibility baseline; preserves every registered tool.';
+        ? 'Hardware-specific control + diagnostic probes; raw MIDI send_* primitives.'
+        : 'Compatibility baseline matching the v0.1 surface.';
     lines.push(`| \`${b.name}\` | ${b.tools.length} | ${when} |`);
   }
   lines.push('');

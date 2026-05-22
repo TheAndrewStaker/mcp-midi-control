@@ -500,7 +500,31 @@ export function collectApplyPresetPreflight(
   // ── slots ─────────────────────────────────────────────────────────
   const slotIds: string[] = [];
   for (let i = 0; i < spec.slots.length; i++) {
-    const slot = spec.slots[i];
+    const rawSlot = spec.slots[i];
+    // T-5 (2026-05-21): merge params + params_by_channel into a single
+    // internal `params` field for the existing dispatcher walkers.
+    // Schema enforces flat-on-params + nested-on-params_by_channel;
+    // setting both on one slot is a structured error. From here on the
+    // dispatcher sees only `slot.params` (carrying whichever shape the
+    // caller actually authored).
+    let slot: PresetSlotSpec = rawSlot;
+    const rawByChannel = (rawSlot as { params_by_channel?: unknown }).params_by_channel;
+    if (rawByChannel !== undefined) {
+      if (rawSlot.params !== undefined) {
+        errors.push({
+          slot_index: i,
+          path: `slots[${i}]`,
+          error: `slots[${i}] sets BOTH params (flat) AND params_by_channel (nested). Pick one: flat for non-channel blocks or active-channel-only writes; params_by_channel for multi-channel authoring.`,
+        });
+      } else {
+        const { params_by_channel: _drop, ...rest } = rawSlot as PresetSlotSpec & { params_by_channel?: unknown };
+        void _drop;
+        slot = {
+          ...rest,
+          params: rawByChannel as PresetSlotSpec['params'],
+        };
+      }
+    }
     const normalizedSlotRef = validateSlotRef(descriptor, i, slot.slot, errors, info);
     const blockKey = resolveBlockKey(descriptor, slot.block_type);
     if (blockKey === undefined) {
