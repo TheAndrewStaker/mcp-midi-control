@@ -59,6 +59,7 @@ import {
   type AxeFxIIBlock,
 } from 'fractal-midi/axe-fx-ii';
 import { KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/axe-fx-ii';
+import { checkApplicability } from 'fractal-midi/axe-fx-ii';
 import {
   buildGetBlockChannel,
   buildGetPresetName,
@@ -320,12 +321,54 @@ export const writer: DeviceWriter = {
     const writes: WriteResult[] = [];
     let acked_count = 0;
     let unacked_count = 0;
+    // BK-071 type-knob applicability pre-flight, in-batch only. If the
+    // batch contains a type write (e.g. `compressor.type=Pedal`), every
+    // subsequent op against the same block is gated against the
+    // just-written type via checkApplicability. Without a prior type
+    // write in the batch, the check returns `'unknown'` (we don't track
+    // device-side active type cross-call) and the write proceeds.
+    //
+    // Mirrors the AM4 pattern at packages/am4/src/descriptor/writer.ts
+    // (sans the lastKnownType cross-call cache — AM4 has a stickier
+    // implementation; II ships the in-batch slice first and can grow
+    // the cross-call cache later when the same surprises surface here).
+    const inBatchTypes: Record<string, number> = {};
     for (const op of ops) {
+      const isTypeOp = op.name === 'type' || op.name === 'mode';
+      if (!isTypeOp) {
+        const check = checkApplicability(`${op.block}.${op.name}`, {
+          currentTypes: inBatchTypes,
+        });
+        if (check.applicable === false) {
+          const activeIndex = inBatchTypes[op.block];
+          writes.push({
+            op: 'set_param',
+            target: `${op.block}.${op.name}`,
+            block: op.block,
+            name: op.name,
+            acked: false,
+            warning:
+              `Skipped (does not apply): ${op.block}.${op.name} is not exposed on ` +
+              `${op.block}.type wire ${activeIndex}. The Axe-Fx II would silently no-op ` +
+              `this write — the wire address has no audible effect on this type. ` +
+              `Report as "not applied" and skip in the next iteration; call ` +
+              `list_params(${op.block}) for the knobs that apply on the current type.`,
+          });
+          unacked_count++;
+          continue;
+        }
+      }
       try {
         const r = await writer.setParam!(ctx, op.block, op.name, op.value as number, op.channel);
         writes.push(r);
-        if (r.acked) acked_count++;
-        else unacked_count++;
+        if (r.acked) {
+          acked_count++;
+          if (isTypeOp) {
+            inBatchTypes[op.block] = Math.round(op.value as number);
+          }
+        } else {
+          unacked_count++;
+        }
       } catch (err) {
         writes.push({
           op: 'set_param',
