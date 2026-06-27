@@ -181,6 +181,7 @@
     "verify-preset-portability": "tsx scripts/mcp-test-preset-portability.ts",
     "verify-fm9-rosters": "tsx scripts/verify-fm9-rosters.ts",
     "verify-fm9-ranges": "tsx scripts/verify-fm9-ranges.ts",
+    "verify-fm3-ranges": "tsx scripts/verify-fm3-ranges.ts",
     "verify-fm9-end-to-end": "tsx scripts/verify-fm9-end-to-end.ts",
     "test:fractal-midi": "npm test --workspace=fractal-midi",
     "test": "npm run test:fractal-midi && npm run test:codec && npm run test:cross-device && npm run test:fractal-gen2 && npm run test:fractal-gen3 && npm run test:hydra && npm run test:server",
@@ -194,7 +195,7 @@
     "deadcode:fix": "knip --fix",
     "catalog:check": "npm run catalog:check --workspace=fractal-midi",
     "catalog:export": "npm run catalog:export --workspace=fractal-midi",
-    "preflight": "npm run build && npm run typecheck && npm test && npm run catalog:check && npm run verify-no-internal-refs && npm run cookbook-verify && npm run tools:inventory-check && npm run verify-tool-annotations && npm run verify-preset-portability && npm run verify-fm9-rosters && npm run verify-fm9-ranges && npm run verify-fm9-end-to-end",
+    "preflight": "npm run build && npm run typecheck && npm test && npm run catalog:check && npm run verify-no-internal-refs && npm run cookbook-verify && npm run tools:inventory-check && npm run verify-tool-annotations && npm run verify-preset-portability && npm run verify-fm9-rosters && npm run verify-fm9-ranges && npm run verify-fm3-ranges && npm run verify-fm9-end-to-end",
     "release-gate": "npm run preflight && npm run test:release-extras && npm run launch-verify && npm run agent-sweep && npm run live-regression"
   },
   "devDependencies": {
