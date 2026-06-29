@@ -3,28 +3,29 @@
  *
  * Derived from the device's editor configuration data. The footswitch config space is a flat
  * `(effectId 199, paramId)` array; this module gives its layout so a consumer can address any
- * switch's tap/hold action, color and label by `(layout, view, switch)` and a field name —
- * without hard-coding paramIds.
+ * switch's tap/hold action, color and label by `(layout, view, switch)` and a field name.
  *
  * ── Addressing ───────────────────────────────────────────────────────
- *   pid = field.base + config * field.stride
+ *   pid = field.base + config * field.stride  (+ index, for multi-wide value/label fields)
  *   config = layout * CONFIGS_PER_LAYOUT + view * SWITCHES + switch
  *     layout 0..8  (9 layouts; index 8 = "Master")
  *     view   0..3  (4 views per layout)
  *     switch 0..2  (FM3 hardware = 3 switches per view)
  *   → 12 configs per layout, 108 configs total.
  *
- * Writes/reads use the standard gen-3 frame
- *   `F0 00 01 74 11 01 <sub> <eid:2×7bit LE> <pid:2×7bit LE> <value:5×7bit packed f32> 00 00 cs F7`
- *   sub = `09 00` discrete SET · `52 00` continuous SET. (eid 199; values are float32.)
+ * Wire frame: `F0 00 01 74 11 01 <sub> <eid:2×7bit LE> <pid:2×7bit LE> <value:5×7bit packed f32> 00 00 cs F7`
+ *   sub = `09 00` discrete · `52 00` continuous. eid = 199. values are float32.
  *
- * ── Confidence ───────────────────────────────────────────────────────
- * CONFIRMED: the `config` formula + the `tapCategory` field (config-major, stride 1) are verified
- * (tapCategory pid == config for L1V1S1=0, L1V2S1=3, L2V2S1=15). The frame format, eid 199, the
- * 11-char ASCII label regions, and the field BASE paramIds (observed at config 0) are confirmed.
- * INFERRED (marked `verified:false`): per-field STRIDE for the non-category fields, and the
- * primary/secondary "value" pairing (bases 324/325 and 1296/1297 are adjacent ⇒ a 2-wide pair).
- * These should be cross-checked before relying on them for arbitrary configs.
+ * ── Field structure (CACHE-CONFIRMED bases) ──────────────────────────
+ * The field-region bases are the FC `*_BEGIN` markers from the device's own param table:
+ *   TAP  FUNCS 0 · SUBFUNCS 108 · DISPFUNCS 216 · PARAMS 324
+ *   HOLD FUNCS 972 · SUBFUNCS 1080 · DISPFUNCS 1188 · PARAMS 1296
+ *   LAYOUT_NAME 1944 · CUR_LAYOUT 2237 · CUR_WINDOW 5640
+ * funcs/subfuncs/dispfuncs are 1 pid per config (108 wide each); PARAMS is 6 pids per config
+ * (324→972 = 648 = 108×6) — index 0 = primary value, 1 = secondary. The tapCategory (= TAP FUNCS)
+ * config formula is device-VERIFIED (pid == config at 0/3/15). Labels (11-char ASCII) + color base
+ * are capture-located. What's NOT yet decoded: the enum VOCABULARY/ordinals for category, function,
+ * color and label-mode (only a few ordinals are capture-confirmed; see FM3_FC_CATEGORIES etc.).
  */
 
 export const FM3_FC_EFFECT_ID = 199;
@@ -34,14 +35,17 @@ export const FM3_FC_LAYOUTS = 9; // incl. index 8 = Master
 export const FM3_FC_CONFIGS_PER_LAYOUT = FM3_FC_VIEWS * FM3_FC_SWITCHES; // 12
 export const FM3_FC_CONFIGS = FM3_FC_LAYOUTS * FM3_FC_CONFIGS_PER_LAYOUT; // 108
 export const FM3_FC_LABEL_LEN = 11; // custom labels are 11 ASCII chars
+export const FM3_FC_PARAMS_WIDTH = 6; // PARAMS region: pids per config (idx0=primary, idx1=secondary)
 
 export type Fm3FcField =
-  | 'tapCategory'
-  | 'tapFunction'
-  | 'tapPrimary'
-  | 'tapSecondary'
-  | 'holdPrimary'
-  | 'holdSecondary'
+  | 'tapCategory' // TAP FUNCS  — the action category
+  | 'tapFunction' // TAP SUBFUNCS — function within the category
+  | 'tapDisplay' // TAP DISPFUNCS — mini-display / label mode
+  | 'tapParams' // TAP PARAMS — 6-wide value block (preset#/scene#/channel/limits…)
+  | 'holdCategory'
+  | 'holdFunction'
+  | 'holdDisplay'
+  | 'holdParams'
   | 'color'
   | 'tapLabel'
   | 'holdLabel';
@@ -49,24 +53,27 @@ export type Fm3FcField =
 export interface Fm3FcFieldDef {
   /** paramId of this field for config 0 (Layout 1 / View 1 / Switch 1). */
   base: number;
-  /** pids this field occupies per config (1 = scalar, 11 = ASCII label). */
+  /** pids this field occupies per config (1 = scalar, 6 = value block, 11 = ASCII label). */
   width: number;
-  /** per-config paramId step. config-major scalar = 1; label = 11; value-pair member = 2. */
+  /** per-config paramId step (equals width here — fields are config-major and contiguous). */
   stride: number;
-  /** true = formula cross-checked against the device; false = base known, stride inferred. */
-  verified: boolean;
+  /** 'cache' = base from the device param table; 'verified' = formula confirmed on-device;
+   *  'capture' = base located from a capture; 'inferred' = derived from region arithmetic. */
+  evidence: 'verified' | 'cache' | 'capture' | 'inferred';
 }
 
 export const FM3_FC_FIELDS: Record<Fm3FcField, Fm3FcFieldDef> = {
-  tapCategory: { base: 0, width: 1, stride: 1, verified: true },
-  tapFunction: { base: 108, width: 1, stride: 1, verified: false },
-  tapPrimary: { base: 324, width: 1, stride: 2, verified: false },
-  tapSecondary: { base: 325, width: 1, stride: 2, verified: false },
-  holdPrimary: { base: 1296, width: 1, stride: 2, verified: false },
-  holdSecondary: { base: 1297, width: 1, stride: 2, verified: false },
-  color: { base: 4618, width: 1, stride: 1, verified: false },
-  tapLabel: { base: 2241, width: FM3_FC_LABEL_LEN, stride: FM3_FC_LABEL_LEN, verified: false },
-  holdLabel: { base: 3429, width: FM3_FC_LABEL_LEN, stride: FM3_FC_LABEL_LEN, verified: false },
+  tapCategory: { base: 0, width: 1, stride: 1, evidence: 'verified' },
+  tapFunction: { base: 108, width: 1, stride: 1, evidence: 'cache' },
+  tapDisplay: { base: 216, width: 1, stride: 1, evidence: 'cache' },
+  tapParams: { base: 324, width: FM3_FC_PARAMS_WIDTH, stride: FM3_FC_PARAMS_WIDTH, evidence: 'cache' },
+  holdCategory: { base: 972, width: 1, stride: 1, evidence: 'cache' },
+  holdFunction: { base: 1080, width: 1, stride: 1, evidence: 'cache' },
+  holdDisplay: { base: 1188, width: 1, stride: 1, evidence: 'cache' },
+  holdParams: { base: 1296, width: FM3_FC_PARAMS_WIDTH, stride: FM3_FC_PARAMS_WIDTH, evidence: 'cache' },
+  color: { base: 4618, width: 1, stride: 1, evidence: 'capture' },
+  tapLabel: { base: 2241, width: FM3_FC_LABEL_LEN, stride: FM3_FC_LABEL_LEN, evidence: 'capture' },
+  holdLabel: { base: 3429, width: FM3_FC_LABEL_LEN, stride: FM3_FC_LABEL_LEN, evidence: 'capture' },
 };
 
 /** config index from (layout, view, switch), all 0-based. */
@@ -74,25 +81,29 @@ export function fm3FcConfigIndex(layout: number, view: number, sw: number): numb
   return layout * FM3_FC_CONFIGS_PER_LAYOUT + view * FM3_FC_SWITCHES + sw;
 }
 
-/** paramId of a field for a given switch config (label fields return the FIRST of their 11 pids). */
-export function fm3FcParamId(field: Fm3FcField, layout: number, view: number, sw: number): number {
+/** paramId of a field for a switch config; `index` selects within a value/label block (default 0). */
+export function fm3FcParamId(field: Fm3FcField, layout: number, view: number, sw: number, index = 0): number {
   const f = FM3_FC_FIELDS[field];
-  return f.base + fm3FcConfigIndex(layout, view, sw) * f.stride;
+  return f.base + fm3FcConfigIndex(layout, view, sw) * f.stride + index;
 }
 
 /**
- * Switch-category ordinals (the tap/hold "Category" enum value).
- * Partial — confirmed values only; extend as more are decoded.
+ * Switch-category ordinals (the tap/hold FUNCS enum value). PARTIAL — only capture-confirmed
+ * ordinals; the full wire vocabulary still needs a capture (the editor's display labels live in
+ * the design's FC_CATS, but the wire ordinals differ from that list's order).
  */
 export const FM3_FC_CATEGORIES: Readonly<Record<number, string>> = {
   1: 'Bank',
   2: 'Preset',
 };
 
-/** Switch LED colour ordinals (the `color` field). Partial — confirmed values only. */
+/** Switch LED colour ordinals (the `color` field). Partial — capture-confirmed only. */
 export const FM3_FC_COLORS: Readonly<Record<number, string>> = {
   5: 'Dark Blue',
 };
+
+/** Mini-display label modes (the DISPLAY field). Vocabulary known from the editor; ordinals TBD. */
+export const FM3_FC_LABEL_MODES: readonly string[] = ['Name', 'Function', 'Custom'];
 
 /** Decode an 11-pid label region (float ASCII codes) to a string. */
 export function fm3FcDecodeLabel(codes: readonly number[]): string {
