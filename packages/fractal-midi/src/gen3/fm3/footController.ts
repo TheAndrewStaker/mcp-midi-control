@@ -88,22 +88,56 @@ export function fm3FcParamId(field: Fm3FcField, layout: number, view: number, sw
 }
 
 /**
- * Switch-category ordinals (the tap/hold FUNCS enum value). PARTIAL — only capture-confirmed
- * ordinals; the full wire vocabulary still needs a capture (the editor's display labels live in
- * the design's FC_CATS, but the wire ordinals differ from that list's order).
+ * Switch-category ordinals (the tap/hold FUNCS enum value). Full FM3 vocabulary, capture-confirmed:
+ * the wire ordinal is the editor's dropdown index, 0..13.
  */
 export const FM3_FC_CATEGORIES: Readonly<Record<number, string>> = {
+  0: 'Unassigned',
   1: 'Bank',
   2: 'Preset',
+  3: 'Scene',
+  4: 'Effect',
+  5: 'Utility',
+  6: 'Layout',
+  7: 'Control Switch',
+  8: 'Looper',
+  9: 'Per Preset',
+  10: 'View',
+  11: 'Set List',
+  12: 'Song',
+  13: 'Song Selection',
 };
 
-/** Switch LED colour ordinals (the `color` field). Partial — capture-confirmed only. */
-export const FM3_FC_COLORS: Readonly<Record<number, string>> = {
-  5: 'Dark Blue',
+/**
+ * Switch LED colour ordinals (the `color` field). Capture-confirmed ordinals 1..12 in the editor's
+ * palette reading order; `hex` is for rendering the swatch (approximate where the exact device
+ * shade isn't pinned). Blue=5 matches the independently-captured "Dark Blue"=5.
+ */
+export const FM3_FC_COLORS: Readonly<Record<number, { name: string; hex: string }>> = {
+  1: { name: 'Red', hex: '#e23b3b' },
+  2: { name: 'Orange', hex: '#f5871f' },
+  3: { name: 'Yellow', hex: '#f5c518' },
+  4: { name: 'Green', hex: '#33c46b' },
+  5: { name: 'Blue', hex: '#2f6bd0' },
+  6: { name: 'Cyan', hex: '#35c9d6' },
+  7: { name: 'Purple', hex: '#9b59f5' },
+  8: { name: 'White', hex: '#ffffff' },
+  9: { name: 'Pink', hex: '#ec4f9c' },
+  10: { name: 'Turquoise', hex: '#2fd6c2' },
+  11: { name: 'Lime', hex: '#9ad11f' },
+  12: { name: 'Off', hex: '#3a3a44' },
 };
 
-/** Mini-display label modes (the DISPLAY field). Vocabulary known from the editor; ordinals TBD. */
-export const FM3_FC_LABEL_MODES: readonly string[] = ['Name', 'Function', 'Custom'];
+/**
+ * Mini-display label modes (the DISPLAY field, pid 216 / 1188). Ordinals 0..2 capture-confirmed.
+ * Note: a category's first label option varies (Name vs Function), but the wire ordinals are stable;
+ * 0 is the category-default label, 1 the numeric/function variant, 2 a user Custom string.
+ */
+export const FM3_FC_LABEL_MODES: Readonly<Record<number, string>> = {
+  0: 'Name',
+  1: 'Number',
+  2: 'Custom',
+};
 
 /** Decode an 11-pid label region (float ASCII codes) to a string. */
 export function fm3FcDecodeLabel(codes: readonly number[]): string {
