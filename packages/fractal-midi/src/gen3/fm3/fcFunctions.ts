@@ -16,10 +16,12 @@
  * 0..4 / 0..2 / 0..3) and their slot roles match the captured value writes + the editor UI. Bank
  * (1) has 3 functions in the export; only Select(0) is detailed here. Categories 5..13 (Utility,
  * Layout, Control Switch, Looper, Per-Preset, View, Setlist, Song, Song Section) have their function
- * names + ordinals and operand option-ranges transcribed from the editor UI; their slot indices are
- * display-order (top-to-bottom) and not yet wire-confirmed, and the per-function label-mode lists are
- * partial (the selected mode + Custom). Functions with no operands (Looper, Tap/Tuner under Utility)
- * carry empty slot arrays.
+ * names + ordinals and operand option-ranges transcribed from the editor UI. Slot indices are
+ * WIRE-CONFIRMED contiguous (slot i → PARAMS base + i, NOT interleaved): a Layout/Inc-Dec capture
+ * wrote Inc/Decrement→base+0, Lower Limit→base+2, Upper Limit→base+3, View→base+4 (Wrap=base+1
+ * untouched), matching the display order here; the same capture confirmed FUNCS(pid 0)=category ordinal
+ * and SUBFUNCS(pid 108)=function ordinal. The per-function label-mode lists are still partial (the
+ * selected mode + Custom). Functions with no operands (Looper, Tap/Tuner under Utility) carry empty slots.
  */
 
 export type Fm3FcSlotType = 'preset' | 'scene' | 'channel' | 'block' | 'int' | 'enum' | 'bool';
