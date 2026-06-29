@@ -14,10 +14,12 @@
  * ── Confidence ───────────────────────────────────────────────────────
  * Preset (cat 2), Scene (3) and Effect (4) function ordinals are capture-VERIFIED (FUNC writes
  * 0..4 / 0..2 / 0..3) and their slot roles match the captured value writes + the editor UI. Bank
- * (1) has 3 functions in the export; only Select(0) is detailed here. Categories 5..13
- * (Utility/Layout/Control-Switch/Looper/Per-Preset/View/Setlist/Song/Song-Section) appear in the
- * export with their function ordinals but their slot roles aren't transcribed yet — the editor
- * shows raw fields for those until a second capture pass.
+ * (1) has 3 functions in the export; only Select(0) is detailed here. Categories 5..13 (Utility,
+ * Layout, Control Switch, Looper, Per-Preset, View, Setlist, Song, Song Section) have their function
+ * names + ordinals and operand option-ranges transcribed from the editor UI; their slot indices are
+ * display-order (top-to-bottom) and not yet wire-confirmed, and the per-function label-mode lists are
+ * partial (the selected mode + Custom). Functions with no operands (Looper, Tap/Tuner under Utility)
+ * carry empty slot arrays.
  */
 
 export type Fm3FcSlotType = 'preset' | 'scene' | 'channel' | 'block' | 'int' | 'enum' | 'bool';
@@ -188,6 +190,173 @@ export const FM3_FC_FUNCTIONS: Readonly<Record<number, readonly Fm3FcFunctionDef
         { i: 4, role: 'Upper Limit', type: 'channel' },
       ],
       labels: ['Action', 'Destination Channel', 'Current Channel', 'Custom'],
+    },
+  ],
+
+  // Utility (cat 5) — footswitch utility functions. Tap Tempo / Tuner are single-action (no operands);
+  // the *+Save / Reveal Hold operands aren't transcribed yet (editor falls back to raw fields).
+  5: [
+    { ord: 0, name: 'Tuner', slots: [], labels: ['Function', 'Custom'] },
+    { ord: 1, name: 'Tap Tempo', slots: [], labels: ['Function', 'Custom'] },
+    { ord: 2, name: 'Amp Level+Save', slots: [], labels: ['Function', 'Custom'] },
+    { ord: 3, name: 'Reveal Hold', slots: [], labels: ['Function', 'Custom'] },
+    { ord: 4, name: 'Scene Level+Save', slots: [], labels: ['Function', 'Custom'] },
+  ],
+
+  // Layout (cat 6). Function names + operand option-ranges screenshot-verified; slot indices are
+  // display-order (top-to-bottom in the editor), not yet wire-confirmed.
+  6: [
+    {
+      ord: 0,
+      name: 'Select',
+      slots: [
+        { i: 0, role: 'Layout', type: 'int', min: 1, max: 9 },
+        { i: 1, role: 'View', type: 'int', min: 1, max: 4 },
+      ],
+      labels: ['Name', 'Custom'],
+    },
+    { ord: 1, name: 'Master Layout', slots: [{ i: 0, role: 'View', type: 'int', min: 1, max: 4 }], labels: ['Function', 'Custom'] },
+    {
+      ord: 2,
+      name: 'Inc / Dec',
+      slots: [
+        { i: 0, role: 'Inc / Decrement', type: 'int', min: -4, max: 4 },
+        { i: 1, role: 'Wrap', type: 'enum', options: ['Wrap', 'No Wrap'] },
+        { i: 2, role: 'Lower Limit', type: 'int', min: 1, max: 9 },
+        { i: 3, role: 'Upper Limit', type: 'int', min: 1, max: 9 },
+        { i: 4, role: 'View', type: 'int', min: 1, max: 4 },
+      ],
+      labels: ['Action', 'Custom'],
+    },
+  ],
+
+  // Control Switch (cat 7) — function = Momentary/Latching; the operand slot picks which CS (1..6).
+  7: [
+    {
+      ord: 0,
+      name: 'Momentary',
+      slots: [{ i: 0, role: 'Control Switch', type: 'enum', options: ['CS1', 'CS2', 'CS3', 'CS4', 'CS5', 'CS6'] }],
+      labels: ['Function', 'Custom'],
+    },
+    {
+      ord: 1,
+      name: 'Latching',
+      slots: [{ i: 0, role: 'Control Switch', type: 'enum', options: ['CS1', 'CS2', 'CS3', 'CS4', 'CS5', 'CS6'] }],
+      labels: ['Function', 'Custom'],
+    },
+  ],
+
+  // Looper (cat 8) — single-action functions, no operands.
+  8: [
+    { ord: 0, name: 'Record', slots: [], labels: ['Function', 'Custom'] },
+    { ord: 1, name: 'Play/Stop', slots: [], labels: ['Function', 'Custom'] },
+    { ord: 2, name: 'Reverse', slots: [], labels: ['Function', 'Custom'] },
+    { ord: 3, name: 'Once', slots: [], labels: ['Function', 'Custom'] },
+    { ord: 4, name: 'Undo/Erase', slots: [], labels: ['Function', 'Custom'] },
+    { ord: 5, name: 'Half Speed', slots: [], labels: ['Function', 'Custom'] },
+  ],
+
+  // Per-Preset (cat 9) — one function; the operand selects which Per-Preset switch (PP# 1..24).
+  9: [{ ord: 0, name: 'Placeholder', slots: [{ i: 0, role: 'Preset Switch', type: 'int', min: 1, max: 24 }], labels: [] }],
+
+  // View (cat 10).
+  10: [
+    { ord: 0, name: 'Select', slots: [{ i: 0, role: 'View', type: 'int', min: 1, max: 4 }], labels: ['Destination', 'Custom'] },
+    {
+      ord: 1,
+      name: 'Inc / Dec',
+      slots: [
+        { i: 0, role: 'Inc / Decrement', type: 'int', min: -3, max: 3 },
+        { i: 1, role: 'Wrap', type: 'enum', options: ['Wrap', 'No Wrap'] },
+        { i: 2, role: 'Lower Limit', type: 'int', min: 1, max: 4 },
+        { i: 3, role: 'Upper Limit', type: 'int', min: 1, max: 4 },
+      ],
+      labels: ['Action', 'Custom'],
+    },
+  ],
+
+  // Setlist (cat 11). Song Load = None/First.
+  11: [
+    {
+      ord: 0,
+      name: 'Select',
+      slots: [
+        { i: 0, role: 'Setlist', type: 'int', min: 1, max: 4 },
+        { i: 1, role: 'Song Load', type: 'enum', options: ['None', 'First'] },
+      ],
+      labels: ['Name', 'Custom'],
+    },
+    {
+      ord: 1,
+      name: 'Toggle',
+      slots: [
+        { i: 0, role: 'Primary Setlist', type: 'int', min: 1, max: 4 },
+        { i: 1, role: 'Secondary Setlist', type: 'int', min: 1, max: 4 },
+        { i: 2, role: 'Song Load', type: 'enum', options: ['None', 'First'] },
+      ],
+      labels: ['Destination Name', 'Custom'],
+    },
+    {
+      ord: 2,
+      name: 'Inc / Dec',
+      slots: [
+        { i: 0, role: 'Inc / Decrement', type: 'int', min: -1, max: 1 },
+        { i: 1, role: 'Wrap', type: 'enum', options: ['Wrap', 'No Wrap'] },
+        { i: 2, role: 'Lower Limit', type: 'int', min: 1, max: 4 },
+        { i: 3, role: 'Upper Limit', type: 'int', min: 1, max: 4 },
+        { i: 4, role: 'Song Load', type: 'enum', options: ['None', 'First'] },
+      ],
+      labels: ['Destination Name', 'Custom'],
+    },
+  ],
+
+  // Song (cat 12) — 32 songs per setlist.
+  12: [
+    { ord: 0, name: 'Select in Set', slots: [{ i: 0, role: 'Song', type: 'int', min: 1, max: 32 }], labels: ['Name', 'Custom'] },
+    {
+      ord: 1,
+      name: 'Toggle in Set',
+      slots: [
+        { i: 0, role: 'Primary Song', type: 'int', min: 1, max: 32 },
+        { i: 1, role: 'Secondary Song', type: 'int', min: 1, max: 32 },
+      ],
+      labels: ['Destination Name', 'Custom'],
+    },
+    {
+      ord: 2,
+      name: 'Inc / Dec in Set',
+      slots: [
+        { i: 0, role: 'Inc / Decrement', type: 'int', min: -10, max: 10 },
+        { i: 1, role: 'Wrap', type: 'enum', options: ['Wrap', 'No Wrap'] },
+        { i: 2, role: 'Lower Limit', type: 'int', min: 1, max: 32 },
+        { i: 3, role: 'Upper Limit', type: 'int', min: 1, max: 32 },
+      ],
+      labels: ['Destination Name', 'Custom'],
+    },
+  ],
+
+  // Song Section (cat 13) — 6 sections per song.
+  13: [
+    { ord: 0, name: 'Select', slots: [{ i: 0, role: 'Song Section', type: 'int', min: 1, max: 6 }], labels: ['Name', 'Custom'] },
+    {
+      ord: 1,
+      name: 'Toggle',
+      slots: [
+        { i: 0, role: 'Primary Section', type: 'int', min: 1, max: 6 },
+        { i: 1, role: 'Secondary Section', type: 'int', min: 1, max: 6 },
+      ],
+      labels: ['Destination Name', 'Custom'],
+    },
+    {
+      ord: 2,
+      name: 'Inc / Dec',
+      slots: [
+        { i: 0, role: 'Inc / Decrement', type: 'int', min: -6, max: 6 },
+        { i: 1, role: 'Wrap', type: 'enum', options: ['Wrap', 'No Wrap'] },
+        { i: 2, role: 'Lower Limit', type: 'int', min: 1, max: 6 },
+        { i: 3, role: 'Upper Limit', type: 'int', min: 1, max: 6 },
+      ],
+      labels: ['Destination Name', 'Custom'],
     },
   ],
 };
