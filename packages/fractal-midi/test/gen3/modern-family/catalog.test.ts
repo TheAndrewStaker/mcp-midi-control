@@ -8,9 +8,16 @@
  *   - the FM3/FM9/VP4 catalogs load and carry DEVICE-TRUE paramIds (not the
  *     III's), with the known spot-checks the integration relies on.
  */
-import { createModernFractalCodec, PARAMS_BY_FAMILY, resolveEnumValues, packValue16 } from '../../../src/gen3/axe-fx-iii/index.js';
-import { FM3_PARAMS, FM3_PARAMS_BY_FAMILY } from '../../../src/gen3/fm3/index.js';
-import { FM9_PARAMS, FM9_PARAMS_BY_FAMILY } from '../../../src/gen3/fm9/index.js';
+import { createModernFractalCodec, PARAMS_BY_FAMILY, resolveEnumValues, packValue16, AXE_FX_III_BLOCKS } from '../../../src/gen3/axe-fx-iii/index.js';
+import {
+  FM3_PARAMS,
+  FM3_PARAMS_BY_FAMILY,
+  FM3_EFFECT_IDS,
+  FM3_EFFECT_ID_TABLE,
+  FM3_FAMILY_BY_EFFECT_ID,
+  fm3EffectId,
+} from '../../../src/gen3/fm3/index.js';
+import { FM9_PARAMS, FM9_PARAMS_BY_FAMILY, FM9_EFFECT_IDS } from '../../../src/gen3/fm9/index.js';
 import { VP4_PARAMS, VP4_PARAMS_BY_FAMILY } from '../../../src/gen3/vp4/index.js';
 
 function assert(cond: boolean, msg: string): void {
@@ -256,6 +263,79 @@ cases.push(() => {
   try { codec.buildRequestPresetDump(-1); } catch { threw = true; }
   assert(threw, 'request rejects out-of-range preset number');
 });
+
+// 10. FM3/FM9 effectId ↔ family map. The (effectId, paramId) addressing layer:
+//     every family that has a wire effectId must (a) be a real param family
+//     in the catalog, (b) bind to the same firstId the shared gen-3 roster
+//     (AXE_FX_III_BLOCKS) uses, and (c) carry the known DISTORT=Amp / FUZZ=Drive
+//     anomaly + the virtual-block effectIds (FC=199, Controllers=2, ScnMIDI=190).
+{
+  // Spot-checks pinned to the FM3 editor instance-table cross-validation.
+  const spot: Array<[string, number | null]> = [
+    ['DISTORT', 58],   // Amp block (no ID_AMP in the gen-3 enum)
+    ['FUZZ', 118],     // Drive / OD / Fuzz pedal block
+    ['CABINET', 62], ['REVERB', 66], ['DELAY', 70], ['COMP', 46],
+    ['INPUT', 37], ['OUTPUT', 42], ['VOLUME', 102], ['TREMOLO', 106],
+    ['GATE', 146], ['MULTICOMP', 154], ['MULTITAP', 74], ['PLEX', 178],
+    ['TENTAP', 158], ['FDBKSEND', 182], ['FDBKRET', 186], ['MULTIPLEXER', 191],
+    ['IRPLAYER', 195],
+    // virtual / system blocks
+    ['CONTROLLERS', 2],   // ID_CONTROL
+    ['MIDIBLOCK', 190],   // Scene MIDI
+    ['FC', 199],          // Foot Controller
+    ['IRCAPTURE', 36],
+    // Param-addressable virtuals confirmed from the device:
+    // GLOBAL=1 (Power-Amp-Modeling wrote eid 1/pid 4), Modifier=3.
+    ['GLOBAL', 1], ['MOD', 3],
+    // no wire effectId of their own
+    ['PRESET', null],
+  ];
+  for (const [family, want] of spot) {
+    cases.push(() =>
+      assert(
+        FM3_EFFECT_IDS[family] === want,
+        `FM3_EFFECT_IDS.${family} = ${FM3_EFFECT_IDS[family]} (want ${want})`,
+      ),
+    );
+    // FM9 mirrors FM3 (shared gen-3 roster + identical family set).
+    cases.push(() =>
+      assert(
+        FM9_EFFECT_IDS[family] === want,
+        `FM9_EFFECT_IDS.${family} = ${FM9_EFFECT_IDS[family]} (want ${want})`,
+      ),
+    );
+  }
+  // Every effectId-bearing family is a real catalog family.
+  for (const e of FM3_EFFECT_ID_TABLE) {
+    cases.push(() =>
+      assert(
+        Array.isArray(FM3_PARAMS_BY_FAMILY[e.family]) && FM3_PARAMS_BY_FAMILY[e.family].length > 0,
+        `FM3_EFFECT_ID_TABLE family ${e.family} has no params in FM3_PARAMS_BY_FAMILY`,
+      ),
+    );
+  }
+  // Every block-addressing family's firstId is present in the shared gen-3
+  // roster (firstId is the device-independent key across III/FM3/FM9).
+  const iiiFirstIds = new Set(AXE_FX_III_BLOCKS.map((b) => b.firstId).filter((x) => x !== null));
+  for (const e of FM3_EFFECT_ID_TABLE) {
+    if (e.addressing === 'block' && e.firstId !== null) {
+      cases.push(() =>
+        assert(
+          iiiFirstIds.has(e.firstId),
+          `FM3 block ${e.family} firstId ${e.firstId} not present in AXE_FX_III_BLOCKS roster`,
+        ),
+      );
+    }
+  }
+  // Resolver: instance math + range guard.
+  cases.push(() => assert(fm3EffectId('DISTORT', 1) === 58, 'fm3EffectId DISTORT inst1 = 58'));
+  cases.push(() => assert(fm3EffectId('DISTORT', 4) === 61, 'fm3EffectId DISTORT inst4 = 61'));
+  cases.push(() => assert(fm3EffectId('DISTORT', 5) === null, 'fm3EffectId DISTORT inst5 out of range → null'));
+  cases.push(() => assert(fm3EffectId('FC', 1) === 199, 'fm3EffectId FC = 199'));
+  cases.push(() => assert(fm3EffectId('GLOBAL') === 1, 'fm3EffectId GLOBAL = 1 (device-confirmed)'));
+  cases.push(() => assert(FM3_FAMILY_BY_EFFECT_ID[58] === 'DISTORT', 'reverse lookup 58 → DISTORT'));
+  cases.push(() => assert(FM3_FAMILY_BY_EFFECT_ID[199] === 'FC', 'reverse lookup 199 → FC'));
+}
 
 export function runModernFamilyTests(): void {
   for (const c of cases) c();

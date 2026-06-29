@@ -162,3 +162,13 @@ export {
   AMP_ALL_PARAMS,
   ampOrdinalsExposingParams,
 } from './ampTypeValidParams.generated.js';
+
+// Editor block-editor UI layouts (pages/tabs + labels + param mapping),
+// keyed by catalog family. Powers editor-authentic block-editor tabs incl.
+// Setup (Global) / Controllers / Modifier. See `layouts.generated.ts`.
+export {
+  AXE3_LAYOUTS,
+  type Axe3BlockLayout,
+  type Axe3LayoutPage,
+  type Axe3LayoutControl,
+} from './layouts.generated.js';

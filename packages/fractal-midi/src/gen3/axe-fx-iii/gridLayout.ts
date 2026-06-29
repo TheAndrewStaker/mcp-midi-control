@@ -58,6 +58,24 @@ const FIELD_CABLE_IN = 16; // bits 16-23: incoming-cable bitmask
 
 const BLOCK_TYPE_SHUNT = 0x08;
 
+// ── FM3 (model 0x11) sub=0x2E layout ──
+// The FM3 grid response uses a DIFFERENT per-cell layout from the FM9/III (not just
+// a region-offset shift). Decoded byte-exact from two FM3 device responses (a linear
+// 12-col chain + a multi-row preset with cross-row cables): column-major 12x4, one
+// 32-bit big-endian record per cell, empty cell = all zero.
+//   bits 31-20 (12) = effectId (real block) | shuntIndex (shunt)
+//   bits 19-16 (4)  = unused
+//   bits 15-8  (8)  = type: 0x00 real block, 0x40 shunt
+//   bits  7-0  (8)  = incoming-cable mask, source row r of the prior column -> bit (4+r)
+// Region starts at mido bit 2568 (= wire byte 366, intra-byte bit 6).
+const FM3_REGION_OFFSET = 366;
+const FM3_BASE_BIT = 6;
+const FM3_COL_STRIDE = 128; // 4 rows * 32
+const FM3_ROW_STRIDE = 32;
+const FM3_BLOCK_TYPE_SHUNT = 0x40;
+const FM3_GRID_COLS = 12;
+const FM3_GRID_ROWS = 4;
+
 /** Grid rows for a model byte: 4 for FM3, 6 for III/FM9. */
 function gridRowsFor(modelByte: number): number {
   return modelByte === MODEL_FM3 ? 4 : 6;
@@ -125,6 +143,7 @@ export function parseGen3GridLayout(
   frame: readonly number[],
   modelByte: number = AXE_FX_III_MODEL_ID,
 ): Gen3GridLayoutCell[] {
+  if (modelByte === MODEL_FM3) return parseFm3GridLayout(frame);
   // mido strips the F0 status byte; the offset 361 is into that stream.
   const mido = frame.length >= 2 && frame[0] === SYSEX_START ? frame.slice(1) : frame;
   const region = mido.slice(GRID_REGION_OFFSET);
@@ -150,6 +169,44 @@ export function parseGen3GridLayout(
         isShunt,
         shuntIndex: isShunt ? idField : undefined,
         cableInputMask: readBitsMsb(region, base + FIELD_CABLE_IN, 8),
+      });
+    }
+  }
+  return cells;
+}
+
+/**
+ * FM3 (model 0x11) sub=0x2E decode. The FM3 uses a 32-bit-per-cell, column-major
+ * 12x4 layout that differs from the FM9/III bit-field grid (see the FM3_* constants
+ * above). `cableInputMask` is normalized so bit `r` set = fed from row `r` of the
+ * previous column. Byte-exact against two FM3 device responses.
+ */
+function parseFm3GridLayout(frame: readonly number[]): Gen3GridLayoutCell[] {
+  const mido = frame.length >= 2 && frame[0] === SYSEX_START ? frame.slice(1) : frame;
+  const region = mido.slice(FM3_REGION_OFFSET);
+  const lastBit = FM3_BASE_BIT + (FM3_GRID_COLS - 1) * FM3_COL_STRIDE + (FM3_GRID_ROWS - 1) * FM3_ROW_STRIDE + 32;
+  if (region.length * 7 < lastBit) {
+    throw new Error(
+      `parseGen3GridLayout(FM3): frame too short for grid region (have ${region.length} region bytes, need ${Math.ceil(lastBit / 7)})`,
+    );
+  }
+  const cells: Gen3GridLayoutCell[] = [];
+  for (let col = 0; col < FM3_GRID_COLS; col++) {
+    for (let row = 0; row < FM3_GRID_ROWS; row++) {
+      const base = FM3_BASE_BIT + col * FM3_COL_STRIDE + row * FM3_ROW_STRIDE;
+      const idField = readBitsMsb(region, base, 12); // bits 31-20 of the 32-bit BE cell
+      const blockType = readBitsMsb(region, base + 16, 8); // bits 15-8
+      const cableByte = readBitsMsb(region, base + 24, 8); // bits 7-0
+      const isShunt = blockType === FM3_BLOCK_TYPE_SHUNT;
+      if (idField === 0 && !isShunt) continue; // empty cell
+      cells.push({
+        row,
+        col,
+        effectId: isShunt ? undefined : idField,
+        isShunt,
+        shuntIndex: isShunt ? idField : undefined,
+        // FM3 packs source rows in bits 4-7; normalize so bit r = source row r.
+        cableInputMask: (cableByte >> 4) & 0x0f,
       });
     }
   }
