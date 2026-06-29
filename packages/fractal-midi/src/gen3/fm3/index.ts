@@ -45,8 +45,13 @@ export {
 } from './footController.js';
 export {
   FM3_MOD_EFFECT_ID,
+  FM3_MOD_SLOT_COUNT,
+  FM3_MOD_SOURCE_PEDAL1,
+  FM3_MOD_SOURCES,
   FM3_MOD_FIELDS,
+  fm3ModSlotEid,
   fm3ModParamId,
+  fm3ModBindFrames,
   type Fm3ModField,
   type Fm3ModFieldDef,
 } from './modifiers.js';
