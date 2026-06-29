@@ -50,3 +50,11 @@ export {
   type Fm3ModField,
   type Fm3ModFieldDef,
 } from './modifiers.js';
+export {
+  FM3_FC_FUNCTIONS,
+  FM3_FC_CHANNELS,
+  fm3FcFunctions,
+  type Fm3FcSlotType,
+  type Fm3FcSlot,
+  type Fm3FcFunctionDef,
+} from './fcFunctions.js';
