@@ -101,11 +101,11 @@ export const FM3_FC_CATEGORIES: Readonly<Record<number, string>> = {
   6: 'Layout',
   7: 'Control Switch',
   8: 'Looper',
-  9: 'Per Preset',
+  9: 'Per-Preset',
   10: 'View',
-  11: 'Set List',
+  11: 'Setlist',
   12: 'Song',
-  13: 'Song Selection',
+  13: 'Song Section',
 };
 
 /**
