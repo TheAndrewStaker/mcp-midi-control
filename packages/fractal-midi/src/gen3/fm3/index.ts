@@ -63,3 +63,18 @@ export {
   type Fm3FcSlot,
   type Fm3FcFunctionDef,
 } from './fcFunctions.js';
+export { FM3_HELP_OVERRIDES } from './help.js';
+export {
+  GEN3_HELP,
+  GEN3_COMMON_PARAM_HELP,
+  blockHelpFor,
+} from '../help.js';
+export {
+  resolveHelp,
+  type BlockHelp,
+  type ParamHelp,
+  type BlockHelpEntry,
+  type HelpCatalog,
+  type BlockHelpOverride,
+  type HelpOverrides,
+} from '../helpTypes.js';

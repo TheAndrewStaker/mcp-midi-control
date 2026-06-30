@@ -21,3 +21,18 @@ export {
   type Fm9LayoutPage,
   type Fm9LayoutControl,
 } from './layouts.generated.js';
+export { FM9_HELP_OVERRIDES } from './help.js';
+export {
+  GEN3_HELP,
+  GEN3_COMMON_PARAM_HELP,
+  blockHelpFor,
+} from '../help.js';
+export {
+  resolveHelp,
+  type BlockHelp,
+  type ParamHelp,
+  type BlockHelpEntry,
+  type HelpCatalog,
+  type BlockHelpOverride,
+  type HelpOverrides,
+} from '../helpTypes.js';

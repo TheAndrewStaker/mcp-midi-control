@@ -19,6 +19,23 @@ export type { AxeFxIIIBlock, ConfidenceTag } from './blockTypes.js';
 export { PARAMS, PARAMS_BY_FAMILY, PARAM_BY_KEY, FAMILIES } from './params.js';
 export type { Unit, Param } from './params.js';
 
+// Block & parameter help — shared gen-3 catalog + III-specific overrides.
+export { AXE_FX_III_HELP_OVERRIDES } from './help.js';
+export {
+  GEN3_HELP,
+  GEN3_COMMON_PARAM_HELP,
+  blockHelpFor,
+} from '../help.js';
+export {
+  resolveHelp,
+  type BlockHelp,
+  type ParamHelp,
+  type BlockHelpEntry,
+  type HelpCatalog,
+  type BlockHelpOverride,
+  type HelpOverrides,
+} from '../helpTypes.js';
+
 // Enum vocabulary overlay — universal Fractal conventions + AM4-
 // verified shared symbols + III-specific direct overrides. See
 // `enumOverlay.ts` for evidence chain and provenance tagging.
