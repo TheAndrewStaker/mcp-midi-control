@@ -55,7 +55,13 @@ import {
   AXE_FX_III_BLOCKS,
   GEN3_READ_ROSTERS,
 } from '../src/gen3/axe-fx-iii/index.js';
-import { FM3_PARAMS } from '../src/gen3/fm3/index.js';
+import {
+  FM3_PARAMS,
+  FM3_RANGES,
+  FM3_ROSTERS,
+  FM3_ENUM_OVERRIDES,
+  FM3_CAB_IRS,
+} from '../src/gen3/fm3/index.js';
 import {
   FM9_PARAMS,
   FM9_ENUM_OVERRIDES,
@@ -167,19 +173,25 @@ const CATALOGS: DeviceCatalog[] = [
       'community-beta (device-true catalog; discrete set-by-name and striped read ' +
       'hardware-confirmed on FM3 by a community collaborator)',
     source:
-      'fractal-midi/src/gen3/fm3 — mined from the FM3-Edit binary; paramIds are FM3-true, ' +
-      'NOT reused from the Axe-Fx III',
+      "fractal-midi/src/gen3/fm3 — derived from the device editor's UI configuration " +
+      'data; paramIds are FM3-true, NOT reused from the Axe-Fx III',
     notes: [
       GEN3_BLOCK_NOTE,
-      'NO ranges/scaling table yet: unlike fm9.json (FM9_RANGES), no FM3-Edit ' +
-        'effectDefinitions cache has been contributed, so per-param display ranges ' +
-        'are limited to what FM3_PARAMS carries. The FM3-Edit cache file (one file, ' +
-        'no capture tools) generates the full table — see the capture guides.',
-      'Enum display names: resolve via axe-fx-iii.json GEN3_READ_ROSTERS ' +
-        '(family-shared); no FM3-specific overrides exist yet.',
+      'FM3_RANGES carries device-true display ranges (display = value * scale), ' +
+        'derived from the FM3 editor UI configuration data (community-beta, ' +
+        'hardware-unverified beyond the anchors).',
+      'FM3_ROSTERS are the device-true model lists per block slug (amp/cab/drive/...), ' +
+        'carrying manufacturer + basedOn lineage; the ordinal IS the discrete-SET value. ' +
+        'FM3_ENUM_OVERRIDES are device-true enum labels (family -> paramId -> labels[]) and ' +
+        'FM3_CAB_IRS are the cabinet IR names per bank. All three are derived from the ' +
+        'FM3 editor UI configuration data.',
     ],
     data: {
       FM3_PARAMS,
+      FM3_RANGES,
+      FM3_ROSTERS,
+      FM3_ENUM_OVERRIDES,
+      FM3_CAB_IRS,
     },
   },
   {
