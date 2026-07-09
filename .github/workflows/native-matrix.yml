@@ -79,4 +79,10 @@ jobs:
         run: npm run verify-loopback-midi
 
       - name: Test suite
-        run: npm test
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            echo "Linux CI runner has no MIDI backend (no ALSA sequencer at /dev/snd/seq), so the server-smoke suite (which exercises real MIDI connections) cannot run here. It is covered on Windows (preflight) and macOS (this matrix). Running everything else on Linux."
+            npm run test:no-server
+          else
+            npm test
+          fi
