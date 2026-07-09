@@ -45,7 +45,9 @@ jobs:
       # CI images. macOS CoreMIDI needs nothing. No-op elsewhere.
       - name: Load ALSA sequencer (Linux only)
         if: runner.os == 'Linux'
-        run: sudo modprobe snd-seq || echo "snd-seq modprobe failed; loopback test may skip"
+        run: |
+          sudo modprobe snd-seq snd-seq-dummy 2>/dev/null \
+            || echo "snd-seq unavailable on this runner; the MIDI enumerate + virtual-loopback steps skip gracefully (the prebuilt-load check still runs)."
 
       - name: Install dependencies
         run: npm ci
@@ -61,7 +63,7 @@ jobs:
       # loopback test below.
       - name: Native bindings load + enumerate
         run: |
-          node -e "const m=require('@julusian/midi'); new m.Input().getPortCount(); new m.Output().getPortCount(); console.log('@julusian/midi loads on '+process.platform+'/'+process.arch);"
+          node -e "const m=require('@julusian/midi'); console.log('@julusian/midi prebuilt loads on '+process.platform+'/'+process.arch); try { new m.Input().getPortCount(); new m.Output().getPortCount(); console.log('  MIDI enumerate ok'); } catch (e) { if (process.platform==='linux') { console.log('  MIDI enumerate skipped (no ALSA sequencer on this headless runner): '+e.message); } else { throw e; } }"
           node -e "import('serialport').then(m=>{if(!m.SerialPort)throw new Error('no SerialPort export');console.log('serialport loads on '+process.platform+'/'+process.arch);})"
 
       # Virtual-loopback SysEx round-trip: guards the inbound-SysEx receive
