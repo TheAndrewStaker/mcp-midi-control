@@ -62,16 +62,16 @@ are NOT in the III's third-party spec:
   PC path failed). Exposed as `buildSwitchPresetSysEx`; **on the FM3 it IS
   the default switch_preset path** (`switch_preset_via: 'sysex'`), because
   the PC path is hardware-FALSIFIED there: **FM3 fw 12.00 IGNORES CC32 Bank
-  Select with the v1.4 'standard' encoding** — a PC switch to preset 438
+  Select with the v1.4 'standard' encoding**: a PC switch to preset 438
   (CC0=0, CC32=3, PC=54) landed on preset 54 = 438 mod 128 (2026-06-12 field
   test). The FM3 reads the bank from CC0 like the FM9 ('msb' mode), so the
   spec's "Axe-Fx III / FM3 standard encoding" claim is wrong for the FM3.
   PC + 'msb' on FM3 is untested (sub=0x27 made it moot).
-  Note the pos-12 value is a PLAIN int here — int-or-float by sub-action
-  (float32 for 0x09/0x52 SET) — and LITTLE-endian, unlike the BIG-endian
+  Note the pos-12 value is a PLAIN int here, int-or-float by sub-action
+  (float32 for 0x09/0x52 SET), and LITTLE-endian, unlike the BIG-endian
   preset# in the `fn=0x03` dump request.
   **Do NOT use `fn=0x3C`** ("AxeFxControl / wiki set-preset"): it HARD-NACKs
-  on FM3 (reply `fn=0x64` multipurpose, result `0x05` — the same
+  on FM3 (reply `fn=0x64` multipurpose, result `0x05`, the same
   received-but-rejected signature as the legacy `fn=0x02` mistake).
 - **No `SET_PARAMETER_VALUE` function.** Per-block parameter writes
   are not exposed in the spec. The Axe-Fx II spec exposes `0x02
@@ -184,7 +184,7 @@ explicit assignment).
    - Their IDs are presumably ≥ 201, but we don't know which.
 
 3. **`ID_FUZZ1..4` (118..121) is the user-facing Drive / OD / Fuzz
-   pedal block** — a distinct placeable block from the amp. FM9
+   pedal block**, a distinct placeable block from the amp. FM9
    hardware-confirmed: the broadcast head's itemCount 172 = (42+1)*4
    matches the FUZZ family's max wire paramId. This is the pedal the
    editor labels "Drive"; it carries drive/tone/level/mix, not a tone
@@ -228,16 +228,16 @@ The list below is preserved as a historical record:
 ## 0x01 PARAMETER_SETGET, byte-verified from public captures 🟢 SET / 🟡 GET
 
 > **CORRECTED 2026-06-08 (FM3 fw 12.00 lldb, BoodieTraps + our FM9 re-decode).** The SET
-> value field is a **5-septet LE float32 at bytes 12-16** for BOTH sub-actions — there is
+> value field is a **5-septet LE float32 at bytes 12-16** for BOTH sub-actions; there is
 > NO separate "raw enum id" space. A DISCRETE type/model select (`sub 09 00`) carries
 > `float32(read-ordinal)`; a CONTINUOUS knob (`sub 52 00`) carries `float32(normalized 0..1)`.
 > The earlier "raw enum id 524, a different space from the dump ordinal 16" reading was a
 > MISREAD: float32(16.0) = septets `[00,00,00,0c,04]`, whose nonzero high septets land at
-> bytes 15-16 where a 3-septet `packValue16` would sit, so `pv16` read 524 — coincidental
+> bytes 15-16 where a 3-septet `packValue16` would sit, so `pv16` read 524, coincidental
 > alignment that only holds when the ordinal's low three septets are zero (e.g. powers of
 > two). It is LOSSY: ordinals 16,17,18,19 all read 524 at pos 15. Our own FM9 reverb
 > capture's SET frame decodes to `float32 16.0` at pos 12 (Medium Spring = ordinal 16), and
-> the device's 60-byte echo returns `16/78 = 0.20512819` (index/(count-1)) — the device
+> the device's 60-byte echo returns `16/78 = 0.20512819` (index/(count-1)): the device
 > received ordinal 16. **So the read-roster ordinal IS the set value; set-by-name resolves
 > name → ordinal off the rosters we already ship, AMPS INCLUDED, no capture.** Builders:
 > `buildSetParameter` (discrete, `float32(ordinal)`), `buildSetParameterContinuous`
@@ -311,7 +311,7 @@ F0 00 01 74 10 01
                                   52 00 = mouse-drag SET (drag context at pos 12-14)
                                   04 01 = STATE_BROADCAST (device→host, unsolicited)
   [id_lo id_hi]      14-bit effect ID per v1.4 Appendix 1 (LS-first)
-  [pid_lo pid_hi]    14-bit paramId (LS-first) — see Ghidra catalog
+  [pid_lo pid_hi]    14-bit paramId (LS-first), see Ghidra catalog
   [00 00 00]         drag-context bytes (zero for typed input)
   [v0 v1 v2]         16-bit value packed into 3 septets:
                        v0 = bits 6..0
@@ -370,7 +370,7 @@ swap based on:
 The reasoning was internally consistent but didn't survive an earlier
 broader open-web sweep. **Every captured III parameter-write uses
 `fn=0x01`**, not `fn=0x02`. The Ghidra binding `0x02 ∈ message-builder
-caller list` is still consistent with the pivot — `fn=0x02` may exist
+caller list` is still consistent with the pivot; `fn=0x02` may exist
 in III firmware for some other purpose (legacy II compatibility?
 internal diagnostics?), but it is NOT the parameter-write opcode that
 AxeEdit III invokes during normal use.
@@ -636,24 +636,24 @@ Everything below is FM3 fw 12.00, model byte `0x11`, direct USB:
   note: serialport lists the `tty.*` node; the transport now prefers the
   `cu.*` callout twin when present.)
 - **Universal MIDI identity request** (`F0 7E 7F 06 01 F7`) is answered by a
-  **bare Fractal-framed `fn=0x64`** (`F0 00 01 74 11 64 F7`) — the
+  **bare Fractal-framed `fn=0x64`** (`F0 00 01 74 11 64 F7`), the
   multipurpose/NACK carrier doing double duty as "I heard you", not a
   standard identity reply.
 - **Documented queries all answer**: `0x0D` patch name, `0x0C` scene,
   `0x14` tempo, `0x13` status dump.
 - **`fn=0x13` STATUS_DUMP reply decoded** (capture
   `samples/captured/fm3-community-2026-06-12/fm3-probe-output.json`,
-  documented_queries): `F0 00 01 74 11 13 25 00 40 2A 00 40 3A 00 40 72 F7`
-  — three `id id dd` triples per the v1.4 table: blocks **37 (Input),
+  documented_queries): `F0 00 01 74 11 13 25 00 40 2A 00 40 3A 00 40 72 F7`,
+  three `id id dd` triples per the v1.4 table: blocks **37 (Input),
   42 (Output), 58 (Amp)**, each `dd=0x40` = engaged (bit 0 = 0), channel A
   (bits 3:1 = 0), **4 channels supported** (bits 6:4 = 4). Only those three
   blocks were placed in the active preset.
 - **`fn=0x1F` bulk read confirmed across 35 of 42 block types**, itemCount ==
-  valueCount on every one (Reverb 284 = 4×71, Delay 352 = 4×88 — matches the
+  valueCount on every one (Reverb 284 = 4×71, Delay 352 = 4×88, matches the
   FM3-true catalog). The 7 others (Tuner, IR Capture, Vocoder, Crossover,
-  Tone Match, RTA, IR Player) each reply a SINGLE frame — **not-pollable
+  Tone Match, RTA, IR Player) each reply a SINGLE frame, **not-pollable
   block types**, not framing loss.
-- **`fn=0x1F` polls answer for UNPLACED blocks** — the "unplaced block
+- **`fn=0x1F` polls answer for UNPLACED blocks**: the "unplaced block
   answers an `fn=0x64` NACK" model is **falsified on FM3 fw 12.00**: in this
   same session the `fn=0x13` status dump reported only **3 placed blocks**
   (Input/Output/Amp, above) while `fn=0x1F` polls were ANSWERED with full
@@ -663,7 +663,7 @@ Everything below is FM3 fw 12.00, model byte `0x11`, direct USB:
   precedent, where a `set_param` on an unplaced block lands in state no dump
   surfaces). See the corrected fn=0x1F section below and cookbook
   [[gen3-fn1f-poll-block-bulk-read]].
-- **Per-block channel count is NOT uniformly 4** — the FM3 itemCount sweep
+- **Per-block channel count is NOT uniformly 4**: the FM3 itemCount sweep
   contradicts a universal `stride = itemCount / 4`: **Send = 2, Return = 6,
   Ring Mod = 26, Megatap = 70** (none divisible by 4), and **Looper = 24**
   with FM3-catalog max paramId 23 (→ 24×1), **Resonator = 80** with max
@@ -675,16 +675,16 @@ Everything below is FM3 fw 12.00, model byte `0x11`, direct USB:
   continuous param**: float32(45.0) sent at REVERB_LOWCUT read back wire
   11540, which is EXACTLY 45.0 Hz under the log10 20..2000 Hz calibration
   (20×100^(11540/65534)). Single-point but exact; it unifies the discrete
-  case (float32(ordinal) — an ordinal IS a discrete param's natural value).
+  case (float32(ordinal), an ordinal IS a discrete param's natural value).
   ⚠️ **Catalog contradiction**: that exactness holds ONLY under a log10
-  mapping — the shipped FM3/III/FM9 catalog rows for REVERB_LOWCUT are
+  mapping: the shipped FM3/III/FM9 catalog rows for REVERB_LOWCUT are
   currently calibrated **linear** ("inferred from AM4"; linear decode of
   11540 over 20..2000 is ~369 Hz, nowhere near 45). The catalog calibration
   for the Hz-taper family needs a correction pass, consistent with the
   Axe-Fx II's hardware-confirmed log10 `low_cut`/`high_cut`.
 - **The `0x75` body word for a DISCRETE param is the plain ordinal**: a
   float SET quantized to step 58 of the 79-entry reverb-type enum echoed
-  0.7435896992683411 (`0x3f3e5be5`) — one float32 ULP below round-nearest
+  0.7435896992683411 (`0x3f3e5be5`), one float32 ULP below round-nearest
   float32(58/78) (`0x3f3e5be6`), i.e. **the float32 truncation of 58/78**
   (matches to the last printed digit; some downward rounding happens in
   firmware, mechanism undetermined from one point). It identifies ordinal 58
@@ -694,7 +694,7 @@ Everything below is FM3 fw 12.00, model byte `0x11`, direct USB:
 - **`fn=0x01 sub=0x1f` at a type selector returns the CURRENT type's display
   NAME** (single-point hardware evidence): the probe's drive query
   (eff=118 FUZZ, pid=0 = FM3-true DRIVE TYPE) answered a 41-byte reply whose
-  value region septet-decodes to ASCII **"Rat Distortion"** — the preset's
+  value region septet-decodes to ASCII **"Rat Distortion"**, the preset's
   current drive type. Capture:
   `samples/captured/fm3-community-2026-06-12/fm3-probe-output.json`
   (job3_enumListDump, drive sub=0x1f entry); response
@@ -702,13 +702,13 @@ Everything below is FM3 fw 12.00, model byte `0x11`, direct USB:
   42 02 11 52 73 3A 1B 6E 27 23 25 5E 6E 00 00 78 F7`. Decode: the streaming
   MSB-first 8→7 septet regroup ([[iii-byte-stream-septet-pack-8to7]]) from
   byte 5 yields the name at decoded offset 14; the clean re-sync is at
-  **wire byte 21** (0-indexed) — wire bytes 21–38 decode to exactly
+  **wire byte 21** (0-indexed): wire bytes 21–38 decode to exactly
   `52 61 74 20 44 69 73 74 6F 72 74 69 6F 6E 00` ("Rat Distortion" + NUL).
   Bytes 19–20 = `0F 00` = 15 = the decoded byte count (likely a length
   prefix). The session's amp/reverb sub=0x1f probes were mis-addressed at
   the FM9-shaped pid 10, so behavior at the FM3-true amp TYPE pid 6 /
   reverb TYPE pid 0 is unconfirmed. **Implication:** a targeted sub=0x1f
-  ordinal sweep is a mechanical path to device-fetched type rosters —
+  ordinal sweep is a mechanical path to device-fetched type rosters,
   consistent with the prior "editors fetch model names via sub=0x1f at
   runtime" hypothesis.
 - **`set_bypass` (0x0A) accepted** (no 0x64); **`switch_scene` (0x0C)
@@ -724,7 +724,7 @@ Everything below is FM3 fw 12.00, model byte `0x11`, direct USB:
 Still unconfirmed on FM3 after this test: `set_block` placement and
 `save_preset` (never auto-tested by design). The probe skipped `set_block`
 believing "preset already had a Drive", but its poll-based placement detector
-was false-positived by the unplaced-poll behavior above — the `fn=0x13` dump
+was false-positived by the unplaced-poll behavior above; the `fn=0x13` dump
 shows NO Drive placed. For the same reason the session's reverb writes were
 against an UNPLACED Reverb block (wire-acked working-buffer state, not an
 audible change); the SET/read-back byte evidence stands, but audibility on a
@@ -753,7 +753,7 @@ issue, not transport).
   Goldens: `test/gen3/axe-fx-iii/typename.test.ts`.
 - **`fn=0x01 sub=0x2E` is ONE layout for both target shapes** (corrected
   2026-07-01): the EMPTY-target query and a BLOCK-TARGETED `sub=0x2E`
-  (effectId+paramId in the target slot) both return the same status frame —
+  (effectId+paramId in the target slot) both return the same status frame:
   preset name (septet-packed), live meters, and the routing grid in the tail.
   The earlier "block-targeted = preset-name frame, NOT a grid" reading (FM9,
   2026-06-19) was vacuously true: that session's scratch preset had an all-zero
@@ -766,7 +766,7 @@ issue, not transport).
   widening the reader's channel-stride candidates to {6,4,3,2,1}.
 
 Still community-beta on FM9: discrete enum **set**-by-name and `save_preset`
-persistence (continuous `set_param` was skipped here — the scratch preset had no
+persistence (continuous `set_param` was skipped here: the scratch preset had no
 placed block; re-run on a preset WITH a reverb to close it on Windows).
 
 ## Undocumented function bytes seen in the wild
@@ -776,9 +776,9 @@ show **function bytes outside that range** being used in real III
 traffic. These are likely the "set parameter / set modifier" calls
 the public spec deliberately omits.
 
-### Functions 0x74 / 0x75 / 0x76 — gen-3 STATE-BROADCAST burst (FM9 hardware-confirmed 🟢)
+### Functions 0x74 / 0x75 / 0x76: gen-3 STATE-BROADCAST burst (FM9 hardware-confirmed 🟢)
 
-**Source:** first real gen-3 hardware capture — an **FM9** (model byte `0x12`,
+**Source:** first real gen-3 hardware capture, an **FM9** (model byte `0x12`,
 firmware 11.00, FM9-Edit 1.03.19) contributed by a community tester, 2026-06-03.
 Byte evidence is golden-tested in `test/axe-fx-iii/setparam.test.ts`. This is the
 real device→host edit-broadcast channel; it **supersedes the earlier `0x21`
@@ -799,7 +799,7 @@ END   F0 00 01 74 12 76 [cs] F7                                        (8 B)
 
 - `blockId` / `itemCount` / values are **14-bit septet-LE**; values are the
   3-septet `packValue16` (lo7 / mid7 / top2).
-- The body is **positional but CHANNEL-BLOCKED** — see the box below. It is NOT a
+- The body is **positional but CHANNEL-BLOCKED**; see the box below. It is NOT a
   flat paramId-indexed vector. Reverb index 0 = **Mix** on channel A, tracking the
   front-panel knob: `7E 7F 03` = 65534 = **100.00%** ⇒ full-scale ≈ 65534.
 
@@ -807,7 +807,7 @@ END   F0 00 01 74 12 76 [cs] F7                                        (8 B)
 > `stride = itemCount / channelCount` (FM9 hardware-confirmed for 4-channel
 > blocks, 2026-06-04; 5-refuter validated).**
 > The body packs one contiguous copy of every paramId slot per channel
-> (channels A–D on a 4-channel block — the per-block channel count the `0x13`
+> (channels A–D on a 4-channel block, the per-block channel count the `0x13`
 > STATUS_DUMP reports in `dd` bits 6:4).
 >
 > ⚠️ **`channelCount` is per-block, NOT uniformly 4** (FM3 field test,
@@ -818,16 +818,16 @@ END   F0 00 01 74 12 76 [cs] F7                                        (8 B)
 > FM3 catalog: **Looper 24** (max paramId 23 → 24×1), **Resonator 80** (max
 > paramId 39 → 40×2). **Reverb 284 = 71×4** and **Delay 352 = 88×4** do fit.
 > Corrected rule: `stride = itemCount / channelCount` where `channelCount` is
-> derived per block — from the `fn=0x13` `dd` bits 6:4, or from
+> derived per block, from the `fn=0x13` `dd` bits 6:4, or from
 > `itemCount / (catalog max paramId + 1)`. The FM9 examples below are all
-> 4-channel blocks, so their ÷4 arithmetic stands — scoped, not falsified.
+> 4-channel blocks, so their ÷4 arithmetic stands (scoped, not falsified).
 > A controlled amp-Balance drag (0 → −100; capture
 > `fm9-amp-balance-0-to-neg100-*-2026-06-04`, blockId 58 = ID_DISTORT1) changed only
-> **index 149 = 1×147 + 2** — channel **B**, `paramId 2` (`DISTORT_PAN`) — while the
+> **index 149 = 1×147 + 2**, channel **B**, `paramId 2` (`DISTORT_PAN`), while the
 > channel-A/C/D copies (indices 2, 296, 443) stayed constant. `itemCount` matches
 > the channel-blocked shape across **5 distinct blocks** observed in existing FM9
 > captures (`itemCount = (max device-true paramId + 1) × 4`, every one divisible
-> by 4 — all five are 4-channel blocks; per-block `channelCount` varies, see the
+> by 4, all five are 4-channel blocks; per-block `channelCount` varies, see the
 > correction box above):
 > **DISTORT 588 = 147×4**, **REVERB 292 = 73×4**, **Phaser 140 = 35×4**,
 > **Filter 148 = 37×4**, **Drive/Fuzz 172 = 43×4**. The earlier "per-block offset 147 / two
@@ -907,7 +907,7 @@ same positional body); see cookbook [[am4-fn1f-atomic-read]] and the new
   pollable** and answer a single frame regardless (FM3: Tuner, IR Capture,
   Vocoder, Crossover, Tone Match, RTA, IR Player).
 
-### Functions 0x03 / 0x77 / 0x78 / 0x79 — preset dump RECEIVE (FM9 hardware-confirmed 🟢, read direction)
+### Functions 0x03 / 0x77 / 0x78 / 0x79: preset dump RECEIVE (FM9 hardware-confirmed 🟢, read direction)
 
 A 2026-06-04 FM9 capture (fw 11.00 / FM9-Edit 1.03.19; Fractal-Bot "Receive" of a
 run of presets) is the **first hardware confirmation of the device→host preset dump**
@@ -927,7 +927,7 @@ IN   F0 00 01 74 [model] 79 [3B] [cs] F7                              (11 B) DUM
   indices 49, 129, 197, 273, 274, 355, 443, 444.
 - Head word-count field (bytes 8-9, **little-endian** septet) = 8192 = the fixed preset
   word allocation. Reassembled body: word1 = `0xAA55` magic, ASCII name at word4+
-  (2 chars/16-bit word), decoded e.g. `"4x12 Plexi DARK AltCab -'25f"` — the EXACT layout
+  (2 chars/16-bit word), decoded e.g. `"4x12 Plexi DARK AltCab -'25f"`, the EXACT layout
   shipped in `packages/fractal-gen3/src/presetDump.ts` (`parsePresetDump` /
   `extractPresetName`). The codec's prior "structural lower bound, not byte-verified
   against a live device push" caveat is **discharged for the read direction**.
@@ -986,14 +986,14 @@ Correcting the earlier "labels are device-resident, never on the wire" conclusio
 value names are transmitted **septet-packed**, decodable by the streaming MSB-first 8→7
 unpack **starting at byte index 5** (the fn byte): `acc=(acc<<7)|byte; while(bits>=8){
 bits-=8; emit (acc>>bits)&0xff}` over `frame[5 .. len-2]`. A one-byte misalignment
-(starting at byte 6) yields garbage — that error is why prior full-capture scans reported
+(starting at byte 6) yields garbage; that error is why prior full-capture scans reported
 "zero labels."
 
-- **WRITE leg = float32(read-ordinal) — NO raw-id space (corrected 2026-06-08):** a typed
+- **WRITE leg = float32(read-ordinal), NO raw-id space (corrected 2026-06-08):** a typed
   SET (`fn=0x01 sub=0x09`, 23B OUT) carries `float32(read-ordinal)` at bytes 12-16; the
   device's 60B IN echo returns that value's name. The earlier "raw enum id" pairs
   (reverb 524/529, drive 523) were `float32(ordinal)` misread at pos 15: 524 = float32(16),
-  529 = float32(40) (NOT 45 — pos-15 is lossy), 523 = float32(14). Set-by-name uses the
+  529 = float32(40) (NOT 45, pos-15 is lossy), 523 = float32(14). Set-by-name uses the
   read ordinal directly; amps select the same way (`float32(ordinal)`), no `sub=0x1a`
   runtime fetch needed.
 - **Value LISTS:** `fn=0x01 sub=0x2e` IN dumps a param's full value list as positional
@@ -1040,7 +1040,7 @@ high septet) = `0x08`. Full decode + golden: cookbook
 now emits this confirmed `sub=0x32` insert op (was the ported, untested
 `fn=0x05`); device-side persistence remains the hardware-verification step.
 
-#### sub=0x35 SET_GRID_ROUTING — full decode
+#### sub=0x35 SET_GRID_ROUTING: full decode
 
 26-byte wire frame (same structure for all gen-3 model bytes):
 
@@ -1052,7 +1052,7 @@ F0 00 01 74 <model> 01 35 00 00 00 00 00 <OP> 00 00 00 00 00 00 02 00 <b21> <b22
 
 Two formula variants, selected by grid row count:
 
-**6-row grids (III 0x10, FM9 0x12) — 26/26 byte-confirmed, FM9-Edit loopMIDI, 2026-06-05:**
+**6-row grids (III 0x10, FM9 0x12), 26/26 byte-confirmed, FM9-Edit loopMIDI, 2026-06-05:**
 
 ```
 srcGp    = (srcCol − 1) × 6 + (srcRow − 1)
@@ -1066,7 +1066,7 @@ b23      = ((|destRow−3| + (srcCol even ? 2 : 0)) mod 4) << 5
 Constraint: srcRow=1 even srcCol is not yet captured for 6-row grids
 (pattern not closed; capture r1c2→r1c3, r1c2→r3c3 with FM9-Edit to close it).
 
-**4-row grids (FM3 0x11) — 10/10 byte-confirmed, FM3-Edit loopMIDI, 2026-06-05:**
+**4-row grids (FM3 0x11), 10/10 byte-confirmed, FM3-Edit loopMIDI, 2026-06-05:**
 
 ```
 srcGp = (srcCol − 1) × 4 + (srcRow − 1)
@@ -1084,7 +1084,7 @@ Key structural differences:
 
 Captures archived: `samples/captured/fm3-routing-probe-*.json` (gitignored).
 
-#### sub=0x2E SET_GRID_LAYOUT (live grid READ) — decoded, FM9-cross-validated, FM3 geometry pinned
+#### sub=0x2E SET_GRID_LAYOUT (live grid READ): decoded, FM9-cross-validated, FM3 geometry pinned
 
 The editors read a preset's whole routing grid live with an **empty-target**
 `fn=0x01 sub=0x2E` query (no block id in the target slot):
@@ -1128,13 +1128,13 @@ III shares the codec (community-beta). FM3 geometry (4×12, tail-anchored
 region) pinned 2026-07-01 offline** against the three checksum-valid
 block-targeted replies in
 `samples/captured/fm3-community-2026-06-12/fm3-probe-output.json` (job3),
-oracled by the same session's `fn=0x13` status dump: all three — including the
-606-byte length variant — decode to exactly Input1(37)@r1c0 → Amp1(58)@r1c1 →
+oracled by the same session's `fn=0x13` status dump: all three, including the
+606-byte length variant, decode to exactly Input1(37)@r1c0 → Amp1(58)@r1c1 →
 Output1(42)@r1c2 (cables 0x04). Goldens: the two embedded FM3 frames in
 `test/gen3/axe-fx-iii/gridlayout.test.ts` + the capture cross-validation in
 `scripts/verify-gen3-grid-layout.ts`.
 
-#### sub=0x2E live-meters payload (CPU + output meters) — decoded, FM9-cross-validated
+#### sub=0x2E live-meters payload (CPU + output meters): decoded, FM9-cross-validated
 
 The **same** empty-target sub=0x2E reply carries live telemetry in fixed low
 offsets, **before** the grid region. Offsets are into the FULL frame WITH the
@@ -1152,14 +1152,14 @@ here against our FM9 capture `fm9-receive-preset-from-device-harp-2026-06-04`
 (model 0x12). The 10 sub=0x2E reads are all of the SAME static preset, so the
 *behavioral oracle* is "a byte that VARIES across reads is live telemetry, a
 byte that is CONSTANT is grid/preset data." In the capture, exactly `f[35]`
-(32..122) and `f[36]` (7..119) vary widely — a stereo output meter bouncing
-with the audio — while `f[37]` is CONSTANT at 66 (→ a steady 65.0 % DSP load,
+(32..122) and `f[36]` (7..119) vary widely, a stereo output meter bouncing
+with the audio, while `f[37]` is CONSTANT at 66 (→ a steady 65.0 % DSP load,
 plausible for a preset's fixed cost). This matches the CPU-steady /
 meters-bouncing signature and agrees with ForgeFX's offsets. Codec:
 `liveMeters.ts` (`parseGen3LiveMeters`); goldens
 `test/gen3/axe-fx-iii/livemeters.test.ts`; the capture cross-validation runs in
 `scripts/verify-gen3-grid-layout.ts`. Surfaced as `live_meters` on gen-3
-`get_preset` (active buffer) — free, since the grid read already pulls this frame.
+`get_preset` (active buffer), free, since the grid read already pulls this frame.
 
 **INPUT meter deliberately NOT surfaced.** ForgeFX reads an input meter at
 `f[588]`, but that offset is FM3-frame-length-specific (the FM3 frame is ~590B,
@@ -1175,7 +1175,7 @@ verify script asserts `f[588]` stays constant on FM9 to lock this rationale.
 Both are spec-documented, golden-verified query opcodes (`buildGetScene` /
 `parseSceneResponse`, `buildGetTempo` / `parseTempoResponse`). gen-3
 `get_preset` (active buffer) issues the **scene** query and surfaces the result
-as `active_scene` — it is a safe read with no side-effect. The **tempo** query
+as `active_scene`; it is a safe read with no side-effect. The **tempo** query
 is deliberately NOT auto-issued from `get_preset`: `get_tempo` (the `7F 7F`
 sentinel) is reported to have SET the tempo to 250 BPM on *early-firmware* III,
 so firing it as a side-effect of a status read would be a silent-write footgun.
@@ -1632,9 +1632,9 @@ Given the function-byte map + Appendix 1 effect IDs:
 - ✅ `axefx3_set_looper(action)` / `axefx3_get_looper_state()`, 0x0F (the REAL 0x0F)
 - ✅ `axefx3_status_dump()`, 0x13 (correct already, parser too)
 - ⚠️ `axefx3_switch_preset`: the v1.4-PDF-documented path is MIDI PC + Bank
-  Select (default). UPDATE 2026-06-10: a SysEx-native path also exists —
+  Select (default). UPDATE 2026-06-10: a SysEx-native path also exists:
   `fn=0x01 sub=0x27` (`buildSwitchPresetSysEx`), FM3-hardware-confirmed. (The
-  old `buildSwitchPreset` bug — which sent a *query-patch-name* frame — is a
+  old `buildSwitchPreset` bug, which sent a *query-patch-name* frame, is a
   separate, real defect; see the known-bugs table above.)
 - ✅ `axefx3_set_param`, opcode is fn=`0x01` PARAMETER_SETGET with sub-action `09 00` (typed-input), byte-verified against 10 public captures spanning two effect blocks and two paramIds (see the 0x01 PARAMETER_SETGET section above). NOT fn=`0x02` (that was the wrong II-port, now closed). Param-IDs come from the AxeEdit III binary mining, not the published third-party PDF. The SET wire shape ships verified; the GET response shape is still unverified.
 - 🟢 `save_preset` (gen-3 path, used via the `port` argument), store-to-location is `fn=0x01 sub=0x26` (presetNum septet @12-13, LSB-first), captured byte-exact from III-Edit (0x10) and FM9-Edit (0x12) over loopMIDI; the codec now emits this. Wire shape confirmed; device persistence (front-panel confirm + flash write) is the remaining hardware-verification step. The 0x77/0x78/0x79 multi-frame envelope is the separate full preset-binary transfer (decoded: its descriptor tables are byte-identical to the II's, the 0x79 footer is a 16-bit XOR-fold of the body words, and the receive direction is FM9 hardware-confirmed; see the preset-dump and envelope sections above).

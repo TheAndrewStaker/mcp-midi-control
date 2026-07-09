@@ -24,7 +24,7 @@ the `DAT_007153e4..DAT_007154xx` data tables.
 
 For each block-type name `N`, the editor binary's `.rdata` carries K
 wire-ids referenced consecutively via `DAT_*` cross-references from
-`AEImageDepot::FUN_00595260` (the alphabetical cascade —
+`AEImageDepot::FUN_00595260` (the alphabetical cascade,
 [[alphabetical-name-cascade-block-ordering]]):
 
 | K | Meaning | Example block-types |
@@ -39,7 +39,7 @@ Full table extracted from `FUN_00595260` lives in
 
 ## Where it's used
 
-- Block-id allocation in `AXE_FX_II_BLOCKS` registry — currently has 4
+- Block-id allocation in `AXE_FX_II_BLOCKS` registry, currently has 4
   documented wiki errors that this primitive surfaces:
   - id 164 wiki says "Graphic EQ 3" → binary says **Filter 3**
   - id 165 wiki missing → binary says **Filter 4**
@@ -48,7 +48,7 @@ Full table extracted from `FUN_00595260` lives in
 
 The K=4 pattern for Filter, GraphicEQ, ParametricEQ, VolPan explains
 why their second-instance wire-ids land at 160-169 rather than near
-their first-instance ids — the four wire-ids per block-name are
+their first-instance ids: the four wire-ids per block-name are
 allocated in two pairs (1-2, then 3-4 elsewhere).
 
 ## Applicability
@@ -63,11 +63,11 @@ extracted.
 
 ## Misapplication failure modes
 
-- Does NOT predict block-id ordering within the K-id range — for example,
+- Does NOT predict block-id ordering within the K-id range, for example,
   Pitch claims wire-ids `130, 153` (NOT 130, 131). Consecutive
   allocation is the common case, but several block-types have
   non-consecutive pairs. Use the explicit cascade table, not arithmetic.
-- Does NOT directly encode block layout in the preset binary — that's
+- Does NOT directly encode block layout in the preset binary; that's
   [[alphabetical-name-cascade-block-ordering]]. This primitive answers
   "given a block-type name, which wire-ids does it own?". The cascade
   answers "given a placed-blocks set, in what order is data
@@ -75,10 +75,10 @@ extracted.
 
 ## Where it does NOT apply
 
-- Axe-Fx III — transfer candidate. III likely uses the same K=1/2/4
+- Axe-Fx III: transfer candidate. III likely uses the same K=1/2/4
   allocation scheme; the III equivalent table is in
   `ghidra-axe-edit-iii-preset-receiver.txt` (371KB, un-mined).
-- AM4 — only 4 slots, no replication scheme. Doesn't apply.
+- AM4: only 4 slots, no replication scheme. Doesn't apply.
 
 ## Verification path
 

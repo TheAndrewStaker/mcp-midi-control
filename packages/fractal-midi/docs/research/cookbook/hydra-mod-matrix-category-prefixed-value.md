@@ -116,7 +116,7 @@ anchors. They are NOT yet confirmed on hardware. Two things gate promotion:
 1. **Hardware confirmation** that a known route (e.g. Env 2 → Filt 1 Cutoff)
    is audibly active after `set_mod_route`. UPDATE (live recipe audition,
    2026-05-31): the front-panel MOD MATRIX page DOES redraw to reflect
-   NRPN-driven routes — a wired route read back on the screen as
+   NRPN-driven routes: a wired route read back on the screen as
    `SRC modWhl → Filt 1 Cutoff 55`, exactly as sent. The earlier
    edisyn-comment warning ("page does not redraw from MIDI") is superseded:
    the normal "front panel is ground truth" check DOES apply, so confirm by

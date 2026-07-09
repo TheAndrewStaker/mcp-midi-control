@@ -46,11 +46,11 @@ AxeEdit, AxeEdit III). Mined via headless Ghidra scripts in
 
 ## Misapplication failure modes
 
-- **DO NOT** stride by 4 — that's the  bug. Stride-by-4
+- **DO NOT** stride by 4; that's the  bug. Stride-by-4
   produces garbage (interprets the name pointer field as a paramId).
   Use stride 16.
 - **DO NOT** assume `namePtr` points to a null-terminated C string in
-  all cases — some entries are JUCE BinaryData ZIP references (see
+  all cases; some entries are JUCE BinaryData ZIP references (see
   [[juce-binarydata-zip]]) which require a different resolver.
 
 ## Verification path

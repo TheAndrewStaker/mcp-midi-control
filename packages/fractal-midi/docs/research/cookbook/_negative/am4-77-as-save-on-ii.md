@@ -8,7 +8,7 @@ verified_on:
 firmware_sensitive: true
 golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
 retest_when:
-  - a decoded II save-to-location wire shape (mine AxeEdit II's save path; see STATE-AXEFX2.md — the moment II's native single-location save is known, this envelope-transfer verdict is moot rather than re-testable)
+  - a decoded II save-to-location wire shape (mine AxeEdit II's save path; see STATE-AXEFX2.md. The moment II's native single-location save is known, this envelope-transfer verdict is moot rather than re-testable)
 relates_to: [ii-fn1f-atomic-read, vendor-envelope-descriptor-table]
 consumed_in: []
 ---

@@ -45,14 +45,14 @@ Concrete sites (dump line refs):
 
 | Site | Pattern |
 |---|---|
-| L15 (case 0x1) | `... 902 65520 65521 65522 44 45 46 47 ...` — mid-table pseudo cluster |
-| L41 (case 0x2) | `... 173 174 65520 65521 ... 65530` — 11-element tail group |
-| L69 (case 0x8) | `... 16 17 18 19 65520` — single trailing pseudo |
-| L91 (case 0x0b) | `... 140 141 65520` — single pseudo before the 0xFF00 bank |
-| L315 (case 0x26) | `... 45 46 65520` — singleton tail pseudo |
-| L357 (case 0x33) | `... 21 65520 65521 65522 65523 65524` — 5-element tail group |
-| L389 (case 0x38) | `... 1944 65520 ... 65527 5648 5649 5650 5651` — pseudo cluster between real ID groups |
-| L398 (case 0x39) | `... 1331 1332 65520 65521 65522` — 3-element tail group |
+| L15 (case 0x1) | `... 902 65520 65521 65522 44 45 46 47 ...`: mid-table pseudo cluster |
+| L41 (case 0x2) | `... 173 174 65520 65521 ... 65530`: 11-element tail group |
+| L69 (case 0x8) | `... 16 17 18 19 65520`: single trailing pseudo |
+| L91 (case 0x0b) | `... 140 141 65520`: single pseudo before the 0xFF00 bank |
+| L315 (case 0x26) | `... 45 46 65520`: singleton tail pseudo |
+| L357 (case 0x33) | `... 21 65520 65521 65522 65523 65524`: 5-element tail group |
+| L389 (case 0x38) | `... 1944 65520 ... 65527 5648 5649 5650 5651`: pseudo cluster between real ID groups |
+| L398 (case 0x39) | `... 1331 1332 65520 65521 65522`: 3-element tail group |
 
 Distinct 0xFFFx values observed in the dump: 65520, 65521, 65522,
 65523, 65524, 65525, 65526, 65527, 65528, 65529, 65530 (11 distinct
@@ -124,7 +124,7 @@ consistent with "after this comes a group of pseudo-knobs" or "this
 position reserves a UI label not bound to a real wire register."
 
 The 20-entry `0xFF00..0xFF13` block on case 0x0b (likely CABINET, 126
-params) suggests cab-bank UI placeholders — cabinet selection options
+params) suggests cab-bank UI placeholders: cabinet selection options
 or factory-IR slot labels. Confirming this needs a peek at the
 metadata pointers for those entries; the V2 script dumps the FIRST
 metadata pointer per table only, so a per-pseudo-entry dereference is

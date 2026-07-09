@@ -1,9 +1,9 @@
 # Design note: gen-3 integer-step params read back as a literal value, not a knob position
 
-**Status:** proposed, not implemented. Written for discussion — it documents a real
+**Status:** proposed, not implemented. Written for discussion: it documents a real
 behavior we found in chihotta's FM9 roundtrip and the design choice it forces.
 
-**TL;DR:** For a class of FM9 params (pitch/synth/plex *shift*, *step*, *bitreduce* —
+**TL;DR:** For a class of FM9 params (pitch/synth/plex *shift*, *step*, *bitreduce*,
 ~33 of them), SET already works but READ shows the wrong number, because the device
 returns these as a literal integer value while we decode them as a 0–65534 knob
 position. Fixing the read is easy in principle but breaks an assumption our code
@@ -16,8 +16,8 @@ deliberate "this param reads differently than it writes" mechanism.
 
 Think of every parameter as having two forms:
 
-- **Display value** — what a human reads: `gain 5.0`, `mix 25%`, `pitch +12 semitones`.
-- **Wire value** — the number that travels over USB.
+- **Display value:** what a human reads: `gain 5.0`, `mix 25%`, `pitch +12 semitones`.
+- **Wire value:** the number that travels over USB.
 
 For an ordinary continuous knob (say amp gain, 0–10), the wire is a **position** on a
 0–65534 slider. Halfway up the slider (wire ≈ 32767) means gain 5.0. We convert both
@@ -47,11 +47,11 @@ Two things to notice:
 
 1. **SET still works.** We sent a *position* (slider 0..max) and the device landed on
    the right musical value (slider 75% → +12 semitones). Our continuous SET already
-   sends a position, so **setting these params is correct today** — same code path as
+   sends a position, so **setting these params is correct today**, same code path as
    the hardware-confirmed amp-gain write.
 2. **READ is different.** The device did **not** answer with a position. It answered
    with the **literal signed value** (+12, or −24 encoded as 65512). Our decode assumes
-   the read is a position, so it would translate 65512 into roughly **+24** — the
+   the read is a position, so it would translate 65512 into roughly **+24**, the
    opposite end of the range. So `get_param` / `get_preset` *lie* about these params.
 
 We confirmed this is not a one-off: it's uniform across all ~32 shift/step params, and
@@ -75,7 +75,7 @@ Our schema assumes `encode` and `decode` are inverses. For these params they can
   already works).
 - **decode (READ)** must become **value-based** (the device returns the literal value).
 
-So `decode(encode(x)) ≠ x` for these params — by design, because the device itself is
+So `decode(encode(x)) ≠ x` for these params, by design, because the device itself is
 asymmetric. That's fine for the hardware, but it trips two things in our codebase:
 
 1. The **display-first round-trip gate** (`verify-fractal-gen3-display-units`) asserts
@@ -95,7 +95,7 @@ the gate), so it deserves its own focused change and review rather than being sl
   only the FM9 has a synced cache today. III/FM3/VP4 come along once their synced caches
   land (the same blocker as the enum unlock).
 - **~33 FM9 params** corrected on read. Real but not the most-used params (pitch/synth/
-  plex shift, bit-reduction). Severity: **read-honesty** — control already works; the
+  plex shift, bit-reduction). Severity: **read-honesty**, control already works; the
   bug is that we report the wrong value back.
 
 ## Open questions to decide together

@@ -51,13 +51,13 @@ Comp, Delay, Drive, Reverb; Tier-2: Chorus, Flanger, Phaser, Wah, Pitch,
 Filter, Vol/Pan, Tremolo/Panner, Formant, Enhancer, FX Loop, Rotary,
 Graphic EQ, Parametric EQ, Multi Delay).
 
-`axefx2_set_scene_channels` consumes this primitive — kills the 
+`axefx2_set_scene_channels` consumes this primitive; kills the 
 channel-Y write-loss bug for the 6 Tier-1 blocks at the protocol level.
 
 ## Applicability
 
 Use when reading or writing per-block per-scene bypass + channel-Y
-state. Single ushort write modifies all 8 scenes atomically — far
+state. Single ushort write modifies all 8 scenes atomically, far
 preferable to 8 sequential SET_BLOCK_CHANNEL frames (which is what the
  channel-Y bug was caused by).
 
@@ -70,14 +70,14 @@ preferable to 8 sequential SET_BLOCK_CHANNEL frames (which is what the
   where each block's scene-state lives.
 - **DO NOT** write bypass without preserving channel-Y (or vice versa).
   Read-modify-write the whole ushort.
-- **DO NOT** use SET_BLOCK_CHANNEL frames to modify scene state —
+- **DO NOT** use SET_BLOCK_CHANNEL frames to modify scene state;
   that's exactly the  bug class (per-scene channel writes
   clobber non-active scene state).
 
 ## Where it does NOT apply
 
 - AM4 (4 scenes ABCD, different encoding)
-- Axe-Fx III — transfer candidate (likely same shape per `iii-preset-
+- Axe-Fx III: transfer candidate (likely same shape per `iii-preset-
   receiver.txt`; un-verified)
 
 ## Verification path

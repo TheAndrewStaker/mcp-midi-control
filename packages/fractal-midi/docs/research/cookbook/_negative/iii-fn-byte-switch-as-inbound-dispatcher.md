@@ -7,9 +7,9 @@ verified_on:
   - axe-edit-iii-binary
   - am4-edit-binary
 firmware_sensitive: false
-golden: STUB (structural-only; negative finding — verification is grep-against the inbound-dispatcher dumps in consumed_in; see Search terms to avoid re-attempting)
+golden: STUB (structural-only; negative finding: verification is grep-against the inbound-dispatcher dumps in consumed_in; see Search terms to avoid re-attempting)
 retest_when:
-  - a new AxeEdit III / AM4-Edit major release whose inbound dispatch shape changes (re-run the inbound-dispatcher dump + top-40 fn-byte-literal scan — the entry's own refinement history names this as the only re-opening evidence)
+  - a new AxeEdit III / AM4-Edit major release whose inbound dispatch shape changes (re-run the inbound-dispatcher dump + top-40 fn-byte-literal scan; the entry's own refinement history names this as the only re-opening evidence)
 relates_to: [iii-async-workflow-fn-registry, iii-workflow-state-machine-executor, ii-axeedit-opcode-table]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-inbound-dispatcher.txt
@@ -20,14 +20,14 @@ consumed_in:
 
 (Slug retains the III-prefix for grep-stability; the finding now
 applies cross-device to every Fractal editor using the
-[[iii-async-workflow-fn-registry]] dispatch model — III + AM4 verified.)
+[[iii-async-workflow-fn-registry]] dispatch model; III + AM4 verified.)
 
 ## Hypothesis ruled out
 
 That a Fractal async-workflow editor contains a function with a
 top-level `switch(fnByte)` (where `fnByte = payload[5]` after the
 `F0 00 01 74 <model>` envelope prefix) routing each inbound fn-byte
-to a per-fn handler — the way II's [[ii-axeedit-opcode-table]]
+to a per-fn handler, the way II's [[ii-axeedit-opcode-table]]
 suggests by analogy.
 
 ## Why the hypothesis fails
@@ -39,7 +39,7 @@ suggests by analogy.
    fn-bytes, second is `FUN_1402a3300` with 18, third is `FUN_1402d6fa0`
    with 17. **None of these are a fn-byte switch:**
    - `FUN_1401f0f10` is the workflow REGISTRY
-     ([[iii-async-workflow-fn-registry]]) — not a dispatcher; it
+     ([[iii-async-workflow-fn-registry]]), not a dispatcher; it
      touches 20 fn-bytes because it passes them as the second argument
      to `FUN_1401bac70` to register them, not because it dispatches on
      them.
@@ -64,11 +64,11 @@ suggests by analogy.
 ## Search terms to avoid re-attempting
 
 - "Ghidra search for `switch` on `payload[5]`" against AxeEdit III's
-  `.text` — there is no such function in the III editor binary.
+  `.text`: there is no such function in the III editor binary.
 - "find the III inbound fn-byte dispatcher" as a flat-switch
-  construct — the dispatch is registry-lookup, not a switch.
+  construct: the dispatch is registry-lookup, not a switch.
 - "expect III's inbound to mirror II's [[ii-axeedit-opcode-table]]
-  switch shape" — it does not. II uses a static `OpcodeDescriptor`
+  switch shape". It does not. II uses a static `OpcodeDescriptor`
   table in `.rdata`; III uses a runtime-registered workflow table.
 
 ## What to look for instead
@@ -108,23 +108,23 @@ suggests by analogy.
   `FUN_1401f0f10`); workflow state determines dispatch, not fn-byte.
   Body promoted to cross-device. Slug retains III prefix
   (grep-stability).
-- 2026-05-28 cont (AM4 sharpening — small-vs-bulk hybrid): the
+- 2026-05-28 cont (AM4 sharpening, small-vs-bulk hybrid): the
   HOP 2 classification of `AM4DeviceManager::vftable` slots 3-10
   surfaced `FUN_1402ddb80` (AMDM vtable slot 4) as AM4-Edit's
   **inbound message dispatcher**, and it DOES contain a literal
-  `switch(fnByte)` — but only for short one-shot response opcodes:
+  `switch(fnByte)`, but only for short one-shot response opcodes:
   `0x00` (stream-start), `0x01` (stream-end / fn=0x01 ack), `0x03`
   (Query Device Version), `0x08` (Library Load), `0x19` (Refresh
   Cabinet Names), `0x47` (uncategorized). The dispatcher emits the
   log string `"DeviceManager: Message timed out for opCode: 0x%X.
   Recvd %d, expected %d."` confirming the role. **The rule-out
   remains correct for the bulk preset-binary frames `0x77/0x78/0x79`
-  specifically** — those are absent from the switch and routed
+  specifically**: those are absent from the switch and routed
   through the `iVar6 == 3` "other" status branch (multi-frame
   stream-accumulation path) or the `cVar5 == 0x01` stream-end
   handler `FUN_1402da830`. Refined claim: the rule-out is "no
   literal-switch dispatcher for **bulk multi-frame preset-binary
-  streams** (the 0x77/0x78/0x79 triplet)" — not "no fn-byte switch
+  streams** (the 0x77/0x78/0x79 triplet)", not "no fn-byte switch
   anywhere." AM4-Edit uses a hybrid: small synchronous responses
   via fn-switch in `FUN_1402ddb80`; bulk streams via
   workflow-state-driven accumulation reachable via the same

@@ -1,4 +1,4 @@
-# Circuit Tracks `.ncs` project — decoded config fields (length / chain / scenes)
+# Circuit Tracks `.ncs` project: decoded config fields (length / chain / scenes)
 
 **Status:** decoded by on-device save→download→diff (2026-06-22/23), hardware-
 confirmed. A `.ncs` is a fixed 160,780-byte project. Beyond the pattern step data
@@ -10,7 +10,7 @@ downloading (`scripts/circuit-download-slot.ts`), and diffing vs a baseline.
 
 - **Offset:** byte 0 of each drum pattern's metadata block =
   `META_OFFSETS[drumBlockIndex(track, pattern)]` (`format.ts`).
-- **Value:** `steps − 1`. `0x0f` = 16 steps (the default — only the first bar
+- **Value:** `steps − 1`. `0x0f` = 16 steps (the default, only the first bar
   plays!), `0x1f` = 32 steps (full 2-bar pattern).
 - **Why it matters:** authoring writes 32 steps of *data* but, until this was
   decoded, never set the length, so the device played 16 and looped. Set every
@@ -39,7 +39,7 @@ downloading (`scripts/circuit-download-slot.ts`), and diffing vs a baseline.
   - Scene 3 (chain 5–6): `04 05 00 00`
   - Scene 4 (chain 7–8): `06 07 00 00`
   - (Scene-1's `01 00` is a quirk of how that first chain was baked; it recalls
-    groove 1 correctly. For authoring, replicate the captured bytes verbatim —
+    groove 1 correctly. For authoring, replicate the captured bytes verbatim;
     do not over-derive the encoding.)
 - Plus a small selected-scene state region near the file end (`@0x1a27a`,
   `@0x26fbc`, `@0x26fd2`) that tracks which scene is active.
@@ -67,12 +67,12 @@ downloading (`scripts/circuit-download-slot.ts`), and diffing vs a baseline.
   baseline): header scene-chain bytes in `0x40..0x2d0` (Scene 1@0x51, 2@0x78
   `02 03`, 3@0xa0 `04 05`, 4@0xc8 `06 07`, repeated per drum track at +4 stride with
   a trailing `0x01`), plus three scene-selection state bytes `@0x1a27a`=07,
-  `@0x26fbc`=08, `@0x26fd2`=05 (transplanted verbatim — they set the initial
+  `@0x26fbc`=08, `@0x26fd2`=05 (transplanted verbatim, they set the initial
   selected scene/pattern and are song-independent).
 
 ## Open
 
-- **Scene-CHAIN** region (song-arrangement auto-progression) — next decode.
-- **Drum-track → sample-slot pointer** — a Drum-3 sample reassign did NOT appear in
+- **Scene-CHAIN** region (song-arrangement auto-progression): next decode.
+- **Drum-track → sample-slot pointer**: a Drum-3 sample reassign did NOT appear in
   the project diff, so the drum→sample binding likely lives outside the `.ncs`
   (a pack-level store). Reading/authoring it (for auto-binding D1–D4) is unsolved.

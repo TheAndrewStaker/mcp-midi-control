@@ -16,7 +16,7 @@ consumed_in:
 # gen-1 (Axe-Fx Standard/Ultra) nibble-split field encoding
 
 The first-generation Fractal flagship (model byte `0x01`) encodes **every**
-addressable wire field — block id, parameter id, and value — the same way: an
+addressable wire field (block id, parameter id, and value) the same way: an
 8-bit value `0..255` is transmitted as **two MIDI bytes, low nibble first**:
 
 ```

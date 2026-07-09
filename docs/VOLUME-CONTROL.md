@@ -89,11 +89,11 @@ Notes:
 - `amplevel` is the global output trim, equivalent to AM4's `amp.level`.
 - All FX wet params use the `*wet` wire name with a `.dry_wet` alias.
 
-## Scene & preset leveling — unity match (Fractal's philosophy)
+## Scene & preset leveling: unity match (Fractal's philosophy)
 
 The default for balancing scenes and presets is **unity match**: set each
 scene (and each preset) so its **average** signal sits on the **white line
-(0 dB)** of the device's Internal Levels Meter. That line is the sweet spot —
+(0 dB)** of the device's Internal Levels Meter. That line is the sweet spot:
 strong signal with ample headroom. The meter is calibrated with ~12 dB of
 headroom at the **red line** (OUT knob at max), so red is not clipping; match
 the average and let brief peaks ride above the line. Level by ear as the final
@@ -107,19 +107,19 @@ scene at the same level/master. The clean scene needs a **positive** trim
 recipes, not the default.
 
 Per-device leveling tool:
-- **AM4** — `preset.scene_1_level`..`scene_4_level` (±20 dB, post-chain, no
+- **AM4**: `preset.scene_1_level`..`scene_4_level` (±20 dB, post-chain, no
   channel switch) is the primary scene-balance control. `amp.out_boost_level`
   (0..+4 dB) is the clean way to do a ~+3 dB solo lift.
-- **Axe-Fx II** — `output.scene_1_main`..`scene_8_main` (±20 dB, the Output
+- **Axe-Fx II**: `output.scene_1_main`..`scene_8_main` (±20 dB, the Output
   block's per-scene "Scene Levels", one per scene) is the primary scene-balance
-  control — the direct analog of the AM4's `preset.scene_N_level`, post-chain
+  control, the direct analog of the AM4's `preset.scene_N_level`, post-chain
   and no channel switch. `amp.level` / `cab.level` are secondary per-channel
   trims (not `master_volume`, which changes tone). `output.level` is the single
   global Main trim, not per-scene.
 
 The agent cannot read either device's output meter over MIDI, so after a
 multi-scene build it labels the levels unverified and asks the player to report
-the meter — the human meter read is the test signal.
+the meter: the human meter read is the test signal.
 
 ## Disambiguation cheat sheet for agents
 

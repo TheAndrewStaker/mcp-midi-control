@@ -1,9 +1,9 @@
-# Circuit Tracks — Musical Sequencing: Direction & Handoff
+# Circuit Tracks (Musical Sequencing): Direction & Handoff
 
 This is the working brief for turning the Novation Circuit Tracks into a
 **musical sequencing brain** an agent can drive by description. It captures the
 maintainer's direction, what is built and hardware-confirmed today, the wire
-facts a new contributor needs, and the open work — enough for a fresh session to
+facts a new contributor needs, and the open work, enough for a fresh session to
 continue without re-deriving anything.
 
 The Circuit Tracks is the project's first *sequencer-class* device. It is a
@@ -20,7 +20,7 @@ agent realise them. Concretely:
 
 - A curated, growing library of **good musical building blocks** for electronic
   and rock: e.g. "a cool minor chord", "a pulsing bass tone", "a catchy lead
-  melody", named drum grooves. This curated vocabulary is the headline feature —
+  melody", named drum grooves. This curated vocabulary is the headline feature:
   the recipe library should become genuinely musical, not just generic test
   grids.
 - **MIDI 1 and MIDI 2 routed to different external instruments.** The maintainer
@@ -30,12 +30,12 @@ agent realise them. Concretely:
 - **Full arrangements**: drums + a MIDI track + (optionally) the internal synths,
   programmed together, with the internal synths usable on their own when wanted.
 - Eventually **control everything useful**: the Circuit's labelled buttons,
-  effects (e.g. reverb on drums — see below), and the deeper surface.
+  effects (e.g. reverb on drums, see below), and the deeper surface.
 
 ## Standout feature idea: Drum Tabs → drum patterns
 
-The ultimate use case the maintainer wants: ask an agent for a song — e.g.
-"Tom Petty — Breakdown" — and have it author the real drum groove onto the
+The ultimate use case the maintainer wants: ask an agent for a song, e.g.
+"Tom Petty: Breakdown", and have it author the real drum groove onto the
 Circuit. **Drum tab notation is a near-perfect source of truth and maps almost
 1:1 onto the Circuit's drum grid.** A drum tab is an ASCII grid, one row per
 drum across fixed-width time columns:
@@ -47,20 +47,20 @@ S|----o-------o---|   snare
 B|o-------o-o-----|   bass (kick)
 ```
 
-Each column is a step (8ths/16ths), each `x`/`o` a hit — which is exactly the
+Each column is a step (8ths/16ths), each `x`/`o` a hit, which is exactly the
 Circuit's 4 drum tracks × up-to-32 steps. The agent workflow:
 
-1. **Source the tab** — try the agent's own training first (famous songs are
+1. **Source the tab**: try the agent's own training first (famous songs are
    often memorized), then a web lookup. Tabs are community transcriptions, so
    accuracy is high but variants exist.
 2. **Parse** the grid → per-row step lists (a drum-tab parser; the notation is
    fairly standardized: `B`/bass-kick, `S`/snare, `H`/hi-hat, `T`/tom,
    `C`/crash, `o`/`x`/`O` hit conventions, `-` rest, often 16 or 32 cols/bar).
-3. **Map voices** — tab instrument → Circuit Drum 1–4 via the `voice_map`
+3. **Map voices**: tab instrument → Circuit Drum 1–4 via the `voice_map`
    (the abstract-voice layer already exists for this).
 4. **Author + upload** the `.ncs` (the drum codec + upload are confirmed).
 
-This is a focused, high-value spike worth doing early — it turns "describe a
+This is a focused, high-value spike worth doing early: it turns "describe a
 beat" into "name a song." Resolve tab column counts to the 16/32-step grid; a
 fill or >32-column bar needs a length/multi-pattern decision.
 
@@ -69,8 +69,8 @@ fill or >32-column bar needs a length/multi-pattern decision.
 | Capability | State |
 |---|---|
 | Drum-pattern `.ncs` codec (`ncs/drumPattern.ts`) | Built, byte-exact vs corpus, hardware-confirmed (kick four-on-the-floor played on device) |
-| Note-track `.ncs` codec (`ncs/notePattern.ts`) — Synth1/Synth2/MIDI1/MIDI2 | Built, byte-exact round-trip vs all 16 synth blocks, **hardware-confirmed both internally (synth played authored notes) and externally (Hydrasynth played an authored MIDI-1 line via the Circuit's MIDI out)** |
-| Note-track authoring wired into `apply_pattern` (melodic/voice realizer) | Built + **hardware-confirmed (2026-06-19)**. `apply_pattern mode:ncs_upload` authors **drums AND the four note tracks**, routed by channel (ch1/2/3/4 → synth1/synth2/midi1/midi2). Device test: an octave bassline (Synth 1) + a kick (Drum 1) uploaded to a slot, loaded, and played back on the device clock — steps + pitches correct. `live_stream` melodies/chords/transpose also confirmed on Synth 1/2 the same day. Per-step pitch + chords come from note tokens in the neutral pattern (`Step.notes`); see below. Golden: `verify-circuit-ncs.ts` (`authorPlanIntoProject`) + `verify-patterns.ts` (pitch parsing + per-note compile + transpose). |
+| Note-track `.ncs` codec (`ncs/notePattern.ts`), Synth1/Synth2/MIDI1/MIDI2 | Built, byte-exact round-trip vs all 16 synth blocks, **hardware-confirmed both internally (synth played authored notes) and externally (Hydrasynth played an authored MIDI-1 line via the Circuit's MIDI out)** |
+| Note-track authoring wired into `apply_pattern` (melodic/voice realizer) | Built + **hardware-confirmed (2026-06-19)**. `apply_pattern mode:ncs_upload` authors **drums AND the four note tracks**, routed by channel (ch1/2/3/4 → synth1/synth2/midi1/midi2). Device test: an octave bassline (Synth 1) + a kick (Drum 1) uploaded to a slot, loaded, and played back on the device clock, steps + pitches correct. `live_stream` melodies/chords/transpose also confirmed on Synth 1/2 the same day. Per-step pitch + chords come from note tokens in the neutral pattern (`Step.notes`); see below. Golden: `verify-circuit-ncs.ts` (`authorPlanIntoProject`) + `verify-patterns.ts` (pitch parsing + per-note compile + transpose). |
 | Melodic note tokens in the pattern grammar | Built. The mini-notation parser accepts scientific-pitch tokens (`c2`, `eb3`, `f#4`, middle C = c4 = 60) and `+`-joined chords (`c3+eb3+g3`); a bassline/lead/chord/arp is one speakable string per voice. Curated melodic recipes shipped: `minor_triad`, `major_triad`, `octave_bass`, `minor_arp_up`, `lead_hook` (in C; agent transposes). |
 | `.ncs` SysEx upload/download (`ncs/uploadProject.ts`, `ncs/transfer.ts`) | Hardware-confirmed end-to-end (read byte-identical to export; write + readback byte-exact; uploaded project loads via Program Change) |
 | Blank base template | Device "Project 21" / **slot 20**, name "User Session": empty drums + notes, mixers audible. Re-export with `scripts/circuit-ncs-read-slot.ts 20`. |
@@ -94,7 +94,7 @@ offset. Per step:
 [note, gate, delay, velocity] x 6     six note slots (a chord)
 ```
 
-- **slotMask** is a BITMASK of active slots (bit n = slot n), NOT a count — a
+- **slotMask** is a BITMASK of active slots (bit n = slot n), NOT a count: a
   3-note chord is `0x07`, and a slot whose bit is 0 is silent even with stale
   bytes. This was the one subtlety that bit the first decode.
 - **probability** 0–7 (7 = 100%, default); present even on empty steps
@@ -104,19 +104,19 @@ offset. Per step:
   Empty slot = `00 00 00 60` (velocity 0x60 = device default, no note). Byte
   order cross-checked against the MIT `namirsab/circuit-tracks-tools` reference.
 
-Drum steps are a DIFFERENT (structure-of-arrays) format — see `ncs/drumPattern.ts`
+Drum steps are a DIFFERENT (structure-of-arrays) format, see `ncs/drumPattern.ts`
 and `ncs/format.ts`. Pattern playback settings (length/speed/direction) live in a
 40-byte block at each block's metadata offset; the blank base defaults are
-len=15 (16 steps), speed=3, forward, tempo 120 — ideal, no surgery needed.
+len=15 (16 steps), speed=3, forward, tempo 120: ideal, no surgery needed.
 
 ## Authoring melodic content (the note-token grammar)
 
 The device-neutral pattern grammar (`packages/core/src/protocol-generic/patterns/`)
 now carries pitch. A voice line can use **note tokens** instead of bare `x`/`.`:
 
-- A pitch is scientific notation — letter, optional accidental (`#`/`s` sharp,
+- A pitch is scientific notation: letter, optional accidental (`#`/`s` sharp,
   `b` flat), octave integer. **Middle C = `c4` = MIDI 60.** Case-insensitive.
-- A chord joins notes with `+`: `c3+eb3+g3` (up to 6 — the note-track slot limit).
+- A chord joins notes with `+`: `c3+eb3+g3` (up to 6, the note-track slot limit).
 - So a bassline is `"c2 ~ g2 ~ eb2 ~ ~ ~"`, a chord stab `"c3+eb3+g3 ~ ~ ~"`,
   an arpeggio `"c3 eb3 g3 c4"`. `c3*4` repeats. A plain `x`/`X` hit stays
   un-pitched and takes the voice's default note from the `voice_map`.
@@ -131,22 +131,22 @@ the track (ch1/2/3/4 → synth1/synth2/midi1/midi2, ch10 → drum pads). The Cir
 `midi2`) for deliberate placement (e.g. `midi1` → a Hydrasynth, `midi2` → an
 SPD-SX). Pitch overrides per step; the `voice_map` note is only the default for
 an un-pitched hit. **Key/transpose:** `apply_pattern` accepts `key` (root note
-like `"G"`/`"Eb"`/`"F#"` — mode suffix ignored, the recipe carries its mode) or
-`transpose` (raw semitones; takes precedence). It shifts `Step.notes` only —
+like `"G"`/`"Eb"`/`"F#"`, mode suffix ignored, the recipe carries its mode) or
+`transpose` (raw semitones; takes precedence). It shifts `Step.notes` only;
 drum triggers and un-pitched hits keep their `voice_map` note, so a transposed
 pattern never re-routes a drum pad. An out-of-range result (past MIDI 0..127)
-errors rather than silently clamping. A structured `melody:{...}` arg was considered and deferred —
+errors rather than silently clamping. A structured `melody:{...}` arg was considered and deferred:
 note-token strings are easier for an agent to emit from natural language; revisit
 if dictation-style input proves awkward.
 
-## Scales — the device re-quantizes notes (don't get caught by this)
+## Scales: the device re-quantizes notes (don't get caught by this)
 
 The Circuit constrains every note a synth/MIDI track plays to the **project Scale**
 (a Scale type + Root, saved in the `.ncs` tail: root at `0x26D0C`, type at
 `0x26D0D`; 16 types, `0 Natural Minor … 15 Chromatic`). It **re-quantizes stored
 notes to that scale on playback** (user guide v3 p.30). Since our note tokens are
-**absolute pitches**, a non-Chromatic scale silently shifts out-of-scale notes —
-hardware-confirmed 2026-06-19: an authored C-maj7 arpeggio `C-E-G-B` in the
+**absolute pitches**, a non-Chromatic scale silently shifts out-of-scale notes.
+Hardware-confirmed 2026-06-19: an authored C-maj7 arpeggio `C-E-G-B` in the
 device-default **C Natural Minor** played back as `C-Eb-G-Bb` (a Cm7); switching
 the project to **Chromatic** restored `C-E-G-B` exactly.
 
@@ -162,11 +162,11 @@ So the codec is scale-aware (`ncs/scale.ts`: `getProjectScale` / `setProjectScal
 
 When a non-Chromatic `scale` is set, the codec compares the authored pitch-classes
 against that scale (`notesOutsideScale`, using a per-scale interval table) and the
-result string **warns how many notes the device will shift** if any fall outside it
-— closing, on the opt-in path, the same silent-requantization hole the feature
+result string **warns how many notes the device will shift** if any fall outside it,
+closing, on the opt-in path, the same silent-requantization hole the feature
 exists to prevent. It's an advisory, not a gate (author in-key, or use Chromatic
 to keep exact pitches). The result string also reports the prior→set scale and that
-the upload **overwrote** the slot (advisory, not gated — same as the guitar save).
+the upload **overwrote** the slot (advisory, not gated, same as the guitar save).
 
 ## Effects: reverb / delay sends (answers "how do I add reverb to drums?")
 
@@ -184,7 +184,7 @@ So "give the drums some reverb" = raise the drum track's reverb-send byte (e.g.
 Hello Tracks ships `D4 reverb_send = 15`). This is fully authorable from the
 codec and is a natural next capability (a `setReverbSend`-style helper +
 exposure through a tool). Mixer levels/pans are at `+800` / `+804` (S1, S2, M1,
-M2) — that's how the synth/MIDI track volumes are set without the physical
+M2): that's how the synth/MIDI track volumes are set without the physical
 mixer; the maintainer's design rule is to keep mixers UP and author empty note
 steps rather than muting (note tracks are note-gated → silent with no notes).
 
@@ -198,7 +198,7 @@ Two independent paths, don't conflate them:
    way to have the agent recall Hydra patches.
 2. **From the Circuit Tracks itself:** the Circuit can transmit Program Change on
    its MIDI tracks, but it is a device setting / per-pattern field, not on by
-   default — which is why pressing Preset + the top buttons did **not** change the
+   default, which is why pressing Preset + the top buttons did **not** change the
    Hydra. NEXT-SESSION RESEARCH: confirm whether the Circuit MIDI track stores a
    per-pattern Program Change/Bank in the `.ncs` (so we can author "this pattern
    selects Hydra patch N"), and document the device-side Tx-PC enable. The MIT
@@ -210,14 +210,14 @@ The MIDI-track **Tx channel appears to be a global device setting, not stored in
 the `.ncs`** (the thorough MIT parser has no channel field; a header diff between
 two projects shows only a project-counter byte at `0x0C`, not a per-track
 channel). So: set the external instrument's Rx channel to match the Circuit's
-MIDI-1 / MIDI-2 Tx channel once on the device (or use Omni for a first test —
+MIDI-1 / MIDI-2 Tx channel once on the device (or use Omni for a first test;
 that already worked for the Hydra). NOT something to pin per-project unless a
 controlled diff (change the channel on the device, re-export, diff) proves it
 lives in the file after all. That controlled diff is the way to settle it.
 
 ## Open work (priority order for the musical-sequencing direction)
 
-> **NEXT SESSION STARTS HERE — build the effects codec (item 4), then drum tabs
+> **NEXT SESSION STARTS HERE: build the effects codec (item 4), then drum tabs
 > (the §"Standout feature idea" above).** That order is the maintainer's choice.
 > Item 4 below has the full, evidence-validated plan; nothing needs re-deriving.
 > The authoring substrate is complete + hardware-confirmed: drums, all four note
@@ -235,7 +235,7 @@ lives in the file after all. That controlled diff is the way to settle it.
    have, not blocking): a chord-into-`.ncs` load-and-play (the live chord path is
    confirmed; the stored-chord slotMask is byte-exact-validated) and a
    `midi1`/`midi2` → external-gear upload.
-2. **A curated MUSICAL recipe library** — the headline. *Started* this session:
+2. **A curated MUSICAL recipe library**, the headline. *Started* this session:
    `minor_triad`, `major_triad`, `octave_bass`, `minor_arp_up`, `lead_hook`
    (all in C). Keep growing `patterns/library.ts` into named, genuinely good
    building blocks: 7th/sus chords, more bass shapes, lead-melody motifs,
@@ -251,7 +251,7 @@ lives in the file after all. That controlled diff is the way to settle it.
    the product value is.
 3. **MIDI 2 → SPD-SX** test (prove the second MIDI track drives the second
    instrument; mirrors the confirmed Hydra path).
-4. **Effects authoring — THE ACTIVE NEXT ITEM (maintainer-chosen, before drum tabs).**
+4. **Effects authoring: THE ACTIVE NEXT ITEM (maintainer-chosen, before drum tabs).**
    Author per-track reverb/delay **sends** into the stored `.ncs` so an agent can
    "give the drums some reverb." Offsets are **evidence-validated** (the MIT
    `ncs_parser.py` decoder matches the handoff byte-for-byte; same strong-evidence
@@ -267,14 +267,14 @@ lives in the file after all. That controlled diff is the way to settle it.
    get/set for sends + params + bypass + mixer (sends 0-127; pans bipolar center
    64), golden-tested against these offsets. **Surface:** an optional `fx` overlay
    on the `apply_pattern mode:ncs_upload` path (consistent with how `scale` was
-   added — that path is already Circuit-specific via `ncs_template`/`ncs_slot`/
+   added; that path is already Circuit-specific via `ncs_template`/`ncs_slot`/
    `scale`). First increment = per-track **sends** (the headline knob); reverb/
    delay *params* + presets a fast follow-on. Then verify on hardware (e.g. drum
    reverb-send up, load, listen). After effects → **drum tabs** (the §Standout
    feature idea: ASCII drum-tab parser → drum grid → existing `ncs_upload`).
-5. **Hydra preset recall** — `send_program_change` path now; Circuit-side PC
+5. **Hydra preset recall**: `send_program_change` path now; Circuit-side PC
    research later.
-6. **Confirm the note-slot gate/velocity behavior on hardware** — the first demo
+6. **Confirm the note-slot gate/velocity behavior on hardware**: the first demo
    used a pre-fix codec (gate/velocity byte order was swapped, since corrected
    and byte-exact-validated); a quick re-test that authored gate/velocity behave
    as expected would promote it from "byte-correct" to "audibly confirmed."

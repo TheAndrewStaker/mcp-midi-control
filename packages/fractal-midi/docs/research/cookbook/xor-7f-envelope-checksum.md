@@ -59,20 +59,20 @@ Verification corpus:
 
 - **DO NOT** forget to mask with `& 0x7F`. An unmasked XOR can produce
   bytes ≥ 0x80, which break SysEx framing.
-- **DO NOT** confuse with [[xor-fold-hash]] — that's the II preset
+- **DO NOT** confuse with [[xor-fold-hash]]: that's the II preset
   binary FOOTER hash (16-bit XOR-fold of decoded ushorts), a separate
   primitive that lives INSIDE the preset push envelope. The
   per-envelope checksum here uses raw wire bytes; the footer hash uses
   decoded native ushorts.
 - The checksum is over the WIRE bytes (raw SysEx form). Do NOT compute
-  it over decoded payload values — payload decode happens AFTER checksum
+  it over decoded payload values; payload decode happens AFTER checksum
   validation.
 
 ## Where it does NOT apply
 
 - Hydrasynth (different vendor; ASM uses its own envelope + checksum
   scheme entirely).
-- The II preset binary body's XOR-fold hash is NOT this primitive —
+- The II preset binary body's XOR-fold hash is NOT this primitive;
   see [[xor-fold-hash]].
 
 ## Verification path
@@ -91,7 +91,7 @@ Three fixtures = three devices = full generalization-axis coverage.
 - Codified in `docs/devices/am4/SYSEX-MAP.md` from initial AM4 RE work.
 - : II verification at 8448/8448 messages (`docs/devices/axe-fx-ii/SYSEX-MAP.md` lines 117-128).
 - III: same algorithm cited at `docs/devices/axe-fx-iii/SYSEX-MAP.md` line 29; `src/shared/checksum.ts` is the shared implementation.
-- 2026-05-22 (cookbook audit): inverted "Where does NOT apply" — earlier
+- 2026-05-22 (cookbook audit): inverted "Where does NOT apply". Earlier
   draft mistakenly said II/III lack this checksum; fixed to reflect
   that all three Fractal devices share the same envelope checksum.
   Status promoted from `matched-singleton` → `matched` (3-device axis

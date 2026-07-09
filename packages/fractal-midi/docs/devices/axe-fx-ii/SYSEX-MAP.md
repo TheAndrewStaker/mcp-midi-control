@@ -145,7 +145,7 @@ verification status against the founder's XL+ where applicable:
 |----|---------------|-----------|---------------|
 | 0x01 | GET_BLOCK_PARAMETERS_LIST | both | 🟡 wiki |
 | 0x02 | GET / SET_BLOCK_PARAMETER_VALUE | both | 🟢 hardware-verified Q8.02, GET is channel-aware (respects fn=0x11). SET is also channel-aware for writes (confirmed 2026-05-26: compressor X/Y independently addressable). SET uses 16-bit wire integer via 3x7-bit septets; required for enum/select params where fn=0x2e no-ops. Bypass (paramId=255) is block-global (same on X/Y). |
-| **0x03** | **SYSEX_PATCH_DUMP** (request) | req | **🟢 hardware-verified Q8.02 (2026-06-10), TWO addressing forms.** (1) `[preset_hi, preset_lo]` MSB-first: dumps that slot's STORED flash contents as the 66-frame 0x77/0x78/0x79 chain, **and RELOADS the stored preset into the edit buffer as a side effect** (live probe: an fn 0x09 buffer rename was lost the moment the request was answered) — destructive to unsaved edits. (2) **`0x7F 0x7F` sentinel (AM4-style): dumps the EDIT BUFFER** — confirmed three ways in the same probe session: two sentinel dumps across a live buffer rename differ (tracks the buffer), the rename SURVIVES the request (no reload side effect), and pushing the 66-frame response back to the device restored the dumped buffer state (round-trip verified by name re-read). All three dump responses carry 0x77 header payload `[0x7f, 0x00, 0x00, 0x20]` regardless of addressing. Captures: `samples/captured/hw132/`. Builders: `buildPatchDumpRequest` / `buildEditBufferDumpRequest` in `src/gen2/axe-fx-ii/setParam.ts` (goldens in the consumer repo's `verify-axe-fx-ii-encoding.ts`). |
+| **0x03** | **SYSEX_PATCH_DUMP** (request) | req | **🟢 hardware-verified Q8.02 (2026-06-10), TWO addressing forms.** (1) `[preset_hi, preset_lo]` MSB-first: dumps that slot's STORED flash contents as the 66-frame 0x77/0x78/0x79 chain, **and RELOADS the stored preset into the edit buffer as a side effect** (live probe: an fn 0x09 buffer rename was lost the moment the request was answered), destructive to unsaved edits. (2) **`0x7F 0x7F` sentinel (AM4-style): dumps the EDIT BUFFER**, confirmed three ways in the same probe session: two sentinel dumps across a live buffer rename differ (tracks the buffer), the rename SURVIVES the request (no reload side effect), and pushing the 66-frame response back to the device restored the dumped buffer state (round-trip verified by name re-read). All three dump responses carry 0x77 header payload `[0x7f, 0x00, 0x00, 0x20]` regardless of addressing. Captures: `samples/captured/hw132/`. Builders: `buildPatchDumpRequest` / `buildEditBufferDumpRequest` in `src/gen2/axe-fx-ii/setParam.ts` (goldens in the consumer repo's `verify-axe-fx-ii-encoding.ts`). |
 | **0x06** | **SET_CELL_ROUTING** (undocumented) | req | **🟢 hardware-decoded on Q8.02 XL+ (2026-05-13)**: 3-byte payload `[src_cell, dst_cell, connect]` adds/removes a cable between adjacent-column cells. Byte-exact golden in `scripts/verify-axe-fx-ii-encoding.ts`. See § 5c. |
 | **0x07** | **GET / SET_MODIFIER_VALUE** | both | **🟢 modifier READ decoded (Ares 2.00 capture).** The field-indexed modifier read channel: device reply = `F0 00 01 74 07 07 [effId:2][slot:2][field:2][value16:3][ASCII label] 00 [cs] F7`. field 0x00=source, 0x01/0x02=min/max, 0x03..0x06=start/mid/end/slope, 0x07=damping, 0x08=target effectId, 0x09=target paramId, 0x0a..0x0e=toggles+scale/offset. Source enum (partial): 0 NONE, 1 LFO 1A, 4 LFO 2B, 5 ADSR 1, 26 SCENE 1, 27 SCENE 2. THIS is how modifiers are read, not fn 0x18. See cookbook [[ii-fn07-modifier-read]] + § 5i. |
 | 0x08 | GET_FIRMWARE_VERSION | both | 🟡 wiki |
@@ -212,7 +212,7 @@ F0 00 01 74 [model] 64 1D [result_code] [cs] F7
 ```
 
 **Byte ordering is MSB-first** for the preset number, `[preset_high,
-preset_low]` — which differs from the wiki's documented LSB-first
+preset_low]`, which differs from the wiki's documented LSB-first
 ordering for related functions (0x14 GET_PRESET_NUMBER, 0x3C
 SET_PRESET_NUMBER). The wiki has no 0x1D entry; the MSB-first ordering
 comes from a public Rust RE crate and is empirically confirmed against
@@ -807,7 +807,7 @@ field-0x00 sweep or fn 0x28 on MOD_CTRLID. Cookbook: [[ii-fn07-modifier-read]].
 ## 6b. 0x14 GET_PRESET_NUMBER byte-ordering correction 🟢
 
 **Wiki says:** the 0x14 response payload is `[bits 6-0, bits 13-7]`, LSB-first. **Q8.02 XL+ actually emits MSB-first**: `[bits 13-7,
-bits 6-0]` — at least for the response side.
+bits 6-0]`, at least for the response side.
 
 **Evidence:** session-61 passive capture, captured immediately after
 AxeEdit saved the working buffer to slot 700:
@@ -884,7 +884,7 @@ encodes preset names without this padding, the family format is not
 identical at every level.
 
 (2026-07-02 refinement: the "3-byte triplets" are the general word
-encoding of the whole body — each triplet is one 16-bit native ushort,
+encoding of the whole body: each triplet is one 16-bit native ushort,
 `lo7 | mid7<<7 | (b2 & 0x03)<<14`, byte 2's high 5 bits reserved. The
 name is simply words 2..33 of the de-framed image, one ASCII char per
 word. See § 6b.)
@@ -893,7 +893,7 @@ word. See § 6b.)
 
 **Decoded 2026-07-02.** De-framing the 64 × `0x78` chunk payloads
 (each `[count=64 as 2 septets] + 64 × 3-byte words`) yields a fixed
-4096-word image. Its structure — confirmed on **388/388 dumps** (384
+4096-word image. Its structure, confirmed on **388/388 dumps** (384
 factory presets, Q8.02 XL+ banks A/B/C, + 4 live hardware dumps:
 `samples/captured/bk070-loop-amp-bass-2-baseline.syx`,
 `samples/captured/hw132/{sentinel-eb-alpha,sentinel-eb-bravo,stored-slot-7}.syx`):
@@ -902,7 +902,7 @@ factory presets, Q8.02 XL+ banks A/B/C, + 4 live hardware dumps:
 |---|---|
 | 0 | format tag **2049** (388/388) |
 | 2..33 | preset name, 1 ASCII char per word, 0-terminated |
-| 36..129 | record table: stride 8, max 12 entries, `[block_id, flag, 0×6]`. **GRID / signal-chain order metadata** — ids ≥ 200 are unplaced/shunt placeholders never serialized. NOT a placed-block enumerator, NOT layout order (Test Crunch table order Comp,Drive,Amp,Cab,Delay,Reverb vs serialized Amp@132..Reverb@678) |
+| 36..129 | record table: stride 8, max 12 entries, `[block_id, flag, 0×6]`. **GRID / signal-chain order metadata**: ids ≥ 200 are unplaced/shunt placeholders never serialized. NOT a placed-block enumerator, NOT layout order (Test Crunch table order Comp,Drive,Amp,Cab,Delay,Reverb vs serialized Amp@132..Reverb@678) |
 | 130.. | **TLV chain**: repeated `[wire_id, payload_len, payload...]`; `wire_id == 0` terminates |
 | 2048.. | tone-match bulk region, ONLY when block 170 is in the chain (4/388); sits after the chain terminator; preserve verbatim |
 
@@ -910,7 +910,7 @@ TLV chain contents, in order (388/388):
 
 1. **Modifier records**: `wire_id` = modifier slot 1..20, always
    `payload_len` 15, always before the first block TLV. 15-word
-   payload layout undecoded — read-only.
+   payload layout undecoded, read-only.
 2. **Effect blocks**, ALPHABETICAL by the AxeEdit canonical DISPLAY
    name, spaces/punctuation ignored ("Tremolo/Panner" sorts under T;
    "Multiband Compressor" precedes "Multi Delay"). Multi-instance
@@ -942,7 +942,7 @@ Reverb 45).
 **Payload lengths are per-dump self-described and drift across
 firmware**: the Q8.02 factory bank files carry Amp `payload_len` 234;
 live Q8.02 hardware dumps carry 236. Never trust a static width
-table — walk the chain of the dump in hand.
+table; walk the chain of the dump in hand.
 
 Decoder: `packages/fractal-gen2/src/presetImageTlv.ts`
 (`deframePresetImage` / `parsePresetImage` / `getParamWord`). Golden +

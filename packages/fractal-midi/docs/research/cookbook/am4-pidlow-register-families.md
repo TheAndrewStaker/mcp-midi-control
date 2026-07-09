@@ -112,14 +112,14 @@ Within the PATCH family (`pidLow=0x00CE`), `pidHigh` values fall into
 two safety-relevant sub-classes. Treat them differently when surfacing
 params to the agent layer:
 
-- **Storage sub-registers** — writes change preset state with no
+- **Storage sub-registers**: writes change preset state with no
   side-effect on outbound MIDI. Examples: `block-slot register for slot N`
   (`pidHigh=0x0010 + slot`), preset.level / preset.balance / scene_{1..4}_level,
   and the 16 `SCENE_N_MIDI_MSG_M` config slots (variant-resolver
   cache_ids 64..79). Safe to expose as agent-writable wire params.
-- **Trigger sub-registers** — writes have a side-effect *now* (the
+- **Trigger sub-registers**: writes have a side-effect *now* (the
   device emits something on its MIDI OUT port immediately). Confirmed
-  trigger: **`pidHigh=0x0070` = `SCENE_MIDI_EXEC`** — writing this
+  trigger: **`pidHigh=0x0070` = `SCENE_MIDI_EXEC`**, writing this
   fires the configured Scene-MIDI message(s) regardless of scene
   state. **Do NOT register as an agent-writable param.** Decoded
   from `samples/captured/session-87-scene-midi-test-buttons.pcapng`

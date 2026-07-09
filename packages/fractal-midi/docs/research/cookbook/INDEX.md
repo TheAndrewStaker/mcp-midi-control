@@ -1,4 +1,4 @@
-# Encoding Cookbook — Index
+# Encoding Cookbook: Index
 
 > Read this BEFORE researching a new wire shape. The shape may already be a
 > known primitive. The cookbook turns decode work from infinite-capture into
@@ -13,30 +13,30 @@ status transition in the Refinement history footer).
 1. Looking up a primitive: grep by name or read the table below.
 2. Decoding a new wire shape: walk the table. Is your shape an instance of
    any registered primitive? If yes, mechanical decode. If no, you may be
-   discovering a new primitive — register it the same session.
+   discovering a new primitive; register it the same session.
 3. Refining a primitive (new evidence, new fixture, status promotion):
    update the entry in place. Don't create a duplicate file. See
    `../INDEX.md` § "Refinement workflow" for the canonical procedure.
 
 ## Status legend
 
-- `matched` — generalized + golden passes + ≥ 2 fixtures from **distinct
+- `matched`: generalized + golden passes + ≥ 2 fixtures from **distinct
   axis points**. An axis point is a device family (AM4 vs II vs III vs
   Hydra), a firmware major revision (Q8 vs Q9), or a capture context
   (live-wire vs forum capture vs Ghidra dump). Two entries of the same
   kind (e.g. two firmware revisions of the same device) only qualify
   when the body explicitly identifies firmware-revision as the
   generalization axis being claimed. Build-gate-protected.
-- `matched-singleton` — generalized as far as it goes (no second axis
+- `matched-singleton`: generalized as far as it goes (no second axis
   exists). 1 fixture is sufficient. Applicability section must explain
   why no second axis applies.
-- `partial-N1` — shipped with N=1 caveat. Counted separately in
+- `partial-N1`: shipped with N=1 caveat. Counted separately in
   `decode-progress`. Path to `matched` is named in the entry's body.
-- `wip` — in progress; not build-gating.
-- `scratch` — in `_scratch/`, expect-fail golden, hypothesis pending.
-- `regression` — build break by design; must be triaged.
-- `non-matching` — in `_negative/`, hypothesis rejected. Every `_negative/`
-  entry additionally carries required frontmatter `retest_when:` — either a
+- `wip`: in progress; not build-gating.
+- `scratch`: in `_scratch/`, expect-fail golden, hypothesis pending.
+- `regression`: build break by design; must be triaged.
+- `non-matching`: in `_negative/`, hypothesis rejected. Every `_negative/`
+  entry additionally carries required frontmatter `retest_when:`, either a
   list of re-test triggers (primitive slugs and/or free-text conditions) or
   the literal `never (<reason>)`; `cookbook-verify` fails on a missing field
   and warns (fails under `--strict`) when a named trigger primitive now
@@ -56,8 +56,8 @@ status transition in the Refinement history footer).
 | [param-descriptor-16byte](param-descriptor-16byte.md) | struct-layout | matched | II / III / AM4 | 16-byte struct: `paramId at +0, name pointer at +8` |
 | [per-effect-paramtable-dispatcher](per-effect-paramtable-dispatcher.md) | dispatch-context | matched | AM4 / III / FM3 / FM9 / VP4 | Switch dispatcher selecting per-effect ParamDescriptor tables; `(effectType, paramId)` addressing. Direct PE pattern-scan recovers rows without Ghidra |
 | [iii-paramid-pseudo-sentinel-ranges](iii-paramid-pseudo-sentinel-ranges.md) | struct-layout | matched-singleton | III | paramIds in `0xFF00..0xFFFE` are non-terminator pseudo-entries (UI separators); only `0xFFFFFFFF` is the true terminator |
-| [ii-preset-image-tlv-chain](ii-preset-image-tlv-chain.md) | struct-layout | matched | II | De-framed 4096-word preset image = self-describing TLV chain from word 130: modifiers → blocks alphabetical by squashed display name → system tail; paramBase = tlvWord+2, Y = +len/2; widths drift across firmware — never trust a static table |
-| [block-record-stride-8](block-record-stride-8.md) | struct-layout | matched-singleton | II | Record table words 36..129, stride 8: GRID/signal-chain order, 12-entry cap, ids ≥200 = unplaced placeholders. NOT a block enumerator / NOT layout order — walk the TLV chain instead |
+| [ii-preset-image-tlv-chain](ii-preset-image-tlv-chain.md) | struct-layout | matched | II | De-framed 4096-word preset image = self-describing TLV chain from word 130: modifiers → blocks alphabetical by squashed display name → system tail; paramBase = tlvWord+2, Y = +len/2; widths drift across firmware; never trust a static table |
+| [block-record-stride-8](block-record-stride-8.md) | struct-layout | matched-singleton | II | Record table words 36..129, stride 8: GRID/signal-chain order, 12-entry cap, ids ≥200 = unplaced placeholders. NOT a block enumerator / NOT layout order; walk the TLV chain instead |
 | [preset-name-ascii-triplets](preset-name-ascii-triplets.md) | struct-layout | matched-singleton | II | 32 × 3-byte ASCII triplets `[ch, 0x00, 0x00]` at CHUNK00:008-103 |
 | [wire-id-pairs-per-placed-block](wire-id-pairs-per-placed-block.md) | struct-layout | matched-singleton | II | Each block-type name reserves K ∈ {1,2,4} consecutive wire-ids |
 | [alphabetical-name-cascade-block-ordering](alphabetical-name-cascade-block-ordering.md) | struct-layout | partial-N1 | II | `AEImageDepot::FUN_00595260` cascade; order now corpus-pinned + prediction obsoleted by ii-preset-image-tlv-chain (Batch D "anomaly" = Tremolo/Panner display name) |
@@ -85,17 +85,17 @@ status transition in the Refinement history footer).
 | [gen3-fn03-request-preset-dump](gen3-fn03-request-preset-dump.md) | envelope | partial-N1 | FM9 | fn=0x03 [preset#:14b BIG-ENDIAN] → 0x77/0x78×N/0x79 dump; reply parses via presetDump.ts; read/backup only |
 | [am4-gen3-preset-container](am4-gen3-preset-container.md) | envelope | matched | AM4 (fw 1.01 + fw 2.00) | AM4 dump body = the gen-3 preset container verbatim at N=4 chunks: `[00 08]` discriminator + 3-to-16 unpack → 8,192 B raw_patch (0xAA55 magic, CRC-16/CCITT @0x04, name @0x08, dynamic-Huffman body @0x4C); 0x79 footer = word-XOR; oracle-valid on 117 dumps; decoded-body map partial (scenes @0x0004+n×0x50, volatile u16 @0x140E) |
 | [gen3-enum-label-septet-stream](gen3-enum-label-septet-stream.md) | bit-level | partial-N1 | FM9 | enum value NAMES cross the wire septet-packed; 8→7 unpack starting at byte 5; carriers sub=0x2e/0x1a/0x09/0x2a/0x01 |
-| [gen3-fn01-set-float32-ordinal](gen3-fn01-set-float32-ordinal.md) | protocol-exchange | matched-singleton | FM9, FM3 | gen-3 SET value = 5-septet LE float32 @ pos 12; sub = value-kind: 09 00 = float32(NATURAL display value — ordinal for discretes, e.g. 45.0 Hz for continuous), 52 00 = float32(normalized 0..1; quantizes on discretes). Server-issued SET FM3-hw-confirmed. Retired the pos-15 raw-id misread. |
+| [gen3-fn01-set-float32-ordinal](gen3-fn01-set-float32-ordinal.md) | protocol-exchange | matched-singleton | FM9, FM3 | gen-3 SET value = 5-septet LE float32 @ pos 12; sub = value-kind: 09 00 = float32(NATURAL display value, ordinal for discretes, e.g. 45.0 Hz for continuous), 52 00 = float32(normalized 0..1; quantizes on discretes). Server-issued SET FM3-hw-confirmed. Retired the pos-15 raw-id misread. |
 | [gen3-fn01-grid-set-position-insert](gen3-fn01-grid-set-position-insert.md) | envelope-shape | matched | III / FM9 | block insert: fn=0x01 sub=0x32 = `[effectId:14b] .. [gridPos:14b]` (sub=0x30 cell-select companion); gridPos=col*6+row (6-row grid); byte9=0x08 = shunt. No-hardware loopMIDI, byte-identical across model 0x10/0x12 |
 | [gen3-fn01-grid-routing](gen3-fn01-grid-routing.md) | envelope-shape | matched | III / FM9 / FM3 | routing cable: fn=0x01 sub=0x35; 26-byte frame; two formula variants: 6-row (III/FM9) uses scaled colTerm + destSign; 4-row (FM3) uses colTerm=srcCol, no destSign, b23=(destRow-1)×32. Row-1 even-col works on FM3, refused on 6-row (not yet decoded). FM9-Edit 26 cables + FM3-Edit 10 cables over loopMIDI |
 | [gen3-fn01-store-preset](gen3-fn01-store-preset.md) | envelope-shape | matched | III / FM9 | store/save-to-location: fn=0x01 sub=0x26 = `[presetNum:14b LSB-first @ byte12-13]`. Corrects the fn=0x1D save guess. No-hardware loopMIDI capture, model 0x10 + 0x12 |
 | [gen3-sub2e-live-meters](gen3-sub2e-live-meters.md) | struct-layout | matched | FM9 + FM3 | live telemetry in the sub=0x2E grid frame (F0-included offsets, raw 7-bit, not septet): `cpu%=32+f[37]*0.5`, `outL=f[35]/127`, `outR=f[36]/127`. FM9 behavioral oracle (10 same-preset reads: only f[35]/f[36] vary) + FM3 capture axis (job3 2026-06-12: same signature on block-targeted frames, f[37]=69→66.5%). Input f[588] ruled out (FM3-frame-length-specific; inside FM9 grid region, constant). Surfaced free on get_preset (rides the grid read) |
-| [gen3-sub2e-grid-region-tail-anchor](gen3-sub2e-grid-region-tail-anchor.md) | struct-layout | matched | FM9 + FM3 | the sub=0x2E routing-grid region is TAIL-ANCHORED (last `ceil((46+cols·rows·32)/7)` bytes before `[cksum, F7]`), NOT fixed at byte 361; per-device geometry 6×14 (III/FM9, 391 B region) vs 4×12 (FM3, 226 B). FM3 answers 590 AND 606 B frames (→ offsets 361/377), all decoding to the session's own fn=0x13 oracle grid. Block-targeted replies carry the SAME layout — the earlier "no grid there" verdict was vacuous on an empty preset |
+| [gen3-sub2e-grid-region-tail-anchor](gen3-sub2e-grid-region-tail-anchor.md) | struct-layout | matched | FM9 + FM3 | the sub=0x2E routing-grid region is TAIL-ANCHORED (last `ceil((46+cols·rows·32)/7)` bytes before `[cksum, F7]`), NOT fixed at byte 361; per-device geometry 6×14 (III/FM9, 391 B region) vs 4×12 (FM3, 226 B). FM3 answers 590 AND 606 B frames (→ offsets 361/377), all decoding to the session's own fn=0x13 oracle grid. Block-targeted replies carry the SAME layout; the earlier "no grid there" verdict was vacuous on an empty preset |
 | [gen3-editor-sync-read-surface](gen3-editor-sync-read-surface.md) | envelope-shape | matched-singleton | FM9 | editor connect/sync reads: every fn=0x01 response echoes query bytes 5..11; per-sub fixed response lengths; sub=0x7b placed-flag (bytes 12-13 nonzero == placed); 0x74 head is 12 bytes (no flag). The read surface a codec-backed device simulator answers to render the grid |
 | [gen3-sub01-block-definition-response](gen3-sub01-block-definition-response.md) | envelope-shape | matched-singleton | FM9 | sub=0x01 query's response = 113-byte frame, tailCount14=80 DECODED bytes shipped as 92 wire septets ([[iii-byte-stream-septet-pack-8to7]]); 80-byte LE record {eid, familyTag(=cache sectionTag), instance, channelCount, paramCount(=fn=0x1F wire stride, ordinary records only; CABINET 106 vs cache 110), name[32], abbrev[12], flags}; all-zero record for empty eids; value32 slot is NOT the param value; host query bytes still uncaptured |
-| [gen3-fn01-sub1f-current-type-name](gen3-fn01-sub1f-current-type-name.md) | struct-layout | matched | FM9 / FM3 | read a block's CURRENT type/model NAME: fn=0x01 sub=0x1F on `(effectId, typeParamId)` → reply carries the 8→7-packed NUL-terminated model name (LEN at frame idx 19 counts the NUL); authoritative for type selectors — the positional fn=0x1F BULK read mis-addresses them; type paramId is device-specific, resolve from the catalog |
+| [gen3-fn01-sub1f-current-type-name](gen3-fn01-sub1f-current-type-name.md) | struct-layout | matched | FM9 / FM3 | read a block's CURRENT type/model NAME: fn=0x01 sub=0x1F on `(effectId, typeParamId)` → reply carries the 8→7-packed NUL-terminated model name (LEN at frame idx 19 counts the NUL); authoritative for type selectors; the positional fn=0x1F BULK read mis-addresses them; type paramId is device-specific, resolve from the catalog |
 | [vp4-fn01-swapped-septet-float32](vp4-fn01-swapped-septet-float32.md) | value-encoding | matched | VP4 | VP4 fn=0x01 SET value = 5-septet LE float32 with the top two septets SWAPPED on the wire (`[s0,s1,s2,s4,s3]`); continuous params carry a normalized [0,1] float, commands (SAVE) a small raw int; non-swapped decode yields ~1e-36 garbage |
-| [vp4-eid206-structure-blob](vp4-eid206-structure-blob.md) | struct-layout | matched | VP4 | eid206 pid0 tc=0x1f GET → 220 packed bytes ([[iii-byte-stream-septet-pack-8to7]] chunked unpack → 192 raw): preset name @16, scene names @48 (4×32), CURRENT scene u8 @8, CHAIN 4×u32 LE effectId @176 (0=empty slot); telemetry float @12 varies per poll — never fingerprint raw blobs; raw[4] toggle is NOT a dirty flag |
+| [vp4-eid206-structure-blob](vp4-eid206-structure-blob.md) | struct-layout | matched | VP4 | eid206 pid0 tc=0x1f GET → 220 packed bytes ([[iii-byte-stream-septet-pack-8to7]] chunked unpack → 192 raw): preset name @16, scene names @48 (4×32), CURRENT scene u8 @8, CHAIN 4×u32 LE effectId @176 (0=empty slot); telemetry float @12 varies per poll; never fingerprint raw blobs; raw[4] toggle is NOT a dirty flag |
 | [ii-fn06-set-cell-routing](ii-fn06-set-cell-routing.md) | fn-byte-mapping | matched-singleton | II | fn=0x06 grid-cell edge connect/disconnect; 3-byte payload |
 | [ii-fn07-modifier-read](ii-fn07-modifier-read.md) | envelope-shape | matched-singleton | II | fn=0x07 field-indexed modifier read; `[effId][slot][field][value16][ASCII label]`; fn 0x18 is request-only |
 | [hydra-sysex-envelope-base64-crc32](hydra-sysex-envelope-base64-crc32.md) | checksum | matched-singleton | Hydra | ASM envelope `F0 00 20 2B 00 6F <base64-payload> F7`; 4-byte CRC32-derived checksum |
@@ -117,7 +117,7 @@ already be ruled out."
 ## Scratch (in-flight hypotheses)
 
 See `_scratch/`. Goldens are `expect-fail` until promoted. A scratch entry
-whose golden unexpectedly passes is a build break — promote or document.
+whose golden unexpectedly passes is a build break; promote or document.
 
 ## Adding to this index
 

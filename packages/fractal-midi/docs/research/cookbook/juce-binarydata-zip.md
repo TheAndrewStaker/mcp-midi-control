@@ -24,7 +24,7 @@ consumed_in:
 
 JUCE-based editor binaries (AM4-Edit, AxeEdit, AxeEdit III) embed their
 resource files as a ZIP archive inside the `BinaryData` static. Label
-extraction takes 5 minutes via standard ZIP tooling — no debugger
+extraction takes 5 minutes via standard ZIP tooling, no debugger
 attachment, no runtime instrumentation.
 
 ## Formal definition
@@ -60,7 +60,7 @@ VP4 additionally ships `__block_layout_expert.xml`; VP4 has NO
 - AM4-Edit binary: 1,299 labels recovered.
 - AxeEdit III binary: 10,250 labels recovered. The `__block_layout.xml`
   contains 2,017 III parameterName entries (90.1% catalog coverage)
-  with displayLabel + controlType — zero hardware.
+  with displayLabel + controlType, zero hardware.
 - AxeEdit II binary: **transfer candidate** per the cross-device
   protocol. The synthesis pass 2026-05-22 flagged this as untried.
   Expected yield: ~2,500 II parameterName entries with display metadata.
@@ -74,7 +74,7 @@ investigation that the  baseline took before pivoting).
 ## Misapplication failure modes
 
 - **DO NOT** assume enum-value labels (amp model names, etc.) are in
-  the XML. They aren't — XML carries parameter metadata, not enum
+  the XML. They aren't; XML carries parameter metadata, not enum
   string tables. Use [[fn28-enum-dump]] for II enum values; III + AM4
   enum value labels are transfer candidates.
 - **DO NOT** assume the XML carries a `paramId` / wire id. It does not:
@@ -89,11 +89,11 @@ investigation that the  baseline took before pivoting).
 
 ## Where it does NOT apply
 
-- Non-JUCE editors (Hydrasynth Editor — uses a different framework).
+- Non-JUCE editors (Hydrasynth Editor, uses a different framework).
 
 ## Verification path
 
-No inline fixture ships (golden is STUB — the editor binaries are
+No inline fixture ships (golden is STUB: the editor binaries are
 local-only). The extraction lane (`scripts/_research/extract-xml-from-dump.ts`
 and siblings) de-facto asserts:
 - ZIP signatures locatable at expected offsets
@@ -110,7 +110,7 @@ and siblings) de-facto asserts:
   Refinement history documents the dead-end pivot so future agents
   don't repeat WinDbg.
 - Synthesis pass 2026-05-22: AxeEdit II + Hydrasynth Editor flagged
-  as untried — transfer candidates filed.
+  as untried; transfer candidates filed.
 - 2026-06-02: extended to the gen-3 FM family. FM9-Edit / FM3-Edit /
   VP4-Edit all carve cleanly (block_layout 7629 / 8080 / 2752+ parameterName
   entries). Added the raw-DEFLATE / no-magic-scan refinement and the

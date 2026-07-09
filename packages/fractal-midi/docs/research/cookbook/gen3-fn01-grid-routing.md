@@ -33,9 +33,9 @@ F0 00 01 74 <model> 01 35 00 00 00 00 00 <OP> 00 00 00 00 00 00 02 00 <b21> <b22
 - Checksum (byte 24): XOR of bytes 0..23 then `& 0x7F`.
 - Constant `0x02` at byte 19 is the edge-record marker (observed in all 36 captures).
 
-## Two formula variants — branched by grid row count
+## Two formula variants, branched by grid row count
 
-### 6-row grids (III 0x10, FM9 0x12) — 26 of 26 cables byte-exact
+### 6-row grids (III 0x10, FM9 0x12): 26 of 26 cables byte-exact
 
 ```
 srcGp    = (srcCol − 1) × 6 + (srcRow − 1)
@@ -49,7 +49,7 @@ b23      = ((|destRow−3| + (srcCol even ? 2 : 0)) mod 4) << 5
 Coverage: source rows 2–6 all columns (18/18); row-1 odd srcCol (8/8).
 Gap: row-1 even srcCol (byte22 breaks; encoding not yet captured for 6-row).
 
-### 4-row grids (FM3 0x11) — 10 of 10 cables byte-exact
+### 4-row grids (FM3 0x11): 10 of 10 cables byte-exact
 
 ```
 srcGp = (srcCol − 1) × 4 + (srcRow − 1)

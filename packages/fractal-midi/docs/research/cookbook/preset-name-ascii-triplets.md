@@ -44,9 +44,9 @@ character in the low byte.
 
 ## Misapplication failure modes
 
-- **DO NOT** treat as a packed 96-byte ASCII string — that's a 96-char
+- **DO NOT** treat as a packed 96-byte ASCII string: that's a 96-char
   name (the field is 32 characters max, not 96).
-- **DO NOT** ignore the zero-byte padding — if you write a non-zero
+- **DO NOT** ignore the zero-byte padding: if you write a non-zero
   byte in those positions, the parser will misalign and the next field
   in the binary may be corrupted.
 
@@ -54,7 +54,7 @@ character in the low byte.
 
 - AM4 preset names use a different encoding entirely. See
   `scripts/_research/decode-am4-preset-name.ts` for the AM4 decoder.
-- Axe-Fx III — transfer candidate (`iii-preset-receiver.txt` un-mined).
+- Axe-Fx III: transfer candidate (`iii-preset-receiver.txt` un-mined).
 
 ## Verification path
 

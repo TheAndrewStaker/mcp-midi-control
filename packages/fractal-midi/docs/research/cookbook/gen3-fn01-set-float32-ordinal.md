@@ -21,7 +21,7 @@ XOR-7F checksum (23-byte frame). The two sub-actions are **value-kind
 selectors, not param-kind selectors**:
 
 - sub `09 00`: value = **float32 of the param's NATURAL DISPLAY value**. For a
-  discrete param (type/model selector) the natural value IS the read ordinal —
+  discrete param (type/model selector) the natural value IS the read ordinal:
   `float32(read-ordinal)`, exactly the index the read leg (fn=0x1f / broadcast)
   and the shipped enum rosters decode with, so **set-by-name resolves straight
   off the read roster; there is no separate write-id space.** For a continuous
@@ -40,7 +40,7 @@ SET  F0 00 01 74 [model] 01 [sub] 00 [eff:14b LE] [pid:14b LE] [s0 s1 s2 s3 s4] 
      value u32 = s0 | s1<<7 | s2<<14 | s3<<21 | s4<<28 ; reinterpret as float32
 ```
 
-## RETRACTION — the "raw-id permutation" model was a misread
+## RETRACTION: the "raw-id permutation" model was a misread
 
 A prior version of this entry claimed the OUT SET carried a permuted "raw enum
 id" (reverb 524/529, drive 523) at bytes 15-16 read as a packValue16, distinct
@@ -69,8 +69,8 @@ ordinals 16/17/18/19 all collapse to "524". A community contributor's
   (Recording Studio A). Both checksums valid.
 - FM3 fw 12.00 (community field test, 2026-06-12, server-issued over
   USB-serial; `samples/captured/fm3-community-2026-06-12/`): sub `09 00`
-  float32(45.0) at REVERB_LOWCUT (eff 66, pid 10 — continuous, 20..2000 Hz
-  log10) read back wire 11540 = **45.0 Hz** — the float carries the param's
+  float32(45.0) at REVERB_LOWCUT (eff 66, pid 10; continuous, 20..2000 Hz
+  log10) read back wire 11540 = **45.0 Hz**: the float carries the param's
   NATURAL DISPLAY value on a continuous param (single-point but exact under
   the log10 mapping). Same session: sub `52 00` on the discrete reverb TYPE
   (pid 0) quantized 0.74998 → ordinal 58, bulk-read word = plain 58.
@@ -95,7 +95,7 @@ ordinals 16/17/18/19 all collapse to "524". A community contributor's
   permutation framing retracted (pos-15 packValue16 misread). Renamed from
   `gen3-enum-setecho-rawid-name`. Promoted to `matched-singleton` (FM3 + FM9).
 - 2026-06-12 (community FM3 field test, fw 12.00): sub semantics reframed as
-  **value-kind, not param-kind** — sub `09 00` float32 carries the param's
+  **value-kind, not param-kind**: sub `09 00` float32 carries the param's
   NATURAL DISPLAY value (45.0 → 45.0 Hz at REVERB_LOWCUT, wire 11540 under
   log10 20..2000; single-point), unifying the discrete `float32(ordinal)` case
   (an ordinal IS a discrete param's natural value); sub `52 00` on a discrete

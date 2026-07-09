@@ -6,7 +6,7 @@ verified_on:
   - am4
 firmware_sensitive: false
 golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
-retest_when: never (re-adjudicated 2026-07-02 — the container-decoder trigger already fired; am4-gen3-preset-container explains the churn as dynamic-Huffman table rebuild, flat-byte diffing of the compressed layer stays ruled out, and the decoded-layer diff lane shipped)
+retest_when: never (re-adjudicated 2026-07-02: the container-decoder trigger already fired; am4-gen3-preset-container explains the churn as dynamic-Huffman table rebuild, flat-byte diffing of the compressed layer stays ruled out, and the decoded-layer diff lane shipped)
 relates_to: [ii-preset-binary-flat-byte-diff, am4-fn1f-atomic-read, vendor-envelope-descriptor-table, am4-gen3-preset-container]
 consumed_in: []
 ---
@@ -20,7 +20,7 @@ consumed_in: []
 > volatile decoded u16 @ body `0x140E`. Flat-byte diffing of the
 > compressed layer stays ruled out exactly as written. The supported lane
 > is now **decoded-layer diffing**: `decodeAm4RawPatch(...).decompressedBody`
-> with `0x140E..0x140F` masked — a no-op redump pair diffs by exactly
+> with `0x140E..0x140F` masked; a no-op redump pair diffs by exactly
 > 2 bytes there, and the warm-pair amp-gain edits localize to a single
 > LE u16 (chA gain @ `0x0958`). The "What works instead" list below
 > gains that lane as the primary one for body field mapping.
@@ -29,7 +29,7 @@ A natural decode plan for the AM4 preset-dump body is: capture two
 dumps with exactly one variable changed (a block-type swap, a per-channel
 gain edit), diff the binaries byte-for-byte, and read the changed field's
 offset from the diff positions. It does not work on AM4, for a reason
-distinct from the II case ([[ii-preset-binary-flat-byte-diff]] — whose
+distinct from the II case ([[ii-preset-binary-flat-byte-diff]], whose
 original "Huffman-compressed" premise was refuted 2026-07-02; the II
 body is a stable fixed-layout word grid and word-layer diffing works
 there): the AM4 dump encoder is **non-deterministic between identical
@@ -55,7 +55,7 @@ block-type identity in a flat-diffable position either. See
 
 Note the contrast with Axe-Fx II: the II `0x77/0x78/0x79` dump IS
 deterministic between identical inputs (a channel-toggle redump of
-`Drive_1` / `Compressor_1` shows zero byte diffs) — and per the
+`Drive_1` / `Compressor_1` shows zero byte diffs), and per the
 2026-07-02 correction of [[ii-preset-binary-flat-byte-diff]], the II
 body is a stable fixed-layout word grid, so one-variable word-layer
 diffing WORKS on the II (the BK-070 width measurements are exactly
@@ -97,7 +97,7 @@ Search these before re-attempting:
 
 ## Refinement history
 
-- 2026-07-02: mechanism corrected (not encoder non-determinism —
+- 2026-07-02: mechanism corrected (not encoder non-determinism:
   dynamic-Huffman table churn in the gen-3 container,
   [[am4-gen3-preset-container]]). Verdict unchanged: flat-byte diffing
   of the compressed stream remains ruled out; decoded-layer diffing is

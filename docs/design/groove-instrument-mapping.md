@@ -2,7 +2,7 @@
 
 **Goal:** take a drum groove authored in MIDI, understand what each note *means*
 (kick, snare, closed hat…), and have it play back as the **correct instruments**
-on every device we support — Circuit Tracks today, the Roland SPD-SX next
+on every device we support: Circuit Tracks today, the Roland SPD-SX next
 (connected to the Circuit as a MIDI 1/2 track), and future pad/drum gear.
 
 The design principle is a **semantic ROLE layer** between source notes and device
@@ -23,7 +23,7 @@ each device resolves roles to its own pads/slots/notes.
   └──────────────┴───────────────────────┴───────────────────────┘
 ```
 
-## Layer 1 — source note → role
+## Layer 1: source note → role
 
 - **Default: the General MIDI Percussion Key Map** (notes 35–81: 36=kick,
   38=snare, 42=closed hat, 46=open hat, 49=crash, 51=ride, …). This is the
@@ -47,7 +47,7 @@ terminal (never re-voiced). Wired into `voiceMap.ts` (host resolution) and
 the SPD-SX's 9 pads or the Circuit's 4 voices with every substitution REPORTED
 (warn-and-play) instead of the old `unmapped_voice` hard error; a voice with no
 substitute (or any melodic voice) still errors honestly. **Identity invariant
-(golden-locked):** on a target that owns every role, folding never fires — a
+(golden-locked):** on a target that owns every role, folding never fires; a
 richer kit always plays the groove more faithfully, never differently.
 Follow-up (not built): usage-ranked slot allocation for the Circuit-internal
 4-track + sample-flip authoring path (today that reduction lives in
@@ -58,21 +58,21 @@ case only).
 report often shows a fold NEXT TO an idle pad (the Sleep Token pack folds
 busy_hat/ride_bell while its songs never touch the SPD-SX clap/crash pads).
 `external_targets[].voice_notes` pins a voice to an explicit note per call
-(`{"busy_hat": 39, "ride_bell": 49}`), bypassing the voice_map + fold layer —
+(`{"busy_hat": 39, "ride_bell": 49}`), bypassing the voice_map + fold layer;
 the user loads the matching sample on that pad (`author_kit`) and the piece
 keeps its own pad. Deliberately per-call, NOT descriptor-level: pad idleness is
 a property of the song/kit, not the device. `tom` fold chain also reordered to
 `[snare, perc]` (fills carry on the snare; perc's arbitrary texture sample is
 the last resort).
 
-**Canonical role spine (`core/patterns/drumRoles.ts`).** The dialects disagree —
+**Canonical role spine (`core/patterns/drumRoles.ts`).** The dialects disagree:
 GM/SPD-SX say `hat`/`openhat`, the Circuit binding says `closed_hat`/`open_hat`.
 `canonicalRole(name)` reconciles them to ONE role set (`DRUM_ROLES`) via an alias
 table, so a groove's `hat` voice finds the Circuit's `closed_hat` slot and the
 SPD-SX's hat pad alike. EVERY device map and import keys off canonical roles
 (golden-checked: all `GM_DRUM_TO_VOICE` values + the SPD-SX dialect resolve).
 
-## Layer 2 — role → device target
+## Layer 2: role → device target
 
 Each supported device contributes a **drum target map**. Roles are the shared
 vocabulary (the same set the Circuit `voice_map` and `pack_groove.SAMPLE_SLOT`
@@ -81,7 +81,7 @@ already use).
 - **Circuit Tracks (4 drum tracks).** Role → pool slot via the canonical layout
   (`SAMPLE_SLOT`: kick=1, snare=2, closed_hat=3, ride=4 …). Authoring writes:
   (a) the drum step patterns, (b) per-step sample *flips* for roles that share a
-  track, and (c) the **drum-track→sample binding** (now decoded —
+  track, and (c) the **drum-track→sample binding** (now decoded:
   `ncs/drumBinding.ts`, `0x1a278`) so the project loads turnkey. Only 4 tracks,
   so >4 roles pack onto tracks via Sample Flip (already built in `pack_groove`).
 - **Roland SPD-SX (via Circuit MIDI 1/2).** The SPD-SX is a thin MIDI target
@@ -90,22 +90,22 @@ already use).
   `voice_map` is the **role → pad note** map (the Layer-2 target for this device);
   it already speaks the shared vocabulary (reconciled via `canonicalRole`). So the
   Circuit sequences it as an external MIDI 1/2 track:
-  1. *Author the Circuit MIDI track* — emit each role's SPD-SX note on the chosen
+  1. *Author the Circuit MIDI track*: emit each role's SPD-SX note on the chosen
      channel (already supported: `midi1`/`midi2` note tracks).
-  2. *Match the SPD-SX side* — the pad→note→sample assignment must agree. Kit
+  2. *Match the SPD-SX side*: the pad→note→sample assignment must agree. Kit
      BUILDING is the Wave Manager / USB-storage path (the SPD-SX Python tooling in
      `scripts/spdsx/`), NOT MIDI. When that write support is exposed as MCP tools,
      we control the pad map and can guarantee role→note→pad alignment end to end;
      until then we honor the device's existing/default note map. NOTE: the SPD-SX
-     PRO is a separate, fully-SysEx device — a future descriptor.
+     PRO is a separate, fully-SysEx device, a future descriptor.
 - **Future devices** add one target map; no groove or note-map changes.
 
-## Layer 3 — resolve roles to what's actually loaded
+## Layer 3: resolve roles to what's actually loaded
 
 A role only sounds right if the matching sample is actually present. Two paths:
-- **By known kit layout** — when we loaded the kit (`upload_kit`), we know which
+- **By known kit layout**: when we loaded the kit (`upload_kit`), we know which
   slot holds which role.
-- **By name match** — `read_sample_directory` (decoded) returns each slot's name,
+- **By name match**: `read_sample_directory` (decoded) returns each slot's name,
   so we can map a role to a slot by meaning ("kick" → the slot named *kick*) even
   for a kit we didn't load. This is the "map samples to matching configurations"
   half of the request.
@@ -115,15 +115,15 @@ A role only sounds right if the matching sample is actually present. Two paths:
 1. ✅ **Drum-binding codec** (`drumBinding.ts`) + Project 33 turnkey proof. *(done 2026-06-27)*
 2. ✅ **Canonical role spine** (`drumRoles.ts`, `canonicalRole`) + Circuit
    **role→slot** map (`CIRCUIT_VOICE_SLOT`, `circuitSlotForVoice` dialect-aware).
-   *(done 2026-06-27)* — remaining sub-item: graduate `pack_groove.py`'s note→role
+   *(done 2026-06-27)*. Remaining sub-item: graduate `pack_groove.py`'s note→role
    guesses (open_hat/tom/perc) into the typed table with provenance.
-3. ✅ **Wire binding into authoring** — `apply_pattern mode:ncs_upload` writes the
+3. ✅ **Wire binding into authoring**: `apply_pattern mode:ncs_upload` writes the
    Circuit drum binding (default `[0,1,2,3]`, overridable). *(done 2026-06-27)*
-4. ✅ **Name-match resolver** — `sampleRoles.ts` `bindingFromDirectory`: role →
+4. ✅ **Name-match resolver**: `sampleRoles.ts` `bindingFromDirectory`: role →
    slot via `read_sample_directory` name matching (shuffled/partial kits handled,
-   fallbacks reported). *(done 2026-06-27)* — needs a live `read_sample_directory`
+   fallbacks reported). *(done 2026-06-27)*. Needs a live `read_sample_directory`
    to exercise end-to-end on hardware.
-5. ✅ **SPD-SX target map + external-instrument routing** *(done 2026-06-28)* —
+5. ✅ **SPD-SX target map + external-instrument routing** *(done 2026-06-28)*:
    role→note via the SPD-SX `voice_map` (canonical-keyed, laid out in pad order
    60..68 to match `author_kit`'s default NoteNum), sequenced from the Circuit
    MIDI 1/2 track. Built:

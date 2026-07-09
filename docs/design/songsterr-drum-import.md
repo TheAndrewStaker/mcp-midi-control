@@ -3,7 +3,7 @@
 A third front-end for the song-import pipeline (alongside ASCII drum-tab and
 Standard MIDI File): pull a song's **drum track** straight from Songsterr's own
 JSON and feed it to the existing `drumScore` quantizer → `apply_pattern` →
-Circuit author → upload. No tab-column parsing, no JS-rendered scraping —
+Circuit author → upload. No tab-column parsing, no JS-rendered scraping:
 Songsterr serves an already-quantized score.
 
 ## Why this source beats scraping tab HTML
@@ -12,7 +12,7 @@ The earlier web-tab route is dead (Ultimate Guitar 403s, Songsterr/drumtabs.app
 render with JS, paywalls). Songsterr's *player* loads a structured JSON score
 from its CDN, and on a drum track each hit stores its instrument as
 `note.fret` = the **General-MIDI percussion note number** (36=kick, 38=snare,
-42=closed-hat, …) — exactly what `gmDrumToVoice` already consumes. We get
+42=closed-hat, …), exactly what `gmDrumToVoice` already consumes. We get
 `(GM note, rational duration, velocity)` triples directly; the hard part
 (quantizing tab columns) is already done.
 
@@ -55,8 +55,8 @@ from its CDN, and on a drum track each hit stores its instrument as
 
 | Field | Meaning | How we use it |
 |---|---|---|
-| `notes[].fret` | **GM percussion note number** — *usually*. Tabs can write a layer on a NON-GM number (Like That hides its clap on `0`) | `drumMap` remap first (number → voice or GM number), then `gmDrumToVoice` → neutral voice. Unmapped numbers are skipped and reported **by number with hit counts** (`unmapped_numbers`), so the fix is one `drum_map` arg |
-| `notes[].string` | drum-staff line (half-ints) | display only — **ignored** |
+| `notes[].fret` | **GM percussion note number**, *usually*. Tabs can write a layer on a NON-GM number (Like That hides its clap on `0`) | `drumMap` remap first (number → voice or GM number), then `gmDrumToVoice` → neutral voice. Unmapped numbers are skipped and reported **by number with hit counts** (`unmapped_numbers`), so the fix is one `drum_map` arg |
+| `notes[].string` | drum-staff line (half-ints) | display only, **ignored** |
 | `notes[].ghost` | per-note grace/ghost flag | `→ event.ghost` (soft hit). A repeated fret in one beat with one ghosted copy is **flam notation**: folds to ONE event (the main hit), counted in `flams_collapsed` (2026-07-02; previously these double-emitted and surfaced as phantom same-step collisions) |
 | `duration` `[num,den]` | **actual** fraction of a whole note (dots already folded in: a dotted-8th is `[3,16]`) | quarter-beats = `num/den * 4`; accumulate for onset position |
 | `velocity` | dynamics string (`fff`/`f`/`mf`/`p`…) | `ff`/`fff` → accent; `pp`/`ppp` → ghost (per-note `ghost` wins over the sticky dynamic) |
@@ -69,22 +69,22 @@ emits its own event at the same onset (same-fret repeats are the flam fold above
 
 **Source→voice mapping principle (2026-07-02, refined same day):** the raw part
 JSON carries NO drum-map legend (verified: a note is just `{fret, string,
-ghost}`) — but Songsterr's PLAYER does: their `DrumLegend` component's
+ghost}`), but Songsterr's PLAYER does: their `DrumLegend` component's
 percussion-constants table was decoded from the production vendor bundle
 (static3.songsterr.com, 2026-07-02) and registered as
 `SONGSTERR_DRUM_EXTENSIONS` in `songsterr.ts`. It is GM plus their own
-extensions — rim shot 91, half hi-hat 92, ride edge 93, cymbal chokes 94–98,
+extensions: rim shot 91, half hi-hat 92, ride edge 93, cymbal chokes 94–98,
 shaker 82, jingle bell 83, bell tree 84, castanets 85, surdo 86/87, extra
-cowbells 99/102, GM2-style 27–34 — all applied automatically (lookup order:
+cowbells 99/102, GM2-style 27–34, all applied automatically (lookup order:
 caller `drumMap` → GM → extensions). So most "exotic" numbers are now a DECODE.
-Numbers outside even Songsterr's table (Like That's clap on `0` — their legend
+Numbers outside even Songsterr's table (Like That's clap on `0`, their legend
 special-cases unknown numbers) remain a musical inference: named in warnings
 with counts, judged by the agent/user from where they land, applied explicitly
 via `drum_map`, confirmed by ear. GM is the *default dictionary*, not a
-normalization target — the real target is the neutral voice model. The same
+normalization target; the real target is the neutral voice model. The same
 `drumMap` + named-unmapped machinery is on the SMF path (`importMidiDrums`
 `channel`/`drumMap` options) for drum-library groove packs with vendor key maps
-(Mixwave Sleep Token II: kit on ch16, 24 distinct sub-GM keys — map pending a
+(Mixwave Sleep Token II: kit on ch16, 24 distinct sub-GM keys, map pending a
 Kontakt mapping-screen read; note its GM-range keys 35–44 may also carry
 non-GM meanings and should be covered by the map, which overrides GM).
 
@@ -137,8 +137,8 @@ consecutive runs.
 A **window** is one fixed-length slice of the song timeline in playback order
 (2-bar windows → a 78-bar song is 39 windows). A **unique pattern** is a distinct
 grid *content* after dedup. The `order` array (length = windowCount) maps each
-window to a bank index — it IS the arrangement. The bank must fit the 8 pattern
-slots; the window count never does (it's the song length) — which is why we
+window to a bank index; it IS the arrangement. The bank must fit the 8 pattern
+slots; the window count never does (it's the song length), which is why we
 decompose + dedup rather than store every bar.
 
 ### Fuzzy coalesce (`coalescePatterns`)
@@ -147,16 +147,16 @@ Exact dedup barely collapses a *human-played* track: a ghost note or a turnaroun
 fill makes each "same" 2-bar groove a distinct grid (39 windows → **31 unique**
 on the Tom Petty test). `coalescePatterns` merges windows whose **onset distance**
 (`gridDistance`: normalized Hamming over `voice × step` cells, accents/rolls
-ignored — they don't change which groove a bar *is*) is within `maxDistance`.
+ignored, they don't change which groove a bar *is*) is within `maxDistance`.
 Greedy in song order: a groove's first appearance seeds a cluster, later
 near-variants fold in, a genuinely new section seeds a fresh cluster (so labels
-stay musical — `A` is the opening groove). Each cluster stores its **medoid** (the
+stay musical, `A` is the opening groove). Each cluster stores its **medoid** (the
 member most typical of the group); `variantCount` reports how many exact variants
-folded in, and the individual fills of non-medoid members are flattened — the
+folded in, and the individual fills of non-medoid members are flattened, the
 right trade when the goal is "fit the song into the hardware."
 
 On "Breakdown" at the default `maxDistance: 0.10`, the song reduces to **3 grooves**
-— a clean verse / fill / chorus split — with the 5 remaining slots free; tightening
+(a clean verse / fill / chorus split) with the 5 remaining slots free; tightening
 to `0.05` keeps 13 (over 8 slots). So the threshold is the fidelity↔fit knob
 (`--fuzz N`, `--exact` to disable).
 
@@ -165,10 +165,10 @@ to `0.05` keeps 13 (over 8 slots). So the threshold is the fidelity↔fit knob
 The Circuit advances content on **two axes**, and a long song uses both:
 
 - **Pattern advance** (within a project): the chain auto-steps patterns 1→2→…→N
-  then loops. Linear, ≤ 8 slots. This is the *fine grain inside a section* — a
+  then loops. Linear, ≤ 8 slots. This is the *fine grain inside a section*: a
   verse that alternates two 2-bar bars (`A B A B`) is a 2-pattern chain.
 - **Scene advance** (the scene-chain): scenes sequence; each scene selects a
-  pattern (or a chain range) + per-track state. This is the *song axis* —
+  pattern (or a chain range) + per-track state. This is the *song axis*:
   verse→chorus→verse→bridge, unbounded in length.
 
 `planArrangement` compiles a decomposition into a **bank** (the patterns to load
@@ -177,9 +177,9 @@ run-length of `order`. Each run (a maximal stretch of one pattern) becomes one
 scene that selects that pattern and holds for the run's window count. On
 "Breakdown": bank 3/8, a 14-step scene-chain (`A×15 B A×3 B×2 C×5 …`). Flags
 report what each layer reaches: `fitsInOnePattern`, `fitsViaChainOnly` (each
-pattern once, in order — a plain chain reproduces it, no scenes), `fitsInPatternSlots`.
+pattern once, in order, a plain chain reproduces it, no scenes), `fitsInPatternSlots`.
 
-**When scene coding lands, `scenes` is the encoder's direct input** — nothing
+**When scene coding lands, `scenes` is the encoder's direct input**; nothing
 above needs re-deriving. The natural next step for in-section richness: detect a
 repeating *subsequence* within a run (`A B A B`) and emit it as a short
 **chain range** the scene points at, so pattern-advance carries the 2-bar
@@ -189,20 +189,20 @@ phrasing and scene-advance carries the section moves.
 
 `flattenSongsterrDrums` now carries the full structure, not just `tempo[0]`:
 
-- **`tempos: {measure,beat,bpm}[]`** — the whole tempo map, each mark's measure
+- **`tempos: {measure,beat,bpm}[]`**: the whole tempo map, each mark's measure
   resolved to a quarter-beat. `tempoAtBeat(flat, beat)` returns the tempo IN
   FORCE at a position. `importSongsterrDrums` reports the window's local tempo,
   not the song's opening one. (Bug it fixes: Gethsemane is 71→141→148→74 bpm;
   the bridge is 74, and verses 141/148 were being reported/streamed at 71 ≈ half
   speed.) `--whole-song` is still single-tempo and now warns loudly when the song
   has >1 tempo (per-scene tempo lands with scene-chain encoding).
-- **`measures: {index,startBeat,signature,bpm,marker}[]`** — a per-measure index
+- **`measures: {index,startBeat,signature,bpm,marker}[]`**: a per-measure index
   (flatten already ran a `measureStart` accumulator). Enables addressing a window
   by **DISPLAYED measure** (`--from-measure`/`--to-measure`, 1-based to match the
   tab UI) or **section name** (`--section "Bridge"`), instead of hand-computed
   beat offsets. Section names are sticky in the source and carried forward;
   duplicate names (Gethsemane has two "Bridge"s) warn and pick the first.
-- **Sticky dynamics** — `velocity` is now carried forward like `signature`
+- **Sticky dynamics**: `velocity` is now carried forward like `signature`
   (Songsterr emits both only on change). A `fff` accents following hits until the
   next marking; a `pp` switches them to ghost.
 
@@ -228,7 +228,7 @@ applies. Two-step flow:
 `query` resolves a name → songId via Songsterr's own search (closing the A3
 discovery gap). The fetch + track-selection live in core (`songsterrFetch.ts`)
 and are shared with the CLI, so the two never drift. `apply_pattern` is
-unchanged — it stays device-focused and consumes `voices` like any inline grid.
+unchanged; it stays device-focused and consumes `voices` like any inline grid.
 
 ## Chain → device (D2, partial)
 
@@ -236,16 +236,16 @@ unchanged — it stays device-focused and consumes `voices` like any inline grid
 8 pattern slots; a chain over `[0, bankSize-1]` would auto-advance them as the
 song. The chain primitive is now a tested codec module
 (`circuit-tracks/ncs/chain.ts`: `setAllDrumLengths`, `setDrumChain`), but only
-the `[0,1]` range is hardware-confirmed — wider ranges are decoded-beta pending a
+the `[0,1]` range is hardware-confirmed; wider ranges are decoded-beta pending a
 capture (`docs/design/circuit-chain-range.md`). The remaining half (authoring the
-bank into the 8 pattern slots of one project — `authorPlanIntoProject` writes
+bank into the 8 pattern slots of one project, `authorPlanIntoProject` writes
 only pattern 0 today) is queued with that capture.
 
 ## Status / caveats
 
 - **Prototype, read-only.** Hits an unofficial CDN endpoint. Fine for local use;
   revisit ToS before shipping as a product feature.
-- `partId`-by-index is verified on one song — confirm on a second multi-track
+- `partId`-by-index is verified on one song; confirm on a second multi-track
   song before relying on it broadly.
 - Off-grid onsets (32nd/triplet ornaments) round to the 16th grid and are
   flagged, same as the MIDI path; raise `--steps 8` for a 32nd grid.

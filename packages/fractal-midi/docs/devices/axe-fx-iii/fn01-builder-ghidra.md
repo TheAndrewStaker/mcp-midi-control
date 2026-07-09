@@ -25,30 +25,30 @@ undefined8 buildSetParameter(undefined1 *modelHandle, longlong txCtx, uint *fiel
 
     byte *buf = calloc(payloadLen, 1);
 
-    // Field A — payload bytes 0-1 (14-bit septet pair)
+    // Field A: payload bytes 0-1 (14-bit septet pair)
     buf[0] = fields[0] & 0x7F;
     buf[1] = (fields[0] >> 7) & 0x7F;
 
-    // Field B — payload bytes 2-3 (14-bit septet pair)
+    // Field B: payload bytes 2-3 (14-bit septet pair)
     buf[2] = fields[1] & 0x7F;
     buf[3] = (fields[1] >> 7) & 0x7F;
 
-    // Field C — payload bytes 4-5 (14-bit septet pair)
+    // Field C: payload bytes 4-5 (14-bit septet pair)
     buf[4] = fields[2] & 0x7F;
     buf[5] = (fields[2] >> 7) & 0x7F;
 
-    // Field D — payload bytes 6-10 (32-bit value, 5 septet pieces)
+    // Field D: payload bytes 6-10 (32-bit value, 5 septet pieces)
     buf[6]  = fields[3]        & 0x7F;
     buf[7]  = (fields[3] >> 7) & 0x7F;
     buf[8]  = (fields[3] >> 14) & 0x7F;
     buf[9]  = (fields[3] >> 21) & 0x7F;
     buf[10] = (fields[3] >> 28);             // 4 bits remain; no mask
 
-    // Field E — payload bytes 11-12 (14-bit septet pair)
+    // Field E: payload bytes 11-12 (14-bit septet pair)
     buf[11] = fields[4] & 0x7F;
     buf[12] = (fields[4] >> 7) & 0x7F;
 
-    // Field F — payload bytes 13-14 (14-bit septet pair) = tail item count
+    // Field F: payload bytes 13-14 (14-bit septet pair) = tail item count
     buf[13] = fields[5] & 0x7F;
     buf[14] = (fields[5] >> 7) & 0x7F;
 
@@ -108,12 +108,12 @@ formula adjusting for byte alignment. 64 wire bytes ÷ 8-bit-items ≈
 
 ```c
 struct SetParamFields {
-    uint16_t action;       // Field A — sub-action code
-    uint16_t blockId;      // Field B — block / effect ID
-    uint16_t paramId;      // Field C — param ID
-    uint32_t value;        // Field D — value (float bits or uint32)
-    uint16_t modifier;     // Field E — modifier / scene slot
-    uint16_t tailCount;    // Field F — tail item count
+    uint16_t action;       // Field A: sub-action code
+    uint16_t blockId;      // Field B: block / effect ID
+    uint16_t paramId;      // Field C: param ID
+    uint32_t value;        // Field D: value (float bits or uint32)
+    uint16_t modifier;     // Field E: modifier / scene slot
+    uint16_t tailCount;    // Field F: tail item count
     uint16_t tail[];       // optional tail (size = tailCount items)
 };
 ```

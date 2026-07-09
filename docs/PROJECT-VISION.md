@@ -55,7 +55,7 @@ against real hardware captures. That tier today is:
   hardware-verified end to end)
 - **Fractal Axe-Fx II XL+**
 - **ASM Hydrasynth Explorer**
-- **Modern Fractal family — Axe-Fx III / FM3 / FM9 / VP4** in community beta (one shared gen-3 codec, per-device catalogs)
+- **Modern Fractal family: Axe-Fx III / FM3 / FM9 / VP4** in community beta (one shared gen-3 codec, per-device catalogs)
 - **Fractal Axe-Fx Standard/Ultra (gen-1)** in community beta (parameter set + read, decoded from the published gen-1 SysEx spec)
 - **Novation Circuit Tracks** in community beta (groove + melody sequencing, sample / project upload, sequencing of outboard gear)
 - **Roland SPD-SX** in community beta (kit + sample authoring over USB mass storage; pad triggering + kit recall over MIDI)

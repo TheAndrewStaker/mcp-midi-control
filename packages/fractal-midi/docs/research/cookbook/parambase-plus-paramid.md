@@ -20,7 +20,7 @@ consumed_in:
 
 For each placed block in the II preset binary, the per-param ushort
 offset is `paramBase + paramId`. `paramBase` is READ from the dump in
-hand — it is the block's TLV position, `tlvWord + 2`, per
+hand: it is the block's TLV position, `tlvWord + 2`, per
 [[ii-preset-image-tlv-chain]]; `paramId` is fixed per (block-type,
 param) pair.
 
@@ -51,12 +51,12 @@ Promoted via the preset-image TLV decode: the formula is confirmed on
 384 factory presets + 4 live hardware dumps, and the two BK-070
 one-variable hardware diffs (amp.bass ch-Y, amp.master_volume ch-Y on
 Test Crunch) land at EXACTLY the words the walker predicts (252, 255).
-The former blocker — "the sort algorithm is only partially cracked" —
+The former blocker ("the sort algorithm is only partially cracked")
 is **irrelevant for read-modify-write**: no ordering prediction is
 needed when the chain is walked. (The order itself is also now
 corpus-pinned: alphabetical by squashed AxeEdit display name, then the
 [Tone Match?, Noisegate, Output, Feedback Send?, Feedback Return?,
-Controllers] tail — the Batch D "PanTrem" anomaly was the
+Controllers] tail; the Batch D "PanTrem" anomaly was the
 Tremolo/Panner display name, and "Mixer last" matches the
 canBypass-false tail group. See [[ii-preset-image-tlv-chain]].)
 
@@ -110,19 +110,19 @@ Per-block-name X→Y channel offsets (ushorts,  cont 2 Tier 1a):
 Remaining block-names' X→Y offsets need measurement (probe per-block-name
 with channel-X + channel-Y SET_PARAM, observe diff in both positions).
 
-## Sort algorithm — RESOLVED / irrelevant (historical)
+## Sort algorithm: RESOLVED / irrelevant (historical)
 
 Historical anomaly notes, kept for provenance. The 2026-07-02 corpus
 sweep pinned the order (alphabetical by squashed AxeEdit display name
-+ fixed tail grammar, 388/388), and — more importantly — the TLV walk
++ fixed tail grammar, 388/388), and, more importantly, the TLV walk
 removes any need to predict it:
 
 - **Cascade order from `FUN_00595260` works for batches A, B, C, E.**
 - **Batch D "broke" cascade**: PanTrem appeared BEFORE Vocoder +
-  VolPan — resolved: the sort key is the display name
+  VolPan; resolved: the sort key is the display name
   "Tremolo/Panner" (T), which alphabetically precedes "Vocoder" /
   "Volume/Pan" (V). The internal PanTrem label was never the key.
-- **Mixer (canBypass=false) always sorts to the END** — consistent
+- **Mixer (canBypass=false) always sorts to the END**, consistent
   with the canBypass-false system-tail group (Mixer never appears in
   the 388-dump corpus, so its exact tail position stays unpinned).
 
@@ -136,7 +136,7 @@ provenance for the firmware that produced them.
 
 ## Misapplication failure modes
 
-- **DO NOT** predict paramBase from static widths + an ordering rule —
+- **DO NOT** predict paramBase from static widths + an ordering rule:
   that path is obsolete AND firmware-fragile (Amp 234 vs 236). Read it
   from the chain ([[ii-preset-image-tlv-chain]]).
 - **DO NOT** write words outside `paramBase + paramId` targets:
@@ -148,7 +148,7 @@ provenance for the firmware that produced them.
 ## Where it does NOT apply
 
 - AM4 (different binary layout; 4 slots, no cascade).
-- Axe-Fx III — transfer candidate. III binary likely uses a similar
+- Axe-Fx III: transfer candidate. III binary likely uses a similar
   per-block-name width + sort scheme; un-verified.
 
 ## Verification path
@@ -173,14 +173,14 @@ diff pairs land at the predicted words.
   persisted in `blockBinaryLayout.ts`. Cross-block stability confirmed.
   X→Y offsets measured for 6 Tier-1 blocks.
 - : Ghidra Path B (mine "compute binary size" in
-  AxeEdit.exe) explicitly ruled out — encoder lives in firmware.
+  AxeEdit.exe) explicitly ruled out: encoder lives in firmware.
   Path A (calibration-based atomic apply) confirmed as interim
   approach.
 - : deprecated `axefx2_atomic_apply` tool;
   scene-state writes route through `apply_preset slots[].params.X/.Y`
   channel-nesting path.
 - 2026-05-22 (cookbook audit): refreshed the entry to reflect Session
-  116 cont 2-4 actual state — width table is 28 rows (not the original
+  116 cont 2-4 actual state: width table is 28 rows (not the original
   5), Ghidra path is closed (not "queued"), and the sort-algorithm
   anomalies (Batch D, Mixer) are the actual blocker to `matched` status.
 - 2026-07-02 (preset-image TLV decode): PROMOTED partial-N1 → matched.

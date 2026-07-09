@@ -77,14 +77,14 @@ The ask is now for **FM3, Axe-Fx III, and VP4 owners**, and it is bigger than am
 **One requirement:** the editor must have actually connected to your device at least once (that sync is what fills the file). A never-connected install writes a placeholder stub with no names and filler ranges; if your file is one of those, connect the editor to the device once and let it finish syncing, then grab the file again. **Ask for the cache file before asking anyone to sweep dropdowns or capture wire traffic.**
 
 > **Why this is the top III/FM3/VP4 ask right now (concrete payoff):** the III/FM3/VP4
-> cache copies currently on hand are unsynced placeholder stubs — the III's has 1,737
+> cache copies currently on hand are unsynced placeholder stubs: the III's has 1,737
 > records but **zero** enum-vocabulary entries; the FM3 and VP4 copies are 3–33-record
 > stubs. A **device-synced** cache carries the per-param enum kind + counts + name
 > lists, and that single file is what let the FM9 correct **~351 parameters** from
 > wrong-wire to right-wire (type selectors now send as discrete ordinals instead of
 > continuous floats). The III and FM3 have since received the same correction from
 > *indirect* evidence (the III from its 2026-06-18 hardware roundtrip as oracle; the
-> FM3 from sibling family-join data, 2026-07-02) — a synced cache is the device's OWN
+> FM3 from sibling family-join data, 2026-07-02); a synced cache is the device's OWN
 > dictionary, so it mechanically confirms (or corrects) those overlays, adds every
 > enum's name list, and pins device-true display ranges/steps/tapers. For the VP4 it
 > is still the primary unlock. All offline, no capture tools.

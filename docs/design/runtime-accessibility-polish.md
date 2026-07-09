@@ -4,7 +4,7 @@
 work, helps every user, low risk. Part of the blind-accessibility headline
 (see [accessibility-blind-support.md](accessibility-blind-support.md)).
 
-**Premise:** the conversational interface is already the accessibility win — text
+**Premise:** the conversational interface is already the accessibility win: text
 in, text out, no spatial navigation. We do **not** build a separate "accessible
 mode." This is about making sure what the tools *say back* presents cleanly when
 read aloud by a screen reader (VoiceOver / NVDA), which also makes every reply
@@ -20,11 +20,11 @@ already has:
   tool returns **structured, display-unit data** (e.g. `live_grid` is
   `{row, col, block}` cells), never a pre-rendered visual. Structured data is
   presentation-agnostic: the model renders the *same payload* to whatever the
-  listener needs — spoken prose for a screen reader, a tight summary for a sighted
+  listener needs: spoken prose for a screen reader, a tight summary for a sighted
   user.
 - Therefore accessibility is not a feature added to a tool; it is a consequence of
   tools **never pre-rendering layout**. Make that an invariant and every tool
-  "just works" aloud — including any future device, because adding gear is a
+  "just works" aloud, including any future device, because adding gear is a
   descriptor, not new tools.
 
 This is the screen-reader sibling of the existing **display-first** invariant
@@ -33,10 +33,10 @@ pre-render visuals" are the same kind of cross-cutting rule on the one surface.
 
 Everything below reduces to **two unified levers**:
 
-1. **One invariant** — tools return structured display-unit data; never ASCII
+1. **One invariant**: tools return structured display-unit data; never ASCII
    grids or aligned tables (Item 5 guards it; the audit confirms current
    compliance).
-2. **One shared directive** — a single "describe for ears" block in the server
+2. **One shared directive**: a single "describe for ears" block in the server
    instructions / shared agent guidance, applied to *all* tools and *all* devices
    at once, never per-tool.
 
@@ -51,11 +51,11 @@ fine). So this is presentation/phrasing polish, not a rip-out.
 
 ## Items
 
-### 1. A "describe for ears" instruction (highest leverage) — ✅ SHIPPED
+### 1. A "describe for ears" instruction (highest leverage): ✅ SHIPPED
 
 **Status:** done. Added as a `DESCRIBE FOR EARS` block in `SERVER_INSTRUCTIONS`
 (`packages/server-all/src/server/index.ts`), the cross-cutting shared guidance
-sent once at the MCP `initialize` handshake — applied to all tools and all devices
+sent once at the MCP `initialize` handshake, applied to all tools and all devices
 at once, never per-tool (there is no separate "shared agent guidance" module; the
 per-device `agentGuidance.ts` files stay device-specific). Build + typecheck +
 smoke-server green.
@@ -81,7 +81,7 @@ This is one block of guidance text. It costs nothing at runtime and shapes every
 reply. It should read as general good practice (it helps everyone), not as a mode
 that toggles on.
 
-### 2. `live_grid` narration cue — ✅ SHIPPED
+### 2. `live_grid` narration cue: ✅ SHIPPED
 
 **Status:** done. Added a clause to the `liveGrid` branch of the gen-3 get_preset
 warning (`packages/fractal-gen3/src/reader.ts`) telling the model to narrate
@@ -94,11 +94,11 @@ explains the `live_grid` structure to the model. Add one clause telling it to
 table**, so a screen-reader user hears the chain, not coordinates. Keep the
 structured data exactly as-is; this only guides presentation.
 
-### 3. Spoken-clean confirmations and warnings — ✅ SHIPPED
+### 3. Spoken-clean confirmations and warnings: ✅ SHIPPED
 
 **Status:** done. Reworded the AM4 write not-acked warnings
 (`packages/am4/src/descriptor/writer.ts`, 6 sites) to lead with the human outcome
-("Sent, but the device did not confirm it — it may not have landed; check the AM4
+("Sent, but the device did not confirm it. It may not have landed; check the AM4
 display.") instead of jargon ("No ack within timeout" / "No write-echo within
 timeout"). The gen-2 writer warnings already read as clean sentences ("verify by
 audible/visible response on the device") and were left as-is. No live test asserts
@@ -114,7 +114,7 @@ each reads as a clean sentence when the model relays it:
 - This is mostly a wording pass over existing `warning` strings; no contract
   change.
 
-### 4. Safety prompts read aloud (the moments that matter most) — ✅ REVIEWED
+### 4. Safety prompts read aloud (the moments that matter most): ✅ REVIEWED
 
 **Status:** done (no text change needed). Reviewed the save-authorization refusal
 (`buildSaveAuthorizationRefusal`, `core/src/server-shared/safeEdit.ts`) and the
@@ -132,7 +132,7 @@ an unambiguous spoken sentence. Review the gate warnings (and
 target and the exact phrase to proceed, in one sentence. No gate-logic change,
 only the message text.
 
-### 5. Regression guardrail (optional, cheap) — ✅ SHIPPED
+### 5. Regression guardrail (optional, cheap): ✅ SHIPPED
 
 **Status:** done. `scripts/verify-no-visual-tables.ts` scans every TS file under
 `packages/*/src/` for Unicode box-drawing (U+2500–257F) and block-element
@@ -140,8 +140,8 @@ only the message text.
 `npm run preflight` after `verify-no-internal-refs`. It deliberately does NOT flag
 multi-space alignment (legit in model-facing agent_guidance) or arrow glyphs
 (↔ → read fine aloud). **On first run it caught 3 real pre-existing offenders the
-manual audit missed** — `── name ──` box-drawing dividers in the `lookup_lineage`
-output of the AM4 and gen-2 readers — which were fixed (bare name headers; entries
+manual audit missed**: `── name ──` box-drawing dividers in the `lookup_lineage`
+output of the AM4 and gen-2 readers, which were fixed (bare name headers; entries
 were already blank-line separated). The guard now passes clean (172 files scanned).
 
 Add a small check (a `verify-*` script in the preflight chain) asserting that no
@@ -149,7 +149,7 @@ tool *description* and no static output template embeds box-drawing characters
 (`│ ─ ┌ ╔ …`) or multi-space column alignment, so a future contributor does not
 reintroduce a screen-reader-hostile table. Lightweight, prevents drift.
 
-### 6. Accessibility note in the docs — ✅ SHIPPED
+### 6. Accessibility note in the docs: ✅ SHIPPED
 
 **Status:** done. Added a "Using it with a screen reader" H2 section to `README.md`
 (after "What you can ask Claude to do today"): the conversational surface is the
@@ -165,14 +165,14 @@ channel.
 
 ## Suggested order
 
-1. Item 1 (the global "describe for ears" guidance) — biggest effect, smallest change.
-2. Items 2–4 (narration cue + phrasing/warning audit) — same change set.
+1. Item 1 (the global "describe for ears" guidance): biggest effect, smallest change.
+2. Items 2–4 (narration cue + phrasing/warning audit): same change set.
 3. Item 6 (docs note).
-4. Item 5 (guardrail) — last, to lock it in.
+4. Item 5 (guardrail): last, to lock it in.
 
 ## Validation
 
-- No automated test can prove "reads well aloud" — the real check is the blind
+- No automated test can prove "reads well aloud"; the real check is the blind
   beta tester (the Reddit user). Item 5 catches the one objective regression
   (visual tables). Preflight stays green (text-only changes).
 - Pair this with the install win: once he can install (the `@julusian/midi` swap /
@@ -182,4 +182,4 @@ channel.
 
 - No separate accessible UI or mode flag.
 - No change to tool contracts, return shapes, or wire behavior.
-- Not trying to make the model verbose — short spoken sentences, not essays.
+- Not trying to make the model verbose: short spoken sentences, not essays.

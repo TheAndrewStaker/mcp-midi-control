@@ -7,7 +7,7 @@ verified_on:
   - am4-edit-1.x-windows
 firmware_sensitive: false
 golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
-retest_when: never (structural — labels are written once at startup before a user-attachable trap can arm, so the trap cannot fire by construction; juce-binarydata-zip is the permanent replacement)
+retest_when: never (structural: labels are written once at startup before a user-attachable trap can arm, so the trap cannot fire by construction; juce-binarydata-zip is the permanent replacement)
 relates_to: [juce-binarydata-zip]
 consumed_in: []
 ---

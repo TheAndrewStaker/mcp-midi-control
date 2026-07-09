@@ -119,7 +119,7 @@ On Windows, a long back-to-back sweep can hit a process-spawn ceiling:
 the OS refuses to initialize a new `claude.exe` (exit `3221225794` =
 `STATUS_DLL_INIT_FAILED`), the case reports `0 tools / 0.0s`, and once it
 starts it does NOT recover mid-run. This is the **machine, not the
-case** — it would otherwise wipe a whole run's reliability numbers (one
+case**; it would otherwise wipe a whole run's reliability numbers (one
 cascade reads as a contiguous block of `✗`).
 
 The harness handles it so a sweep still completes honestly:
@@ -132,8 +132,8 @@ The harness handles it so a sweep still completes honestly:
   these rows from pass-rate; legacy rows (pre-flag) are detected by the
   same signature so historical stats are trustworthy.
 - **Env-retry with backoff.** An environmental result is re-spawned (up
-  to 2×) after a few seconds' backoff — separate from the instant
-  LLM-flake retry — giving the OS time to release per-spawn handles.
+  to 2×) after a few seconds' backoff (separate from the instant
+  LLM-flake retry), giving the OS time to release per-spawn handles.
 - **Inter-case spacing** (~1.2 s) between cases reduces residue buildup.
 - **Abort-on-cascade.** After 3 consecutive environmental results the
   sweep stops with an actionable message rather than marking the rest
@@ -147,7 +147,7 @@ npm run agent-sweep
 ```
 
 `agent-sweep:kill` is safe standalone but is **not** auto-run from inside
-a sweep — a reap from within would match the sweep's own launcher chain
+a sweep: a reap from within would match the sweep's own launcher chain
 (bash → npx → tsx → node, all carrying `agent-regression/index`) and kill
 its own tree. Device-scoped sweeps (`--device=am4`, 1–4 cases) rarely
 cascade; the ceiling is specific to large unscoped runs starting dirty.
@@ -181,7 +181,7 @@ cascade; the ceiling is specific to large unscoped runs starting dirty.
      env-var side door (`MOCK_FIXTURE=...`) still works for ad-hoc runs;
      case-spec wins when both are present.
    - `requiresHardware`: set true for a case that needs a real device
-     RESPONSE the mock can't synthesize — a SysEx readback (e.g.
+     RESPONSE the mock can't synthesize: a SysEx readback (e.g.
      `get_preset` on a device with no mock responder) or an ack-gated
      transfer (`upload_sample`/`upload_project` on Circuit). These are
      SKIPPED under the mock (default sweep) and run only under

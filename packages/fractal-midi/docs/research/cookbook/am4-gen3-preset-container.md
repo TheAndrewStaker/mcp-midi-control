@@ -2,12 +2,12 @@
 name: am4-gen3-preset-container
 class: envelope
 status: matched
-discovered: 2026-07-02 (cross-device transfer reflex — gen-3 container hypothesis run against the AM4 dump corpus, full-bank oracle sweep)
+discovered: 2026-07-02 (cross-device transfer reflex, gen-3 container hypothesis run against the AM4 dump corpus, full-bank oracle sweep)
 verified_on:
   - am4 fw 1.01 (factory bank, 104 presets)
   - am4 fw 2.00 (hardware exports + warm-pair captures, 13 dumps)
 firmware_sensitive: false
-golden: packages/fractal-midi/test/am4/presetcontainer.test.ts (synthetic round-trip + CRC/XOR vectors); capture sweep scripts/verify-am4-preset-container.ts (890 checks / 117 dumps — adds the body block-record-chain amp walk)
+golden: packages/fractal-midi/test/am4/presetcontainer.test.ts (synthetic round-trip + CRC/XOR vectors); capture sweep scripts/verify-am4-preset-container.ts (890 checks / 117 dumps; adds the body block-record-chain amp walk)
 relates_to: [gen3-fn03-request-preset-dump, am4-fn03-stored-dump-request, vendor-envelope-descriptor-table, xor-fold-hash, xor-7f-envelope-checksum, am4-preset-dump-flat-byte-diff]
 consumed_in:
   - fractal-midi/src/shared/presetContainer.ts
@@ -37,7 +37,7 @@ device knob (N=4 on AM4)**.
   dynamic-Huffman bitstream decompressing to exactly decompSize;
   zero-filled tail.
 - `0x79` footer payload = septet-packed u16 XOR of all raw_patch LE words
-  (`computeRawPatchXor` — the same [[xor-fold-hash]]-family fold gen-3
+  (`computeRawPatchXor`, the same [[xor-fold-hash]]-family fold gen-3
   uses).
 
 Oracles (all self-validating, no hardware key-press needed): CRC + footer
@@ -80,7 +80,7 @@ variable-length block-record chain**. The AMP block is byte-exactly decoded:
   `0x2C`. The rest of the registered amp knobs ride the SAME geometry
   (formula-extrapolated from the four anchors), decoded through the shipped
   param scaling.
-- **Config-dependent base — WALK IT, never hardcode.** The amp marker sits
+- **Config-dependent base: WALK IT, never hardcode.** The amp marker sits
   at body `0x0934` in 70/104 factory presets, `0x0A92` in 17 (an extra
   pre-amp record enlarges the modifier region by `0x15E`), and is ABSENT in
   17 (16 empty presets + one intentional `'Bass NoAmp DI'`).
@@ -97,7 +97,7 @@ variable-length block-record chain**. The AMP block is byte-exactly decoded:
 - **Don't flat-diff the compressed layer.** The dynamic Huffman code
   table is rebuilt per export, so byte-identical decoded content still
   produces thousands of compressed-byte diffs (the old "encoder
-  non-determinism" — see [[am4-preset-dump-flat-byte-diff]], mechanism
+  non-determinism"; see [[am4-preset-dump-flat-byte-diff]], mechanism
   now explained). Diff `decodeAm4RawPatch(...).decompressedBody`.
 - **Mask the volatile word.** Decoded-layer comparisons must exclude
   body `0x140E..0x140F` or a no-op churn reads as a signal.
@@ -118,12 +118,12 @@ variable-length block-record chain**. The AMP block is byte-exactly decoded:
   scan reads two reverbs, `cab@0x0934` nonsense, etc.). Validate the record
   SHAPE: real block records have header words 1..4 == 0; the amp marker
   additionally needs all four channel TYPE ordinals in `[0, 247]`
-  (a valid `AMP_TYPES` index). This is why only the amp block is decoded —
+  (a valid `AMP_TYPES` index). This is why only the amp block is decoded:
   it is the one block with an ordinal-bounded type enum to gate on.
 - **stride / pidHigh+7 verified on AMP only.** Cab (`0x003E`) and FX blocks
   share the chain structure but their per-block stride + param formula are
   UNVERIFIED (no isolated one-variable capture yet). Don't extrapolate the
-  amp formula to them — that's the pending capture (see captured-artifacts
+  amp formula to them; that's the pending capture (see captured-artifacts
   UNMINED `2026-07-02`), and shipping a guessed non-amp value would be a
   WEAK-evidence leak under the same "untested" banner as the amp anchors.
 
@@ -131,7 +131,7 @@ variable-length block-record chain**. The AMP block is byte-exactly decoded:
 
 Decoder: `decodeAm4RawPatch` (`src/am4/presetContainer.ts`); shared
 primitives hoisted to `src/shared/presetContainer.ts` (fractal-gen3's
-`presetHuffman.ts` is now a re-export of them — gen-3 behavior
+`presetHuffman.ts` is now a re-export of them; gen-3 behavior
 byte-identical, proven by verify-gen3-preset-huffman/-body/-authoring
 staying green through the hoist). Pure-CPU golden:
 `test/am4/presetcontainer.test.ts`. Capture sweep:
@@ -142,7 +142,7 @@ is absent).
 
 - 2026-07-02: registered at `matched` (two firmware axis points: the fw
   1.01 factory bank and fw 2.00 hardware exports; the container claim is
-  additionally cross-device — the same primitives validate the III/FM9
+  additionally cross-device: the same primitives validate the III/FM9
   corpora). Explains and refines [[am4-preset-dump-flat-byte-diff]]
   (verdict stands; mechanism corrected from "encoder non-determinism"
   to dynamic-Huffman table churn + one volatile decoded word).

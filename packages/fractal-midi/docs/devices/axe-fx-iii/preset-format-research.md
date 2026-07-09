@@ -65,22 +65,22 @@ to forum posts so the chain of evidence is auditable.
    384 III factory presets + FM9 152.syx; independently verified by a 3-lens
    review workflow). The forum's blanket "body is Huffman-packed" claim is
    **refuted for the outer container + header/name region**, but is **NOT
-   settled for the param region** — see the scope line below.
+   settled for the param region**; see the scope line below.
 
    **Proven uncompressed (container + header):**
    - The `0x78` body is **1024 uint16 words per chunk**, each word packed
      3 bytes (`b0 | b1<<7 | b2<<14`), exactly as `fractal-gen3/src/presetDump.ts`
      reads it. Preset **names decode directly** (384/384) and the `0xAA55` magic
-     word is universal (384/384) — you cannot read ASCII names out of a Huffman
+     word is universal (384/384); you cannot read ASCII names out of a Huffman
      bitstream.
    - **Per-chunk data density:** chunks 0–2 carry data (98/99/52%), chunk 3 ~2%,
      **chunks 4–7 100% empty**, chunks 8–15 ~1.8%. A III preset uses ~2.5 of its
      16 chunks; thirteen all-zero chunks is incompatible with whole-body
      compression. The forum conflated **sparse storage** (only non-default
-     params stored — which its own "120-param amp doesn't take 2KB" reasoning
+     params stored, which its own "120-param amp doesn't take 2KB" reasoning
      actually describes) with **compression**.
 
-   **⚠️ SCOPE — words 36+ are NOT shown to be plaintext.** The dense param/block
+   **⚠️ SCOPE: words 36+ are NOT shown to be plaintext.** The dense param/block
    records (the part that matters for `save_preset`, and exactly what the
    contributor BoodieTraps calls "compressed") are **undetermined**. Positive
    evidence they are encoded/permuted, not raw: the FM9 152.syx is known to
@@ -91,25 +91,25 @@ to forum posts so the chain of evidence is auditable.
    different artifact. Do NOT claim "whole-preset read needs no decompressor"
    until words 36+ are positively shown plaintext.
 
-   **Decoded chunk-0 header skeleton (offline; III N=384, FM9 N=1 — header only;
+   **Decoded chunk-0 header skeleton (offline; III N=384, FM9 N=1, header only;
    FM3/VP4 unverified; words 36+ NOT mapped):**
 
    | Word | Role (confidence) | Evidence |
    |---|---|---|
-   | 0 | format/version discriminator — **NOT constant** (hypothesis) | III bimodal `0x13e`×180 / `0x13f`×204; FM9 `0x144` (N=1) |
+   | 0 | format/version discriminator, **NOT constant** (hypothesis) | III bimodal `0x13e`×180 / `0x13f`×204; FM9 `0x144` (N=1) |
    | 1 | `0xAA55` magic (confirmed) | constant 384/384 |
-   | 2 | per-preset near-unique value — role unknown (checksum/hash/id?) | 383/384 distinct |
+   | 2 | per-preset near-unique value, role unknown (checksum/hash/id?) | 383/384 distinct |
    | 3 | `0x00` separator (confirmed) | constant 0 |
    | 4–19 | preset name, 2 ASCII chars/word (lo then hi), space-padded `0x2020` (confirmed) | names decode 384/384 |
    | 20–35 | zero pad (confirmed) | constant 0 |
-   | 36+ | per-preset param/block data — **encoding undetermined** | high variance; known ordinals absent as raw words |
+   | 36+ | per-preset param/block data, **encoding undetermined** | high variance; known ordinals absent as raw words |
 
    **NEXT DECODE STEP (offline, III N=384, no hardware/contributor needed):**
    differentially map words 36+. (a) Diff two factory presets that differ in one
    known block and find where the `REVERB_TYPE=524` landmark lands. (b) Histogram
    each word position in chunks 0–2 for fixed-stride record boundaries (the
    AM4/II lineage uses 16-byte `ParamDescriptor` records). (c) Search all 384 for
-   known enum ordinals as raw / septet-split / 14-bit-packed — whichever makes an
+   known enum ordinals as raw / septet-split / 14-bit-packed: whichever makes an
    ordinal appear at a stable offset IS the param encoding; if **none** do across
    384, that is positive evidence of a compressed substream (which would confirm
    the contributor's claim and resolve the scope question above).
@@ -167,7 +167,7 @@ Offset  Hex   Notes
   0     F0    SysEx start
   1-3   00 01 74  Fractal manufacturer prefix
   4     10    Model byte (0x10 = III; 0x11 = FM3; 0x12 = FM9)
-  5     77    Function byte — preset-header marker
+  5     77    Function byte, preset-header marker
   6-10  ??    Destination + revision payload (5 bytes; see below)
   11    XX    XOR checksum (per Fractal family convention)
   12    F7    SysEx end
@@ -213,7 +213,7 @@ factory-bank walk):
   3 bytes/word** (`b0 | b1<<7 | b2<<14`), per `fractal-gen3/src/presetDump.ts`.
 - The first chunk holds global preset info + the preset name (words 0–35);
   subsequent words/chunks hold block data.
-- ⚠️ **The "content is Huffman-compressed" line is SUPERSEDED** — the container
+- ⚠️ **The "content is Huffman-compressed" line is SUPERSEDED**: the container
   + header are uncompressed plain uint16; only the param region (words 36+) is
   undetermined and *may* carry an encoded/compressed substream. See point 2.
 
@@ -297,7 +297,7 @@ content-hash field.
    "ship STORE_PRESET" path requires:
    - Decoding the param-region (words 36+) encoding inside the `0x78` frames
      (the container + header are already decoded; this inner region is the
-     remaining work — see point 2; it may be an encoded/compressed substream)
+     remaining work, see point 2; it may be an encoded/compressed substream)
    - Or building a "write the entire .syx as the user provides it"
      tool (passthrough); user-friendliness suffers
    - Or sniffing AxeEdit III's save sequence and replicating it

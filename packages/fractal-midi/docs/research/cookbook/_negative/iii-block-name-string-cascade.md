@@ -14,7 +14,7 @@ relates_to: [alphabetical-name-cascade-block-ordering, vendor-envelope-descripto
 consumed_in: []
 ---
 
-# III block-name string-cascade — NO transfer
+# III block-name string-cascade: NO transfer
 
 The Axe-Fx II preset serializer encodes block ordering with an inline
 if-else cascade of `strcmp(name, "Amp") / "Cab" / "Chorus" / ...` calls
@@ -76,7 +76,7 @@ What this rules out:
   the III code path that produces it is not the II cascade.
 
 What this does NOT rule out:
-- The III preset binary's per-block ORDER on the wire. Open question —
+- The III preset binary's per-block ORDER on the wire. Open question:
   needs a III preset-push hardware capture (carried HW follow-up
   per STATE.md). The cascade primitive's ordering CLAIM (alphabetical
   by display name) may or may not transfer; only the IMPLEMENTATION

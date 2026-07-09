@@ -284,19 +284,19 @@ management methods.
 #### Transport abstraction (two layers)
 
 Devices reach the host over more than one kind of pipe, and the
-abstraction lives at two distinct layers — pick the right one when adding
+abstraction lives at two distinct layers; pick the right one when adding
 a device:
 
-- **Byte-stream layer — `MidiConnection`.** Anything that carries raw MIDI
+- **Byte-stream layer: `MidiConnection`.** Anything that carries raw MIDI
   byte frames is a `MidiConnection`, regardless of the physical pipe. USB
   MIDI and the FM3's USB-CDC serial both live here: the FM3's
   `serialTransport.ts` implements `MidiConnection` over serial because
   serial just carries the same MIDI bytes through a different pipe. A new
   MIDI-over-X transport is a new `MidiConnection` implementation.
 
-- **Endpoint layer — `DispatchCtx` / `openCtx`.** Some devices are not a
+- **Endpoint layer: `DispatchCtx` / `openCtx`.** Some devices are not a
   MIDI byte stream at all. The Roland SPD-SX in WAVE MGR mode is a mounted
-  USB mass-storage volume whose kits/waves are `.spd` files — a filesystem,
+  USB mass-storage volume whose kits/waves are `.spd` files, a filesystem,
   not a stream of MIDI messages. That can never be a `MidiConnection`, so
   the generalization happens one level up, at the dispatch context.
 
@@ -314,7 +314,7 @@ a device:
 `conn` it returns is a null object that throws on any MIDI I/O, so a
 storage device's reader/writer methods read `ctx.storage.root` and never
 touch the wire. Existing MIDI devices omit `transport` (default `'midi'`)
-and are completely unaffected — `conn` stays required and the ~156
+and are completely unaffected; `conn` stays required and the ~156
 `ctx.conn` call sites are untouched.
 
 **Hybrid devices** (SPD-SX) expose both surfaces on one descriptor, with

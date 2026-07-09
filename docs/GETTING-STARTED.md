@@ -31,7 +31,7 @@ NRPN, SysEx, program change, notes, clock). A growing set of devices have
 deeper, first-class support (whole-preset or whole-patch authoring, tone
 lineage, cross-device translation): the Fractal AM4 and Axe-Fx II XL+,
 and the ASM Hydrasynth Explorer are hardware-verified, with several more in
-community beta — the modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4) and
+community beta: the modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4) and
 the original Axe-Fx Standard/Ultra, the Novation Circuit Tracks (groove and
 melody sequencing), the Roland SPD-SX (kit and sample authoring), and the Boss
 VE-500 vocal processor.

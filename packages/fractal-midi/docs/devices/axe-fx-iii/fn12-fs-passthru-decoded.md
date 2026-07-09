@@ -20,7 +20,7 @@ builders. 1-byte payload status messages.
 ## Wire envelope
 
 ```
-F0 00 01 74 10 12 [status_byte] [cksum] F7   — 9 bytes total
+F0 00 01 74 10 12 [status_byte] [cksum] F7   (9 bytes total)
 ```
 
 Single-byte payload carrying a status enum or flag.

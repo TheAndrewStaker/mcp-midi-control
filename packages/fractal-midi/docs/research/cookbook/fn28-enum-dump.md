@@ -17,7 +17,7 @@ consumed_in:
 # fn 0x28 device-emitted enum dump (II)
 
 Axe-Fx II fn 0x28 returns the device's authoritative enum-value labels
-for a given enum-type parameter. Hardware truth over wiki — 
+for a given enum-type parameter. Hardware truth over wiki. It
 surfaced 4 wiki transcription errors (CORNCOB → CORNFED, etc.) via this
 mechanism.
 
@@ -47,7 +47,7 @@ example, but 4 others surfaced in the same  sweep).
 
 ## Misapplication failure modes
 
-- **DO NOT** use this for III or AM4 — only the II implementation has
+- **DO NOT** use this for III or AM4; only the II implementation has
   been verified. The III + AM4 analogs are transfer candidates (filed
   per the cross-device protocol).
 - **DO NOT** compare device-emitted labels byte-exact to wiki strings.
@@ -55,13 +55,13 @@ example, but 4 others surfaced in the same  sweep).
 
 ## Where it does NOT apply
 
-- Axe-Fx III — transfer candidate. `iii-inbound-dispatcher.txt` (524KB)
+- Axe-Fx III: transfer candidate. `iii-inbound-dispatcher.txt` (524KB)
   likely contains the III analog.
-- AM4 — transfer candidate.
+- AM4: transfer candidate.
 
 ## Verification path
 
-No inline fixture ships (golden is STUB — the capture is local-only).
+No inline fixture ships (golden is STUB, the capture is local-only).
 The de-facto check is `scripts/_research/probe-axefx2-enum-dump.ts`'s
 diff loop against `samples/captured/probe-axefx2-enum-dump.syx`. Asserts:
 - 145 enum tables dumped without truncation (the original fixture has one
@@ -74,7 +74,7 @@ diff loop against `samples/captured/probe-axefx2-enum-dump.syx`. Asserts:
 
 - : fn 0x28 wire shape decoded, probe script shipped. 145
   enum tables dumped, 1112 labels recovered (1/145 truncated at
-  amp.effect_type — 2048-byte node-midi cap, documented limitation).
+  amp.effect_type, 2048-byte node-midi cap, documented limitation).
   4 wiki transcription errors surfaced (CORNCOB → CORNFED on
   amp.tone_stack 108-109, plus 3 others).
 - : catalog-missing enum expansion via `isNew: true`

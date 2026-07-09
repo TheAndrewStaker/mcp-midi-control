@@ -8,8 +8,8 @@ verified_on:
   - axe-edit-iii-1.40
   - am4-edit-1.x
 firmware_sensitive: false
-golden: STUB (structural-only; negative finding — the positive stride-16 layout is exercised by scripts/cookbook-verify.ts#case-per-effect-paramtable-dispatcher; see Symptoms / grep terms)
-retest_when: never (structural — the real layout is the 16-byte ParamDescriptor, param-descriptor-16byte, verified across 3 editor binaries; stride-4 reads pointer fragments by construction)
+golden: STUB (structural-only; negative finding, the positive stride-16 layout is exercised by scripts/cookbook-verify.ts#case-per-effect-paramtable-dispatcher; see Symptoms / grep terms)
+retest_when: never (structural: the real layout is the 16-byte ParamDescriptor, param-descriptor-16byte, verified across 3 editor binaries; stride-4 reads pointer fragments by construction)
 relates_to: [param-descriptor-16byte]
 consumed_in:
   - fractal-midi/scripts/ghidra/DumpAxeEditIIIParamTablesV2.java (script header L7-18 documents one more in-the-wild instance of the stride-4 mistake: V1 used stride-4 and got garbage, V2 fixed by switching to stride-16; "The DAT_xxx tables aren't `-1`-terminated int arrays - they're arrays of 16-byte structs")

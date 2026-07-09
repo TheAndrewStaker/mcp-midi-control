@@ -20,7 +20,7 @@ consumed_in:
 
 Preset numbers ≥ 128 in Axe-Fx II / III control envelopes (fn 0x03
 SWITCH_PRESET, fn 0x3c, fn 0x1d STORE_PRESET reply, fn 0x14
-GET_PRESET_NUMBER reply) encode as 2 bytes, **MSB-first** — distinct
+GET_PRESET_NUMBER reply) encode as 2 bytes, **MSB-first**, distinct
 from septet 14-bit pair encoding.
 
 ## Formal definition
@@ -38,23 +38,23 @@ p = (byte0 << 7) | byte1
 ```
 
 Both bytes are SysEx-safe (high bit 0). The MSB precedes the LSB in the
-wire stream — unlike [[septet-14bit]] which is LSB-first
+wire stream, unlike [[septet-14bit]] which is LSB-first
 (pidLow precedes pidHigh).
 
 Example: preset 699 encodes as `[0x05, 0x3B]` → `(0x05 << 7) | 0x3B = 699`.
 
 ## Where it's used
 
-- fn 0x03 SWITCH_PRESET — outbound preset selection
-- fn 0x3c — outbound variant
-- fn 0x1d STORE_PRESET — outbound preset save, target slot
-- fn 0x14 GET_PRESET_NUMBER reply — inbound active preset (decoded from
+- fn 0x03 SWITCH_PRESET: outbound preset selection
+- fn 0x3c: outbound variant
+- fn 0x1d STORE_PRESET: outbound preset save, target slot
+- fn 0x14 GET_PRESET_NUMBER reply: inbound active preset (decoded from
   `05 3B → preset 699`  cite)
 
 ## Applicability
 
 Apply ONLY to preset-number fields (and related "global preset slot"
-fields like target STORE slot). Do NOT use for parameter IDs or values —
+fields like target STORE slot). Do NOT use for parameter IDs or values;
 those use [[septet-14bit]].
 
 Cost: trivial. One shift + OR.
@@ -68,7 +68,7 @@ Cost: trivial. One shift + OR.
 - **DO NOT** use for param values. Param values that need >7 bits use
   septet 14-bit encoding, not this. fn 0x02 SET_PARAMETER (II) and
   fn 0x01 SET_PARAMETER (III) tails use septet.
-- **DO NOT** apply to AM4 preset numbers — AM4 envelope is different;
+- **DO NOT** apply to AM4 preset numbers: AM4 envelope is different;
   preset locations use the A01-Z04 textual scheme. See
   `protocol/locations.ts`.
 

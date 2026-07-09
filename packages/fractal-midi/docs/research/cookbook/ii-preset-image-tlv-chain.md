@@ -19,7 +19,7 @@ The de-framed Axe-Fx II 4096-word preset image (64 × `fn 0x78` chunks,
 64 native ushorts each per [[septet-21bit-byte2-mask-preservation]])
 is a self-describing TLV structure. No static width table and no
 calibration probe is needed to locate any block's parameters in any
-dump — the dump in hand describes its own layout.
+dump; the dump in hand describes its own layout.
 
 ## Formal definition
 
@@ -27,7 +27,7 @@ dump — the dump in hand describes its own layout.
 word 0        format tag 2049 (388/388)
 words 2..33   preset name, 1 ASCII char per word, 0-terminated
               (word layer of [[preset-name-ascii-triplets]])
-words 36..129 the record table ([[block-record-stride-8]]) — GRID /
+words 36..129 the record table ([[block-record-stride-8]]): GRID /
               signal-chain order metadata, NOT the serialization index
 word 130..    TLV chain: repeated [wire_id, payload_len, payload...];
               wire_id == 0 terminates. paramBase of a TLV at word i is
@@ -38,14 +38,14 @@ Chain contents, in order (388/388):
 
 1. **Modifier records**: wire_id = modifier slot 1..20, payload_len
    always 15, always before the first block TLV. 15-word payload
-   layout NOT decoded — read-only, preserve verbatim.
+   layout NOT decoded; read-only, preserve verbatim.
 2. **Effect blocks**, ALPHABETICAL by the AxeEdit canonical DISPLAY
    name with spaces/punctuation ignored: "Tremolo/Panner" sorts under
    T (not under the internal PanTrem label), "Multiband Compressor"
    precedes "Multi Delay". Multi-instance blocks are adjacent.
 3. **System tail**: an ordered subsequence of
    `[170 Tone Match, 139 Noisegate, 140 Output, 142 Feedback Send,
-   143 Feedback Return, 141 Controllers]` — 139/140/141 always
+   143 Feedback Return, 141 Controllers]`: 139/140/141 always
    present; Feedback Send/Return serialize BETWEEN Output and
    Controllers; Tone Match before Noisegate.
 
@@ -70,7 +70,7 @@ All other post-terminator words are zero (388/388).
 
 - **Factory file corpus**: 384 presets (Q8.02 XL+ banks A/B/C).
   Chain walks clean, ordering grammar, system tail, name equality vs
-  the triplet decode, amp-type ordinal sanity — all 388/388 (incl.
+  the triplet decode, amp-type ordinal sanity: all 388/388 (incl.
   the 4 hardware dumps).
 - **Live hardware (BK-070 anchors)**: on Test Crunch
   (`samples/captured/bk070-loop-amp-bass-2-baseline.syx`, Amp TLV
@@ -101,7 +101,7 @@ All other post-terminator words are zero (388/388).
   write must only touch words addressed via paramBase + paramId.
 - **On writeback, preserve** the tone-match bulk region (word 2048+)
   verbatim, and each triplet's `byte2 & 0x7c` reserved bits
-  ([[septet-21bit-byte2-mask-preservation]] — NACK 0x13 otherwise),
+  ([[septet-21bit-byte2-mask-preservation]], NACK 0x13 otherwise),
   and recompute the footer XOR-fold ([[xor-fold-hash]]).
 - **Do not sort by the internal layout labels** (`AxeFxIIBlockName`:
   PanTrem, MultiDelay, EffectsLoop...). The device's sort key is the
@@ -109,11 +109,11 @@ All other post-terminator words are zero (388/388).
 
 ## Where it does NOT apply
 
-- AM4 — its dump body is the gen-3 preset container
+- AM4: its dump body is the gen-3 preset container
   ([[am4-gen3-preset-container]]), not this word grid.
-- Axe-Fx III / gen-3 — .syx body is Huffman-coded
+- Axe-Fx III / gen-3: .syx body is Huffman-coded
   (`presetHuffman.ts`); different container entirely.
-- The `fn=0x1F` live read ([[ii-fn1f-atomic-read]]) — that reply is a
+- The `fn=0x1F` live read ([[ii-fn1f-atomic-read]]): that reply is a
   different (broadcast-triple) shape, not this image.
 
 ## Verification path

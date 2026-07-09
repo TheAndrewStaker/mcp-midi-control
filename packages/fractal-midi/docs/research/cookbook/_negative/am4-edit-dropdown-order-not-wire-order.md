@@ -4,8 +4,8 @@ class: enum-mapping
 status: non-matching
 verified_on:
   - am4-edit-2.00
-golden: STUB (structural-only; negative finding — the resolved wire orders are guarded by scripts/verify-msg.ts enum-table registration cases; see Symptoms / grep terms)
-retest_when: never (structural — editors re-sort dropdowns for display; the device front-panel knob order IS the wire order, and the hardware-sweep lane that resolved this shipped 2026-05-31)
+golden: STUB (structural-only; negative finding: the resolved wire orders are guarded by scripts/verify-msg.ts enum-table registration cases; see Symptoms / grep terms)
+retest_when: never (structural: editors re-sort dropdowns for display; the device front-panel knob order IS the wire order, and the hardware-sweep lane that resolved this shipped 2026-05-31)
 relates_to: [param-descriptor-16byte]
 consumed_in: []
 ---
@@ -126,7 +126,7 @@ device-confirmed wire order (each reorders the AM4-Edit dropdown):
   6L6GC JJ, EL34 JJ, EL84 JJ, KT66 JJ, KT88 JJ, 6CA7 AMP, EL34 SVET, 6L6GC SVET,
   6V6GT TUNG, EL84 MULL, 6550 TUNG, TRANSISTOR`. A NEW register at pidHigh `0x4b`
   (adjacent to preamp_tube_type `0x4c`), NOT `amp.tubes` `0x0095` (which stayed 0
-  when Power Tube Type changed — ruled out). Found by scanning the amp register
+  when Power Tube Type changed, ruled out). Found by scanning the amp register
   range for the distinctive parked value (TRANSISTOR = index 25):
   `probe-am4-find-power-tube-type.ts`. Amp-gated (Double Verb Vibrato).
 

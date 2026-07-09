@@ -7,7 +7,7 @@ verified_on:
   - axe-fx-ii-xl-plus
 firmware_sensitive: false
 golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
-retest_when: never (re-adjudicated 2026-07-02 — the Huffman premise was refuted and the entry re-scoped; the remaining rule-outs, raw framed-byte-layer diffing and using the dump envelope for parameter sync, are structural to the frame format and to fn=0x1F being the sync primitive)
+retest_when: never (re-adjudicated 2026-07-02: the Huffman premise was refuted and the entry re-scoped; the remaining rule-outs, raw framed-byte-layer diffing and using the dump envelope for parameter sync, are structural to the frame format and to fn=0x1F being the sync primitive)
 relates_to: [ii-preset-image-tlv-chain, ii-fn1f-atomic-read, vendor-envelope-descriptor-table, septet-21bit-byte2-mask-preservation, xor-fold-hash, preset-name-ascii-triplets, block-record-stride-8, am4-preset-dump-flat-byte-diff]
 consumed_in: []
 ---
@@ -19,14 +19,14 @@ consumed_in: []
 > per-firmware codebook" with offsets "unstable across presets." That
 > premise is **REFUTED** by on-disk evidence (adjudication below). The
 > Huffman claim was a misattribution from the Axe-Fx III community RE
-> (Fractal Forum #159885) — and even for the III it holds only for the
+> (Fractal Forum #159885), and even for the III it holds only for the
 > gen-3 **.syx file body** (`packages/fractal-gen3/src/presetHuffman.ts`),
 > not the II wire dump. The II body is a **fixed-layout word grid** with
 > stable offsets at both the byte and word layers. Do NOT cite this entry
 > as evidence that the II preset body is compressed.
 >
 > **SUPERSEDED-STRONGER 2026-07-02:** the word layer is not merely
-> stable — it is a **self-describing TLV chain** from word 130
+> stable; it is a **self-describing TLV chain** from word 130
 > ([[ii-preset-image-tlv-chain]], 388/388: 384 factory + 4 hardware
 > dumps). Every block's paramBase is read directly from the dump in
 > hand (`tlvWord + 2`), so cross-preset/cross-firmware offset
@@ -39,16 +39,16 @@ consumed_in: []
 The II preset dump body is a deterministic fixed grid: 64 `fn 0x78`
 chunks, each declaring exactly 64 native ushorts (2-byte septet count
 `0x40 0x00` + 64 × 3-byte words per
-[[septet-21bit-byte2-mask-preservation]]) — 4096 words per preset.
+[[septet-21bit-byte2-mask-preservation]]), 4096 words per preset.
 Evidence, one hypothesis per check
 (`hw132/` + `bk070-*` + factory-bank captures):
 
 - **Chunk word-count fixed:** every chunk across 128 Bank-A factory
   presets + 3 hw132 hardware dumps declares count=64. No variable-length
-  regions anywhere — incompatible with entropy coding.
+  regions anywhere, incompatible with entropy coding.
 - **One-variable rename pair** (`hw132/sentinel-eb-alpha.syx` vs
   `sentinel-eb-bravo.syx`, "EB ALPHA"→"EB BRAVO"): differs at exactly
-  **8 of 12,951 raw bytes** — the 5 changed name chars at byte offsets
+  **8 of 12,951 raw bytes**: the 5 changed name chars at byte offsets
   35/38/41/44/47 (stride 3, per [[preset-name-ascii-triplets]]), the
   chunk-0 frame checksum (212), and the footer hash + checksum
   (12,946/12,949). Zero downstream smear. At the de-framed word layer:
@@ -74,7 +74,7 @@ static analysis: NOT Huffman, structured serialization) and the
 cross-device note in [[am4-preset-dump-flat-byte-diff]] (II dump is
 deterministic; a channel-toggle redump shows zero byte diffs). The
 one-variable diff campaign this entry originally rejected was in fact
-later executed successfully — the BK-070 width measurements
+later executed successfully: the BK-070 width measurements
 (`scripts/_research/bk070-measure-widths.ts`, batches A–E → 
 `packages/fractal-gen2/src/blockBinaryLayout.ts`) are word-layer diffs
 of exactly this dump.
@@ -89,7 +89,7 @@ of exactly this dump.
   Always de-frame to the 4096-word image first; diff words.
 - **Using the preset-binary envelope as the parameter-SYNC read.**
   [[ii-fn1f-atomic-read]] (`SYSEX_GET_ALL_PARAMS`) is the wire shape
-  AxeEdit actually uses for its "Read from Axe-Fx" flow — one request,
+  AxeEdit actually uses for its "Read from Axe-Fx" flow: one request,
   full per-block state. The `0x77/0x78/0x79` path is the store/load
   preset-file feature. For "what are the current parameter values," the
   original entry's reason 2 stands: fn=0x1F is the right primitive.
@@ -104,7 +104,7 @@ Search these before re-attempting (or before re-believing the old claim):
 
 - "II preset dump byte diff" / "diff 0x77/0x78/0x79 captures"
 - "Huffman-compressed preset body" / "offsets unstable across presets"
-  (REFUTED for the II — see adjudication above)
+  (REFUTED for the II, see adjudication above)
 - "21-capture plan" / "one parameter changed per capture pair"
 - "fixed 64-word chunk grid" / "4096-word image"
 
@@ -126,7 +126,7 @@ Search these before re-attempting (or before re-believing the old claim):
   Root CLAUDE.md's "Body is Huffman-compressed; offsets unstable"
   bullet mirrors the old text and needs the same correction.
 - 2026-07-02 (preset-image TLV decode): stable-word-layer claim
-  superseded-stronger — the image is a self-describing TLV chain
+  superseded-stronger: the image is a self-describing TLV chain
   ([[ii-preset-image-tlv-chain]]); per-dump paramBase is read, not
   predicted, making the offset-stability question moot for
   read-modify-write.

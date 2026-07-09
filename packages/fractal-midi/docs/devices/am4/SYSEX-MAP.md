@@ -59,7 +59,7 @@ Byte 0     0xF0        SysEx start
 Byte 1     0x00        Manufacturer ID byte 0  ┐
 Byte 2     0x01        Manufacturer ID byte 1  │ Fractal Audio (0x00 01 74)
 Byte 3     0x74        Manufacturer ID byte 2  ┘
-Byte 4     0x15        Model ID — AM4
+Byte 4     0x15        Model ID: AM4
 Byte 5     0xdd        Function ID
 Byte 6..N-2           Payload (function-specific)
 Byte N-1   0xdd        Checksum (7-bit, XOR of F0..last payload byte, & 0x7F)
@@ -588,7 +588,7 @@ The Ghidra catalog already carries all 99 paramId+name pairs. Generating
 `params.ts` GLOBAL entries from this finding is mechanical (the next
 follow-up after this decode).
 
-### 2026-06-05 — Enum tables confirmed via interactive hardware probe
+### 2026-06-05: Enum tables confirmed via interactive hardware probe
 
 **23 global params upgraded from `unit:'count'` placeholders to `unit:'enum'`** via
 interactive hardware probe (`scripts/_research/probe-am4-setup-enums.ts`) covering
@@ -622,7 +622,7 @@ all SETUP menu pages. Key confirmed mappings (full tables in `params.ts`):
 `global.tuner_source`. These write via MIDI and persist, but have no front-panel
 UI and are cleared by SETUP → Reset → Reset System Parameters.
 
-**`global.sprk_model`** (Speaker Imp. Curve, pidHigh=0x0097): partial — indices 0-8
+**`global.sprk_model`** (Speaker Imp. Curve, pidHigh=0x0097): partial, indices 0-8
 confirmed (Default + named cabs starting with Resistive Load); more entries likely exist.
 See BK-AM4-GLOBAL-REMAINING.
 
@@ -926,7 +926,7 @@ Observed AM4 response (capture 2026-04-14, firmware 2.00):
 
   MAJ = 0x02 (firmware major version 2)
   MIN = 0x00 (firmware minor version 0)
-  R1..R5 = 03 04 05 00 00 (reserved, purpose unknown — stable across reads)
+  R1..R5 = 03 04 05 00 00 (reserved, purpose unknown, stable across reads)
   Build date: null-terminated ASCII "Mon DD YYYY HH:MM:SS" format
   Null padding: appears to pad total response to a fixed length
 ```
@@ -1839,7 +1839,7 @@ F0 00 01 74 15 01 [pidLow=0x00CE] [pidHigh=0x0070] [action=0x0001] [hdr3=0x0000]
 trigger_float32_value = scene_index + (high_byte << 8)
   scene_index = 0..3  (scene 1..4)
   high_byte   = 0..3  (per-row: msg_index 0..3)
-              = 0xFF (per-scene Send All sentinel — "fire all 4 msgs")
+              = 0xFF (per-scene Send All sentinel, "fire all 4 msgs")
 ```
 
 The "scene index in low byte, mode-selector in high byte" pattern
@@ -2581,7 +2581,7 @@ Format: `F0 00 01 74 15 78 [discriminator:2] [packed:3072] [cs] F7`
   reading): the chunk bodies are the gen-3 preset container, verbatim.**
   Concatenating the 4 chunks' packed bytes and 3-to-16 unpacking yields an
   8,192-byte `raw_patch` whose body region is compressed with the gen-3
-  dynamic-Huffman scheme — the pervasive byte churn between exports is the
+  dynamic-Huffman scheme; the pervasive byte churn between exports is the
   per-export dynamic Huffman CODE TABLE changing, not a mask or scramble.
   See "Container decode" below and §11.
 
@@ -2590,13 +2590,13 @@ Format: `F0 00 01 74 15 78 [discriminator:2] [packed:3072] [cs] F7`
 Observed: `F0 00 01 74 15 79 71 6F 00 77 F7`
 
 - Payload, 3 bytes: the septet-packed (`[x&0x7F, (x>>7)&0x7F, (x>>14)&0x7F]`)
-  uint16 XOR of all 4,096 LE words of the unpacked `raw_patch` — the same
+  uint16 XOR of all 4,096 LE words of the unpacked `raw_patch`, the same
   footer integrity value as the gen-3 devices (`computeRawPatchXor` in
   `fractal-midi/shared`). Matches on all 104 factory presets + every
   hardware export checked (`scripts/verify-am4-preset-container.ts`).
 - `77 F7`, checksum + SysEx end.
 
-### Container decode (0x78 body layer) 🟢 — DECODED 2026-07-02
+### Container decode (0x78 body layer) 🟢: DECODED 2026-07-02
 
 The AM4 dump body is the **gen-3 preset container** at chunk count 4
 (the III uses 16 chunks, FM3/FM9 use 8; the chunk count is the only
@@ -2617,13 +2617,13 @@ device knob). Decoder: `decodeAm4RawPatch` in
 | `0x4C` … | gen-3 dynamic-Huffman bitstream, decompressing to exactly decompSize; raw_patch tail after the stream is zero-filled |
 
 Decoded-BODY field map (offsets into the decompressed body; values are
-standard AM4 LE u16 on the 0..65534 wire scale) — **PARTIAL**:
+standard AM4 LE u16 on the 0..65534 wire scale), **PARTIAL**:
 
 | Body offset | Field |
 |---|---|
 | `0x0004 + n×0x50` (n=0..3) | scene record n: 32-byte ASCII scene name (space-padded, NUL at 31), then per-scene state (channel bytes visible, unmapped) |
-| AMP block (walked marker) | 4 per-channel amp records — see below |
-| `0x140E` u16 | **volatile** — churns between back-to-back no-op redumps; exclude from decoded-layer diffs |
+| AMP block (walked marker) | 4 per-channel amp records (see below) |
+| `0x140E` u16 | **volatile**: churns between back-to-back no-op redumps; exclude from decoded-layer diffs |
 
 #### Body = a walkable BLOCK-RECORD CHAIN (AMP block decoded byte-exact) 🟢 amp / 🟡 other blocks
 
@@ -2639,7 +2639,7 @@ when a block's type changes. Decoder: `locateAm4AmpBlock` /
 - **Param word rule:** `off = marker + channel*0x130 + 0x0E + pidHigh*2`
   (the "pidHigh + 7 words" rule; `0x0E` header bytes = 7 words).
 
-CONFIRMED amp anchors (byte-exact, warm-pair oracle) — the rest of the
+CONFIRMED amp anchors (byte-exact, warm-pair oracle); the rest of the
 registered amp knobs ride the SAME geometry (formula-extrapolated):
 
 | param | ch | pidHigh | off from marker | abs (amp@0x0934) | oracle |
@@ -2649,7 +2649,7 @@ registered amp knobs ride the SAME geometry (formula-extrapolated):
 | amp.gain | B | `0x0B` | `0x154` | `0x0A88` | warm-3: 5.0→5.1; **pins the `0x130` stride** |
 | amp.master | A | `0x0F` | `0x2C` | `0x0960` | warm-4: `0x828E` = 5.1 |
 
-**Config-dependent base — WALK IT, never hardcode.** The amp marker is at
+**Config-dependent base: WALK IT, never hardcode.** The amp marker is at
 body `0x0934` in **70/104** factory presets, `0x0A92` in **17** (an extra
 pre-amp record enlarges the modifier region by `0x15E`), and ABSENT in **17**
 (16 empty presets + one intentional `'Bass NoAmp DI'`). `locateAm4AmpBlock`
@@ -2657,25 +2657,25 @@ scans + validates the record shape (marker + header words 1..4 zero + all four
 channel TYPE ordinals in `[0,247]`), resolving the base in every config with
 **zero false positives** across the bank. A bare `u16==effectId` scan
 false-positives on param-value / modifier-record collisions (reads two
-reverbs, `cab@0x0934` nonsense) — the shape validation is what makes it robust.
+reverbs, `cab@0x0934` nonsense); the shape validation is what makes it robust.
 
 **Scope: AMP only.** Only the amp block has a validated record shape + an
 ordinal-bounded TYPE enum to reject false markers. Cab (`0x003E`) and FX blocks
 share the chain structure but their per-block stride/param formula is UNVERIFIED
-(no isolated one-variable capture yet), so they are an honest omission — see the
+(no isolated one-variable capture yet), so they are an honest omission; see the
 captured-artifacts `UNMINED[2026-07-02]` entry for the 5 captures that close it.
 
 Corpus + oracles (all green via `scripts/verify-am4-preset-container.ts`,
-890 checks / 117 dumps — adds the body block-record-chain amp walk):
+890 checks / 117 dumps; adds the body block-record-chain amp walk):
 `samples/factory/AM4-Factory-Presets-1p01.syx`
-(104 fw 1.01 presets — CRC, footer XOR, Huffman termination, plaintext
+(104 fw 1.01 presets: CRC, footer XOR, Huffman termination, plaintext
 names + scene names), `samples/factory/A01-original.syx`,
 `samples/captured/hw132/am4-{stored-a01,active-1}.syx`, and the 5 warm
 pairs `samples/captured/am4-warm-pair-*-{before,after}.syx` (fw 2.00).
 Goldens: `test/am4/presetcontainer.test.ts`. Cookbook:
 `docs/research/cookbook/am4-gen3-preset-container.md`.
 
-### MCP-facing stored `get_preset(location)` 🟢 — SHIPPED 2026-07-02
+### MCP-facing stored `get_preset(location)` 🟢: SHIPPED 2026-07-02
 
 `get_preset({ location: 'A01'..'Z04' })` now surfaces the container decode
 through the unified tool surface. The AM4 reader
@@ -2685,7 +2685,7 @@ stream with NO working-buffer side effect), reassembles it via
 `receivePresetDumpStream`, decodes via `decodeAm4RawPatch`, and returns the
 **preset name + the 4 scene names + the self-validating CRC flag + the AMP
 block's per-channel param VALUES** on `PresetSnapshot.whole_preset`
-(`source: 'stored-dump'`, `model_id: 0x15`, `amp: { A/B/C/D → knob map }` — the
+(`source: 'stored-dump'`, `model_id: 0x15`, `amp: { A/B/C/D → knob map }`; the
 AM4 body IS the gen-3 container, so it reuses that view and populates `amp`
 exactly like the gen-3 `amp1`). One round-trip, ~150-200 ms; read-only.
 `get_preset` with **no** `location` keeps the active-buffer fn 0x1F per-block
@@ -2764,7 +2764,7 @@ server; firmware updates are out of scope for the tool surface.
 (see §10b "Container decode"). The earlier verdicts are now explained,
 not merely superseded:
 
-- **"Per-export masked" (2026-04-29) — explained.** There is no mask.
+- **"Per-export masked" (2026-04-29): explained.** There is no mask.
   `samples/factory/A01-original.syx` differs from the bank's A01 entry
   at the compressed layer because (a) its fw word is `0x0109` (re-encoded
   under fw 2.00; the bank is `0x0107`) and (b) the dynamic Huffman code
@@ -2773,18 +2773,18 @@ not merely superseded:
   compare directly.
 - **"Encoder non-determinism" (§10.10 of
   `preset-binary-format-research.md`, and the
-  `_negative/am4-preset-dump-flat-byte-diff` cookbook entry) — explained.**
+  `_negative/am4-preset-dump-flat-byte-diff` cookbook entry): explained.**
   The ~20% no-op redump churn is dynamic-Huffman table churn plus ONE
   volatile decoded u16 @ body `0x140E`. A no-op redump pair diffs by
   exactly 2 bytes at the DECODED layer. Flat-byte diffing of the
   compressed stream stays ruled out; **decoded-layer diffing is the
   supported calibration lane** (`decodeAm4RawPatch(...).decompressedBody`,
-  masking `0x140E..0x140F`) — the amp-gain warm pair localizes to a
+  masking `0x140E..0x140F`); the amp-gain warm pair localizes to a
   single u16 this way.
 
 The remaining 🔴 is the decoded-body FIELD MAP beyond the pinned offsets
 (scene records, amp.gain chA, the volatile word): block records, routing,
-and the rest of the params — now reachable by ordinary one-variable
+and the rest of the params, now reachable by ordinary one-variable
 decoded-layer diffing.
 
 From `Presets.md`:
@@ -2808,7 +2808,7 @@ working field-map plan is:
    `decompressedBody`, masking the volatile u16 @ `0x140E`.
 2. Change one parameter in AM4-Edit (or via `set_param`), export, re-diff
    at the decoded layer. A one-variable edit localizes to a single LE u16
-   (plus scene-copy echoes) — proven by the warm-pair corpus.
+   (plus scene-copy echoes), proven by the warm-pair corpus.
 3. Repeat across representative parameters until the body is mapped;
    record pinned offsets in `src/am4/presetContainer.ts` and the
    "Container decode" table in §10b.

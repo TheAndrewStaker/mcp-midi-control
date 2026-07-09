@@ -23,25 +23,25 @@ The dump exposes the complete decompile of `FUN_14033ec70`, the AxeEdit III func
 Location in dump: L22641-22850. The relevant excerpts (offset bytes are after the F0 00 01 74 <model> 01 prefix):
 
 ```c
-// Field 0 (action14)   — 2-byte septet, output bytes [0,1]
+// Field 0 (action14)   : 2-byte septet, output bytes [0,1]
 pbVar4[0] = (byte)uVar1 & 0x7f;
 pbVar4[1] = (byte)(uVar1 >> 7) & 0x7f;        // L22698-22699
-// Field 1 (effectId14) — 2-byte septet, output bytes [2,3]
+// Field 1 (effectId14) : 2-byte septet, output bytes [2,3]
 pbVar4[2] = (byte)uVar1 & 0x7f;
 pbVar4[3] = (byte)(uVar1 >> 7) & 0x7f;        // L22726-22727
-// Field 2 (paramId14)  — 2-byte septet, output bytes [4,5]
+// Field 2 (paramId14)  : 2-byte septet, output bytes [4,5]
 pbVar4[4] = (byte)uVar1 & 0x7f;
 pbVar4[5] = (byte)(uVar1 >> 7) & 0x7f;        // L22754-22755
-// Field 3 (value32)    — 5-byte septet, output bytes [6..10]
+// Field 3 (value32)    : 5-byte septet, output bytes [6..10]
 pbVar4[6]  = (byte)uVar1 & 0x7f;
 pbVar4[7]  = (byte)(uVar1 >> 7) & 0x7f;
 pbVar4[8]  = (byte)(uVar1 >> 0xe) & 0x7f;
 pbVar4[9]  = (byte)(uVar1 >> 0x15) & 0x7f;
 pbVar4[10] = (byte)(uVar1 >> 0x1c);           // L22782-22786
-// Field 4 (modifier14) — 2-byte septet, output bytes [11,12]
+// Field 4 (modifier14) : 2-byte septet, output bytes [11,12]
 pbVar4[0xb] = (byte)uVar1 & 0x7f;
 pbVar4[0xc] = (byte)(uVar1 >> 7) & 0x7f;      // L22813-22814
-// Field 5 (tailCount14) — 2-byte septet, output bytes [13,14]
+// Field 5 (tailCount14) : 2-byte septet, output bytes [13,14]
 pbVar4[0xd] = (byte)uVar1 & 0x7f;
 pbVar4[0xe] = (byte)(uVar1 >> 7) & 0x7f;      // L22840-22841
 // Tail (param_3[5] septets at byte 0xf+)
@@ -275,13 +275,13 @@ Worth tracking as a sub-claim within `[[vendor-envelope-descriptor-table]]`'s bo
 
 ### 3.A, Auto-labeled `fn=0x...` headers in PART B are unreliable
 
-**Negative claim:** the PART B section headers (`## fn=0x10 — Save Preset`, `## fn=0x14 — Set Preset Name`, `## fn=0x30 — Reset Block`, etc.) are produced by literal-grep over the function body and do not correspond to the fn byte actually being emitted. Do not trust them.
+**Negative claim:** the PART B section headers (`## fn=0x10: Save Preset`, `## fn=0x14: Set Preset Name`, `## fn=0x30: Reset Block`, etc.) are produced by literal-grep over the function body and do not correspond to the fn byte actually being emitted. Do not trust them.
 
 **Evidence:**
 
-- L22635 `## fn=0x14 — Set Preset Name` → body is `FUN_14033ec70`, which calls `FUN_1403437d0(param_2, 1, pbVar3, iVar2, *param_1)` at L22846. The literal `1` is the fn byte. This is the fn=0x01 SET_PARAMETER builder, not Set Preset Name.
-- L22412 `## fn=0x10 — Save Preset` → body is `FUN_14014ced0`, which calls `FUN_1403434b0(param_2, <expr> + 0x5a, cVar6, &local_d8)` at L22516. The literal under the expression is `0x5a`, not `0x10`. This is a cab-bank file import routine, not a save-preset emitter.
-- L22854 `## fn=0x15 — Change Scene` → bodies are `FUN_140328a10` (emits fn=`0x5a` at L22941 and fn=`0x5c` at L23039) and `FUN_140336a40` (emits fn=`0x5c` at L23081). Neither emits fn=0x15.
+- L22635 `## fn=0x14: Set Preset Name` → body is `FUN_14033ec70`, which calls `FUN_1403437d0(param_2, 1, pbVar3, iVar2, *param_1)` at L22846. The literal `1` is the fn byte. This is the fn=0x01 SET_PARAMETER builder, not Set Preset Name.
+- L22412 `## fn=0x10: Save Preset` → body is `FUN_14014ced0`, which calls `FUN_1403434b0(param_2, <expr> + 0x5a, cVar6, &local_d8)` at L22516. The literal under the expression is `0x5a`, not `0x10`. This is a cab-bank file import routine, not a save-preset emitter.
+- L22854 `## fn=0x15: Change Scene` → bodies are `FUN_140328a10` (emits fn=`0x5a` at L22941 and fn=`0x5c` at L23039) and `FUN_140336a40` (emits fn=`0x5c` at L23081). Neither emits fn=0x15.
 
 **Search terms a future agent should grep:**
 - Treat `FUN_1403437d0(...,<lit>,...)` as authoritative for the fn byte emitted by a caller.

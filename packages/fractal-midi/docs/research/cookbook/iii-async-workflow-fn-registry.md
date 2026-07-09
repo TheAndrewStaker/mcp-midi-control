@@ -33,9 +33,9 @@ Binary-specific sites:
 The III registry enumerates ~60 workflows over L60-L2285 of
 `ghidra-axe-edit-iii-inbound-dispatcher.txt`. AM4-Edit's registry holds
 fewer workflows (single-shot device; ~35 distinct names observed) but
-the structural pattern — the same per-fn-byte registration helper, the
+the structural pattern (the same per-fn-byte registration helper, the
 same paired (request_id, response_id) workflow ints written at the
-workflow-object offset, the same name-binder call — is byte-for-byte
+workflow-object offset, the same name-binder call) is byte-for-byte
 the same architectural shape across both editors.
 
 When the device emits a SysEx with fn=X, the dispatcher (not present in
@@ -134,7 +134,7 @@ Many fn-bytes are bidirectional, so the two tables overlap.
 - **DO NOT** assume a fn-byte's semantics are global. If a future
   workflow re-registers fn=0x33 with a different parent workflow, the
   semantics change. Grep the registry before claiming "fn=X means Y."
-- **DO NOT** search for a flat `switch(fnByte)` in III binaries — see
+- **DO NOT** search for a flat `switch(fnByte)` in III binaries; see
   the corresponding negative entry
   `_negative/iii-fn-byte-switch-as-inbound-dispatcher.md`.
 

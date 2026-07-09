@@ -7,12 +7,12 @@ verified_on:
   - fm9-fw-11.00
 firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-gen3-septet-label-wrong-offset
-retest_when: never (trap-record — the byte-5 alignment is capture-proven and golden-gated; this entry exists as the offset-sweep tripwire, not as a re-testable hypothesis)
+retest_when: never (trap-record, the byte-5 alignment is capture-proven and golden-gated; this entry exists as the offset-sweep tripwire, not as a re-testable hypothesis)
 relates_to: [gen3-enum-label-septet-stream, iii-byte-stream-septet-pack-8to7]
 consumed_in: []
 ---
 
-# Septet unpack at the wrong byte offset hides gen-3 enum labels — DO NOT conclude "no labels on the wire"
+# Septet unpack at the wrong byte offset hides gen-3 enum labels: DO NOT conclude "no labels on the wire"
 
 This is the trap that produced a WRONG multi-session conclusion ("gen-3
 enum value names are device-resident / never cross the wire"). They DO
@@ -24,7 +24,7 @@ sensitive to its start byte**, and both started one byte too late.
 
 - A full-capture ASCII scan unpacking each frame's payload from **byte 6**
   (after the `sub` byte) yielded only the fixed identity blob `SPFGAD…` and
-  one `"Output 3"` — no enum labels. Conclusion drawn: "labels off-wire."
+  one `"Output 3"`, no enum labels. Conclusion drawn: "labels off-wire."
 - The correct stream starts at **byte 5** (the `fn` byte). At byte 5 the
   same frames decode to "Clean", "Warm", "Medium Spring", "BASSGUY", … One
   byte of misalignment shifts every 7-bit boundary and turns ASCII to noise.
@@ -44,7 +44,7 @@ offset 5.
 ## Also retired here: "open the block panel to dump type lists"
 
 A companion false lead: opening a block's PANEL was believed to make the
-editor fetch that block's full enum/type lists. It does not — panel-open
+editor fetch that block's full enum/type lists. It does not; panel-open
 yields only the param CURRENT-values (`sub=0x1a`) and the active cab's IR
 list (`sub=0x2e`). The full per-type list dumps only when the **Type
 dropdown itself is opened**. Ask testers to open the dropdown, not just the

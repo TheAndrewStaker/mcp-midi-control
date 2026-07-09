@@ -14,7 +14,7 @@ consumed_in:
   - packages/fractal-gen3/src/reader.ts (VP4 get_preset active-buffer structure read)
 ---
 
-# VP4 eid206 pid0 tc=0x1f — the whole-preset STRUCTURE blob
+# VP4 eid206 pid0 tc=0x1f: the whole-preset STRUCTURE blob
 
 The VP4's system block **eid 206** answers `fn=0x01` GET on **paramId 0,
 typecode 0x1f** with one septet-packed blob carrying the active preset's whole
@@ -24,7 +24,7 @@ to render the chain (392 responses across the two captures).
 
 ## Wire shape
 
-Request (18 bytes, verbatim in both captures — 202 occurrences):
+Request (18 bytes, verbatim in both captures, 202 occurrences):
 
 ```
 F0 00 01 74 14 01 4E 01 00 00 1F 00 00 00 00 00 cs F7
@@ -39,7 +39,7 @@ checksum, F7.
 ## Payload decode
 
 The 220 packed bytes unpack 8→7 with the chunked LSB-first-with-carry scheme
-([[iii-byte-stream-septet-pack-8to7]] — `unpackValueChunked` in
+([[iii-byte-stream-septet-pack-8to7]], `unpackValueChunked` in
 `shared/packValue.ts`; carry restarts every 8 wire / 7 raw bytes) into a
 192-byte raw record:
 
@@ -48,7 +48,7 @@ The 220 packed bytes unpack 8→7 with the chunked LSB-first-with-carry scheme
 | `[0]` | u8 status flag: `0x00` fresh-loaded, `0x60` after the first structural edit |
 | `[4]` | 1-bit toggle that FLIPS on every structural command (delete / move / save / scene) |
 | `[8]` | u8 **CURRENT SCENE**, 0-based |
-| `[12..15]` | float32 LE **live telemetry** — varies per poll |
+| `[12..15]` | float32 LE **live telemetry**, varies per poll |
 | `[16..47]` | preset name, ASCII, space-padded to 31 chars + NUL |
 | `[48..175]` | scene 1..4 names, 4 × 32-byte records (31 ASCII + NUL) |
 | `[176..191]` | **CHAIN TABLE**: 4 × u32 LE effectId (shared gen-3 effect-ID table), slots 1..4 in order; `0` = empty slot |
@@ -72,12 +72,12 @@ The 220 packed bytes unpack 8→7 with the chunked LSB-first-with-carry scheme
 ## Misapplication failure modes
 
 - **DO NOT fingerprint or byte-compare raw blobs.** The telemetry word at
-  raw[12..15] (and its packed image) varies on every poll — two reads of an
+  raw[12..15] (and its packed image) varies on every poll; two reads of an
   UNCHANGED preset differ. Compare decoded fields, never bytes.
 - **raw[4] is NOT a dirty flag.** It is a parity-like toggle that flips on
   every structural command (including SAVE), so its absolute value carries no
   "modified since save" meaning. raw[0]=0x60 is stickier but also not proven
-  to clear on save — do not wire either into the buffer-dirty gate without a
+  to clear on save; do not wire either into the buffer-dirty gate without a
   dedicated capture.
 - **Chain slot value `0` means EMPTY, not effectId 0.** Preserve slot
   positions (gaps are real); do not compact the chain.
@@ -85,18 +85,18 @@ The 220 packed bytes unpack 8→7 with the chunked LSB-first-with-carry scheme
   addressable roster and the tc-typecode GET is the VP4's own frame shape;
   do not issue this read at other model bytes.
 - **The unpack is the CHUNKED 8→7 scheme.** A continuous-carry (non-restarting)
-  or MSB-first unpack garbles everything past the first 7 raw bytes — this
+  or MSB-first unpack garbles everything past the first 7 raw bytes; this
   exact mistake produced the v1 capture's since-retired "preset name is not
   in the capture / chain not recoverable" negatives.
 
 ## Where it does NOT apply (yet)
 
 - Whether OTHER presets' structures can be read without loading them (a
-  stored-location variant) is unknown — both captures only poll the active
+  stored-location variant) is unknown; both captures only poll the active
   buffer.
 - The blob is read-only evidence. The corresponding WRITE registers
   (`pid10` delete, `pid15`/`pid16` move pair, `pid13` scene) are identified
-  by causality but their value math is undecoded — see the VP4 SYSEX-MAP
+  by causality but their value math is undecoded; see the VP4 SYSEX-MAP
   "still gated" list.
 
 ## Verification path
@@ -112,5 +112,5 @@ end-to-end against the captured v1 frame (mock conn).
 - 2026-07-01: decoded (mine1..mine5 pass over
   `samples/captured/decoded/vp4-403{,-v2}/frames.json`); codec + goldens +
   reader wiring shipped same-session. Overturned two v1-capture negatives
-  (name-not-in-capture, chain-not-recoverable) — both were unpack-scheme
+  (name-not-in-capture, chain-not-recoverable); both were unpack-scheme
   misses, not absent data.

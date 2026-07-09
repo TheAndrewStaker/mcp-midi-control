@@ -10,7 +10,7 @@ verified_on:
     date: 2026-05-25
     evidence: "probe-axefx2-state-write.ts Test A: Amp 1 pos[2] round-trip byte-exact"
   - axis: device-family
-    point: "FM9 (gen-3, model 0x12, FW 11.00) — device→host broadcast direction"
+    point: "FM9 (gen-3, model 0x12, FW 11.00), device→host broadcast direction"
     date: 2026-06-03
     evidence: "community FM9 capture: fn=0x74/0x75/0x76 burst as the fn=0x1F poll response; Reverb block 66, body index 0 = Mix = 65534. parseGen3StateBroadcastBody golden in test/axe-fx-iii/setparam.test.ts"
 ---
@@ -54,7 +54,7 @@ The **device-emitted broadcast** direction (device → host) is now confirmed on
 The triple ENVELOPE SHAPE thus generalizes across gen-2 (II) and gen-3 (III/FM3/FM9).
 
 The **HOST-TO-DEVICE write acceptance** (this entry's headline claim) remains
-confirmed on Axe-Fx II XL+ Q8.02 ONLY — gen-3 write-acceptance is untested (the
+confirmed on Axe-Fx II XL+ Q8.02 ONLY; gen-3 write-acceptance is untested (the
 FM9 capture was a panel edit + reads, no synthesized write). Status stays
 `matched-singleton` for the write claim until a gen-3 write round-trip lands.
 
@@ -76,8 +76,8 @@ FM9 capture was a panel edit + reads, no synthesized write). Status stays
 
 ## Cross-references
 
-- [[ii-fn1f-atomic-read]] — the READ primitive that returns this same shape
-- [[septet-14bit]] — targetId and itemCount encoding
+- [[ii-fn1f-atomic-read]]: the READ primitive that returns this same shape
+- [[septet-14bit]]: targetId and itemCount encoding
 
 ## Refinement history
 

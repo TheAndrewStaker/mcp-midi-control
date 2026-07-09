@@ -122,7 +122,7 @@ input-routing mask. Advanced via live FM9-Edit draws against a rendered grid
   (1 and 2) across draws.
 - **Drawing between EMPTY cells auto-inserts shunts at both endpoints (and in
   any gap) BEFORE the routing op**, so those frames reference the shunts, not the
-  cells clicked — the confound that kept this op "partial". Confirmed: r1c1->r1c2
+  cells clicked, the confound that kept this op "partial". Confirmed: r1c1->r1c2
   inserted shunts at both; r1c1->r1c3 inserted shunts at c1/c2(gap)/c3.
 - **Drawing between already-PLACED blocks inserts NO shunts** (clean endpoints):
   Amp(58,r2c3)->Cab(62,r2c5) gave tails `06 44 60` + `09 46 20` with no shunts.

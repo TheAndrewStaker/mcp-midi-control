@@ -1,12 +1,12 @@
-# Circuit Tracks sample upload — research + feasibility
+# Circuit Tracks sample upload: research + feasibility
 
-## 2026-07-03 (late) — pack-index theory RE-TESTED and RE-FALSIFIED (2nd time); reverted again. Real lead = cold-handle single-upload drop.
+## 2026-07-03 (late): pack-index theory RE-TESTED and RE-FALSIFIED (2nd time); reverted again. Real lead = cold-handle single-upload drop.
 
 A session re-wired `readActivePackIndex` into `uploadSample`/`uploadSampleKit` (reading the
 `0b 02` byte and threading it as the pack byte) to re-test the pack-index theory on the
 known-state device the doc said was needed. A 4-agent adversarial review workflow (read the
 full doc + code paths + the observed results) FALSIFIED it AGAIN and the change was REVERTED
-(`git checkout` — back to the Components-proven hardcoded pack 0). Verdict + evidence:
+(`git checkout`, back to the Components-proven hardcoded pack 0). Verdict + evidence:
 
 - **H1 (pack index is the differentiator): REFUTED.** Same controlled `_web`/`_our` bytes as
   the 2026-06-28 reversal, PLUS a new independent kill: a single upload to the EXACT slot the
@@ -17,7 +17,7 @@ full doc + code paths + the observed results) FALSIFIED it AGAIN and the change 
   one `upload_kit` success was almost certainly its cold-handle probe TIMING OUT to the silent
   `0` fallback (= old correct behavior); the real reason the kit worked where it had failed
   earlier that evening was that a separate PORT-CONTENTION wedge had been cleared (two Claude
-  Code sessions on the exclusive MIDI port; fixed via `/mcp` restart). Confounded variables —
+  Code sessions on the exclusive MIDI port; fixed via `/mcp` restart). Confounded variables,
   exactly the trap this doc keeps warning about.
 - **The actual open lead (what the evidence points to): a COLD-HANDLE first-transaction drop on
   the SINGLE-upload path.** The dispatcher `ctx.reconnect()`s before every upload → each starts
@@ -32,30 +32,30 @@ full doc + code paths + the observed results) FALSIFIED it AGAIN and the change 
   reviews (2026-06-28, 2026-07-03) have now falsified it against the repo's strongest controlled
   evidence. `readActivePackIndex` stays as an UNWIRED probe only.
 
-## 2026-07-03 — Components pack GET+SEND round-trip does NOT clear the empty-directory block
+## 2026-07-03: Components pack GET+SEND round-trip does NOT clear the empty-directory block
 
 Hit the still-open "empty-non-default-pack first-write" gap again live: `upload_sample`
 and `upload_kit` both rejected with `"the pack's sample directory is UNINITIALIZED
 (empty pack)"` on a pack named "ST & Roland" that our OWN earlier writes may have left
 in a bad state. Recovery attempted: founder used Components' **"Get Pack from Circuit
 Tracks"** then **"Send to Circuit Tracks"** (a pure round-trip, no new sample added),
-producing a pack named "7/3 pack from CT". Retried `upload_kit` against it —
+producing a pack named "7/3 pack from CT". Retried `upload_kit` against it:
 **IDENTICAL rejection**, same message, same slot 0 failure. So a pack round-trip alone
 does NOT flip the directory from empty to occupied; this is consistent with (not a new
-contradiction of) the "STILL OPEN" note below — the gap is specifically the FIRST
+contradiction of) the "STILL OPEN" note below: the gap is specifically the FIRST
 sample entry into an empty directory, and Components merely re-sending the pack's
 PROJECT data back doesn't perform whatever extra step seeds the sample directory.
 **Unresolved next step (untested):** have the founder upload at least one sample via
 Components' own **sample** upload UI (not a pack round-trip) to break the empty-first-
 entry deadlock, per the existing note below that same-session uploads to an OCCUPIED
-pack are proven to work — only the very first entry into a genuinely empty directory is
+pack are proven to work; only the very first entry into a genuinely empty directory is
 in question. Do not re-attempt more `upload_kit`/`upload_sample` calls against a
 confirmed-empty pack without a new hypothesis; each failed attempt is a wedge risk
 (see `feedback_circuit_multisession_port_contention` memory for the separate, ALSO-hit
-port-contention wedge from two simultaneous Claude Code sessions this same evening —
+port-contention wedge from two simultaneous Claude Code sessions this same evening;
 different root cause, don't conflate the two).
 
-## CORRECTION 2026-06-28 (post-review — READ FIRST; supersedes the pack-index claim below)
+## CORRECTION 2026-06-28 (post-review, READ FIRST; supersedes the pack-index claim below)
 
 A multi-agent review FALSIFIED the "pack index from `0b 02`" root cause that the
 sections below claim as SOLVED. The repo's own controlled pair disproves it:
@@ -65,7 +65,7 @@ sections below claim as SOLVED. The repo's own controlled pair disproves it:
 | `_web` (Components, works) | `01` | `…01` occupied | `07 05 **00**` | ACK |
 | `_our` (ours, fails) | `01` | `…00` empty | `07 05 **00**` | reject |
 
-Same device, **identical `0b 02` reply (`01`), identical pack byte (`00`)** — so the
+Same device, **identical `0b 02` reply (`01`), identical pack byte (`00`)**, so the
 pack byte is NOT the differentiator, and working Components writes `0` while `0b 02`
 reads `01` (it does NOT copy that byte). The real differentiator in this pair is
 **empty vs occupied directory**. The pack-2/pack-3 SD-card captures that suggested
@@ -80,13 +80,13 @@ a count/status than an index).
 
 **Reverted:** deriving the pack byte from `0b 02` (uploadSample/Kit write pack byte
 `0`, Components-proven; `readActivePackIndex` kept as a probe, not wired). The
-empty-non-default-pack first-write is STILL OPEN — recover via Components. The
+empty-non-default-pack first-write is STILL OPEN; recover via Components. The
 music-box hardware pass is consistent with the *occupied-directory* path, not the
 pack-index theory. **Next:** a clean handshake capture on a 2+-pack device with a
 KNOWN active index to settle what `0b 02`'s byte is. Everything below is retained as
 the investigation trail but the SOLVED/pack-index conclusion is withdrawn.
 
-## ROOT CAUSE FOUND — 2026-06-27 (read this first)
+## ROOT CAUSE FOUND: 2026-06-27 (read this first)
 
 The "0/64 on a clean device" mystery was always the **pack sample-directory state**,
 never our bytes. Decoded by diffing the pack-send capture
@@ -97,7 +97,7 @@ never our bytes. Decoded by diffing the pack-send capture
 - **`SET_FILENAME` (the slot-REGISTER step) is the load-bearing signal.** On an
   initialized directory it **ACKs (`04`)**; on an empty/uninitialized one it is
   **REJECTED** (device replies with the empty-slot record `05 00…`). The bulk
-  data (WRITE_INIT/DATA/FINISH) ACKs in BOTH cases — so a write to an empty pack
+  data (WRITE_INIT/DATA/FINISH) ACKs in BOTH cases, so a write to an empty pack
   acks every frame but the slot is never registered and never plays. We never
   checked SET_FILENAME's reply → "acked-but-silent" false success.
 - Every Components capture we hold starts from an **already-initialized** directory
@@ -113,15 +113,15 @@ upload to an uninitialized directory **fails LOUD** with a clear message instead
 false success (golden: verify-circuit-ncs-transfer "SET_FILENAME rejection").
 `read_sample_directory` is disabled (it caused the `00` wipe).
 
-**STILL OPEN:** (a) the directory-INIT frame — see the 2026-06-27-night finding
+**STILL OPEN:** (a) the directory-INIT frame, see the 2026-06-27-night finding
 below; (b) `upload_kit` may REPLACE the directory (writes only its own slots'
-entries) — audit merge-vs-replace before trusting it to preserve other occupied
+entries); audit merge-vs-replace before trusting it to preserve other occupied
 slots. Recovery for a wiped pack = send a pack/samples via Components.
 
-## 2026-06-27 night — EMPTY-pack write IS possible (pack-2 capture, partial decode)
+## 2026-06-27 night: EMPTY-pack write IS possible (pack-2 capture, partial decode)
 
 `send-pack-to-circuit-tracks-pack-2-...pcapng` is the first capture that writes to a
-genuinely EMPTY (`00`) directory — Components sent a pack to a fresh slot (pack 2)
+genuinely EMPTY (`00`) directory: Components sent a pack to a fresh slot (pack 2)
 on a new SD card. RESULT: the first sample's **SET_FILENAME ACKed on an empty
 directory** (`07 05 01 00 … → 04 ACK`). So writing-to-empty is NOT impossible; our
 pack-0 attempt (`_our-single-timeline`) that got rejected differs in TWO ways at
@@ -132,19 +132,19 @@ once, so neither is yet isolated:
    OUR code HARDCODES `0x00` (sampleTransfer.ts FILE_TYPE_SAMPLE prelude + writes).
    The device addresses a specific pack slot by this byte.
 2. **Projects written first.** The pack-2 send wrote the project directory
-   (`0b 03 01` + WRITE_INIT…) BEFORE the sample directory — which may be what
+   (`0b 03 01` + WRITE_INIT…) BEFORE the sample directory, which may be what
    "opens"/creates the pack so its sample directory accepts the first SET_FILENAME.
    Our sample-only upload skips that. (Note: our earlier SAME-SESSION sample-only
-   uploads to an OCCUPIED pack 0 worked — so sample-only is fine once the directory
+   uploads to an OCCUPIED pack 0 worked, so sample-only is fine once the directory
    is non-empty; the gap is specifically the FIRST entry into an empty pack.)
 
 Also differs (probably benign): the `0b 01` open reply was `…03` here vs `…01`
 elsewhere, and Components did 1× enum vs our 64×.
 
-## 2026-06-27 night — SOLVED + WIRED (pack-index)
+## 2026-06-27 night: SOLVED + WIRED (pack-index)
 
 The decisive capture (`send-single-sample-to-circuit-tracks-pack-3-...pcapng`) was
-a SAMPLE-ONLY send to an EMPTY pack (slot 3) — no projects written. It isolated the
+a SAMPLE-ONLY send to an EMPTY pack (slot 3), no projects written. It isolated the
 variable: **the device reports its ACTIVE pack index in the `0b 02` DIR_CONTROL
 reply, and every sample dir/file frame must carry it.** Three captures agree:
 
@@ -155,28 +155,28 @@ reply, and every sample dir/file frame must carry it.** Three captures agree:
 | our code (fail) | `0b 02 **01**` | `07 05 **00** …` | REJECT ✗ |
 
 Our `sampleFileId(slot)` built `[0x05, slot>>7, slot]` = `[0x05, **0**, slot]` for
-slots 0..63 — i.e. **we hardcoded pack 0 by accident** (the byte we labeled
+slots 0..63, i.e. **we hardcoded pack 0 by accident** (the byte we labeled
 "slot-high" is the PACK INDEX). Uploads only worked when the active pack was 0;
 on any other (or after a pack switch) SET_FILENAME was rejected → "0/64". NOT an
-init frame at all — we were addressing the wrong pack.
+init frame at all; we were addressing the wrong pack.
 
 **WIRED (this is the real fix):** `sampleFileId(slot, packIndex)` →
 `[0x05, packIndex, slot]`; `buildKitUploadFrames`/`buildSampleUploadFrames` thread
 `packIndex` into the dir-listing / enum / info / write frames;
-`readActivePackIndex(conn)` reads it from the `0b 02` reply (SAFE — pack-info
+`readActivePackIndex(conn)` reads it from the `0b 02` reply (SAFE: pack-info
 prelude only, never the 0x05 sample-dir session); `uploadSample`/`uploadSampleKit`
 call it and target the active pack. Goldens in verify-circuit-ncs-transfer
 (sampleFileId, frame bytes, readActivePackIndex). **HARDWARE-CONFIRMED 2026-06-28:**
 `upload_sample` of a music box to slot 20 registered and PLAYED on the device's
-active pack through our own code — `ok:true` is now gated on the SET_FILENAME ACK,
+active pack through our own code; `ok:true` is now gated on the SET_FILENAME ACK,
 so success means the slot actually registered. The 0/64 bug is fixed end-to-end.
 `read_sample_directory` stays disabled (separate destructive bug). `upload_kit`
 replace-vs-merge audit still open.
 
 ---
 
-**Historical (pre-2026-06-27): "STILL BROKEN — root cause OPEN".** History: a note here once
-claimed "HARDWARE-CONFIRMED + DURABLE" — retracted; the only durable uploads we
+**Historical (pre-2026-06-27): "STILL BROKEN, root cause OPEN".** History: a note here once
+claimed "HARDWARE-CONFIRMED + DURABLE", retracted; the only durable uploads we
 could point to were stock samples or the maintainer's own WEB uploads via
 Components, never our code. Our code writing a custom WAV (single sample AND
 64-kit) reads back **0/64** on a clean device.
@@ -189,22 +189,22 @@ header byte 5 == `0x03` and dropped the `0x08`-group frame). We built the fix
 (opt-in `awaitCommitMs` + `isFamily`/`isCommitDone` ingest) and tested it on
 hardware (instrumented, `scripts/_research/circuit-instrumented-upload.ts`):
 
-- The wait **engages correctly** — upload took ~11 s (writes ~5 s + a real ~6 s
+- The wait **engages correctly**: upload took ~11 s (writes ~5 s + a real ~6 s
   wait) and **received** the post-CLOSE `0x08` frame (`ok=true`).
 - **But the slot still read EMPTY.** And the device emits `grp 0x8 00` **4×**,
-  including BEFORE any write — so it is a generic "ready/idle" status, **not** a
+  including BEFORE any write, so it is a generic "ready/idle" status, **not** a
   commit gate. The cap1-only `grp 0x4 03 04 00` is occupied-pack-specific and
   never appears for an empty pack. Removing the pre-OPEN reset CLOSE didn't help
   either.
 
 So the commit-wait is **necessary-but-not-sufficient at best, and on its own
-useless** — backed out of the default path (the opt-in mechanism + the genuinely-
+useless**: backed out of the default path (the opt-in mechanism + the genuinely-
 correct `isFamily` ingest stay, golden-tested, for the eventual fix). **Root cause
 remains unknown:** our frames are byte-identical to the capture and ack, yet don't
 persist. The directory READ path works (real names, 0/64), so the session
 protocol is fine for reads.
 
-**USBPcap DIFF — the missing `QUERY_INFO 09 01 01` (2026-06-24, the cleanest lead
+**USBPcap DIFF: the missing `QUERY_INFO 09 01 01` (2026-06-24, the cleanest lead
 yet).** Captured OUR upload (`ct_upload_single.pcapng`) and a Components
 single-sample web upload (`ct_upload_single_from_web.pcapng`) under the same
 conditions and diffed the host→device control frames
@@ -219,24 +219,24 @@ prelude:
 | OURS (failing) | 1 | 1 | 1 | **0** |
 
 Two differences: (1) Components-current does a **probe session** first (OPEN→query→
-dir→CLOSE) — but with multi-SECOND gaps = the **UI browsing** the directory, almost
+dir→CLOSE), but with multi-SECOND gaps = the **UI browsing** the directory, almost
 certainly not load-bearing; and (2) it sends **`QUERY_INFO 09 01 01`** inside the
 write session (at protocol speed, ~1.5 ms after `09 01 00`), which **we never
 send**. The `09 01 01` reply (`00 01 0f 03 0b 0f`) differs from `09 01 00`'s
-(`00 00 00 00 05 0b`) — a different info field, likely a "prepare/lock pack for
+(`00 00 00 00 05 0b`), a different info field, likely a "prepare/lock pack for
 write" step. **Added `09 01 01` to the prelude** (`sampleTransfer.ts`).
 
 CAVEAT (unresolved): the OLDER multi-sample captures, which presumably committed
-(the maintainer has those samples), LACK `09 01 01` too — so either Components was
+(the maintainer has those samples), LACK `09 01 01` too, so either Components was
 updated between then and now, or single- vs multi-sample differ, OR the new
 single-sample web upload ALSO failed (needs confirming: is that sample on the
 device?). The fresh same-scenario diff is the better evidence, so `09 01 01` is the
 change to test first; the probe session is the fallback.
 
-**EARLIER LEAD — CLOSE count, from the recurring STUCK symptom.** Our
+**EARLIER LEAD: CLOSE count, from the recurring STUCK symptom.** Our
 uploads also leave the device **stuck in the upload/download display** (the
 file-transfer session never completes). Capture diff: **Components sends OPEN×1 +
-CLOSE×1** per upload (opens cold). **Our transport sends CLOSE up to 3×** — a
+CLOSE×1** per upload (opens cold). **Our transport sends CLOSE up to 3×**: a
 pre-OPEN reset CLOSE (`uploadProject.ts`), the plan's `close_session`
 (`sampleTransfer.ts`), AND the `finally`'s CLOSE (~120 ms after the plan close,
 firing into the device's multi-second flush). This single divergence plausibly
@@ -245,12 +245,12 @@ device stuck in transfer display AND nothing commits. Implemented an opt-in
 `singleClose` (TransferOptions) that makes the sample path send exactly one CLOSE,
 Components-faithful (no pre-OPEN reset, `finally` suppressed on the success path);
 `uploadSample`/`uploadSampleKit` pass it; project path unchanged (still 3×, which
-works). Offline golden asserts OPEN×1/CLOSE×1. **UNTESTED on hardware** — this is a
+works). Offline golden asserts OPEN×1/CLOSE×1. **UNTESTED on hardware**: this is a
 hypothesis, the two prior ones were refuted. Recovery from the stuck state is a
 device power-cycle.
 
 **Decisive oracle: a fresh Components capture of a SINGLE sample to an EMPTY pack**
-(our exact failing scenario — the existing captures were multi-sample to *occupied*
+(our exact failing scenario; the existing captures were multi-sample to *occupied*
 packs). Diff that wire sequence frame-by-frame against ours
 (`decode-sample-capture-timeline.py`); the difference that makes Components commit
 where we don't must be in there. Alternatively, USBPcap OUR upload and diff the
@@ -262,20 +262,20 @@ attempt wedges the device).
 `send-to-circuit-tracks-sleep-token-samples.pcapng` (2026-06-21) →
 `_cap1`/`_cap2`. That capture is the **"Send samples"** action, not "Send pack":
 `_cap2_control.txt` contains ONLY `0x05` sample-file writes (no patch/project
-file-types). So we decoded the RIGHT action — Send-samples-vs-Send-pack is not the
+file-types). So we decoded the RIGHT action; Send-samples-vs-Send-pack is not the
 gap. In that working capture the device replied ~1:1 (`_cap2_in.hex` holds 1,884
 `F0` device replies vs 1,880 host frames; the rest is `0xF8` clock noise), i.e.
 Components got a reply to essentially every frame including the `0x0d` scan.
 
-## Investigation 2026-06-23 — acks but never commits (single sample too)
+## Investigation 2026-06-23: acks but never commits (single sample too)
 
 Symptom: a user upload reported success, but after a device restart the Circuit
 showed no drum samples. Reading the device's own sample directory
-(`scripts/circuit-read-sample-directory.ts`) confirmed **0/64 occupied** — the
+(`scripts/circuit-read-sample-directory.ts`) confirmed **0/64 occupied**: the
 writes never registered, not just "didn't survive a restart."
 
 A clean, single-process **upload-then-readback** test (one connection, no MCP, so
-no process handoff — `scripts/_research/circuit-diff-sample-upload.ts`) isolated it:
+no process handoff, `scripts/_research/circuit-diff-sample-upload.ts`) isolated it:
 
 ```
 before : slot 1 = "(empty)"
@@ -283,23 +283,23 @@ upload : ok=true  blocks=12          # every frame device-ACKed
 after  : slot 1 = "(empty)"          # still empty
 ```
 
-So a SINGLE sample acks `ok` (the ACK gating is real — `runFramePlanOnce`
+So a SINGLE sample acks `ok` (the ACK gating is real: `runFramePlanOnce`
 requires a subcmd-`0x04` ACK per frame within 4 s, `uploadProject.ts:165`) yet
 nothing lands in the manifest. **It is not a volume / 64-in-one-session problem.**
 
 **Ruled out** (don't re-chase):
-- **Frame bytes** — our prelude, the 64× `0x0d` scan, WRITE_INIT/WRITE_FINISH/
+- **Frame bytes**: our prelude, the 64× `0x0d` scan, WRITE_INIT/WRITE_FINISH/
   SET_FILENAME, and CLOSE all match the working Components capture
   `_cap2_control.txt` (a real 64-sample upload). The finish address `numBlocks+1`
   matches too: the capture's `0x0c` is just an 11-block WAV vs our 12-block one.
   Per-sample WRITE bytes are golden-verified byte-identical (`verify-circuit-ncs-transfer.ts`).
-- **Fake acks** — the device really sends `0x04` ACKs; they are gated, not optimistic.
+- **Fake acks**: the device really sends `0x04` ACKs; they are gated, not optimistic.
 
-**ROOT CAUSE — the post-CLOSE FLASH COMMIT wait (timed-capture decode, 2026-06-23,
+**ROOT CAUSE: the post-CLOSE FLASH COMMIT wait (timed-capture decode, 2026-06-23,
 cross-validated in BOTH "Send samples" captures).** A timestamped both-direction
 timeline (`scripts/_research/decode-sample-capture-timeline.py` →
 `scripts/_research/_sample-timeline-2026-06-2{1,3}.txt`) shows that after the
-final `CLOSE` (0x41) Components does NOT tear down — it WAITS for the device to
+final `CLOSE` (0x41) Components does NOT tear down; it WAITS for the device to
 flush the pack manifest to flash:
 
 ```
@@ -312,13 +312,13 @@ cap2: 277.2288 OUT CLOSE 41 f7
 ```
 
 `runFramePlanOnce` (`uploadProject.ts`) sends `CLOSE` and the `finally{}`
-immediately closes the session and returns `ok` — it never waits for the
+immediately closes the session and returns `ok`; it never waits for the
 post-CLOSE flush. So every per-frame `0x04` ACK lands (upload reports ok) but the
 device never finishes committing to flash → 0/64. This is the bug.
 
 **Fix (to implement + test):** after sending `CLOSE_SESSION`, KEEP the connection
 open and WAIT for the device's post-CLOSE commit signal (the `grp 0x8 00` status
-and/or the `grp 0x4 03 04 00`) before declaring success or closing the port —
+and/or the `grp 0x4 03 04 00`) before declaring success or closing the port;
 budget ~10-20 s (observed 6.3-15.3 s). Then re-run the single-sample upload +
 directory read-back (`scripts/_research/circuit-diff-sample-upload.ts`); success =
 the slot reads its name back, and it survives a restart.
@@ -335,13 +335,13 @@ leave the device stuck in an upload/download state needing a power-cycle. Do all
 sample I/O in ONE process per operation; don't alternate CLI scripts and MCP
 tools against the port.
 
-## (superseded) earlier PERSISTENCE note — the session PRELUDE
+## (superseded) earlier PERSISTENCE note: the session PRELUDE
 
 > Retained for history; its "confirmed" conclusion did not hold up (see above).
 The write frames were byte-identical to Components, so the prelude was made
 file-type `0x05` (SAMPLE dir, not the project `0x03`) followed by the 64× `0x0d`
 scan, on the theory that the `0x05` listing + `0x0d` scan together commit the
-manifest. That prelude is necessary but, on its own, evidently NOT sufficient —
+manifest. That prelude is necessary but, on its own, evidently NOT sufficient:
 firing the `0x0d` scan without consuming the replies still acks-but-stores-
 nothing (the hypothesis above).
 
@@ -352,7 +352,7 @@ Capture: `samples/captured/send-to-circuit-tracks-sleep-token-samples.pcapng`
 0x01). Reassembled the USB-MIDI (`usbaudio.midi.event` via tshark) → SysEx, then
 decoded with `scripts/decode-circuit-sample-capture.ts`.
 
-- **Same file-transfer session as projects** — header `F0 00 20 29 01 64 03`,
+- **Same file-transfer session as projects**: header `F0 00 20 29 01 64 03`,
   subcmds OPEN_SESSION `0x40` / DIR_CONTROL `0x0b` / QUERY_INFO `0x09` /
   WRITE_INIT `0x01` / WRITE_DATA `0x02` / WRITE_FINISH `0x03`, msb-interleave,
   CRC32. We already own all of this (`transfer.ts` / `uploadProject.ts`).
@@ -403,9 +403,9 @@ different file-type byte + a different payload.**
   `00 20 29 01 64` (`0x64`=Circuit Tracks, `0x63`=Circuit Rhythm) and CRC-32 +
   7-bit MIDI packing. NOTE: that gist documents the FIRMWARE-UPDATE protocol
   (opcodes `0x71`..`0x7C`), which is a DIFFERENT command group from file
-  transfer — useful for the header/CRC confirmation only.
+  transfer, useful for the header/CRC confirmation only.
 - **mungewell/circuit_samples** (the original Circuit, header `00 20 29 00`,
-  cmds `0x77/0x79/0x7a`, NO session): a **sample DATA-FORMAT reference** — raw
+  cmds `0x77/0x79/0x7a`, NO session): a **sample DATA-FORMAT reference**: raw
   **PCM, 8/16/24-bit, mono/stereo, big-endian, uncompressed**, 7-bit MSB-first
   packed, 256-byte chunks, CRC32 of the unpacked data, max ~90 MB. The original
   Circuit's wire differs from Tracks, but the **audio format is the strong
@@ -424,18 +424,18 @@ different file-type byte + a different payload.**
 ## RE path WITHOUT capturing the wire (the ask)
 
 1. **Read Novation Components' web-app JavaScript (recommended).** Components is
-   a WebMIDI browser app — it builds the sample-upload SysEx **in the browser**,
+   a WebMIDI browser app; it builds the sample-upload SysEx **in the browser**,
    so its (minified but inspectable) JS encodes the file-type, the WAV→device
    conversion, the framing, and the slot directory. Reverse-engineering the JS
    is the "no USB capture" path the user wants, and it answers all three unknowns
    directly. (Fetch the Components bundle, locate the sample-upload module, trace
    the SysEx builder + the audio re-encode.)
-2. **One targeted USBPcap capture** of a single Components sample upload — the
+2. **One targeted USBPcap capture** of a single Components sample upload, the
    fallback if the JS is too obfuscated. One capture answers everything.
 3. **Infer + iterate.** Bind our existing `uploadProject` session to a guessed
    sample file-type + mungewell's PCM format and try it. The transfer is
    CRC-gated, so a malformed upload is *rejected* (safe). RISK: a wrong-but-
-   CRC-valid payload could store a garbage sample in a slot — recoverable by
+   CRC-valid payload could store a garbage sample in a slot, recoverable by
    re-uploading via Components, but treat sample slots as overwritable scratch
    while iterating, and confirm on a throwaway slot first.
 
@@ -453,7 +453,7 @@ Parameterize the transfer we already have:
 
 **MODERATE and very feasible.** The hard, hardware-confirmed part (the transfer
 session + framing + CRC + reboot-safe guard) is DONE and reused. The new work is
-the sample file-type + WAV→PCM conversion + slot directory — all answerable from
+the sample file-type + WAV→PCM conversion + slot directory, all answerable from
 **one Components-JS RE pass (no wire capture needed)**, with mungewell as the
 data-format crib. Legal footing is the same personal-use/interop basis as the
 rest of the project: the user uploads their own samples to their own device.

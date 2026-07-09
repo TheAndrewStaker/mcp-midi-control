@@ -42,3 +42,21 @@ jobs:
 
       - name: Tools inventory check
         run: npm run tools:inventory-check
+
+      - name: Visual-table guard (a11y)
+        run: npm run verify-no-visual-tables
+
+      - name: Control-character guard
+        run: npm run verify-no-control-chars
+
+      - name: RE-ledger verify
+        run: npm run verify-re-ledger
+
+      - name: Tool-annotation verify
+        run: npm run verify-tool-annotations
+
+      - name: Preset-portability verify
+        run: npm run verify-preset-portability
+
+      - name: FM9 catalog verify (rosters + ranges + end-to-end)
+        run: npm run verify-fm9-rosters && npm run verify-fm9-ranges && npm run verify-fm9-end-to-end
