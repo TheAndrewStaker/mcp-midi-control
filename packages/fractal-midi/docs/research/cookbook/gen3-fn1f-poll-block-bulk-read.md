@@ -81,7 +81,7 @@ END   F0 00 01 74 <model> 76 <cksum> F7                                (8 bytes)
   III/FM3 but 10 on FM9).
 - A whole-block dump **pages** across multiple `0x75` frames at the transport
   level (each frame carries up to ~256 values), independent of the channel
-  blocking — Reverb's 292 values arrive as a 256 + 36 split. Concatenate frames in
+  blocking; Reverb's 292 values arrive as a 256 + 36 split. Concatenate frames in
   arrival order, THEN apply the channel-stride index.
 
 ## Misapplication failure modes
@@ -89,7 +89,7 @@ END   F0 00 01 74 <model> 76 <cksum> F7                                (8 bytes)
 - ~~**DO NOT** poll an unplaced block. Like AM4, the device answers a poll for
   an empty effectId with an `fn=0x64` MULTIPURPOSE_RESPONSE NACK, not a
   burst.~~ **CORRECTED 2026-06-12 (FM3 field test, fw 12.00):** that claim was
-  an AM4/II analogy never gen-3-observed, and is **falsified on FM3** — the
+  an AM4/II analogy never gen-3-observed, and is **falsified on FM3**: the
   field-test session answered `fn=0x1F` polls with full bursts for 35/42 block
   types while the same session's `fn=0x13` STATUS_DUMP reported only 3 placed
   blocks (Input/Output/Amp; capture
@@ -106,12 +106,12 @@ END   F0 00 01 74 <model> 76 <cksum> F7                                (8 bytes)
 - **DO NOT** treat a 0x74 head for a different blockId as our reply. Front-panel
   edits emit the same burst unsolicited; gate on the head's `eid` matching the
   poll's effectId.
-- **DO NOT** read `values[paramId]` as "the value" — that is the channel-A copy
+- **DO NOT** read `values[paramId]` as "the value"; that is the channel-A copy
   only. For a param that differs across channels it silently returns channel A's
   value regardless of the active channel. Read `values[channel × stride + paramId]`;
   if no channel is specified, return the value only when all four channel copies
   are equal, else require a channel. (The pre-2026-06-04 reader had this bug,
-  hidden because the one param ever tested — Reverb Mix, paramId 0 — sat at the
+  hidden because the one param ever tested (Reverb Mix, paramId 0) sat at the
   channel-A index 0 either way.)
 
 ## Where it does NOT apply
@@ -157,7 +157,7 @@ positional decode → enum label, across III/FM3/FM9).
   issuing the poll is **FM3-hardware-confirmed end-to-end** (35/42 block types
   assembled, itemCount == valueCount throughout). Two corrections harvested
   from the same session: (a) the "unplaced block answers an fn=0x64 NACK"
-  misapplication bullet is **falsified** — polls answer for unplaced blocks
+  misapplication bullet is **falsified**: polls answer for unplaced blocks
   (fn=0x13 reported 3 placed blocks while 35 block types answered); placement
   truth comes from fn=0x13. (b) `channelCount` is per-block, not uniformly 4
   (Send 2 / Return 6 / Ring Mod 26 / Megatap 70 / Looper 24×1 /

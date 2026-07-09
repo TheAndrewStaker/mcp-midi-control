@@ -42,14 +42,14 @@ hash on receive; mismatch causes fn 0x79 NACK 0x05.
 
 ## Misapplication failure modes
 
-- **DO NOT** compute over raw wire bytes — must decode the 21-bit ushorts
+- **DO NOT** compute over raw wire bytes; must decode the 21-bit ushorts
   first.
 - **DO NOT** confuse with [[xor-7f-envelope-checksum]] (universal
   Fractal envelope checksum across AM4 / II / III, per-envelope,
   7-bit mask).
 ## Where it does NOT apply
 
-- AM4 — uses [[xor-7f-envelope-checksum]].
+- AM4: uses [[xor-7f-envelope-checksum]].
 - ~~Axe-Fx III, transfer candidate.~~ TRANSFERRED (2026-06-09): the
   gen-3 fn 0x79 footer carries the same 16-bit XOR-fold of the body
   words (validated by Axe-Edit III's own receive path, which XOR-folds

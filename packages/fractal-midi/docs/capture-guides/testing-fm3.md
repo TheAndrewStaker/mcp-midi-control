@@ -9,10 +9,10 @@
 > byte-identical to this server's encoder, sent from the tester's own rig).
 > What remains unconfirmed: **`set_block`** (needs a loaded preset WITHOUT a
 > Drive block so the probe's placement test can run) and **`save_preset`**
-> (T4 below — never auto-tested by design). A Windows serial-driver run would
+> (T4 below, never auto-tested by design). A Windows serial-driver run would
 > also be new coverage (the field tests were macOS).
 >
-> **Highest-value FM3 ask: run the catalog-wide SET→GET roundtrip script** —
+> **Highest-value FM3 ask: run the catalog-wide SET→GET roundtrip script**,
 > the same sweep community FM9 and Axe-Fx III owners ran on 2026-06-18. The
 > FM3 now ships the discrete enum-routing correction its siblings got
 > (type/count selectors sent as discrete ordinals, not continuous floats),
@@ -22,7 +22,7 @@
 > the overlay mechanically (`scripts/generate-gen3-roundtrip-discrete.ts`).
 > It is read-and-restore only (each param is SET then read back and restored).
 >
-> Beyond the tests below, the highest-value FM3 artifact needs no capture tools at all: the editor's cache file (the device's complete parameter dictionary — including the display ranges the catalog still lacks for FM3 — offline, see [captures-gen3.md C2](captures-gen3.md)). The [harvest script](harvest-script.md) does NOT work on the FM3 (it talks MIDI ports; the FM3 is serial-only over USB).
+> Beyond the tests below, the highest-value FM3 artifact needs no capture tools at all: the editor's cache file (the device's complete parameter dictionary, including the display ranges the catalog still lacks for FM3, offline, see [captures-gen3.md C2](captures-gen3.md)). The [harvest script](harvest-script.md) does NOT work on the FM3 (it talks MIDI ports; the FM3 is serial-only over USB).
 
 See [README.md](README.md) for setup. Want to record captures too? See [captures-gen3.md](captures-gen3.md).
 
@@ -35,7 +35,7 @@ still unconfirmed):
 
 - **Windows:** install Fractal's **FM3 USB Serial Driver** (separate from the
   audio driver; both come in the FM3 driver download). The FM3 then appears
-  under "Ports (COM & LPT)" as "FM3 Communications Port" — not in any MIDI
+  under "Ports (COM & LPT)" as "FM3 Communications Port", not in any MIDI
   port list. The server finds it automatically.
 - **macOS:** no driver; the FM3 enumerates as `/dev/cu.usbmodem…` and the
   server finds it automatically.
@@ -44,7 +44,7 @@ still unconfirmed):
 - If auto-detection misses, set `MCP_FM3_SERIAL_PATH` (e.g. `COM5` or
   `/dev/cu.usbmodemXXXXX`) in the server's environment.
 
-Note: the FM3 runs a **4-row, 12-column effect grid** (the FM9/III use a 6-row, 14-column grid). That matters for `set_block` and for the live grid read inside `get_preset` — the FM3's 4×12 grid decode was pinned offline (2026-07-01) against the 2026-06-12 probe capture, so a quick way to help: ask for the active preset's layout on a preset with three or more placed blocks and compare it to the FM3-Edit / front-panel grid. A match flips the FM3 live-grid read from "untested" to "confirmed".
+Note: the FM3 runs a **4-row, 12-column effect grid** (the FM9/III use a 6-row, 14-column grid). That matters for `set_block` and for the live grid read inside `get_preset`; the FM3's 4×12 grid decode was pinned offline (2026-07-01) against the 2026-06-12 probe capture, so a quick way to help: ask for the active preset's layout on a preset with three or more placed blocks and compare it to the FM3-Edit / front-panel grid. A match flips the FM3 live-grid read from "untested" to "confirmed".
 
 ---
 

@@ -7,7 +7,7 @@ verified_on:
   - axe-edit-iii-binary
 golden: STUB (structural grep-against committed III SYSEX-MAP + string pool; no pure-CPU fixture applies, see Verification path)
 retest_when:
-  - a captured III connect-and-sync burst decoding the workflow-scoped reply BODIES (the fn 0x0A/0x0D/0x0C/0x47 param-info family and the fn 0x14 GET reply — flagged un-mined in the private captured-artifacts manifest)
+  - a captured III connect-and-sync burst decoding the workflow-scoped reply BODIES (the fn 0x0A/0x0D/0x0C/0x47 param-info family and the fn 0x14 GET reply, flagged un-mined in the private captured-artifacts manifest)
   - a live III capture of the fn 0x0E QUERY SCENE NAME reply (currently grounded on the v1.4 PDF + committed wire map, not a hardware capture)
 relates_to: [ii-fn0e-query-states, ii-fn16-get-param-info, iii-host-emitter-fn-table, iii-async-workflow-fn-registry, ii-fn1f-atomic-read]
 consumed_in: []

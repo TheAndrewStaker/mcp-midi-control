@@ -7,7 +7,7 @@ verified_on:
   - axe-edit-ii-32bit
 firmware_sensitive: false
 golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
-retest_when: never (structural — multi-device Fractal editors load the model byte at runtime by construction; the 4-byte-prefix scan + model-load inspection is the permanent replacement)
+retest_when: never (structural, multi-device Fractal editors load the model byte at runtime by construction; the 4-byte-prefix scan + model-load inspection is the permanent replacement)
 relates_to: [param-descriptor-16byte, ii-axeedit-opcode-table]
 consumed_in: []
 ---

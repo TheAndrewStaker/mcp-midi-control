@@ -1,6 +1,6 @@
 {
   "name": "fractal-midi",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Pure-TypeScript codec and parameter dictionaries for Fractal Audio devices (AM4, Axe-Fx II, Axe-Fx III, FM3, FM9, VP4, Axe-Fx Standard/Ultra). No MIDI transport dependency, bring your own.",
   "license": "Apache-2.0",
   "author": "Stephen Staker <stephenstaker@gmail.com>",

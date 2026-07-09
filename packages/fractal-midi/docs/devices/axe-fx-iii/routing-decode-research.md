@@ -33,7 +33,7 @@ undefined8 FUN_140339c40(longlong param_1, uint *param_2) {
   // param_2 is a struct: { count, header_val, cell_array, ..., array_len }
   //
   //   *param_2        = N (count of cell records)
-  //   param_2[1]      = header value (single u32 — septet-split into 2 bytes)
+  //   param_2[1]      = header value (single u32, septet-split into 2 bytes)
   //   param_2[2]      = pointer to ushort[N] (cell records)
   //   param_2[5]      = array length (guard)
   //

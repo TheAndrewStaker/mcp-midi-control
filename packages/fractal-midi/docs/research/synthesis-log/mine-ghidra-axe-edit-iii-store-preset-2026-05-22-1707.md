@@ -197,11 +197,11 @@ units, e.g. the III's fn=0x01 long-broadcast tail (64 raw bytes →
 
 **Why it warrants a cookbook entry.** Three existing cookbook entries hint at this primitive but none formalize it. `septet-21bit-byte2-mask-preservation` covers a fixed 21-bit-per-ushort layout; `septet-14bit` covers fixed 14-bit fields; neither covers the general byte-stream case. The fn=0x01 long-broadcast and the fn=0x78 chunk payload both need the stream form. Naming it lets future fn-byte decode work cite it instead of re-deriving.
 
-### 2.2 `iii-fn01-six-field-builder` — refinement promoting the full 6-field fn=0x01 envelope to a cookbook primitive
+### 2.2 `iii-fn01-six-field-builder`: refinement promoting the full 6-field fn=0x01 envelope to a cookbook primitive
 
 **Status.** This is BORDERLINE between "refinement of [[iii-fn01-set-parameter-envelope]]" and "new primitive." Recommend the former (refine in place) but document here so the founder can choose.
 
-**One-line summary.** AxeEdit III's `FUN_14033ec70` builds EVERY fn=0x01 envelope from a 6-field struct `{action14, blockId14, paramId14, value32, modifier14, tailCount14, tail[]}` — covering not just SET_PARAMETER but STATE_BROADCAST (`04 01`), typed input (`09 00`), mouse-drag (`52 00`), and the 87-byte long broadcast (`01 00` with 64-item tail).
+**One-line summary.** AxeEdit III's `FUN_14033ec70` builds EVERY fn=0x01 envelope from a 6-field struct `{action14, blockId14, paramId14, value32, modifier14, tailCount14, tail[]}`, covering not just SET_PARAMETER but STATE_BROADCAST (`04 01`), typed input (`09 00`), mouse-drag (`52 00`), and the 87-byte long broadcast (`01 00` with 64-item tail).
 
 **Why it matters.** The existing cookbook entry [[iii-fn01-set-parameter-envelope]] documents the SET sub-action specifically (status `matched`) but the underlying builder is broader. Promoting the 6-field structure into the cookbook entry's "Formal definition" section means:
 - Future decoders for the STATE_BROADCAST and long-broadcast envelopes can cite the same primitive.
@@ -226,11 +226,11 @@ Field map (per FUN_14033ec70 + fn01-builder-ghidra.md):
 
 **N-count.** Refining the existing `matched` entry, no new fixture count needed.
 
-### 2.3 `iii-stream-patch-preset-index` — workflow pattern, NOT recommended for cookbook promotion
+### 2.3 `iii-stream-patch-preset-index`: workflow pattern, NOT recommended for cookbook promotion
 
 **One-line summary.** Bank-store workflow: build a single SysEx stream containing N consecutive `F0 00 01 74 <model> 0x77 ...` envelopes once, then iterate the buffer finding each 0x77 header and patch in the per-preset target index at offsets 6-7 (MSB-first 14-bit).
 
-**Why I'm not proposing promotion.** The cookbook hosts encoding primitives (bit-level, struct-layout, checksum, envelope-shape, label-extraction, fn-byte-mapping, coercion). This is a builder workflow that USES existing primitives ([[msb-first-14bit-preset-payload]] + the III 0x77 PRESET_DUMP_HEADER envelope) but doesn't define a new encoding shape. The pattern is interesting operationally — it confirms that III preset dump bodies are INDEX-INDEPENDENT (the body bytes don't encode the preset slot; only the 0x77 first-frame header does), which informs how our future III store-preset implementation can batch presets. But that's a project-level note, not a cookbook primitive.
+**Why I'm not proposing promotion.** The cookbook hosts encoding primitives (bit-level, struct-layout, checksum, envelope-shape, label-extraction, fn-byte-mapping, coercion). This is a builder workflow that USES existing primitives ([[msb-first-14bit-preset-payload]] + the III 0x77 PRESET_DUMP_HEADER envelope) but doesn't define a new encoding shape. The pattern is interesting operationally: it confirms that III preset dump bodies are INDEX-INDEPENDENT (the body bytes don't encode the preset slot; only the 0x77 first-frame header does), which informs how our future III store-preset implementation can batch presets. But that's a project-level note, not a cookbook primitive.
 
 **Recommendation.** Note this insight in `STATE-AXEFX3.md` or `docs/devices/axe-fx-iii/store-preset-decoded.md` (if/when that file gets created), not in the cookbook.
 
@@ -242,7 +242,7 @@ Field map (per FUN_14033ec70 + fn01-builder-ghidra.md):
 
 **Evidence.**
 
-1. **Caller chain.** `FUN_140337060` (the fn=0x40 builder) has exactly ONE caller: `FUN_1402990d0` (L236-265). `FUN_1402990d0` is a leaf — its sole callers are entry points that take a single byte (preset number) and allocate a 3000-byte INBOUND buffer (`FUN_14032eb90(local_res18, 3000)` at L249) before sending. This is the canonical "send request, wait for large response" pattern of a LOAD/READ envelope, not a STORE.
+1. **Caller chain.** `FUN_140337060` (the fn=0x40 builder) has exactly ONE caller: `FUN_1402990d0` (L236-265). `FUN_1402990d0` is a leaf; its sole callers are entry points that take a single byte (preset number) and allocate a 3000-byte INBOUND buffer (`FUN_14032eb90(local_res18, 3000)` at L249) before sending. This is the canonical "send request, wait for large response" pattern of a LOAD/READ envelope, not a STORE.
 2. **Store-workflow chain.** `FUN_14014d400` is the actual STORE_PRESET UI dispatcher (identifiable by the `"permanently overwrite N presets in your ..."` warning string at L575). Its switch cases 3, 4, 5, 7, 8 cover every store-preset variant (single, bank, IR-only, FullRes IR-bank). None of these cases call `FUN_140337060`. Case 4 (the bank-store path) calls `FUN_14014d2a0` (the fn=0x77 stream-patcher) directly.
 3. **Independent confirmation.** `docs/devices/axe-fx-iii/fn-byte-envelopes-ghidra.md:38, 94-110` already documents this correction; the current dump is a SECOND verification.
 
@@ -290,9 +290,9 @@ allocation is the tell.
 
 **Hypothesis flagged for cookbook clarification.** The existing [[iii-fn01-set-parameter-envelope]] verification fixture reads `value=508` for Drive 1 Boost ON. The dump confirms via `FUN_14033ec70` that Field D is a 32-bit LSB-first 5-septet field whose bytes `00 00 00 7C 03` decode to `0x3F800000` = IEEE-754 float `1.0`, not integer `508`.
 
-The two readings coincide for the SET_PARAMETER capture corpus because all four captured values (boost ON, boost OFF, time 520, time 516) sit in the low 14 bits of Field D — the high 21 bits are always zero, so the bytes look identical under integer-vs-float interpretation. But a consumer that builds a new write with `value=1000000` per the cookbook fixture's integer interpretation will pack `0x40 0x42 0x0F 0x00 0x00` (1000000 as LSB-first 5-septet integer) into Field D, while the device firmware likely expects `value=1000000.0` packed as IEEE-754 float bits `0x49742400`. These produce DIFFERENT 5-byte sequences, and the wire write will be silently incorrect.
+The two readings coincide for the SET_PARAMETER capture corpus because all four captured values (boost ON, boost OFF, time 520, time 516) sit in the low 14 bits of Field D; the high 21 bits are always zero, so the bytes look identical under integer-vs-float interpretation. But a consumer that builds a new write with `value=1000000` per the cookbook fixture's integer interpretation will pack `0x40 0x42 0x0F 0x00 0x00` (1000000 as LSB-first 5-septet integer) into Field D, while the device firmware likely expects `value=1000000.0` packed as IEEE-754 float bits `0x49742400`. These produce DIFFERENT 5-byte sequences, and the wire write will be silently incorrect.
 
-**This is not a cookbook bug per se** — the entry says "5-byte septet-encoded packed-float per the AM4-derived `packValue` algorithm." But the explicit `value=508` in the fixture text is ambiguous given the float interpretation. A clarifying refinement to the Verification path section, naming Field D's contents as `float-bits(value)` not raw `value`, would prevent a future misuse.
+**This is not a cookbook bug per se**: the entry says "5-byte septet-encoded packed-float per the AM4-derived `packValue` algorithm." But the explicit `value=508` in the fixture text is ambiguous given the float interpretation. A clarifying refinement to the Verification path section, naming Field D's contents as `float-bits(value)` not raw `value`, would prevent a future misuse.
 
 I'm not proposing this as a `_negative` entry (the cookbook entry is not wrong, just under-specified). Recommended instead: refinement-history note on `iii-fn01-set-parameter-envelope.md`.
 
@@ -315,7 +315,7 @@ All seven actions are founder-gated. No cookbook files modified by this report.
 | Function | Line | Role |
 |---|---|---|
 | `FUN_140337060` | L8-231 | fn=0x40 LOAD_PRESET builder, walks descriptor `0x1407ab2f0`. Sends 2-byte payload, dispatches receive based on first payload byte (4 → action 0x43, 5/8 → action 0x103). |
-| `FUN_1402990d0` | L236-265 | Single caller of `FUN_140337060`. Allocates 3000-byte inbound buffer via `FUN_14032eb90(..., 3000)` — confirms READ semantics. |
+| `FUN_1402990d0` | L236-265 | Single caller of `FUN_140337060`. Allocates 3000-byte inbound buffer via `FUN_14032eb90(..., 3000)`, confirms READ semantics. |
 | `FUN_14014d2a0` | L269-345 | Stream-patcher for fn=0x77 PRESET_DUMP_HEADER. Searches buffer for 6-byte prefix `F0 00 01 74 <model> 0x77`, patches MSB-first 14-bit preset index at offsets 6-7. |
 | `FUN_14014d400` | L350-1271 | AxeEdit III STORE_PRESET UI dispatcher. Switch on store-mode (3/4/5/7/8) selects which envelope path to invoke. Case 4 = bank store, case 7 = IR cab, case 8 = IR bank. |
 | `FUN_14033f2d0` | L1278-1317 | General 8-to-7-bit byte-stream septet packer. Output size = `ceil(N*8/7) + 1`. Candidate new cookbook primitive (§2.1). |

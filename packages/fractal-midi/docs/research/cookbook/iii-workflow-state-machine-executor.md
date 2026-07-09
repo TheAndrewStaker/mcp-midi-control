@@ -59,7 +59,7 @@ L11948, L11988, L12022, L12092, L12112, L12125, L12135, L12151, L12158,
 L12165, L12176, L12195, L12227, L12243, L12272, L12301, L12334, L12362,
 L12381, L12388, L12403, L12437, L12477, L12608, L12640, L12669, L12697,
 L12726, L12769, L12801, L12830, L12867, L12897, L12926, L12955, L12983,
-L13013, L13041, L13070, L13085 — ~70 case labels, suggesting state IDs
+L13013, L13041, L13070, L13085: ~70 case labels, suggesting state IDs
 in the lower half of the registered-ID space dispatch here.
 
 ## Model-byte selection inside states
@@ -101,7 +101,7 @@ The half-split shape is structurally identical to the existing
 ## Why this is a primitive
 
 Locating the inbound dispatch in III binaries does NOT start with a
-fn-byte switch (that hypothesis is ruled out — see the corresponding
+fn-byte switch (that hypothesis is ruled out, see the corresponding
 negative entry `_negative/iii-fn-byte-switch-as-inbound-dispatcher.md`).
 It starts with the workflow registry
 ([[iii-async-workflow-fn-registry]]) and ends at this state-machine
@@ -175,7 +175,7 @@ specific dump line range.
   predicted at `FUN_1402da830` (reached from the dispatcher's fn=0x01
   stream-end branch). HOP 3 mines that path. Status stays
   `matched-singleton` until HOP 3 lands.
-- 2026-05-28 (HOP 3 result — AM4 analog FALSIFIED, status locked):
+- 2026-05-28 (HOP 3 result: AM4 analog FALSIFIED, status locked):
   `DecompileAM4InboundStreamPath.java` decompiled `FUN_1402da830`
   (the predicted AM4 analog) plus all other dispatcher first-level
   callees. `FUN_1402da830` is a **single-param SET_PARAMETER
@@ -194,7 +194,7 @@ specific dump line range.
   machine executor switching on workflow state. **Conclusion**:
   AM4-Edit's architecture does not use the III `FUN_1401f4390`
   pattern at the function-shape level; the analog does NOT exist
-  in AM4-Edit. Status stays `matched-singleton` permanently — the
+  in AM4-Edit. Status stays `matched-singleton` permanently; the
   promotion-to-`matched` path now requires landing the pattern in
   a different binary (AxeEdit II is the remaining cross-device
   candidate). The bulk preset-binary parsing path that III's

@@ -4,7 +4,7 @@
 
 ## Status (updated 2026-07-01)
 
-Two community captures (Kevin Iudicello, VP4 fw 4.03) are decoded — see
+Two community captures (Kevin Iudicello, VP4 fw 4.03) are decoded; see
 [`docs/devices/vp4/SYSEX-MAP.md`](../devices/vp4/SYSEX-MAP.md):
 
 - **#1 (2026-06-08, read poll):** confirmed the `fn=0x01` parameter READ path, the gen-3
@@ -17,23 +17,23 @@ Two community captures (Kevin Iudicello, VP4 fw 4.03) are decoded — see
   (continuous+discrete), and **bypass** frames. So C1 (param SET) and most of the write
   surface are **captured**.
 - **2026-07-01 (mining pass over both captures): the eid206 pid0 `0x1f` STRUCTURE BLOB is
-  field-decoded** — preset name, all four scene names, the CURRENT scene index, and the
+  field-decoded**: preset name, all four scene names, the CURRENT scene index, and the
   serial 4-slot chain (effectIds, empty slots included), oracle-matched against the
   annotated move cascade and scene switch in both presets. `get_preset` on the VP4 now
   reads the whole structure in one round-trip (community-beta, untested on hardware).
   This also overturned two earlier negatives (the preset name and the slot order WERE in
-  the capture all along — wrong unpack scheme). See the SYSEX-MAP "STRUCTURE blob" section.
+  the capture all along, wrong unpack scheme). See the SYSEX-MAP "STRUCTURE blob" section.
 
 **Still open:** block-placement value→slot math (`set_block` stays gated; the blob's
-chain table is now the diff oracle — see the surgical C1 below), the scene WRITE value
+chain table is now the diff oracle, see the surgical C1 below), the scene WRITE value
 mapping (the read side is solved), display calibration, and a discrete type-select
 example. VP4-Edit reads via `fn=0x01` GET and writes via `fn=0x01` `tc`-coded SET (no
-`fn=0x1F`, no `09/52` sub-action) — see the family-wide read-path note in the
+`fn=0x1F`, no `09/52` sub-action); see the family-wide read-path note in the
 decode-status doc.
 
 ---
 
-## P0 — fn=0x0C scene-query probe (zero cost, read-only, no capture tooling)
+## P0: fn=0x0C scene-query probe (zero cost, read-only, no capture tooling)
 
 Highest value-per-minute ask, needs only the MCP server (or any SysEx send tool), no
 Wireshark/MIDI Monitor. The gen-3 family documents a read-only scene QUERY:
@@ -44,7 +44,7 @@ F0 00 01 74 14 0C 7F cs F7      (cs = XOR(F0..7F) & 0x7F = 0x12)
 
 Send it to the VP4 and report whether anything comes back (paste the reply bytes).
 It has **no write side-effect** (the `7F` sentinel is the documented query form). If the
-VP4 answers it — and then accepts the fn=0x0C SET form — `switch_scene` ships WITHOUT
+VP4 answers it, and then accepts the fn=0x0C SET form, `switch_scene` ships WITHOUT
 needing the `pid13` value decode at all. One frame, possibly a whole capability.
 
 **Before any capture, two no-tooling asks come first:** (1) the VP4-Edit
@@ -99,22 +99,22 @@ What remains: **display calibration** (which wire value = which front-panel numb
 placement**, **scene mapping**, and **discrete type selects**. This single session closes all
 of them so we don't have to keep asking. Keep recording the whole time; do each step slowly
 with a ~3 s pause; **note the value you set in VP4-Edit at each step** (this is the part we
-can't get any other way). You do NOT need to read the pedal's screen — since you're setting
+can't get any other way). You do NOT need to read the pedal's screen: since you're setting
 each value yourself, the number shown in the editor is exactly what we need (the device
 echoes it back, so editor and device agree for values you just set).
 
 Start recording, then:
 
-1. **Calibration sweeps — the highest value.** For a knob with a number on the panel, set it
+1. **Calibration sweeps, the highest value.** For a knob with a number on the panel, set it
    to a few *exact* values and note each:
    - Delay **Mix**: set to **0%**, then **50%**, then **100%** (pause between; note panel %).
    - Delay **Feedback**: set to **0%**, then **+50%**, then **−50%** (note panel %).
    - Delay **Time**: set to **100 ms**, then **500 ms**, then **1000 ms** (note panel ms).
    These multi-point sets let us derive the value→display curve (linear AND non-linear) for
-   each knob type — the thing blocking real `%`/`ms` units.
+   each knob type, the thing blocking real `%`/`ms` units.
 2. **Discrete type select:** change the **Reverb (or Delay) TYPE** dropdown to a specific
    named model, note the name. (Captures a discrete value SET we have zero examples of.)
-3. **Block placement — do TWO distinct moves:** move one block from slot **2 → 4**; pause;
+3. **Block placement, do TWO distinct moves:** move one block from slot **2 → 4**; pause;
    then move a different block from slot **1 → 3**. Note exact from/to each. (Two moves let us
    diff the routing and crack the slot encoding.)
 4. **Scene mapping:** switch scene **1 → 2 → 3 → 4**, one at a time, pausing between, noting
@@ -128,18 +128,18 @@ unlock display units + placement + scenes + type selects in one go.
 
 ---
 
-## C1 -- Block moves + delete/re-add, minimal pairs (SURGICAL — updated 2026-07-01)
+## C1 -- Block moves + delete/re-add, minimal pairs (SURGICAL, updated 2026-07-01)
 **~10 min | [SETUP.md](SETUP.md) required**
 
 The placement REGISTERS are now identified (`eid206 pid10` = delete, `pid15`/`pid16` =
 move pair) and the chain STATE is fully readable (the pid0 `0x1f` structure blob), so
 what remains is exactly the **value math** of the write frames. That takes MINIMAL
 PAIRS: single isolated gestures whose from/to is known, so each write value maps to one
-(from, to) pair. Keep VP4-Edit's poll running (it re-reads the blob after each gesture —
+(from, to) pair. Keep VP4-Edit's poll running (it re-reads the blob after each gesture,
 that's our before/after oracle for free), pause ~3 s between actions, and note each
 action + its order:
 
-1. **Moves (the key data):** one block at a time, note from/to each —
+1. **Moves (the key data):** one block at a time, note from/to each:
    - move a block slot **1 → 2** (adjacent, up-chain);
    - move it back **2 → 1** (the reverse pair);
    - move a block slot **1 → 4** (long move);
@@ -150,7 +150,7 @@ action + its order:
    block type into a chosen slot. (Pins `pid10`'s value math and captures the ADD frame,
    which no capture holds yet.)
 3. **Scene pairs, exhaustive:** switch scenes covering every from→to direction you have
-   patience for — at minimum `1→2, 2→3, 3→4, 4→1, 1→3, 2→4` — noting each pair. (The
+   patience for, at minimum `1→2, 2→3, 3→4, 4→1, 1→3, 2→4`, noting each pair. (The
    single captured `pid13` value `0x01` for a 1→3 switch is not enough to solve the
    mapping; exhaustive pairs are.)
 4. **Front-panel-vs-editor causality:** do ONE move and ONE scene switch **from the

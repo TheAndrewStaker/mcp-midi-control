@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/spd-sx",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Roland SPD-SX hybrid descriptor: MIDI kit recall + pad triggers (AUDIO/MIDI mode) and mass-storage kit/wave authoring (WAVE MGR mode), driven by the unified tool surface.",
   "private": true,
   "license": "Apache-2.0",

@@ -1,16 +1,16 @@
 # Axe-Fx Standard / Ultra (gen-1) SysEx map
 
-Model byte `0x01`. The first-generation Fractal flagship. Its own codec — it
+Model byte `0x01`. The first-generation Fractal flagship. Its own codec: it
 shares only the Fractal manufacturer envelope with the later gen-2 (Axe-Fx II,
 septet-packed) and gen-3 (modern, sub-action) families.
 
 Sources, two documents:
 - The published "Axe-FX Ultra System Exclusive Messages" doc (Ultra firmware
-  10.02-10.05) — the parameter-SET catalog. The wire is decoded **byte-exactly
+  10.02-10.05): the parameter-SET catalog. The wire is decoded **byte-exactly
   from that doc's worked examples and its full 0..255 conversion table**.
 - The community-maintained gen-1 wiki "Axe-Fx System Exclusive Message Spec"
   (wiki.fractalaudio.com/gen1, saved at
-  `docs/manuals/AxeFx-gen1-SysEx-Spec-wiki.wikitext.txt`) — the fuller protocol
+  `docs/manuals/AxeFx-gen1-SysEx-Spec-wiki.wikitext.txt`): the fuller protocol
   doc that documents the bidirectional half (queries + responses + patch dump)
   the param-set catalog omits. Its SET example matches our builder byte-for-byte.
 
@@ -37,7 +37,7 @@ F0 00 01 74 01 02 [bb bb] [pp pp] [vv vv] 01 F7
 
 ## The nibble-split encoding (the key primitive)
 
-Every addressable field — block id, param id, AND value — is an 8-bit value
+Every addressable field (block id, param id, AND value) is an 8-bit value
 0..255 transmitted as **two MIDI bytes, low nibble first**:
 
 ```
@@ -64,8 +64,8 @@ the worked example's payload is `0x02`, not `0x01`, so no checksum is applied.
 (Contrast gen-2/AM4, which DO use `fractalChecksum` XOR&0x7F.) Do not call
 `fractalChecksum` for gen-1.
 
-It read as a "fixed trailer" only because our original source — the narrow
-"Ultra System Exclusive Messages" param-set doc — shows nothing but SET
+It read as a "fixed trailer" only because our original source (the narrow
+"Ultra System Exclusive Messages" param-set doc) shows nothing but SET
 messages, where this byte is always `1`. The fuller gen-1 wiki spec documents it
 as the set/query selector: clear it to `0` to query.
 
@@ -93,7 +93,7 @@ The device returns the live value (0..254) and a null-terminated label string
 manufacturer id `00 00 7D` (10.02+ uses `00 01 74`); the parser currently
 matches the `00 01 74` envelope our SET path also uses.
 
-## Whole-patch dump (MIDI_GET_PATCH 0x03 → MIDI_PATCH_DUMP 0x04) — pinned subset SHIPPED (community-beta); param block still open
+## Whole-patch dump (MIDI_GET_PATCH 0x03 → MIDI_PATCH_DUMP 0x04): pinned subset SHIPPED (community-beta); param block still open
 
 Assessed 2026-07-02 against the mirrored wiki spec
 (`docs/manuals/AxeFx-gen1-SysEx-Spec-wiki.wikitext.txt`, sections
@@ -105,17 +105,17 @@ modifier state)"** (spec line 466).
 **Shipped 2026-07-02 (community-beta, hardware-unverified):** the SPEC-PINNED
 SUBSET is implemented in `src/gen1/patchDump.ts` (`buildGetPatchDump` /
 `parsePatchDump` / `isPatchDumpResponse`) and wired into the device package as
-`get_preset` — it returns the preset NAME, the 4×12 effect-grid block layout
+`get_preset`: it returns the preset NAME, the 4×12 effect-grid block layout
 (effect ids resolved via the fn 0x02 block-id table; the 2 per-cell state
 bytes carried raw), and the edit-buffer/stored source flag. The parameter
-region is returned as a byte COUNT only, never decoded — per the
+region is returned as a byte COUNT only, never decoded, per the
 no-guessed-wire-paths rule that region stays out until a real capture closes
 it (the evidence class for any layout written today would be WEAK: an inferred
 layout with no oracle, not spec-derived). Goldens:
 `test/gen1/patchdump.test.ts` (request frames byte-exact vs every spec worked
 example; synthetic dump round-trip; bank-C refusal).
 
-### Request (fn 0x03) — pinned, one spec-flagged wrinkle
+### Request (fn 0x03): pinned, one spec-flagged wrinkle
 
 Edit buffer (fully pinned, spec lines 223–236):
 
@@ -129,19 +129,19 @@ Stored preset (spec lines 207–218 + worked examples 239–245):
 F0 00 01 74 01 03 00 [ls] [ms] F7
 ```
 
-`ls = preset & 0x0f`, `ms = preset >> 4` — proven by the spec's own examples
+`ls = preset & 0x0f`, `ms = preset >> 4`, proven by the spec's own examples
 (A000 → `00 00`, A127 → `0F 07`, B128 → `00 08`, B255 → `0F 0F`, C256 →
 `00 10`). Note `ms` carries `preset >> 4`, i.e. MORE than one nibble (C256 →
-`0x10`) — this preset-number field is NOT the 8-bit nibble-split used by
+`0x10`). This preset-number field is NOT the 8-bit nibble-split used by
 fn 0x02. **Wrinkle:** the spec itself flags `ls` as "or'd with unknown value
 when requesting presets from bank 2": its C383 example shows `7F 17` where
 `383 & 0x0f = 0x0f`. Banks A/B (presets 0..255) are pinned; bank-C requests
 ≥ 256 with a nonzero low nibble are NOT. `buildGetPatchDump` therefore
 REFUSES presets ≥ 256 (one community capture pins the OR-value).
 
-### Dump (fn 0x04) — what the spec pins (lines 443–467)
+### Dump (fn 0x04): what the spec pins (lines 443–467)
 
-"Patch dumps **appear to be** 2060 bytes" — the spec hedges even the total.
+"Patch dumps **appear to be** 2060 bytes"; the spec hedges even the total.
 Layout with the spec's stated sizes; the offset arithmetic is internally
 consistent (7 + 6 + 42 + 22 = 77 = the spec's stated grid offset):
 
@@ -152,7 +152,7 @@ consistent (7 + 6 + 42 + 22 = 77 = the spec's stated grid offset):
 | 13–54 | 42 | 20-char patch name, ls/ms nibble pairs, + nibble-pair null terminator (20×2 + 2 = 42 ✓) | pinned |
 | 55–76 | 22 | ? | undetermined |
 | 77–268 | 192 | effect grid, 4×12 cells × 4 bytes: 2 bytes effect id (ls/ms nibble pair, matches the block-id table) + 2 bytes "undetermined state" | ids pinned; state bytes undetermined |
-| 269–2058 | 1790 | "assume parameter and modifier state" | **NOT pinned — the open piece** |
+| 269–2058 | 1790 | "assume parameter and modifier state" | **NOT pinned: the open piece** |
 | 2059 | 1 | `F7` | pinned |
 
 ### Why the param block cannot be spec-derived
@@ -161,7 +161,7 @@ The spec gives NO per-block param ordering, NO record framing or
 block-presence markers, NO value encoding for the region, and hedges the total
 size. Arithmetic kills the one obvious hypothesis: 1790 bytes as nibble pairs
 = 895 eight-bit values, but the catalog holds 922 params per block *type*
-(more again after duplication across the 68 block instances) — "every param,
+(more again after duplication across the 68 block instances): "every param,
 nibble-split, in catalog order" does not fit. Any layout written today would
 be a guess with no way to catch a wrong answer; it stays out.
 
@@ -170,7 +170,7 @@ be a guess with no way to catch a wrong answer; it stays out.
 The minimal oracle is a real fn=0x04 dump plus known ground truth:
 
 1. **Best:** two edit-buffer dumps bracketing exactly ONE noted front-panel
-   param change (one-capture-per-hypothesis) — the byte diff pins the offset
+   param change (one-capture-per-hypothesis): the byte diff pins the offset
    AND the value encoding in one shot.
 2. **Acceptable:** one dump (a Fractal-Bot / gen-1 AxeEdit preset `.syx`
    export should be exactly this frame) plus a note of a few known param
@@ -204,7 +204,7 @@ docs/manuals/AxeFx-Ultra-SysEx-Messages.htm
 
 Display-first: continuous params with a documented linear range convert
 display↔wire; params the doc marks non-linear (`*`) carry `scaling: 'pending'`
-and refuse display conversion (raw wire pass-through) until a curve is supplied —
+and refuse display conversion (raw wire pass-through) until a curve is supplied:
 no fabricated linear interpolation.
 
 ## Open items

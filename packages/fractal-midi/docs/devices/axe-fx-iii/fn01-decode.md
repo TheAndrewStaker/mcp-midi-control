@@ -17,7 +17,7 @@ the Axe-Fx II spec assigned to `GET_BLOCK_PARAMETERS_LIST`, BUT:
   this function entirely.
 - Community posts in this corpus describe 0x01 by its II name but
   also describe it as the workflow they expect to do `after the
-  status dump response (0x13)` — i.e. a *hoped-for* workflow, not
+  status dump response (0x13)`, i.e. a *hoped-for* workflow, not
   a confirmed working one.
 
 So: **0x01 is the right opcode but the III may have changed the

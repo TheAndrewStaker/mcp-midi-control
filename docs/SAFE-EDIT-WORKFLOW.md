@@ -81,9 +81,9 @@ implementation strategy:
 
 | Capability | AM4 | Axe-Fx II | Hydrasynth | Circuit Tracks |
 |---|---|---|---|---|
-| Device-sourced dirty signal | ❌ not exposed (verified by capture: zero MIDI bytes on front-panel edits). Dirty gate uses the deterministic in-memory `markDirty`/`markClean` tracker (`core/server-shared/bufferDirty.ts`), set at AM4 write call sites + cleared on save/switch; see `tools/safeEdit.ts`. Does NOT track front-panel / parallel-editor edits (deliberate tradeoff; the old fingerprint poll did, but non-deterministically, which false-refused users). | ✅ via `0x74` state-broadcast | ❌ not exposed in MIDI | n/a — no working-buffer "save" model. Edits are either live (fire-and-forget CC/NRPN, instantly audible, nothing to lose) or whole-slot file transfers (see the slot-transfer gate below). There is no dirty preset buffer to guard. |
+| Device-sourced dirty signal | ❌ not exposed (verified by capture: zero MIDI bytes on front-panel edits). Dirty gate uses the deterministic in-memory `markDirty`/`markClean` tracker (`core/server-shared/bufferDirty.ts`), set at AM4 write call sites + cleared on save/switch; see `tools/safeEdit.ts`. Does NOT track front-panel / parallel-editor edits (deliberate tradeoff; the old fingerprint poll did, but non-deterministically, which false-refused users). | ✅ via `0x74` state-broadcast | ❌ not exposed in MIDI | n/a: no working-buffer "save" model. Edits are either live (fire-and-forget CC/NRPN, instantly audible, nothing to lose) or whole-slot file transfers (see the slot-transfer gate below). There is no dirty preset buffer to guard. |
 | `on_active_preset_edited` guard | ✅ unified surface (`apply_preset`, `switch_preset`) | ✅ shipped | n/a (no dirty detection) | n/a (no working buffer) |
-| `save_authorized` guard on apply-at-slot | ✅ unified `apply_preset(target_location, save_authorized)` | ✅ shipped | ✅ `apply_patch(save: true)` | replaced by the **slot-transfer overwrite gate** (`confirm_overwrite`) on the destructive transfer tools — see below |
+| `save_authorized` guard on apply-at-slot | ✅ unified `apply_preset(target_location, save_authorized)` | ✅ shipped | ✅ `apply_patch(save: true)` | replaced by the **slot-transfer overwrite gate** (`confirm_overwrite`) on the destructive transfer tools, see below |
 | Multi-preset overwrite scan | ✅ `scan_locations` | ✅ `scan_locations` | n/a (different patch model) | ⚠️ partial: `upload_project` / `apply_pattern ncs_upload` READ the target project slot (empty→write, occupied→refuse + name); sample slots can't be read yet (`upload_sample` / `upload_kit` refuse by default). |
 | Tool-description guidance for agent | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance | ✅ the `confirm_overwrite` contract is in every transfer tool's description |
 
@@ -103,7 +103,7 @@ permanently overwrites whatever is in the target slot. The project's
 "read before write / confirm before overwriting non-empty" contract applies
 here just as it does to a preset location.
 
-The gate is **occupancy-driven, not a blanket refuse-by-default** — so it
+The gate is **occupancy-driven, not a blanket refuse-by-default**, so it
 adds friction only where there's something to lose:
 
 - **`upload_project` / `apply_pattern ncs_upload`** (project slots are
@@ -113,7 +113,7 @@ adds friction only where there's something to lose:
   project, for the agent to surface and the user to confirm; re-call with
   `confirm_overwrite: true`. The read costs one extra slot download and runs
   only on the non-authorized path.
-- **`upload_sample` / `upload_kit`** (sample slots are NOT readable yet — the
+- **`upload_sample` / `upload_kit`** (sample slots are NOT readable yet, the
   sample-directory decode is RE-gated): occupancy "can't be confirmed", so the
   tool refuses by default and asks for `confirm_overwrite: true`. When the
   dir-listing decode lands, these graduate to the same empty-slot-no-friction
@@ -148,12 +148,12 @@ emits zero unsolicited MIDI on front-panel edits; no push signal exists.
 The AM4 also has no transport-layer send classifier, so it fires
 `markDirty` (`core/server-shared/bufferDirty.ts`) at each acked
 edit-class write call site in `writer.ts` / `applyExecutor.ts` /
-`presetRestore.ts`, and `markClean` on save / switch — the same
+`presetRestore.ts`, and `markClean` on save / switch, the same
 call-site model Axe-Fx II uses. `tools/safeEdit.ts` consults
 `isDirty(label)`. A prior version polled + hashed the working-buffer
 dump, but the AM4 dump is non-deterministic (~20% byte drift on a
 zero-mutation re-dump, 2026-05-28), so the hash both fails-open and
-false-refuses — a real user was refused a navigation immediately after
+false-refuses: a real user was refused a navigation immediately after
 a clean save (2026-06-03). Tradeoff vs. the old poll: this detects OUR
 edits reliably but not out-of-band front-panel / parallel-editor edits.
 
@@ -311,4 +311,4 @@ exercises the gates. Extending it to cover more of the unified
   (2026-06-03): the AM4 dump is non-deterministic (~20% drift on a
   zero-mutation re-dump), so the hash false-refused users. AM4 now
   tracks ITS OWN edits via markDirty (not front-panel / parallel-editor
-  edits — accepted tradeoff for determinism).
+  edits, accepted tradeoff for determinism).

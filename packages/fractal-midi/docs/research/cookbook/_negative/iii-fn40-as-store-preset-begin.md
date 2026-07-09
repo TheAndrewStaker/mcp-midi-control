@@ -6,8 +6,8 @@ discovered: 2026-05-22 (cookbook-mine of ghidra-axe-edit-iii-store-preset.txt)
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: STUB (structural-only; negative finding — caller-chain evidence in ghidra-axe-edit-iii-store-preset.txt; see Symptoms / grep terms)
-retest_when: never (caller-chain proven — fn=0x40 is LOAD_PRESET, identified by the 3000-byte inbound-buffer read signature; the store path is the 0x77/0x78/0x79 exchange itself with the preset index patched into the 0x77 header)
+golden: STUB (structural-only; negative finding; caller-chain evidence in ghidra-axe-edit-iii-store-preset.txt; see Symptoms / grep terms)
+retest_when: never (caller-chain proven; fn=0x40 is LOAD_PRESET, identified by the 3000-byte inbound-buffer read signature; the store path is the 0x77/0x78/0x79 exchange itself with the preset index patched into the 0x77 header)
 relates_to: [iii-host-emitter-fn-table, vendor-envelope-descriptor-table, msb-first-14bit-preset-payload]
 consumed_in: []
 ---

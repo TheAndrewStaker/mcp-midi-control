@@ -11,7 +11,7 @@ golden: STUB (structural-only; de-facto coverage: packages/fractal-gen2/src/scen
 relates_to: [parambase-plus-paramid, wire-id-pairs-per-placed-block, vendor-envelope-descriptor-table]
 consumed_in:
   - packages/fractal-gen2/src/sceneChannelMap.ts (BLOCK_LAYOUT_MAP)
-  - (III: pending — transfer candidate, see iii-preset-receiver.txt)
+  - (III: pending, transfer candidate, see iii-preset-receiver.txt)
 ---
 
 # Alphabetical-name-cascade block ordering
@@ -19,12 +19,12 @@ consumed_in:
 > **2026-07-02 note:** the serialization order is now corpus-pinned by
 > the preset-image TLV decode ([[ii-preset-image-tlv-chain]], 388/388):
 > alphabetical by the AxeEdit canonical DISPLAY name with spaces /
-> punctuation ignored ("Tremolo/Panner" under T — which resolves this
+> punctuation ignored ("Tremolo/Panner" under T, which resolves this
 > entry's Batch D "PanTrem" anomaly), then a fixed system tail
 > [Tone Match?, Noisegate, Output, Feedback Send?, Feedback Return?,
 > Controllers] (which matches the "Mixer sorts to the END"
 > observation). More importantly, ordering PREDICTION is obsolete for
-> read-modify-write — the chain self-describes each block's position.
+> read-modify-write; the chain self-describes each block's position.
 
 The Axe-Fx II preset binary serializes block data in **alphabetical order
 by block-type display name**, not by grid placement, not by block-id, not
@@ -53,15 +53,15 @@ PanTrem → Tremolo → Looper → Noisegate → Output → Controllers`
 
 Note: `EffectsLoop` lands between `GraphicEQ` and `MegaTap` in the
 cascade, NOT in pure alphabetical position between `Drive` and `Enhancer`.
-The cascade is *almost* alphabetical with a small reordering — agents
+The cascade is *almost* alphabetical with a small reordering; agents
 must use the cascade table, not a sort by string.
 
 For each matched block-type, the serializer emits K consecutive wire-ids
-(K ∈ {1, 2, 4}) — see [[wire-id-pairs-per-placed-block]].
+(K ∈ {1, 2, 4}); see [[wire-id-pairs-per-placed-block]].
 
 ## Where it's used
 
-- II preset binary block layout — defines paramBase ordering at the
+- II preset binary block layout: defines paramBase ordering at the
   protocol level. The width-per-block-name table layered on top of this
   rule yields the formula for `paramBase` per (preset, block).
 -  atomic_apply build path (+) uses this for the
@@ -77,9 +77,9 @@ Empirical verification (-DECODE-NOTES.md):
 
 This is the LAYOUT primitive. It tells you the ORDER of blocks in the
 preset binary. To get the actual byte offsets you also need:
-- [[wire-id-pairs-per-placed-block]] — how many wire-ids each block-name
+- [[wire-id-pairs-per-placed-block]]: how many wire-ids each block-name
   consumes
-- The per-block-name WIDTH table (currently partial — Test Crunch has
+- The per-block-name WIDTH table (currently partial: Test Crunch has
   Amp=238, Cab=80, Comp=42, Delay=142, Drive=44 ushorts measured)
 
 Together: `paramBase(block) = sum(width(b) for b in cascade order before block) + startOffset`.
@@ -102,9 +102,9 @@ Cost: zero (once the cascade table is in code). One TS sort + lookup.
     but sometimes alphabetical. Not yet conclusively RE'd.
 - Does NOT apply to grid-placement order (the visual signal chain).
   Grid placement is independent of preset-binary layout.
-- Does NOT apply to scene state — scene state ushorts are at fixed
+- Does NOT apply to scene state; scene state ushorts are at fixed
   offsets per block-name, not in cascade order. See [[scene-state-ushort]].
-- Cascade order alone is INSUFFICIENT for paramBase calculation — you
+- Cascade order alone is INSUFFICIENT for paramBase calculation; you
   also need the width table AND the full sort algorithm. Shipping a
   `BLOCK_LAYOUT_MAP` with cascade-ordered entries that don't account
   for the canBypass-class anomalies produces wrong paramBase values for
@@ -114,7 +114,7 @@ Cost: zero (once the cascade table is in code). One TS sort + lookup.
 
 ## Where it does NOT apply
 
-- Axe-Fx III editor — the inline-string-cascade IMPLEMENTATION form is
+- Axe-Fx III editor: the inline-string-cascade IMPLEMENTATION form is
   structurally absent. Exhaustive grep of all 7 III preset-related
   Ghidra dumps (preset-receiver 371 KB, store-preset 81 KB,
   actions-and-shapes 989 KB, inbound-dispatcher 524 KB, patch-parsers
@@ -126,17 +126,17 @@ Cost: zero (once the cascade table is in code). One TS sort + lookup.
   session trying to re-grep the dumps for `"Amp" / "Cab" / "Chorus"`
   needles. See `_negative/iii-block-name-string-cascade.md` for the
   full evidence + grep table.
-- AM4 — preset layout is different (AM4 has 4 slots × 1 block; cascade
+- AM4: preset layout is different (AM4 has 4 slots × 1 block; cascade
   doesn't apply the same way).
 
 ## Verification path
 
 No inline fixture ships (golden is STUB). A functional case, if added,
 would run two fixtures:
-1. Test Crunch composition (Amp/Cab/Comp/Delay/Drive/Reverb) — expected
+1. Test Crunch composition (Amp/Cab/Comp/Delay/Drive/Reverb), expected
    cascade order: Amp, Cab, Compressor, Delay, Drive, Reverb. Verifies
    against captured paramBase values.
-2. Test Crunch + Chorus — expected cascade-induced shift: Chorus claims
+2. Test Crunch + Chorus, expected cascade-induced shift: Chorus claims
    the old Compressor position; Compressor shifts to the next slot.
    Verifies against the -DECODE-NOTES.md §1 empirical test.
 

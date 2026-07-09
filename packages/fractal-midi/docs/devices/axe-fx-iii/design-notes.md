@@ -61,7 +61,7 @@ function isStateBroadcastInboundIII(bytes: readonly number[]): boolean {
   if (bytes[1] !== 0x00 || bytes[2] !== 0x01 || bytes[3] !== 0x74) return false;
   if (bytes[4] !== AXE_FX_III_MODEL_ID) return false;
   // 0x21 is the "front panel change detected" auto-push per the III spec.
-  // Strong candidate but UNVERIFIED on hardware — confirm with capture
+  // Strong candidate but UNVERIFIED on hardware; confirm with capture
   // (analogous to the AM4 finding) before trusting as the sole signal.
   return bytes[5] === 0x21;
 }
@@ -91,7 +91,7 @@ same probe-and-observe pattern that landed II's 0x1D STORE_PRESET).
 ```ts
 const CLEAN_FUNCTIONS_III = new Set<number>([
   0x0d, // SET_PRESET_NUMBER (analog to II's 0x3C SWITCH_PRESET)
-  // 0x?? STORE_PRESET — pending decode at III implementation time
+  // 0x?? STORE_PRESET: pending decode at III implementation time
 ]);
 ```
 
@@ -107,7 +107,7 @@ capabilities: {
   supports_save: true,
   supports_lineage: true,       // amp/cab/drive corpus may extend to III models
   has_scenes: true,
-  has_per_scene_authoring: false,  // confirmed by III spec — switch-write-switch-back only
+  has_per_scene_authoring: false,  // confirmed by III spec: switch-write-switch-back only
 }
 ```
 

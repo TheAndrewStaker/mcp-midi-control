@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/core",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Shared MCP dispatcher, param-kind resolver, and protocol-generic types.",
   "private": true,
   "license": "Apache-2.0",

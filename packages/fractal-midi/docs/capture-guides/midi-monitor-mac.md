@@ -8,7 +8,7 @@ Download: [snoize.com/midimonitor](https://www.snoize.com/midimonitor/)
 
 Use this when you want to capture what a Fractal editor (AxeEdit III, FM9-Edit, VP4-Edit, AM4-Edit) sends to your device while it connects and syncs. This is the Mac equivalent of the [USBPcap + Wireshark](usbpcap-wireshark.md) guide used on Windows.
 
-**FM3 exception:** MIDI Monitor cannot capture FM3-Edit traffic. The FM3 is not a USB MIDI device on any OS — FM3-Edit talks to it over a USB-CDC **serial** channel (`/dev/cu.usbmodem…`), which never touches CoreMIDI. To capture FM3-Edit traffic on a Mac, use a serial-level method instead (e.g. the lldb `write()` breakpoint technique). All the other devices here (III, FM9, VP4, AM4) are true CoreMIDI devices and capture normally.
+**FM3 exception:** MIDI Monitor cannot capture FM3-Edit traffic. The FM3 is not a USB MIDI device on any OS; FM3-Edit talks to it over a USB-CDC **serial** channel (`/dev/cu.usbmodem…`), which never touches CoreMIDI. To capture FM3-Edit traffic on a Mac, use a serial-level method instead (e.g. the lldb `write()` breakpoint technique). All the other devices here (III, FM9, VP4, AM4) are true CoreMIDI devices and capture normally.
 
 ## Enabling spy mode
 

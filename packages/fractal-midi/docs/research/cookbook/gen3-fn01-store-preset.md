@@ -52,7 +52,7 @@ is locked by preset 10 landing in byte 12 as `0x0a` (an MSB-first reading
 would put 10 in byte 13). **The high-septet (presets >= 128) is now captured**:
 a live FM9-Edit save of preset 151 emitted `... 26 00 00 00 00 00 17 01 00 ...`,
 i.e. byte 12 = `0x17` (151 & 0x7f = 23) and byte 13 = `0x01` (151 >> 7 = 1),
-decode14(0x17,0x01) = 151 — confirming the LSB-first septet extension across the
+decode14(0x17,0x01) = 151, confirming the LSB-first septet extension across the
 128 boundary (captured through the codec-backed simulator, see
 [[gen3-editor-sync-read-surface]]). Note this
 LSB-first layout differs from the preset-dump REQUEST (`fn=0x03`), whose

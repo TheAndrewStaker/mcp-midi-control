@@ -1,18 +1,18 @@
-# Catalog JSON — schema and consumption contract
+# Catalog JSON: schema and consumption contract
 
 `catalog/` holds a **generated**, language-agnostic export of this package's
 parameter dictionaries, block tables, enum rosters, and range/calibration
-data — one JSON file per device plus `index.json`. It exists so non-TypeScript
+data: one JSON file per device plus `index.json`. It exists so non-TypeScript
 consumers (Python tooling, librarians, other codec implementations) can use
 the data without vendoring source files.
 
 **Consumption rule: pin, don't copy.** Pin the `fractal-midi` npm package (the
 JSON ships in it at `node_modules/fractal-midi/catalog/<device>.json`; from
-Node ESM, import it with an attribute — `import cat from
-'fractal-midi/catalog/fm3.json' with { type: 'json' }` — or just read the file)
+Node ESM, import it with an attribute, `import cat from
+'fractal-midi/catalog/fm3.json' with { type: 'json' }`, or just read the file)
 or a git tag, and read the JSON from there. Vendored copies silently drift as
 calibration fixes, enum-roster fills, and new decodes land. If a value in the
-catalog disagrees with your hardware, that is a bug report we want — please
+catalog disagrees with your hardware, that is a bug report we want; please
 open an issue.
 
 ## Generation and integrity
@@ -36,7 +36,7 @@ Every `catalog/<device>.json` is one object:
 | `model_byte` | The SysEx model byte as a hex string (e.g. `"0x12"`). |
 | `support_status` | Honest evidence label: `hardware-verified` or `community-beta` with a parenthetical naming what is and is not confirmed. |
 | `source` | Where the data came from (mining source, spec, captures). |
-| `notes` | Optional array of device-specific caveats. Read them — they carry the family-shared-vs-device-true distinctions. |
+| `notes` | Optional array of device-specific caveats. Read them; they carry the family-shared-vs-device-true distinctions. |
 | `data` | The payload. **Each key mirrors the same-named TypeScript export** in `fractal-midi/<device>` (or a clearly named generated module), serialized verbatim. The TS interfaces in `src/<device>/` are the normative field documentation. |
 
 `index.json` lists all device files with their `model_byte` and
@@ -51,8 +51,8 @@ Every `catalog/<device>.json` is one object:
 | `axe-fx-iii` | `PARAMS` (array: family, paramId, name, displayLabel, unit…), `AXE_FX_III_BLOCKS` (gen-3 family-shared effect IDs), `GEN3_READ_ROSTERS` (enum ordinal → display name; the ordinal IS the wire set value, sent as float32(ordinal)) |
 | `fm3` | `FM3_PARAMS` (same shape as III `PARAMS`, paramIds FM3-true) |
 | `fm9` | `FM9_PARAMS`, `FM9_RANGES` (per family+paramId: kind, displayMin/Max, scale, step), `FM9_ENUM_OVERRIDES`, `FM9_AMP_ROSTER`, `FM9_DRIVE_ROSTER`, `FM9_REVERB_TYPE_ROSTER` |
-| `vp4` | `VP4_PARAMS` (paramIds VP4-true; display calibration pending — write raw wire values) |
-| `axe-fx-gen1` | `KNOWN_PARAMS` (paramId, controlType, display, scaling — `"pending"` means the display curve is unknown, pass raw wire 0..254), `AXE_FX_GEN1_BLOCKS` |
+| `vp4` | `VP4_PARAMS` (paramIds VP4-true; display calibration pending: write raw wire values) |
+| `axe-fx-gen1` | `KNOWN_PARAMS` (paramId, controlType, display, scaling; `"pending"` means the display curve is unknown, pass raw wire 0..254), `AXE_FX_GEN1_BLOCKS` |
 
 ## What the catalog is NOT
 
@@ -91,5 +91,5 @@ ordinal**. The ordinal IS the wire set value (sent as float32(ordinal)).
 ## Versioning and attribution
 
 The catalog carries no embedded version; the version IS the npm package / git
-tag you pinned. License: Apache-2.0 — keep the package's `LICENSE` and
+tag you pinned. License: Apache-2.0; keep the package's `LICENSE` and
 `NOTICE` with redistributed copies.

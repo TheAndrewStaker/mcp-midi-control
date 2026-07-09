@@ -183,8 +183,9 @@ export interface DeviceCapabilities {
    *                      (e.g. Circuit Tracks "record from external controller").
    *                      Two-phase: the user arms Record on the hardware first.
    *   - 'ncs_upload'     Author a named project offline and push it (Circuit
-   *                      Tracks .ncs over SysEx). Phase C — not yet shippable;
-   *                      no device lists it until the codec lands.
+   *                      Tracks .ncs via SysEx file transfer over USB MIDI).
+   *                      Shipped: the Circuit Tracks lists it (community-beta,
+   *                      the project transfer is hardware-confirmed).
    * Absent/empty ⇒ not a pattern target; `apply_pattern` refuses with
    * capability_not_supported. Mirrors the optional-capability idiom
    * (`has_scenes`, `has_mod_matrix`).
@@ -195,7 +196,8 @@ export interface DeviceCapabilities {
    * pattern target. Keys are abstract voice names the neutral pattern uses
    * (`kick`/`snare`/`hat`/`bass`/`lead`/…); values are the `{channel, note}`
    * this device fires them on (Circuit drums: ch10 notes 60/62/64/65;
-   * SPD-SX pads: ch10 from C4=60; a synth's `bass`: its melodic channel).
+   * SPD-SX pads: ch10, General MIDI drum notes (kick 36 / snare 38 / hat 42);
+   * a synth's `bass`: its melodic channel).
    *
    * This is what keeps device vocabulary OUT of the neutral pattern data:
    * the pattern says "kick", the target descriptor owns where "kick" goes.

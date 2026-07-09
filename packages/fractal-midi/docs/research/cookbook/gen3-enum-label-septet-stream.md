@@ -15,7 +15,7 @@ consumed_in: []
 
 Gen-3 Fractal editors fetch enum value NAMES (reverb/amp/drive type lists,
 cab IR names, current-value labels, controller sources) from the device
-over USB — they are NOT editor-resident. The names are carried **septet-
+over USB; they are NOT editor-resident. The names are carried **septet-
 packed** in `fn=0x01` IN frames and recovered by the streaming MSB-first
 8→7 unpack ([[iii-byte-stream-septet-pack-8to7]]), but only when the unpack
 **starts at byte index 5** (the fn byte). See the negative
@@ -35,12 +35,12 @@ labels(frame):                                   # frame = full F0..F7
 
 | fn:sub | what it carries |
 |---|---|
-| `0x01:0x2e` | a param's full value LIST (positional 32-char fields) — dumped when its Type dropdown opens; in the panel-open capture this was the cab IR-picker list |
-| `0x01:0x1a` | one param's CURRENT-value label (getParameterInfo septet tail) — e.g. amp "FAS Bass"/"BASSGUY" |
-| `0x01:0x09` | a typed-SET response: the SET value's name (see [[gen3-fn01-set-float32-ordinal]] — the SET value is float32(ordinal)) |
+| `0x01:0x2e` | a param's full value LIST (positional 32-char fields), dumped when its Type dropdown opens; in the panel-open capture this was the cab IR-picker list |
+| `0x01:0x1a` | one param's CURRENT-value label (getParameterInfo septet tail), e.g. amp "FAS Bass"/"BASSGUY" |
+| `0x01:0x09` | a typed-SET response: the SET value's name (see [[gen3-fn01-set-float32-ordinal]], the SET value is float32(ordinal)) |
 | `0x01:0x2a` | cab/IR browser list (capture3: "AMPEG BASS", "SVT 4X10+subkick", …) |
 | `0x01:0x1f` | controller / modifier source names ("PEDAL 1", "FC 1 PEDAL 1", …) |
-| `0x01:0x01` | block instance / category names ("Reverb 1", "REV") — structural, not enum values |
+| `0x01:0x01` | block instance / category names ("Reverb 1", "REV"), structural, not enum values |
 
 ## Evidence
 
@@ -61,7 +61,7 @@ session notes.
   dropdown-open capture (or an editor-resource re-mine of this 32-char
   format).
 - Amp model names appear via `sub=0x1a` (current value) but the amp SET
-  echo (`sub=0x09`) is numeric, not a name — see
+  echo (`sub=0x09`) is numeric, not a name; see
   [[gen3-fn01-set-float32-ordinal]].
 - N=1 axis (FM9 only).
 

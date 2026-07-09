@@ -1,4 +1,4 @@
-# Connection arbiter — design
+# Connection arbiter: design
 
 Status: **sound, ready to build (revised after a 5-lens design review).** The
 mechanical-but-dangerous half of the multi-device song-orchestration vision
@@ -26,13 +26,13 @@ device can't parse), and nobody checks the room is still there (a handle can die
 mid-use while we keep "sending" into the void). The arbiter is a bouncer on each
 door enforcing two rules:
 
-1. **Check the room is alive before letting anyone in** (R2 — ships first). Verify
+1. **Check the room is alive before letting anyone in** (R2, ships first). Verify
    the handle; if it faults, reconnect and retry once, transparently.
-2. **One operation in the room at a time** (R1 — orchestration phase). A second op
+2. **One operation in the room at a time** (R1, orchestration phase). A second op
    to the *same* device waits; ops to *different* devices use *different* doors
    and never wait on each other.
 
-The "door" is the *endpoint* — usually a MIDI port, but also the FM3's serial
+The "door" is the *endpoint*, usually a MIDI port, but also the FM3's serial
 line or the SPD-SX's mounted drive. Same bouncer, every transport.
 
 **What each party experiences:**
@@ -40,7 +40,7 @@ line or the SPD-SX's mounted drive. Same bouncer, every transport.
 - **The musician:** nothing new in the normal case (no contention = waved straight
   through). You only notice it when it *saves* you: a clean result because the
   second op waited, a transparent reconnect-and-retry instead of a dead-port
-  silent failure, or a clear "the FM9 is busy finishing a pattern" — never a
+  silent failure, or a clear "the FM9 is busy finishing a pattern"; never a
   corrupted patch, never a fake "done."
 - **The AI agent:** keeps calling tools exactly as today. It learns no new tool and
   manages no connections. New things it can encounter: a `device_busy` error
@@ -49,7 +49,7 @@ line or the SPD-SX's mounted drive. Same bouncer, every transport.
 - **A device author:** writes the descriptor's reader/writer as today and gets
   health recovery + serialization for free.
 
-**Worked scenario** — "set me up for a song: heavy tone on the FM9, half-time
+**Worked scenario**: "set me up for a song: heavy tone on the FM9, half-time
 groove on the Circuit, fat-snare kit on the SPD-SX":
 
 - `apply_preset(fm9)` → FM9 door free, runs, holds the door ~1 s.
@@ -61,16 +61,16 @@ groove on the Circuit, fat-snare kit on the SPD-SX":
   occupied → it waits, then runs cleanly when the stream ends, or fails fast with
   "Circuit is busy streaming" (and the user can cancel the stream).
 
-Without per-endpoint serialization, that last step is a real corruption risk —
+Without per-endpoint serialization, that last step is a real corruption risk:
 two MIDI streams interleaved into one port. **Note (attribution):** the *logged*
 Circuit-reboot and "169 writes into a dead port reported success" incidents were
-a *different* cause — a second process holding the exclusive port, and a WinMM
-handle poisoned mid-send — which serialization does **not** fix. Those are the
+a *different* cause (a second process holding the exclusive port, and a WinMM
+handle poisoned mid-send) which serialization does **not** fix. Those are the
 health/liveness (R2) and cross-process (out-of-scope) problems, below. Don't
 conflate them: R1 prevents an interleave we have not yet logged; R2 fixes the
 ones we have.
 
-## What it solves — and what it cannot
+## What it solves, and what it cannot
 
 In scope:
 
@@ -80,19 +80,19 @@ In scope:
    reconnect, cold-start resend) into one place every device gets.
 2. **Per-endpoint serialization (R1).** At most one operation per endpoint at a
    time, so overlapping calls can't interleave into a corrupt stream. Latent-safe
-   today only because one chat serializes calls — which the MCP spec does **not**
+   today only because one chat serializes calls, which the MCP spec does **not**
    guarantee (concurrent requests are legal; a long stream or upload holds a
    device for seconds).
 3. **Graceful contention (R3).** A busy endpoint makes a waiter block briefly then
    fail fast with a clear `device_busy`; long holders are escapable by
    **cancellation**, not by waiting.
 
-**What it CANNOT do (hard boundary — state this up front):**
+**What it CANNOT do (hard boundary, state this up front):**
 
 - **No cross-process coordination.** The lock is a single in-process structure. It
   cannot stop a *second* MCP server instance, an orphaned prior process, or
-  AxeEdit/Components from holding the same exclusive port. That class — the actual
-  cause of the logged incidents — is mitigated separately (the server already
+  AxeEdit/Components from holding the same exclusive port. That class (the actual
+  cause of the logged incidents) is mitigated separately (the server already
   self-terminates on client disconnect to release ports, and `connect()` reports a
   held port with the likely holder) and a hard guard (single-instance lockfile /
   OS named mutex / boot-time port-claim) is **deferred**, noted as future work
@@ -103,7 +103,7 @@ In scope:
 
 ## Current state (`packages/core/src/server-shared/connections.ts`)
 
-- `ensureConnection(label, forceReconnect)` — per-`label` registry
+- `ensureConnection(label, forceReconnect)`: per-`label` registry
   (`Map<label, { conn, consecutiveTimeouts, cold }>`), opened via a connector
   factory or generic `connect()`, then cached.
 - Stale detection: `recordAckOutcome` bumps `consecutiveTimeouts`; at threshold 2
@@ -113,7 +113,7 @@ In scope:
   `transport.kind`, builds `{ conn, storage:{root}, descriptor, reconnect }`, and
   substitutes `createNullMidiConnection` for storage devices.
 - `reconnect_midi` calls `ensureConnection(label, true)` → `closeMidiSafely()`
-  **directly, with no coordination** — it can close a port out from under an
+  **directly, with no coordination**: it can close a port out from under an
   in-flight op.
 - Windows MIDI ports are **exclusive**; `isPortOpen()` is a negative catch only (a
   mid-send-poisoned WinMM handle still reports open). No mutex exists.
@@ -147,17 +147,17 @@ withEndpoint<T>(descriptor: DeviceDescriptor, fn: (ctx: DispatchCtx, signal: Abo
 ```
 
 It (1) derives the lock key, (2) acquires the per-endpoint lock, (3) builds the
-`DispatchCtx` (the current `openCtx` body — transport branch, storage root,
+`DispatchCtx` (the current `openCtx` body: transport branch, storage root,
 null-conn, reconnect), (4) runs `fn` with health recovery (R2) and an
 `AbortSignal` (R3), (5) releases in `finally`.
 
-Each I/O `execute*` changes by one line — `const ctx = openCtx(d); return writer.foo(ctx, …)`
+Each I/O `execute*` changes by one line: `const ctx = openCtx(d); return writer.foo(ctx, …)`
 becomes `return withEndpoint(d, (ctx) => writer.foo(ctx, …))`. Crucially, a
 **missed wrap is a `tsc` error**, not a silent serialization hole: bare `openCtx`
 stops being exported for I/O paths, so there is no way to get a usable ctx without
 going through the lock. Storage/hybrid/`reconnect` logic stays in one place
-instead of being hand-rebuilt per call. (The even-cleaner end state — an
-auto-wrapping reader/writer decorator applied at descriptor registration — is
+instead of being hand-rebuilt per call. (The even-cleaner end state, an
+auto-wrapping reader/writer decorator applied at descriptor registration, is
 noted as a later refinement; the explicit `withEndpoint` is the P-B target.)
 
 ### Lock key = `connection_label ?? id`
@@ -165,7 +165,7 @@ noted as a later refinement; the explicit `withEndpoint` is the P-B target.)
 Same key as the existing connection registry, so the lock and the handle-health
 state co-locate under one key. The earlier "resolved endpoint" idea is dropped:
 `MidiConnection` exposes no port name, and the SPD-SX hybrid's endpoint *changes
-by USB mode* (drive root vs MIDI port) — two ops across a mode flip would get two
+by USB mode* (drive root vs MIDI port): two ops across a mode flip would get two
 keys and fail to serialize. Instead, the handle/root is **re-resolved fresh inside
 the lock on each acquire**, so a mode flip is simply seen on the next acquire. (A
 real two-descriptors-one-physical-port device would revisit this; none exists.)
@@ -178,7 +178,7 @@ locked op on the same endpoint. Two such paths exist today:
 - `executeSetModRoute` / `executeSetMacroRoute` call `executeSetParam` 2–3× on the
   same port.
 - `executeTranslatePreset` reads the **source** (via raw `openCtx`) while calling
-  `executeApplyPreset` on the **target** — two endpoints, nested.
+  `executeApplyPreset` on the **target**: two endpoints, nested.
 
 The invariant: **an `execute*` holds at most one endpoint lock and never calls
 another `execute*` while holding it.** Enforced by:
@@ -188,7 +188,7 @@ another `execute*` while holding it.** Enforced by:
   lock.
 - **Multi-endpoint ops acquire in a canonical order** (sorted by key) and release
   each before the next where possible. `executeTranslatePreset` reads + releases
-  the source, *then* acquires the target — never both held nested.
+  the source, *then* acquires the target; never both held nested.
 - **A reentrancy guard throws** a clear error (`endpoint already held in this call
   chain`) rather than deadlocking, so a future violation fails loud in tests.
 
@@ -198,13 +198,13 @@ Use `async-mutex` (`runExclusive` + `withTimeout`, ~3 KB, mature). A bare
 promise-chain mutex with a bounded timeout is exactly the combination that leaks:
 a waiter that extended the tail then timed out leaves a dangling link, and on
 release the lock is handed to an abandoned, already-rejected waiter → the endpoint
-deadlocks forever. ("Zero-dep" was never an invariant — the project already ships
+deadlocks forever. ("Zero-dep" was never an invariant; the project already ships
 `@julusian/midi`, `serialport`, `zod`, the MCP SDK.)
 
-`withEndpoint` does **not** call `recordAckOutcome` — leaf I/O keeps ownership of
+`withEndpoint` does **not** call `recordAckOutcome`; leaf I/O keeps ownership of
 the ack counter, so wrapping doesn't double-count.
 
-### R2 — health & liveness (ships first, no lock required)
+### R2: health & liveness (ships first, no lock required)
 
 `isPortOpen()` lies for a poisoned handle, and a real first-ACK probe on every
 acquire adds 30–60 ms (a `get_param` becomes two round-trips, blowing the <200 ms
@@ -213,25 +213,25 @@ budget). So liveness is proven **in-band**, not pre-flight:
 - Keep the *free* stale-counter force-reconnect at acquire.
 - Run `fn`; on a handle fault (throw / `lastSendError` set / stale-fault),
   **reconnect once and retry `fn`**, generalizing `uploadProject`'s existing
-  recovery. This in-op reconnect is **lock-free** — it operates on the held slot
+  recovery. This in-op reconnect is **lock-free**: it operates on the held slot
   and never re-enters the mutex.
 
 This is the present-value reliability win and needs no serialization, so it ships
 in Phase A on its own.
 
-### R3 — contention & cancellation
+### R3: contention & cancellation
 
 - **Waiter timeout bounds the WAITER, not the op.** Deliberately short (fail-fast),
   because real op durations are long: `awaitCommitMs` ≈ 6–8 s, `upload_kit` ≈
   270 s, live-streams many bars. A second op queued behind a *healthy* long
-  transfer must not false-trip — so it doesn't wait it out, it gets a `device_busy`
+  transfer must not false-trip, so it doesn't wait it out, it gets a `device_busy`
   that distinguishes **"briefly busy, retry"** from **"busy for the whole stream,
   don't wait"** (using the holder metadata below).
 - **Cancellation is the escape for long holders, not the timeout.** Thread an
   `AbortSignal` into `fn`; wire it to the MCP SDK's `notifications/cancelled` so
   "stop the pattern" actually unwinds a streaming holder (which `send_panic`
   cannot). The live-stream holder gets a real stop checkpoint (it already loops per
-  cycle — check the signal there). Add **graceful SIGINT/SIGTERM shutdown** that
+  cycle; check the signal there). Add **graceful SIGINT/SIGTERM shutdown** that
   aborts in-flight ops and lets them release **before** the existing synchronous
   `process.on('exit')` / `shutdown()` close yanks a port mid-transfer.
 - **`reconnect_midi` routes through the lock.** It either acquires the endpoint
@@ -253,7 +253,7 @@ USB-mode flip is handled on the next acquire rather than serving a stale key.
 
 ### `describe_rig` visibility (advisory only)
 
-Add `busy_hint` (not `busy`) to each device in `describe_rig` — **advisory, never
+Add `busy_hint` (not `busy`) to each device in `describe_rig`: **advisory, never
 gated on** (a busy flag the agent acts on is a TOCTOU race: it can flip between
 the read and the call). The P-B lock cell carries holder metadata
 `{ holderOpName, acquiredAt, waiterCount }` so a `device_busy` error can name the
@@ -261,16 +261,16 @@ in-flight op ("busy: apply_pattern started 4 s ago").
 
 ## Phasing
 
-- **Phase A — health/liveness (R2).** In-band reconnect-and-retry-once generalized
+- **Phase A: health/liveness (R2).** In-band reconnect-and-retry-once generalized
   across devices + the free stale-counter reconnect. No lock, no seam change.
   Ships the reliability win immediately; fixes the handle-fault class.
-- **Phase B — serialization + contention + cancellation (R1 + R3).** The
+- **Phase B: serialization + contention + cancellation (R1 + R3).** The
   `withEndpoint(descriptor, fn)` seam, `async-mutex`, lock key = label, the
   reentrancy invariant + composite refactor, `AbortSignal`/MCP cancellation +
   live-stream stop checkpoint + graceful shutdown, `reconnect_midi` through the
   lock, `device_busy` + kill-switch. The orchestration foundation. Cancellation is
   built **with** the lock here, not deferred.
-- **Phase C — observability.** `busy_hint` in `describe_rig` + a lock-wait metric,
+- **Phase C: observability.** `busy_hint` in `describe_rig` + a lock-wait metric,
   so a jammed rig is diagnosable.
 
 ## Resolved decisions
@@ -278,8 +278,8 @@ in-flight op ("busy: apply_pattern started 4 s ago").
 - **Long-running holders hold for the whole op** (was OQ1; resolved to "hold"). A
   live-stream *is* exclusive use of that device; a concurrent write to the same box
   mid-pattern is almost always a mistake. This is exactly why granularity is
-  **per-endpoint, not global** — holding one device for a stream never blocks any
-  other device — and it is paired with the cancellation checkpoint so a long hold
+  **per-endpoint, not global** (holding one device for a stream never blocks any
+  other device) and it is paired with the cancellation checkpoint so a long hold
   is always escapable.
 - **`async-mutex` dependency** over hand-rolling (the leak bug is what's hard to get
   right by hand).
@@ -295,7 +295,7 @@ in-flight op ("busy: apply_pattern started 4 s ago").
   mitigate it and a hard guard is its own effort. Tracked here so it isn't
   mistaken for something the arbiter already does.
 - **Auto-wrapping reader/writer decorator** at registration (so `withEndpoint` is
-  applied structurally, not per-call) — the cleaner end state after Phase B proves
+  applied structurally, not per-call), the cleaner end state after Phase B proves
   the seam.
 
 ## Test plan
@@ -310,7 +310,7 @@ Phase B:
   starts only after the first resolves); a third on a *different* key runs in
   parallel.
 - **Interleave-detection mock**: assert no two ops' `send()` calls ever overlap on
-  one key — this is the direct proof of the core claim.
+  one key; this is the direct proof of the core claim.
 - A hung holder past the waiter timeout makes the waiter throw `device_busy` (not
   hang); the holder releasing lets a queued waiter proceed.
 - **Timed-out-waiter-then-third-acquirer**: a holder releases *after* a waiter
@@ -319,7 +319,7 @@ Phase B:
   endpoint; composites (mod/macro route) complete under a single lock.
 - A long, healthy holder does **not** false-trip the busy timeout for a same-device
   waiter that is willing to wait for a brief op.
-- **`reconnect_midi` during a hold** waits or refuses — never closes the port under
+- **`reconnect_midi` during a hold** waits or refuses, never closes the port under
   the holder.
 - **Cancellation**: an aborted op releases the lock promptly and a queued op then
   proceeds; SIGINT aborts an in-flight transfer before the port is closed.

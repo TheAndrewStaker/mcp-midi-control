@@ -37,10 +37,10 @@ delay times in the high range.
 
 ## Misapplication failure modes
 
-- **DO NOT** apply globally — only parameters with `scaling: 'log10'`
+- **DO NOT** apply globally: only parameters with `scaling: 'log10'`
   metadata use this. Other parameters use Q16
   ([[display-q16-fixedpoint]]) or direct mapping.
-- **DO NOT** assume the same scale constant across parameters — each
+- **DO NOT** assume the same scale constant across parameters; each
   has its own kEncodeScale / kDecodeScale.
 
 ## Where it does not apply

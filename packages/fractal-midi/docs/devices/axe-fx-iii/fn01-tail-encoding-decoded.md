@@ -94,7 +94,7 @@ int unpack_8to7(byte *wire, int wireLen, byte *dst) {
   for (int wireIdx = 0; wireIdx < wireLen - 1; ) {
     if (bitCounter == 8) {
       // pull the 8-th wire byte (saved carry) and shift it into
-      // the previous 7 results — actually, the packed format has
+      // the previous 7 results. Actually, the packed format has
       // already integrated this; the reader just reverses the bits
       bitCounter = 1;
       carry = wire[wireIdx];

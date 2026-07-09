@@ -23,13 +23,13 @@ capture while building the simulator.
 
 ## The invariant that makes a simulator possible
 
-**Every `fn=0x01` response ECHOES the query's bytes 5..11 verbatim** — the fn
+**Every `fn=0x01` response ECHOES the query's bytes 5..11 verbatim**: the fn
 byte (`0x01`), the sub-action (byte 6), and the 4-byte address region (bytes
 8..11, which carry the 14-bit effectId at 8..9 for block-addressed reads). The
 device fills a fixed-length tail after byte 11, then the XOR-7 envelope checksum
 ([[xor-7f-envelope-checksum]]), then `F7`. This held on 100% of ~18,900 captured
 query/response pairs, so a simulator can frame any response by echoing bytes
-5..11 and filling the tail — centralized in `simResponders.gen3EchoFrame`.
+5..11 and filling the tail, centralized in `simResponders.gen3EchoFrame`.
 
 ## Sub-action → response length (FM9 capture)
 
@@ -49,7 +49,7 @@ query/response pairs, so a simulator can frame any response by echoing bytes
 
 `0x1f` is the enum-label READ stream: variable-length (26..53), sequential (the
 same address returns the next label each call), so it is NOT address-stable and
-a verbatim address store cannot reproduce a given frame — it is harvest-surface,
+a verbatim address store cannot reproduce a given frame; it is harvest-surface,
 not render-gating.
 
 ## Placed-flag (sub=0x7b)
@@ -59,7 +59,7 @@ nonzero; the remaining tail is zero. The captured placed set was exactly
 `{1, 2, 58, 59, 66, 118}` (eff 1 = the preset/system pseudo-block, carrying the
 family signature `1a 21 02 00` at bytes 12..15). The editor only polls `0x7b`
 for blocks it already believes are placed (learned from the layout map), so the
-**absent-block (all-zero) shape is uncaptured** — the simulator emits all-zero
+**absent-block (all-zero) shape is uncaptured**: the simulator emits all-zero
 for an absent block as a hypothesis, confirmed live when a block is deleted.
 
 ## Live render validation (FM9-Edit, codec-backed simulator)
@@ -79,7 +79,7 @@ two-port wiring is required.)
 ### The post-render param-definition stream (`sub=0x1f`) and the insert gate
 
 After the grid draws, FM9-Edit runs an operation it names **"Query All Param
-Definitions: clear_editor_refresh"** — a CURSOR-PAGED streaming read on
+Definitions: clear_editor_refresh"**, a CURSOR-PAGED streaming read on
 `sub=0x1f`: the query advances a 14-bit cursor at bytes 10..11 (observed
 climbing from 99 to ~14,900 across one block) and the device returns the next
 chunk (variable 26..53 bytes). A fixed same-sub fallback answer never advances
@@ -105,24 +105,24 @@ sub=0x32 : f0 00 01 74 12 01 32 00 73 00 00 00 2b 00 ...  eff 115 @ gridPos 43 (
 
 gridPos = col*6+row confirmed live (43=7*6+1, 44=7*6+2, 31=5*6+1). The inserted
 block does NOT re-render (the `sub=0x2e` layout map is served verbatim from the
-captured preset, so it can't show new occupancy — projecting the layout from
+captured preset, so it can't show new occupancy; projecting the layout from
 state is the follow-up). The block-TYPE dropdowns render with N correct entries
 (count from the served param structure) but garbage labels ("CC #118") because
-the names live in the unseeded `sub=0x1f` stream — so the `{name -> raw-id}`
+the names live in the unseeded `sub=0x1f` stream, so the `{name -> raw-id}`
 enum harvest stays gated on serving `sub=0x1f`.
 
 **Enum WRITE-leg harvest does NOT work against the simulator (empirically
 falsified, controlled live session).** The hope was: pick dropdown entries by
 ORDINAL position → the editor emits a `sub=0x09` SET carrying that entry's raw-id
 → join to the catalog's ordinal→name. It fails: with the dropdown unpopulated
-(no `sub=0x1f`), clicking a placeholder entry does NOT commit a selection — the
+(no `sub=0x1f`), clicking a placeholder entry does NOT commit a selection; the
 editor emits a value-0 GET (`sub=0x09` eff/param with value 0), never a raw-id
 SET. Confirmed: 9 clicks across the Reverb (eff 66 param 10) and Amp (eff 58
 param 10) type dropdowns all returned value 0; the on-screen selection never
 changed. The captured reverb raw-ids (524 Spring/529 Hall) came from a REAL
 device whose `0x1f` populated the dropdown so a true SET could fire. So the enum
 write-leg and the read-name leg are gated on the SAME thing: a device-side
-`sub=0x1f` capture (the sim cannot synthesize one — its frame format is
+`sub=0x1f` capture (the sim cannot synthesize one; its frame format is
 unobserved).
 
 ### Live wire confirmations from this session
@@ -136,8 +136,8 @@ sub=0x09 typed       : f0 00 01 74 12 01 09 00 42 00 0a 00 00 00 00 00 00 00 ...
 ```
 
 The `sub=0x09` layout is byte-identical to `buildSetParameter` (eff@8..9,
-paramId@10..11, 5-septet LE float32 value @ 12..16 — see
-[[gen3-fn01-set-float32-ordinal]]) — first live FM9 confirmation of the gen-3
+paramId@10..11, 5-septet LE float32 value @ 12..16, see
+[[gen3-fn01-set-float32-ordinal]]), the first live FM9 confirmation of the gen-3
 `set_param` envelope through the simulator (value was 0.0, a type GET). The
 `sub=0x30` gridPos slot (bytes 12..13) is the same slot
 [[gen3-fn01-grid-set-position-insert]] uses for the insert.
@@ -145,8 +145,8 @@ paramId@10..11, 5-septet LE float32 value @ 12..16 — see
 The full editor WRITE surface was exercised live through the simulator (one
 session): `sub=0x32` insert (3 frames byte-exact) + shunt (byte9=0x08,
 auto-inserted in a cable gap at r1c7), `sub=0x30` select, `sub=0x35` routing (2
-frames, 26 bytes, endpoint data in the varying tail bytes 21..23 — advances the
-partial routing decode), `sub=0x26` store (presetNum 151, first >=128 capture —
+frames, 26 bytes, endpoint data in the varying tail bytes 21..23, advances the
+partial routing decode), `sub=0x26` store (presetNum 151, first >=128 capture,
 see [[gen3-fn01-store-preset]]), and `sub=0x52` continuous param drag:
 
 ```
@@ -160,12 +160,12 @@ decode to 0.4080 and 0.8488. This is the first live confirmation of the gen-3
 continuous param SET (`sub=0x52`) in the SET direction (was beta). The on-screen
 value reverts because the simulator does not echo the drag value back.
 
-### Editor WRITE surface — sub=0x35 routing decode (mined from the sim sessions)
+### Editor WRITE surface: sub=0x35 routing decode (mined from the sim sessions)
 
 The live sim sessions logged BOTH directions, so the editor's `sub=0x35` cable
 writes are recoverable with no hardware (`scripts/_research/sim/mine-editor-writes.ts`
 extracts them deduped + decoded). Every `sub=0x35` frame is **26 bytes with a
-fixed skeleton — only four bytes vary**:
+fixed skeleton, only four bytes vary**:
 
 ```
 f0 00 01 74 12 01 35 00 | 00 00 00 00 | OP | 00 00 00 00 00 00 | 02 | 00 | RM EP DR | cks f7
@@ -175,10 +175,10 @@ idx 0..7                  8  9 10 11    12   13 14 15 16 17 18   19   20   21 22
 | byte | name | reading |
 |---|---|---|
 | 12 | OP | **`0x01` = connect, `0x02` = disconnect**. |
-| 19 | — | `0x02` constant (edge-record marker). |
-| 21 | B21 | **`floor(srcGridPos / 2)`** — universal across all source rows/cols. `srcGridPos = (srcCol−1)·rows + (srcRow−1)`. |
-| 22 | B22 | **`((srcGp & 1) << 6) \| (colTerm(srcCol) + destSign)`** — `colTerm(c) = floor(3·(c−1)/2)+1`; `destSign = destRow≥3 ? 1 : 0`. Universal for source rows 2-6. Row-1 odd-col passes; row-1 even-col (c2,c4,...) is refused (byte22 breaks — see `buildSetGridRouting` error). |
-| 23 | B23 | **`((|destRow−3| + (srcCol even ? 2 : 0)) % 4) << 5`** — universal across all dest rows/cols. |
+| 19 | n/a | `0x02` constant (edge-record marker). |
+| 21 | B21 | **`floor(srcGridPos / 2)`**, universal across all source rows/cols. `srcGridPos = (srcCol−1)·rows + (srcRow−1)`. |
+| 22 | B22 | **`((srcGp & 1) << 6) \| (colTerm(srcCol) + destSign)`**: `colTerm(c) = floor(3·(c−1)/2)+1`; `destSign = destRow≥3 ? 1 : 0`. Universal for source rows 2-6. Row-1 odd-col passes; row-1 even-col (c2,c4,...) is refused (byte22 breaks, see `buildSetGridRouting` error). |
+| 23 | B23 | **`((|destRow−3| + (srcCol even ? 2 : 0)) % 4) << 5`**, universal across all dest rows/cols. |
 
 **DECODED and shipped (2026-06-05).** `buildSetGridRouting` in
 `fractal-midi/src/gen3/axe-fx-iii/setParam.ts` (golden:
@@ -209,7 +209,7 @@ r1c2→r5c3) via `controlled-capture.ts --capture routing --model 12`.
 FM3 (4-row grid) is also excluded from the formula (destRow baseline and mod-4
 wrap may differ); pending an FM3-Edit `--model 11` routing capture.
 
-Ghidra static route was tried (2026-06-04) and is a DEAD END — don't re-dig:
+Ghidra static route was tried (2026-06-04) and is a DEAD END; don't re-dig:
 the III composes routing via an object-builder + serializer (`FUN_1402298a0`
 field-appends on `param_1[0x475]`), not inline byte arithmetic, so the byte
 21/22/23 formula is not cheaply recoverable from the decompile (`FUN_1401f4390`
@@ -223,12 +223,12 @@ from a single-preset corpus**, so a simulator serves these two render-gate
 frames VERBATIM (checksum recomputed) for M1.
 
 What the sim sessions DID newly establish about `0x2e`: its body is
-**septet-packed (7→8, MSB-first, [[iii-byte-stream-septet-pack-8to7]])** — the
+**septet-packed (7→8, MSB-first, [[iii-byte-stream-septet-pack-8to7]])**: the
 long runs of `40 20 10 08 04 02 01 00` (each byte = the previous `>>1`) unpack
 to a constant `0x40` background, with the sparse non-`0x40` unpacked bytes
 carrying the real layout. It encodes **occupancy + routing, NOT effect types**:
 the placed effectIds (58=Amp, 66=Reverb) do not appear anywhere in `0x2e`,
-packed or unpacked — types come from the `sub=0x01` descriptors / `sub=0x7b`
+packed or unpacked; types come from the `sub=0x01` descriptors / `sub=0x7b`
 placed-flag, addressed by effectId. So projecting `0x2e` from state means
 modeling an occupancy/routing bitmap, not block ids. Closing it is gated on a
 diff capture: render an EMPTY preset, place ONE block live, capture the new
@@ -239,15 +239,15 @@ diff capture: render an EMPTY preset, place ONE block live, capture the new
 `scripts/_research/sim/controlled-capture.ts` drives FM-Edit against the
 simulator and auto-decodes ONE isolated action. Three kinds:
 
-- `--capture routing` — drag one cable between two named cells; prints the lone
+- `--capture routing`: drag one cable between two named cells; prints the lone
   `sub=0x35` field decode to bind byte 21 (rowMask) / byte 22 (endpoint) /
   byte 12 (connect-vs-disconnect direction) to the known source→dest. Fully
   offline.
-- `--capture enum` — pick each TYPE-dropdown value / insert each block type;
+- `--capture enum`: pick each TYPE-dropdown value / insert each block type;
   prints raw-ids (`sub=0x09`) + effectIds (`sub=0x32`) in click order to map to
-  names. This is the gen-3 enum roster ({name→raw-id}) with **no hardware** —
+  names. This is the gen-3 enum roster ({name→raw-id}) with **no hardware**:
   the WRITE leg replaces the unservable `sub=0x1f` name-stream.
-- `--capture layout` — `0x2e` is a device→editor response the sim only replays,
+- `--capture layout`: `0x2e` is a device→editor response the sim only replays,
   so this records the editor's incremental writes (the ground-truth grid) and
   diffs any full-length `0x2e` seen; the decode itself needs a second
   known-layout `0x2e` from a real device, then `--analyze` diffs it.
@@ -267,20 +267,20 @@ subs) runs in `scripts/verify-fractal-gen3-sim.ts`.
 ## FM3 cross-family confirmation (query side)
 
 FM3-Edit (model byte `0x11`, wire-confirmed for the first time from a live
-editor — previously spec/wiki only) drives the **same** `fn=0x01` editor read
+editor, previously spec/wiki only) drives the **same** `fn=0x01` editor read
 surface as FM9, captured 2026-06-04 over single-port loopMIDI self-loopback:
 
 ```
 fn=0x00 7a              broadcast identify (model 0x7F, payload 0x7a)
 fn=0x11 08 1c           WHO_AM_I   (FM9 used 08 1f)
 fn=0x11 47 53           INIT       (FM9 used 47 50)
-fn=0x11 01 2e 00 00 00 00 00 …   layout-map query — byte-identical address to FM9
+fn=0x11 01 2e 00 00 00 00 00 …   layout-map query, byte-identical address to FM9
 fn=0x11 01 01 00 <eid:14b> …     block descriptor by effectId at bytes 8..9 (same)
 ```
 
 Sub-actions seen: `0x01 0x1a 0x1b 0x2a 0x2e 0x4b 0x1c 0x09` plus `0x03` / `0x20`
 (FM3's high-frequency poll leans on `0x4b` + `0x03`, where FM9 leaned on `0x7b` +
-`0x37` + fn=0x1F — the steady-state poll sub mix differs per model/editor-state,
+`0x37` + fn=0x1F; the steady-state poll sub mix differs per model/editor-state,
 but the descriptor/layout READ surface is shared).
 
 What FM3 did NOT confirm: the device RESPONSE shapes (per-sub lengths,

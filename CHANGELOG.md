@@ -8,6 +8,29 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.6.1]
+
+Maintenance and CI hardening. No new device capabilities: the codec, tools, and
+server behavior are unchanged from 0.6.0 apart from one robustness fix.
+
+### Fixed
+
+- `list_midi_ports` no longer crashes on a machine with no MIDI backend (a
+  headless environment with no ALSA sequencer, or a machine with no MIDI
+  driver). It reports "no MIDI ports visible" gracefully instead, and a
+  zero-ports response now names the pattern it had nothing to match against.
+
+### Changed
+
+- The macOS and Linux native-binary CI matrix now passes end to end, verifying
+  the prebuilt N-API binary loads on darwin-arm64/x64 and linux-x64. The Linux
+  leg skips the server-smoke suite (which needs a live MIDI backend the runner
+  cannot provide); that suite runs on Windows and macOS.
+- The preflight CI workflow mirrors the local-only gates (visual-table,
+  control-char, RE-ledger, tool-annotation, preset-portability, FM9 verifiers).
+- Removed em dashes from the authored Markdown documentation.
+- Stopped tracking a large debug capture (kept locally, gitignored).
+
 ## [0.6.0]
 
 The largest release since launch. Two entirely new device brands join the

@@ -35,6 +35,12 @@ docs/manuals/other-gear/*.pdf
 docs/manuals/circuit_tracks_*.txt
 packages/fractal-midi/docs/devices/am4/manuals/ct-guide.txt
 
+# Large debug/capture blobs from analysis scripts are scratch, kept local
+# (an underscore prefix marks them). Their committed generators + small
+# summary JSONs stay tracked; the multi-MB raw captures do not.
+scripts/groove-analysis/_microstep-capture.json
+scripts/**/_*-capture.json
+
 # samples/ is entirely local-only — captures, factory preset exports
 # (Fractal IP, don't redistribute), debug logs, and decoded outputs
 # from analysis scripts. Nothing in here is committed. Generated

@@ -33,10 +33,10 @@ decode(b0, b1): b0 | (b1 << 7)
 ## Where it's used
 
 Everywhere a 14-bit field appears in a Fractal envelope tail:
-- paramId low/high pair (`pidLow, pidHigh`) — `set_param` / `get_param`
+- paramId low/high pair (`pidLow, pidHigh`): `set_param` / `get_param`
 - action codes in fn 0x01 SET_PARAMETER (III) tails
 - effect ids in fn 0x05 SET_GRID_CELL (II)
-- preset numbers in command frames (when LSB-first variants are used —
+- preset numbers in command frames (when LSB-first variants are used,
   but NOTE the reply payloads are MSB-first; see
   [[msb-first-14bit-preset-payload]])
 - tempo BPM in fn 0x14 family
@@ -46,14 +46,14 @@ Implementation: `fractal-midi/src/shared/packValue.ts` (canonical).
 
 ## Misapplication failure modes
 
-- **DO NOT** use this for preset-number REPLY payloads — those are
+- **DO NOT** use this for preset-number REPLY payloads: those are
   MSB-first ([[msb-first-14bit-preset-payload]]). The bug is silent
   (produces a parseable wrong number).
-- **DO NOT** use this for 21-bit values — use
+- **DO NOT** use this for 21-bit values; use
   [[septet-21bit-byte2-mask-preservation]].
 - Forgetting to septet-encode a field that EXTERNALLY looks like 1 byte
   but might exceed 127 (action codes, effect IDs) was the 
-  bug class. Always septet-encode 14-bit fields — never assume they
+  bug class. Always septet-encode 14-bit fields; never assume they
   fit in 1 byte just because current observed values are ≤ 127.
 
 ## Verification path
@@ -65,7 +65,7 @@ bytes (see SYSEX-MAP files).
 
 ## Refinement history
 
-- : bug found — pidHigh was being decoded as the high byte of
+- : bug found, pidHigh was being decoded as the high byte of
   a little-endian 16-bit int instead of the high 7 bits of a 14-bit
   septet. Fix shipped. Rule established: every new pidHigh requires a
   `verify-msg.ts` golden built from captured bytes.

@@ -4,7 +4,7 @@ class: coercion
 status: wip
 discovered:
 verified_on:
-  - axe-fx-ii-q8.02 (partial — sanity probe queued)
+  - axe-fx-ii-q8.02 (partial, sanity probe queued)
 firmware_sensitive: false
 golden: scripts/verify-msg.ts (AM4 continuous-param byte goldens exercise the Q16 encode byte-exactly; decode sanity probe still queued)
 relates_to: [display-log10-scaling]
@@ -40,9 +40,9 @@ the tool boundary via `resolveValue` / `resolveEnumValue`.
 
 ## Misapplication failure modes
 
-- **DO NOT** use Q16 for parameters marked `scaling: 'log10'` — those
+- **DO NOT** use Q16 for parameters marked `scaling: 'log10'`; those
   use [[display-log10-scaling]].
-- **DO NOT** assume integer wire values — Q16 wire is u32, not u16.
+- **DO NOT** assume integer wire values; Q16 wire is u32, not u16.
 
 ## Verification path
 

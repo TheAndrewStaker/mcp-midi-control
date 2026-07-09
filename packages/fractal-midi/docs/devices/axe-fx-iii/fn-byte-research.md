@@ -75,14 +75,14 @@ Two callers (`FUN_1401a1a20` and `FUN_14014ced0`) emit the fn byte
 via arithmetic on a runtime boolean:
 
 ```c
-// FUN_1401a1a20 — line 544 of the message-builders trace
+// FUN_1401a1a20, line 544 of the message-builders trace
 FUN_1403434b0(&local_1e0, (bVar25 ^ 1) * 0x20 + 0x5A, cVar14, &local_1d0);
 // fn = 0x5A when bVar25 = 1
 // fn = 0x7A when bVar25 = 0
 ```
 
 ```c
-// FUN_14014ced0 — line 116
+// FUN_14014ced0, line 116
 FUN_1403434b0(param_2, (lVar13 << 5) + 0x5A, cVar6 ...);
 // fn = 0x5A when lVar13 = 0
 // fn = 0x7A when lVar13 = 1

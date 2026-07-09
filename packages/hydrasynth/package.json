@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/hydrasynth",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "ASM Hydrasynth device descriptor, writer, reader, and MCP tools.",
   "private": true,
   "license": "Apache-2.0",

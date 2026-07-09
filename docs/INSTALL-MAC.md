@@ -73,13 +73,13 @@ Mac's chip (Apple Silicon or Intel). Two things follow:
 
 Almost all of them, and with no driver. The Axe-Fx III, FM9, VP4, and AM4 are
 class-compliant USB MIDI devices on macOS (they appear in Audio MIDI Setup),
-as is the ASM Hydrasynth — plug in and go.
+as is the ASM Hydrasynth: plug in and go.
 
 **The FM3 is the one special case.** Fractal's own documentation is explicit
-that the FM3 is *not* a USB MIDI device on any OS — over USB its control
+that the FM3 is *not* a USB MIDI device on any OS; over USB its control
 channel is a serial device (`/dev/cu.usbmodem…` on a Mac). This server
 handles that automatically: when no FM3 MIDI port is found it looks for the
-FM3's serial port and talks raw MIDI over it (community-beta — please report
+FM3's serial port and talks raw MIDI over it (community-beta, please report
 how it goes). Two things to know:
 
 - The FM3 serial port is **exclusive**: FM3-Edit or Fractal-Bot must be fully
@@ -98,7 +98,7 @@ how it goes). Two things to know:
   ```
 
   (This is the one case where editing the config by hand is needed. Note that
-  re-running `npm run setup-mac` rewrites the entry — re-add the env line
+  re-running `npm run setup-mac` rewrites the entry, so re-add the env line
   after an update.)
 
 ## Updating later
@@ -132,10 +132,10 @@ darwin-x64 and a community Apple-Silicon owner for darwin-arm64):
    `npm install` fetches a prebuilt binary instead of compiling, so common Macs
    (arm64 / x64) need no toolchain. An npm-fetched prebuild is *not* quarantined
    (npm/git/curl don't set `com.apple.quarantine`), so it stays Gatekeeper-clean
-   at runtime — the same property local compilation gave us. Keep `xcode-select`
+   at runtime, the same property local compilation gave us. Keep `xcode-select`
    documented only as a fallback for platforms without a matching prebuild. Do
    not drop it from the user steps until a Mac confirms the prebuild fetch.
-2. **The `.mcpb` Desktop Extension is now unblocked** — it was gated on exactly
+2. **The `.mcpb` Desktop Extension is now unblocked**: it was gated on exactly
    this swap. That double-click, no-Terminal, no-Gatekeeper install is the front
    door we want for non-technical and screen-reader users; see
    `docs/design/accessibility-blind-support.md`. This source-build path stays as

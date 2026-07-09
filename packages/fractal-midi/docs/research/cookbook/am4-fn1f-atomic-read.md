@@ -104,12 +104,12 @@ Per-shape verdict: `samples/captured/decoded/probe-am4-fn1f-findings.md`.
 
 ## Where it does NOT apply
 
-- Axe-Fx II — sibling primitive at [[ii-fn1f-atomic-read]], different
+- Axe-Fx II: sibling primitive at [[ii-fn1f-atomic-read]], different
   request payload, different reply granularity (whole-preset vs per-
   block).
-- Axe-Fx III — uses its own atomic-read family (fn 0x19, fn 0x14); not
+- Axe-Fx III: uses its own atomic-read family (fn 0x19, fn 0x14); not
   byte-compatible.
-- Hydrasynth — dump-by-NRPN-range, not a single atomic-read opcode.
+- Hydrasynth: dump-by-NRPN-range, not a single atomic-read opcode.
 
 ## Verification path
 
@@ -147,7 +147,7 @@ on shapes `amp1`, `scene1`, `slot1_amp`.
   subscribe-before-send + accumulate-triple pattern. Captured-frame
   decode validates chunk shape (matches II convention exactly:
   septet itemCount × 3 bytes-per-ushort packed-septet payload).
-- 2026-05-22 (later same session — chunk position = pidHigh
+- 2026-05-22 (later same session, chunk position = pidHigh
   hardware-verified for amp block at effectId 58):
   - effectId sweep across 1..255 found 25 effectIds returning non-
     empty chunks plus 47 NACKs. Empty-chunk responses (header +
@@ -164,7 +164,7 @@ on shapes `amp1`, `scene1`, `slot1_amp`.
     gain (0x0b)→11, bass (0x0c)→12, mid (0x0d)→13, treble
     (0x0e)→14, master (0x0f)→15, depth (0x1a)→26, presence
     (0x1e)→30. Every captured wire u16 also matched
-    `round(displayValue/10 × 65534)` exactly — the [[display-q16-
+    `round(displayValue/10 × 65534)` exactly: the [[display-q16-
     fixedpoint]] denominator (READ_VALUE_DENOMINATOR=65534) holds.
 
   Probes:
@@ -187,7 +187,7 @@ on shapes `amp1`, `scene1`, `slot1_amp`.
   individual block types whose pidHigh space matches the chunk
   size.
 
-- 2026-05-22 (same session — position rule universal + getPreset
+- 2026-05-22 (same session, position rule universal + getPreset
   shipped):
   - **All-blocks position probe** (`scripts/_research/probe-am4-
     fn1f-all-blocks-positions.ts`) ran 53 sentinel writes across
@@ -241,14 +241,14 @@ on shapes `amp1`, `scene1`, `slot1_amp`.
   observations (state-broadcast triple, 100-byte chunk, valid
   effectId) are correct regardless of label.
 
-- 2026-06-04 (live AM4 — chunk is CHANNEL-BLOCKED ×4): the prior
+- 2026-06-04 (live AM4, chunk is CHANNEL-BLOCKED ×4): the prior
   "chunk position = pidHigh" rule is the **channel-A slice** of a
   channel-blocked layout. The 0x75 body packs four contiguous copies of
   the block's slots, one per channel A-D: `index = channel × stride +
   pidHigh`, `stride = itemCount / 4`, quarter 0 = channel A. Confirmed
   READ-ONLY on connected hardware (`scripts/_research/probe-am4-channel-
   blocked.ts`): channel-bearing blocks all have `itemCount % 4 == 0` with
-  DISTINCT quarters — eff 58 (amp tone) 608=152×4, eff 62 (amp cab)
+  DISTINCT quarters: eff 58 (amp tone) 608=152×4, eff 62 (amp cab)
   312=78×4, eff 66 292=73×4 (A/B/C/D all differ), eff 70 360=90×4. Same
   primitive as gen-3 `[[gen3-fn1f-poll-block-bulk-read]]` (×4 A-D) and II
   (×2 X/Y, block 0x6a 236≈118×2): ONE cross-Fractal atomic-read that
@@ -260,7 +260,7 @@ on shapes `amp1`, `scene1`, `slot1_amp`.
   A→B→A switch that left the quarters invariant
   (`probe-am4-channel-orientation.ts` / `probe-am4-channel-switch-test.ts`).
   **Open:** the amp (eff 58) chunk was 256 ushorts in 2026-05-22 but 608
-  now — amp chunk size looks type/firmware-dependent; reconcile before
+  now: amp chunk size looks type/firmware-dependent; reconcile before
   relying on amp specifically. The amp channel SELECTOR register reads back
   derived/cached firmware state (not a clean 0..3 index), so `get_param(amp,
   channel)` decodes it via a best-effort float32-packed-enum fallback;
@@ -275,5 +275,5 @@ Promotion path: entry promotes from `matched-singleton` →
 `cross-device-pattern` once a comparable per-block-atomic-read
 ships for a non-Fractal device. Within Fractal, AM4 / II / gen-3 share the
 fn byte AND the channel-blocked layout (differing in channel count + value
-encoding) — a confirmed cross-Fractal pattern, distinct only in model byte
+encoding), a confirmed cross-Fractal pattern, distinct only in model byte
 + catalog.

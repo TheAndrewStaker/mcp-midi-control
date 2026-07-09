@@ -8,7 +8,7 @@ verified_on:
   - am4-edit-on-windows
 firmware_sensitive: false
 golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
-retest_when: never (structural — AxeEdit II / AM4-Edit filter MIDI ports by driver class, so a bridge between editor and real device cannot appear in the picker; the gen-3 AXE-prefixed loopMIDI EMULATION carve-out is already a shipped positive lane and is explicitly not ruled out here)
+retest_when: never (structural: AxeEdit II / AM4-Edit filter MIDI ports by driver class, so a bridge between editor and real device cannot appear in the picker; the gen-3 AXE-prefixed loopMIDI EMULATION carve-out is already a shipped positive lane and is explicitly not ruled out here)
 relates_to: []
 consumed_in: []
 ---

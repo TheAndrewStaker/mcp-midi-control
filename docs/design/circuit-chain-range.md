@@ -1,4 +1,4 @@
-# Circuit Tracks pattern CHAIN range — decode (range capture queued)
+# Circuit Tracks pattern CHAIN range: decode (range capture queued)
 
 ## What's decoded
 
@@ -23,9 +23,9 @@ drum tracks. Codec: `packages/circuit-tracks/src/ncs/chain.ts`
 **only `[0,1]` is hardware-confirmed.** Two things are unverified for wider
 ranges:
 
-1. **The `[start,end]` bytes are integer pattern indices** — strongly implied by
+1. **The `[start,end]` bytes are integer pattern indices**, strongly implied by
    the capture (`start=0`, `end=1`), but only one data point.
-2. **The tail byte `0x0c`** — its role is unknown. It might be a fixed
+2. **The tail byte `0x0c`**: its role is unknown. It might be a fixed
    chain-enable flag (in which case wider ranges Just Work), or it might encode
    the range length / a mode (in which case a wider chain needs a different tail
    and the current code would under-specify it).
@@ -50,9 +50,9 @@ region (`0x2d4..0x2e3`) + `0x26fc7`.
 ## Why it matters
 
 This is the bridge for whole-song playback: `decomposeToPatterns` /
-`coalescePatterns` reduce a song to a small pattern bank (often ≤8 — fits the
+`coalescePatterns` reduce a song to a small pattern bank (often ≤8, fits the
 8 pattern slots), and a chain over `[0, bankSize-1]` makes those patterns
 auto-advance as the song. Confirming the range unlocks `fitsViaChainOnly` songs
 playing end-to-end (the remaining piece is authoring the bank into the 8 pattern
-slots of one project — `authorPlanIntoProject` currently writes only pattern 0;
+slots of one project: `authorPlanIntoProject` currently writes only pattern 0;
 generalizing it to a target pattern index is the other half of that feature).

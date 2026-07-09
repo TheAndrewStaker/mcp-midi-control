@@ -58,9 +58,9 @@ unverified and is a transfer candidate.
 
 ## Misapplication failure modes
 
-- **DO NOT** use bilateral `trim()` — leading whitespace is significant
+- **DO NOT** use bilateral `trim()`; leading whitespace is significant
   in some device labels (rare, but observed). Only trim trailing.
-- **DO NOT** trim the catalog side — the device-side trim brings the
+- **DO NOT** trim the catalog side; the device-side trim brings the
   device to catalog parity, not vice versa.
 
 ## Verification path

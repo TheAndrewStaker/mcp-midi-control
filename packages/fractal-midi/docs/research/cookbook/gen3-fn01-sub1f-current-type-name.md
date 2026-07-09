@@ -13,13 +13,13 @@ consumed_in:
   - packages/fractal-gen3/src/reader.ts (getParam discrete-name path)
 ---
 
-# gen-3 fn=0x01 sub=0x1F — read a block's CURRENT type/model NAME
+# gen-3 fn=0x01 sub=0x1F: read a block's CURRENT type/model NAME
 
 The modern Fractal editor reads a block's currently-selected type/model NAME with
 `fn=0x01 sub=0x1F`, targeting `(effectId, typeParamId)` with a zero value field.
 The device replies with the long fn=0x01 GET frame whose display-string region
 carries the model name. This is the authoritative source for a type selector's
-value — the positional `fn=0x1F` BULK read mis-addresses type selectors (its value
+value: the positional `fn=0x1F` BULK read mis-addresses type selectors (its value
 is NOT the roster ordinal; FM9 capture 2026-06-19: a reverb whose device name was
 "Small Room"/ordinal 0 read back as positional value 5 = "Large Hall").
 
@@ -56,7 +56,7 @@ F0 00 01 74 <model> 01 1F 00 <eff pair> <pid pair> 00*8 <LEN> 00 <packed name…
 | drive | 118 / 0 | 0x0F | "Rat Distortion" |
 
 FM3 fw 12.00 (2026-06-12) returned "Rat Distortion" from its drive sub=0x1F
-(pid 0) — a second device/firmware axis point, byte-pattern identical bar the
+(pid 0), a second device/firmware axis point, byte-pattern identical bar the
 model byte. All three FM9 names are real Fractal models (self-validating decode).
 
 ## Companion: sub=0x2E is OVERLOADED (do not confuse with this)
@@ -70,6 +70,6 @@ model byte. All three FM9 names are real Fractal models (self-validating decode)
 
 ## Refinement history
 
-- 2026-06-12 — FM3 field test: single-point decode ("Rat Distortion"), partial.
-- 2026-06-19 — FM9 Windows verify: 3 blocks byte-exact + LEN-field semantics
+- 2026-06-12, FM3 field test: single-point decode ("Rat Distortion"), partial.
+- 2026-06-19, FM9 Windows verify: 3 blocks byte-exact + LEN-field semantics
   pinned; promoted to `matched` (FM9 + FM3 axis points). Wired into get_param.

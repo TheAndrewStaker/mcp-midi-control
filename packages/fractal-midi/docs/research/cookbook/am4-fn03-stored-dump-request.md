@@ -16,7 +16,7 @@ consumed_in:
 # AM4 fn=0x03 stored-location dump request: H1 `[bank, sub, 0x00]`
 
 The AM4's fn=0x03 dump request addresses a STORED location with payload
-`[bank, sub, 0x00]` — bank = locationIndex >> 2 (A=0..Z=25), sub =
+`[bank, sub, 0x00]`: bank = locationIndex >> 2 (A=0..Z=25), sub =
 locationIndex & 3 (display 01..04 → wire 0..3). The active-buffer form
 is the `[7F 7F 00]` sentinel (decoded 2026-05-08 from the AM4-Edit
 export capture; this entry settles the stored form).
@@ -38,9 +38,9 @@ consumer repo.
 ## No working-buffer side effect (opposite of the II)
 
 Active-buffer dumps taken before and after the stored requests differ
-ONLY in the dump's volatile bytes — the same offset cluster
+ONLY in the dump's volatile bytes: the same offset cluster
 (~27-29, 132, 139-157) drifts between two back-to-back active dumps
-with nothing in between — and the post-request buffer does not match
+with nothing in between, and the post-request buffer does not match
 the requested slot's content. The stored request is a pure read.
 Contrast: the Axe-Fx II's slot-addressed fn 0x03 RELOADS the stored
 preset over the working buffer (see [[ii-fn03-dump-addressing]]).

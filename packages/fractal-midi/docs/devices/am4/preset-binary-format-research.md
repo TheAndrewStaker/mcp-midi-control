@@ -121,7 +121,7 @@ exactly two differences:
 offset  bytes                         meaning (hypothesised)
 0x00    00 08 09|07 02 00 55 54 02    chunk header (byte 0x02 differs:
                                        09 in active export, 07 in stored)
-0x08    XX XX XX XX                   4-byte "seed" — varies per export
+0x08    XX XX XX XX                   4-byte "seed", varies per export
 0x0C    00 00                         padding before structural region
 ```
 
@@ -186,8 +186,8 @@ variable byte positions are distributed at fixed strides
 consistent with a 3-byte-record table:
 
 ```
-offset 0x0E .. 0x3B   16 records × 3 bytes — slot/channel layout table
-offset 0x3C .. 0x6D   50 bytes of zeros — padding inside the table
+offset 0x0E .. 0x3B   16 records × 3 bytes: slot/channel layout table
+offset 0x3C .. 0x6D   50 bytes of zeros: padding inside the table
 offset 0x6E .. 0x6F   transition (15/9 distinct values across bank)
 offset 0x70+          start of the variable / disputed region
 ```
@@ -201,7 +201,7 @@ For factory A01:
 @0x17:  67 40 00    (record  3)
 @0x1A:  52 52 01    (record  4)
 @0x1D:  67 40 00    (record  5)
-@0x20:  20 40 00    (record  6  — default record, 10x identical follows)
+@0x20:  20 40 00    (record  6, default record, 10x identical follows)
 ...
 @0x3B:  20          (last byte of record 15)
 ```
@@ -269,7 +269,7 @@ Chunk 1 payload (3,074 bytes total) for any AM4 preset:
 |        byte[2] = 0x09 in active export, 0x07 in stored slot      |
 +------------------------------------------------------------------+
 | 0x008  per-export "seed"      4 B   monotonic counter, possibly  |
-|        not used as cipher key — empirically unrelated to the     |
+|        not used as cipher key; empirically unrelated to the      |
 |        observed mask behaviour                                   |
 +------------------------------------------------------------------+
 | 0x00C  zero pad               2 B                                |
@@ -330,7 +330,7 @@ function encodePresetForSlot(
   // active-buffer exports (sentinel header bank = 0x7F).
 
   // 2. Seed at 0x008. Empirically not used as a cipher key. Emit a
-  //    small monotonic counter bumped per encode, or zero — both
+  //    small monotonic counter bumped per encode, or zero; both
   //    appear acceptable.
   chunk1.set([SEED_LO, SEED_MID, 0x00, 0x00], 0x008);
 
@@ -349,7 +349,7 @@ function encodePresetForSlot(
   // (already zero from constructor)
 
   // 5. Variable region 0x06E..end-of-chunk1 + chunk2 prefix.
-  //    *** NOT IMPLEMENTED — encoding unknown ***
+  //    *** NOT IMPLEMENTED: encoding unknown ***
   encodePerChannelParamsAndScenesAndName(preset, chunk1, chunk2);
 
   // 6. Header (0x77).
@@ -803,7 +803,7 @@ before any code can ship to `packages/am4/`.**
 > dynamic-Huffman body; see `SYSEX-MAP.md` §10b "Container decode" and
 > `src/am4/presetContainer.ts`). The per-export churn is the dynamic
 > Huffman CODE TABLE being rebuilt each export plus ONE volatile decoded
-> u16 @ body `0x140E` — the same warm pairs diff by exactly 2 bytes at
+> u16 @ body `0x140E`: the same warm pairs diff by exactly 2 bytes at
 > the DECODED layer, and the amp-gain pairs localize to a single u16
 > (chA gain @ body `0x0958` = `0x828E` for display 5.1). Flat-byte
 > diffing of the compressed stream stays ruled out; decoded-layer
@@ -1295,7 +1295,7 @@ payload at byte offset +5 (i.e. the byte after the 5-byte
 | `0x47` | `FUN_1401d2a20(&local_50, param_1 + 0xa24, local_84)` + writes flag at `param_1 + 0xa22` | (workflow source not yet cross-referenced) |
 
 The error path emits the format string `"DeviceManager: Message timed
-out for opCode: 0x%X. Recvd %d, expected %d."` — confirming this is
+out for opCode: 0x%X. Recvd %d, expected %d."`, confirming this is
 the message-queue / opcode-dispatch layer.
 
 **Crucial absence:** No case for fn `0x77` / `0x78` / `0x79`. The
@@ -1628,7 +1628,7 @@ an AM4-Edit-specific gap.**
   via AM4, would need to land in a different binary (Axe-Edit II,
   Hydrasynth editor) instead.
 - **NEW negative cookbook entry needed**: `_negative/editor-side-
-  chunk-1-inner-decode.md` — documents the rule-out that bulk
+  chunk-1-inner-decode.md`: documents the rule-out that bulk
   preset-binary inner per-param layout exists in any Fractal editor
   binary. Verified on AM4 (the first three hops, 2026-05-28) and III
   (`presetDump.ts` L47 cross-cite). Future agents asking "where in
@@ -1737,7 +1737,7 @@ All candidates fail the ARM Cortex-M boot-vector sanity check (reset handler mus
 The raw payload contains the repeating 4-byte pattern `6E 77 3B 5D` ("nw;]") in one ~120-byte stretch, suggestive of a stream cipher XORed against zeros. Direct test: top-10 four-byte n-grams across 4-byte-aligned slots are:
 
 ```
-00000000  × 262,670  (30.8% of all 4-byte slots — heavy zero-padding)
+00000000  × 262,670  (30.8% of all 4-byte slots, heavy zero-padding)
 7f7f7f7f  ×   3,497
 00000001  ×   1,023
 08000000  ×     883

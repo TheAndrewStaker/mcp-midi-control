@@ -16,7 +16,7 @@ FUN_1402990d0(ctx, byte presetNum)        // entry point
 ## Wire envelope
 
 ```
-F0 00 01 74 10 40 [low_septet] [high_septet] [cksum] F7  — 10 bytes total
+F0 00 01 74 10 40 [low_septet] [high_septet] [cksum] F7  (10 bytes total)
 ```
 
 Where the 2 payload bytes are the septet-encoded preset number:
@@ -57,9 +57,9 @@ encoded directly in the 0x77 PRESET_DUMP_HEADER payload. The III's
 save workflow is just:
 
 ```
-F0 00 01 74 10 77 [bank, preset, ...header] [cs] F7   — header
-F0 00 01 74 10 78 [194 bytes] [cs] F7 × 64            — chunks
-F0 00 01 74 10 79 [3 bytes hash] [cs] F7              — footer
+F0 00 01 74 10 77 [bank, preset, ...header] [cs] F7   (header)
+F0 00 01 74 10 78 [194 bytes] [cs] F7 × 64            (chunks)
+F0 00 01 74 10 79 [3 bytes hash] [cs] F7              (footer)
 ```
 
 ## What fn=0x40 actually does

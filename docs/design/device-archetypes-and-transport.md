@@ -12,7 +12,7 @@ and the storage-transport path in `openCtx`.
 The unified surface (`set_param`, `apply_preset`, `switch_scene`, …) was built
 for guitar preset devices and scales cleanly there: a new Fractal device is a
 descriptor, not new tools. But newer device *shapes* started minting
-device-specific tools — Circuit Tracks (`apply_pattern`, `upload_project`),
+device-specific tools: Circuit Tracks (`apply_pattern`, `upload_project`),
 SPD-SX (`spdsx_status`, `spdsx_list_kits`, `spdsx_author_kit`, …). The registered
 surface crossed ~53 tools. Two real costs, neither a round number:
 
@@ -26,9 +26,9 @@ surface crossed ~53 tools. Two real costs, neither a round number:
 
 There is no magic cap (40, etc.). The governing rule is below.
 
-## Decision 1 — tools scale with capability ARCHETYPES, not with devices
+## Decision 1: tools scale with capability ARCHETYPES, not with devices
 
-Our devices are ~5 shapes, and each shape wants *one* tool family — most of
+Our devices are ~5 shapes, and each shape wants *one* tool family, most of
 which already exist as the base unified surface that **every** device shares:
 
 | Archetype | Devices (owned + wanted) | Tool family |
@@ -52,7 +52,7 @@ which already exist as the base unified surface that **every** device shares:
 
 ### Do NOT unify the archetypes themselves
 
-Unify the *verbs* (params + preset-container + sample-pool — already the base
+Unify the *verbs* (params + preset-container + sample-pool, already the base
 surface). Do **not** build a shared "sequencer/sampler/looper" tool family: a
 step sequencer, a pad sampler, and a live looper share almost nothing at the
 runtime level. `apply_pattern` means nothing to a looper; record/overdub means
@@ -70,19 +70,19 @@ a pad to a wave; power-cycle after writing." Pulled on demand, not paid as
 context tax every turn. This is strictly better for device-specific teaching
 than device-prefixed tool names.
 
-## Decision 2 — multi-device performance orchestration: agent over mechanical tools
+## Decision 2: multi-device performance orchestration, agent over mechanical tools
 
-The north star: **"tell an agent a performance — a set of songs or pieces — and it
+The north star: **"tell an agent a performance (a set of songs or pieces) and it
 configures the whole rig, song by song, including the live transitions between
 pieces."** A rig is set up for a show of many songs, not one song in isolation
 (the per-song setup AND the song→song transitions both matter). Two ways to build
 it:
 
-- **A — mega-tool (`apply_setlist`)**: one tool whose TypeScript does the musical
+- **A: mega-tool (`apply_setlist`)**: one tool whose TypeScript does the musical
   reasoning (what each device needs for the song). Rejected: it freezes the
   song-understanding in code, bypasses the safe-edit gates and per-device
   guidance, and is a black box on partial failure.
-- **B — mechanical tools, agent orchestrates (CHOSEN)**: small single-purpose
+- **B: mechanical tools, agent orchestrates (CHOSEN)**: small single-purpose
   tools (`describe_rig`, the bare verbs). The *model* does the musical reasoning
   and calls the tools in sequence.
 
@@ -94,10 +94,10 @@ failure is legible and recoverable.
 
 **B is not "do nothing."** Code must own the boring, closed, dangerous parts:
 
-- A **connection arbiter / scheduler** — the no-ack-on-concurrent-MIDI and
+- A **connection arbiter / scheduler**: the no-ack-on-concurrent-MIDI and
   stale-handle problems. The agent must never reason about "is this port free
   right now / rotate the connection." This lives in the `ensureConnection` /
-  `openCtx` layer (see Decision 3 — same investment).
+  `openCtx` layer (see Decision 3, same investment).
 - A **`describe_rig`** capability (the agent can't orchestrate what it can't see).
 - Honest per-tool acks.
 
@@ -106,7 +106,7 @@ The one legitimate high-level tool is **persistence, not intelligence**: a futur
 configuration the agent already computed (specific presets/patterns/tempos to
 specific ports). A cache of intelligence, never the source of it.
 
-## Decision 3 — generalize the transport abstraction now (hybrid SPD-SX)
+## Decision 3: generalize the transport abstraction now (hybrid SPD-SX)
 
 There are two transport layers, and storage belongs to the upper one:
 
@@ -120,7 +120,7 @@ There are two transport layers, and storage belongs to the upper one:
 ### Concrete shape
 
 - `DeviceDescriptor.transport?: { kind: 'midi' | 'serial' | 'storage' | 'hybrid';
-  resolveRoot?: () => string | undefined }`. Default `'midi'` — every existing
+  resolveRoot?: () => string | undefined }`. Default `'midi'`; every existing
   device is untouched.
 - `DispatchCtx` keeps `conn` (required) and gains `storage?: { root: string }`.
   For the storage path `conn` is a **null-object `MidiConnection`** that throws
@@ -136,17 +136,17 @@ There are two transport layers, and storage belongs to the upper one:
 SPD-SX is two transports on one device, **mutually exclusive by USB mode**: MIDI
 (kit recall / pad triggers, AUDIO/MIDI mode) vs storage (kit/wave authoring,
 WAVE MGR mode). Chosen: **one descriptor, `kind: 'hybrid'`.** `openCtx` resolves
-at call time — drive mounted → storage methods; else MIDI port present → MIDI
+at call time: drive mounted → storage methods; else MIDI port present → MIDI
 methods; else (NEITHER connected) `device_not_mounted` whose message names BOTH
 surfaces (the storage mount steps AND the MIDI path), so a storage verb on a
 fully-disconnected device is not mis-directed toward a MIDI port it never needs
 (`openCtx` tries the MIDI surface and converts its port-not-found into the
 both-surfaces error; 2026-06-28). One device identity, one `describe_device`.
 A verb that needs the other mode returns `capability_not_supported` with a
-"the unit is in the other USB mode" message. (Rejected Option A — two
-descriptors — because a user thinks "my SPD-SX," not two ports.)
+"the unit is in the other USB mode" message. (Rejected Option A (two
+descriptors) because a user thinks "my SPD-SX," not two ports.)
 
-### The payoff — SPD-SX's 6 device tools collapse into the base contract
+### The payoff: SPD-SX's 6 device tools collapse into the base contract
 
 The storage logic already exists as plain functions; it just moves into the
 `DeviceReader`/`DeviceWriter` the descriptor already declares:
@@ -168,7 +168,7 @@ recorded here so the plan and the code agree:
 1. **`author_kit` is a new bare verb, not `save_preset`/`apply_preset`.** The
    original plan reused the preset-container verbs, but a sampler kit is a
    *pad→wave map written straight to a stored location*, with no audition/working
-   buffer behind it — the `save_preset` (persist the working buffer) and
+   buffer behind it; the `save_preset` (persist the working buffer) and
    `apply_preset` (build into the working buffer) models both assume a buffer the
    SPD-SX does not have. Forcing the kit author through them would have made both
    descriptions hedge across a buffer-based and a bufferless meaning, the exact
@@ -195,7 +195,7 @@ The connection arbiter the song-orchestration vision (Decision 2) needs lives in
 exactly this layer. Generalizing `openCtx` from "open the MIDI handle" to
 "resolve and open whatever endpoint this device uses, when it's free" is step one
 of the arbiter. The transport generalization is not a detour from the song
-vision — it is its foundation.
+vision; it is its foundation.
 
 ## Rollout
 

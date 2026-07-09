@@ -6,7 +6,7 @@ discovered: 2026-05-22 (cookbook crosscheck mining of ghidra-axe-edit-iii-action
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: STUB (structural-only; de-facto coverage: the consumed_in dump-citation — actions-and-shapes dump per-caller dispatch lines)
+golden: STUB (structural-only; de-facto coverage: the consumed_in dump-citation, actions-and-shapes dump per-caller dispatch lines)
 relates_to: [iii-fn01-set-parameter-envelope, iii-multiproduct-editor-binary]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-actions-and-shapes.txt
@@ -110,12 +110,12 @@ FUN_14033ec70(param_1 + 0x38, &local_48, *(undefined8 *)(param_1 + 0x40));
 
 ## Where it does NOT apply
 
-- AxeEdit II — has a different fn for SET_PARAMETER (`0x02`, not
+- AxeEdit II: has a different fn for SET_PARAMETER (`0x02`, not
   `0x01`), different builder function, different action-code
   enumeration. See [[ii-axeedit-opcode-table]].
-- AM4-Edit — fn=0x01 family on AM4 is per-paramId not per-action.
+- AM4-Edit: fn=0x01 family on AM4 is per-paramId not per-action.
   See [[am4-pidlow-register-families]].
-- Hydrasynth — NRPN-based; no fn-byte action codes.
+- Hydrasynth: NRPN-based; no fn-byte action codes.
 
 ## Verification path
 

@@ -19,7 +19,7 @@ consumed_in:
 > and NOT the serialization layout. It is capped at 12 entries and
 > carries ids >= 200 (unplaced/shunt placeholders) that are never
 > serialized. To enumerate a preset's blocks or locate their data,
-> walk the self-describing TLV chain from word 130 instead —
+> walk the self-describing TLV chain from word 130 instead:
 > [[ii-preset-image-tlv-chain]].
 
 Axe-Fx II preset binary carries a block-record table in the de-framed
@@ -39,14 +39,14 @@ record[i] = words[36 + 8*i : min(36 + 8*(i+1), 130)]   i = 0..11
 Per the Ghidra cross-reference, **only the first 2
 ushorts of each record are populated**:
 
-- `ushort[0]` — block_id. Ids < 200 match the wire-ids from
+- `ushort[0]`: block_id. Ids < 200 match the wire-ids from
   [[wire-id-pairs-per-placed-block]]; ids >= 200 (200, 201, 206,
   207... observed) are unplaced/shunt placeholders with no TLV in the
   serialized chain.
-- `ushort[1]` — flag ushort. Bit 1 (`0x0002`) = "active in standard
+- `ushort[1]`: flag ushort. Bit 1 (`0x0002`) = "active in standard
   scene" (-DECODE-NOTES.md lines 399-410). Other bits' semantics
   not yet decoded but observed values cluster around 0x0002, 0x0003.
-- `ushort[2..7]` — zero, reserved by firmware (writeback must preserve
+- `ushort[2..7]`: zero, reserved by firmware (writeback must preserve
   zeros)
 
 Termination: block_id = 0 marks an empty entry; 383/388 corpus
@@ -55,8 +55,8 @@ presets fill all 12 entries.
 ## Where it's used
 
 The table records the preset's GRID / signal-chain order (2026-07-02:
-Test Crunch table order is Comp,Drive,Amp,Cab,Delay,Reverb — the
-signal chain — while the serialized TLV chain is alphabetical
+Test Crunch table order is Comp,Drive,Amp,Cab,Delay,Reverb (the
+signal chain) while the serialized TLV chain is alphabetical
 Amp..Reverb). The earlier framing ("enumerate which blocks are
 PLACED") is WRONG in both directions: placeholders >= 200 appear in
 the table without being serialized, and the multiset of table ids
@@ -84,7 +84,7 @@ new code should resolve blocks via the TLV walk.
 ## Where it does NOT apply
 
 - AM4 (no analog; 4 fixed slots, no record table needed)
-- Axe-Fx III — transfer candidate (would need probe of III preset
+- Axe-Fx III: transfer candidate (would need probe of III preset
   binary structure)
 
 ## Verification path
@@ -103,7 +103,7 @@ would parse a known preset capture and assert:
 -  cont: Ghidra cross-reference confirmed ushort[2..7] are
   always zero (firmware doesn't write them); paramBase dynamic-
   computation hypothesis confirmed.
-- 2026-07-02 (preset-image TLV decode): role corrected — the table is
+- 2026-07-02 (preset-image TLV decode): role corrected; the table is
   grid/signal-chain-order metadata with a 12-entry cap and >= 200
   placeholder ids, NOT a placed-block enumerator and NOT layout order
   (layout-order hypothesis refuted on Test Crunch). Region pinned to

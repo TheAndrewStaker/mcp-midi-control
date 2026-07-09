@@ -8,7 +8,7 @@ verified_on:
   - axe-edit-iii-1.40
 firmware_sensitive: false
 golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
-retest_when: never (measured — 20-40% inversion rate; the XML records the editor's UI layout by construction, not the device param table, so the positional binding cannot become correct)
+retest_when: never (measured, 20-40% inversion rate; the XML records the editor's UI layout by construction, not the device param table, so the positional binding cannot become correct)
 relates_to: [juce-binarydata-zip, param-descriptor-16byte, parambase-plus-paramid]
 consumed_in: []
 ---

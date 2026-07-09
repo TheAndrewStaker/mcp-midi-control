@@ -14,7 +14,7 @@ probe (no AM4-Edit capture needed) settled the hypothesis space below:
   content). Captures: `samples/captured/hw132/am4-stored-{a01,a02-h1,z04}.syx`.
 - **No working-buffer side effect**: active-buffer dumps taken before
   and after the stored requests differ only in the dump's volatile
-  bytes — the SAME offsets drift between two back-to-back active dumps
+  bytes; the SAME offsets drift between two back-to-back active dumps
   with nothing in between (offset cluster ~27-29, 132, 139-157), and
   the post-request buffer does not match the requested slot. This is
   the opposite of the Axe-Fx II, whose slot-addressed fn 0x03 RELOADS
@@ -50,7 +50,7 @@ is now exposed as an MCP tool: `am4_request_active_buffer_dump()`.
   raw masked dump bytes for the  probe series. Chunk content
   is not decoded.
 - **Goldens:** byte-exact build golden in `scripts/verify-msg.ts`
-  (`buildRequestActiveBufferDump() — matches the export-preset
+  (`buildRequestActiveBufferDump(): matches the export-preset
   capture`).
 - **Docs:** SYSEX-MAP §6o.
 

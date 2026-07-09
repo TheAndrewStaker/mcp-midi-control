@@ -188,7 +188,7 @@ interface FractalBlock {
 interface RoutingEdge {
   /**
    * Source block's `id` (or the auto-generated id: bare `block_type`
-   * for a single instance — `amp_1` accepted as alias — and
+   * for a single instance (`amp_1` accepted as alias) and
    * `<block_type>_<instance>` from instance 2 up).
    */
   from: string;

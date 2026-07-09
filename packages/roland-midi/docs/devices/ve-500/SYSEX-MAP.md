@@ -41,7 +41,7 @@ sevenBitize(a) = ((a & 0x0fe00000)<<3) | ((a & 0x001fc000)<<2) | ((a & 0x00003f8
 |---|---|---|
 | Setup | `0x00000000` | editor/global setup |
 | System | `0x02000000` | global: MIDI, USB, tuner, preference, input + input-EQ |
-| **Temporary** (active patch) | `0x04000000` | the LIVE edit buffer — `set_param`/`get_param` target this |
+| **Temporary** (active patch) | `0x04000000` | the LIVE edit buffer, `set_param`/`get_param` target this |
 | UserPatch(n) n=1..99 | `0x04040000 + 0x40000·(n-1)` | each reuses the Temporary layout |
 
 ### Active-patch section bases (relative to `0x04000000`)
@@ -73,10 +73,10 @@ have `ofs = 0`.
 ## Patch recall
 
 **BARE Program Change** (NO Bank Select): PC 0..98 → user memory U01..U99.
-Hardware-confirmed 2026-06-28 — a Bank Select (CC0/CC32) *prepended* to the PC
+Hardware-confirmed 2026-06-28: a Bank Select (CC0/CC32) *prepended* to the PC
 makes the VE-500 **ignore** the recall, so none is sent. Requires `PC IN = ON`
 and `RX CH = OMNI`/`Ch.1` on the device. Preset (P01..P50) recall uses a
-different bank whose select values are **not yet decoded** — gated, not guessed.
+different bank whose select values are **not yet decoded**, gated, not guessed.
 
 ## Golden anchor
 

@@ -127,7 +127,7 @@ at firmware Quantum 8.02:
 
 ### Roland / Boss devices
 
-**Boss VE-500 Vocal Performer — supported (hardware-verified).** The first Roland
+**Boss VE-500 Vocal Performer: supported (hardware-verified).** The first Roland
 address-based SysEx codec in the tree. Wire layer lives in the `roland-midi`
 package (`packages/roland-midi/`): shared DT1/RQ1 + Roland checksum + 7-bit
 address + value packing in `src/shared/`, and the VE-500 catalog + builders in
@@ -222,7 +222,7 @@ Scraped copy lives in `docs/wiki/` (gitignored; regenerate via
 - `AxeFxSysExTable` is a redirect to `Axe-Fx_SysEx_Documentation` (no separate table).
 
 **Complete enumeration (don't re-discover pages one at a time):** run
-`npx tsx scripts/_research/scrape-fractal-wiki.ts` — it walks the MediaWiki
+`npx tsx scripts/_research/scrape-fractal-wiki.ts`; it walks the MediaWiki
 `list=allpages` API across BOTH wiki instances, filters the gift-card spam (620
 of the gen1 wiki's 1040 pages are spam), and flags protocol-relevant titles.
 Full title lists land in `samples/wiki-inventory/`. As of 2026-06-06 the gen1
@@ -237,7 +237,7 @@ Active community. Useful search terms:
 - "3rd party MIDI": expected usage and gotchas.
 
 ### USB enumeration per device (settled 2026-06-11, cited research)
-Which Fractal devices are USB-MIDI class-compliant vs serial — the answer to
+Which Fractal devices are USB-MIDI class-compliant vs serial: the answer to
 every "does it work on Mac / why is the FM3 invisible to MIDI apps" question:
 - **Fractal support KB, "Mac OS Audio MIDI Setup Utility"**
   (`https://support.fractalaudio.com/en-US/mac-os-audio-midi-setup-utility-286553`):
@@ -246,13 +246,13 @@ every "does it work on Mac / why is the FM3 invisible to MIDI apps" question:
 - **Fractal wiki `USB` and `MIDI` pages**: FM3 "is NOT a USB MIDI Device …
   uses 'COM over USB' channels"; III/FM9 have the dedicated USB processor and
   true MIDI-over-USB; VP4 "appears as MIDI ports in a DAW" (staff quote).
-- **FM3 downloads page**: Windows needs TWO drivers — audio + the "FM3 USB
+- **FM3 downloads page**: Windows needs TWO drivers, audio + the "FM3 USB
   Serial Driver" (virtual COM port; that's the editor/Fractal-Bot channel).
 - **Linux ground truth**: FM3 enumerates as `/dev/ttyACM0` (CDC-ACM); the
   Axe-Fx III is `2466:8010` in mainline `sound/usb/quirks.c` (pure
   audio+MIDI class, no serial).
 Net: every Fractal device here is CoreMIDI-reachable on macOS except the FM3,
-which is serial on every OS — hence the FM3 serial transport in
+which is serial on every OS, hence the FM3 serial transport in
 `packages/core/src/midi/serialTransport.ts`.
 
 ### Axe-Fx II community libraries
@@ -272,22 +272,22 @@ binary are potential cross-references for AM4 (same family, similar format):
 A fan-out research pass mapped every public project that touches the Fractal
 protocol, to confirm whether any rivals this project's codec (`fractal-midi`)
 on **preset-binary decode depth** (the routing grid, the Huffman-compressed
-gen-3 patch body, the CRC — the deepest, hardest layer). The verdict: **none
+gen-3 patch body, the CRC, the deepest, hardest layer). The verdict: **none
 do.** The only cross-generation preset-binary decoder, FracTool, is closed
 donationware forbidden for commercial use, so it is not a buildable
 "source of truth" anyone can migrate to. Every *open* public project is
-strictly narrower than our codec — either command-only (sends SysEx
+strictly narrower than our codec: either command-only (sends SysEx
 commands, never parses the stored preset) or a name catalog. Recorded here
 so future sessions don't re-survey:
 
-- **`github.com/sKuhLight/ForgeFX`** — C#/.NET 10, ASP.NET Core HTTP API +
+- **`github.com/sKuhLight/ForgeFX`**: C#/.NET 10, ASP.NET Core HTTP API +
   OpenAPI + Docker. FM3-focused (FM9/III planned). Its `Fm3PresetCodec` is,
   by its own README, an *independent C# reimplementation* of the gen-3 dump
   framing / Huffman patch body / grid layout it credits to **this project**
   and to `fractal-syx-codec`. A downstream consumer/repackager of our decode
   work for a server audience, **not** an independent decode. The new C#
   entrant that prompted this survey.
-- **`github.com/tysonlt/AxeFxControl`** — C++/Arduino, **GPL-3.0**, ~34★, last
+- **`github.com/tysonlt/AxeFxControl`**: C++/Arduino, **GPL-3.0**, ~34★, last
   commit Oct 2023. Complete implementation of Fractal's *published* gen-3
   3rd-party MIDI **command** spec (preset/scene change, bypass, status dump,
   tuner, looper, tempo) for the III (tested) and FM3 (flag). **Does NOT touch
@@ -296,13 +296,13 @@ so future sessions don't re-survey:
   (GPL-3.0)") in the codec package's
   [`community-re-methodology.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-ii/community-re-methodology.md);
   GPL-3.0 means it is read-only-reference for our Apache-2.0 tree, no code lift.
-- **`github.com/rinkashimikito/ampdex`** — React 19 / TypeScript / Vite,
+- **`github.com/rinkashimikito/ampdex`**: React 19 / TypeScript / Vite,
   **MIT**, ~0★, last push 2026-05. Searchable UI over the 331 gen-3 amp-model
   names (III/FM9/FM3), wrapping Clayton Welch's *Amplifier Library Guide*. Amp
-  **names only** — decodes no SysEx, no preset binary, no grid. A tone-discovery
+  **names only**, decodes no SysEx, no preset binary, no grid. A tone-discovery
   catalog, not a protocol decoder.
 - **FracTool** and **FracPad III** (forum member AlGrenadine; `archive.axefx.fr`
-  / mobile app stores, **not** on GitHub) — closed-binary, **donationware,
+  / mobile app stores, **not** on GitHub): closed-binary, **donationware,
   commercial use forbidden**. FracTool parses gen-2 *and* gen-3 preset `.syx`
   offline (blocks, controllers, modifiers, per-scene/X-Y), exports CSV/XML/PDF,
   and cross-converts II/XL/XL+/AX8/FX8/FM3 → III/FM9 (v3.85, actively maintained
@@ -312,33 +312,33 @@ so future sessions don't re-survey:
 - **Forum RE fragments** (not repos): gen-2/gen-3 `.syx` framing
   (`0x77`/`0x78`/`0x79` header/chunk/footer), septet/7-bit name packing, and an
   undocumented gen-3 system-backup SysEx (`0x51`/`0x52`/`0x53`, single-source,
-  medium confidence) live in forum threads #60098, #159885, #201663 — raw
+  medium confidence) live in forum threads #60098, #159885, #201663: raw
   evidence, not maintainable codebases.
 
-**Broader open-source roster (all shallower than `fractal-midi` — surveyed
+**Broader open-source roster (all shallower than `fractal-midi`; surveyed
 2026-06-27, none parse the full stored patch):**
-- **`github.com/vangrieg/Midi-SysEx-MCPServer`** — *another MCP server* doing
+- **`github.com/vangrieg/Midi-SysEx-MCPServer`**: *another MCP server* doing
   III/FM RE, but LLM-assisted notes only: block layout partly mapped, most
   params still `❓`. Not a working decoder. **The closest thing to a same-niche
   competitor; worth periodic re-checking** in case it matures.
-- **`github.com/ctrowat/fractal-preset-sysex`** (+ `-parser`) — docs + TS that
+- **`github.com/ctrowat/fractal-preset-sysex`** (+ `-parser`): docs + TS that
   document `0x77`/`0x78`/`0x79` framing and split a `.syx` into chunks; author's
   own note says "much decoding to do here." Framing only, **not** a decoder.
-- **`github.com/bspaulding/axe-fx-midi`** — Rust (MIT, ~1.8k dl) — decodes the
+- **`github.com/bspaulding/axe-fx-midi`**: Rust (MIT, ~1.8k dl), decodes the
   **live** grid/flags from a device query response (fn `0x20`), not stored files.
   This is the anonymized "Rust read/navigate crate" in the methodology doc.
-- **`github.com/laxu/AxeFx2VirtualPedalboard`** — TS (MIT) — CC→SET_PARAM live
+- **`github.com/laxu/AxeFx2VirtualPedalboard`**: TS (MIT), CC→SET_PARAM live
   translator (II/AX8). The anonymized "TypeScript SET_PARAM project" in the
   methodology doc; first open `0x02` SET_PARAM prior art on the II.
-- **`github.com/JamesDunne/axefx-sysex-decoder`** — Go (MIT, dead 2018) — unpacks
+- **`github.com/JamesDunne/axefx-sysex-decoder`**: Go (MIT, dead 2018), unpacks
   septet encoding of **IR/firmware** transport packets, not preset structure.
-- **`github.com/codeflows/rusty-axe`** — Rust (dead 2016) — reads `.syx`
+- **`github.com/codeflows/rusty-axe`**: Rust (dead 2016), reads `.syx`
   **header only** (model/name/target).
 - **`github.com/rudib/axess`** (Rust, dead 2020), **`github.com/sean-e/mTroll`**,
-  and assorted FCB1010 / Arduino foot-controller projects — live-MIDI command
+  and assorted FCB1010 / Arduino foot-controller projects: live-MIDI command
   mappers / CC senders, no preset decode.
 
-**Phantoms (searched, do not exist as public projects — don't re-hunt):**
+**Phantoms (searched, do not exist as public projects, don't re-hunt):**
 "Fractal Manager"/FractalManager, axe-fx-mfc, "Albert Gee" tools, any
 `pyaxefx`/`axefx`/`axefx-control` on PyPI, any `axefx`/`fractalbot` on npm
 (the only Axe-Fx npm package is our own `fractal-midi`), FractalUI,
@@ -351,8 +351,8 @@ decoder, `drewmerc302/fractal-syx-codec` (Apache-2.0), is this project's own
 collaborator's, not independent prior art. Our Apache-2.0 license is what makes
 us the legally-safe base others build on (ForgeFX did). Sourcing caveat: the
 gen-3 patch-body decode is corroborated by Drew's codec (which Huffman-
-decompresses it), **not** by the public forum corpus — which describes the
-III/FM body as plaintext-sparse — so don't cite the community as a Huffman source.
+decompresses it), **not** by the public forum corpus, which describes the
+III/FM body as plaintext-sparse, so don't cite the community as a Huffman source.
 
 ---
 

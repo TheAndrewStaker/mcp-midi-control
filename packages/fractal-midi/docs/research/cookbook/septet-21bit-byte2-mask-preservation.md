@@ -34,7 +34,7 @@ byte2 = (originalByte2 & 0x7C) | ((v >> 14) & 0x03)   // high 2 bits ONLY
 
 The high 5 bits of byte 2 (`0x7C` = bits 2-6, plus bit 7 always 0 to keep
 the byte SysEx-safe) are reserved by the firmware for something we do
-NOT yet understand — possibly a record-type tag, possibly a continuity
+NOT yet understand: possibly a record-type tag, possibly a continuity
 marker. They must be preserved verbatim across reads.
 
 Decode (read side):
@@ -65,7 +65,7 @@ fn 0x79 NACK code 0x13 on multi-modification pushes. Fix:
 
 Apply when packing or unpacking any 21-bit value in the II preset binary
 envelope family. The XOR-fold hash ([[xor-fold-hash]]) computes over the
-DECODED 21-bit ushorts, not the raw 3-byte wire form — so a missing
+DECODED 21-bit ushorts, not the raw 3-byte wire form, so a missing
 preservation rule corrupts both the data AND the hash.
 
 Cost: zero (encode/decode is in `packages/fractal-gen2/src/presetBinary/`).
@@ -75,7 +75,7 @@ Cost: zero (encode/decode is in `packages/fractal-gen2/src/presetBinary/`).
 - **DO NOT** use `(v >> 14) & 0x7F` for byte 2 high bits. That zeroes
   the reserved bits and triggers NACK 0x13. Use `& 0x03` for the value
   contribution and OR with `originalByte2 & 0x7C`.
-- **DO NOT** assume byte 2 reserved bits are always 0. They are not —
+- **DO NOT** assume byte 2 reserved bits are always 0. They are not;
   they carry firmware-defined state. Read-modify-write is required;
   blind-write is wrong.
 - **DO NOT** confuse with [[septet-14bit]]. 14-bit septet uses 2 bytes,
@@ -84,15 +84,15 @@ Cost: zero (encode/decode is in `packages/fractal-gen2/src/presetBinary/`).
 
 ## Where it does NOT apply
 
-- Axe-Fx III preset binary — transfer candidate. The III envelope spec
+- Axe-Fx III preset binary: transfer candidate. The III envelope spec
   is byte-identical in shape to II (see
   [[vendor-envelope-descriptor-table]]), and III's `byte_count` field
   values are consistent with 3-bytes-per-ushort packing
   (`byte_count = 768` for 256 ushorts; `byte_count = 192` for 64 ushorts).
   III byte 2 preservation rule is a same-session test as soon as a III
   owning contributor is available.
-- AM4 — AM4 envelopes use 14-bit septet only; no 21-bit field observed.
-- Fn 0x01 SET_PARAMETER tail — uses [[septet-14bit]], not this primitive.
+- AM4: AM4 envelopes use 14-bit septet only; no 21-bit field observed.
+- Fn 0x01 SET_PARAMETER tail: uses [[septet-14bit]], not this primitive.
 - fn 0x0E QUERY_STATES and fn 0x1F state-broadcast triples use
   4-plain-septet records / `packValue16`, not the 21-bit
   byte2-preservation scheme. This primitive is the preset-binary
@@ -114,7 +114,7 @@ Both fixtures cite the  capture set.
 - 2026-05-22: bug found + fixed. Initial encode
   zeroed bits 2-6 of byte 2 → NACK 0x13. Fix landed in `BLOCK_LAYOUT_MAP`
   writeback path; 390/390 preset push verified.
-- Cookbook entry created from synthesis pass 2026-05-22 — promoting the
+- Cookbook entry created from synthesis pass 2026-05-22, promoting the
   bug-fix detail from -DECODE-NOTES.md to a primitive because it
   generalizes to III preset binary handling.
 - 2026-05-28: scope corrected. Removed the claim that this scheme governs

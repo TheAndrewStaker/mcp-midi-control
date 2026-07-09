@@ -5,7 +5,7 @@ status: matched
 discovered: 2026-05-22 (cookbook mine of ghidra-axe-edit-iii-store-preset.txt)
 verified_on:
   - axe-edit-iii-binary
-  - vp4-fw-4.03 (device-EMITTED: the eid206 structure blob's 220 packed bytes unpack with this exact scheme across 392 captured responses / two sessions — see [[vp4-eid206-structure-blob]])
+  - vp4-fw-4.03 (device-EMITTED: the eid206 structure blob's 220 packed bytes unpack with this exact scheme across 392 captured responses / two sessions; see [[vp4-eid206-structure-blob]])
 firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-iii-byte-stream-septet-pack-8to7
 relates_to: [septet-14bit, septet-21bit-byte2-mask-preservation, iii-fn01-set-parameter-envelope]
@@ -113,16 +113,16 @@ implementation uses the LSB-first-with-carry variant documented above
 
 ## Where it does NOT apply
 
-- Axe-Fx II — no direct evidence yet that II's AxeEdit ships the
+- Axe-Fx II: no direct evidence yet that II's AxeEdit ships the
   identical `FUN_14033f2d0` shape. Transfer candidate: scan II's
   Ghidra dump for the same loop pattern (`if bitsConsumed == 8` flush
   + carry shift) and confirm. Until then, treat II as unknown for
   this primitive.
-- AM4 — same. AM4-Edit's set-param path uses
+- AM4: same. AM4-Edit's set-param path uses
   [[am4-pidlow-register-families]] addressing with fixed-width
   septet fields per [[septet-14bit]]; no byte-stream payload is
   exercised in the AM4 fn=0x01 wire shape.
-- Hydrasynth — NRPN-based, no Fractal envelope; not applicable.
+- Hydrasynth: NRPN-based, no Fractal envelope; not applicable.
 
 ## Verification path
 
@@ -138,12 +138,12 @@ runs the pack algorithm against a small set of fixtures (N=1, 2, 7,
 Decompile reference: `FUN_14033f2d0` at envelope positions L1278-1317
 of `fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-store-preset.txt`.
 
-## Path to `matched` — ACHIEVED 2026-07-01
+## Path to `matched`: ACHIEVED 2026-07-01
 
 Promoted `matched-singleton` → `matched`: the second axis point is **VP4
 firmware 4.03 itself** (a device, not an editor binary). The VP4's eid206
 pid0 tc=0x1f structure blob ([[vp4-eid206-structure-blob]]) packs its
-192-byte payload with this exact scheme — all 392 captured device responses
+192-byte payload with this exact scheme; all 392 captured device responses
 across two sessions/presets unpack to clean ASCII names + the oracle-matched
 chain table with `unpackValueChunked` (the shipped inverse), and garble under
 MSB-first or non-restarting variants. This also upgrades the evidence class:
@@ -162,7 +162,7 @@ scan) are listed in the 2026-05-22 history below.
   the cookbook same-session discipline.
 - 2026-07-01 (VP4 structure-blob decode): promoted to `matched` on the
   VP4-firmware axis; the shipped TS implementation of the inverse is
-  `unpackValueChunked` (`shared/packValue.ts`) — the AM4 chunked
+  `unpackValueChunked` (`shared/packValue.ts`); the AM4 chunked
   sliding-window unpack and this packer are the SAME algorithm (the
   "flush every 7 inputs" carry reset ≡ the chunk restart; independently
   asserted by `test/gen3/axe-fx-iii/subactions.test.ts`).

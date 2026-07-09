@@ -36,12 +36,12 @@ A descriptor table is a contiguous array of records, each record being a
 triple `(tag, mid, byte_count)`, terminated by a sentinel record
 `(-1, -1, -1)`. The fields:
 
-- **tag** — the per-record key (0, 1, 2, ...). The order of tags within
+- **tag**: the per-record key (0, 1, 2, ...). The order of tags within
   the table defines the order of fields in the wire envelope after `F0`.
-- **mid** — the wire-byte offset of this field from `F0`. The first
+- **mid**: the wire-byte offset of this field from `F0`. The first
   field after the `F0 00 01 74 <model>` envelope prefix is typically at
   offset 6 (immediately after fn byte at 5).
-- **byte_count** — the size of the field, OR the units count when the
+- **byte_count**: the size of the field, OR the units count when the
   field is a packed-data block (e.g. `byte_count = 3072` for II preset
   body = 1024 ushorts × 3 bytes-per-ushort septet packing).
 
@@ -53,11 +53,11 @@ for II preset body's 3-byte-per-ushort packing).
 
 ## Where it's used
 
-- II chunk descriptor table at `0xe04440` — declares the preset-body
+- II chunk descriptor table at `0xe04440` declares the preset-body
   envelope: `(tag=0, mid=6, byte_count=2)` + `(tag=1, mid=8, byte_count=3072)`.
-- II footer descriptor table at `0xdff900` — declares the footer envelope:
+- II footer descriptor table at `0xdff900` declares the footer envelope:
   `(tag=0, mid=6, byte_count=3)`.
-- III descriptor tables at `0x1407ab440` + `0x1407aba40` — byte-identical
+- III descriptor tables at `0x1407ab440` + `0x1407aba40`: byte-identical
   shape to II. `(0, 6, 2) + (1, 8, 768)` and `(0, 6, 2) + (1, 8, 192)`
   respectively (256-ushort and 64-ushort payloads).
 - III also carries 24 additional descriptor tables at
@@ -65,7 +65,7 @@ for II preset body's 3-byte-per-ushort packing).
   All 24 extracted 2026-05-22 via `parse-ghidra-decompile.ts`; cross-
   linked to their caller functions via the misc-descriptors caller-refs
   section. Headline finding: **table `0x1407ab940` has shape
-  `(tag=0, mid=6, byte_count=2) + (tag=1, mid=8, byte_count=3072)` —
+  `(tag=0, mid=6, byte_count=2) + (tag=1, mid=8, byte_count=3072)`,
   1024 ushorts × 3 bytes/ushort septet, byte-identical to the II
   preset push payload**. This is the III analog of the II preset
   binary at the envelope-spec layer.
@@ -87,7 +87,7 @@ Other notable III tables (per JSON output):
 - `0x1407ab910`: 160 bytes = 53 ushorts
 - `0x1407aba40`: 192 bytes = 64 ushorts
 - `0x1407ab440`: 768 bytes = 256 ushorts
-- `0x1407ab8b0`: 31 bytes (uncommon shape — likely a header/metadata block)
+- `0x1407ab8b0`: 31 bytes (uncommon shape, likely a header/metadata block)
 - 19 more smaller tables (1-3 byte payloads, likely per-fn-byte command shapes)
 
 **Model-byte-dispatched descriptor selection (fn=0x19 file snapshot / export):**
@@ -109,7 +109,7 @@ descriptor tables by model-byte" in the III editor binary. The
 dispatch mechanism is generic; other fn-byte builders likely use it
 too.
 
-Evidence files (gitignored — see `captured-artifacts.md`):
+Evidence files (gitignored, see `captured-artifacts.md`):
 - `fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-dump-descriptors.txt` lines 7-23
 - `fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-misc-descriptors.txt` lines 50-79+
 - `fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-actions-and-shapes.txt` lines 23138-23339 (model-byte dispatch + stride-12 + sentinel=-1 walker)
@@ -127,7 +127,7 @@ fn-byte in the binary.
 
 ## Misapplication failure modes
 
-- Does NOT replace `vendor-envelope-prefix` (`F0 00 01 74 <model> [fn]`) —
+- Does NOT replace `vendor-envelope-prefix` (`F0 00 01 74 <model> [fn]`);
   descriptor tables describe what comes AFTER the prefix.
 - Does NOT directly encode the inbound (device → host) envelope shape;
   for inbound, the inbound dispatcher table is the analog (separate
@@ -144,9 +144,9 @@ fn-byte in the binary.
 
 `scripts/cookbook-verify.ts#case-vendor-envelope-descriptor-table` runs
 two fixtures:
-1. II preset push envelope (`0x77/0x78/0x79`) — input: descriptor table
+1. II preset push envelope (`0x77/0x78/0x79`), input: descriptor table
    at `0xe04440`; expected: matches captured `samples/captured/session-51-export-preset.pcapng`.
-2. III preset push envelope (`0x77/0x78/0x79`) — input: descriptor table
+2. III preset push envelope (`0x77/0x78/0x79`), input: descriptor table
    at `0x1407ab440`; expected: matches forum-captured III preset push.
 
 When III preset round-trip is hardware-verified by a III-owning

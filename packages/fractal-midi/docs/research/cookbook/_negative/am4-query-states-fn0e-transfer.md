@@ -5,12 +5,12 @@ status: non-matching
 verified_on:
   - am4-edit
 golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
-retest_when: never (closed at both layers — AM4-Edit never emits fn 0x0E across 21036 frames, and the 2026-05-30 firmware probe answered with a near-empty body, not per-block state records)
+retest_when: never (closed at both layers; AM4-Edit never emits fn 0x0E across 21036 frames, and the 2026-05-30 firmware probe answered with a near-empty body, not per-block state records)
 relates_to: [ii-fn0e-query-states, am4-fn1f-atomic-read, am4-pidlow-register-families]
 consumed_in: []
 ---
 
-# AM4 fn 0x0E QUERY_STATES editor transfer — NO transfer
+# AM4 fn 0x0E QUERY_STATES editor transfer: NO transfer
 
 The Axe-Fx II fn 0x0E QUERY_STATES whole-preset block-state read
 ([[ii-fn0e-query-states]]) does NOT transfer to AM4 at the editor level.

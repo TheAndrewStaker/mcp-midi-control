@@ -9,15 +9,15 @@ verified_on:
   - fm3-edit-binary
   - vp4-edit-binary
 firmware_sensitive: true
-golden: STUB (structural-only; negative finding — device-true catalogs are drift-gated by the per-device catalog checks; see Symptoms / grep terms)
-retest_when: never (measured firmware fact — paramIds are per-firmware per-effect ordinals, 6.9%/18.6%/99.5% divergence from the III; device-true catalogs mined from each editor binary are the permanent lane)
+golden: STUB (structural-only; negative finding: device-true catalogs are drift-gated by the per-device catalog checks; see Symptoms / grep terms)
+retest_when: never (measured firmware fact: paramIds are per-firmware per-effect ordinals, 6.9%/18.6%/99.5% divergence from the III; device-true catalogs mined from each editor binary are the permanent lane)
 relates_to: [per-effect-paramtable-dispatcher, iii-multiproduct-editor-binary, iii-fn01-action-code-per-model-byte, param-descriptor-16byte]
 consumed_in:
   - scripts/_research/scan-editor-param-tables.ts
   - scripts/_research/merge-modern-fractal-devicetrue.ts
 ---
 
-# Gen-3 paramId reuse across model bytes — NO transfer
+# Gen-3 paramId reuse across model bytes: NO transfer
 
 The modern-Fractal family (Axe-Fx III `0x10`, FM3 `0x11`, FM9 `0x12`,
 VP4 `0x14`) shares ONE wire codec: identical SysEx envelope, checksum,

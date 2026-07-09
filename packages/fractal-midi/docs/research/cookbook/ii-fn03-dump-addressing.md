@@ -25,8 +25,8 @@ SOURCE, and the two forms behave very differently:
 F0 00 01 74 07 03 <hi> <lo> <cs> F7
 ```
 
-Returns the STORED flash contents of that slot — never the working
-buffer — **and RELOADS the stored preset into the working buffer as a
+Returns the STORED flash contents of that slot (never the working
+buffer) **and RELOADS the stored preset into the working buffer as a
 side effect**, silently destroying unsaved edits. Proven live: a buffer
 rename (fn 0x09, buffer-scope verified) was present immediately before
 the request and gone immediately after (fn 0x0F re-read), replaced by
@@ -50,7 +50,7 @@ session (`samples/captured/hw132/` in the consumer repo):
    restored the dumped buffer state (name re-read "EB ALPHA").
 
 All three response chains carry an identical 0x77 header payload
-`[7F 00 00 20]` regardless of which form was requested — the response
+`[7F 00 00 20]` regardless of which form was requested; the response
 header does NOT echo the requested address (unlike the AM4, whose 0x77
 header echoes `[bank, sub]`).
 
@@ -60,5 +60,5 @@ The `0x7F 0x7F` sentinel is the AM4's documented active-buffer
 convention (`am4-fn03-stored-dump-request` is the mirror entry). It was
 worth one read-only probe on the II before accepting "no edit-buffer
 dump exists": the 94-opcode AxeEdit table has no dedicated edit-buffer
-opcode, but the sentinel rides the existing fn 0x03 — opcode-table
+opcode, but the sentinel rides the existing fn 0x03; opcode-table
 absence does not rule out sentinel addressing on an existing opcode.

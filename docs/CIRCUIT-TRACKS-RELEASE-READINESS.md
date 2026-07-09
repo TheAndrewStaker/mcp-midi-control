@@ -32,20 +32,20 @@ steps to raise release quality.
   live-regression block, and agent-regression cases. `npm run preflight` is green.
 - **Backup/restore is designed, not built.** See
   [`design/circuit-pack-backup.md`](./design/circuit-pack-backup.md).
-- **Synth PATCH save + read — ✅ HARDWARE-CONFIRMED (2026-07-03), `supports_save = true`.**
+- **Synth PATCH save + read: ✅ HARDWARE-CONFIRMED (2026-07-03), `supports_save = true`.**
   `save_preset` persists a synth part's live sound to a Flash PATCH slot 0-63
   (instance 1/2 = Synth 1/2; refuse-by-default overwrite gate). Two patches saved
   this way survived a power-cycle (confirmed by ear). The write protocol
-  (`codec/patchTransfer.ts savePatch`) — decoded from Components captures + a 7-agent
-  capture review — cleans the body's dirty-edit marker (`body[17]=0x00`), wraps a
+  (`codec/patchTransfer.ts savePatch`), decoded from Components captures + a 7-agent
+  capture review, cleans the body's dirty-edit marker (`body[17]=0x00`), wraps a
   byte-clean Replace-Patch in a file-transfer session, and sends it FIRE-AND-FORGET
   as the last message (the device commits to flash silently; any session opened
   afterward aborts it; it never acks a save). `get_param`/`get_params` read synth
   patch params (osc/filter/env/lfo/mixer/fx/eq) from a live Patch Dump at each
-  param's §13 offset — the offset map (32-123) is **oracle-confirmed against 128 real
+  param's §13 offset; the offset map (32-123) is **oracle-confirmed against 128 real
   factory patch dumps**. `get_preset("patch:N")` reads a STORED bank patch (name +
   all decoded params) by PC-loading the slot into the working buffer and dumping it
-  (a Program Change loads an OCCUPIED bank slot — HW-confirmed reading back a
+  (a Program Change loads an OCCUPIED bank slot, HW-confirmed reading back a
   freshly-saved patch), restoring the prior buffer. Mod-matrix/macro record arrays
   (offsets 124-339) deferred. See `CIRCUIT-TRACKS-CONTROL-MAP.md` "Patch save + read"
   and `HARDWARE-TASKS-CIRCUIT.md`.
@@ -66,7 +66,7 @@ steps to raise release quality.
 
 ## Next steps to improve release quality (prioritized)
 
-### P1 — gate the first-class claim
+### P1: gate the first-class claim
 1. **#3 positioning.** Add Circuit Tracks to `CLAUDE.md`'s device tier, the
    `README.md` first-class blurb, and `ROADMAP.md`; write
    `docs/features/circuit-tracks.feature` (the durable product-capability record).
@@ -74,16 +74,16 @@ steps to raise release quality.
 2. **Backup-before-overwrite (Tier 1 of the pack-backup design).** Ship
    `export_project[s]` + a `backup_first` (default on) on the destructive transfer
    tools, so an overwrite is one-command-reversible. This **completes the
-   safe-edit contract** — the gate warns; backup makes "yes, overwrite" safe for
+   safe-edit contract**: the gate warns; backup makes "yes, overwrite" safe for
    a non-technical user. Everything needed (`downloadProject`) is hardware-
    confirmed. Bonus: raw `.ncs` download via `export_project` also unblocks the
    byte-identical download→re-upload→readback round-trip test that the current
    tool surface can't express.
 
-### P2 — close quality gaps in shipped features
+### P2: close quality gaps in shipped features
 3. **Wire scene/length/chain into authoring.** Authored `ncs_upload` projects
    should ship full-length (length `0x1f`) and, where a packed set has multiple
-   grooves, carry the captured Scene 1–4 + chain bytes — so a stored project
+   grooves, carry the captured Scene 1–4 + chain bytes, so a stored project
    plays full-length and is tap-to-switch without the manual length-set step the
    `ncs_upload` receipt currently warns about. Decode is done (scripts apply it);
    fold it into the authoring path.
@@ -92,7 +92,7 @@ steps to raise release quality.
    a committed WAV fixture (sample refusal) and a known-occupied project slot
    (project refusal) so the gate is covered in the standard battery.
 
-### P3 — depth that lifts the ceiling (RE-gated)
+### P3: depth that lifts the ceiling (RE-gated)
 5. **Decode the sample READ (file-type `0x05`).** Unblocks three things at once:
    sample backup, a "what samples do I have" directory read, and upgrading the
    sample overwrite gate from refuse-by-default to occupancy-driven (matching
@@ -106,9 +106,9 @@ steps to raise release quality.
    "drop in any drummer's MIDI" lands losslessly when no step exceeds 4 hits.
 
 ## Risks / honest caveats to carry into the release notes
-- Sample tools **refuse by default** (occupancy unreadable until P3 #5) — minor
+- Sample tools **refuse by default** (occupancy unreadable until P3 #5), minor
   friction; the agent must pass `confirm_overwrite` once the user authorizes.
-- The transfer's **final device CRC verdict is not read back** — writes are
+- The transfer's **final device CRC verdict is not read back**: writes are
   frame-acked; confirm a sample/project by ear / on-device.
 - Several Circuit tests are **hardware-sweep-only** (no Circuit mock transport),
   so CI/preflight covers the codec + gate logic deterministically but not the

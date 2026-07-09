@@ -37,7 +37,7 @@ first-class dispatch dimension.
 The III editor holds a global current-model-byte at `DAT_1412633f8`.
 Most code paths gate behavior on this byte using one of two patterns:
 
-**Pattern A — chained equality (per-model branch):**
+**Pattern A, chained equality (per-model branch):**
 
 ```c
 cVar1 = *(char *)(param_1 + 0x38);    // local model byte from a struct
@@ -55,7 +55,7 @@ else if (cVar1 == '\x12') {            // FM9
 Verbatim from `FUN_1401e38a0` L793-800 in
 `fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-actions-and-shapes.txt`.
 
-**Pattern B — model-family gate (treat the three as equivalent):**
+**Pattern B, model-family gate (treat the three as equivalent):**
 
 ```c
 if (((DAT_1412633f8 == 0x10) || (DAT_1412633f8 == 0x11))
@@ -126,11 +126,11 @@ the model-byte arm explicitly.
 
 ## Where it does NOT apply
 
-- AxeEdit II — separate binary, single product line (Axe-Fx II with
+- AxeEdit II: separate binary, single product line (Axe-Fx II with
   XL/XL+ legacy under a different code path).
-- AM4-Edit — separate binary, single product line.
-- Hydrasynth — different vendor / protocol family entirely.
-- Future Fractal multi-product editors — if Fractal ships a
+- AM4-Edit: separate binary, single product line.
+- Hydrasynth: different vendor / protocol family entirely.
+- Future Fractal multi-product editors: if Fractal ships a
   successor that drops one of the three model bytes (or adds a
   fourth), the dispatch logic above changes shape; the primitive
   itself stays but the verified set rotates.

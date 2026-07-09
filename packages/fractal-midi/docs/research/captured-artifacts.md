@@ -53,7 +53,7 @@ we don't own.
 - **Cookbook**: applies [[../research/cookbook/septet-14bit]] for
   paramId encoding; the sub-action code table was subsequently mined
   (2026-06-09: 57 fn=0x01 action14 codes charted from all 93 callers
-  in the III decompile — see the founder-private manifest's
+  in the III decompile, see the founder-private manifest's
   actions-and-shapes entry)
 - **Status**: ✅ wire shape locked
 
@@ -84,12 +84,12 @@ we don't own.
 - **Artifact**: `samples/captured/vp4-edit-preset-sync-poll-fw403-kevin-iudicello-2026-06-08.mmon`
   (gitignored). Decode + scripts: `samples/captured/decoded/vp4-403/` (`FINDINGS.md`).
 - **Locks**: VP4 `fn=0x01` PARAMETER GET read path (query + response shape, no
-  sub-action), effectId == shared gen-3 block table, device-true paramId catalog —
+  sub-action), effectId == shared gen-3 block table, device-true paramId catalog:
   all byte-confirmed on real VP4 hardware. 1000 frames, 100% checksum-valid.
-- **Does NOT lock**: any write path (read-only editor poll — no SET/bypass/scene/
+- **Does NOT lock**: any write path (read-only editor poll, no SET/bypass/scene/
   block-move frames). Full GET value calibration + the `0x1f` routing-blob layout
   remain open.
-- UNMINED[2026-06-08]: samples/captured/vp4-edit-preset-sync-poll-fw403-kevin-iudicello-2026-06-08.mmon — full GET value calibration (display↔wire scale for continuous params); the 0x1f routing-blob item closed 2026-07-01 via [[../research/cookbook/vp4-eid206-structure-blob]]
+- UNMINED[2026-06-08]: samples/captured/vp4-edit-preset-sync-poll-fw403-kevin-iudicello-2026-06-08.mmon, full GET value calibration (display↔wire scale for continuous params); the 0x1f routing-blob item closed 2026-07-01 via [[../research/cookbook/vp4-eid206-structure-blob]]
 - **Decode doc**: [`docs/devices/vp4/SYSEX-MAP.md`](../devices/vp4/SYSEX-MAP.md).
 - **Cookbook**: applies [[../research/cookbook/xor-7f-envelope-checksum]] +
   [[../research/cookbook/septet-14bit]].
@@ -105,21 +105,21 @@ we don't own.
   100% `fn=0x01`, all checksum-valid; 69 write frames isolated.
 - **Locks**: VP4 `fn=0x01` SET frame (21-byte, `tc` sub-opcode), the value codec (5-septet
   LE float32, top two septets swapped, normalized [0,1]), the **synchronous per-write echo**
-  (+ the 16-byte SAVE completion ack), and the SAVE / continuous-param-SET / bypass frames —
+  (+ the 16-byte SAVE completion ack), and the SAVE / continuous-param-SET / bypass frames:
   byte-exact, mapped to known actions. Strong-evidence: `set_bypass`, `save_preset`.
 - **Does NOT lock**: generic discrete `set_param` (zero captured evidence), block-placement
   value→slot math (frames known, encoding open), scene value mapping, and continuous-param
   display calibration (single-point/noisy).
-- UNMINED[2026-06-09]: samples/captured/vp4-edit-edit-session-fw403-kevin-iudicello-2026-06-09.mmon — block-placement value→slot math (69 isolated write frames, encoding open), scene value mapping, and continuous-param display calibration (single-point/noisy)
+- UNMINED[2026-06-09]: samples/captured/vp4-edit-edit-session-fw403-kevin-iudicello-2026-06-09.mmon, block-placement value→slot math (69 isolated write frames, encoding open), scene value mapping, and continuous-param display calibration (single-point/noisy)
 - **Decode doc**: [`docs/devices/vp4/SYSEX-MAP.md`](../devices/vp4/SYSEX-MAP.md) (PARAMETER SET section).
 - **Status**: ✅ write path decoded (param/save/bypass); ⛔ block placement still gated.
 
 ### AM4 stored-preset body decode (warm-pair captures)
-- **Source**: founder-private hardware warm-pair captures — a redump of the same
+- **Source**: founder-private hardware warm-pair captures, a redump of the same
   stored preset before/after ONE isolated edit, so the decoded-body diff pins a
   single field. `samples/captured/am4-warm-pair-*-{before,after}.syx` (gitignored):
   1 no-op baseline, amp.gain chA, amp.gain chB, amp.master, amp type-swap.
-- **Locks**: the AM4 decoded-BODY block-record chain for the AMP block —
+- **Locks**: the AM4 decoded-BODY block-record chain for the AMP block:
   marker (== block pidLow) + `0x0E` header + 4 per-channel records at stride
   `0x130`; param word = `marker + ch*0x130 + 0x0E + pidHigh*2`. Four anchors
   byte-exact (amp.type, amp.gain chA @`0x0958` / chB @`0x0A88`, amp.master chA).
@@ -131,7 +131,7 @@ we don't own.
   false-positive markers; cab / drive / delay / reverb share the chain structure
   but their per-block stride + param formula are untested (a naive effectId scan
   false-positives). Five isolated one-variable captures would confirm transfer.
-- UNMINED[2026-07-02]: samples/captured/am4-warm-pair-* (5 new one-variable pairs needed) — one warm pair each for delay.mix, drive.drive, a cab param, a scene-bypass toggle, and a per-block channel change, to confirm the amp block's pidHigh+7 / 0x130-stride formula transfers to non-amp blocks (unblocks whole_preset VALUES for every block, not just amp)
+- UNMINED[2026-07-02]: samples/captured/am4-warm-pair-* (5 new one-variable pairs needed), one warm pair each for delay.mix, drive.drive, a cab param, a scene-bypass toggle, and a per-block channel change, to confirm the amp block's pidHigh+7 / 0x130-stride formula transfers to non-amp blocks (unblocks whole_preset VALUES for every block, not just amp)
 - **Decode doc**: [`docs/devices/am4/SYSEX-MAP.md`](../devices/am4/SYSEX-MAP.md)
   (§10b body block-record chain). Cookbook [[../research/cookbook/am4-gen3-preset-container]].
 - **Status**: ✅ amp block VALUES surfaced (community-beta); ⛔ non-amp block VALUES pending the 5 captures.

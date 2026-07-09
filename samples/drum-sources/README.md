@@ -1,7 +1,7 @@
 # Drum / instrument sample sources
 
 Audio test sources for the SPD-SX / Circuit Tracks sample work. The **audio is
-local-only** (gitignored — these libraries are large and commercially licensed).
+local-only** (gitignored: these libraries are large and commercially licensed).
 Only this `README.md` and `manifest.json` are committed, so the tree can always
 be rebuilt after a delete. `manifest.json` is the registry of which sources exist.
 
@@ -12,10 +12,10 @@ be rebuilt after a delete. `manifest.json` is the registry of which sources exis
 ## These are Kontakt libraries, not loose WAVs
 
 All current sources are **Native Instruments Kontakt Player libraries** installed
-via Native Access (this corrects an earlier note in this repo — Invasion *is*
+via Native Access (this corrects an earlier note in this repo: Invasion *is*
 delivered through Native Access). They live under
 `C:/Users/Public/Documents/<Library>/` and ship as **encrypted `.nkx`/`.nkc`/
-`.nkr` monoliths** — you **cannot** `ffmpeg` them directly. To get WAVs you must
+`.nkr` monoliths**: you **cannot** `ffmpeg` them directly. To get WAVs you must
 **render ("bounce") them out of Kontakt 8**, then run the converter on the WAVs.
 
 Runtime + installed sources (all verified complete 2026-06-20):
@@ -27,7 +27,7 @@ Runtime + installed sources (all verified complete 2026-06-20):
 | `kinetic-treats`            | NI Play Series  | `Public/Documents/Kinetic Treats Library`      | 413 MB |
 | `kontakt-factory-selection` | NI              | `Public/Documents/Kontakt Factory Selection Library` | 631 MB |
 | `play-series-selection`     | NI              | `Public/Documents/Play Series Selection Library` | 1.7 GB |
-| `sleep-token-ii` (planned)  | Mixwave         | not yet purchased                              | —      |
+| `sleep-token-ii` (planned)  | Mixwave         | not yet purchased                              | n/a    |
 
 See `manifest.json` for per-source detail (versions, kit/snapshot names, bounce notes).
 
@@ -36,7 +36,7 @@ See `manifest.json` for per-source detail (versions, kit/snapshot names, bounce 
 ```
 samples/drum-sources/
   README.md            # committed
-  manifest.json        # committed — source registry
+  manifest.json        # committed, source registry
   <label>/
     raw/               # WAVs rendered ("bounced") out of Kontakt (local-only)
     spdsx/             # 44.1kHz/16-bit/stereo PCM, ready for SPD-SX (generated)
@@ -46,7 +46,7 @@ samples/drum-sources/
 
 1. **Open** the library in **Kontakt 8** (`Kontakt 8.exe`, or the VST3 in a DAW).
 2. **Render ("bounce")** the pads/articulations/instruments you want to WAV into
-   `samples/drum-sources/<label>/raw/` (any subfolder layout — it's preserved).
+   `samples/drum-sources/<label>/raw/` (any subfolder layout, it's preserved).
    This is the one manual step: Kontakt monoliths are encrypted, so audio has to
    come out through Kontakt's audio engine (play/render each pad, or export from
    your DAW).
@@ -74,4 +74,4 @@ The converter is `scripts/bounce-to-spdsx.ts`. Flags: `--src --out --rate
 These are NI/Kontakt Player libraries, so they're governed by Native Instruments'
 account activation policy (managed in Native Access), not a per-machine file
 license. If activation on this second machine is ever blocked, it's an NI-account
-limit to resolve in Native Access — not something the repo controls.
+limit to resolve in Native Access, not something the repo controls.

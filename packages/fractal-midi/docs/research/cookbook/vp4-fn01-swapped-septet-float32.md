@@ -13,11 +13,11 @@ consumed_in:
   - packages/fractal-midi/src/gen3/vp4/setParam.ts (encodeVp4Float / decodeVp4Float)
 ---
 
-# VP4 fn=0x01 value field — swapped-septet float32
+# VP4 fn=0x01 value field: swapped-septet float32
 
 The VP4 (model 0x14) carries its fn=0x01 SET value as an IEEE-754 **float32**,
 5-septet little-endian, but with the **top two septets (s3, s4) SWAPPED on the
-wire** — the value bytes are emitted as `[s0, s1, s2, s4, s3]`.
+wire**: the value bytes are emitted as `[s0, s1, s2, s4, s3]`.
 
 ## Formal definition
 
@@ -46,5 +46,5 @@ Full SET frame: `F0 00 01 74 14 01 [eid:14b LE] [pid:14b LE] [tc] 00 00 00 04 00
 
 - Editor *drag* frames carry noise in the top septet (bits beyond 32) the device
   masks; clean `float32` values round-trip exactly, drag frames do not.
-- Per-param **display calibration** (normalized↔%/ms/Hz) is NOT decoded — only the
+- Per-param **display calibration** (normalized↔%/ms/Hz) is NOT decoded, only the
   raw normalized [0,1] value field. See `docs/devices/vp4/SYSEX-MAP.md`.
