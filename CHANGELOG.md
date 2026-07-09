@@ -8,6 +8,259 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.6.0]
+
+The largest release since launch. Two entirely new device brands join the
+roster: the **Novation Circuit Tracks** (a groovebox sequencer) and the
+**Roland SPD-SX** (a sample pad), proving the descriptor model scales past
+guitar gear into sequencers and samplers, and Boss support arrives on two
+fronts: the **VE-500** vocal processor and the **RC-505mk2** Loop Station, a
+looper that is both a live MIDI target and a mass-storage device the server can
+author memories on. Underneath them, the transport abstraction was generalized
+so a "device" can speak MIDI, USB-serial, or USB mass-storage (or resolve
+between them at call time), the native MIDI engine was swapped for one that
+ships prebuilt binaries (no compiler on any platform), and macOS gained a
+one-click Claude Desktop Extension install. A new `describe_rig` tool gives the
+agent a whole-rig overview, the first step toward configuring a multi-device
+setup from one conversation.
+
+### Added
+
+- **Novation Circuit Tracks: a new first-class sequencer device.** Author
+  drum grooves and melodic patterns by conversation and play them on the
+  hardware. `apply_pattern` builds patterns two ways: live-streamed over MIDI
+  clock, or authored into a `.ncs` project uploaded to a slot. Drum tracks,
+  note tracks (synth 1/2 and the two MIDI-out tracks: chords, basslines,
+  leads, routed by channel), per-step sample flips, micro-step buzz rolls, and
+  scale-aware authoring are all supported. `import_songsterr`, drum-tab text,
+  and standard MIDI files import a real song's groove. WAV samples upload to the
+  pad pool (`upload_sample`), whole `.ncs` projects transfer verbatim
+  (`upload_project`), and the drum-track→sample binding is decoded so a groove
+  can target specific kit voices. Destructive slot transfers read-before-write
+  and back up the existing slot first. On the synth side, `save_preset` stores
+  an edited synth patch to a Flash slot (hardware-confirmed: the patch survives
+  a device restart) and `get_preset("patch:N")` reads a stored synth patch back
+  from the bank, so a patch can be audited, saved, and re-read by conversation.
+  Hardware-confirmed end-to-end (owner tests): `live_stream` melodies and chords
+  play on Synth 1/2; an `ncs_upload` authoring of drums plus a note track
+  round-trips onto a stored project that loads and plays on the device clock
+  (octave bass on Synth 1 + kick on Drum 1); sample upload played back audibly;
+  note-track arps drove a Hydrasynth over MIDI out; `get_param` reads a patch;
+  and the synth-patch save (survives a power-cycle) plus stored-patch read-back
+  round-trip was confirmed on the device (2026-07-03). Drum tracks
+  cannot record external MIDI, so `ncs_upload` (not live capture) is the path
+  that persists a drum beat onto the device.
+
+- **Roland SPD-SX: a new sample-pad device on a hybrid transport.** In WAVE
+  MGR mode the SPD-SX mounts as a USB drive whose kits and wave pool are files;
+  in AUDIO/MIDI mode it is a MIDI device. It registers as a single
+  **hybrid-transport descriptor**: the dispatcher resolves the live USB mode per
+  call and routes accordingly, with no device-specific tools. In storage mode
+  `scan_locations` lists kits, `get_preset(location)` reads a kit's pad map,
+  `list_samples` reads the wave pool, `export_preset(location)` backs up a kit,
+  `upload_sample` appends a wave (append-only, with duplicate detection and
+  on-import normalization to the device's canonical PCM), and the new sampler
+  verb **`author_kit`** writes the pad map (per-pad wave, MIDI note, voice
+  poly/mono, mute group, loop mode, and level), with a non-destructive
+  per-pad-note edit mode too. In MIDI mode `switch_preset` recalls a kit and
+  `apply_pattern` triggers pads. The storage codec is byte-identical to the
+  device's own files, and the write path through the server is hardware-confirmed
+  end-to-end: server-authored kits (including looping pads) load and play on the
+  unit after a power-cycle.
+
+- **Circuit → SPD-SX (and other gear) MIDI sequencing.** `apply_pattern` gained
+  `external_targets`: a Circuit pattern can drive an outboard device on one of
+  the Circuit's MIDI-out tracks (e.g. route a programmed drum groove out to the
+  SPD-SX's pads) while optionally keeping the internal voices too. An optional
+  `MCP_RIG_LINKS` map lets you name the targets once and then just say "drums to
+  the SPD-SX."
+
+- **Boss VE-500 Vocal Performer: new device.** A vocal multi-effect (harmony,
+  pitch correct, enhancer, FX, reverb). The full wire protocol was decoded
+  byte-exact from the manufacturer's own editor source, so the catalog (873
+  parameters across 41 blocks) needed zero captures and zero guessing.
+  `set_param`/`set_params`, `get_param`/`get_params` (Roland RQ1→DT1 read-back),
+  `set_bypass`, and `switch_preset` are hardware-confirmed on the unit
+  (2026-06-28), so the device ships **verified**. `apply_preset` (whole-patch
+  build, with enum/type values resolved by their editor panel labels) is wired;
+  `save_preset` (store the active edit buffer to a user memory) is
+  hardware-confirmed (2026-07-08): a bare store command does not persist, so
+  `save_preset` first sends the editor's Communication Mode ON handshake that
+  gates the device's command register, then the store, then waits for the
+  store-ack echo the unit sends back; a set + save + reload round-trip persisted
+  on the unit. One decoded hardware quirk: the unit
+  ignores a memory recall when a Bank Select precedes the Program Change, so
+  `switch_preset` sends a bare Program Change (needs PC IN = ON, RX CH =
+  OMNI/Ch.1); factory presets P01-P50 stay gated (their Bank Select mapping is
+  undecoded). Whole-patch reads remain deferred.
+
+- **Boss RC-505mk2 Loop Station: a new looper on a hybrid transport.** The
+  RC-505mk2 is both a live USB-MIDI device and, in storage mode, a USB drive
+  whose memories are `.RC0` files. It registers as one **hybrid-transport
+  descriptor**: the dispatcher resolves the live surface per call. On the MIDI
+  surface, `switch_preset` recalls a memory (memory M to Program Change M-1 on
+  the RX CTL channel, device-confirmed), looper and track functions are driven
+  by `send_cc` through the memory's own ASSIGN table, and it slaves or masters
+  the MIDI clock for tempo. On the storage surface, `scan_locations` lists
+  memory names, `get_preset(location)` decodes a memory's full ASSIGN
+  control-routing table (each slot read as `source -> target`, e.g.
+  `CC#81 -> TRK2 PLY/STP`), and `export_preset(location)` backs up the live
+  `.RC0`. Authoring a memory reuses the existing `apply_preset` verb rather than
+  a new tool: `apply_preset(target_location = memory, save_authorized)` writes a
+  memory's name and ASSIGN table (the exact inverse of the `get_preset` shape),
+  and `save_preset(location, name)` renames one. Writes honor the device's own
+  A/B `<count>` double-buffer save (the edit lands in the inactive slot with a
+  raised count so it goes live on storage disconnect, no power cycle) and back
+  up the overwritten copy first; without `save_authorized` an author is a
+  no-write preview. The `.RC0` codec and the RC-505mk2 ASSIGN dictionary are
+  byte-exact against real device files, and the whole path is hardware-confirmed
+  end-to-end: a scene ping-pong authored into a memory (an external CC starting
+  one track and stopping another) triggered correctly over MIDI on the unit,
+  confirmed by ear and front panel. No parameter read over MIDI (the unit never
+  echoes state), so live control is send-and-confirm-by-ear.
+
+- **`describe_rig`: a whole-rig overview.** A read-only tool that lists every
+  registered device with best-effort connectivity, transport, support tier, and
+  pattern-target capability, plus a one-line summary: the "see the whole stage"
+  read an agent needs before planning a multi-device setup. Opens no MIDI
+  handles. Hardware-validated via Claude Desktop (10 devices listed; the SPD-SX
+  resolved as a mounted drive).
+
+- **macOS one-click install (`.mcpb`).** A Claude Desktop Extension installs the
+  server from inside Claude Desktop with no Terminal and no config editing:
+  the front door for the accessibility use case (driving gear entirely by voice
+  / screen reader). The `.mcpb` carries the prebuilt MIDI engine for its build
+  platform; `npm run setup-mac` remains the Terminal path. The Windows release
+  ZIP is unchanged.
+
+- **Accessibility: spoken-first output.** The server now instructs the agent to
+  present results so they read cleanly aloud: signal chains as a linear path
+  rather than an ASCII grid, each change confirmed in one short sentence with
+  the device-confirmed value, and uncertainty stated in words. The
+  conversational surface is the accessibility win; this makes the replies match.
+
+- **Stored-preset reads across the Fractal family.** `get_preset` now reads a
+  stored preset straight from device flash (not just the active buffer) on more
+  of the family, each in a single round-trip: the **AM4** returns a stored
+  location's name, scene names, and CRC-validated structure (and decodes the
+  amp block's parameter values off the stored body); the **VP4** returns a
+  stored preset's name, four scene names, current scene, and 4-slot chain; the
+  **gen-1 Axe-Fx Standard/Ultra** returns the spec-pinned patch-dump subset
+  (name + effect-grid layout + source flag, with the undetermined param region
+  surfaced honestly as a byte count). On the **modern Fractal family** (Axe-Fx
+  III / FM3 / FM9), `get_preset` on the active buffer now also surfaces the
+  active scene and, community-beta (the meter decode is cross-validated against a
+  behavioral oracle, not yet hardware-confirmed), live CPU and output meters
+  alongside the grid.
+
+- **Song-to-rig arrangements.** `apply_pattern` can realize a whole song's
+  drum arrangement in one call: it folds a General-MIDI drum track (notes
+  35-81) onto the target's pads by role, reports how the arrangement was
+  compressed to fit, and supports `dry_run` to preview the mapping before any
+  wire traffic. The Songsterr / drum-tab / MIDI-file import path feeds it.
+
+### Changed
+
+- **Native MIDI engine swapped to `@julusian/midi`.** The USB-MIDI binding is
+  now an API-compatible fork that ships N-API prebuilt binaries for every target
+  platform (macOS arm64/x64, Windows x64/arm64/ia32, Linux), so a normal install
+  needs no C++ toolchain on any OS: the change that unblocks the no-Xcode macOS
+  install and the `.mcpb` extension. A latent bug surfaced and fixed in the
+  swap: the new binding resets its receive-filter on `openPort`, which had to be
+  re-applied *after* opening or all SysEx reads on Windows would silently drop.
+
+- **Transport abstraction generalized.** `DeviceDescriptor` now carries a
+  `transport` kind (`midi` / `serial` / `storage` / `hybrid`, default `midi`),
+  and the dispatch context resolves the right endpoint per call. This is
+  additive (the existing ~156 MIDI call sites are untouched) and is what lets
+  the SPD-SX be one hybrid descriptor instead of a bespoke tool family, and the
+  first step toward the connection arbiter that multi-device orchestration
+  needs.
+
+- **Modern Fractal family (gen-3) read rosters completed and hardened.** The
+  shared amp / drive / reverb read rosters across the Axe-Fx III / FM3 / FM9 are
+  filled out (union of the per-device editor data), the compressor and wah type
+  rosters are gap-filled from Fractal's wiki (agreement-verified against the
+  device data), the FM3 now sends a cell-select before a block insert (matching
+  the editor's own sequence), and the inbound reply reject-predicate is hardened
+  (length + echoed-function guard) so a malformed frame can't be mistaken for a
+  valid read.
+
+- **Modern Fractal family (gen-3) enum/type selector routing corrected
+  (wrong-ordinal write fix).** Type, model, and count selectors on the Axe-Fx
+  III / FM3 / FM9 were being sent as continuous floats, so the device stored the
+  wrong ordinal for a "set this block to that model" write. They now route as
+  discrete ordinals: roughly 92 on the III and a further 34 on the FM9 (on top of
+  the ~351 FM9 selectors already corrected in 0.5.1; each gated on that device's own
+  SET-then-GET round-trip as the oracle), and 473 on the FM3 (via a
+  family-join against the FM9/III evidence, community-beta pending an FM3 owner
+  round-trip). The wire builder is byte-identical; only the display-to-wire
+  kind-classification at the catalog boundary changed, so the III byte-identity
+  anchor is intact. In the same pass the FM9's factory cabinet rosters (2,237
+  names across FACTORY 1/2 + LEGACY) were registered as a bank-conditioned
+  resolver, the FM9's scene / tempo / status reads were unblocked (they were
+  III-model-locked and threw on the FM9), the FM3 grid read was fixed (the parser
+  had hardcoded 14 columns and rejected every real FM3 frame), and gen-3
+  `set_block` now honestly reports `unconfirmed` when the device sends no
+  confirming echo instead of a false `acked`.
+
+- **Display-first parity gate extended to the whole Fractal family.** The
+  round-trip gate that guarantees no internal index or wire byte leaks through a
+  tool boundary (previously enforced device-by-device) now runs across AM4 /
+  Axe-Fx II / gen-3 (III/FM3/FM9/VP4) / gen-1 with a per-device parity-pending
+  allowlist whose ceilings freeze the raw-wire debt, so a new uncalibrated
+  param fails the gate. It caught and fixed two live violations.
+
+- **Grid terminology aligned to Fractal's own vocabulary.** Grid-device output
+  (`chain_integrity`, `describe_device`, tool guidance) now counts content
+  **blocks** and reports connecting **shunts** separately, matching the
+  Axe-Fx III manual's usage, instead of folding shunts into a raw placed-cell
+  count.
+
+### Fixed
+
+- **Circuit Tracks `.ncs` transfers no longer reboot the device on a stale
+  connection handle.** Transfers now reconnect before sending and abort cleanly
+  per-send if the handle has gone dead, instead of streaming bytes into a
+  half-open port (which power-cycled the device). Validated with zero reboots
+  across repeated transfers.
+
+- **Circuit Tracks sample upload fails loudly instead of silently as "0/64".**
+  An upload into an uninitialized pack used to report a silent partial failure;
+  the upload now gates on the `SET_FILENAME` acknowledgement and fails loudly and
+  clearly on a genuinely uninitialized pack. Hardware-confirmed (a music-box
+  sample registered to a slot and played back). (An earlier active-pack-index
+  theory was investigated and reverted after it was falsified; the upload writes
+  the pack-0 slot.)
+
+- **Axe-Fx II bug sweep (hardware-verified).** A pass over reported Axe-Fx II
+  behaviors, each fixed and confirmed on the device: `find_compatible_types` now
+  returns each block's own type roster instead of a false "no type enum" answer,
+  and narrows by the placed model on the two blocks that carry a primary-type
+  gate (compressor, multidelay); the ambiguous-enum count is reported correctly;
+  fresh-build grid-clearing (which already cleared stale blocks) gained a
+  regression guard so it cannot silently regress; and `chain_integrity`
+  reports the content-block count rather than a shunt-inclusive placed-cell
+  count. The reported "blocks read as 12" was a reporting miscount, not a
+  clear-logic bug.
+
+- **AM4 bug-sweep fixes (hardware-verified).** A companion pass over reported
+  AM4 behaviors: `get_preset` now returns all four block channels (A/B/C/D)
+  instead of one mislabeled active channel and reports the current location plus
+  a dirty flag; the MIDI-config registers (e.g. scene CC) decode as raw ints with
+  the "None" sentinel handled; a stored-but-inaudible tempo-lock advisory and a
+  pseudo-block warning exemption were added; and a recipe compressor-type fix
+  landed. A later pass added the channel default (writes land on channel A/X for
+  flat params) and per-scene channel completion on both the AM4 and the Axe-Fx
+  II, plus the `find_compatible_types` fix shared with the II. An earlier
+  multi-agent review of the sweep also corrected an Axe-Fx II classifier that had
+  been silently dropping phantom-param and routing-mask warnings for every block.
+
+- **`translate_preset` gained a validated AM4↔II enum-pair audit generator.**
+  Cross-device enum translations are now backed by a generated, checked mapping
+  audit instead of ad-hoc pairs, so an unmapped enum is surfaced rather than
+  silently passed through.
+
 ## [0.5.1]
 
 A community contributor ran a full SET→GET roundtrip across the entire FM9 and
@@ -41,7 +294,7 @@ confirmed end-to-end.
 - **Axe-Fx III and FM9 reads + continuous writes are now community
   hardware-confirmed.** A 2026-06-17 owner test ran `get_param` + continuous
   `set_param` on both devices (FM9 fw 11.0; III fw 25.04) with device echoes and
-  read-backs matching the front panel — the first on-device confirmation of the
+  read-backs matching the front panel: the first on-device confirmation of the
   III, the gen-3 byte-identity anchor. Status language updated across the device
   configs, server instructions, and docs. Still community-beta on both: discrete
   set-by-name, `save_preset`, `set_block`, and the live grid read.
@@ -50,12 +303,12 @@ confirmed end-to-end.
   catalog-wide roundtrip and the read/continuous-write confirmations are marked
   done (no longer asked for). The top remaining gen-3 ask is now a
   device-synced editor cache for the III / FM3 / VP4 (the copies on hand are
-  unsynced stubs with no enum vocabulary) — the same offline, no-tools file that
+  unsynced stubs with no enum vocabulary): the same offline, no-tools file that
   unlocked the FM9 enum routing above.
 
 ## [0.5.0]
 
-Two gen-3 read unlocks adopted from — and cross-validated against — the
+Two gen-3 read unlocks adopted from (and cross-validated against) the
 MIT-licensed `ai-tone-assistant` community project, plus the first independent
 FM9 hardware confirmation of this server's own read + continuous-write path.
 
@@ -76,7 +329,7 @@ FM9 hardware confirmation of this server's own read + continuous-write path.
   and the `apply_preset` type-knob pre-flight now answer for gen-3 amps (they
   previously returned `applicability_known: false`): an agent is told which amp
   models actually expose a given knob, and warned before writing a knob that is
-  inert on the selected model — the same guard the AM4 already had. Backed by a
+  inert on the selected model: the same guard the AM4 already had. Backed by a
   331-model valid-parameter table validated against our own amp roster and
   parameter catalog.
 
@@ -84,8 +337,8 @@ FM9 hardware confirmation of this server's own read + continuous-write path.
 
 - **FM9 read + continuous-write path is now community hardware-confirmed.** An
   FM9 owner test (firmware 11.0, macOS) round-tripped `get_param` and continuous
-  `set_param` on the device through this server — acknowledged, with values
-  confirmed on the FM9-Editor display — plus channel-specific reads and alias
+  `set_param` on the device through this server (acknowledged, with values
+  confirmed on the FM9-Editor display), plus channel-specific reads and alias
   resolution. The support-status language across the FM9 descriptor, agent
   guidance, and docs reflects this. Discrete set-by-name, `save_preset`,
   `set_block`, and the new live grid read remain community-beta on the FM9.
@@ -94,7 +347,7 @@ FM9 hardware confirmation of this server's own read + continuous-write path.
 
 The FM3's first hardware field test, the fixes and protocol findings it
 produced, and a codebase-wide reorganization of the Fractal packages by codec
-generation — including one breaking change to the `fractal-midi` npm package's
+generation, including one breaking change to the `fractal-midi` npm package's
 TypeScript subpaths (JSON catalog consumers are unaffected).
 
 ### Added
@@ -126,7 +379,7 @@ TypeScript subpaths (JSON catalog consumers are unaffected).
   Resonator that the uniform model mis-addressed.
 - **Probe diagnostics hardened from field evidence:** the gen-3 probes now
   resolve every paramId from the device-true catalog (paramIds differ across
-  the family — hardcoded FM9-shaped ids mis-addressed the FM3 run), gate
+  the family; hardcoded FM9-shaped ids mis-addressed the FM3 run), gate
   block-placement checks on the status dump instead of poll responses (polls
   answer even for unplaced blocks), and restore via the SysEx preset switch.
 
@@ -137,7 +390,7 @@ TypeScript subpaths (JSON catalog consumers are unaffected).
   `fractal-midi/gen1`; `fractal-midi/axe-fx-ii` → `fractal-midi/gen2/axe-fx-ii`;
   `fractal-midi/axe-fx-iii`, `/fm3`, `/fm9`, `/vp4` →
   `fractal-midi/gen3/<device>`. `fractal-midi/am4` and `fractal-midi/shared`
-  are unchanged, and **`catalog/*.json` paths are unchanged** — JSON catalog
+  are unchanged, and **`catalog/*.json` paths are unchanged**: JSON catalog
   consumers are unaffected. Migration table in the package README.
 - **Fractal MCP packages renamed by codec generation** (internal to the
   server): `fractal-gen1` (Axe-Fx Standard/Ultra), `fractal-gen2` (Axe-Fx II;
@@ -162,13 +415,13 @@ TypeScript subpaths (JSON catalog consumers are unaffected).
 ## [0.3.1]
 
 Two additions aimed at the community: a language-agnostic JSON export of every
-device's parameter dictionary, and first support for connecting the FM3 — the
+device's parameter dictionary, and first support for connecting the FM3, the
 one Fractal device that is not a USB MIDI device on any OS.
 
 ### Added
 
 - **JSON parameter catalog (`fractal-midi/catalog/`).** Every device's full
-  dictionary — params, wire ids, blocks, enum rosters, ranges — exported as one
+  dictionary (params, wire ids, blocks, enum rosters, ranges) exported as one
   generated JSON file per device, shipped in the `fractal-midi` npm package and
   the repo. Built for non-TypeScript consumers (Python tooling, librarians):
   pin a version instead of vendoring source files, and every calibration fix
@@ -179,7 +432,7 @@ one Fractal device that is not a USB MIDI device on any OS.
   device, not a MIDI device ("FM3 Communications Port" on Windows,
   `/dev/cu.usbmodem…` on macOS). The server now auto-discovers that serial port
   (falling back from MIDI-port discovery) and speaks raw MIDI over it, so an
-  FM3 works over plain USB on Windows and macOS. The serial port is exclusive —
+  FM3 works over plain USB on Windows and macOS. The serial port is exclusive:
   fully quit FM3-Edit / Fractal-Bot while connected. If auto-detection misses,
   set `MCP_FM3_SERIAL_PATH`. Hardware reports welcome: the wire paths are
   collaborator-confirmed, this server's serial leg is the part awaiting a
@@ -190,13 +443,13 @@ one Fractal device that is not a USB MIDI device on any OS.
 ### Changed
 
 - Source installs now require Node.js 20+ (the serial transport's native
-  dependency sets that floor). Release-ZIP users are unaffected — the bundled
+  dependency sets that floor). Release-ZIP users are unaffected: the bundled
   runtime already satisfies it.
 - Mac and FM3 documentation corrected against Fractal's own USB documentation:
   the Axe-Fx III, FM9, VP4, and AM4 are class-compliant USB MIDI devices on
   macOS (no driver, no caveats); only the FM3 is serial. MIDI Monitor cannot
   capture FM3-Edit traffic, and the metadata harvest script cannot reach an
-  FM3 — both guides now say so instead of implying otherwise.
+  FM3; both guides now say so instead of implying otherwise.
 
 ## [0.3.0]
 
@@ -247,7 +500,7 @@ FM3 / FM9 gain new editing moves.
 - **`clean_forward` scene-leveling recipe.** Cleans deliberately hot (clean +6 dB,
   ambient clean +5, rhythm unity, solo +2): a clean tone can be eased off with the
   volume knob and pick dynamics, while a saturated tone plays in a narrow loudness
-  band with input maxed — so hot cleans are recoverable in a way hot leads are
+  band with input maxed, so hot cleans are recoverable in a way hot leads are
   not. Ear-tested on stage-style material.
 - **AM4 stored-location export.** `export_preset` with a `location` now works on
   the AM4 (locations A01..Z04): back up any stored preset directly from flash
@@ -289,7 +542,7 @@ FM3 / FM9 gain new editing moves.
 - **Axe-Fx II Vol/Pan volume reads back in knob units** (0..10) instead of a raw
   internal integer.
 - **MIDI port failures are loud and self-diagnosing.** Windows can refuse to open
-  a MIDI port (it is exclusive — another program or a leftover server process can
+  a MIDI port (it is exclusive: another program or a leftover server process can
   hold it) and the underlying library reported nothing, so writes silently went
   nowhere while reads timed out and reconnect claimed success. The server now
   verifies every port actually opened and, on failure, names the likely holder
@@ -589,5 +842,11 @@ generic MIDI for any USB device.
 - Apache-2.0, with the patent grant, from day one. Trademark statement in
   `NOTICE`. Security policy in `SECURITY.md`.
 
+[0.6.0]: https://github.com/TheAndrewStaker/mcp-midi-control/releases/tag/v0.6.0
+[0.5.1]: https://github.com/TheAndrewStaker/mcp-midi-control/releases/tag/v0.5.1
+[0.5.0]: https://github.com/TheAndrewStaker/mcp-midi-control/releases/tag/v0.5.0
+[0.4.0]: https://github.com/TheAndrewStaker/mcp-midi-control/releases/tag/v0.4.0
+[0.3.1]: https://github.com/TheAndrewStaker/mcp-midi-control/releases/tag/v0.3.1
+[0.3.0]: https://github.com/TheAndrewStaker/mcp-midi-control/releases/tag/v0.3.0
 [0.2.0]: https://github.com/TheAndrewStaker/mcp-midi-control/releases/tag/v0.2.0
 [0.1.0]: https://github.com/TheAndrewStaker/mcp-midi-control/releases

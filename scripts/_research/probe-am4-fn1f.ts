@@ -59,7 +59,7 @@
  * - If a different envelope shape returned → decode + register the
  *   new primitive in the cookbook + ship a codec helper.
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 
 const AM4_MODEL = 0x15;

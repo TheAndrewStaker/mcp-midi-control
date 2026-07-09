@@ -40,7 +40,9 @@ import { registerDiscoveryTools } from './tools/discovery.js';
 import { registerLayoutTools } from './tools/layout.js';
 import { registerNavigationTools } from './tools/navigation.js';
 import { registerParamTools } from './tools/params.js';
+import { registerPatternTools } from './tools/patterns.js';
 import { registerPresetTools } from './tools/preset.js';
+import { registerUploadTools } from './tools/uploads.js';
 
 export function registerUnifiedTools(server: McpServer): void {
   registerDiscoveryTools(server);
@@ -48,4 +50,6 @@ export function registerUnifiedTools(server: McpServer): void {
   registerLayoutTools(server);
   registerNavigationTools(server);
   registerPresetTools(server);
+  registerPatternTools(server);
+  registerUploadTools(server);
 }

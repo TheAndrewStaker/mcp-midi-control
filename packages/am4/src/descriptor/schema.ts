@@ -31,6 +31,8 @@ import {
   roundDisplayValue,
   findEnumCandidates,
   resolveEnumValue,
+  isRawIntRegister,
+  encodeRawIntRegister,
   type Param,
   type ParamKey,
 } from 'fractal-midi/am4';
@@ -78,6 +80,11 @@ export function makeEncode(param: Param): ParamSchema['encode'] {
         throw new Error(`"${value}" is not a valid ${param.block}.${param.name} value. First few valid names: ${samples}… (call list_enum_values for the full list).`);
       }
       return resolved;
+    }
+    // MIDI-config registers take an integer (or 'None' on CC assignments).
+    // encodeRawIntRegister owns the range check + None sentinel (GAP-2).
+    if (isRawIntRegister(param)) {
+      return encodeRawIntRegister(param, value);
     }
     const num = typeof value === 'number' ? value : Number(value);
     if (!Number.isFinite(num)) {

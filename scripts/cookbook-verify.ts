@@ -10,6 +10,27 @@
  *      - Required frontmatter fields present (name, status, golden, etc.)
  *      - `name:` matches the filename slug.
  *      - `status:` is one of the legal values from cookbook INDEX.md.
+ *      - `golden:` RESOLVES: a `cookbook-verify.ts#case-<slug>` reference
+ *        must name a real FUNCTIONAL_CASES key; a script/test path must
+ *        exist on disk (repo root or packages/fractal-midi/); the honest
+ *        `STUB (...)` form is always legal. Phantom goldens fail the build.
+ *      - INDEX <-> disk drift: every main-directory entry is linked from
+ *        INDEX.md, every _negative entry from _negative/INDEX.md, and every
+ *        cookbook .md link in either index resolves to a file on disk.
+ *      - Every `_negative/` entry carries a findability heading
+ *        (Symptoms / grep terms) so the agent about to re-attempt the dead
+ *        end can find the rule-out by grep.
+ *      - Every `_negative/` entry carries a `retest_when:` frontmatter field:
+ *        either a list of re-test triggers (primitive slugs and/or free-text
+ *        conditions) or the literal scalar form `never (<reason>)`. Missing
+ *        field = FAIL (same class as the findability heading). A resolver
+ *        WARNS when a listed trigger slug now exists in the live entry set
+ *        with status matched / matched-singleton ("re-adjudicate or update
+ *        retest_when"); under `--strict` that resolver hit FAILS. Free-text
+ *        conditions (anything that isn't a kebab-case slug of an existing
+ *        entry) are allowed and simply skipped by the resolver, as are
+ *        slug-shaped names of primitives that don't exist yet (they're the
+ *        pending trigger). `--strict` changes nothing else.
  *      - `consumed_in:` paths exist on disk (resolved against the consumer
  *        repo, the fractal-midi sibling repo, and the parent of both).
  *      - Status invariants:
@@ -38,6 +59,9 @@
  *
  * Build-break policy: any structural gate fail or any functional case fail
  * exits with code 1. Wired into `npm run preflight` after `verify-msg`.
+ * Non-breaking: a synthesis-cadence check WARNS (does not fail) when the
+ * newest main-cookbook entry is > 21 days newer than the newest artifact
+ * in docs/research/synthesis-log/ (cadence rot would otherwise be invisible).
  *
  * Adding a new cookbook entry that needs a fixture: add a `case-<slug>`
  * function below + extend FUNCTIONAL_CASES. Entries without an inline case
@@ -56,6 +80,9 @@ const REPO_PARENT = path.resolve(MCP_ROOT, '..');
 const FRACTAL_MIDI_ROOT = path.join(MCP_ROOT, 'packages', 'fractal-midi');
 const COOKBOOK_ROOT = path.join(FRACTAL_MIDI_ROOT, 'docs', 'research', 'cookbook');
 const IS_CI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
+// --strict (the release gate): escalates the retest_when resolver's
+// "trigger primitive now exists" warnings to failures. Nothing else changes.
+const STRICT = process.argv.includes('--strict');
 
 const LEGAL_STATUSES = new Set([
   'matched',
@@ -407,6 +434,273 @@ function validateStructural(
       });
     }
   }
+  validateGoldenAnchor(entry, violations);
+  validateNegativeFindability(entry, violations);
+}
+
+/**
+ * Golden-anchor resolution. Three legal shapes for `golden:`:
+ *   1. `STUB (...)` — the honest structural-only marker (name the best
+ *      de-facto coverage pointer, or 'none').
+ *   2. A `case-<slug>` reference into THIS script — the slug must be a key
+ *      in FUNCTIONAL_CASES. Both the canonical
+ *      `scripts/cookbook-verify.ts#case-<slug>` form and the prose
+ *      `case-<slug> in scripts/cookbook-verify.ts (...)` form are accepted.
+ *   3. A path to another script/test file that de-facto covers the
+ *      primitive — every path-like token must exist on disk (resolved
+ *      against the repo root and packages/fractal-midi/).
+ * Anything else fails: a golden that does not resolve is a coverage claim
+ * that nothing enforces (39 entries carried phantom case references before
+ * this gate landed).
+ */
+function validateGoldenAnchor(entry: CookbookEntry, violations: Violation[]): void {
+  const golden = typeof entry.frontmatter.golden === 'string' ? entry.frontmatter.golden : null;
+  if (golden === null) return; // missing key already reported by REQUIRED_FRONTMATTER_KEYS
+  if (/^STUB\b/.test(golden)) return;
+  if (golden.includes('cookbook-verify.ts')) {
+    const caseRefs = [...golden.matchAll(/case-([A-Za-z0-9][A-Za-z0-9-]*)/g)].map((m) => m[1]);
+    if (caseRefs.length === 0) {
+      violations.push({
+        entry: entry.slug,
+        severity: 'fail',
+        message:
+          `golden names cookbook-verify.ts but carries no 'case-<slug>' reference: '${golden}'. ` +
+          `Point at a FUNCTIONAL_CASES case, a real de-facto golden script, or use golden: STUB (...).`,
+      });
+      return;
+    }
+    for (const ref of caseRefs) {
+      if (!(ref in FUNCTIONAL_CASES)) {
+        violations.push({
+          entry: entry.slug,
+          severity: 'fail',
+          message:
+            `golden declares 'cookbook-verify.ts#case-${ref}' but no such case exists in FUNCTIONAL_CASES. ` +
+            `Fix options: (a) add the functional case + FUNCTIONAL_CASES entry, ` +
+            `(b) repoint golden: at the real de-facto golden (e.g. scripts/verify-msg.ts), or ` +
+            `(c) use the honest form: golden: STUB (structural-only; de-facto coverage: <pointer or 'none'>).`,
+        });
+      }
+    }
+    return;
+  }
+  // Path form: every path-like token in the value must exist on disk.
+  const pathTokens = golden.match(/[A-Za-z0-9_@][A-Za-z0-9_@./\\-]*\.(?:ts|js|mjs|py|java|md)\b/g) ?? [];
+  if (pathTokens.length === 0) {
+    violations.push({
+      entry: entry.slug,
+      severity: 'fail',
+      message:
+        `golden is neither STUB (...), a cookbook-verify case reference, nor a script path: '${golden}'`,
+    });
+    return;
+  }
+  for (const tok of pathTokens) {
+    const candidates = [path.resolve(MCP_ROOT, tok), path.resolve(FRACTAL_MIDI_ROOT, tok)];
+    if (!candidates.some((c) => existsSync(c))) {
+      violations.push({
+        entry: entry.slug,
+        severity: 'fail',
+        message:
+          `golden references '${tok}' which does not exist (tried repo root and packages/fractal-midi/). ` +
+          `Repoint at the real file or use golden: STUB (structural-only; de-facto coverage: <pointer or 'none'>).`,
+      });
+    }
+  }
+}
+
+/**
+ * Every `_negative/` entry must be FINDABLE by the agent about to
+ * re-attempt the dead end: a heading naming the symptoms / grep terms is
+ * what turns a negative finding from an archive note into a tripwire.
+ * Accepted headings match /symptom|grep terms|search terms|when you'd reach/i
+ * (the older "Search terms to avoid re-attempting" heading qualifies).
+ */
+function validateNegativeFindability(entry: CookbookEntry, violations: Violation[]): void {
+  if (entry.dirCategory !== '_negative') return;
+  const headingRe = /symptom|grep terms|search terms|when you['’]d reach/i;
+  const hasFindableHeading = entry.body
+    .split(/\r?\n/)
+    .some((line) => /^#{1,6}\s/.test(line) && headingRe.test(line));
+  if (!hasFindableHeading) {
+    violations.push({
+      entry: entry.slug,
+      severity: 'fail',
+      message:
+        `_negative entry lacks a findability heading (e.g. '## Symptoms / grep terms'). ` +
+        `Negative findings must be findable by the agent about to re-attempt the dead end: ` +
+        `add a heading matching /symptom|grep terms|search terms|when you'd reach/i with ` +
+        `2-4 grep phrases a future agent would search before re-attempting.`,
+    });
+  }
+}
+
+/**
+ * `retest_when:` gate for `_negative/` entries. A negative finding is a
+ * standing verdict; this field names what would make the verdict worth
+ * re-adjudicating. Two legal shapes:
+ *   1. Scalar `never (<reason>)` — the verdict is structural / measured /
+ *      already re-adjudicated and no future primitive re-opens it.
+ *   2. A list of triggers. Each item is either a cookbook primitive slug
+ *      (kebab-case) or a free-text condition (e.g. 'a VP4-Edit lldb capture
+ *      method'). The resolver checks only slug-shaped items that exist in
+ *      the live entry set: when such a slug has status matched /
+ *      matched-singleton, the trigger has FIRED — warn (fail under
+ *      --strict) so the negative gets re-adjudicated or its retest_when
+ *      updated. Free-text conditions and not-yet-existing slugs are
+ *      skipped by design (they are the pending trigger).
+ */
+function validateNegativeRetestWhen(
+  entry: CookbookEntry,
+  violations: Violation[],
+  statusBySlug: Map<string, string>,
+): void {
+  if (entry.dirCategory !== '_negative') return;
+  const rw = entry.frontmatter.retest_when;
+  if (rw === undefined) {
+    violations.push({
+      entry: entry.slug,
+      severity: 'fail',
+      message:
+        `_negative entry lacks required frontmatter 'retest_when:'. Provide either a list of ` +
+        `re-test triggers (primitive slugs / free-text conditions) or the literal form ` +
+        `'never (<reason>)'. A negative without a named re-test condition silently rots.`,
+    });
+    return;
+  }
+  if (typeof rw === 'string') {
+    if (!/^never\s*\(.+\)$/.test(rw.trim())) {
+      violations.push({
+        entry: entry.slug,
+        severity: 'fail',
+        message:
+          `retest_when scalar must be the literal form 'never (<reason>)'; got '${rw}'. ` +
+          `For actual triggers, use the YAML list form (one slug or free-text condition per item).`,
+      });
+    }
+    return;
+  }
+  if (rw.length === 0) {
+    violations.push({
+      entry: entry.slug,
+      severity: 'fail',
+      message: `retest_when list is empty. Name at least one trigger, or use 'never (<reason>)'.`,
+    });
+    return;
+  }
+  for (const item of rw) {
+    const isSlugShaped = /^[a-z0-9][a-z0-9-]*$/.test(item);
+    if (!isSlugShaped) continue; // free-text condition: resolver skips by design
+    const status = statusBySlug.get(item);
+    if (status === undefined) continue; // pending trigger: primitive doesn't exist yet
+    if (status === 'matched' || status === 'matched-singleton') {
+      violations.push({
+        entry: entry.slug,
+        severity: STRICT ? 'fail' : 'warn',
+        message:
+          `negative '${entry.slug}' names primitive '${item}' as its re-test trigger and ` +
+          `'${item}' now exists with status '${status}' — re-adjudicate the negative against ` +
+          `the new primitive, or update retest_when (e.g. to 'never (re-adjudicated <date>; <outcome>)').`,
+      });
+    }
+  }
+}
+
+/**
+ * INDEX <-> disk drift gate. Two directions, two indexes:
+ *   - every main-directory entry slug must appear as a link in INDEX.md,
+ *     and every _negative entry slug as a link in _negative/INDEX.md
+ *     (an unindexed entry is invisible to the "walk the table" workflow);
+ *   - every cookbook .md link in either index must resolve to a file on
+ *     disk (a dead row sends readers chasing ghosts).
+ * _scratch/ and _partial/ entries are exempt (in-flight by definition).
+ */
+function validateIndexDrift(entries: CookbookEntry[], violations: Violation[]): void {
+  const indexes: { indexPath: string; category: CookbookEntry['dirCategory']; label: string }[] = [
+    { indexPath: path.join(COOKBOOK_ROOT, 'INDEX.md'), category: 'main', label: 'INDEX.md' },
+    { indexPath: path.join(COOKBOOK_ROOT, '_negative', 'INDEX.md'), category: '_negative', label: '_negative/INDEX.md' },
+  ];
+  for (const { indexPath, category, label } of indexes) {
+    if (!existsSync(indexPath)) {
+      violations.push({
+        entry: label,
+        severity: 'fail',
+        message: `cookbook index file missing on disk: ${indexPath}`,
+      });
+      continue;
+    }
+    const src = readFileSync(indexPath, 'utf8');
+    const linkTargets = [...src.matchAll(/\]\(([^)\s]+\.md)\)/g)].map((m) => m[1]);
+    // Direction 1: every entry in this category is linked from its index.
+    for (const e of entries) {
+      if (e.dirCategory !== category) continue;
+      const linked = linkTargets.some((t) => t === `${e.slug}.md` || t.endsWith(`/${e.slug}.md`));
+      if (!linked) {
+        violations.push({
+          entry: e.slug,
+          severity: 'fail',
+          message: `entry exists on disk but is not linked from ${label}. Add a table row.`,
+        });
+      }
+    }
+    // Direction 2: every .md link in the index resolves on disk.
+    for (const t of new Set(linkTargets)) {
+      if (/^https?:/.test(t)) continue;
+      const abs = path.resolve(path.dirname(indexPath), t);
+      if (!existsSync(abs)) {
+        violations.push({
+          entry: label,
+          severity: 'fail',
+          message: `index links '${t}' but no such file exists on disk (${abs}). Remove the row or restore the file.`,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Synthesis-cadence check (WARNING, never build-breaking). The cookbook
+ * discipline pairs entry growth with periodic synthesis passes in
+ * docs/research/synthesis-log/. If the newest main-cookbook entry is more
+ * than STALENESS_DAYS newer than the newest synthesis artifact, cadence
+ * rot is underway — surface it prominently so it stops being invisible.
+ */
+const SYNTHESIS_STALENESS_DAYS = 21;
+function checkSynthesisStaleness(entries: CookbookEntry[]): string | null {
+  const synthRoot = path.join(FRACTAL_MIDI_ROOT, 'docs', 'research', 'synthesis-log');
+  if (!existsSync(synthRoot)) {
+    return `synthesis-log directory missing at ${synthRoot} — cadence cannot be measured.`;
+  }
+  let newestSynthMs = 0;
+  let newestSynthName = '(none)';
+  for (const name of readdirSync(synthRoot)) {
+    const full = path.join(synthRoot, name);
+    const st = statSync(full);
+    if (st.isFile() && st.mtimeMs > newestSynthMs) {
+      newestSynthMs = st.mtimeMs;
+      newestSynthName = name;
+    }
+  }
+  let newestEntryMs = 0;
+  let newestEntrySlug = '(none)';
+  for (const e of entries) {
+    if (e.dirCategory !== 'main') continue;
+    const st = statSync(e.filePath);
+    if (st.mtimeMs > newestEntryMs) {
+      newestEntryMs = st.mtimeMs;
+      newestEntrySlug = e.slug;
+    }
+  }
+  if (newestSynthMs === 0 || newestEntryMs === 0) return null;
+  const lagDays = (newestEntryMs - newestSynthMs) / 86_400_000;
+  if (lagDays <= SYNTHESIS_STALENESS_DAYS) return null;
+  return (
+    `newest main-cookbook entry (${newestEntrySlug}, mtime ${new Date(newestEntryMs).toISOString().slice(0, 10)}) ` +
+    `is ${Math.floor(lagDays)} days newer than the newest synthesis-log artifact ` +
+    `(${newestSynthName}, mtime ${new Date(newestSynthMs).toISOString().slice(0, 10)}). ` +
+    `The cookbook has grown for > ${SYNTHESIS_STALENESS_DAYS} days without a synthesis pass — ` +
+    `schedule one (docs/research/synthesis-log/). This is a warning, not a build break.`
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -1646,12 +1940,26 @@ function main(): void {
   const verbose = process.argv.includes('--verbose');
   const entries = loadEntries();
   const slugSet = new Set(entries.map((e) => e.slug));
+  const statusBySlug = new Map(
+    entries.map((e) => [e.slug, typeof e.frontmatter.status === 'string' ? e.frontmatter.status : '']),
+  );
   const violations: Violation[] = [];
   let structuralOk = 0;
   for (const entry of entries) {
     const before = violations.length;
     validateStructural(entry, violations, slugSet);
+    validateNegativeRetestWhen(entry, violations, statusBySlug);
     if (violations.length === before) structuralOk += 1;
+  }
+  validateIndexDrift(entries, violations);
+  const stalenessWarning = checkSynthesisStaleness(entries);
+  if (stalenessWarning !== null) {
+    console.log('');
+    console.log('!'.repeat(72));
+    console.log('SYNTHESIS-CADENCE WARNING (non-blocking):');
+    console.log(`  ${stalenessWarning}`);
+    console.log('!'.repeat(72));
+    console.log('');
   }
   const functionalResults: { slug: string; ok: boolean; message: string | null }[] = [];
   for (const [slug, fn] of Object.entries(FUNCTIONAL_CASES)) {

@@ -92,3 +92,45 @@ export function wireToDisplay(wire: number, opts: DisplayToWireOptions): number 
 
     return displayMin + (wire / 65534) * (displayMax - displayMin);
 }
+
+/**
+ * Size of one wire step in display units, near a given wire position
+ * (BUG-3 quantization tolerance).
+ *
+ * The wire field is a fixed 65535-step ladder (0..65534). A param whose
+ * display range is wide relative to that ladder therefore cannot store
+ * every display integer exactly: writing `delay.time = 400` ms (range
+ * 1..8000) lands on the nearest rung and reads back ~399-400, because one
+ * rung is `(8000 - 1) / 65534 ≈ 0.12` ms. This is inherent quantization,
+ * NOT a write failure and NOT a reader bug — `get_param` correctly echoes
+ * the value the device actually stores. A ±1-ms readback delta on a
+ * fine-unit knob is expected.
+ *
+ * Verify/readback loops should treat a written↔read display difference of
+ * up to (roughly) one quantum as a match rather than asserting exact
+ * equality. Use this to size that tolerance so it scales with the param's
+ * range instead of a hardcoded absolute (a fixed 0.1 is too tight for
+ * `delay.time` yet needlessly loose for a 0..10 knob).
+ *
+ * For `linear` the quantum is constant; for `log10` it grows with the
+ * value, so this returns the LOCAL quantum at `wire` (the wider of the
+ * step below and above), which is the conservative bound to tolerate.
+ */
+export function displayQuantum(opts: DisplayToWireOptions, wire = 32767): number {
+    const clampedWire = Math.min(65534, Math.max(0, Math.round(wire)));
+    const here = wireToDisplay(clampedWire, opts);
+    const below = clampedWire > 0 ? Math.abs(here - wireToDisplay(clampedWire - 1, opts)) : 0;
+    const above = clampedWire < 65534 ? Math.abs(wireToDisplay(clampedWire + 1, opts) - here) : 0;
+    return Math.max(below, above);
+}
+
+/**
+ * True when two display values differ by no more than one wire quantum
+ * (plus a tiny float-rounding epsilon). The tolerance for a readback
+ * comparison — see {@link displayQuantum}. Sizes the quantum at the wire
+ * position of `expected` so log10 params get the right local step.
+ */
+export function withinDisplayQuantum(actual: number, expected: number, opts: DisplayToWireOptions): boolean {
+    const quantum = displayQuantum(opts, displayToWire(expected, opts));
+    return Math.abs(actual - expected) <= quantum + 1e-6;
+}

@@ -167,6 +167,200 @@ export interface DeviceCapabilities {
   has_macro_routing?: boolean;
   macro_count?: number;
   macro_dest_slots?: number;
+  /**
+   * Sequencer-orchestrator axis (ORTHOGONAL to preset_class). When present
+   * and non-empty, this device is a valid TARGET for `apply_pattern`: the
+   * device-neutral pattern module (see `protocol-generic/patterns/`) can
+   * realize a step grid onto it. The array lists the realization modes the
+   * device supports, in PREFERENCE order (first = the default when the
+   * caller doesn't pass `mode`):
+   *   - 'live_stream'    Host streams clock-aligned notes in real time; the
+   *                      device is a sound module. Works on any note-capable
+   *                      device, zero device code. Ephemeral / audition-tier
+   *                      (JS-timer jitter — not a performance tool).
+   *   - 'record_capture' Host streams notes while the device's own sequencer
+   *                      records them into a pattern that then loops on-device
+   *                      (e.g. Circuit Tracks "record from external controller").
+   *                      Two-phase: the user arms Record on the hardware first.
+   *   - 'ncs_upload'     Author a named project offline and push it (Circuit
+   *                      Tracks .ncs over SysEx). Phase C — not yet shippable;
+   *                      no device lists it until the codec lands.
+   * Absent/empty ⇒ not a pattern target; `apply_pattern` refuses with
+   * capability_not_supported. Mirrors the optional-capability idiom
+   * (`has_scenes`, `has_mod_matrix`).
+   */
+  pattern_realizers?: readonly RealizerMode[];
+  /**
+   * Abstract-voice → concrete trigger resolution for THIS device as a
+   * pattern target. Keys are abstract voice names the neutral pattern uses
+   * (`kick`/`snare`/`hat`/`bass`/`lead`/…); values are the `{channel, note}`
+   * this device fires them on (Circuit drums: ch10 notes 60/62/64/65;
+   * SPD-SX pads: ch10 from C4=60; a synth's `bass`: its melodic channel).
+   *
+   * This is what keeps device vocabulary OUT of the neutral pattern data:
+   * the pattern says "kick", the target descriptor owns where "kick" goes.
+   * Required to be a pattern target; absent ⇒ only patterns that carry
+   * their own `voice_hints` can realize, and unmapped voices error rather
+   * than silently drop.
+   */
+  voice_map?: Readonly<Record<string, VoiceTarget>>;
+  /**
+   * Devices that SEQUENCE EXTERNAL gear over MIDI declare their outward
+   * note-track channels here: track name → the MIDI channel that track transmits
+   * on. The Circuit Tracks has two such tracks (`{ midi1: 3, midi2: 4 }`). This
+   * is what `apply_pattern`'s `external_targets` uses to route a groove resolved
+   * against ANOTHER device's `voice_map` (e.g. an SPD-SX) onto one of these
+   * tracks — so the Circuit's MIDI 2 track drives the SPD-SX's pads. The external
+   * device must be set to receive on the same channel. Absent on devices with no
+   * outward MIDI sequencer tracks.
+   */
+  external_tracks?: Readonly<Record<string, number>>;
+}
+
+// ── Pattern / sequencer-orchestrator surface ───────────────────────
+//
+// The device-neutral pattern module (`protocol-generic/patterns/`) owns
+// the grammar (grid, mini-notation, Euclid) and the named library. These
+// types are the THIN contract between that module and a device: the
+// capability flag (`pattern_realizers`), the voice→trigger map
+// (`voice_map`), and the fully-compiled, device-agnostic plan a realizer
+// consumes. Defined here (not in patterns/) so `DeviceWriter` can
+// reference them without a core→patterns import cycle.
+
+/** Realization mode for `apply_pattern`. See `DeviceCapabilities.pattern_realizers`. */
+export type RealizerMode = 'live_stream' | 'record_capture' | 'ncs_upload';
+
+/** Where an abstract voice fires on a specific target device. */
+export interface VoiceTarget {
+  /** MIDI channel 1..16 (musician convention; converted to 0..15 at the wire). */
+  channel: number;
+  /** MIDI note number 0..127 that triggers this voice on the target. */
+  note: number;
+}
+
+/**
+ * One fully-resolved note in a realize plan. The dispatcher compiles a
+ * NeutralPattern through the target's `voice_map` into these BEFORE a
+ * realizer runs, so realizers handle MIDI, never the pattern grammar.
+ * Same field shape as the existing `send_sequence` event, plus an
+ * explicit per-event `channel` (a pattern can drive several channels at
+ * once — Circuit drums on ch10 + a synth voice on ch1).
+ */
+export interface RealizeNoteEvent {
+  channel: number;       // 1..16
+  note: number;          // 0..127
+  velocity: number;      // 1..127
+  time_ms: number;       // offset from cycle start
+  duration_ms: number;
+  /**
+   * Micro-step roll: 1..6 sub-hits within this step (drum hits only; absent/1
+   * = a single plain hit). The NCS author writes it as the Circuit's 6-bit
+   * micro-hit mask; live realizers expand it into that many rapid retriggers.
+   * Carried through from `Step.roll`.
+   */
+  micro_hits?: number;
+  /**
+   * Micro-tick PLACEMENT: this onset's position within its step, 1..5 (absent
+   * = on-grid, tick 0). `time_ms` already includes the offset (step + micro/6),
+   * so live realizers play true micro-timing with no extra handling; the .ncs
+   * author writes this field directly as the note slot's delay byte. One event
+   * per onset — a step with `Step.micro = [0, 3]` compiles to two events.
+   * Carried through from `Step.micro`. B0-hardware-confirmed on the wire
+   * (2026-07-02): the Circuit MIDI-OUT transmits the delay as real timing.
+   */
+  micro?: number;
+}
+
+/** One named section of a song arrangement: a compiled plan + its name. */
+export interface ArrangementSectionPlan {
+  name: string;
+  plan: RealizePlan;
+}
+
+/**
+ * Device-agnostic, fully-compiled input to a realizer. Produced by the
+ * pattern module's `compileToPlan`; consumed by the realizers in
+ * `patterns/realizers/` and by the optional `DeviceWriter.realizePattern`
+ * override hook.
+ */
+export interface RealizePlan {
+  pattern_name: string;
+  bpm: number;
+  steps: number;
+  bars: number;
+  repeat: number;
+  mode: RealizerMode;
+  /** Compiled, voice_map-resolved events for ONE cycle (the `bars`-long loop). */
+  events: readonly RealizeNoteEvent[];
+  /** Length of one cycle in ms (the loop period; total play = cycle_ms × repeat). */
+  cycle_ms: number;
+  /**
+   * record_capture two-phase signal: false/undefined on the first call
+   * (the realizer returns an "arm Record on the device" instruction and
+   * sends nothing); true once the user has armed the hardware (the
+   * realizer streams the events for the device to capture).
+   */
+  armed?: boolean;
+  /**
+   * ncs_upload only: the bespoke inputs for authoring a project file and
+   * pushing it to a stored slot. `template_path` is an existing project to
+   * modify (template-modify, since we don't author a project from scratch);
+   * `slot` is the 0-based project slot to write. `scale` optionally names the
+   * musical scale the target device should constrain the pattern to (device-
+   * specific; the Circuit defaults to Chromatic so authored pitches are
+   * literal). Ignored by other realizers.
+   *
+   * `drum_flips` authors per-step SAMPLE FLIPS (Circuit Tracks): a map of drum
+   * track name ("drum1".."drum4") to { 1-based step number → absolute sample
+   * slot 0..63 }. The flipped step plays that sample instead of the track's
+   * default, so several drum pieces (kick + snare + …) can live on one track.
+   *
+   * `drum_binding` sets which pool slot each drum track plays (Circuit Tracks):
+   * a 4-element array of 0-based sample slots for Drum 1..4. Authoring writes it
+   * into the project so the groove loads TURNKEY (no on-device hand-assignment).
+   * Defaults to the canonical stoken role layout [0,1,2,3] = kick / snare /
+   * closed_hat / ride when drum tracks are authored. See
+   * docs/design/groove-instrument-mapping.md.
+   */
+  upload?: {
+    template_path?: string;
+    slot: number;
+    scale?: string;
+    drum_flips?: Record<string, Record<string, number>>;
+    drum_binding?: number[];
+    /**
+     * Safe-edit overwrite gate (cf. `docs/SAFE-EDIT-WORKFLOW.md`): authored
+     * `ncs_upload` writes a stored project slot, so it honors the same gate as
+     * `upload_project` — it refuses to clobber an occupied slot unless the user
+     * authorized the overwrite. An empty target slot is written without it.
+     */
+    confirm_overwrite?: boolean;
+    /**
+     * Pre-flight only: author + fit-check + report, but send NOTHING to the
+     * device (no reads, no gate, no transfer). The realizer returns status
+     * 'dry_run' with the full receipt so the agent can surface piece
+     * compression / layout before committing.
+     */
+    dry_run?: boolean;
+  };
+}
+
+/**
+ * Realizer outcome. `source` carries the project's read-honesty: most
+ * sequencer targets give NO readback, so a realize is reported as what we
+ * actually know — `played` (we streamed it), `streamed_unverified` (we
+ * streamed for the device to capture, can't confirm it landed) — never a
+ * fabricated success.
+ */
+export interface RealizeResult {
+  ok: boolean;
+  mode: RealizerMode;
+  /** 'played' | 'awaiting_arm' | 'streamed_unverified' | 'uploaded'. */
+  status: string;
+  notes_sent?: number;
+  source?: 'played' | 'streamed_unverified' | 'device_confirmed';
+  warning?: string;
+  info?: string;
 }
 
 // ── Param / block schema ────────────────────────────────────────────
@@ -327,10 +521,32 @@ export type LocationRef = string | number;
 // ── Reader / writer adapter contracts ───────────────────────────────
 
 export interface DispatchCtx {
-  /** Live MIDI handle, scoped to this device's connection label. */
+  /**
+   * Live MIDI handle, scoped to this device's connection label. For
+   * storage-transport devices (no MIDI pipe) this is a null-object
+   * `MidiConnection` that throws on any I/O — those devices' reader/writer
+   * methods use `storage` instead and never touch `conn`. Kept required so
+   * the ~156 existing `ctx.conn` call sites in MIDI devices are unchanged.
+   */
   conn: MidiConnection;
+  /**
+   * Mounted-volume root for storage-transport devices (e.g. the SPD-SX
+   * `Roland/SPD-SX` folder in WAVE MGR mode). Present only when the
+   * descriptor's `transport.kind` resolved to storage at `openCtx` time
+   * (`'storage'`, or `'hybrid'` with a drive mounted). Absent on MIDI/serial
+   * transports. See `DeviceTransport` and `docs/ARCHITECTURE.md` §"Transport
+   * abstraction".
+   */
+  storage?: { root: string };
   /** The descriptor the dispatcher resolved. */
   descriptor: DeviceDescriptor;
+  /**
+   * Force-reconnect this device's handle and return the FRESH one. Lets a
+   * multi-frame transfer (Circuit `.ncs` / sample upload, download) recover
+   * from a stale/poisoned handle by reconnecting + retrying ONCE, instead of
+   * refusing and making the user run reconnect_midi by hand. Set by `openCtx`.
+   */
+  reconnect?: () => MidiConnection;
 }
 
 export interface ReadResult {
@@ -914,7 +1130,30 @@ export interface PresetSnapshot {
    * and when the grid read returned nothing (then `slots` is the poll inventory).
    */
   live_grid?: readonly Gen3GridCellView[];
+  /**
+   * gen-3 only: live DSP/CPU + stereo-output meters, decoded from the SAME
+   * `fn=0x01 sub=0x2E` frame the `live_grid` is read from (zero extra wire
+   * round-trips). `cpu_percent` is the steady DSP cost of the active preset
+   * (the most useful field for a one-shot read — it answers "how much headroom
+   * does this patch leave"); the output meters are momentary peaks at read time.
+   * FM9-cross-validated, community beta. Present only on a gen-3 active-buffer
+   * read where the sub=0x2E frame arrived; absent on II/AM4/Hydra and on
+   * stored-by-location reads. The device's INPUT meter is intentionally not
+   * surfaced — its offset is FM3-frame-specific and not portable across the
+   * gen-3 family (see fractal-midi `liveMeters.ts`).
+   */
+  live_meters?: Gen3LiveMeters;
   _meta: PresetSnapshotMeta;
+}
+
+/** gen-3 live telemetry (CPU + stereo output meters) from a sub=0x2E read. */
+export interface Gen3LiveMeters {
+  /** DSP/CPU utilization, percent (32.0..95.5). Steady for a given preset. */
+  cpu_percent: number;
+  /** Output meter, LEFT channel, normalized 0..1 (momentary). */
+  output_left: number;
+  /** Output meter, RIGHT channel, normalized 0..1 (momentary). */
+  output_right: number;
 }
 
 export interface PresetSnapshotSlot extends PresetSlotSpec {
@@ -979,6 +1218,25 @@ export interface PresetSnapshotMeta {
    * (0.3.0 final-signoff finding).
    */
   blocks_failed?: string[];
+  /**
+   * The stored preset LOCATION the working buffer's pointer is at
+   * (e.g. "A01".."Z04"), when the device exposes an active-location
+   * register. Lets an agent plan navigation and dirty-buffer gating
+   * without a separate read. Absent when the read failed or the device
+   * doesn't model an active-location pointer. NOTE: the buffer may have
+   * diverged from what is STORED at this location — see `is_dirty`
+   * (GAP-1, 2026-07-04 AM4 session).
+   */
+  current_location?: string;
+  /**
+   * True when the working buffer has unsaved edits relative to the last
+   * loaded/saved state, per the server's dirty tracker. False when known
+   * clean; absent when the device provides no dirty signal. On the AM4
+   * this reflects the in-memory edit tracker (the device emits no dirty
+   * push), so it is authoritative for edits made THROUGH this server but
+   * cannot see front-panel edits.
+   */
+  is_dirty?: boolean;
 }
 
 /**
@@ -1217,6 +1475,23 @@ export interface PresetBinaryDump {
   /** Human-readable note on what was dumped (e.g. 'active working buffer'). */
   source?: string;
   /**
+   * File extension (no dot) the backup should be written with, e.g. `'syx'`
+   * for Fractal dumps, `'ncs'` for a Circuit Tracks project. Absent ⇒ the
+   * tool layer defaults to `'syx'` (the Fractal convention). Lets a device
+   * whose native file is not a `.syx` declare its own container without the
+   * export tool special-casing per device.
+   */
+  file_extension?: string;
+  /**
+   * True when the requested stored location holds NOTHING (an empty slot),
+   * so `bytes` is empty and there is nothing to back up. A clean, expected
+   * answer for a read-before-write probe — NOT an error. The export tool
+   * reports it without writing a file; backup-before-overwrite skips it.
+   * Only devices whose stored slots can be empty (Circuit Tracks projects)
+   * ever set it; Fractal stored-location dumps never do.
+   */
+  empty?: boolean;
+  /**
    * Surfaced caveat the caller MUST relay to the user (e.g. the Axe-Fx II
    * has no edit-buffer dump request, so its "active" export is the stored
    * flash copy of the active slot). Absent when the dump is unambiguous.
@@ -1245,6 +1520,38 @@ export interface RestorePresetResult {
   format: string;
 }
 
+/** One entry in a device's named sample/sound directory. */
+export interface SampleDirectoryEntry {
+  /** 0-based wire slot. */
+  slot: number;
+  /** 1-based slot number as the device/editor displays it. */
+  device_slot: number;
+  /** Stored name, or undefined when the slot is empty. */
+  name?: string;
+}
+
+/**
+ * A read of a device's named sample pool (Circuit Tracks: the pack's shared
+ * 64-slot drum-sample directory). Backs the read-only `read_sample_directory`
+ * tool. Reading slot names lets a caller map sounds semantically.
+ */
+export interface SampleDirectoryDump {
+  /** Number of named (occupied) slots. */
+  occupied: number;
+  /** Total slot count probed. */
+  total: number;
+  slots: SampleDirectoryEntry[];
+  /**
+   * True when the pool is append-only with no fixed slot ceiling (SPD-SX:
+   * storage-bounded, not slot-bounded). When set, `total` equals `occupied`
+   * (the count of waves present), and `occupied/total` must NOT be read as a
+   * "% full" — there is room to append. Unset/false (Circuit) = a real ceiling.
+   */
+  unbounded?: boolean;
+  /** Optional human note about capacity (e.g. "append-only, room to add more"). */
+  capacity_note?: string;
+}
+
 export interface DeviceReader {
   getParam(ctx: DispatchCtx, block: string, name: string, channel?: string | number, instance?: number): Promise<ReadResult>;
   /**
@@ -1269,6 +1576,13 @@ export interface DeviceReader {
    * the dispatcher errors with capability_not_supported.
    */
   dumpStoredPresetBinary?(location: number, ctx: DispatchCtx): Promise<PresetBinaryDump>;
+  /**
+   * Optional. Read the device's named sample/sound directory (Circuit Tracks:
+   * the pack's shared 64-slot drum-sample pool). Read-only, bidirectional.
+   * Devices without a named sample pool omit it and the dispatcher errors with
+   * capability_not_supported.
+   */
+  readSampleDirectory?(ctx: DispatchCtx): Promise<SampleDirectoryDump>;
   getParams(ctx: DispatchCtx, queries: readonly ParamQuery[]): Promise<BatchReadResult>;
   /**
    * BK-075 phantom-param pre-flight read. Returns a snapshot of which
@@ -1356,6 +1670,133 @@ export interface DeviceReader {
 export type RenameTarget = 'preset' | `scene:${number}`;
 
 /**
+ * Result of uploading one WAV to a device sample slot (Circuit Tracks family).
+ * `slot` is wire-indexed 0..63; the dispatcher surfaces the device-facing
+ * 1..64 in `info`.
+ */
+export interface SampleUploadOutcome {
+  ok: boolean;
+  slot: number;
+  /** Number of WRITE_DATA blocks sent. */
+  blocks: number;
+  /** True when the source WAV was resampled/folded/requantized to device format. */
+  converted: boolean;
+  /** Name written to the slot (what the device/Components shows). */
+  filename: string;
+  /** Human receipt (device-slot numbering, overwrite advisory, format note). */
+  info: string;
+  warning?: string;
+}
+
+/**
+ * Options for a destructive slot transfer (sample / kit / project upload).
+ *
+ * `confirmOverwrite` is the safe-edit overwrite gate (cf.
+ * `docs/SAFE-EDIT-WORKFLOW.md`): the destructive transfer tools refuse to
+ * overwrite an occupied — or, for samples, an unverifiable — slot unless the
+ * caller passes it true (the user used save/overwrite/replace language). A slot
+ * the writer can READ and finds EMPTY is written without it (no gate on empty
+ * slots — the whole point is to confirm before clobbering something real).
+ */
+export interface SlotWriteOptions {
+  confirmOverwrite?: boolean;
+}
+
+/** One item in a kit upload: the already-read WAV bytes + its destination + name. */
+export interface KitUploadItem {
+  wav: Uint8Array;
+  slot: number;
+  filename: string;
+}
+
+/** Result of uploading a folder of WAVs to consecutive sample slots. */
+export interface KitUploadOutcome {
+  ok: boolean;
+  uploaded: { slot: number; filename: string; converted: boolean }[];
+  /** The item that aborted the batch, if any (upload stops on first failure). */
+  failed?: { slot: number; filename: string; error: string };
+  info: string;
+  warning?: string;
+}
+
+/**
+ * Result of uploading a prepared whole-project file (e.g. a Circuit Tracks
+ * .ncs) to a device project slot. `slot` is the project slot 0..63; the device
+ * shows it as "Project slot+1".
+ */
+export interface ProjectUploadOutcome {
+  ok: boolean;
+  slot: number;
+  /** Number of WRITE_DATA blocks sent. */
+  blocks: number;
+  /** Human receipt (slot numbering, overwrite advisory). */
+  info: string;
+  warning?: string;
+}
+
+// ── Sampler kit authoring (author_kit) ──────────────────────────────
+//
+// The sampler-archetype whole-preset write. A kit IS the preset, addressed by
+// location; there is no audition buffer, so authoring writes the stored file
+// directly. First device: Roland SPD-SX (storage transport). Generalizes to
+// future drum samplers as the sampler write verb. See
+// `docs/design/device-archetypes-and-transport.md`.
+
+/**
+ * One pad assignment. The simple form is a wave index (number), a wave name
+ * (string), or -1 / 'empty'. The object form additionally sets per-pad MIDI /
+ * voice properties (sampler archetype; SPD-SX): the MIDI note that triggers the
+ * pad, POLY vs MONO voicing (POLY = overlapping trails — wanted for hat rolls),
+ * mute group (open/closed-hat choke), and velocity dynamics. Passing ANY object
+ * form switches the kit to the device's full format; the all-simple form stays
+ * on the byte-confirmed minimal format.
+ */
+export type KitPadAssignment = number | string | KitPadSpec;
+
+export interface KitPadSpec {
+  /** Wave index (number), wave name (string), or -1 / 'empty'. */
+  wave: number | string;
+  /** MIDI note that triggers this pad (0..127). Default: ascending from 60 by pad order. */
+  note?: number;
+  /** POLY = a new hit layers over the previous sound (hat rolls ring out); MONO = it chokes. Default 'poly' (one-shot) / 'mono' (loop). */
+  voice?: 'poly' | 'mono';
+  /** LOOP the wave (a groove/bed you play along to) instead of a one-shot hit; plays at its native tempo. Default false. */
+  loop?: boolean;
+  /** Mute group 0..9 (0 = off; pads in the same group cut each other off, e.g. open vs closed hat). Default 0. */
+  mute_group?: number;
+  /** Per-pad LEVEL / volume 0..127 (device WvLevel). Default 100. Lower it to sit a loud pad (e.g. a hi-hat) below the shells without re-baking the wave. */
+  level?: number;
+  /** Velocity scales volume (DYNAMICS). Default true. */
+  dynamics?: boolean;
+  /** Optional second (sub) wave layered on the pad: index, name, or -1 / 'empty'. */
+  sub_wave?: number | string;
+}
+
+export interface KitAuthorOptions {
+  /** Allow overwriting an occupied kit (backs the prior kit up first). */
+  confirmOverwrite?: boolean;
+  /** Build + validate the kit but do not write. */
+  dryRun?: boolean;
+}
+
+export interface KitAuthorResult {
+  ok: boolean;
+  /** Kit location written (device-facing numbering, e.g. 1..100 on SPD-SX). */
+  location: number;
+  name: string;
+  /** Pads that ended up with a wave assigned. */
+  assigned: number;
+  /** Serialized kit size in bytes. */
+  bytes: number;
+  /** True when this was a dry run (nothing written). */
+  dry_run: boolean;
+  /** Prior kit backed up before an overwrite (absolute path), when applicable. */
+  backed_up?: string;
+  info: string;
+  warning?: string;
+}
+
+/**
  * Writer contract. Two layers:
  *
  *   - **Pure builders** (`build*`) return wire bytes without sending.
@@ -1428,9 +1869,96 @@ export interface DeviceWriter {
    * (`executeSavePreset`) via the reader's `checkOverwriteTarget` +
    * `readSaveSnapshot` capabilities.
    */
-  savePreset?(ctx: DispatchCtx, location: LocationRef, name?: string): Promise<WriteResult>;
+  savePreset?(ctx: DispatchCtx, location: LocationRef, name?: string, instance?: number): Promise<WriteResult>;
   switchScene?(ctx: DispatchCtx, scene: number): Promise<WriteResult>;
   rename?(ctx: DispatchCtx, target: RenameTarget, name: string): Promise<WriteResult>;
+
+  /**
+   * OPTIONAL per-device override for `apply_pattern`. Most devices need
+   * NONE of this: for `live_stream` / `record_capture` the dispatcher runs
+   * the shared, device-agnostic realizers in `patterns/realizers/` directly
+   * against `ctx.conn` using the descriptor's `voice_map` — zero device
+   * code. A device implements this hook only when it has a bespoke
+   * realization path the shared realizers can't express — chiefly
+   * `ncs_upload` (Circuit Tracks .ncs authoring + SysEx transfer, phase C).
+   * When present, the dispatcher prefers it; when absent it falls back to
+   * the shared realizer for the selected `plan.mode`.
+   */
+  realizePattern?(ctx: DispatchCtx, plan: RealizePlan): Promise<RealizeResult>;
+
+  /**
+   * OPTIONAL. Realize a multi-section song ARRANGEMENT (apply_pattern
+   * `arrangement`): each section is one compiled RealizePlan; `order` lists
+   * section indices in play order (repeats allowed). The device writer owns
+   * the layout strategy (pattern slots + chain vs. scene-chain) and its own
+   * capacity limits, and errors honestly when the song doesn't fit. Only
+   * devices with multi-pattern project authoring implement this (Circuit
+   * Tracks .ncs); absent → the dispatcher errors capability_not_supported.
+   */
+  realizeArrangement?(
+    ctx: DispatchCtx,
+    sections: readonly ArrangementSectionPlan[],
+    order: readonly number[],
+    upload: NonNullable<RealizePlan['upload']>,
+  ): Promise<RealizeResult>;
+
+  /**
+   * OPTIONAL. Add one WAV to a device's sample pool. `wav` is the raw file
+   * bytes; any device-format normalize (rate/channels/bits) happens inside.
+   *
+   * `slot` semantics are device-dependent:
+   *   - Slot-addressed pools (Circuit Tracks, 0..63): `slot` is REQUIRED and
+   *     names the destination (OVERWRITES it). The writer rejects `undefined`.
+   *   - Append-only pools (SPD-SX wave pool): `slot` is IGNORED — the wave is
+   *     appended at the next free index, which the result reports. Callers omit
+   *     it (the dispatcher passes `undefined`).
+   *
+   * Devices without sample memory omit this; the dispatcher then errors with
+   * capability_not_supported.
+   */
+  uploadSample?(ctx: DispatchCtx, wav: Uint8Array, slot: number | undefined, filename: string, opts?: SlotWriteOptions): Promise<SampleUploadOutcome>;
+
+  /**
+   * OPTIONAL. Author a sampler KIT (a pad→wave map) and persist it at a stored
+   * location (sampler archetype; Roland SPD-SX). The kit IS the preset, addressed
+   * by location — there is no audition buffer, so this writes the device file
+   * directly. `pads[i]` assigns pad i (0-based order) a wave by index (number) or
+   * name (string), or -1 / 'empty' for an empty pad; the writer resolves names
+   * against the device's wave pool. Refuses to overwrite an occupied kit unless
+   * `opts.confirmOverwrite` (which backs the prior kit up first). Devices without
+   * a kit format omit this; the dispatcher then errors capability_not_supported.
+   */
+  authorKit?(ctx: DispatchCtx, location: LocationRef, name: string, pads: readonly KitPadAssignment[], opts?: KitAuthorOptions): Promise<KitAuthorResult>;
+
+  /**
+   * OPTIONAL. Non-destructively set per-pad MIDI trigger notes on an EXISTING
+   * kit WITHOUT rebuilding it: only the note fields change, so waves, levels, and
+   * FX are preserved exactly (unlike authorKit, which rebuilds and resets levels/
+   * FX to defaults — the loudness-drop trap). `notes` maps the device-facing pad
+   * number (1-based) to a MIDI note 0..127. Sampler-family; full kits only — an
+   * implementation refuses a kit that stores no per-pad notes (e.g. an SPD-SX
+   * minimal kit), since adding one would force the level-changing full format.
+   * Reuses KitAuthorResult (assigned = pads patched). Devices without a kit
+   * format omit this; the dispatcher then errors capability_not_supported.
+   */
+  editPadNotes?(ctx: DispatchCtx, location: LocationRef, notes: Readonly<Record<number, number>>, opts?: KitAuthorOptions): Promise<KitAuthorResult>;
+
+  /**
+   * OPTIONAL. Upload a batch of WAVs to consecutive sample slots in one
+   * session-managed run (each item is its own ACK-gated transfer). Stops on the
+   * first failure rather than firing more frames into a possibly-dead handle.
+   */
+  uploadKit?(ctx: DispatchCtx, items: readonly KitUploadItem[], opts?: SlotWriteOptions): Promise<KitUploadOutcome>;
+
+  /**
+   * OPTIONAL. Upload a prepared whole-project file (e.g. a Circuit Tracks .ncs)
+   * to a device project slot over the file-transfer transport. The bytes are
+   * sent VERBATIM (no authoring) — this is the "play a pre-made project" path,
+   * distinct from realizePattern which authors a pattern into a template first.
+   * The writer validates the file shape (size/format). Devices without project
+   * memory omit this; the dispatcher then errors with capability_not_supported.
+   */
+  uploadProject?(ctx: DispatchCtx, project: Uint8Array, slot: number, opts?: SlotWriteOptions): Promise<ProjectUploadOutcome>;
 
   /**
    * Cross-device safe-edit gate (see `docs/SAFE-EDIT-WORKFLOW.md`).
@@ -1508,10 +2036,55 @@ export interface GuardResult {
  */
 export type PresetClass = 'layout' | 'voice' | 'effect';
 
+/**
+ * Which kind of endpoint a device talks over. The dispatcher's `openCtx`
+ * branches on this to build the right `DispatchCtx`.
+ *
+ *   - `'midi'`    USB MIDI port (the default; resolved via `ensureConnection`).
+ *   - `'serial'`  USB-CDC serial carrying raw MIDI bytes (FM3). Still a
+ *                 `MidiConnection`; the difference is handled inside the
+ *                 connection factory, so the dispatch path is identical to midi.
+ *   - `'storage'` A mounted USB mass-storage volume (SPD-SX WAVE MGR mode).
+ *                 NOT a MIDI byte stream — `openCtx` resolves a filesystem root
+ *                 instead of a wire handle and puts it on `DispatchCtx.storage`.
+ *   - `'hybrid'`  The device exposes BOTH a MIDI surface and a storage surface,
+ *                 mutually exclusive by hardware mode (SPD-SX). `openCtx`
+ *                 resolves the live one per call: drive mounted → storage, else
+ *                 a MIDI port → midi.
+ *
+ * Omit the field entirely for plain USB-MIDI devices — it defaults to `'midi'`,
+ * leaving every existing descriptor untouched.
+ */
+export type TransportKind = 'midi' | 'serial' | 'storage' | 'hybrid';
+
+export interface DeviceTransport {
+  kind: TransportKind;
+  /**
+   * Storage / hybrid only: resolve the device's mounted-volume root, or
+   * `undefined` when it is not currently mounted. For `'storage'` an absent
+   * root makes `openCtx` throw `device_not_mounted`; for `'hybrid'` an absent
+   * root means "fall through to the MIDI surface".
+   */
+  resolveRoot?: () => string | undefined;
+  /**
+   * Storage / hybrid only: device-specific steps to mount the drive, folded
+   * into the `device_not_mounted` error so the agent can relay exactly how to
+   * get the storage surface (USB mode, driver, port). Optional; a generic
+   * message is used when absent.
+   */
+  notMountedHint?: string;
+}
+
 export interface DeviceDescriptor {
   // -- identity --
   id: string;                                   // 'am4', 'axe-fx-ii', 'hydrasynth'
   display_name: string;                         // 'Fractal AM4'
+  /**
+   * Endpoint kind for this device. Defaults to `'midi'` when omitted. Storage
+   * and hybrid devices (SPD-SX) set it to declare their mass-storage surface;
+   * see `DeviceTransport` and `docs/design/device-archetypes-and-transport.md`.
+   */
+  transport?: DeviceTransport;
   /**
    * Preset-shape class (layout / voice / effect). Determines which
    * "apply the whole preset" tool is registered for this device.
@@ -1687,6 +2260,7 @@ export interface CompatibleTypesResult {
 
 export type ErrorCode =
   | 'port_not_found'
+  | 'bad_request'                  // malformed/contradictory tool arguments (e.g. two mutually-exclusive modes)
   | 'capability_not_supported'
   | 'unknown_block'
   | 'unknown_param'
@@ -1699,8 +2273,10 @@ export type ErrorCode =
   | 'block_not_placed'           // soft-fail — write acked but block isn't in preset
   | 'no_ack'
   | 'stale_handle'
+  | 'device_not_mounted'          // storage-transport device is not mounted as a drive (e.g. SPD-SX not in WAVE MGR mode)
   | 'save_authorization_required' // gate refusal: apply-at-slot called without save_authorized=true
-  | 'buffer_dirty';               // gate refusal: nav/save-at-slot while active buffer has unsaved edits
+  | 'buffer_dirty'                // gate refusal: nav/save-at-slot while active buffer has unsaved edits
+  | 'overwrite_confirmation_required'; // gate refusal: destructive slot transfer to an occupied/unverifiable slot without confirm_overwrite=true
 
 export interface DispatchErrorDetails {
   /** Single best near-match — printed inline ("did you mean X?"). */

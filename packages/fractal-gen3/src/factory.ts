@@ -43,6 +43,7 @@ import {
   resolveEffectId,
   GEN3_READ_ROSTERS,
   ampOrdinalsExposingParams,
+  III_ROUNDTRIP_DISCRETE,
 } from 'fractal-midi/gen3/axe-fx-iii';
 import {
   VP4_MODEL_ID,
@@ -50,12 +51,35 @@ import {
   buildVp4Save,
   buildVp4SetParam,
 } from 'fractal-midi/gen3/vp4';
-import { FM9_RANGES } from 'fractal-midi/gen3/fm9';
+import { FM9_RANGES, FM9_ROUNDTRIP_DISCRETE } from 'fractal-midi/gen3/fm9';
+import { FM3_FAMILY_JOIN_DISCRETE } from 'fractal-midi/gen3/fm3';
 import { createModernCatalog, type AxeFxIIIParam } from './catalog.js';
 
 /** FM9 SysEx model byte: its device-true editor-cache ranges (FM9_RANGES) take
  *  precedence over the AM4-overlay-inferred catalog bounds. */
 const FM9_MODEL_ID = 0x12;
+/** Axe-Fx III SysEx model byte (the gen-3 byte-identity anchor). */
+const III_MODEL_ID = 0x10;
+/** FM3 SysEx model byte. */
+const FM3_MODEL_ID = 0x11;
+
+/**
+ * Discrete-ordinal overlays, keyed by SysEx model byte. The III and FM9 each
+ * carry an overlay generated from THAT device's own full roundtrip hardware
+ * sweep (`fractal-midi/scripts/generate-gen3-roundtrip-discrete.ts`); they are
+ * device-specific (different ordinal counts), so they are NEVER cross-wired.
+ * The FM3 has no roundtrip capture and no device-synced enum cache, so it
+ * carries the FAMILY-JOIN overlay instead
+ * (`fractal-midi/scripts/generate-fm3-family-join-discrete.ts`): the same
+ * correction, classified by (family, SYMBOL) join against the FM9 cache enum
+ * rows + FM9/III roundtrips — family-pattern evidence, community-beta, FM3
+ * roundtrip pending. VP4 (0x14) has no oracle data and gets no overlay.
+ */
+const ROUNDTRIP_DISCRETE_BY_MODEL: Readonly<Record<number, Readonly<Record<string, number>>>> = {
+  [III_MODEL_ID]: III_ROUNDTRIP_DISCRETE,
+  [FM9_MODEL_ID]: FM9_ROUNDTRIP_DISCRETE,
+  [FM3_MODEL_ID]: FM3_FAMILY_JOIN_DISCRETE,
+};
 import { makeReader } from './reader.js';
 import { makeWriter } from './writer.js';
 
@@ -189,7 +213,7 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
       buildSetParameterContinuous: (e, p, normalized) => buildVp4SetParam(e, p, normalized, { continuous: true }),
       buildSetParameter: (e, p) => {
         throw new Error(
-          `vp4: discrete parameter SET (effectId ${e}, paramId ${p}) is not yet decoded — ` +
+          `vp4: discrete parameter SET (effectId ${e}, paramId ${p}) is not yet decoded; ` +
             'only continuous knob writes have a captured wire shape.',
         );
       },
@@ -222,6 +246,12 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
     // the real front panel (DELAY_TIME, REVERB_PREDELAY, etc.). The III/FM3/VP4
     // have no device-true range table yet, so they keep the catalog inference.
     deviceRanges: config.model_byte === FM9_MODEL_ID ? FM9_RANGES : undefined,
+    // Discrete-ordinal overlay: params the enum paths missed but oracle
+    // evidence proves are ordinals (the device quantizes a continuous SET), so
+    // they must route DISCRETE. III and FM9 each get their OWN roundtrip-derived
+    // overlay (never cross-wired); the FM3 gets the family-join overlay
+    // (sibling-evidence classification, community-beta); VP4 has no oracle data.
+    roundtripDiscreteOrdinals: ROUNDTRIP_DISCRETE_BY_MODEL[config.model_byte],
   });
 
   // Grid devices (III/FM3/FM9) advertise a 2-D grid + multi-instance blocks;
@@ -258,7 +288,7 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
     const base = { block: query.block, params_queried: query.params };
     if (query.block.toLowerCase() !== 'amp' || ampBlock === undefined || typeEnum === undefined) {
       return { ...base, compatible_types: [], total_types: 0, applicability_known: false,
-        note: `no structured type-applicability data for "${query.block}" — full type list, no filtering.` };
+        note: `no structured type-applicability data for "${query.block}"; full type list, no filtering.` };
     }
     const totalTypes = Object.keys(typeEnum).length;
     // Resolve each queried knob to its canonical DISTORT_* name; skip unknowns.

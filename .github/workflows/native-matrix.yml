@@ -1,0 +1,73 @@
+name: native-matrix
+
+# Cross-platform validation of the native MIDI stack (@julusian/midi +
+# serialport). The Windows path is covered by preflight.yml; this fills the
+# gap that has bitten us: the macOS (.mcpb / no-Xcode) install depends on the
+# darwin-arm64/x64 N-API prebuilts loading AND on the inbound-SysEx receive
+# path working, and the maintainer develops on Windows. This runs the
+# virtual-loopback receive test on real macOS (Apple Silicon + Intel) and
+# Linux runners, so a receive regression (e.g. ignoreTypes-before-openPort)
+# is caught without anyone having to plug in hardware.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  native:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14       # Apple Silicon (darwin-arm64) — the blind-user .mcpb target
+            label: macos-arm64
+          - os: macos-13       # Intel (darwin-x64) — the maintainer's iMac arch
+            label: macos-x64
+          - os: ubuntu-latest  # linux-x64
+            label: linux-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          cache: 'npm'
+
+      # Linux needs the ALSA sequencer kernel module for RtMidi virtual
+      # ports (openVirtualPort). It is not loaded by default on headless
+      # CI images. macOS CoreMIDI needs nothing. No-op elsewhere.
+      - name: Load ALSA sequencer (Linux only)
+        if: runner.os == 'Linux'
+        run: sudo modprobe snd-seq || echo "snd-seq modprobe failed; loopback test may skip"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Proves the N-API prebuilt loads + enumerates on this platform/arch
+      # (the thing the macOS install win hinges on), independent of the
+      # loopback test below.
+      - name: Native bindings load + enumerate
+        run: |
+          node -e "const m=require('@julusian/midi'); new m.Input().getPortCount(); new m.Output().getPortCount(); console.log('@julusian/midi loads on '+process.platform+'/'+process.arch);"
+          node -e "import('serialport').then(m=>{if(!m.SerialPort)throw new Error('no SerialPort export');console.log('serialport loads on '+process.platform+'/'+process.arch);})"
+
+      # Virtual-loopback SysEx round-trip: guards the inbound-SysEx receive
+      # path (ignoreTypes-after-openPort) without hardware.
+      - name: Virtual-loopback receive test
+        run: npm run verify-loopback-midi
+
+      - name: Test suite
+        run: npm test

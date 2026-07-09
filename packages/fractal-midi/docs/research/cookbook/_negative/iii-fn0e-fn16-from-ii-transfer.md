@@ -6,6 +6,9 @@ verified_on:
   - axe-fx-iii-v14-pdf
   - axe-edit-iii-binary
 golden: STUB (structural grep-against committed III SYSEX-MAP + string pool; no pure-CPU fixture applies, see Verification path)
+retest_when:
+  - a captured III connect-and-sync burst decoding the workflow-scoped reply BODIES (the fn 0x0A/0x0D/0x0C/0x47 param-info family and the fn 0x14 GET reply — flagged un-mined in the private captured-artifacts manifest)
+  - a live III capture of the fn 0x0E QUERY SCENE NAME reply (currently grounded on the v1.4 PDF + committed wire map, not a hardware capture)
 relates_to: [ii-fn0e-query-states, ii-fn16-get-param-info, iii-host-emitter-fn-table, iii-async-workflow-fn-registry, ii-fn1f-atomic-read]
 consumed_in: []
 ---
@@ -68,6 +71,14 @@ Classify whether the reply tiles into the II fn 0x16 25-byte
 the III fn 0x0E QUERY SCENE NAME reply is `nn` plus 32 name bytes on
 hardware (currently grounded on the v1.4 PDF and the committed wire map,
 not on a live III capture).
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "III fn 0x0E QUERY_STATES" / "0x0E is QUERY SCENE NAME on III"
+- "III fn 0x16 GET_PARAM_INFO" / "0x16 not host-emitted"
+- "II fn-byte transfer to III" / "same fn byte different meaning"
 
 ## Refinement history
 

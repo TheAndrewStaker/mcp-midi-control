@@ -14,6 +14,7 @@ import * as z from 'zod/v4';
 
 import {
   describeDevice,
+  executeDescribeRig,
   executeLookupLineage,
   findCompatibleTypes,
   listParams,
@@ -22,6 +23,23 @@ import {
 import { PORT_DESC, asError, asText } from './shared.js';
 
 export function registerDiscoveryTools(server: McpServer): void {
+  server.registerTool('describe_rig', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    description: [
+      'Whole-rig overview: every device this server can drive, which are connected right now, and what each one is. Read-only, pure introspection (a non-opening port scan plus a mounted-drive check; opens no MIDI handles).',
+      'Call this FIRST when configuring more than one device (e.g. setting up a rig for a song) so you can plan against what is actually present, instead of guessing ports.',
+      'Per device: id and name (pass either as the `port` arg to drive it), connected plus how (a MIDI port name or a mounted drive), transport (midi/serial/storage/hybrid), preset_class (layout = preset processor, voice = synth or sampler), support_tier, pattern_target (accepts apply_pattern), and a one-line capability summary. For deep per-device detail, call describe_device(port).',
+      'Note: serial devices (FM3) are invisible to the MIDI scan and can read connected:false even when plugged in; confirm with describe_device or list_midi_ports.',
+    ].join(' '),
+    inputSchema: {},
+  }, async () => {
+    try {
+      return asText(executeDescribeRig());
+    } catch (err) {
+      return asError(err);
+    }
+  });
+
   server.registerTool('describe_device', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [

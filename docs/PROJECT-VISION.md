@@ -55,8 +55,11 @@ against real hardware captures. That tier today is:
   hardware-verified end to end)
 - **Fractal Axe-Fx II XL+**
 - **ASM Hydrasynth Explorer**
-- **Fractal Axe-Fx III** in community beta
+- **Modern Fractal family — Axe-Fx III / FM3 / FM9 / VP4** in community beta (one shared gen-3 codec, per-device catalogs)
 - **Fractal Axe-Fx Standard/Ultra (gen-1)** in community beta (parameter set + read, decoded from the published gen-1 SysEx spec)
+- **Novation Circuit Tracks** in community beta (groove + melody sequencing, sample / project upload, sequencing of outboard gear)
+- **Roland SPD-SX** in community beta (kit + sample authoring over USB mass storage; pad triggering + kit recall over MIDI)
+- **Boss VE-500 Vocal Performer** in community beta (parameter set + read, decoded byte-exact from the manufacturer's editor source)
 
 These are named second on purpose. They are the current depth frontier,
 not the identity of the project.
@@ -128,9 +131,10 @@ Claude: Reduces Filter sensitivity, re-sends, asks how it sounds now.
 ## Target User
 - Musicians who own at least one USB MIDI device. Any MIDI device works
   through generic-MIDI primitives; the first-class depth tier today is the
-  Fractal AM4, Axe-Fx II XL+, and Hydrasynth Explorer, with the modern Fractal
-  family (Axe-Fx III / FM3 / FM9) and the original Axe-Fx Standard/Ultra
-  in community beta.
+  Fractal AM4, Axe-Fx II XL+, and Hydrasynth Explorer (hardware-verified), with
+  the modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4), the original Axe-Fx
+  Standard/Ultra, the Novation Circuit Tracks, the Roland SPD-SX, and the Boss
+  VE-500 in community beta.
 - Comfortable with an MCP host such as Claude Desktop (free tier
   acceptable).
 - Want authentic tones without deep technical knowledge.
@@ -167,7 +171,7 @@ Claude: Reduces Filter sensitivity, re-sends, asks how it sounds now.
 - **Runtime:** Node.js / TypeScript
 - **MCP Framework:** @modelcontextprotocol/sdk, MCP specification revision
   2025-11-25
-- **MIDI/USB:** node-midi (npm)
+- **MIDI/USB:** @julusian/midi (npm; API-compatible node-midi fork with N-API prebuilds)
 - **Protocol:** device SysEx, NRPN, and CC over USB MIDI
 - **Host:** an MCP host such as Claude Desktop via the MCP connector
 - **Future host mode:** Claude API (anthropic SDK) for standalone mode

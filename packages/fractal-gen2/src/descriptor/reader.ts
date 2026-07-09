@@ -524,10 +524,10 @@ export const reader: DeviceReader = {
       throw new DispatchError(
         'no_ack',
         DEVICE_LABEL,
-        `get_param: no response from device within ${GET_RESPONSE_TIMEOUT_MS}ms — ${err instanceof Error ? err.message : String(err)}. ` +
+        `get_param: no response from device within ${GET_RESPONSE_TIMEOUT_MS}ms; ${err instanceof Error ? err.message : String(err)}. ` +
         `Likely causes: block '${block.name}' not placed on the active preset grid (device silently absorbs reads on absent blocks), ` +
         `a stale MIDI handle (try reconnect_midi), or another program holding the device's MIDI IN port ` +
-        `(a second MCP server instance from another Claude session, a stale node.exe, or a manufacturer editor — ` +
+        `(a second MCP server instance from another Claude session, a stale node.exe, or a manufacturer editor; ` +
         `if reconnect_midi doesn't recover, close those or fully restart the host app).`,
       );
     }
@@ -675,7 +675,7 @@ export const reader: DeviceReader = {
       throw new DispatchError(
         'no_ack',
         DEVICE_LABEL,
-        `getBlockLayoutSnapshot: grid read failed — ${err instanceof Error ? err.message : String(err)}.`,
+        `getBlockLayoutSnapshot: grid read failed; ${err instanceof Error ? err.message : String(err)}.`,
       );
     }
     const placed = collectPlacedBlocks(cells);
@@ -737,7 +737,7 @@ export const reader: DeviceReader = {
       throw new DispatchError(
         'no_ack',
         DEVICE_LABEL,
-        `get_preset: grid read failed — ${err instanceof Error ? err.message : String(err)}. Check that the Axe-Fx II is connected and AxeEdit isn't holding the port.`,
+        `get_preset: grid read failed; ${err instanceof Error ? err.message : String(err)}. Check that the Axe-Fx II is connected and AxeEdit isn't holding the port.`,
       );
     }
     const placed = collectPlacedBlocks(cells);
@@ -1075,7 +1075,7 @@ export const reader: DeviceReader = {
     // doesn't have to already know it exists (alpha.17 finding).
     const hasChannelBearing = placed.some((p) => p.canBypass);
     const channelStateHint = (!includeChannelState && hasChannelBearing)
-      ? "Only each block's ACTIVE channel (per the current scene) is included — see the params_by_channel key on each slot. Pass include_channel_state:true to get_preset for the full X/Y per-channel read (decoded from the same fn 0x1F dump; no extra round-trips)."
+      ? "Only each block's ACTIVE channel (per the current scene) is included; see the params_by_channel key on each slot. Pass include_channel_state:true to get_preset for the full X/Y per-channel read (decoded from the same fn 0x1F dump; no extra round-trips)."
       : undefined;
     return {
       name: presetName,
@@ -1114,7 +1114,7 @@ export const reader: DeviceReader = {
       throw new DispatchError(
         'value_out_of_range',
         DEVICE_LABEL,
-        `Scan range ${fromN}..${toN} is ${span} presets — exceeds the ${MAX_SCAN_RANGE}-preset cap (each entry round-trips ~80ms, so a 64-slot scan takes ~5s). Narrow the range and try again.`,
+        `Scan range ${fromN}..${toN} is ${span} presets; exceeds the ${MAX_SCAN_RANGE}-preset cap (each entry round-trips ~80ms, so a 64-slot scan takes ~5s). Narrow the range and try again.`,
       );
     }
 
@@ -1202,7 +1202,7 @@ export const reader: DeviceReader = {
       return { ok: true, text: formatAxeFxIILineageRecord(result.hits[0].record, withQuotes) };
     }
     const blocks = result.hits.map(
-      (h) => `── ${h.axefx2Name} ──\n${formatAxeFxIILineageRecord(h.record, withQuotes, 3)}`,
+      (h) => `${h.axefx2Name}\n${formatAxeFxIILineageRecord(h.record, withQuotes, 3)}`,
     );
     return {
       ok: true,

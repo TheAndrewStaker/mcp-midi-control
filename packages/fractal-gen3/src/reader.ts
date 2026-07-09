@@ -42,6 +42,7 @@ import type {
   PresetBinaryDump,
   Gen3WholePresetView,
   Gen3GridCellView,
+  Gen3LiveMeters,
   OverwriteTargetInfo,
   LocationRef,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
@@ -52,7 +53,14 @@ import {
   parseGen3StateBroadcastHead,
   buildRequestGridLayout,
   parseGen3GridLayout,
+  parseGen3LiveMeters,
 } from 'fractal-midi/gen3/axe-fx-iii';
+import {
+  VP4_MODEL_ID,
+  buildVp4GetStructureBlob,
+  parseVp4StructureBlob,
+} from 'fractal-midi/gen3/vp4';
+import type { Vp4StructureBlob } from 'fractal-midi/gen3/vp4';
 import { parsePresetDump, extractPresetName } from './presetDump.js';
 import { decodeGen3PresetDump, effectName } from './presetBody.js';
 import type { Gen3DecodedPreset } from './presetBody.js';
@@ -324,6 +332,126 @@ async function collectGridLayout(
 }
 
 /**
+ * VP4 only: read the active preset's STRUCTURE in one round-trip via the
+ * eid206 pid0 tc=0x1f blob (preset name, scene names, current scene, and the
+ * serial 4-slot chain). This is the register VP4-Edit itself polls to render
+ * the chain; the request/response are byte-decoded from two fw 4.03 community
+ * captures (`fractal-midi/src/gen3/vp4/structureBlob.ts`). Subscribes BEFORE
+ * sending (the reply can land in the same USB callback). Throws no_ack on
+ * timeout; the caller treats the structure read as best-effort.
+ */
+async function collectVp4StructureBlob(
+  ctx: DispatchCtx,
+  deviceLabel: string,
+  timeoutMs: number,
+): Promise<Vp4StructureBlob> {
+  let frame: number[] | undefined;
+  let resolveDone!: () => void;
+  const done = new Promise<void>((res) => {
+    resolveDone = res;
+  });
+  const unsubscribe = ctx.conn.onMessage((bytes) => {
+    // fn=0x01 reply on the structure register: eid206 (4E 01), pid0, tc=0x1f.
+    // Gate on a LARGE frame so the editor-style 18-byte query echo (if any)
+    // isn't mistaken for the 238-byte blob response.
+    if (
+      bytes[4] === VP4_MODEL_ID && bytes[5] === 0x01 &&
+      bytes[6] === 0x4e && bytes[7] === 0x01 &&
+      bytes[8] === 0x00 && bytes[9] === 0x00 &&
+      bytes[10] === 0x1f && bytes.length > 100
+    ) {
+      if (frame) return;
+      frame = [...bytes];
+      resolveDone();
+    }
+  });
+  const timer = setTimeout(resolveDone, timeoutMs);
+  try {
+    ctx.conn.send(buildVp4GetStructureBlob());
+    await done;
+  } finally {
+    clearTimeout(timer);
+    unsubscribe();
+  }
+  if (!frame) {
+    throw new DispatchError(
+      'no_ack',
+      deviceLabel,
+      `get_preset: no structure-blob (eid206 pid0 tc=0x1f) reply from ${deviceLabel} within ${timeoutMs}ms.`,
+    );
+  }
+  return parseVp4StructureBlob(frame);
+}
+
+/**
+ * Read a DISCRETE (type/model) param's CURRENT name directly off the device via
+ * the fn=0x01 sub=0x1F type-name GET (reply decoded by parseGetParameterResponse,
+ * `.displayString`). The positional fn=0x1F BULK read mis-addresses type
+ * selectors — its value is not the roster ordinal (FM9 capture 2026-06-19: a
+ * reverb whose device name was "Small Room"/ordinal 0 read back as positional
+ * value 5 = "Large Hall"), so for enum/type params the device's own name string
+ * is authoritative. Byte-grounded on FM9 fw 11.0 (the device answered both the
+ * sub=0x1F and sub=0x09 type GETs with the name). Returns the name, or undefined
+ * when the device doesn't answer (caller falls back to the bulk read — older
+ * firmware / III·FM3 where this GET reply isn't yet confirmed).
+ */
+async function readCurrentTypeName(
+  ctx: DispatchCtx,
+  codec: ModernFractalCodec,
+  effectId: number,
+  typeParamId: number,
+  timeoutMs: number,
+): Promise<string | undefined> {
+  const respPromise = ctx.conn.receiveSysExMatching(
+    (b) => codec.isGetParameterResponse(b),
+    timeoutMs,
+  );
+  ctx.conn.send(codec.buildRequestCurrentTypeName(effectId, typeParamId));
+  try {
+    const resp = await respPromise;
+    const parsed = codec.parseGetParameterResponse(resp);
+    if (parsed.effectId === effectId && parsed.displayString.length > 0) {
+      return parsed.displayString;
+    }
+  } catch {
+    // device didn't answer the type-name GET; caller falls back to the bulk read.
+  }
+  return undefined;
+}
+
+/**
+ * Best-effort read of the device's CURRENT active scene index (fn=0x0C with the
+ * `7F` query sentinel → a 0x0C reply whose payload byte is the scene). The scene
+ * QUERY is the spec-documented form and has NO write side-effect — unlike the
+ * tempo query (fn=0x14 `7F 7F`), which on early-firmware III is reported to SET
+ * the tempo to 250 BPM, so tempo is deliberately NOT auto-read here. Returns
+ * undefined when the device doesn't answer in time; the caller then leaves the
+ * active scene simply unknown rather than failing the whole read.
+ */
+async function readActiveScene(
+  ctx: DispatchCtx,
+  codec: ModernFractalCodec,
+  timeoutMs: number,
+): Promise<number | undefined> {
+  const respPromise = ctx.conn.receiveSysExMatching(
+    (b) => codec.isSetGetSceneResponse(b),
+    Math.min(250, timeoutMs),
+  );
+  // send() is INSIDE the try: it throws synchronously on a dead/closed handle,
+  // and this helper's whole contract is best-effort (return undefined, never
+  // throw) — letting a send throw escape would trip get_preset's outer grid
+  // catch and mislabel a present live_grid as absent. respPromise is already
+  // pre-observed by receiveSysExMatching, so not awaiting it on the throw path
+  // does not leak an unhandled rejection.
+  try {
+    ctx.conn.send(codec.buildGetScene());
+    return codec.parseSceneResponse(await respPromise).scene;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Convert a live sub=0x2E grid reply into the same `Gen3GridCellView[]` shape as
  * the stored-dump grid (`whole_preset.grid`), labeling blocks with the SAME
  * `effectName` convention. The cable bitmask is carried raw in `route_flag`;
@@ -416,9 +544,9 @@ function snapshotFromDecoded(
 
   const warnings = [
     `gen-3 whole-preset decode (${source}): the patch body was Huffman-decompressed and ` +
-      `structurally decoded (CRC ${decoded.crc_valid ? 'valid' : 'INVALID — values may be unreliable'}). ` +
+      `structurally decoded (CRC ${decoded.crc_valid ? 'valid' : 'INVALID, values may be unreliable'}). ` +
       `'slots'/'scenes' are a summary; the full routing grid, per-channel (A/B/C/D) block types, ` +
-      `scene controllers, and modifiers are in 'whole_preset'. This snapshot is informational — ` +
+      `scene controllers, and modifiers are in 'whole_preset'. This snapshot is informational; ` +
       `it is NOT a positioned grid that round-trips through apply_preset by slot. Named knob VALUES ` +
       `beyond amp are not yet decoded (the body word->knob map awaits a value-scale ground truth).`,
   ];
@@ -513,8 +641,15 @@ export function makeReader(opts: {
    */
   function strideOf(bulk: Gen3BlockBulkRead, maxPid: number | undefined): { stride: number; channels: number } {
     if (bulk.itemCount > 0 && bulk.values.length >= bulk.itemCount) {
+      // Descending candidate channel counts. On a DEVICE-TRUE catalog
+      // stride == maxPid+1 exactly, so the correct channel count is the LARGEST
+      // c that still leaves room for every paramId (itemCount/c >= maxPid+1); any
+      // larger c under-sizes the stride and is rejected, so trying 6/3 ahead of
+      // 4/2 cannot mis-derive a 4-channel block. 6 covers the Multiplexer
+      // (itemCount 42 = 6×7, maxPid 6 — the ÷4 rule fell through to 2×21 and
+      // mis-addressed channels B-D; FM9 capture 2026-06-19).
       if (deviceTrueCatalog && maxPid !== undefined) {
-        for (const c of [4, 2, 1]) {
+        for (const c of [6, 4, 3, 2, 1]) {
           if (bulk.itemCount % c === 0 && bulk.itemCount / c >= maxPid + 1) {
             return { stride: bulk.itemCount / c, channels: c };
           }
@@ -586,7 +721,7 @@ export function makeReader(opts: {
         throw new DispatchError(
           'bad_channel',
           deviceLabel,
-          `get_param: channel index ${want} is out of range for ${blockSlug}.${name} — ` +
+          `get_param: channel index ${want} is out of range for ${blockSlug}.${name}; ` +
             (channels === 1
               ? `this block's dump carries a single channel copy (read it as channel ` +
                 `"${channelNames[0]}" or omit the channel arg).`
@@ -635,6 +770,32 @@ export function makeReader(opts: {
     ): Promise<ReadResult> {
       const { effectId } = resolveBlockOrThrow(blockSlugIn, deviceLabel, instance);
       const { param } = resolveParamOrThrow(blockSlugIn, name, deviceLabel);
+      // DISCRETE type/model param: read the device's CURRENT type NAME directly.
+      // The positional bulk read mis-addresses type selectors (its value is not
+      // the roster ordinal), so the device's own name string is authoritative.
+      const schema = catalog.blocks[blockSlugIn]?.params[name];
+      if (schema?.wire_kind === 'discrete') {
+        const typeName = await readCurrentTypeName(
+          ctx, codec, effectId, param.paramId, Math.min(250, getResponseTimeoutMs),
+        );
+        if (typeName !== undefined) {
+          // Best-effort reverse-resolve the wire ordinal from the partial enum
+          // table for callers that want it; the NAME is the authoritative value.
+          let wire = 0;
+          if (schema.enum_values !== undefined) {
+            const hit = Object.entries(schema.enum_values).find(([, v]) => v === typeName);
+            if (hit !== undefined) wire = Number(hit[0]);
+          }
+          return {
+            block: blockSlugIn,
+            name,
+            wire_value: wire,
+            display_value: typeName,
+            unit: param.unit,
+          };
+        }
+        // else: device didn't answer the type-name GET — fall back to the bulk read.
+      }
       const bulk = await collectBlockBulkRead(ctx, codec, effectId, deviceLabel, getResponseTimeoutMs);
       return projectParam(blockSlugIn, name, param, bulk, channel);
     },
@@ -707,17 +868,64 @@ export function makeReader(opts: {
       const warnings: string[] = [];
       let liveGrid: Gen3GridCellView[] | undefined;
       let placedEffectIds: Set<number> | undefined;
-      try {
-        const gridFrame = await collectGridLayout(ctx, codec, deviceLabel, getResponseTimeoutMs);
-        liveGrid = liveGridView(gridFrame, codec.modelByte);
-        placedEffectIds = new Set(liveGrid.filter((c) => !c.is_shunt).map((c) => c.effect_id));
-      } catch {
-        // No grid reply (older firmware / port held / III-FM3 unconfirmed):
-        // fall back to probing every catalog block, as before.
-        warnings.push(
-          'gen-3 live grid read (fn=0x01 sub=0x2E) returned nothing; fell back to polling every ' +
-            'catalog block. The snapshot has no positioned routing (live_grid absent).',
-        );
+      let liveMeters: Gen3LiveMeters | undefined;
+      let activeScene: number | undefined;
+      let vp4Structure: Vp4StructureBlob | undefined;
+
+      // VP4 (serial AM4-shape): the whole preset STRUCTURE — name, scene
+      // names, current scene, and the 4-slot chain — is one eid206 pid0
+      // tc=0x1f blob read (the register VP4-Edit itself polls; byte-decoded
+      // from two fw 4.03 community captures). One round-trip replaces the
+      // grid read (sub=0x2E is a grid-family read VP4-Edit never issues) AND
+      // the fn=0x0C scene query, and scopes the per-block poll below to the
+      // blocks the chain actually holds. Community beta: the blob layout is
+      // capture-decoded; this server issuing the read is untested on hardware.
+      // Best-effort — on no reply we fall through to the generic path.
+      if (codec.modelByte === VP4_MODEL_ID) {
+        try {
+          vp4Structure = await collectVp4StructureBlob(ctx, deviceLabel, getResponseTimeoutMs);
+          placedEffectIds = new Set(
+            vp4Structure.chain.filter((s): s is NonNullable<typeof s> => s !== null).map((s) => s.effectId),
+          );
+          activeScene = vp4Structure.currentSceneDisplay; // PresetSnapshot.active_scene is 1-indexed
+        } catch {
+          warnings.push(
+            'vp4 structure read (eid206 pid0 tc=0x1f) returned nothing; fell back to polling every ' +
+              'catalog block. The snapshot has no preset name / scene names / chain positions.',
+          );
+        }
+      }
+
+      // Grid-family live read. Skipped when the VP4 structure blob already
+      // answered: the VP4 is a serial chain with no grid, sub=0x2E is a
+      // grid-family read VP4-Edit never issues, and the blob carries the
+      // scene, so neither the grid attempt nor the fn=0x0C query would add
+      // anything but a timeout.
+      if (vp4Structure === undefined) {
+        try {
+          const gridFrame = await collectGridLayout(ctx, codec, deviceLabel, getResponseTimeoutMs);
+          liveGrid = liveGridView(gridFrame, codec.modelByte);
+          placedEffectIds = new Set(liveGrid.filter((c) => !c.is_shunt).map((c) => c.effect_id));
+          // The SAME sub=0x2E frame carries live CPU + output meters at fixed
+          // low offsets (before the grid region) — decode them for free, no extra
+          // round-trip. Best-effort: a malformed frame just omits meters.
+          try {
+            liveMeters = parseGen3LiveMeters(gridFrame);
+          } catch {
+            // meters absent; not worth a warning (the grid read still succeeded).
+          }
+          // The grid reply proves the device is answering, so a short scene query
+          // won't pay a full timeout. (Skipped entirely when the grid read failed,
+          // so a dead/held port isn't probed twice.)
+          activeScene = await readActiveScene(ctx, codec, getResponseTimeoutMs);
+        } catch {
+          // No grid reply (older firmware / port held / III-FM3 unconfirmed):
+          // fall back to probing every catalog block, as before.
+          warnings.push(
+            'gen-3 live grid read (fn=0x01 sub=0x2E) returned nothing; fell back to polling every ' +
+              'catalog block. The snapshot has no positioned routing (live_grid absent).',
+          );
+        }
       }
 
       // Short per-block cap: a real burst lands in ~1ms and an unplaced block
@@ -762,19 +970,39 @@ export function makeReader(opts: {
             params[key] = blockParams[key].decode(bulk.values[paramId]);
           }
         }
-        // slot is a sequential placeholder (no grid position is read on gen-3).
-        slots.push({ slot: placedIndex, block_type: slug, params });
+        // slot: on VP4 with a decoded structure blob this is the block's REAL
+        // 1-based chain position (gaps = empty slots); on grid devices it is a
+        // sequential placeholder (no grid position is read on gen-3).
+        const chainPos = vp4Structure?.chain.findIndex((s) => s !== null && s.effectId === effectId);
+        slots.push({
+          slot: chainPos !== undefined && chainPos >= 0 ? chainPos + 1 : placedIndex,
+          block_type: slug,
+          params,
+        });
       }
+      if (vp4Structure !== undefined) slots.sort((a, b) => Number(a.slot) - Number(b.slot));
       warnings.push(
-        liveGrid
+        vp4Structure
+          ? 'vp4 get_preset: `name`, `scenes` (with names), `active_scene`, and the `slots` slot ' +
+              'numbers (REAL 1-based chain positions; gaps = empty slots) come from ONE structure-blob ' +
+              'read (eid206 pid0 tc=0x1f, the register VP4-Edit itself polls, byte-decoded from two ' +
+              'fw 4.03 community captures). Community beta: the blob layout is capture-decoded but this ' +
+              "server's own read is untested on hardware — confirm against the front panel. Narrate the " +
+              'chain as a linear signal path (Input → slot 1 → … → slot 4 → Output). Per-block param ' +
+              'VALUES still come from the fn=0x1F bulk poll, which VP4-Edit never uses (that read-path ' +
+              'audit item stands); treat values as unconfirmed; enum params read as ordinal labels, ' +
+              'uncalibrated continuous as raw wire.'
+          : liveGrid
           ? 'gen-3 get_preset: `live_grid` holds the positioned routing (row/col + block per cell) ' +
               'from the live fn=0x01 sub=0x2E read; `slots` carries the per-block param VALUES (a flat ' +
-              'inventory — its `slot` numbers are sequential, not grid positions; match a slot to its ' +
+              'inventory; its `slot` numbers are sequential, not grid positions; match a slot to its ' +
               'cell via block_type/effect name in live_grid). Cable directions are surfaced raw in ' +
               'live_grid[].route_flag (edge decode is community-beta, not asserted). Per-channel params ' +
               'are the channel-A copy (use get_param with a channel arg); enum params read as ordinal ' +
-              'labels, uncalibrated continuous as raw wire. Community beta: server-issued reads are not ' +
-              'yet hardware-confirmed end to end.'
+              'labels, uncalibrated continuous as raw wire. When describing this to the user, narrate ' +
+              'live_grid as a linear signal path (Input → block → block → Output), not a row/column ' +
+              'grid or coordinates; it reads cleanly aloud and is clearer for everyone. Community beta: ' +
+              'server-issued reads are not yet hardware-confirmed end to end.'
           : 'gen-3 get_preset is a block inventory, not a positioned grid read: slot indices are ' +
               'sequential placeholders (no grid read), so the snapshot is not round-trippable ' +
               'through apply_preset by position. Per-channel params are reported as their channel-A ' +
@@ -782,16 +1010,38 @@ export function makeReader(opts: {
               'as ordinal labels; uncalibrated continuous params read back as raw wire values. ' +
               'Community beta: the server-driven fn=0x1F poll is not yet hardware-confirmed end to end.',
       );
+      if (liveMeters !== undefined) {
+        warnings.push(
+          `gen-3 live_meters: cpu_percent (${liveMeters.cpu_percent}%) is the active preset's steady ` +
+            'DSP cost (the headroom answer); output_left/right are momentary peaks at read time. ' +
+            'Decoded from the same sub=0x2E frame as live_grid (no extra round-trip). Evidence: the ' +
+            'output meters are FM9-behaviorally-confirmed (they vary across reads); cpu_percent is ' +
+            'FM3(ForgeFX)-sourced and FM9-consistent. Community beta. The device input meter is not ' +
+            'surfaced (its offset is not portable across the gen-3 family).',
+        );
+      }
+      // VP4: scene names from the structure blob (channel/bypass per scene are
+      // not in the blob — left empty, not asserted).
+      const vp4Scenes: SceneSpec[] | undefined = vp4Structure?.sceneNames.map((n, i) => ({
+        scene: i + 1,
+        channels: {},
+        bypassed: {},
+        name: n,
+      }));
       return {
-        name: undefined,
+        name: vp4Structure?.presetName,
         slots,
+        ...(vp4Scenes ? { scenes: vp4Scenes } : {}),
         ...(liveGrid ? { live_grid: liveGrid } : {}),
+        ...(liveMeters ? { live_meters: liveMeters } : {}),
+        ...(activeScene !== undefined ? { active_scene: activeScene } : {}),
         read_warnings: warnings,
         _meta: {
           device: deviceLabel,
           read_at_ms: readStartedMs,
           active_scene_only: true,
-          routing_omitted: liveGrid === undefined,
+          // The VP4 structure blob carries the serial chain = the routing.
+          routing_omitted: liveGrid === undefined && vp4Structure === undefined,
           channel_state_omitted: true,
           read_duration_ms: Date.now() - readStartedMs,
         },

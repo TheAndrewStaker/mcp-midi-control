@@ -29,7 +29,7 @@ import {
   resolveChannel,
   resolveParamName,
 } from './resolvers.js';
-import { collectTempoLockCowriteWarnings, type TempoLockWrite } from './tempoLock.js';
+import { collectTempoLockCowriteWarnings, collectTempoLockStandaloneWarnings, type TempoLockWrite } from './tempoLock.js';
 
 /**
  * BK-075 phantom-param pre-flight. Returns a `validation_info[]` entry
@@ -40,6 +40,31 @@ import { collectTempoLockCowriteWarnings, type TempoLockWrite } from './tempoLoc
  * The write proceeds regardless — same display-first / user-agency
  * rationale as BK-071. Surface the trap, don't refuse.
  */
+/**
+ * A "pseudo-block" carries params (device/preset config like the AM4
+ * `global` MIDI map or `preset` scene-MIDI slots) but is NOT a placeable
+ * chain block — it never occupies a slot, so its param-register writes
+ * always land and the "unplaced block" / "unrouted block" pre-flights are
+ * false positives (BUG-7, 2026-07-04 AM4 hardware session). A block is a
+ * pseudo-block when the descriptor exposes typed slots (`block_types`) and
+ * this block isn't one of them. When `block_types` is absent we can't
+ * tell, so we treat every block as real (the pre-flight runs as before).
+ */
+function isPseudoBlock(descriptor: DeviceDescriptor, canonicalBlock: string): boolean {
+  if (descriptor.block_types === undefined) return false;
+  // block_types keys are the bare block slug on AM4 ("amp") but INSTANCE-
+  // suffixed on grid devices with multiple instances per type ("amp 1",
+  // "reverb 2" on Axe-Fx II). canonicalBlock is always the bare slug
+  // (resolveBlockName strips the instance), so strip any trailing " N" from
+  // each block_types key before comparing — otherwise every real II block
+  // reads as a pseudo-block and its unplaced/unrouted warnings are lost.
+  const slug = canonicalBlock.trim().toLowerCase();
+  for (const key of Object.keys(descriptor.block_types)) {
+    if (key.trim().toLowerCase().replace(/\s+\d+$/, '') === slug) return false;
+  }
+  return true;
+}
+
 export async function collectPhantomParamWarnings(
   descriptor: DeviceDescriptor,
   ctx: DispatchCtx,
@@ -47,6 +72,7 @@ export async function collectPhantomParamWarnings(
   canonicalName: string,
 ): Promise<ValidationInfo[]> {
   if (descriptor.reader.getBlockLayoutSnapshot === undefined) return [];
+  if (isPseudoBlock(descriptor, canonicalBlock)) return [];
   let snapshot;
   try {
     snapshot = await getCachedBlockLayout(descriptor.id, ctx, () =>
@@ -103,6 +129,7 @@ export async function collectRoutingMaskWarnings(
   canonicalName: string,
 ): Promise<ValidationInfo[]> {
   if (descriptor.reader.getBlockLayoutSnapshot === undefined) return [];
+  if (isPseudoBlock(descriptor, canonicalBlock)) return [];
   let snapshot;
   try {
     snapshot = await getCachedBlockLayout(descriptor.id, ctx, () =>
@@ -182,8 +209,16 @@ export async function executeSetParam(args: {
     canonical_block,
     canonical_name,
   );
+  // Tempo-lock standalone advisory: a single set_param on a tempo-locked
+  // timing param (delay.time / <mod>.rate) can't carry its own tempo, so
+  // the co-write inspection can't see it. Read the block's current tempo;
+  // if synced, the write lands in the register but is inaudible (BUG-2).
+  // One extra read, only for timing params.
+  const tempoLockWarnings = await collectTempoLockStandaloneWarnings(descriptor, ctx, [
+    { block: canonical_block, name: canonical_name, value: wire_value, channel, instance },
+  ]);
   const result = await descriptor.writer.setParam(ctx, canonical_block, canonical_name, wire_value, channel, instance);
-  const combinedWarnings = [...phantomWarnings, ...routingWarnings];
+  const combinedWarnings = [...phantomWarnings, ...routingWarnings, ...tempoLockWarnings];
   const validation_info = combinedWarnings.length > 0 ? combinedWarnings : undefined;
   return {
     ...result,
@@ -262,7 +297,7 @@ export async function executeSetParams(args: {
       const channel = resolveChannel(descriptor, block, op.channel);
       const value = encodeValue(descriptor, block, name, op.value);
       validated.push({ block, name, value, channel, instance: op.instance });
-      displayWrites.push({ block, name, value: op.value });
+      displayWrites.push({ block, name, value: op.value, channel, instance: op.instance });
     } catch (err) {
       if (err instanceof DispatchError) {
         throw new DispatchError(
@@ -282,9 +317,14 @@ export async function executeSetParams(args: {
   // ignored on the hardware. Pure inspection of the resolved writes —
   // no extra wire read. Additive `validation_info[]`; write proceeds.
   const tempoWarnings = collectTempoLockCowriteWarnings(descriptor, displayWrites);
+  // Standalone case: timing params in the batch whose tempo isn't also in
+  // the batch — read the live tempo and warn if synced (BUG-2). The
+  // collector skips co-write cases internally, so the two don't double-warn.
+  const tempoStandaloneWarnings = await collectTempoLockStandaloneWarnings(descriptor, ctx, displayWrites);
+  const allTempoWarnings = [...tempoWarnings, ...tempoStandaloneWarnings];
   return {
     ...result,
-    ...(tempoWarnings.length > 0 ? { validation_info: tempoWarnings } : {}),
+    ...(allTempoWarnings.length > 0 ? { validation_info: allTempoWarnings } : {}),
     device: descriptor.display_name,
   };
 }

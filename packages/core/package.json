@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/core",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Shared MCP dispatcher, param-kind resolver, and protocol-generic types.",
   "private": true,
   "license": "Apache-2.0",
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "midi": "^2.0.0",
+    "@julusian/midi": "^3.6.1",
     "serialport": "^13.0.0",
     "zod": "^4.4.2"
   },

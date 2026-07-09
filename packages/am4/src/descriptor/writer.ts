@@ -416,7 +416,7 @@ export const writer: DeviceWriter = {
       channel: channelName,
       warning: result.acked
         ? undefined
-        : `No ack within timeout; typically a stale MIDI handle or the block isn't placed. Try reconnect_midi or check the layout.`,
+        : `Sent, but the device did not confirm it; it may not have landed; check the AM4 display. If it didn't take, the MIDI handle may be stale (try reconnect_midi) or the block may not be placed in the chain.`,
     };
   },
 
@@ -524,7 +524,7 @@ export const writer: DeviceWriter = {
         : undefined,
       warning: result.acked
         ? undefined
-        : 'No write-echo within timeout; verify on the AM4 display.',
+        : 'Sent, but the device did not confirm it; it may not have landed; check the AM4 display.',
     };
   },
 
@@ -610,7 +610,7 @@ export const writer: DeviceWriter = {
         : undefined,
       warning: result.acked
         ? undefined
-        : 'No write-echo within timeout; verify on the AM4 display.',
+        : 'Sent, but the device did not confirm it; it may not have landed; check the AM4 display.',
     };
   },
 
@@ -654,7 +654,7 @@ export const writer: DeviceWriter = {
         : undefined,
       warning: result.acked
         ? undefined
-        : `No write-echo within timeout; verify on the AM4 display.`,
+        : `Sent, but the device did not confirm it; it may not have landed; check the AM4 display.`,
     };
   },
 
@@ -704,7 +704,7 @@ export const writer: DeviceWriter = {
         : undefined,
       warning: result.acked
         ? undefined
-        : `No write-echo within timeout; verify on the AM4 display.`,
+        : `Sent, but the device did not confirm it; it may not have landed; check the AM4 display.`,
     };
   },
 
@@ -790,7 +790,7 @@ export const writer: DeviceWriter = {
       capture.unsubscribe();
     }
     const budgetNote = wireResult.budgetExceeded
-      ? `apply aborted: the device went silent mid-burst and the operation budget elapsed before all writes were sent (${wireResult.acked + wireResult.unacked} of ${wireResult.totalWrites}). Reconnect (reconnect_midi) and retry — the same spec completes the unfinished writes idempotently.`
+      ? `apply aborted: the device went silent mid-burst and the operation budget elapsed before all writes were sent (${wireResult.acked + wireResult.unacked} of ${wireResult.totalWrites}). Reconnect (reconnect_midi) and retry; the same spec completes the unfinished writes idempotently.`
       : undefined;
     const ackNote = wireResult.unacked > 0
       ? `${wireResult.unacked} of ${wireResult.totalWrites} writes did not ack within timeout. This is usually cold-start: the first write burst after a fresh connection drops a few acks while the port warms up. Retry the same call once; the second attempt almost always lands clean. If un-acked writes persist across retries, verify on the AM4 display.`
@@ -980,7 +980,7 @@ export const writer: DeviceWriter = {
         : undefined,
       warning: result.acked
         ? undefined
-        : `Scene rename sent but no ack; verify on the AM4 display.`,
+        : `Scene rename sent, but the device did not confirm it; it may not have landed; check the AM4 display.`,
     };
   },
 

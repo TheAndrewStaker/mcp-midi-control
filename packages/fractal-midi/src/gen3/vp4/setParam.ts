@@ -71,7 +71,11 @@ export function decodeVp4Float(b: readonly number[]): number {
   return decode5SeptetFloat32(w0, w1, w2, w3, w4);
 }
 
-function buildVp4Frame(payload: readonly number[]): number[] {
+/**
+ * Wrap an fn=0x01 payload in the VP4 envelope (F0 mfr model fn ... cks F7).
+ * Exported for the other VP4 fn=0x01 builders (structureBlob.ts).
+ */
+export function buildVp4Frame(payload: readonly number[]): number[] {
   const body = [SYSEX_START, ...MFR, VP4_MODEL_ID, FN_PARAMETER, ...payload];
   return [...body, fractalChecksum(body), SYSEX_END];
 }

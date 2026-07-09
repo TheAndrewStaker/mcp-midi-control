@@ -47,8 +47,8 @@
  * - samples/captured/probe-ii-sysinfo-sweep.syx (raw request+response bytes)
  */
 
-import midi from 'midi';
-import type { Input as MidiInput, Output as MidiOutput } from 'midi';
+import midi from "@julusian/midi";
+import type { Input as MidiInput, Output as MidiOutput } from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { guardAgainstRunningEditors } from '../_lib/editor-guard.js';
 import { fractalChecksum } from 'fractal-midi/shared';

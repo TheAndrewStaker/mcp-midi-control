@@ -40,6 +40,7 @@ import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/descriptor.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
+import { CIRCUIT_TRACKS_DESCRIPTOR } from '@mcp-midi-control/circuit-tracks/descriptor.js';
 
 // Register every device so the dispatcher's `requireDevice` finds them
 // during describe_device / preflight tests below.
@@ -47,6 +48,7 @@ registerDevice(AM4_DESCRIPTOR);
 registerDevice(AXEFX2_DESCRIPTOR);
 registerDevice(AXEFX3_DESCRIPTOR);
 registerDevice(HYDRASYNTH_DESCRIPTOR);
+registerDevice(CIRCUIT_TRACKS_DESCRIPTOR);
 
 let passed = 0;
 let failed = 0;
@@ -278,6 +280,93 @@ function resolveParamSafely(
   check(
     'unknown name surfaces did-you-mean suggestion path',
     'error' in r && /did you mean|known params|Did you mean/i.test(r.error),
+    JSON.stringify(r),
+  );
+}
+
+// ── 4b. Per-descriptor concept-keys (synth vocabulary) ──────────────
+// Resolution now reads `descriptor.concept_keys` directly, so a device
+// outside the Fractal `DevicePortSlug` union (Circuit Tracks) participates
+// just by declaring its slice. New name-router waveform keys map on both
+// synths; env/LFO TIME keys are deliberately NOT shared (raw count vs ms).
+console.log('\n-- resolveParamName: synth concept-keys across devices --');
+
+// New Hydrasynth waveform concept-keys resolve to short local names.
+{
+  const r = resolveParamSafely(HYDRASYNTH_DESCRIPTOR, 'osc1', 'osc.waveform');
+  check(
+    'Hydra osc.waveform (concept-key) resolves to type',
+    'name' in r && r.name === 'type' && r.aliased_from === 'osc.waveform',
+    JSON.stringify(r),
+  );
+}
+{
+  const r = resolveParamSafely(HYDRASYNTH_DESCRIPTOR, 'lfo1', 'lfo.waveform');
+  check(
+    'Hydra lfo.waveform (concept-key) resolves to wave',
+    'name' in r && r.name === 'wave' && r.aliased_from === 'lfo.waveform',
+    JSON.stringify(r),
+  );
+}
+
+// Circuit Tracks (non-Fractal slug) resolves its descriptor-declared keys.
+{
+  const r = resolveParamSafely(CIRCUIT_TRACKS_DESCRIPTOR, 'filter', 'filter.cutoff');
+  check(
+    'Circuit filter.cutoff (concept-key) resolves to frequency',
+    'name' in r && r.name === 'frequency' && r.aliased_from === 'filter.cutoff',
+    JSON.stringify(r),
+  );
+}
+{
+  const r = resolveParamSafely(CIRCUIT_TRACKS_DESCRIPTOR, 'filter', 'resonance');
+  check(
+    'Circuit filter.resonance (bare concept, block context) resolves to resonance',
+    'name' in r && r.name === 'resonance',
+    JSON.stringify(r),
+  );
+}
+{
+  const r = resolveParamSafely(CIRCUIT_TRACKS_DESCRIPTOR, 'osc1', 'osc.waveform');
+  check(
+    'Circuit osc.waveform (concept-key, block osc1) resolves to wave',
+    'name' in r && r.name === 'wave' && r.aliased_from === 'osc.waveform',
+    JSON.stringify(r),
+  );
+}
+{
+  const r = resolveParamSafely(CIRCUIT_TRACKS_DESCRIPTOR, 'lfo2', 'lfo.waveform');
+  check(
+    'Circuit lfo.waveform (concept-key, block lfo2) resolves to waveform',
+    'name' in r && r.name === 'waveform' && r.aliased_from === 'lfo.waveform',
+    JSON.stringify(r),
+  );
+}
+// Circuit device-local name still resolves unchanged (no regression).
+{
+  const r = resolveParamSafely(CIRCUIT_TRACKS_DESCRIPTOR, 'filter', 'frequency');
+  check(
+    'Circuit filter.frequency (device-local) resolves to frequency',
+    'name' in r && r.name === 'frequency' && r.aliased_from === undefined,
+    JSON.stringify(r),
+  );
+}
+// Env TIME is intentionally NOT a shared concept-key on Circuit (raw count,
+// not display ms): the concept-key path must NOT hijack it. The device-local
+// `attack` still works; the cross-device `env.attack` does not resolve here.
+{
+  const r = resolveParamSafely(CIRCUIT_TRACKS_DESCRIPTOR, 'env1', 'env.attack');
+  check(
+    'Circuit env.attack (unshared time concept-key) does NOT resolve',
+    'error' in r,
+    JSON.stringify(r),
+  );
+}
+{
+  const r = resolveParamSafely(CIRCUIT_TRACKS_DESCRIPTOR, 'env1', 'attack');
+  check(
+    'Circuit env1.attack (device-local) still resolves',
+    'name' in r && r.name === 'attack',
     JSON.stringify(r),
   );
 }

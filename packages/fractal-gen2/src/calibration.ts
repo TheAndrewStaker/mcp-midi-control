@@ -827,9 +827,10 @@ function resolveEnumWire(param: AxeFxIIParam, value: number | string): number {
   }
   if (matches.length === 1) return matches[0].idx;
   if (matches.length > 1) {
-    const list = matches.slice(0, 6).map((m) => `"${m.label}"`).join(' / ');
+    const shown = matches.slice(0, 6).map((m) => `"${m.label}"`).join(' / ');
+    const more = matches.length > 6 ? ` (and ${matches.length - 6} more — call list_params for the full list)` : '';
     throw new Error(
-      `"${value}" is ambiguous — matched ${matches.length} entries: ${list}. Pick one verbatim.`,
+      `"${value}" is ambiguous — matched ${matches.length} entries: ${shown}${more}. Pick one verbatim.`,
     );
   }
   const samples = Object.values(enumValues).slice(0, 8).join(', ');

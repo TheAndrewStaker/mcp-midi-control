@@ -1,0 +1,18 @@
+{
+  "name": "@mcp-midi-control/boss-rc",
+  "version": "0.6.0",
+  "description": "Boss RC looper family (RC-505mk2 / RC-600 / RC-500 / RC-505mk1) hybrid descriptor: live MIDI control (CC/PC on the RX CTL channel) and mass-storage .RC0 memory authoring, driven by the unified tool surface.",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./*": "./dist/*"
+  },
+  "dependencies": {
+    "@mcp-midi-control/core": "*",
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

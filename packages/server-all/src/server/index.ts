@@ -81,6 +81,10 @@ import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js'
 import { AXEFXGEN1_DESCRIPTOR } from '@mcp-midi-control/fractal-gen1/descriptor.js';
 import { MODERN_FRACTAL_DESCRIPTORS } from '@mcp-midi-control/fractal-gen3/device.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
+import { CIRCUIT_TRACKS_DESCRIPTOR } from '@mcp-midi-control/circuit-tracks/descriptor.js';
+import { SPD_SX_DESCRIPTOR } from '@mcp-midi-control/spd-sx/descriptor.js';
+import { VE500_DESCRIPTOR } from '@mcp-midi-control/ve-500/descriptor.js';
+import { RC_505_MK2_DESCRIPTOR } from '@mcp-midi-control/boss-rc/descriptor.js';
 
 // -- Server setup -----------------------------------------------------------
 
@@ -102,24 +106,54 @@ const SERVER_INSTRUCTIONS = [
   'transport, reads, continuous param writes, bypass, scene, and preset',
   'switching end-to-end through this server\'s own code, and a 2026-06-10',
   'community session confirmed set-by-name discrete param writes via',
-  'frames byte-identical to this server\'s encoder; only set_block',
-  'placement and save_preset still need on-device confirmation. The',
+  'frames byte-identical to this server\'s encoder. set_block placement is',
+  'now hardware-confirmed on the FM9 (2026-06-19 Windows verify probe: a',
+  'placed block appeared in the device fn=0x13 status dump); FM3 shares',
+  'that codec; save_preset still needs on-device confirmation.',
   'The FM9 is now also community-confirmed for reads + continuous writes:',
   'a 2026-06-17 owner test (fw 11.0 / macOS) round-tripped get_param +',
   'continuous set_param on hardware through this server, with channel-',
-  'specific reads and alias resolution confirmed (discrete set-by-name,',
-  'save_preset, set_block, and the live grid read stay beta). The III is',
+  'specific reads and alias resolution confirmed; set_block placement +',
+  'switch_scene are FM9-hardware-confirmed (2026-06-19) and reading a',
+  'block\'s current type/model by NAME is wire-confirmed. Discrete',
+  'set-by-name, save_preset, and the live grid read stay beta. The III is',
   'now hardware-confirmed too: the same 2026-06-17 owner test ran set_param',
   '(amp gain, channel A) with a device echo and a get_param read-back matching',
-  'the front panel — the first on-device confirmation of the III, the gen-3',
+  'the front panel, the first on-device confirmation of the III, the gen-3',
   'byte-identity anchor (same beta carve-outs as the FM9). Also',
   'community beta: Fractal VP4 (reads + continuous-knob set_param /',
   'set_bypass / save_preset writes), and the original Axe-Fx',
   'Standard/Ultra (parameter WRITES via set_param / set_params plus',
   'parameter reads; no whole-preset ops).',
+  'Non-Fractal community-beta devices (also fully drivable; call the',
+  'tools, ask the user to confirm by ear):',
+  '- Novation Circuit Tracks: a groovebox sequencer. apply_pattern authors',
+  '  drum + melodic note-track patterns (live-streamed over MIDI clock or',
+  '  written into a .ncs project uploaded to a slot); upload_sample /',
+  '  upload_project transfer WAVs + projects; external_targets routes a',
+  '  pattern out to outboard gear (e.g. the SPD-SX). Sample upload and',
+  '  note-track MIDI output are hardware-confirmed.',
+  '- Roland SPD-SX: a sample pad on a HYBRID transport. In WAVE MGR mode it',
+  '  is a mounted USB drive: scan_locations lists kits, get_preset reads a',
+  '  kit, list_samples reads the wave pool, export_preset backs up a kit,',
+  '  upload_sample appends a wave, author_kit writes the pad→wave map. In',
+  '  AUDIO/MIDI mode switch_preset recalls a kit and apply_pattern triggers',
+  '  pads. A verb in the wrong USB mode returns a clear capability error.',
+  '  The storage codec is hardware-confirmed; the server write path is beta.',
+  '- Boss VE-500: a vocal processor (harmony / pitch correct / FX / reverb).',
+  '  set_param / set_params / get_param / set_bypass / switch_preset (user',
+  '  memories), whole-patch apply_preset, and save_preset are hardware-verified',
+  '  (decoded byte-exact from the maker\'s editor source); factory-preset recall',
+  '  and whole-patch reads are not yet available.',
+  '- Boss RC-505mk2: a loop station on a HYBRID transport. Live MIDI:',
+  '  switch_preset recalls a memory (Program Change on the RX CTL channel),',
+  '  looper/track functions ride CC through the memory\'s ASSIGN table. Storage:',
+  '  scan_locations / get_preset read a memory\'s .RC0, apply_preset authors its',
+  '  name + ASSIGN table. The CC-driven coordination is hardware-confirmed; the',
+  '  unit never echoes state, so confirm by ear.',
   'Pick tools by intent, not by name length.',
   '',
-  'DEFAULT BEHAVIOR — call the tools, do not write specs.',
+  'DEFAULT BEHAVIOR: call the tools, do not write specs.',
   'When the user asks for an audible change on connected hardware (build a',
   'tone, tweak a param, switch a preset, switch a scene, save a patch), USE',
   'THE TOOLS. Do not produce a written spec / preset doc / parameter table',
@@ -127,12 +161,12 @@ const SERVER_INSTRUCTIONS = [
   'run, design exercise, or "what would the params look like" preview.',
   'Audible-change requests are tool-call requests by default.',
   '',
-  'SESSION-START SETUP — call describe_device(port) ONCE.',
+  'SESSION-START SETUP: call describe_device(port) ONCE.',
   'Before the first tone-building or apply_preset call against a device,',
   'call describe_device({port}) once. The response carries device-specific',
   'agent_guidance (channel/scene model, applicability rules, iconic-amp',
   'shortcuts, enum-name conventions, tempo-sync discipline, save-language',
-  'anti-patterns, read-vs-navigate constraints) — load it into context',
+  'anti-patterns, read-vs-navigate constraints); load it into context',
   'and refer to it while planning. Skipping this is the #1 cause of "the',
   'AI changed something but it doesn\'t sound right."',
   'This server is OPINIONATED about musical defaults: on every device that',
@@ -145,19 +179,46 @@ const SERVER_INSTRUCTIONS = [
   'ONE TOOL SURFACE.',
   'The unified surface (apply_preset, set_param, get_param, switch_preset,',
   'save_preset, switch_scene, set_block, set_bypass, set_params, get_params,',
-  'list_params, lookup_lineage, scan_locations, describe_device,',
+  'list_params, lookup_lineage, scan_locations, describe_device, describe_rig,',
   'find_compatible_types, get_preset, translate_preset, init_patch,',
-  'set_system_param, set_macro, apply_patch, send_chord, send_sequence)',
+  'set_system_param, set_macro, apply_patch, apply_pattern, author_kit,',
+  'upload_sample, upload_project, list_samples, import_songsterr,',
+  'list_pattern_recipes, send_chord, send_sequence)',
   'routes via the `port` argument and works against any registered device.',
-  'All tools are unified; there are no device-namespaced alternatives.',
+  'describe_rig gives a read-only overview of every registered device (use it',
+  'to plan a multi-device setup). All tools are unified; there are no',
+  'device-namespaced alternatives.',
   '',
-  'SAVE LANGUAGE — strict vocabulary list.',
+  'SAVE LANGUAGE: strict vocabulary list.',
   'Persisting to flash is destructive and gated. Only set save_authorized=',
   'true when the user used explicit save vocab: save, store, keep, put on,',
   'persist, commit to flash. State descriptions ("I want X to have a copy',
   'of Y", "make X look/sound like Y", "create at X based on Y") describe',
-  'the desired audition state, NOT save intent — leave save_authorized=false',
+  'the desired audition state, NOT save intent; leave save_authorized=false',
   'and audition. When ambiguous, audition and ASK before persisting.',
+  '',
+  'DESCRIBE FOR EARS: present results so they read cleanly aloud.',
+  'Many users drive this server entirely by voice / screen reader; the',
+  'conversational surface IS the accessibility win, so phrase every reply',
+  'to be spoken, not scanned. This is general good practice (it is clearer',
+  'for everyone), not a mode that toggles on:',
+  '- Spatial layouts as a linear path, never a table. Describe a signal',
+  '  chain or routing grid as prose ("signal flows: drive into amp into',
+  '  cab into reverb; reverb is bypassed in scene 1"). Never render a',
+  '  row/column grid or aligned ASCII table; the tools return structured',
+  '  display-unit data precisely so you can narrate it as a path.',
+  '- Confirm each change in one short sentence with the device-confirmed',
+  '  value ("amp gain set to 5.0, confirmed on the device"). Not a JSON',
+  '  blob, not a field table.',
+  '- State uncertainty in words. When a write is sent but the device did',
+  '  not echo it, say so in a sentence ("sent, but the device did not',
+  '  confirm it, please check the front panel"), rather than surfacing',
+  '  acked:false or a raw rejection code.',
+  '- Read safety / overwrite prompts as plain, unambiguous sentences that',
+  '  name the target and the exact phrase to proceed ("this would',
+  '  overwrite preset A03, named \'Lead Tone\'; say \'overwrite\' to',
+  '  proceed").',
+  'Keep it short: spoken sentences, not essays.',
 ].join('\n');
 
 // Report the package's real version in serverInfo. Read it from the
@@ -199,6 +260,12 @@ registerMidiPrimitiveTools(server); // send_cc / _note / _program_change / _nrpn
 // for reference. Hydrasynth-specific tools that haven't migrated to the
 // unified surface are still registered below.
 registerHydrasynthTools(server);    // Hydra-specific tools not yet on unified surface
+// SPD-SX needs no device-specific tools: it is a HYBRID-transport descriptor
+// (registered below) driven entirely by the unified surface. In WAVE MGR storage
+// mode the dispatcher resolves its mounted drive and routes scan_locations /
+// get_preset / list_samples / export_preset / upload_sample / author_kit to the
+// descriptor's storage reader/writer; in AUDIO/MIDI mode switch_preset recalls a
+// kit over MIDI. See packages/spd-sx/src/descriptor.ts.
 
 // -- Unified-surface descriptor registration --------------------------------
 //
@@ -237,6 +304,18 @@ registerMcpDevice(AM4_DESCRIPTOR);
 // regex (/hydrasynth|asm.*hydra/i) can't collide with the Fractal
 // patterns, so ordering doesn't matter for correctness.
 registerMcpDevice(HYDRASYNTH_DESCRIPTOR);
+// Novation Circuit Tracks (synth/drum control + pattern-target) and Roland
+// SPD-SX (minimal kit-recall + pattern-target). Their port_match patterns
+// (/circuit/i, /spd-?sx/i) can't collide with the Fractal or Hydra
+// patterns, so registration order doesn't matter for correctness.
+registerMcpDevice(CIRCUIT_TRACKS_DESCRIPTOR);
+registerMcpDevice(SPD_SX_DESCRIPTOR);
+// Boss VE-500 (vocal multi-FX). port_match /VE-?500/i can't collide with the
+// Fractal / Hydra / Circuit / SPD-SX patterns, so registration order is free.
+registerMcpDevice(VE500_DESCRIPTOR);
+// Boss RC-505mk2 (looper, hybrid live-MIDI + .RC0 storage). port_match /rc-?505/i
+// can't collide with the other devices' patterns, so registration order is free.
+registerMcpDevice(RC_505_MK2_DESCRIPTOR);
 registerUnifiedTools(server);
 // Expose each device's agent_guidance topics as MCP resources so the
 // agent can pull individual topics on demand instead of always

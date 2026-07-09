@@ -8,7 +8,7 @@ verified_on:
   - axe-edit-iii-binary
   - am4-edit-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-param-descriptor-16byte
+golden: scripts/cookbook-verify.ts#case-per-effect-paramtable-dispatcher (validates the same stride-16 descriptor tables against the mined dumps)
 relates_to: []
 consumed_in:
   - fractal-midi/scripts/ghidra/MineAxeEditIIParamResolver.java
@@ -55,8 +55,9 @@ AxeEdit, AxeEdit III). Mined via headless Ghidra scripts in
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-param-descriptor-16byte` validates the
-struct against known paramId/name pairs from the three editor binaries.
+`scripts/cookbook-verify.ts#case-per-effect-paramtable-dispatcher`
+validates the stride-16 descriptor tables (entry counts + dispatcher
+cite) against the mined dumps from the editor binaries.
 Cross-referenced with `verify-msg.ts` goldens.
 
 ## Refinement history

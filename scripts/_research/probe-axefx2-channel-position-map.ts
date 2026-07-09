@@ -25,7 +25,7 @@
  *   npx tsx scripts/_research/probe-axefx2-channel-position-map.ts
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 const AXE_FX_II_MODEL = 0x07;
 const FRACTAL_MFR = [0x00, 0x01, 0x74] as const;

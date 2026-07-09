@@ -867,6 +867,7 @@ export function buildApplyPresetAtOps(
         }
       }
     } else {
+      const blockParams = pendingParams.filter((p) => p.blockIdx === i);
       if (r.channel !== undefined) {
         ops.push({
           kind: 'channel',
@@ -876,8 +877,24 @@ export function buildApplyPresetAtOps(
           effectId: r.target.id,
           expectedChannel: r.channel,
         });
+      } else if (blockParams.length > 0 && r.target.canBypass) {
+        // BUG-4 fix (AM4/II parity): flat params with no explicit `channel`
+        // must land somewhere deterministic, not whatever channel the
+        // device happens to have active. Default to channel X; the
+        // per-scene channel completion below defaults every placed
+        // channel-capable block to X on any scene that doesn't explicitly
+        // map it elsewhere, so a fresh build is audible on landing without
+        // the caller doing anything special.
+        ops.push({
+          kind: 'channel',
+          bytes: buildSetBlockChannel(r.target.id, 'X'),
+          summary: `${r.target.name}: channel=X (default, no explicit channel supplied)`,
+          awaitResponse: 'channel_verify',
+          effectId: r.target.id,
+          expectedChannel: 'X',
+        });
       }
-      for (const pp of pendingParams.filter((p) => p.blockIdx === i)) {
+      for (const pp of blockParams) {
         ops.push({
           kind: 'param',
           bytes: buildParamBytes(r.target.id, pp, wireMode, r.target.name),
@@ -981,6 +998,7 @@ export function buildApplyPresetAtOps(
         });
       }
       // Walk this scene's channel map.
+      const explicitlyMappedChannelIds = new Set<number>();
       for (const [blockKey, channel] of Object.entries(s.channels ?? {})) {
         const target = sceneBlockResolutions.get(blockKey)!;
         if (!target.canBypass) {
@@ -988,6 +1006,7 @@ export function buildApplyPresetAtOps(
             `scenes[${s.index}].channels: block '${blockKey}' does not expose X/Y channels on Axe-Fx II`,
           );
         }
+        explicitlyMappedChannelIds.add(target.id);
         ops.push({
           kind: 'channel',
           bytes: buildSetBlockChannel(target.id, channel),
@@ -995,6 +1014,23 @@ export function buildApplyPresetAtOps(
           awaitResponse: 'channel_verify',
           effectId: target.id,
           expectedChannel: channel,
+        });
+      }
+      // BUG-4 completeness (AM4/II parity): any placed channel-capable
+      // block this scene doesn't explicitly map defaults to channel X,
+      // deterministic regardless of whatever channel the device inherited
+      // from the previous preset/scene. Mirrors the bypass-completeness
+      // pass above.
+      for (const r of resolved) {
+        if (!r.target.canBypass) continue;
+        if (explicitlyMappedChannelIds.has(r.target.id)) continue;
+        ops.push({
+          kind: 'channel',
+          bytes: buildSetBlockChannel(r.target.id, 'X'),
+          summary: `[scene ${s.index}] ${r.target.name}: channel=X (default, not explicitly mapped)`,
+          awaitResponse: 'channel_verify',
+          effectId: r.target.id,
+          expectedChannel: 'X',
         });
       }
     }

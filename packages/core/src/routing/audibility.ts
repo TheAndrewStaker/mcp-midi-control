@@ -305,7 +305,21 @@ export function checkAudibility(input: AudibilityInput, config: GridAudibilityCo
   const ok = breaks.length === 0;
   let summary: string;
   if (ok && notes.length === 0) {
-    summary = `Audibility check: input-to-output path is intact across ${graph.byPos.size} placed cell${graph.byPos.size === 1 ? '' : 's'}.`;
+    // Report the BLOCK count, not the raw placed-cell count. A full chain to
+    // the output fills every cell with blocks PLUS shunts — Fractal's term
+    // (Axe-Fx III manual) for the "sonically transparent" connector that
+    // spans empty grid locations (blockId 200..235). So `graph.byPos.size`
+    // reads e.g. "12" for a preset with only 5 blocks; surfacing that as
+    // "N placed cells" reads like "N blocks survived" and led to a false
+    // ghost-block report (2026-07-04). Split blocks vs shunts. "block"
+    // follows Fractal usage: amp / cab / effect are all blocks; a shunt is
+    // called out separately as it carries no processing.
+    const shuntCount = [...graph.byPos.values()].filter((c) => isShunt(c.blockId)).length;
+    const blockCount = graph.byPos.size - shuntCount;
+    const shuntClause = shuntCount > 0
+      ? ` (+${shuntCount} shunt${shuntCount === 1 ? '' : 's'})`
+      : '';
+    summary = `Audibility check: input-to-output path is intact across ${blockCount} block${blockCount === 1 ? '' : 's'}${shuntClause}.`;
   } else if (ok) {
     summary = `Audibility check: path intact, ${notes.length} informational note${notes.length === 1 ? '' : 's'} (see notes[]).`;
   } else {

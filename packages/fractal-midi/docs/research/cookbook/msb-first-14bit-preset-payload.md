@@ -8,7 +8,7 @@ verified_on:
   - axe-fx-ii-q9.04
   - axe-fx-iii-public-captures
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-msb-first-14bit-preset-payload
+golden: scripts/verify-axe-fx-ii-encoding.ts (buildSwitchPreset 0/128/699 MSB-first byte goldens)
 relates_to: [septet-14bit]
 consumed_in:
   - fractal-midi/src/gen2/axe-fx-ii/setParam.ts (buildSwitchPreset)
@@ -82,7 +82,8 @@ Cost: trivial. One shift + OR.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-msb-first-14bit-preset-payload` runs:
+`scripts/verify-axe-fx-ii-encoding.ts` carries buildSwitchPreset byte
+goldens over real envelopes (presets 0 / 128 / 699). Reference fixtures:
 1. Encode preset 699 → expected `[0x05, 0x3B]`
 2. Decode `[0x05, 0x3B]` → expected preset 699
 3. Encode preset 127 (boundary case under MSB byte 0) → expected

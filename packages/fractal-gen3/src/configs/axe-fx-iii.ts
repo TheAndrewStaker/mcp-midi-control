@@ -59,7 +59,7 @@ const AXEFX3_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> =
 const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
   ...MODERN_AGENT_GUIDANCE,
   device_note: [
-    'This is the Axe-Fx III (community beta) — the gen-3 byte-identity anchor.',
+    'This is the Axe-Fx III (community beta): the gen-3 byte-identity anchor.',
     '6x14 grid, 8 scenes, A-D channels. get_param and continuous set_param are',
     'now III-hardware-confirmed (community owner test: amp gain on channel A',
     'acked with device echo, read-back matched the front panel). Discrete',
@@ -133,7 +133,7 @@ export const AXE_FX_III_CONFIG: FractalModernConfig = {
   params_by_family: PARAMS_BY_FAMILY,
   canonical_terms: {
     block: 'block',
-    slot: 'grid cell (row 1..6, col 1..14)',
+    slot: 'grid location (row 1..6, col 1..14)',
     preset: 'preset',
     scene: 'scene 1..8',
     channel: 'channel A/B/C/D',

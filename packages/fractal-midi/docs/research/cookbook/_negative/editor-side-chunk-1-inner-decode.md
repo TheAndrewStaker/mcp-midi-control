@@ -7,7 +7,8 @@ verified_on:
   - am4-edit-binary
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-editor-side-chunk-1-inner-decode
+golden: STUB (structural-only; negative finding — verification is the three-HOP Ghidra classification cited in consumed_in; see Search terms to avoid re-attempting)
+retest_when: never (architectural — editors treat bulk preset chunks as opaque transport, proven by 3 Ghidra HOPs on AM4-Edit plus the committed III cross-cite; per-param byte positions are firmware-only knowledge, and the 2026-07-02 AM4 container decode came from the codec/oracle lane, not from any editor binary)
 relates_to: [iii-async-workflow-fn-registry, iii-workflow-state-machine-executor, iii-fn-byte-switch-as-inbound-dispatcher, vendor-envelope-descriptor-table, iii-multiproduct-editor-binary]
 consumed_in:
   - packages/fractal-midi/docs/devices/am4/preset-binary-format-research.md (§13)

@@ -80,10 +80,68 @@ sampled Delay param returned `00 00 00 00`, including a present block's LEVEL/MI
 treat `0x26` as an unconfirmed value read, not a reliable scalar, until a param-change
 capture confirms its semantics.
 
-`0x1f` form: 221-byte septet-packed routing/grid descriptor (eid 206). Across its 6
-reads it is byte-identical except a 5-byte telemetry region (payload offsets 14-18) —
-i.e. the stored chain layout is stable. Field-level decode (slot assignment) is **not
-yet done**; needs a before/after block-move capture to isolate the slot field.
+`0x1f` form (eid 206 pid 0): the whole-preset STRUCTURE blob — **fully field-decoded
+2026-07-01**, see the dedicated section below. (The earlier framing here — "routing/grid
+descriptor, not field-decoded, slot assignment unknown" — is superseded.)
+
+## eid206 pid0 tc=0x1f — whole-preset STRUCTURE blob (✅ decoded 2026-07-01)
+
+The VP4's system block **eid 206** answers `fn=0x01` GET on paramId 0, typecode `0x1f`
+with ONE septet-packed blob carrying the active preset's structure: preset name, the
+four scene names, the current scene, and the serial 4-slot chain. This is the register
+VP4-Edit itself polls to render the chain — 392 responses across the two captures.
+Codec: `src/gen3/vp4/structureBlob.ts` (`buildVp4GetStructureBlob` /
+`parseVp4StructureBlob`); goldens: `test/gen3/vp4/structureblob.test.ts`; cookbook:
+`vp4-eid206-structure-blob`.
+
+Request (18 bytes, verbatim in both captures, 202×):
+```
+F0 00 01 74 14 01 4E 01 00 00 1F 00 00 00 00 00 cs F7
+                  └eid 206─┘ └pid 0┘ tc      └len=0┘
+```
+
+Response (238 bytes): same header through `tc=0x1f`, then `00 00 00`, a 14-bit
+LSB-first length tag `40 01` (= **192** raw bytes — the same length-tag convention as
+the write frame's `04 00`), then **220 packed bytes**, cks, F7. The packed region
+unpacks 8→7 with the CHUNKED LSB-first-with-carry scheme (cookbook
+`iii-byte-stream-septet-pack-8to7`; `unpackValueChunked` — carry restarts every
+8 wire / 7 raw bytes) into a 192-byte raw record:
+
+| raw offset | field |
+|---|---|
+| `[0]` | u8 status flag: `0x00` fresh-loaded, `0x60` after the first structural edit |
+| `[4]` | 1-bit toggle FLIPPING on every structural command (delete/move/save/scene) — NOT a clean dirty flag |
+| `[8]` | u8 **CURRENT SCENE**, 0-based |
+| `[12..15]` | float32 LE **live telemetry** — varies per poll; never fingerprint/byte-compare raw blobs |
+| `[16..47]` | preset name, ASCII, space-padded 31 chars + NUL |
+| `[48..175]` | scene 1..4 names, 4 × 32-byte records (31 ASCII + NUL) |
+| `[176..191]` | **CHAIN TABLE**: 4 × u32 LE effectId (shared gen-3 table), slots 1..4 in order; `0` = empty slot |
+
+**Oracles (byte-exact, action-annotated):**
+- **Chain / move cascade (v2):** `[118,78,70,66]` (DRV/CHO/DLY/RVB) → the `pid10` write
+  at 4.78 s (Drive delete) → `[0,78,70,66]` → the `pid15`/`pid16` pair at 10.73 s (Delay
+  move) → `[70,0,78,66]` = exactly the annotated cascade [DLY, empty, CHO, RVB].
+- **Chain (v1, second preset):** `[70,118,90,94]` = precisely its four annotated blocks
+  (DLY/DRV/PHR/WAH).
+- **Current scene (N=2):** the annotated v2 scene 1→3 switch (`pid13` write, 41.15 s)
+  flips raw[8] `0→2`; the v1 capture (also post scene-1→3) independently reads `2`.
+  **This corrects the earlier claim that no readable register exposes the scene index.**
+- **Names:** "Virtual Pedalboard" / "Main Bank" + all eight scene names, clean ASCII in
+  both captures. **This overturns the v1-capture negative "the preset name is not in the
+  capture"** — the name was always in the 0x1f blob; the earlier 7-in-8 unpack attempt
+  used the wrong scheme/alignment (same failure class as
+  `_negative/gen3-septet-label-wrong-offset`). Likewise the v1 "slot order not
+  recoverable by blind unpack" negative: the chain IS a plain slot→effectId list, but as
+  u32 LE words in the CHUNKED unpack domain, not effectId bytes in the packed stream.
+
+**Register identities on eid206 (write side, from the same causality pass):** `pid10` =
+DELETE gesture, `pid15`+`pid16` = MOVE pair, `pid13` = SCENE gesture. These are
+identities only — the value math (≈33.x floats for placement; scene value `0x01` for a
+1→3 switch) remains OPEN, so `set_block` / `switch_scene` writes still do NOT ship.
+
+Consumed by `fractal-gen3` `get_preset` (active buffer) on VP4: one blob read returns
+name + scene names + current scene + the 4-slot chain (community-beta; the blob layout
+is capture-decoded but this server issuing the read is untested on hardware).
 
 ## Block effect-ID addressing (✅ confirmed == shared gen-3 table)
 
@@ -167,10 +225,15 @@ not Kevin's "-45% or so"). Treat continuous display calibration as undecoded.
 - **PARAM SET continuous**: `eid pid tc02` + normalized float (Delay feedback example above).
 - **BLOCK PLACEMENT / routing**: `eid206 pid10..16 tc01`. NOT one atomic cascade — `pid10`
   (val→33.5) fired at 4.78 s, `pid15`/`pid16` (val→33.06) together at 10.73 s, ~6 s apart =
-  two separate gestures. Placement STATE lives in the septet-packed `eid206 pid0 0x1f` blob.
-  Value→slot math **not decoded** (needs isolated single moves).
-- **SCENE switch**: `eid206 pid13 tc01` (value `0x01` for a 1→3 switch — value↔scene mapping
-  to confirm; no readable register exposes scene index in this capture).
+  two separate gestures. Register identities now pinned by the structure-blob chain diff
+  (see the STRUCTURE blob section): **`pid10` = delete gesture, `pid15`/`pid16` = move
+  pair**. Placement STATE lives in the `eid206 pid0 0x1f` blob (now field-decoded).
+  Value→slot math **still not decoded** (needs isolated minimal-pair moves) — placement
+  writes do not ship.
+- **SCENE switch**: `eid206 pid13 tc01` = the scene GESTURE (value `0x01` for a 1→3
+  switch — value↔scene mapping still to confirm). The CURRENT scene is readable: byte
+  [8] of the eid206 pid0 `0x1f` structure blob (corrects this doc's earlier "no readable
+  register exposes scene index" claim).
 
 **Other meta-register:** `pid 2028` (0x7EC) — 163-byte `0x0d` descriptor responses on effect
 blocks {66,70,78}, clustered around edits. A third firmware descriptor register alongside 2013/2022.
@@ -201,21 +264,27 @@ the 16-byte SAVE ack above. Do NOT use `get_param` for confirmation (telemetry-m
 
 ## Not yet decoded / still gated
 
-- **Block placement value→slot math** (`eid206 pid10–16` routing) — frames known, encoding
-  open. The one capability that stays gated.
-- **Scene value↔index** and the **bypass "bypassed" value** (enable=0.0 is solid).
+- **Block placement value→slot math** (`eid206 pid10–16` routing writes) — register
+  identities pinned (pid10 delete, pid15/16 move pair), values open. The one capability
+  that stays gated. The structure blob's chain table is the read-side diff oracle for
+  cracking it (minimal-pair single moves — see `captures-vp4.md`).
+- **Scene write value↔index** (`pid13` gesture value math; the READ side is solved via
+  the structure blob) and the **bypass "bypassed" value** (enable=0.0 is solid).
+  Zero-cost alternative: probe whether the VP4 answers the family-documented read-only
+  `fn=0x0C` scene query (`F0 00 01 74 14 0C 7F cs F7`) — if it does AND accepts the
+  fn=0x0C SET form, `switch_scene` ships without decoding pid13 at all.
 - **Continuous-param display calibration** beyond normalized [0,1] (per-param % / ms / Hz
-  range) and the `0x1f` routing-blob field layout.
-- **eid206 compact registers are the prime next target.** Beyond the pid-0 `0x1f` blob,
-  eid206 exposes `0x0d` registers pid 19/20/21/22 (read 6× each; 19/21 share one record,
-  20/22 another — likely 4 slots or 4 scenes paired) and pid 63 (read 23×, a stable
-  20-byte packed descriptor). These are the most decodable candidates for the serial
-  slot layout + Scene state and should be mined before the 221-byte septet blob.
-- **Negative results** (do not re-chase): the preset name "Y1: Main Bank" is NOT in the
-  capture (no ASCII even after a 7-in-8 unpack — the name register wasn't polled); no
-  4CM-separator / send-return block was polled (the 4CM routing is not a polled block or
-  lives inside the eid206 descriptor).
-- **Read-path action item:** `fractal-gen3` ships an `fn=0x1F` bulk-poll reader; this
-  capture shows VP4-Edit uses `fn=0x01` GET instead and contains no `fn=0x1F`. Whether
-  VP4 answers `fn=0x1F` at all is unconfirmed. Consider adding an `fn=0x01` GET
-  reader/parser for VP4. (Flagged here; `fractal-gen3` codec owned by another session.)
+  range).
+- **eid206 compact registers** `0x0d` pid 19/20/21/22 (19/21 share one record, 20/22
+  another) and pid 63 (stable 20-byte packed descriptor) remain unidentified. Less urgent
+  now that the pid-0 `0x1f` blob is field-decoded (name/scenes/scene-index/chain solved);
+  still candidates for per-scene bypass/channel state.
+- **Negative results** (updated 2026-07-01): the earlier "preset name is NOT in the
+  capture" and "slot order not recoverable by blind unpack" verdicts are **OVERTURNED** —
+  both were unpack-scheme misses (the name and the chain live in the pid-0 `0x1f` blob
+  under the CHUNKED 8→7 unpack; see the STRUCTURE blob section). Still standing: no
+  4CM-separator / send-return block was polled in capture #1.
+- **Read-path action item (stands):** `fractal-gen3` ships an `fn=0x1F` bulk-poll reader
+  for per-param VALUES; VP4-Edit uses `fn=0x01` GET instead and no capture shows VP4
+  answering `fn=0x1F`. The structure-blob read (fn=0x01, decoded) now covers the
+  name/scene/chain half; the per-param fn=0x01 GET reader is still the open item.

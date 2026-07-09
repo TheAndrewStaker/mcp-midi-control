@@ -84,7 +84,7 @@ mcp-midi-control                       (single repo)
 └── packages/
     ├── core/                        cross-device foundation
     │   └── src/
-    │       ├── midi/                MidiConnection + node-midi wrapper
+    │       ├── midi/                MidiConnection + @julusian/midi wrapper
     │       ├── protocol-generic/    unified surface
     │       │   ├── types.ts         DeviceDescriptor, DeviceWriter, DeviceReader
     │       │   ├── registry.ts      registerDevice / resolveDevice
@@ -189,7 +189,7 @@ across vendors:
   startup banner. Lives in `packages/server-all/src/server/`.
 - **MIDI port management.** Port enumeration, open/close, hot-replug
   detection, error handling. Shipped as `list_midi_ports` and
-  `reconnect_midi`. Generic node-midi wrapper in
+  `reconnect_midi`. Generic @julusian/midi wrapper in
   `packages/core/src/midi/`.
 - **Generic-MIDI primitive tools.** `send_cc`, `send_note`,
   `send_program_change`, `send_nrpn`, `send_sysex`, and the rest of the

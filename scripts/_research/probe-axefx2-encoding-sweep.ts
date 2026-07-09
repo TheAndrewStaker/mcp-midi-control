@@ -26,7 +26,7 @@
  * Estimated time: ~14 min for all 21 blocks (530ms per position).
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 

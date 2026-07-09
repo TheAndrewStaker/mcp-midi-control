@@ -60,7 +60,7 @@
  * ```
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { KNOWN_PARAMS, AXE_FX_II_BLOCKS } from 'fractal-midi/gen2/axe-fx-ii';

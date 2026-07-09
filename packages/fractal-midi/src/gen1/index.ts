@@ -12,5 +12,6 @@ export * from './types.js';
 export * from './nibble.js';
 export * from './setParam.js';
 export * from './readParam.js';
+export * from './patchDump.js';
 export * from './params.js';
 export * from './blockTypes.js';

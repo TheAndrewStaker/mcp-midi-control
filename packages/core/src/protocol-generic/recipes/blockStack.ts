@@ -211,7 +211,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: 1,
             block_type: 'compressor',
-            params: p({ type: 'JFET Pedal Compressor', ratio: 4, threshold: -18, level: 5 }),
+            params: p({ type: 'JFET Studio Compressor', ratio: 4, threshold: -18, level: 5 }),
           },
           {
             slot: 2,
@@ -417,7 +417,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: 1,
             block_type: 'compressor',
-            params: p({ type: 'JFET Pedal Compressor', ratio: 2, threshold: -22, level: 5 }),
+            params: p({ type: 'JFET Studio Compressor', ratio: 2, threshold: -22, level: 5 }),
           },
           {
             slot: 2,
@@ -719,7 +719,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: 1,
             block_type: 'compressor',
-            params: p({ type: 'JFET Pedal Compressor', ratio: 3, threshold: -20, level: 5 }),
+            params: p({ type: 'JFET Studio Compressor', ratio: 3, threshold: -20, level: 5 }),
           },
           {
             slot: 2,

@@ -6,7 +6,7 @@ discovered: Pre-extraction (codec ported from edisyn Sean Luke 2023)
 verified_on:
   - hydrasynth-explorer-v2.2.0
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-hydra-sysex-envelope-base64-crc32
+golden: scripts/hydrasynth/verify-sysex-envelope.ts (worked-example + checksum goldens)
 relates_to: []
 consumed_in:
   - packages/hydrasynth/src/sysexEnvelope.ts

@@ -10,7 +10,7 @@ verified_on:
   - fm3-edit-binary
   - vp4-edit-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-juce-binarydata-zip
+golden: STUB (structural-only; de-facto coverage: scripts/_research/extract-xml-from-dump.ts extraction lane vs the local editor binaries)
 relates_to: [param-descriptor-16byte, per-effect-paramtable-dispatcher, gen3-paramid-reuse-across-model-bytes]
 consumed_in:
   - scripts/_research/extract-exe-strings.ts
@@ -93,8 +93,9 @@ investigation that the  baseline took before pivoting).
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-juce-binarydata-zip` runs against
-captured AM4 + III binaries, asserting:
+No inline fixture ships (golden is STUB — the editor binaries are
+local-only). The extraction lane (`scripts/_research/extract-xml-from-dump.ts`
+and siblings) de-facto asserts:
 - ZIP signatures locatable at expected offsets
 - `__block_layout.xml` parseable
 - Known parameterName entries match expected canonical names

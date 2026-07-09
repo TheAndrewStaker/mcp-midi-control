@@ -35,7 +35,7 @@
  * Run:  npx tsx scripts/_research/probe-am4-edit-counter.ts
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 const SYSEX_START = 0xf0;
 const SYSEX_END = 0xf7;

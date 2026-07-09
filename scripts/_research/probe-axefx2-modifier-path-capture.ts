@@ -16,7 +16,7 @@
  *
  * Run: npx tsx scripts/_research/probe-axefx2-modifier-path-capture.ts [seconds]
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 

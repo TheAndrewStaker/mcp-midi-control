@@ -72,7 +72,7 @@
  * understood.
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import {

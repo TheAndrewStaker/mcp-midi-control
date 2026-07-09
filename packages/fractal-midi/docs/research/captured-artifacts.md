@@ -51,8 +51,10 @@ we don't own.
 - **Captures archived inline** in
   [`docs/devices/axe-fx-iii/set-parameter-captures.md`](../devices/axe-fx-iii/set-parameter-captures.md)
 - **Cookbook**: applies [[../research/cookbook/septet-14bit]] for
-  paramId encoding; sub-action codes still un-mined (one row per
-  caller body in the III decompile)
+  paramId encoding; the sub-action code table was subsequently mined
+  (2026-06-09: 57 fn=0x01 action14 codes charted from all 93 callers
+  in the III decompile — see the founder-private manifest's
+  actions-and-shapes entry)
 - **Status**: ✅ wire shape locked
 
 ### Axe-Fx III preset format research (community RE)
@@ -87,6 +89,7 @@ we don't own.
 - **Does NOT lock**: any write path (read-only editor poll — no SET/bypass/scene/
   block-move frames). Full GET value calibration + the `0x1f` routing-blob layout
   remain open.
+- UNMINED[2026-06-08]: samples/captured/vp4-edit-preset-sync-poll-fw403-kevin-iudicello-2026-06-08.mmon — full GET value calibration (display↔wire scale for continuous params); the 0x1f routing-blob item closed 2026-07-01 via [[../research/cookbook/vp4-eid206-structure-blob]]
 - **Decode doc**: [`docs/devices/vp4/SYSEX-MAP.md`](../devices/vp4/SYSEX-MAP.md).
 - **Cookbook**: applies [[../research/cookbook/xor-7f-envelope-checksum]] +
   [[../research/cookbook/septet-14bit]].
@@ -107,8 +110,31 @@ we don't own.
 - **Does NOT lock**: generic discrete `set_param` (zero captured evidence), block-placement
   value→slot math (frames known, encoding open), scene value mapping, and continuous-param
   display calibration (single-point/noisy).
+- UNMINED[2026-06-09]: samples/captured/vp4-edit-edit-session-fw403-kevin-iudicello-2026-06-09.mmon — block-placement value→slot math (69 isolated write frames, encoding open), scene value mapping, and continuous-param display calibration (single-point/noisy)
 - **Decode doc**: [`docs/devices/vp4/SYSEX-MAP.md`](../devices/vp4/SYSEX-MAP.md) (PARAMETER SET section).
 - **Status**: ✅ write path decoded (param/save/bypass); ⛔ block placement still gated.
+
+### AM4 stored-preset body decode (warm-pair captures)
+- **Source**: founder-private hardware warm-pair captures — a redump of the same
+  stored preset before/after ONE isolated edit, so the decoded-body diff pins a
+  single field. `samples/captured/am4-warm-pair-*-{before,after}.syx` (gitignored):
+  1 no-op baseline, amp.gain chA, amp.gain chB, amp.master, amp type-swap.
+- **Locks**: the AM4 decoded-BODY block-record chain for the AMP block —
+  marker (== block pidLow) + `0x0E` header + 4 per-channel records at stride
+  `0x130`; param word = `marker + ch*0x130 + 0x0E + pidHigh*2`. Four anchors
+  byte-exact (amp.type, amp.gain chA @`0x0958` / chB @`0x0A88`, amp.master chA).
+  Walker `decodeAm4AmpBlock` (`src/am4/bodyChain.ts`); swept over the 104-preset
+  factory bank (amp base `0x0934`/`0x0A92`/absent = 70/17/17, zero false
+  positives). AM4 stored `get_preset` now surfaces `whole_preset.amp`.
+- **Does NOT lock**: the pidHigh+7 / `0x130`-stride formula for any NON-amp
+  block. The amp is the only block with an ordinal-bounded TYPE enum to reject
+  false-positive markers; cab / drive / delay / reverb share the chain structure
+  but their per-block stride + param formula are untested (a naive effectId scan
+  false-positives). Five isolated one-variable captures would confirm transfer.
+- UNMINED[2026-07-02]: samples/captured/am4-warm-pair-* (5 new one-variable pairs needed) — one warm pair each for delay.mix, drive.drive, a cab param, a scene-bypass toggle, and a per-block channel change, to confirm the amp block's pidHigh+7 / 0x130-stride formula transfers to non-amp blocks (unblocks whole_preset VALUES for every block, not just amp)
+- **Decode doc**: [`docs/devices/am4/SYSEX-MAP.md`](../devices/am4/SYSEX-MAP.md)
+  (§10b body block-record chain). Cookbook [[../research/cookbook/am4-gen3-preset-container]].
+- **Status**: ✅ amp block VALUES surfaced (community-beta); ⛔ non-amp block VALUES pending the 5 captures.
 
 ### General purpose: any Fractal envelope from a third party
 - Apply [[../research/cookbook/xor-7f-envelope-checksum]], universal

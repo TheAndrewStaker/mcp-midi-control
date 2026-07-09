@@ -318,7 +318,7 @@ export const writer: DeviceWriter = {
         throw new DispatchError(
           'no_ack',
           DEVICE_LABEL,
-          `set_param: cannot verify ${block.name} channel before write — ${err instanceof Error ? err.message : String(err)}. ` +
+          `set_param: cannot verify ${block.name} channel before write; ${err instanceof Error ? err.message : String(err)}. ` +
           `Likely cause: ${block.name} is not placed on the active grid. Place the block first or omit the channel arg.`,
         );
       }
@@ -326,7 +326,7 @@ export const writer: DeviceWriter = {
         throw new DispatchError(
           'capability_not_supported',
           DEVICE_LABEL,
-          `set_param: refusing to write ${block.name}.${param.name} on channel ${channelWire} — the active scene has ${block.name} on channel ${active}. ` +
+          `set_param: refusing to write ${block.name}.${param.name} on channel ${channelWire}; the active scene has ${block.name} on channel ${active}. ` +
           `On Axe-Fx II, switching a block's channel mutates the channel pointer across multiple scenes at once (not just the active scene), which silently corrupts other scenes' patches. ` +
           `Safe pattern: call switch_scene first to a scene that already has ${block.name} on channel ${channelWire}, OR omit the channel arg to write to whichever channel the active scene is already on.`,
           {
@@ -419,7 +419,7 @@ export const writer: DeviceWriter = {
             warning:
               `Skipped (does not apply): ${op.block}.${op.name} is not exposed on ` +
               `${op.block}.type wire ${activeIndex}. The Axe-Fx II would silently no-op ` +
-              `this write — the wire address has no audible effect on this type. ` +
+              `this write; the wire address has no audible effect on this type. ` +
               `Report as "not applied" and skip in the next iteration; call ` +
               `list_params(${op.block}) for the knobs that apply on the current type.`,
           });
@@ -753,7 +753,7 @@ export const writer: DeviceWriter = {
             `Reversible by switching presets. Call save_preset({port:'axe-fx-ii', location:${slot}}) ` +
             `when the user explicitly asks to save / keep / persist.`
           : result.nackedSteps.length > 1
-          ? `${result.nackedSteps.length} mid-sequence wire NACK(s) — see nacked_steps[] for full list. Pre-fix versions only surfaced the first; the agent should treat the chain as not fully cabled.`
+          ? `${result.nackedSteps.length} mid-sequence wire NACK(s); see nacked_steps[] for full list. Pre-fix versions only surfaced the first; the agent should treat the chain as not fully cabled.`
           : undefined,
       };
     }
@@ -800,7 +800,7 @@ export const writer: DeviceWriter = {
       warning: result.ok
         ? `Working buffer configured. Press SAVE on the device or call save_preset to persist.`
         : result.nackedSteps.length > 1
-        ? `${result.nackedSteps.length} mid-sequence wire NACK(s) — see nacked_steps[] for full list.`
+        ? `${result.nackedSteps.length} mid-sequence wire NACK(s); see nacked_steps[] for full list.`
         : undefined,
     };
   },
@@ -1188,10 +1188,10 @@ export function translateSpec(spec: PresetSpec): ApplyPresetInput {
           throw new DispatchError(
             'value_out_of_range',
             'Fractal Axe-Fx II',
-            `slot {row:${row},col:${col}} (block_type=${s.block_type}): instance=${instanceArg} out of range — Axe-Fx II exposes ${max} ${s.block_type} block${max === 1 ? '' : 's'} (valid instances: 1..${max}).`,
+            `slot {row:${row},col:${col}} (block_type=${s.block_type}): instance=${instanceArg} out of range; Axe-Fx II exposes ${max} ${s.block_type} block${max === 1 ? '' : 's'} (valid instances: 1..${max}).`,
             {
               retry_action: max === 1
-                ? `Drop the instance field — only one ${s.block_type} block exists on Axe-Fx II.`
+                ? `Drop the instance field; only one ${s.block_type} block exists on Axe-Fx II.`
                 : `Pass instance: 1..${max}.`,
             },
           );

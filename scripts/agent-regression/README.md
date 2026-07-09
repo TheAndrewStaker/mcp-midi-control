@@ -113,6 +113,45 @@ declaring fail. If the retry passes, the case is flagged `⚠ flake`
 in the summary table (visible signal, not silent) but doesn't
 block the gate. Override with `--max-retries=0` for CI-debug mode.
 
+## Environmental failures (the Windows `0xC0000142` spawn cascade)
+
+On Windows, a long back-to-back sweep can hit a process-spawn ceiling:
+the OS refuses to initialize a new `claude.exe` (exit `3221225794` =
+`STATUS_DLL_INIT_FAILED`), the case reports `0 tools / 0.0s`, and once it
+starts it does NOT recover mid-run. This is the **machine, not the
+case** — it would otherwise wipe a whole run's reliability numbers (one
+cascade reads as a contiguous block of `✗`).
+
+The harness handles it so a sweep still completes honestly:
+
+- **Tagged `⊘ ENV`, not `✗ FAIL`.** A run with the spawn-failure
+  signature (exit `3221225794` / spawn EPERM/ENOENT, 0 tools, near-instant)
+  is classed environmental and **excluded from pass/fail accounting**
+  (`runner.ts isEnvironmentalResult`, `resultsLog isEnvironmentalRow`).
+  `stats.ts` and the inline history line show an `env` column and exclude
+  these rows from pass-rate; legacy rows (pre-flag) are detected by the
+  same signature so historical stats are trustworthy.
+- **Env-retry with backoff.** An environmental result is re-spawned (up
+  to 2×) after a few seconds' backoff — separate from the instant
+  LLM-flake retry — giving the OS time to release per-spawn handles.
+- **Inter-case spacing** (~1.2 s) between cases reduces residue buildup.
+- **Abort-on-cascade.** After 3 consecutive environmental results the
+  sweep stops with an actionable message rather than marking the rest
+  failed.
+
+**Before a big unscoped `npm run agent-sweep`, reap residue first:**
+
+```bash
+npm run agent-sweep:kill   # clears leftover claude/runner processes from a prior run
+npm run agent-sweep
+```
+
+`agent-sweep:kill` is safe standalone but is **not** auto-run from inside
+a sweep — a reap from within would match the sweep's own launcher chain
+(bash → npx → tsx → node, all carrying `agent-regression/index`) and kill
+its own tree. Device-scoped sweeps (`--device=am4`, 1–4 cases) rarely
+cascade; the ceiling is specific to large unscoped runs starting dirty.
+
 ## Authoring a new case
 
 1. Add an entry to the right `cases-<device>.ts` file. Required fields:
@@ -141,6 +180,45 @@ block the gate. Override with `--max-retries=0` for CI-debug mode.
      boundary regression, etc.). Default omitted = `clean-scratch`. The
      env-var side door (`MOCK_FIXTURE=...`) still works for ad-hoc runs;
      case-spec wins when both are present.
+   - `requiresHardware`: set true for a case that needs a real device
+     RESPONSE the mock can't synthesize — a SysEx readback (e.g.
+     `get_preset` on a device with no mock responder) or an ack-gated
+     transfer (`upload_sample`/`upload_project` on Circuit). These are
+     SKIPPED under the mock (default sweep) and run only under
+     `--real-hardware`. Distinct from `disabled` (which removes the case
+     from every sweep): a requiresHardware case is live, just gated to the
+     bench. Mock-friendly fire-and-forget / storage / introspection cases
+     leave it unset.
+
+## Archetype coverage + how non-MIDI devices run under mock
+
+Beyond per-tool cases, each ACTIVE device archetype has ONE
+large-coverage case that exercises ≥3 distinct archetype tools in one
+scenario (so a whole archetype's surface is regression-checked end to
+end). See `docs/design/device-archetypes-and-transport.md` for the
+taxonomy.
+
+| Archetype | Large-coverage case | Tools |
+|---|---|---|
+| Preset processor | `am4-archetype-build-lineage-readback` | apply_preset + lookup_lineage + get_param |
+| Synth/patch | `hydrasynth-archetype-patch-macro-system` | apply_patch + set_macro + set_system_param |
+| Sequencer | `circuit-archetype-discover-audition-tweak` | list_pattern_recipes + apply_pattern + set_param |
+| Sampler/storage | `spdsx-archetype-full-rundown` | scan_locations + list_samples + get_preset + author_kit(dry_run) |
+
+Two archetypes had no headless path before and now do:
+
+- **Sequencer (Circuit Tracks)** has no per-device mock responder. A
+  generic mock-transport fallback in `connect()` (core `midi/transport.ts`,
+  gated on `MCP_MOCK_TRANSPORT`, only reached by factory-less devices)
+  gives Circuit a fire-and-forget connection under mock, so live_stream /
+  set_param / introspection cases run headless. Read/transfer cases that
+  need real SysEx responses are marked `requiresHardware`.
+- **Sampler (SPD-SX)** is a storage-transport device. The runner builds a
+  deterministic on-disk fixture (`getSpdsxFixtureRoot`: 3 waves + one kit
+  "Demo Kit") and injects `MCP_SPDSX_ROOT` for `device: 'spd-sx'` cases,
+  so scan/list/get_preset/author_kit(dry_run) all read real fixture data.
+  The large case asserts `text_contains: ['Demo Kit']` to prove a real
+  read, not a fabrication.
 3. Run with `--verbose` once to see the actual tool sequence, tune the
    bounds, and commit.
 
@@ -231,10 +309,18 @@ scripts/agent-regression/
 ├── mcp-config.json        # MCP server config passed to claude -p
 ├── types.ts               # AgentRegressionCase / Expectations types
 ├── runner.ts              # spawn + stream-json parser + assertion engine
-├── cases-am4.ts           # AM4 cases (H1/H2/H3 + §2 surface coverage)
+├── cases-am4.ts           # AM4 cases (H1/H2/H3 + §2 surface + preset archetype)
 ├── cases-axe-fx-ii.ts     # Axe-Fx II cases (X/Y channel + discovery)
 ├── cases-axe-fx-iii.ts    # Axe-Fx III cases (fn=0x01 SET_PARAMETER envelope + discovery)
-├── cases-hydrasynth.ts    # Hydrasynth cases (System CC + macro + discovery)
+├── cases-axefx-gen1.ts    # Axe-Fx Standard/Ultra (gen-1) cases
+├── cases-fm9.ts           # FM9 cases
+├── cases-hydrasynth.ts    # Hydrasynth cases (System CC + macro + synth archetype)
+├── cases-circuit-tracks.ts# Circuit Tracks cases (overwrite gate + sequencer archetype)
+├── cases-spd-sx.ts        # SPD-SX cases (sampler archetype, storage fixture)
+├── cases-cross-device.ts  # cross-device translate / read-anchor cases
 ├── cases-all.ts           # aggregator
-└── index.ts               # CLI entry
+├── resultsLog.ts          # append/read the durable results.jsonl corpus (+ env-row exclusion)
+├── stats.ts               # per-case pass/flake/env analytics over the corpus
+├── kill-sweeps.ts         # manual reap of leftover sweep/claude processes (run BETWEEN sweeps)
+└── index.ts               # CLI entry (run loop, inter-case spacing, abort-on-cascade)
 ```

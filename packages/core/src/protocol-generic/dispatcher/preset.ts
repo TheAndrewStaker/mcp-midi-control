@@ -17,6 +17,7 @@ import {
   type PresetSlotSpec,
   type PresetSpec,
   type RestorePresetResult,
+  type SampleDirectoryDump,
   type SetlistApplyOptions,
   type SetlistEntrySpec,
   type ValidationError,
@@ -397,7 +398,7 @@ export async function executeExportActivePreset(args: {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
-      `export_preset is not implemented for ${descriptor.display_name}. Byte-exact backup of the active preset is available on Fractal AM4 and Axe-Fx II; other devices return capability_not_supported. Use get_preset for a structured (non-byte-exact) snapshot.`,
+      `export_preset is not implemented for ${descriptor.display_name}. Byte-exact backup of the active preset is available on Fractal AM4, Axe-Fx II, and the gen-3 family (Axe-Fx III / FM3 / FM9 / VP4); Circuit Tracks exports a stored project slot via the location argument. Other devices return capability_not_supported. Use get_preset for a structured (non-byte-exact) snapshot.`,
     );
   }
   const ctx = openCtx(descriptor);
@@ -427,6 +428,27 @@ export async function executeExportStoredPreset(args: {
   }
   const ctx = openCtx(descriptor);
   const dump = await descriptor.reader.dumpStoredPresetBinary(args.location, ctx);
+  return { ...dump, device: descriptor.display_name };
+}
+
+/**
+ * Backs the read-only `read_sample_directory` tool: read a device's named
+ * sample pool (Circuit Tracks: the pack's shared 64-slot drum-sample
+ * directory). Devices without a named pool error with capability_not_supported.
+ */
+export async function executeReadSampleDirectory(args: {
+  port: string;
+}): Promise<SampleDirectoryDump & { device: string }> {
+  const descriptor = requireDevice(args.port);
+  if (descriptor.reader.readSampleDirectory === undefined) {
+    throw new DispatchError(
+      'capability_not_supported',
+      descriptor.display_name,
+      `read_sample_directory reads a named sample pool; ${descriptor.display_name} has none. It is available on the Novation Circuit Tracks (the pack's 64-slot drum-sample pool).`,
+    );
+  }
+  const ctx = openCtx(descriptor);
+  const dump = await descriptor.reader.readSampleDirectory(ctx);
   return { ...dump, device: descriptor.display_name };
 }
 

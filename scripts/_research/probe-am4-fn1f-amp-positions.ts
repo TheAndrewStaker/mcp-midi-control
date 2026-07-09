@@ -12,7 +12,7 @@
  * Run with AM4 powered + USB connected + AM4-Edit closed:
  *   npx tsx scripts/_research/probe-am4-fn1f-amp-positions.ts
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {

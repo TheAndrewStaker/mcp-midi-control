@@ -128,52 +128,44 @@ function pickReverbType(args: Record<string, unknown>): string | undefined {
 }
 
 export const AM4_CASES: AgentRegressionCase[] = [
-  // ── H1, Hero: clean tone with mixed param shapes ───────────────
+  // ── H1: Hall-reverb fixed-decay silent-no-op check (slimmed) ────────
   //
-  // RECOVERY-CANARY. H1 tests that the agent RECOVERS from silent-no-op
-  // traps using the dropped-param warning surface, NOT that it lands
-  // clean on attempt 1. The original strict policy (max_repeats:2 +
-  // should_avoid_dropped_param_warning) conflated product signal with
-  // Sonnet-first-attempt variance, producing chronic flake-fail with no
-  // actionable signal.
+  // SOLE OWNER of the harness's flagship silent-no-op regression check:
+  // on AM4, Hall reverb variants are fixed-decay and do NOT expose
+  // `reverb.time`, so writing a decay time to a Hall reverb silently
+  // no-ops (device ACKs, nothing changes — the README's motivating
+  // example). The agent, asked for a LONG-decay reverb, must pick a type
+  // that actually exposes `time` (Plate / Spring / Echo / SFX), not Hall.
   //
-  // New policy:
-  //   - `max_repeats: { apply_preset: 4 }`: agent legitimately needs
-  //     budget for: initial guess, then preflight rejection (bad enum),
-  //     then dropped-warn (capability trap), then recovery. Two cascading
-  //     traps with one verify-reapply is about 4 calls. If the agent goes
-  //     >4, that IS a regression signal (the pre-flight isn't surfacing
-  //     the warning, or the Levenshtein matcher isn't suggesting the
-  //     right enum, etc.).
-  //   - Structural reverb-type validator (no Hall family) stays:
-  //     that's the actual H1 regression check.
-  //   - `should_avoid_dropped_param_warning` REMOVED. Dropped warnings
-  //     during the recovery sequence are the surface doing its job,
-  //     not a regression.
-  //
-  // Re-tighten triggers:
-  //   - A Sonnet bump that consistently lands H1 in <= 2 calls: tighten
-  //     max_repeats back to 2 and re-add the dropped-warning gate.
-  //   - Schema-level enum constraints land: first-attempt accuracy goes
-  //     up, tighten budget accordingly.
+  // SLIMMED 2026-06-28 (founder call): the old "recovery canary" layered a
+  // bad-amp-enum trap + a chorus capability trap + a save on top, driving
+  // 10–18 tool calls and chronic wall-limit flake (61% pass) — that budget
+  // pressure was the flake source, NOT the Hall check. The build / recovery
+  // / no-false-save aspects are redundant (deterministic-4scene-build,
+  // recipe cases, unknown-param-recovery, archetype-build-lineage-readback
+  // cover them). This case is reduced to JUST the unique Hall check: one
+  // focused reverb-build, the no-Hall validator, a tight budget. The
+  // isolated find_compatible_types variant (am4-s2-discovery-find-compatible-
+  // reverb) remains retired-into-this-case.
   {
     id: 'am4-h1-sunday-morning',
     device: 'am4',
 
-    description: 'H1 recovery canary: Vox AC30 + slow chorus + long hall reverb. Tests that the agent RECOVERS cleanly from cascading silent-no-op traps (bad amp enum to preflight reject; chorus type capability gap to dropped warning). Asserts the trajectory lands clean within a sensible retry budget, NOT that the first attempt is perfect. Reverb-type validator (no Hall family) is the structural regression check.',
-    prompt: "Build me an AM4 clean tone on Z4. I want a Vox AC30 with the gain rolled back, a slow chorus, and a long hall reverb with about 30% mix. Call it 'Sunday Morning'.",
+    description: 'H1 Hall-reverb silent-no-op check (slimmed): the agent, asked for a LONG-decay reverb on the AM4, must pick a type that exposes `reverb.time` (Plate/Spring/Echo/SFX), NOT a Hall variant (fixed-decay, no `time` — the flagship silent-no-op). The reverb-type validator is the regression check; the build is kept minimal to avoid the budget-pressure flake the old recovery-canary version had.',
+    prompt: "On the AM4, build a clean tone in the working buffer with a long, lush reverb tail. Pick a reverb type that actually lets you dial in a long decay time. Don't save it.",
     expectations: {
-      must_call: ['describe_device', 'apply_preset'],
-      max_tools: 10,
-      max_repeats: { apply_preset: 4 },
+      must_call: ['apply_preset'],
+      max_tools: 6,
+      max_repeats: { apply_preset: 2 },
       tool_call_validators: [{
         tool: 'apply_preset',
+        call_index: 'last',
         check: (args) => {
           const reverbType = pickReverbType(args);
           if (reverbType === undefined) return 'apply_preset did not include a reverb type';
-          // The H1 silent-no-op: Hall variants do NOT expose reverb.time on AM4.
-          // After this regression fix, the agent should pick from Plate/Spring/Echo/SFX
-          // for "long-decay reverb" prompts. If it still picks Hall, the warning fires.
+          // The silent-no-op: Hall variants do NOT expose reverb.time on AM4.
+          // For a "long-decay reverb" prompt the agent should pick from
+          // Plate/Spring/Echo/SFX. If it still picks Hall, that's the regression.
           if (reverbType.startsWith('Hall')) {
             return `picked Hall variant "${reverbType}": Hall algorithms are fixed-decay on AM4 and don't expose \`time\`. Should pick from Plate/Spring/Echo/SFX instead (use find_compatible_types({block:"reverb", params:["time"]})).`;
           }
@@ -182,24 +174,11 @@ export const AM4_CASES: AgentRegressionCase[] = [
       }],
       // No false-confidence language about persisting: apply_preset is
       // audition-only. POSITIVE-CLAIM SHAPES so negation disclaimers
-      // ("Not saved to Z04 yet") don't false-trip.
-      text_not_contains: [
-        'I saved',
-        'I persisted',
-        'now saved to Z',
-        'now persisted to Z',
-        'preset is saved',
-        'preset is persisted',
-      ],
-      // The heaviest case in the suite: a full build + recovery from the
-      // Hall-reverb silent-no-op trap + save + read-back is ~10 distinct,
-      // wire-heavy calls (verified effective — no get/set leveling loop).
-      // At 240 s it false-times-out mid-work; 300 s still false-timed-out
-      // on slow-tail runs (2026-06-10: force-killed at 301 s mid-sequence
-      // after 9 CORRECT calls; history p50 162 s, 55% pass with the cap as
-      // the dominant failure mode). 480 s matches the suite's other long
-      // builds. NOT raised to mask a loop — max_tools bounds tool usage.
-      max_wall_seconds: 480,
+      // ("Not saved yet") don't false-trip.
+      text_not_contains: ['I saved', 'I persisted', 'preset is saved', 'preset is persisted'],
+      // Slimmed from 480 s: a single focused reverb-build is a handful of
+      // calls, not the old multi-trap-recovery marathon.
+      max_wall_seconds: 150,
     },
   },
 
@@ -1414,6 +1393,69 @@ export const AM4_CASES: AgentRegressionCase[] = [
       }],
       text_not_contains: ['I saved', 'I stored'],
       max_wall_seconds: 240,
+    },
+  },
+
+  // ── Large coverage: build + lineage + read-back (audition, no save) ────────
+  {
+    id: 'am4-archetype-build-lineage-readback',
+    device: 'am4',
+    description:
+      'Preset-processor archetype, large coverage: a "build a tone, tell me its lineage, confirm it landed" request should walk the build + knowledge + read surface — apply_preset (multi-block working-buffer build), lookup_lineage (what real amp the model is based on), and get_param (read the amp gain back). The user said audition, so NO save_preset. Catches an agent that saves an audition, fabricates the amp lineage, or claims success without a read-back. Exercises the core preset-processor surface end to end against the AM4 mock.',
+    // Reverb is a PLATE (exposes time, no Hall fixed-decay trap) so this broad
+    // archetype case stays clear of the Hall silent-no-op — that flagship check
+    // is owned in isolation by am4-h1-sunday-morning. should_avoid_dropped_param_warning
+    // is intentionally NOT set here: this case tests archetype breadth, not the
+    // type-gating trap (asserting it here would re-create the latent Hall flake).
+    prompt:
+      'On the AM4, build a Marshall-style crunch in the working buffer: a Plexi-type amp at gain 6, a tube-screamer-style drive in front of it, and a plate reverb after. ' +
+      'Tell me what real amplifier the Plexi model is based on, and read the amp gain back off the device to confirm it landed. Just audition it — do not save.',
+    expectations: {
+      must_call: ['apply_preset', 'lookup_lineage', 'get_param'],
+      must_not_call: ['save_preset'],
+      max_tools: 14,
+      min_tools: 3,
+      tool_call_validators: [{
+        tool: 'apply_preset',
+        check: (args) => {
+          // Working-buffer audition: must not persist to a stored location.
+          if (typeof args.target_location === 'string' && args.target_location.trim() !== '') {
+            return `apply_preset should build in the working buffer (no target_location) for an audition, got ${String(args.target_location)}.`;
+          }
+          if (args.save === true) return 'apply_preset must not save on an audition request.';
+          return true;
+        },
+      }],
+      text_not_contains: ['I saved', 'I stored', 'saved to'],
+      max_wall_seconds: 320,
+    },
+  },
+
+  // ── Coverage: get_params (batch read) ──────────────────────────────────────
+  {
+    id: 'am4-get-params-batch-read',
+    device: 'am4',
+    description: 'Batch read: "read the whole amp EQ at once" should route to get_params (one batched read of gain/master/bass/mid/treble), NOT a fan-out of 5 individual get_param calls. get_params had no agent-sweep coverage (get_param did). Tests the agent prefers the batch-read tool when reading several params, mirroring am4-slow-response-batched-write for the write side.',
+    prompt: 'On the AM4, read the amp gain, master, bass, mid, and treble — all of them, in one batched read — and report the values.',
+    expectations: {
+      must_call: ['get_params'],
+      // Discourage fanning out individual reads when a batch was asked for.
+      max_repeats: { get_param: 1 },
+      max_tools: 5,
+      tool_call_validators: [{
+        tool: 'get_params',
+        check: (args) => {
+          const queries = (args.queries ?? args.params ?? []) as Array<{ block?: string; name?: string }>;
+          if (!Array.isArray(queries) || queries.length < 3) {
+            return `get_params should batch several amp reads in one call (>=3 queries), got ${Array.isArray(queries) ? queries.length : 'none'}.`;
+          }
+          if (!queries.every((q) => String(q.block).toLowerCase() === 'amp')) {
+            return `get_params queries should all target the amp block; got ${JSON.stringify(queries.map((q) => q.block))}.`;
+          }
+          return true;
+        },
+      }],
+      max_wall_seconds: 60,
     },
   },
 ];

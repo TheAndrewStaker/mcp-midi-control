@@ -7,7 +7,7 @@ verified_on:
   - axe-fx-iii-public-captures-fc12
   - axe-fx-iii-public-captures-mountain-utilities
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-fn01-set-parameter-envelope
+golden: scripts/verify-axe-fx-iii-encoding.ts (4 encoder goldens + 4 capture-parse goldens over the public-capture corpus)
 relates_to: [septet-14bit, xor-7f-envelope-checksum, iii-host-emitter-fn-table]
 consumed_in:
   - fractal-midi/src/gen3/axe-fx-iii/setParam.ts
@@ -112,8 +112,8 @@ Test corpus: 10 public captures archived in
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-iii-fn01-set-parameter-envelope` runs
-two fixtures:
+`scripts/verify-axe-fx-iii-encoding.ts` is the golden (4 encoder + 4
+capture-parse goldens). Reference fixtures:
 
 1. `buildSetParameter(effectId=58, paramId=40, value=508)` from
    `fractal-midi/src/gen3/axe-fx-iii/setParam.ts` must match Source A's
@@ -122,8 +122,8 @@ two fixtures:
    Source B's "Delay 1 TIME typed v520" frame.
 
 Both fixtures are committed in `set-parameter-captures.md` with full
-byte sequences. Also `scripts/verify-axe-fx-iii-encoding.ts` has 4
-encoder goldens + 4 capture-parse goldens covering the same corpus.
+byte sequences; `scripts/verify-axe-fx-iii-encoding.ts` covers the same
+corpus.
 
 ## Refinement history
 

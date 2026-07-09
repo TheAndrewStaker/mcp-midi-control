@@ -53,7 +53,7 @@
  *   change with your playing, the meter is live.
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { BLOCK_TYPE_VALUES } from 'fractal-midi/am4';

@@ -15,7 +15,7 @@
  *
  * One write, 17 baseline reads, 17 re-reads. ~15 seconds total.
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {

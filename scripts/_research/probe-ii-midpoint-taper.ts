@@ -11,7 +11,7 @@
  * every write restored + verified, editor pre-flight guard, paced, per-tx
  * timeout, abort-restore. Reads the device display, never the editor.
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync } from 'node:fs';
 import { guardAgainstRunningEditors } from '../_lib/editor-guard.js';
 import {

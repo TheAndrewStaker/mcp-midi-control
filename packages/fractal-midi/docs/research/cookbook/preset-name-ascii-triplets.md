@@ -7,7 +7,7 @@ verified_on:
   - axe-fx-ii-q8.02
   - axe-fx-ii-q9.04
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-preset-name-ascii-triplets
+golden: scripts/verify-preset-dump-ii.ts (extractPresetName across the 128-entry factory corpus)
 relates_to: [vendor-envelope-descriptor-table, septet-21bit-byte2-mask-preservation]
 consumed_in:
   - packages/fractal-gen2/src/presetDump.ts (extractPresetName)
@@ -58,9 +58,10 @@ character in the low byte.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-preset-name-ascii-triplets` runs
-round-trip: encode "Test Crunch" → 96 bytes → decode → assert "Test
-Crunch" (trimmed).
+`scripts/verify-preset-dump-ii.ts` decodes the name region via
+`extractPresetName` across the 128-entry factory corpus (local
+captures). Reference round-trip: encode "Test Crunch" → 96 bytes →
+decode → "Test Crunch" (trimmed).
 
 ## Refinement history
 

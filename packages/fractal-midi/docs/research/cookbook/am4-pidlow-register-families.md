@@ -6,7 +6,7 @@ discovered: Sessions 84 + 96 (PATCH + GLOBAL family decode)
 verified_on:
   - am4-fw18
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-am4-pidlow-register-families
+golden: scripts/verify-msg.ts (185 PATCH-family + 2 GLOBAL-family byte-exact goldens)
 relates_to: [septet-14bit]
 consumed_in:
   - fractal-midi/docs/devices/am4/SYSEX-MAP.md

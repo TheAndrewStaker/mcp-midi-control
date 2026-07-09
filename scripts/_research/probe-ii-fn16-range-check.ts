@@ -9,7 +9,7 @@
  * amp.level (Amp 1 effectId 106, paramId 21) is queried as a known-good anchor
  * (suffix rule -80..20). Read-only: only fn 0x16 query frames are sent.
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 const MODEL = 0x07, MFR = [0x00, 0x01, 0x74], F0 = 0xf0, F7 = 0xf7;
 const cks = (b: number[]) => b.reduce((a, x) => a ^ x, 0) & 0x7f;

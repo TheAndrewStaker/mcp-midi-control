@@ -11,8 +11,14 @@ import {
   DispatchError,
   type CompatibleTypesResult,
   type DeviceDescriptor,
+  type PresetClass,
   type PresetSpec,
+  type SupportTier,
+  type TransportKind,
 } from '../types.js';
+import { listRegisteredDevices } from '../registry.js';
+import { getRigLinks, type RigLinks } from '../rigLinks.js';
+import { listMidiPorts } from '../../midi/transport.js';
 import {
   lookupAmpLoudness,
   lookupDriveLoudness,
@@ -70,6 +76,116 @@ export function describeDevice(port: string): {
     block_params_summary: desc.block_params_summary,
     concept_keys: desc.concept_keys,
     recipes: recipes.length > 0 ? recipes : undefined,
+  };
+}
+
+/**
+ * One device in the `describe_rig` roster: enough for an orchestrating agent to
+ * see the whole stage and plan against what is actually present, without opening
+ * any handle. `port` is `id` / `name` (either drives the unified tools).
+ */
+export interface RigDevice {
+  id: string;
+  name: string;
+  /** Best-effort: a matching MIDI port is present, or a storage drive is mounted. */
+  connected: boolean;
+  /** How `connected` was determined (the matched MIDI port name, or the mounted root). */
+  via?: string;
+  transport: TransportKind;
+  preset_class: PresetClass;
+  support_tier: SupportTier;
+  /** True when the device accepts `apply_pattern` (has pattern realizers). */
+  pattern_target: boolean;
+  /** One-line capability summary (first sentence of the device's agent guidance). */
+  summary?: string;
+}
+
+/** First sentence of a guidance blob, bounded, for the rig overview. */
+function firstSentence(s: string): string {
+  const m = s.match(/^[\s\S]*?[.!?](\s|$)/);
+  const out = (m ? m[0] : s).trim();
+  return out.length > 200 ? `${out.slice(0, 197)}...` : out;
+}
+
+/**
+ * Whole-rig overview for `describe_rig`. Pure introspection over the device
+ * registry plus a NON-OPENING port scan (`listMidiPorts` opens and immediately
+ * releases short-lived enumeration handles) and a mounted-drive check
+ * (`transport.resolveRoot`). Opens no device handle, so it never contends with a
+ * live connection. The orchestrating agent calls this first to see every device
+ * it can drive + which are present, then drives each by `port` (= id / name).
+ */
+export function executeDescribeRig(): {
+  total_registered: number;
+  connected_count: number;
+  devices: readonly RigDevice[];
+  /** Configured external-instrument wiring (host track → device), when set via MCP_RIG_LINKS. */
+  rig_links?: RigLinks;
+  note: string;
+} {
+  // A serial-only environment (no native MIDI binding) makes listMidiPorts throw;
+  // degrade to "no MIDI ports visible" rather than failing the whole overview.
+  let ports: { name: string }[] = [];
+  try {
+    const { inputs, outputs } = listMidiPorts();
+    ports = [...inputs, ...outputs];
+  } catch {
+    ports = [];
+  }
+  const portMatches = (desc: DeviceDescriptor, name: string): boolean =>
+    desc.port_match.some((m) =>
+      m.pattern instanceof RegExp
+        ? m.pattern.test(name)
+        : name.toLowerCase().includes(String(m.pattern).toLowerCase()),
+    );
+
+  const devices: RigDevice[] = listRegisteredDevices().map((desc) => {
+    const transport = desc.transport?.kind ?? 'midi';
+    let connected = false;
+    let via: string | undefined;
+    if (transport === 'storage' || transport === 'hybrid') {
+      const root = desc.transport?.resolveRoot?.();
+      if (root !== undefined) {
+        connected = true;
+        via = `mounted drive (${root})`;
+      }
+    }
+    if (!connected && transport !== 'storage') {
+      const hit = ports.find((p) => portMatches(desc, p.name));
+      if (hit) {
+        connected = true;
+        via = `MIDI port "${hit.name}"`;
+      }
+    }
+    const summary = desc.agent_guidance?.capability_summary;
+    return {
+      id: desc.id,
+      name: desc.display_name,
+      connected,
+      via,
+      transport,
+      preset_class: desc.preset_class ?? 'layout',
+      support_tier: desc.capabilities.support_tier ?? 'verified',
+      pattern_target: (desc.capabilities.pattern_realizers?.length ?? 0) > 0,
+      summary: summary !== undefined ? firstSentence(summary) : undefined,
+    };
+  });
+
+  const rigLinks = getRigLinks();
+  const hasLinks = Object.keys(rigLinks).length > 0;
+  return {
+    total_registered: devices.length,
+    connected_count: devices.filter((d) => d.connected).length,
+    devices,
+    ...(hasLinks ? { rig_links: rigLinks } : {}),
+    note:
+      (hasLinks
+        ? 'rig_links records external-instrument wiring (a host MIDI track → the device it drives); '
+          + 'apply_pattern external_targets defaults a target\'s track from it. '
+        : '')
+      + 'connected is best-effort from a non-opening port scan plus a mounted-drive check; it opens no handles. '
+      + 'Serial devices (FM3) are not visible to the MIDI scan, so a plugged-in FM3 can read connected:false here; '
+      + 'confirm with describe_device(port) or list_midi_ports. Drive any device by passing its id or name as `port`.',
   };
 }
 
@@ -321,10 +437,13 @@ export function findCompatibleTypes(args: {
     });
     return { ...result, device: desc.display_name };
   }
-  // Fallback: surface the type-enum list from descriptor.blocks[block].params.type
+  // Fallback: surface the type-enum list from the block's type-selector param
   // with applicability_known=false so the agent knows no filtering happened.
+  // Device dialects name the type-enum knob differently — AM4/III call it
+  // `type`, Axe-Fx II calls it `effect_type` — so try both (BUG-9: II falsely
+  // reported "no type enum for reverb" because only `type` was checked).
   const blockSchema = desc.blocks[canonicalBlock];
-  const typeParam = blockSchema?.params['type'];
+  const typeParam = blockSchema?.params['type'] ?? blockSchema?.params['effect_type'];
   const enumValues = typeParam?.enum_values;
   const fullList = enumValues !== undefined ? Object.values(enumValues) : [];
   // Bug J in the alpha.13 report: the note used to claim "returned the

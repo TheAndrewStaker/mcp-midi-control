@@ -121,9 +121,10 @@ Run any tool call against your device, paste the JSON response into a
 GitHub issue, and note whether the device's front panel did what the
 response says. That's it.
 
-The Axe-Fx III is the most-wanted target for this right now. The wire
-shapes are decoded from public captures but no III owner has confirmed
-end-to-end. See [`packages/fractal-midi/docs/capture-guides/testing-axe-fx-iii.md`](packages/fractal-midi/docs/capture-guides/testing-axe-fx-iii.md)
+The Axe-Fx III is a high-value target for this. A 2026-06 owner test
+confirmed reads and continuous writes end-to-end, but discrete set-by-name,
+`save_preset`, `set_block`, and the live grid read are still community beta
+and want a second owner's confirmation. See [`packages/fractal-midi/docs/capture-guides/testing-axe-fx-iii.md`](packages/fractal-midi/docs/capture-guides/testing-axe-fx-iii.md)
 for the probe, a report-from-a-chat menu, and the captures still needed.
 
 ## Recipes need your ears

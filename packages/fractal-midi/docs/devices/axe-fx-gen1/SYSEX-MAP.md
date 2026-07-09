@@ -93,12 +93,99 @@ The device returns the live value (0..254) and a null-terminated label string
 manufacturer id `00 00 7D` (10.02+ uses `00 01 74`); the parser currently
 matches the `00 01 74` envelope our SET path also uses.
 
+## Whole-patch dump (MIDI_GET_PATCH 0x03 → MIDI_PATCH_DUMP 0x04) — pinned subset SHIPPED (community-beta); param block still open
+
+Assessed 2026-07-02 against the mirrored wiki spec
+(`docs/manuals/AxeFx-gen1-SysEx-Spec-wiki.wikitext.txt`, sections
+`===MIDI_GET_PATCH===` line 203 and `===MIDI_PATCH_DUMP===` line 443). The
+spec pins the request and the dump's header / name / grid regions, but
+**explicitly leaves the parameter region "Undetermined (assume parameter and
+modifier state)"** (spec line 466).
+
+**Shipped 2026-07-02 (community-beta, hardware-unverified):** the SPEC-PINNED
+SUBSET is implemented in `src/gen1/patchDump.ts` (`buildGetPatchDump` /
+`parsePatchDump` / `isPatchDumpResponse`) and wired into the device package as
+`get_preset` — it returns the preset NAME, the 4×12 effect-grid block layout
+(effect ids resolved via the fn 0x02 block-id table; the 2 per-cell state
+bytes carried raw), and the edit-buffer/stored source flag. The parameter
+region is returned as a byte COUNT only, never decoded — per the
+no-guessed-wire-paths rule that region stays out until a real capture closes
+it (the evidence class for any layout written today would be WEAK: an inferred
+layout with no oracle, not spec-derived). Goldens:
+`test/gen1/patchdump.test.ts` (request frames byte-exact vs every spec worked
+example; synthetic dump round-trip; bank-C refusal).
+
+### Request (fn 0x03) — pinned, one spec-flagged wrinkle
+
+Edit buffer (fully pinned, spec lines 223–236):
+
+```
+F0 00 01 74 01 03 01 00 00 F7
+```
+
+Stored preset (spec lines 207–218 + worked examples 239–245):
+
+```
+F0 00 01 74 01 03 00 [ls] [ms] F7
+```
+
+`ls = preset & 0x0f`, `ms = preset >> 4` — proven by the spec's own examples
+(A000 → `00 00`, A127 → `0F 07`, B128 → `00 08`, B255 → `0F 0F`, C256 →
+`00 10`). Note `ms` carries `preset >> 4`, i.e. MORE than one nibble (C256 →
+`0x10`) — this preset-number field is NOT the 8-bit nibble-split used by
+fn 0x02. **Wrinkle:** the spec itself flags `ls` as "or'd with unknown value
+when requesting presets from bank 2": its C383 example shows `7F 17` where
+`383 & 0x0f = 0x0f`. Banks A/B (presets 0..255) are pinned; bank-C requests
+≥ 256 with a nonzero low nibble are NOT. `buildGetPatchDump` therefore
+REFUSES presets ≥ 256 (one community capture pins the OR-value).
+
+### Dump (fn 0x04) — what the spec pins (lines 443–467)
+
+"Patch dumps **appear to be** 2060 bytes" — the spec hedges even the total.
+Layout with the spec's stated sizes; the offset arithmetic is internally
+consistent (7 + 6 + 42 + 22 = 77 = the spec's stated grid offset):
+
+| offset | size | content | status |
+|---|---|---|---|
+| 0–6 | 7 | header `F0 00 01 74 [model] 04 [buf]`; byte 6 = `0x01` edit buffer / `0x00` stored | pinned |
+| 7–12 | 6 | "patch number?" (spec's own question mark) | undetermined |
+| 13–54 | 42 | 20-char patch name, ls/ms nibble pairs, + nibble-pair null terminator (20×2 + 2 = 42 ✓) | pinned |
+| 55–76 | 22 | ? | undetermined |
+| 77–268 | 192 | effect grid, 4×12 cells × 4 bytes: 2 bytes effect id (ls/ms nibble pair, matches the block-id table) + 2 bytes "undetermined state" | ids pinned; state bytes undetermined |
+| 269–2058 | 1790 | "assume parameter and modifier state" | **NOT pinned — the open piece** |
+| 2059 | 1 | `F7` | pinned |
+
+### Why the param block cannot be spec-derived
+
+The spec gives NO per-block param ordering, NO record framing or
+block-presence markers, NO value encoding for the region, and hedges the total
+size. Arithmetic kills the one obvious hypothesis: 1790 bytes as nibble pairs
+= 895 eight-bit values, but the catalog holds 922 params per block *type*
+(more again after duplication across the 68 block instances) — "every param,
+nibble-split, in catalog order" does not fit. Any layout written today would
+be a guess with no way to catch a wrong answer; it stays out.
+
+### What closes it (one community capture)
+
+The minimal oracle is a real fn=0x04 dump plus known ground truth:
+
+1. **Best:** two edit-buffer dumps bracketing exactly ONE noted front-panel
+   param change (one-capture-per-hypothesis) — the byte diff pins the offset
+   AND the value encoding in one shot.
+2. **Acceptable:** one dump (a Fractal-Bot / gen-1 AxeEdit preset `.syx`
+   export should be exactly this frame) plus a note of a few known param
+   values + firmware version.
+
+Either also confirms or denies the 2060-byte total. The community ask lives in
+`docs/capture-guides/captures-axe-fx-gen1.md` (C1).
+
 ## Still not wired (capability boundary)
 
-Documented in the wiki spec but NOT yet implemented: whole-patch dump
-(`MIDI_GET_PATCH` 0x03 → `MIDI_PATCH_DUMP` 0x04 — the ~2060-byte body is only
-partially decoded: header, 20-char name in nibble pairs, 4×12 effect grid at
-offset 77; the param block is undetermined), modifier query (0x07),
+Documented in the wiki spec but NOT yet implemented: the patch dump's
+parameter region (the pinned header/name/grid subset SHIPS as `get_preset`,
+see above; the ~1790-byte param block is explicitly undetermined in the spec,
+so it is surfaced as a byte count only until a capture closes it), bank-C
+stored-dump requests (unknown OR-value), modifier query (0x07),
 get-firmware (0x08), get-preset-name (0x0f). Not in the protocol at all: save /
 store-to-location, preset-change / bank-select, scenes, X/Y channels. The device
 package omits those ops; the dispatcher returns `capability_not_supported`.

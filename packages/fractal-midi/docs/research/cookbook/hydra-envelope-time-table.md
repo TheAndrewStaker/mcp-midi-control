@@ -6,7 +6,7 @@ discovered:  (27 envelope-time pairs hardware-verified )
 verified_on:
   - hydrasynth-explorer-v2.2.0
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-hydra-envelope-time-table
+golden: scripts/hydrasynth/verify-env-time-display.ts (full 27-pair hardware round-trip)
 relates_to: [hydra-nrpn-14bit-with-fxaware-resolution]
 consumed_in:
   - packages/hydrasynth/src/nrpnDisplay.ts

@@ -18,7 +18,7 @@
  *   samples/captured/decoded/am4-fn1f-effectid-sweep.md (markdown summary)
  *   samples/captured/decoded/am4-fn1f-effectid-sweep.json (raw data)
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { buildGetAllParams } from 'fractal-midi/am4';

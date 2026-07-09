@@ -13,7 +13,7 @@ import {
 } from '../types.js';
 
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
-import { openCtx, requireDevice } from './core.js';
+import { assertInstanceSupported, openCtx, requireDevice } from './core.js';
 import { resetModRouteState } from './modRouteState.js';
 
 /**
@@ -71,8 +71,13 @@ export async function executeSavePreset(args: {
   location: string | number;
   name?: string;
   confirm_overwrite?: boolean;
+  instance?: number;
 }): Promise<WriteResult & { device: string }> {
   const descriptor = requireDevice(args.port);
+  // `instance` selects which block instance's buffer is saved (Circuit Tracks:
+  // 1 = Synth 1, 2 = Synth 2). Reject it on single-instance devices up front,
+  // same gate as set_param, so a stray instance arg fails loudly not silently.
+  assertInstanceSupported(descriptor, args.instance, 'save_preset');
   // Gate on IMPLEMENTATION presence, not the `supports_save` (= persistence is
   // hardware-VERIFIED) flag. A device that implements writer.savePreset can
   // save; whether persistence is hardware-confirmed is conveyed by the result's
@@ -123,7 +128,7 @@ export async function executeSavePreset(args: {
     }
   }
 
-  const result: WriteResult = await descriptor.writer.savePreset(ctx, args.location, args.name);
+  const result: WriteResult = await descriptor.writer.savePreset(ctx, args.location, args.name, args.instance);
 
   // ── Receipt (device-agnostic): when the save acked and the device exposes
   // `readSaveSnapshot`, attach saved_snapshot + a human read-back line.

@@ -58,7 +58,7 @@ export function registerMidiControlTools(server: McpServer): void {
             : matchedInput && matchedOutput
                 ? 'AM4 input + output both visible. The server will connect to these on the next tool call.'
                 : matchedInput || matchedOutput
-                    ? 'Only one of AM4 input/output is visible. The AM4 needs both directions — check the USB cable and driver.'
+                    ? 'Only one of AM4 input/output is visible. The AM4 needs both directions; check the USB cable and driver.'
                     : inputs.length === 0 && outputs.length === 0
                         ? 'No MIDI ports of any kind are visible. This usually means no MIDI driver is installed.'
                         : 'AM4 not visible. Check USB cable, power, and that the AM4 driver is installed (https://www.fractalaudio.com/am4-downloads/).';
@@ -78,7 +78,7 @@ export function registerMidiControlTools(server: McpServer): void {
                 const fractalSerial = serial.filter((c) => c.matchReason !== undefined);
                 if (fractalSerial.length > 0) {
                     serialSection =
-                        `\n\nSerial (USB-CDC) ports — FM3 control channel (the FM3 is not a USB MIDI device):\n` +
+                        `\n\nSerial (USB-CDC) ports, the FM3 control channel (the FM3 is not a USB MIDI device):\n` +
                         fractalSerial
                             .map((c) => `  ${c.path}  ← ${c.matchReason}${c.friendlyName ? ` (${c.friendlyName})` : ''}`)
                             .join('\n');

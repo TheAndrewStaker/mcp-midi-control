@@ -7,14 +7,24 @@ verified_on:
   - axe-fx-ii-q8.02
   - axe-fx-ii-q9.04
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-alphabetical-name-cascade-block-ordering
-relates_to: [paramBase-plus-paramId, wire-id-pairs-per-placed-block, vendor-envelope-descriptor-table]
+golden: STUB (structural-only; de-facto coverage: packages/fractal-gen2/src/sceneChannelMap.ts BLOCK_LAYOUT_MAP consumer; no byte-exact fixture)
+relates_to: [parambase-plus-paramid, wire-id-pairs-per-placed-block, vendor-envelope-descriptor-table]
 consumed_in:
   - packages/fractal-gen2/src/sceneChannelMap.ts (BLOCK_LAYOUT_MAP)
   - (III: pending — transfer candidate, see iii-preset-receiver.txt)
 ---
 
 # Alphabetical-name-cascade block ordering
+
+> **2026-07-02 note:** the serialization order is now corpus-pinned by
+> the preset-image TLV decode ([[ii-preset-image-tlv-chain]], 388/388):
+> alphabetical by the AxeEdit canonical DISPLAY name with spaces /
+> punctuation ignored ("Tremolo/Panner" under T — which resolves this
+> entry's Batch D "PanTrem" anomaly), then a fixed system tail
+> [Tone Match?, Noisegate, Output, Feedback Send?, Feedback Return?,
+> Controllers] (which matches the "Mixer sorts to the END"
+> observation). More importantly, ordering PREDICTION is obsolete for
+> read-modify-write — the chain self-describes each block's position.
 
 The Axe-Fx II preset binary serializes block data in **alphabetical order
 by block-type display name**, not by grid placement, not by block-id, not
@@ -121,8 +131,8 @@ Cost: zero (once the cascade table is in code). One TS sort + lookup.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-alphabetical-name-cascade-block-ordering`
-runs two fixtures:
+No inline fixture ships (golden is STUB). A functional case, if added,
+would run two fixtures:
 1. Test Crunch composition (Amp/Cab/Comp/Delay/Drive/Reverb) — expected
    cascade order: Amp, Cab, Compressor, Delay, Drive, Reverb. Verifies
    against captured paramBase values.
@@ -144,7 +154,7 @@ runs two fixtures:
   See `blockBinaryLayout.ts` lines 164-181 for Batch D + Mixer anomalies. The
   canBypass-class hypothesis is the next RE target; full
   sort-algorithm crack is the blocker to `matched` (per
-  [[paramBase-plus-paramId]] § "Sort algorithm").
+  [[parambase-plus-paramid]] § "Sort algorithm").
 - 2026-05-22: III transfer-candidate audit
   closed as negative on the IMPLEMENTATION axis. Exhaustive grep of
   all III preset-related Ghidra dumps surfaces zero block-name string

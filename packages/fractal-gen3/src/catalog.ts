@@ -325,6 +325,19 @@ function resolveCalibration(
   if (deviceRange !== undefined && deviceRange.kind === 'float') {
     displayMin = roundDisplay(deviceRange.displayMin);
     displayMax = roundDisplay(deviceRange.displayMax);
+  } else {
+    // Catalog-inferred bounds get the SAME precision rounding as cache rows:
+    // the mined tables carry float32 artifacts (III/FM3 DISTORT_TREMFREQ
+    // displayMin 0.20000000298023224 = float32(0.2)), and an unrounded bound
+    // makes encode REFUSE the panel's own endpoint (set_param tremfreq 0.2
+    // errored "out of range [0.20000000298023224..20]"). Rounding here keeps
+    // decode's endpoints, the schema's advertised bounds, and encode's range
+    // check on the same 2-decimal panel grid (caught by
+    // scripts/verify-display-first-fractal.ts GATE B). If rounding degrades a
+    // range below usability (collapsed span, log10 bound hitting 0), the
+    // checks below return undefined and the param falls back to passthrough.
+    if (displayMin !== undefined) displayMin = roundDisplay(displayMin);
+    if (displayMax !== undefined) displayMax = roundDisplay(displayMax);
   }
   const { scaling } = param;
   if (displayMin === undefined || displayMax === undefined) return undefined;
@@ -375,6 +388,7 @@ function buildParamSchema(
   deviceEnumOverrides?: Readonly<Record<string, Readonly<Record<number, string>>>>,
   sharedEnumRosters?: Readonly<Record<string, Readonly<Record<number, string>>>>,
   deviceRange?: DeviceParamRange,
+  roundtripDiscreteOrdinals?: Readonly<Record<string, number>>,
 ): {
   key: string;
   schema: ParamSchema;
@@ -429,13 +443,30 @@ function buildParamSchema(
     typeof deviceRange.enumCount === 'number' &&
     deviceRange.enumCount > 1;
 
+  // Roundtrip-derived discrete selector: the editor-cache enum path missed this
+  // param (no enumValues, no kind:'enum' cache row), but the device's OWN full
+  // roundtrip sweep showed it QUANTIZES a continuous SET to a small ordinal —
+  // i.e. the device treats it as a discrete ordinal (type/model/mode selector or
+  // integer count), so sending it continuous stores the WRONG value. Route it
+  // DISCRETE bounded by the observed maxOrdinal. Precedence: an explicit enum
+  // table, a cache kind:'enum' row, or a deviceEnumNoNames classification all
+  // win; this only fills params currently routed continuous. (Same wire form as
+  // deviceEnumNoNames: float32(ordinal), sub 09 00 — the wire builder is
+  // unchanged, only the kind-classification differs.)
+  const roundtripDiscrete =
+    enumValues === undefined &&
+    !deviceEnumNoNames &&
+    deviceRange?.kind !== 'enum' &&
+    roundtripDiscreteOrdinals?.[param.name] !== undefined;
+
   // Display-first: a non-enum param with a calibrated range encodes/decodes
   // through the II resolver. Enum params encode name→ordinal (the discrete-SET
   // value, float32(ordinal)) and decode ordinal→label; numeric wire passes
   // through either way. When a device-true cache range is present (FM9), it
   // overrides the catalog's AM4-overlay bounds inside resolveCalibration. A
-  // count-known device-cache enum (deviceEnumNoNames) skips calibration too.
-  const cal = enumValues === undefined && !deviceEnumNoNames
+  // count-known device-cache enum (deviceEnumNoNames) skips calibration too, as
+  // does a roundtrip-derived discrete selector (it is an ordinal, not a knob).
+  const cal = enumValues === undefined && !deviceEnumNoNames && !roundtripDiscrete
     ? resolveCalibration(param, deviceRange)
     : undefined;
 
@@ -457,6 +488,11 @@ function buildParamSchema(
     // wire (the ordinal passes straight through on decode).
     encode = makeOrdinalEncode(family, key, deviceRange!.enumCount! - 1);
     decode = (wire: number): number => wire;
+  } else if (roundtripDiscrete) {
+    // Roundtrip-derived discrete selector, no names yet: discrete numeric-ordinal
+    // wire bounded by the observed maxOrdinal (the ordinal passes through on decode).
+    encode = makeOrdinalEncode(family, key, roundtripDiscreteOrdinals![param.name]);
+    decode = (wire: number): number => wire;
   } else if (cal !== undefined) {
     encode = makeCalibratedEncode(family, key, cal);
     decode = makeCalibratedDecode(cal);
@@ -469,22 +505,25 @@ function buildParamSchema(
     key,
     schema: {
       display_name: humanize(key),
-      // A count-known device-cache enum reports 'enum' even though its catalog
-      // entry was 'unverified' — the editor cache is the authority on kind.
-      unit: deviceEnumNoNames ? 'enum' : param.unit,
+      // A count-known device-cache enum (and a roundtrip-derived discrete
+      // selector) reports 'enum' even though its catalog entry was 'unverified' —
+      // the device's own behaviour is the authority on kind.
+      unit: deviceEnumNoNames || roundtripDiscrete ? 'enum' : param.unit,
       display_min: displayMin,
       display_max: displayMax,
       enum_values: enumValues,
       // gen-3 SET wire form: enum/type selectors are DISCRETE (float32(ordinal),
       // sub 09 00); every other param is CONTINUOUS (float32(normalized), 52 00).
-      // A device-cache enum routes discrete by COUNT even with no name table.
-      wire_kind: enumValues !== undefined || deviceEnumNoNames ? 'discrete' : 'continuous',
+      // A device-cache enum routes discrete by COUNT, and a roundtrip-derived
+      // selector by its observed maxOrdinal, even with no name table.
+      wire_kind: enumValues !== undefined || deviceEnumNoNames || roundtripDiscrete ? 'discrete' : 'continuous',
       // A captured/correlated table is partial (only some ordinals named), so
       // numeric ordinals outside it must pass through, not error. A pure family
       // overlay (no device/shared contribution) stays a complete vocab. A
-      // count-known enum with NO names is partial by definition (numeric only).
+      // count-known enum (or roundtrip-derived selector) with NO names is partial
+      // by definition (numeric only).
       enum_partial:
-        (deviceOverlayValues !== undefined || sharedRoster !== undefined || deviceEnumNoNames)
+        (deviceOverlayValues !== undefined || sharedRoster !== undefined || deviceEnumNoNames || roundtripDiscrete)
           ? true
           : undefined,
       encode,
@@ -547,8 +586,24 @@ export function createModernCatalog(opts: {
    * range table (III/FM3/VP4 still use the catalog inference).
    */
   deviceRanges?: DeviceRangeTable;
+  /**
+   * Discrete-ordinal overlay (param firmware symbol → maxOrdinal). For the III
+   * and FM9 this is generated from that device's OWN full roundtrip hardware
+   * sweep (`scripts/generate-gen3-roundtrip-discrete.ts`); for the FM3 (no
+   * roundtrip capture, no synced cache) it is the FAMILY-JOIN overlay
+   * (`scripts/generate-fm3-family-join-discrete.ts`: sibling FM9-cache/roundtrip
+   * evidence joined by (family, SYMBOL) — community-beta, FM3 roundtrip pending).
+   * Params the editor-cache enum path missed but the oracle proves the device
+   * QUANTIZES (so it treats them as ordinals): they route DISCRETE
+   * (float32(ordinal), sub 09 00) bounded by maxOrdinal instead of continuous,
+   * which would store the wrong ordinal. Pass each device ITS OWN overlay
+   * (III ≠ FM9 ≠ FM3 — never cross-wire by paramId). Omit for VP4 (no oracle).
+   * Precedence: explicit enum table / cache kind:'enum' / deviceEnumNoNames all
+   * win; this only fills params currently routed continuous.
+   */
+  roundtripDiscreteOrdinals?: Readonly<Record<string, number>>;
 }): ModernCatalog {
-  const { blocks, paramsByFamily, resolveEffectId, dropEmptyMappedBlocks = false, deviceEnumOverrides, sharedEnumRosters, excludeBlocks, deviceRanges } = opts;
+  const { blocks, paramsByFamily, resolveEffectId, dropEmptyMappedBlocks = false, deviceEnumOverrides, sharedEnumRosters, excludeBlocks, deviceRanges, roundtripDiscreteOrdinals } = opts;
   const excluded = new Set((excludeBlocks ?? []).map((s) => s.toLowerCase()));
 
   const slugToFamily: Record<string, string> = {};
@@ -578,7 +633,7 @@ export function createModernCatalog(opts: {
         // device's editor-cache range table; a float row overrides the
         // AM4-overlay inference inside buildParamSchema.
         const deviceRange = deviceRanges?.[family]?.[p.paramId];
-        const { key, schema } = buildParamSchema(family, p, deviceEnumOverrides, sharedEnumRosters, deviceRange);
+        const { key, schema } = buildParamSchema(family, p, deviceEnumOverrides, sharedEnumRosters, deviceRange, roundtripDiscreteOrdinals);
         // First wins on key collision (e.g. FLANGER_TYPE vs FLANGER_OLD_TYPE).
         if (!(key in params)) {
           params[key] = schema;

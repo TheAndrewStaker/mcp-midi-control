@@ -1,0 +1,10 @@
+# Captures and decoded artifacts are local-only research scratch.
+# Don't commit: Ghidra dumps, USBPcap pcapngs, raw .syx captures.
+# The directory itself is kept by a .gitkeep placeholder so Ghidra
+# scripts have a place to write.
+*
+!.gitignore
+!captured/
+!captured/.gitkeep
+!captured/decoded/
+!captured/decoded/.gitkeep

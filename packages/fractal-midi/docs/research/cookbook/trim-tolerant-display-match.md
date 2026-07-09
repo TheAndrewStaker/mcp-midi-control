@@ -7,7 +7,7 @@ verified_on:
   - axe-fx-ii-q8.02
   - axe-fx-ii-q9.04
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-trim-tolerant-display-match
+golden: STUB (structural-only; de-facto coverage: scripts/extract-axe-fx-ii-params.ts display normalization + the probe diff loop)
 relates_to: [fn28-enum-dump]
 consumed_in:
   - scripts/_research/probe-axefx2-enum-dump.ts (diff loop)
@@ -65,9 +65,10 @@ unverified and is a transfer candidate.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-trim-tolerant-display-match` runs
-fixtures over the 9 known padding cases plus negative cases (where a
-leading-space label correctly mismatches).
+No inline fixture ships (golden is STUB). The de-facto surface is the
+trim-tolerant comparison in `scripts/extract-axe-fx-ii-params.ts` and
+the probe diff loop; a fixture would cover the 9 known padding cases
+plus negative cases (where a leading-space label correctly mismatches).
 
 ## Refinement history
 

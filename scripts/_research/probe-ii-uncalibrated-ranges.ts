@@ -26,7 +26,7 @@
  *
  * Run:  npx tsx scripts/_research/probe-ii-uncalibrated-ranges.ts
  */
-import midi, { type Input as MidiInput, type Output as MidiOutput } from 'midi';
+import midi, { type Input as MidiInput, type Output as MidiOutput } from "@julusian/midi";
 import { writeFileSync } from 'node:fs';
 import * as readline from 'node:readline';
 import { guardAgainstRunningEditors } from '../_lib/editor-guard.js';

@@ -13,7 +13,7 @@
  * Read-only (GET requests only). Run:
  *   npx tsx scripts/_research/probe-axefx2-fn18-reply-capture.ts
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 const II_NEEDLES = ['axe-fx ii', 'axe-fx-ii', 'axefx ii'];
 const AMP1 = 106;

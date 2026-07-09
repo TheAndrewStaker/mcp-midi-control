@@ -167,8 +167,12 @@ export function makeWriter(opts: {
     // latency and ensures a rejection is never missed.
     windowMs = 250,
   ): Promise<{ resultCode: number; description?: string } | undefined> {
+    // Only accept a 0x64 that echoes the function we just sent (frame byte 5),
+    // so a stray status/other-op 0x64 in the window isn't read as this op's
+    // rejection.
+    const sentFn = bytes[5];
     const watchPromise = ctx.conn.receiveSysExMatching(
-      (b) => codec.isMultipurposeResponse(b),
+      (b) => codec.isMultipurposeResponse(b, sentFn),
       windowMs,
     );
     ctx.conn.send(bytes);
@@ -227,8 +231,9 @@ export function makeWriter(opts: {
         if (typeof unsubscribe === 'function') unsubscribe();
         resolve(r);
       };
+      const sentFn = bytes[5]; // 0x01 for a SET; reject must echo it
       const unsubscribe = ctx.conn.onMessage((frame) => {
-        if (codec.isMultipurposeResponse(frame)) {
+        if (codec.isMultipurposeResponse(frame, sentFn)) {
           const parsed = codec.parseMultipurposeResponse(frame);
           finish({
             kind: 'reject',
@@ -506,6 +511,16 @@ export function makeWriter(opts: {
         }
       }
       const bytes = codec.buildSetGridCell({ row: slot.row, col: slot.col, blockId, rows: grid.rows });
+      // FM3 (4-row grid) ignores the insert's target cell unless a sub=0x30
+      // cell-select moves the edit cursor there first — an FM3 owner live-
+      // confirmed this on hardware 2026-06-27 (ForgeFX). The Axe-Fx III and FM9
+      // (6-row) place correctly from the insert alone (FM9 fn=0x13 read-back,
+      // 2026-06-19), so the confirmed single-frame path is left untouched and
+      // only the 4-row FM3 path pairs select → ~15 ms → insert.
+      if (grid.rows === 4) {
+        ctx.conn.send(codec.buildSelectCell({ row: slot.row, col: slot.col, rows: grid.rows }));
+        await new Promise<void>((resolve) => setTimeout(resolve, 15));
+      }
       const errorReport = await sendAndWatchForError(ctx, bytes);
       // The block insert rides the dual-purpose fn=0x01 (sub=0x32), so the
       // connection-level edit classifier can't flag it by function byte alone;
@@ -521,16 +536,24 @@ export function makeWriter(opts: {
             BETA_WARNING,
         };
       }
+      // No 0x64 rejection is NOT a positive ack — the gen-3 block-insert has no
+      // confirming echo, so the wire cannot tell a landed placement from a
+      // silently-dropped one. Report "sent, unconfirmed" (not acked), so the
+      // agent verifies on the device instead of asserting a build that may not
+      // exist. (FM9 hardware DOES accept placement — confirmed via fn=0x13
+      // read-back in the 2026-06-19 verify probe — but the LIVE path here still
+      // can't self-verify, so the honest label is unconfirmed.)
       return {
         op: 'set_block',
         target: `r${slot.row}c${slot.col}`,
-        acked: true,
+        acked: false,
+        unconfirmed: true,
         display_value: blockType === 'none' || blockType === 'empty' ? 'cleared' : change.block_type,
         warning:
-          `🟡 ${shape.id} set_block: sent the gen-3 block-insert op ` +
-          '(fn=0x01 sub=0x32, wire-confirmed from the editors). ' +
-          'Device emitted no rejection but device-side persistence is not yet ' +
-          'hardware-verified; confirm by checking the grid layout on the device. ' + BETA_WARNING,
+          `🟡 ${shape.id} set_block: SENT the gen-3 block-insert op ` +
+          '(fn=0x01 sub=0x32, wire-confirmed from the editors), no device rejection; ' +
+          'but block placement has NO confirming echo, so this is unverified from the wire. ' +
+          'Confirm the block appears on the device grid / front panel before relying on it. ' + BETA_WARNING,
       };
     },
 
@@ -572,7 +595,7 @@ export function makeWriter(opts: {
           (shape.id === 'vp4'
             ? `🟡 vp4 set_bypass: decoded byte-exact from a community capture (fn=0x01, paramId 3; ` +
               `enable=0.0 / bypass replicated verbatim). The device emitted no rejection, but this is ` +
-              `UNTESTED on VP4 hardware — confirm on the front panel. `
+              `UNTESTED on VP4 hardware; confirm on the front panel. `
             : `🟡 ${shape.id} set_bypass: spec-documented (function 0x0A). Targets the ACTIVE ` +
               'scene only; per spec, the modern family has no per-scene bypass write. ') + BETA_WARNING,
       };
@@ -614,7 +637,7 @@ export function makeWriter(opts: {
           acked: false,
           warning:
             `${shape.id} apply_preset: total budget (${GEN3_APPLY_BUDGET_MS} ms) exceeded after ${elapsed} ms; ` +
-            `remaining writes skipped — the device likely went silent mid-burst. ${BETA_WARNING}`,
+            `remaining writes skipped; the device likely went silent mid-burst. ${BETA_WARNING}`,
         });
         console.error(
           `apply_preset ABORTED (${shape.id}): budget ${GEN3_APPLY_BUDGET_MS} ms exceeded after ` +
@@ -645,7 +668,10 @@ export function makeWriter(opts: {
             instance: slotSpec.instance,
           });
           writes.push(result);
-          if (!result.acked) anyFailed = true;
+          // set_block has no positive ack (no confirming echo), so a no-rejection
+          // placement returns unconfirmed, not acked. Treat it like the param path:
+          // unconfirmed is "sent, verify on device", NOT a failure.
+          if (!result.acked) { if (result.unconfirmed) anyUnconfirmed = true; else anyFailed = true; }
         } catch (err) {
           writes.push({
             op: 'set_block',
@@ -949,7 +975,7 @@ export function makeWriter(opts: {
           `🟡 ${shape.id} apply_preset: composed of ${envelopes.join(' / ')} envelopes. ` +
           `${writes.length} step(s) attempted; ${ackedCount} acked` +
           (unconfirmedCount > 0
-            ? `, ${unconfirmedCount} sent but UNCONFIRMED (no device echo — the preset likely ` +
+            ? `, ${unconfirmedCount} sent but UNCONFIRMED (no device echo; the preset likely ` +
               `applied; this gen-3 beta wire cannot confirm continuous-param writes). `
             : '. ') +
           (anyUnconfirmed && !anyFailed
@@ -1041,7 +1067,7 @@ export function makeWriter(opts: {
         warning:
           (shape.id === 'vp4'
             ? `🟡 vp4 save_preset: sent the VP4 store command (fn=0x01 tc=0x1b), byte-identical to ` +
-              `the captured save. Saves the ACTIVE preset in place (no destination arg — VP4 ` +
+              `the captured save. Saves the ACTIVE preset in place (no destination arg; VP4 ` +
               `save-in-place vs index is undecoded). Untested persistence. `
             : `🟡 ${shape.id} save_preset: sent the gen-3 editor store envelope (fn=0x01 sub=0x26, ` +
               `destination preset at the 14-bit arg slot). Wire shape is captured byte-exact from the ` +

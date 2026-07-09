@@ -20,6 +20,7 @@ import {
   type Applicability,
   type ApplicabilityGate,
 } from './typeApplicability.js';
+import { KNOWN_PARAMS } from './params.js';
 
 export type { Applicability, ApplicabilityGate };
 
@@ -151,4 +152,96 @@ export function checkApplicability(
     return a.always ? { applicable: true } : { applicable: 'unknown' };
   }
   return { applicable: false, gates: a.gates };
+}
+
+/**
+ * Display-name map for a block's PRIMARY type enum. The II registers each
+ * effect block's type selector as `<block>.effect_type` with an
+ * `enumValues` map (wire index -> display name) — the SAME enum the
+ * primary-type applicability gates (`COMP_TYPE`, `DELAY_MODEL`, …) index
+ * into. Reading it from `KNOWN_PARAMS` keeps the registry the single
+ * source of truth (no hand-maintained typeEnum->const table to drift).
+ */
+function primaryTypeDisplayMap(block: string): Readonly<Record<number, string>> | undefined {
+  // KNOWN_PARAMS is a literal-keyed const; index it through a widened view
+  // for the dynamic `<block>.effect_type` lookup.
+  const registry = KNOWN_PARAMS as Readonly<Record<string, { enumValues?: Readonly<Record<number, string>> }>>;
+  const p = registry[`${block}.effect_type`] ?? registry[`${block}.type`];
+  return p?.enumValues;
+}
+
+/**
+ * find_compatible_types for Axe-Fx II — mirrors the AM4 sibling
+ * (`fractal-midi/src/am4/applicability.ts`) but adapts to the II's sparse
+ * `Readonly<Record<number,string>>` enum maps: the accepted set starts
+ * from the ACTUAL wire-index key set (not a dense `0..length-1` range), so
+ * a sparse/non-contiguous type enum narrows correctly.
+ *
+ * Data reality (2026-07-04 audit of `typeApplicability.ts`): only two II
+ * blocks carry PRIMARY-type gates — `compressor` (`COMP_TYPE`) and
+ * `multidelay` (`DELAY_MODEL`); every other block's applicability is
+ * either always-on or sub-mode-gated (`DISTORT_DRIVETYPE`, `REVERB_QUALITY`
+ * …). So real narrowing happens for those two; every other block returns
+ * its full type roster with `applicability_known: false` (honest "no
+ * filtering data — try and see"). That is not a wiring gap, it is the
+ * limit of the AxeEdit-derived applicability table.
+ */
+export function findCompatibleTypes(
+  block: string,
+  paramNames: readonly string[],
+): {
+  compatible_types: readonly string[];
+  total_types: number;
+  applicability_known: boolean;
+  note?: string;
+} {
+  const typeEnum = primaryTypeEnumFor(block);
+  if (typeEnum === undefined) {
+    return { compatible_types: [], total_types: 0, applicability_known: false, note: `block "${block}" has no primary type enum` };
+  }
+  const displayMap = primaryTypeDisplayMap(block);
+  if (displayMap === undefined) {
+    return { compatible_types: [], total_types: 0, applicability_known: false, note: `no type-enum display map registered for ${block}` };
+  }
+  // Sparse-safe: start from the real key set, not Array.from({length}).
+  const allIndices = Object.keys(displayMap).map(Number).filter((n) => Number.isInteger(n));
+  const totalTypes = allIndices.length;
+  let accepted = new Set<number>(allIndices);
+  let anyPrimaryGateApplied = false;
+  const skippedParams: string[] = [];
+
+  for (const paramName of paramNames) {
+    const a = TYPE_APPLICABILITY[`${block}.${paramName}`];
+    if (a === undefined) {
+      skippedParams.push(`${paramName} (no applicability data - treated as always-on)`);
+      continue;
+    }
+    if (a.always && a.gates.length === 0) continue;
+    const exposedHere = new Set<number>();
+    let hasPrimaryGate = false;
+    for (const g of a.gates) {
+      // Narrow ONLY on the block's primary type enum: its ordinal space is
+      // the one `displayMap` is keyed by. Sub-mode gates (DISTORT_DRIVETYPE,
+      // REVERB_BASETYPE, …) index a different enum and cannot narrow this list.
+      if (g.typeEnum !== typeEnum) continue;
+      hasPrimaryGate = true;
+      for (const v of g.values) exposedHere.add(v);
+    }
+    if (!hasPrimaryGate) {
+      skippedParams.push(`${paramName} (only sub-mode gates - not narrowable on primary type)`);
+      continue;
+    }
+    anyPrimaryGateApplied = true;
+    accepted = new Set([...accepted].filter((idx) => exposedHere.has(idx)));
+    if (accepted.size === 0) break;
+  }
+
+  const compatibleNames = [...accepted]
+    .sort((a, b) => a - b)
+    .map((idx) => displayMap[idx])
+    .filter((n): n is string => n !== undefined);
+  const note = skippedParams.length > 0
+    ? `Skipped from narrowing: ${skippedParams.join('; ')}.`
+    : undefined;
+  return { compatible_types: compatibleNames, total_types: totalTypes, applicability_known: anyPrimaryGateApplied, note };
 }

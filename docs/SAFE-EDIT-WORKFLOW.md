@@ -79,17 +79,56 @@ Devices vary in how much of the contract is enforced at the API
 boundary today. The table below tracks both gaps and the
 implementation strategy:
 
-| Capability | AM4 | Axe-Fx II | Hydrasynth |
-|---|---|---|---|
-| Device-sourced dirty signal | ❌ not exposed (verified by capture: zero MIDI bytes on front-panel edits). Dirty gate uses the deterministic in-memory `markDirty`/`markClean` tracker (`core/server-shared/bufferDirty.ts`), set at AM4 write call sites + cleared on save/switch; see `tools/safeEdit.ts`. Does NOT track front-panel / parallel-editor edits (deliberate tradeoff; the old fingerprint poll did, but non-deterministically, which false-refused users). | ✅ via `0x74` state-broadcast | ❌ not exposed in MIDI |
-| `on_active_preset_edited` guard | ✅ unified surface (`apply_preset`, `switch_preset`) | ✅ shipped | n/a (no dirty detection) |
-| `save_authorized` guard on apply-at-slot | ✅ unified `apply_preset(target_location, save_authorized)` | ✅ shipped | ✅ `apply_patch(save: true)` |
-| Multi-preset overwrite scan | ✅ `scan_locations` | ✅ `scan_locations` | n/a (different patch model) |
-| Tool-description guidance for agent | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance |
+| Capability | AM4 | Axe-Fx II | Hydrasynth | Circuit Tracks |
+|---|---|---|---|---|
+| Device-sourced dirty signal | ❌ not exposed (verified by capture: zero MIDI bytes on front-panel edits). Dirty gate uses the deterministic in-memory `markDirty`/`markClean` tracker (`core/server-shared/bufferDirty.ts`), set at AM4 write call sites + cleared on save/switch; see `tools/safeEdit.ts`. Does NOT track front-panel / parallel-editor edits (deliberate tradeoff; the old fingerprint poll did, but non-deterministically, which false-refused users). | ✅ via `0x74` state-broadcast | ❌ not exposed in MIDI | n/a — no working-buffer "save" model. Edits are either live (fire-and-forget CC/NRPN, instantly audible, nothing to lose) or whole-slot file transfers (see the slot-transfer gate below). There is no dirty preset buffer to guard. |
+| `on_active_preset_edited` guard | ✅ unified surface (`apply_preset`, `switch_preset`) | ✅ shipped | n/a (no dirty detection) | n/a (no working buffer) |
+| `save_authorized` guard on apply-at-slot | ✅ unified `apply_preset(target_location, save_authorized)` | ✅ shipped | ✅ `apply_patch(save: true)` | replaced by the **slot-transfer overwrite gate** (`confirm_overwrite`) on the destructive transfer tools — see below |
+| Multi-preset overwrite scan | ✅ `scan_locations` | ✅ `scan_locations` | n/a (different patch model) | ⚠️ partial: `upload_project` / `apply_pattern ncs_upload` READ the target project slot (empty→write, occupied→refuse + name); sample slots can't be read yet (`upload_sample` / `upload_kit` refuse by default). |
+| Tool-description guidance for agent | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance | ✅ the `confirm_overwrite` contract is in every transfer tool's description |
 
-All three devices are fully shipped on the unified surface (`apply_preset`,
-`save_preset`, `switch_preset`). Device-namespaced tools have been removed
-from the registered surface. The unified surface is the sole live contract.
+AM4 / Axe-Fx II / Hydrasynth are fully shipped on the unified surface
+(`apply_preset`, `save_preset`, `switch_preset`). Device-namespaced tools have
+been removed from the registered surface. The unified surface is the sole live
+contract.
+
+### Circuit Tracks: slot-transfer overwrite gate
+
+The Circuit Tracks has no working-buffer "save" model, so the preset
+dirty/save gates above don't apply. What it DOES have is **destructive
+slot transfers**: `upload_sample` / `upload_kit` (a sample slot, 1..64),
+`upload_project` (a project slot, 0..63), and `apply_pattern mode:ncs_upload`
+(authors a pattern into a template, then writes a project slot). Each one
+permanently overwrites whatever is in the target slot. The project's
+"read before write / confirm before overwriting non-empty" contract applies
+here just as it does to a preset location.
+
+The gate is **occupancy-driven, not a blanket refuse-by-default** — so it
+adds friction only where there's something to lose:
+
+- **`upload_project` / `apply_pattern ncs_upload`** (project slots are
+  readable): without `confirm_overwrite`, the tool READS the target slot
+  first. **Empty → it writes straight through** (no friction). **Occupied →
+  it refuses** (`overwrite_confirmation_required`) and names the stored
+  project, for the agent to surface and the user to confirm; re-call with
+  `confirm_overwrite: true`. The read costs one extra slot download and runs
+  only on the non-authorized path.
+- **`upload_sample` / `upload_kit`** (sample slots are NOT readable yet — the
+  sample-directory decode is RE-gated): occupancy "can't be confirmed", so the
+  tool refuses by default and asks for `confirm_overwrite: true`. When the
+  dir-listing decode lands, these graduate to the same empty-slot-no-friction
+  behavior as projects.
+- **`confirm_overwrite: true`** (set by the agent when the user used
+  save/overwrite/replace language) writes immediately and skips the occupancy
+  read on every path.
+
+The mechanism is `SlotWriteOptions.confirmOverwrite` threaded from each
+transfer tool's `confirm_overwrite` arg; the refusal is a
+`DispatchError('overwrite_confirmation_required', …)` formatted into the
+canonical refusal text. Implementation: `gateProjectOverwrite` /
+`gateSampleOverwrite` + `probeProjectSlot` in
+`packages/circuit-tracks/src/descriptor/writer.ts` and
+`.../ncs/uploadProject.ts`.
 
 ## Implementation pattern
 

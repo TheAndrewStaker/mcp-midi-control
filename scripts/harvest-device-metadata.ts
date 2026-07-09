@@ -64,7 +64,7 @@
 
 import { appendFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 import { guardAgainstRunningEditors } from './_lib/editor-guard.js';
 

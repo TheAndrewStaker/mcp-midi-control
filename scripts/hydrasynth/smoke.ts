@@ -44,7 +44,7 @@
  *
  * Design doc: docs/devices/hydrasynth-explorer/FIRST-SMOKE.md
  */
-import midi, { Output } from 'midi';
+import midi, { Output } from "@julusian/midi";
 
 const HYDRA_PORT_NEEDLES = ['hydrasynth', 'asm hydra'];
 const MIDI_CHANNEL = 1;            // Hydrasynth default; configurable on MIDI page 1

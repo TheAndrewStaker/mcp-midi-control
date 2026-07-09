@@ -8,7 +8,11 @@ modern devices now have on-hardware confirmation:
 
 - **FM9** — reads and continuous `set_param` hardware-confirmed (2026-06-17 owner
   test, firmware 11.0), plus a full SET→GET roundtrip across the entire parameter
-  catalog (2026-06-18). Model rosters and ranges complete from a synced cache.
+  catalog (2026-06-18), plus **`set_block` placement + `switch_scene`
+  hardware-confirmed on Windows** (2026-06-19 verify probe: a placed block appeared
+  in the device's own status dump). Reading a block's current type/model by NAME is
+  wire-confirmed (`get_param` on an enum returns the device's own name). Model
+  rosters and ranges complete from a synced cache.
 - **Axe-Fx III** — continuous `set_param` + `get_param` hardware-confirmed
   (2026-06-17, firmware 25.04) and a full catalog roundtrip (2026-06-18). This is
   the gen-3 byte-identity anchor, so confirming it raises confidence family-wide.
@@ -17,7 +21,9 @@ modern devices now have on-hardware confirmation:
   community session.
 
 Still unconfirmed on these (short front-panel checks, not sweeps): discrete
-set-by-name on the III/FM9, `save_preset`, and `set_block`. Gen-1 (Axe-Fx
+set-by-name on the III/FM9 and `save_preset`. (`set_block` placement and
+`switch_scene` are now FM9/Windows hardware-confirmed — 2026-06-19 verify probe.)
+Gen-1 (Axe-Fx
 Standard / Ultra) supports full parameter WRITES (set_param / set_params) plus
 reads, decoded from the spec and hardware-unconfirmed; preset authoring there
 awaits one structural capture (see the gen-1 row below).
@@ -67,9 +73,11 @@ A read-only-safe diagnostic that confirms the device accepts the server's own
 parameter writes. This is the single thing that flips a device's write path from
 "untested" to "confirmed."
 
-- **FM9:** `npm run fm9:verify` (or double-click `fm9-verify.cmd` in the release ZIP).
+- **FM9:** `npm run fm9:verify` / **Axe-Fx III:** `npm run axefx3:verify` / **FM3:**
+  `npm run fm3:verify` (or double-click `fm9-verify.cmd` / `axefx3-verify.cmd` /
+  `fm3-verify.cmd` in the release ZIP).
 - **Read-back diagnostics:** `npm run fm9:probe` / `fm3:probe` / `axefx3:probe`.
-- III / FM3 also have a quick conversational write test on their testing pages.
+- Each device's testing page also has a quick conversational write test.
 
 ## 4. Record a calibration capture *(needs a capture tool, for display accuracy)*
 
@@ -83,11 +91,12 @@ with the front-panel readings noted, so display values land exactly. Full steps:
 
 | Device | Test / probe page | Captures | Top ask |
 |---|---|---|---|
-| Axe-Fx III | [testing-axe-fx-iii.md](testing-axe-fx-iii.md) | [captures-gen3.md](captures-gen3.md) | **Cache file** (#1) for device-true rosters; then the write test. Set-by-name + apply_preset work today via the shared gen-3 roster. |
+| Axe-Fx III | [testing-axe-fx-iii.md](testing-axe-fx-iii.md) | [captures-gen3.md](captures-gen3.md) | **Cache file** (#1) for device-true rosters/ranges; then **`axefx3:verify`** (T6 on the testing page — one self-restoring run closes discrete set-by-name, `set_bypass`, `switch_scene`, and `set_block`). Reads + continuous writes hardware-confirmed (2026-06-17/18); set-by-name + apply_preset work today via the shared gen-3 roster. |
 | FM3 | [testing-fm3.md](testing-fm3.md) | [captures-gen3.md](captures-gen3.md) | Serial transport + read path + continuous write + bypass/scene/preset switch **hardware-CONFIRMED end-to-end** (2026-06-12 field test, macOS); set-by-name discrete write also hardware-confirmed (2026-06-10 community session, frames byte-identical to this server's encoder). Remaining: **set_block** (re-run the verify probe with a preset that has no Drive block), **save_preset** (T4), a **Windows** serial-driver run, and the **cache file** (#1) for device-true display ranges. |
-| FM9 | [testing-fm9.md](testing-fm9.md) | [captures-gen3.md](captures-gen3.md) | **`fm9:verify` write-verify probe** (#3) flips writes to confirmed. Rosters and knob ranges are device-true (cache in); reads + preset receive confirmed. |
-| VP4 | [testing-vp4.md](testing-vp4.md) | [captures-vp4.md](captures-vp4.md) | **Cache file** (#1) for rosters; then confirm the decoded writes (continuous-knob set_param, set_bypass, save_preset) on hardware. Block placement + scene switching stay gated pending a capture. Reads work. |
+| FM9 | [testing-fm9.md](testing-fm9.md) | [captures-gen3.md](captures-gen3.md) | Reads, continuous writes, **`set_block` placement + `switch_scene`** all hardware-confirmed (2026-06-17 / 2026-06-19); rosters + knob ranges device-true (cache in); current-type-name read confirmed. Remaining: **re-run `fm9:verify` on a preset that HAS a reverb block** (closes continuous `set_param` + discrete set-by-name + `save_preset` on Windows), and a **type-dropdown-OPEN sweep** for per-block name rosters beyond reverb (see captures-gen3.md). |
+| VP4 | [testing-vp4.md](testing-vp4.md) | [captures-vp4.md](captures-vp4.md) | **Zero-cost fn=0x0C scene-query probe** (P0 in captures-vp4.md — one read-only frame, may unlock switch_scene) + **cache file** (#1) for rosters; then confirm the decoded writes (continuous-knob set_param, set_bypass, save_preset) AND the new whole-preset structure read (name/scenes/scene/chain in get_preset, decoded 2026-07-01) on hardware. Block placement + scene WRITE stay gated pending the surgical minimal-pair capture (C1). |
 | Standard / Ultra | [testing-axe-fx-gen1.md](testing-axe-fx-gen1.md) | [captures-axe-fx-gen1.md](captures-axe-fx-gen1.md) | **Top ask: ONE structural editing-session capture (place block / route / save in gen-1 AxeEdit) -- the single unlock for apply_preset + save** (C2 in the guide). Also: port name + a write/read confirmation; legacy captures confirm reads + decode the patch-dump body. |
+| AM4 | (first-class; no community guide) | — | Hardware-confirmed. **Owner-verify (stored `get_preset`, shipped 2026-07-02):** with the AM4 connected, ask "what's stored at A05?" and compare the returned preset name + 4 scene names to the front panel. Container decode is CRC-self-validating offline (104 factory presets); this confirms the live fn-0x03 stored-dump request round-trips end-to-end through the reader. Per-param VALUES stay labeled-omitted pending the body field-map decode. |
 
 Because these devices share a protocol family, one good cache file, probe, or
 capture often helps several at once.

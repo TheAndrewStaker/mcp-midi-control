@@ -84,6 +84,9 @@ export function appendResultRow(
     tool_count: result.tool_calls.length,
     wall_seconds: Number(result.wall_seconds.toFixed(3)),
     mock_fixture: opts.mockFixture,
+    // Environmental (OS spawn-refusal) non-runs are tagged so pass-rate math can
+    // exclude them — they measure the machine, not the case.
+    environmental: result.environmental === true ? true : undefined,
     failures: result.passed ? undefined : result.failures,
   };
   try {
@@ -115,6 +118,8 @@ export interface LoggedRow {
   tool_count: number;
   wall_seconds: number;
   mock_fixture?: string;
+  /** OS spawn-refusal non-run (excluded from pass/fail accounting). */
+  environmental?: boolean;
   failures?: string[];
 }
 
@@ -146,9 +151,40 @@ function percentile(sortedAsc: number[], p: number): number {
  * since it's appended first). Printed inline after a run so behavior/trend is
  * visible without a separate command. Empty string when the case has no history.
  */
+/**
+ * THE single environmental-signature predicate, shared by the runtime path
+ * (runner.ts — drives env-retry/backoff/abort + the environmental flag) and the
+ * historical path (isEnvironmentalRow / caseHistoryLine / stats.ts). One detector
+ * so live and historical verdicts always agree (no detector split).
+ *
+ * Environmental = an OS spawn-refusal NON-run that measures the machine, not the
+ * case: the explicit flag (new rows) OR the legacy signature (not passed, zero
+ * tool calls, near-instant, and a spawn-failure exit code / DLL-init / spawn errno
+ * in failures[]). The Windows 0xC0000142 (STATUS_DLL_INIT_FAILED) cascade.
+ */
+export function isEnvironmentalSignature(x: {
+  passed: boolean;
+  environmental?: boolean;
+  tool_count: number;
+  wall_seconds: number;
+  failures?: readonly string[];
+}): boolean {
+  if (x.environmental === true) return true;
+  return !x.passed && x.tool_count === 0 && x.wall_seconds <= 2 &&
+    (x.failures ?? []).some((f) => f.includes('3221225794') || /DLL[- ]init|\bEPERM\b|\bENOENT\b|\bEAGAIN\b/i.test(f));
+}
+
+/** Historical-row form of {@link isEnvironmentalSignature}. */
+export function isEnvironmentalRow(r: LoggedRow): boolean {
+  return isEnvironmentalSignature(r);
+}
+
 export function caseHistoryLine(rows: readonly LoggedRow[], caseId: string): string {
-  const hist = rows.filter((r) => r.case_id === caseId);
-  if (hist.length === 0) return '';
+  const all = rows.filter((r) => r.case_id === caseId);
+  if (all.length === 0) return '';
+  const envCount = all.filter(isEnvironmentalRow).length;
+  const hist = all.filter((r) => !isEnvironmentalRow(r));
+  if (hist.length === 0) return `history: ${all.length} run(s), all environmental (OS spawn refusal) — no scored runs`;
   const passes = hist.filter((r) => r.passed).length;
   const flakes = hist.filter((r) => r.passed && r.flaked).length;
   const walls = hist.map((r) => r.wall_seconds).sort((a, b) => a - b);
@@ -156,5 +192,6 @@ export function caseHistoryLine(rows: readonly LoggedRow[], caseId: string): str
   const recent = hist.slice(-8).map((r) => (r.passed ? (r.flaked ? '⚠' : '✓') : '✗')).join('');
   const passPct = Math.round((passes / hist.length) * 100);
   const flakeNote = flakes > 0 ? `, ${Math.round((flakes / hist.length) * 100)}% flake` : '';
-  return `history: ${hist.length} run(s), ${passPct}% pass${flakeNote}, p50 ${p50}s — recent ${recent}`;
+  const envNote = envCount > 0 ? `, ${envCount} env-excluded` : '';
+  return `history: ${hist.length} run(s), ${passPct}% pass${flakeNote}${envNote}, p50 ${p50}s — recent ${recent}`;
 }

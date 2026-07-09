@@ -67,6 +67,7 @@ import {
   buildQueryPatchName,
   isQueryPatchNameResponse,
   parseQueryPatchNameResponse,
+  parseStatusDumpResponse,
 } from 'fractal-midi/gen3/axe-fx-iii';
 
 const REVERB_EFFECT_ID = 66;
@@ -190,21 +191,23 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
     f.length >= 8 && f[0] === 0xf0 && f[1] === 0x00 && f[2] === 0x01 && f[3] === 0x74
     && f[4] === MODEL && f[5] === 0x13;
 
+  // Raw bytes of the most recent fn=0x13 STATUS_DUMP reply, so callers can
+  // serialize it into the report for byte-level audit (the set_block PASS verdict
+  // is otherwise asserted, not provable from the JSON — workflow finding 2026-06-20).
+  let lastStatusDumpFrame: number[] | undefined;
   async function readPlacedBlocks(): Promise<Set<number> | undefined> {
     const frames = await sendAndCollect(buildStatusDump(MODEL), queryMs, (fs) => fs.some(isStatusDumpReply));
     const frame = frames.find(isStatusDumpReply);
-    if (!frame) return undefined;
-    // Payload is `id_lo id_hi dd` triples (SYSEX-MAP fn=0x13; dd bit 0 =
-    // bypass, bits 3:1 = channel, bits 6:4 = channel count). The codec's
-    // parseStatusDumpResponse implements this exact shape but is model-locked
-    // to the III's 0x10 envelope, so decode the triples here for FM3/FM9 too.
-    const payload = frame.slice(6, -2);
-    if (payload.length % 3 !== 0) return undefined;
-    const ids = new Set<number>();
-    for (let i = 0; i < payload.length; i += 3) {
-      ids.add((payload[i] & 0x7f) | ((payload[i + 1] & 0x7f) << 7));
+    if (!frame) { lastStatusDumpFrame = undefined; return undefined; }
+    lastStatusDumpFrame = frame;
+    // parseStatusDumpResponse is now model-aware (it used to be locked to the
+    // III's 0x10 envelope, which forced an inline triple decoder here); use it
+    // directly for FM3/FM9 too. Payload is `id_lo id_hi dd` triples.
+    try {
+      return new Set(parseStatusDumpResponse(frame, MODEL).map((e) => e.effectId));
+    } catch {
+      return undefined;
     }
-    return ids;
   }
 
   /** Send a SET (caller-built frame), capture any 0x64 reject + 60-byte echo. */
@@ -355,9 +358,13 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
       record('set_block', 'skipped', 'a Drive block is already in this preset (per the 0x13 status dump), so the placement test would risk clearing it. Load a preset without a Drive to test set_block.');
     } else {
       const cell = { row: 1, col: gridRows === 6 ? 14 : 12, rows: gridRows };
-      const placeReply = await sendAndCollect(buildSetGridCell({ ...cell, blockId: DRIVE_EFFECT_ID }, MODEL), setMs);
+      const insertFrame = buildSetGridCell({ ...cell, blockId: DRIVE_EFFECT_ID }, MODEL);
+      const placeReply = await sendAndCollect(insertFrame, setMs);
       await sleep(settleMs);
       const placedAfter = await readPlacedBlocks();
+      // Capture the post-placement 0x13 status dump raw bytes so the PASS verdict
+      // is byte-auditable from the report, not just asserted (workflow 2026-06-20).
+      const statusDumpAfter = lastStatusDumpFrame ? toHex(lastStatusDumpFrame) : undefined;
       const drivePresent = placedAfter !== undefined
         ? placedAfter.has(DRIVE_EFFECT_ID)
         : (await pollBlock(DRIVE_EFFECT_ID)) !== undefined;
@@ -367,7 +374,15 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
       record('set_block', placeRejected ? 'fail' : (drivePresent ? 'pass' : 'fail'),
         placeRejected ? 'device REJECTED set_block (0x64).'
           : drivePresent ? `placed Drive at r${cell.row}c${cell.col} and ${confirmSource} then listed it. Block placement lands.` : `sent the insert but ${confirmSource} did not list a Drive (cell may have been occupied, or placement was not applied).`,
-        { cell });
+        {
+          cell,
+          // Byte-auditable evidence: the insert frame we sent, any reply to it,
+          // and the post-placement 0x13 status dump that lists (or doesn't) the
+          // Drive. Lets the verdict be re-derived from the report, not trusted.
+          insert_frame: toHex(insertFrame),
+          insert_reply: placeReply.map((f) => toHex(f)),
+          status_dump_after: statusDumpAfter,
+        });
     }
 
     record('save_preset', 'skipped',

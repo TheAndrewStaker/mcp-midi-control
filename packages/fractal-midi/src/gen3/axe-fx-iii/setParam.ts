@@ -276,17 +276,27 @@ export function encode5SeptetFloat32(value: number): [number, number, number, nu
 }
 
 /**
- * Parse the 60-byte gen-3 SET value-echo response (FM9-confirmed). The
- * device answers a typed SET (`sub 09 00`) or a mouse-drag SET
- * (`sub 52 00`) with this synchronous echo: it carries the effectId,
- * paramId, and the device's quantized NORMALIZED value as a 5-septet
- * float32 at bytes 12-16, followed by a descriptor/metadata block.
- * Read-only decode of device-emitted bytes; emits nothing on the wire.
+ * Parse the gen-3 SET value-echo / GET response (FM9-confirmed). The device
+ * answers a typed SET (`sub 09 00`), a mouse-drag SET (`sub 52 00`), or a GET
+ * (`sub 09 00`/`1F 00` with the value field zero) with a synchronous frame
+ * carrying the effectId, paramId, and the device's quantized NORMALIZED value
+ * as a 5-septet float32 at bytes 12-16.
+ *
+ * For a CONTINUOUS knob the float field is the value. For a DISCRETE type/model
+ * selector the float field is ZERO and the device's current type NAME rides as
+ * a length-prefixed 8→7 packed string later in the frame — surfaced here as
+ * `displayName` when present (FM9 capture 2026-06-19: a reverb-type GET returned
+ * float32=0 + "Small Room"; the old code reported only the misleading 0). The
+ * CALLER picks which to trust by the param's `wire_kind` (discrete → displayName,
+ * continuous → normalizedValue); do NOT infer kind from "value is zero" alone
+ * (a knob legitimately at 0.0 is also zero). Read-only; emits nothing on the wire.
  */
 export function parseGen3SetValueEcho(bytes: readonly number[]): {
   effectId: number;
   paramId: number;
   normalizedValue: number;
+  /** Device's current display string (type NAME for discrete params), when the frame carries one. */
+  displayName?: string;
 } {
   if (
     bytes.length < 22 || bytes[0] !== 0xf0 || bytes[1] !== 0x00
@@ -294,10 +304,23 @@ export function parseGen3SetValueEcho(bytes: readonly number[]): {
   ) {
     throw new Error('parseGen3SetValueEcho: not a fn=0x01 echo frame');
   }
+  // A type/model GET/echo carries the device's display string (the NAME) in the
+  // length-prefixed region parsed by parseGetParameterResponse. Use the frame's
+  // OWN model byte (FM9=0x12, III=0x10, …) so the predicate's model gate passes.
+  let displayName: string | undefined;
+  const modelByte = bytes[4];
+  try {
+    if (isGetParameterResponse(bytes, modelByte)) {
+      displayName = parseGetParameterResponse(bytes, modelByte).displayString;
+    }
+  } catch {
+    // not a display-string frame; leave displayName undefined.
+  }
   return {
     effectId: decode14(bytes[8], bytes[9]),
     paramId: decode14(bytes[10], bytes[11]),
     normalizedValue: decode5SeptetFloat32(bytes[12], bytes[13], bytes[14], bytes[15], bytes[16]),
+    displayName,
   };
 }
 
@@ -418,6 +441,39 @@ export function buildGetParameter(
 }
 
 /**
+ * GET CURRENT TYPE NAME (function 0x01, sub-action 0x1F 0x00).
+ *
+ * The gen-3 editor reads a block's current type/model NAME with this sub-action
+ * (effectId + the block's "type" paramId as the target; the value field stays
+ * zero). The device replies with the long fn=0x01 GET frame whose display-string
+ * region carries the model name — decode the reply with `parseGetParameterResponse`
+ * (`.displayString`). Byte-confirmed on FM9 fw 11.0 (capture 2026-06-19): the
+ * reverb/amp/drive type reads returned "Small Room" / "59 Bassguy Bright" /
+ * "Rat Distortion". (`buildGetParameter`'s `09 00` GET elicits the same
+ * display-string reply; this `1F 00` form matches what the editor sends.)
+ *
+ * Wire (23 bytes): `F0 00 01 74 <model> 01 1F 00 <eid:14b LE> <pid:14b LE>
+ *  00*9 <cks> F7`. Read-only; carries no value, mutates nothing.
+ */
+export const SUB_ACTION_GET_TYPE_NAME = 0x1f;
+
+export function buildRequestCurrentTypeName(
+  effectId: number,
+  typeParamId: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  return buildEnvelope(FN_PARAMETER_SETGET, [
+    SUB_ACTION_GET_TYPE_NAME,
+    0x00,
+    ...encode14(effectId),
+    ...encode14(typeParamId),
+    0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00,
+  ], modelByte);
+}
+
+/**
  * Block-bypass via PARAMETER_SETGET (paramId 255 is the bypass
  * register per Axe-Fx II wiki — III binding unverified). The III
  * v1.4 spec exposes a separate 0x0A SET_BYPASS opcode — prefer that
@@ -510,6 +566,12 @@ export function parseSetGetParameterResponse(
   // NOT a packValue16 at pos 9-11 — see encode5SeptetFloat32 / the 2026-06-08
   // FM3+FM9 confirmation. For a discrete select it is float32(ordinal); for a
   // continuous drag it is float32(normalized 0..1).
+  // NOTE (FM9 capture 2026-06-19): a GET/echo on a TYPE/model param carries
+  // float32 ZERO here AND the device's current type NAME as a length-prefixed
+  // 8→7 packed string later in the frame. This parser returns only the numeric
+  // `value` (0 for type params); use `parseGetParameterResponse` /
+  // `parseGen3SetValueEcho().displayName` to read the name. Do not treat the 0
+  // as the type's value.
   return {
     kind: 'set_echo',
     effectId: decode14(payload[2], payload[3]),
@@ -1088,6 +1150,27 @@ export function buildClearBlockCompanion(
   modelByte: number = AXE_FX_III_MODEL_ID,
 ): number[] {
   return buildGridClearFrame(SUB_ACTION_CLEAR_BLOCK_COMPANION, opts, modelByte);
+}
+
+/**
+ * SELECT GRID CELL (fn=0x01 sub=0x30, gridPos only): move the edit cursor to
+ * cell `(row, col)` WITHOUT changing grid state. Byte-identical to
+ * `buildClearBlock`'s frame (the editor reuses one action struct), but its
+ * role here is a cursor move, NOT a clear — it carries no sub=0x33 companion
+ * (the 0x30+0x33 pair is the clear op).
+ *
+ * Why it exists separately: the FM3 (4-row grid) IGNORES a block INSERT's
+ * target cell unless this select is sent first — an FM3 owner live-confirmed
+ * this on hardware 2026-06-27 (sKuhLight/ForgeFX), whose FM3 codec sends
+ * select → ~15 ms → insert. The Axe-Fx III and FM9 (6-row) place correctly
+ * from the insert alone (hardware-confirmed: FM9 fn=0x13 read-back 2026-06-19),
+ * so only the FM3 placement path pairs select+insert. Community-beta on FM3.
+ */
+export function buildSelectCell(
+  opts: { row: number; col: number; rows?: number },
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  return buildGridClearFrame(SUB_ACTION_CLEAR_BLOCK, opts, modelByte);
 }
 
 // ── 0x09 SET_PRESET_NAME ───────────────────────────────────────────
@@ -1810,8 +1893,11 @@ export function isSetGetBypassResponse(bytes: readonly number[]): boolean {
 export function isSetGetChannelResponse(bytes: readonly number[]): boolean {
   return isAxeFxIIIFrame(bytes, FN_SET_GET_CHANNEL);
 }
-export function isSetGetSceneResponse(bytes: readonly number[]): boolean {
-  return isAxeFxIIIFrame(bytes, FN_SET_GET_SCENE);
+export function isSetGetSceneResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return isAxeFxIIIFrame(bytes, FN_SET_GET_SCENE, modelByte);
 }
 export function isQueryPatchNameResponse(
   bytes: readonly number[],
@@ -1825,17 +1911,37 @@ export function isQuerySceneNameResponse(bytes: readonly number[]): boolean {
 export function isSetGetLooperResponse(bytes: readonly number[]): boolean {
   return isAxeFxIIIFrame(bytes, FN_SET_GET_LOOPER);
 }
-export function isStatusDumpResponse(bytes: readonly number[]): boolean {
-  return isAxeFxIIIFrame(bytes, FN_STATUS_DUMP);
+export function isStatusDumpResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return isAxeFxIIIFrame(bytes, FN_STATUS_DUMP, modelByte);
 }
-export function isSetGetTempoResponse(bytes: readonly number[]): boolean {
-  return isAxeFxIIIFrame(bytes, FN_SET_GET_TEMPO);
+export function isSetGetTempoResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return isAxeFxIIIFrame(bytes, FN_SET_GET_TEMPO, modelByte);
 }
 export function isMultipurposeResponse(
   bytes: readonly number[],
   modelByte: number = AXE_FX_III_MODEL_ID,
+  expectedFn?: number,
 ): boolean {
-  return isAxeFxIIIFrame(bytes, FN_MULTIPURPOSE_RESPONSE, modelByte);
+  if (!isAxeFxIIIFrame(bytes, FN_MULTIPURPOSE_RESPONSE, modelByte)) return false;
+  // A rejection body is `[echoed_fn, result_code]` (2 bytes; allow up to 4 for
+  // any variant). 0x64 is OVERLOADED on the gen-3 wire as a continuous
+  // tuner/tempo status STREAM whose body is longer, so a bare fn==0x64 test is
+  // not enough: reject anything outside the 2..4 body shape here, or a stray
+  // status frame in a write's reject-watch window gets mis-parsed as a
+  // rejection with a garbage result code (a false-reject footgun).
+  const payload = bytes.slice(6, -2);
+  if (payload.length < 2 || payload.length > 4) return false;
+  // When the caller knows which function it just sent, require the response to
+  // ECHO that function (payload[0]); a 0x64 rejecting a different or earlier op
+  // is not this write's rejection. Matches ForgeFX's Fm3Device echoed-fn guard.
+  if (expectedFn !== undefined && (payload[0] & 0x7f) !== (expectedFn & 0x7f)) return false;
+  return true;
 }
 
 /**
@@ -1873,8 +1979,11 @@ export function parseChannelResponse(bytes: readonly number[]): {
 }
 
 /** Parse a 0x0C SET/GET SCENE response. Payload is `[scene]`. */
-export function parseSceneResponse(bytes: readonly number[]): { scene: number } {
-  if (!isSetGetSceneResponse(bytes)) {
+export function parseSceneResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): { scene: number } {
+  if (!isSetGetSceneResponse(bytes, modelByte)) {
     throw new Error(`parseSceneResponse: not a 0x0C frame`);
   }
   const payload = bytes.slice(6, -2);
@@ -1960,8 +2069,11 @@ export function parseLooperStateResponse(bytes: readonly number[]): LooperState 
 }
 
 /** Parse a 0x14 SET/GET TEMPO response. Payload is the BPM as a septet pair. */
-export function parseTempoResponse(bytes: readonly number[]): { bpm: number } {
-  if (!isSetGetTempoResponse(bytes)) {
+export function parseTempoResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): { bpm: number } {
+  if (!isSetGetTempoResponse(bytes, modelByte)) {
     throw new Error(`parseTempoResponse: not a 0x14 frame`);
   }
   const payload = bytes.slice(6, -2);
@@ -2072,8 +2184,11 @@ export interface StatusDumpEntry {
  * Wire shape per v1.4 PDF:
  *   `F0 00 01 74 10 13 [id id dd]* [cs] F7`
  */
-export function parseStatusDumpResponse(bytes: readonly number[]): StatusDumpEntry[] {
-  if (!isStatusDumpResponse(bytes)) {
+export function parseStatusDumpResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): StatusDumpEntry[] {
+  if (!isStatusDumpResponse(bytes, modelByte)) {
     throw new Error(
       `parseStatusDumpResponse: not a valid 0x13 frame (len=${bytes.length})`,
     );
@@ -2203,6 +2318,8 @@ export interface ModernFractalCodec {
   /** CONTINUOUS SET (sub 52 00): `normalized` in [0,1] → float32(normalized) @pos12. */
   buildSetParameterContinuous(effectId: number, paramId: number, normalized: number): number[];
   buildGetParameter(effectId: number, paramId: number): number[];
+  /** GET CURRENT TYPE NAME (sub 1F 00): reply decodes via parseGetParameterResponse().displayString. */
+  buildRequestCurrentTypeName(effectId: number, typeParamId: number): number[];
   isGetParameterResponse(bytes: readonly number[]): boolean;
   parseGetParameterResponse(
     bytes: readonly number[],
@@ -2211,6 +2328,8 @@ export interface ModernFractalCodec {
   buildSetChannel(effectId: number, channel: 0 | 1 | 2 | 3): number[];
   buildSetScene(sceneIndex: number): number[];
   buildSetGridCell(opts: { row: number; col: number; blockId: number; rows?: number }): number[];
+  /** fn=0x01 sub=0x30 cursor-move to a cell (FM3 needs it before a block insert). */
+  buildSelectCell(opts: { row: number; col: number; rows?: number }): number[];
   buildSetGridRouting(opts: { srcRow: number; srcCol: number; destRow: number; rows?: number; op?: number }): number[];
   buildSetPresetName(name: string): number[];
   buildStorePreset(presetNumber: number): number[];
@@ -2221,7 +2340,7 @@ export interface ModernFractalCodec {
   parseSetGetParameterResponse(
     bytes: readonly number[],
   ): ReturnType<typeof parseSetGetParameterResponse>;
-  isMultipurposeResponse(bytes: readonly number[]): boolean;
+  isMultipurposeResponse(bytes: readonly number[], expectedFn?: number): boolean;
   parseMultipurposeResponse(
     bytes: readonly number[],
   ): ReturnType<typeof parseMultipurposeResponse>;
@@ -2231,6 +2350,17 @@ export interface ModernFractalCodec {
   parseQueryPatchNameResponse(
     bytes: readonly number[],
   ): ReturnType<typeof parseQueryPatchNameResponse>;
+  // Scene / tempo / status reads — model-bound so they parse this device's frames
+  // (the free functions default to the III model byte, which throws on FM9/FM3).
+  buildGetScene(): number[];
+  isSetGetSceneResponse(bytes: readonly number[]): boolean;
+  parseSceneResponse(bytes: readonly number[]): ReturnType<typeof parseSceneResponse>;
+  buildGetTempo(): number[];
+  isSetGetTempoResponse(bytes: readonly number[]): boolean;
+  parseTempoResponse(bytes: readonly number[]): ReturnType<typeof parseTempoResponse>;
+  buildStatusDump(): number[];
+  isStatusDumpResponse(bytes: readonly number[]): boolean;
+  parseStatusDumpResponse(bytes: readonly number[]): ReturnType<typeof parseStatusDumpResponse>;
   // fn=0x03 REQUEST_PRESET_DUMP (host → device) → 0x77/0x78/0x79 dump chain.
   buildRequestPresetDump(presetNumber: number): number[];
   // fn=0x43 REQUEST_EDIT_BUFFER_DUMP (no args) → 0x51 head + 0x52 body run (no tail).
@@ -2253,10 +2383,12 @@ export function createModernFractalCodec(
     buildSetParameter: (e, p, v) => buildSetParameter(e, p, v, modelByte),
     buildSetParameterContinuous: (e, p, v) => buildSetParameterContinuous(e, p, v, modelByte),
     buildGetParameter: (e, p) => buildGetParameter(e, p, modelByte),
+    buildRequestCurrentTypeName: (e, p) => buildRequestCurrentTypeName(e, p, modelByte),
     buildSetBypass: (e, b) => buildSetBypass(e, b, modelByte),
     buildSetChannel: (e, c) => buildSetChannel(e, c, modelByte),
     buildSetScene: (s) => buildSetScene(s, modelByte),
     buildSetGridCell: (opts) => buildSetGridCell(opts, modelByte),
+    buildSelectCell: (opts) => buildSelectCell(opts, modelByte),
     buildSetGridRouting: (opts) => buildSetGridRouting(opts, modelByte),
     buildSetPresetName: (n) => buildSetPresetName(n, modelByte),
     buildStorePreset: (n) => buildStorePreset(n, modelByte),
@@ -2266,12 +2398,21 @@ export function createModernFractalCodec(
     parseSetGetParameterResponse: (b) => parseSetGetParameterResponse(b, modelByte),
     isGetParameterResponse: (b) => isGetParameterResponse(b, modelByte),
     parseGetParameterResponse: (b) => parseGetParameterResponse(b, modelByte),
-    isMultipurposeResponse: (b) => isMultipurposeResponse(b, modelByte),
+    isMultipurposeResponse: (b, expectedFn) => isMultipurposeResponse(b, modelByte, expectedFn),
     parseMultipurposeResponse: (b) => parseMultipurposeResponse(b, modelByte),
     describeMultipurposeResultCode,
     buildQueryPatchName: (n) => buildQueryPatchName(n, modelByte),
     isQueryPatchNameResponse: (b) => isQueryPatchNameResponse(b, modelByte),
     parseQueryPatchNameResponse: (b) => parseQueryPatchNameResponse(b, modelByte),
+    buildGetScene: () => buildGetScene(modelByte),
+    isSetGetSceneResponse: (b) => isSetGetSceneResponse(b, modelByte),
+    parseSceneResponse: (b) => parseSceneResponse(b, modelByte),
+    buildGetTempo: () => buildGetTempo(modelByte),
+    isSetGetTempoResponse: (b) => isSetGetTempoResponse(b, modelByte),
+    parseTempoResponse: (b) => parseTempoResponse(b, modelByte),
+    buildStatusDump: () => buildStatusDump(modelByte),
+    isStatusDumpResponse: (b) => isStatusDumpResponse(b, modelByte),
+    parseStatusDumpResponse: (b) => parseStatusDumpResponse(b, modelByte),
     buildRequestPresetDump: (n) => buildRequestPresetDump(n, modelByte),
     buildRequestEditBufferDump: () => buildRequestEditBufferDump(modelByte),
     isEditBufferDumpHead: (b) => isEditBufferDumpHead(b, modelByte),

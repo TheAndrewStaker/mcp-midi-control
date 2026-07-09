@@ -57,7 +57,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 interface PortInfo {
     index: number;
@@ -157,9 +157,57 @@ console.error(`✓ Found input port matching "${portArg}": [${port.index}] "${po
 
 const input = new midi.Input();
 const stream = fs.createWriteStream(absOut, { flags: 'a' });
+// Timestamped note-on log (one JSON object per line) alongside the raw .syx, so a
+// downstream analyzer can DETERMINISTICALLY measure the loop period / playback tempo
+// from the real sequence — the fix for baking loop-clips at the wrong (notated vs
+// rig) tempo. See scripts/_research/measure_loop.ts.
+const eventsPath = absOut.replace(/\.syx$/i, '') + '.events.jsonl';
+const eventsStream = fs.createWriteStream(eventsPath, { flags: 'a' });
 let messageCount = 0;
 let byteCount = 0;
 const start = Date.now();
+
+// Decoded summary of channel-voice traffic (the "what channel + note is this
+// device transmitting" question). Channels reported 1..16 (musician convention).
+const noteOnsByChannel = new Map<number, Map<number, number>>(); // ch -> note -> count
+const ccByChannel = new Map<number, Set<number>>();              // ch -> set of CC#
+let lastNote: { ch: number; note: number; vel: number } | undefined; // most-recent note-on, for the live line
+function noteName(n: number): string {
+  const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  return `${names[n % 12]}${Math.floor(n / 12) - 1}`;
+}
+function decode(bytes: number[]): void {
+  if (bytes.length < 2) return;
+  const status = bytes[0];
+  if (status >= 0xf0) return; // SysEx / system — captured raw, not summarized here
+  const type = status & 0xf0;
+  const ch = (status & 0x0f) + 1;
+  if (type === 0x90 && bytes[2] > 0) { // note on (velocity > 0)
+    const perNote = noteOnsByChannel.get(ch) ?? new Map<number, number>();
+    perNote.set(bytes[1], (perNote.get(bytes[1]) ?? 0) + 1);
+    noteOnsByChannel.set(ch, perNote);
+    lastNote = { ch, note: bytes[1], vel: bytes[2] };
+  } else if (type === 0xb0) { // control change
+    const set = ccByChannel.get(ch) ?? new Set<number>();
+    set.add(bytes[1]);
+    ccByChannel.set(ch, set);
+  }
+}
+function printSummary(): void {
+  console.error('\n── decoded channel-voice summary ───────────────────────');
+  if (noteOnsByChannel.size === 0 && ccByChannel.size === 0) {
+    console.error('  (no note-on or CC channel messages seen — only SysEx/clock, or nothing arrived)');
+  }
+  for (const ch of [...noteOnsByChannel.keys()].sort((a, b) => a - b)) {
+    const notes = [...noteOnsByChannel.get(ch)!.entries()].sort((a, b) => a[0] - b[0]);
+    const list = notes.map(([n, c]) => `${n}(${noteName(n)})×${c}`).join(', ');
+    console.error(`  NOTE-ONs on MIDI ch ${ch}:  ${list}`);
+  }
+  for (const ch of [...ccByChannel.keys()].sort((a, b) => a - b)) {
+    console.error(`  CCs on MIDI ch ${ch}:  ${[...ccByChannel.get(ch)!].sort((a, b) => a - b).join(', ')}`);
+  }
+  console.error('────────────────────────────────────────────────────────');
+}
 
 // Don't ignore SysEx (false). Do ignore timing clock + active-sensing
 // (true, true) so we capture the protocol-meaningful messages, not
@@ -170,9 +218,26 @@ input.on('message', (_dt, bytes) => {
     messageCount++;
     byteCount += bytes.length;
     stream.write(Buffer.from(bytes));
+    decode(bytes);
+    // Deterministic loop-measurement log: one JSON line per note-on (velocity > 0).
+    if (bytes.length >= 3 && (bytes[0] & 0xf0) === 0x90 && bytes[2] > 0) {
+        eventsStream.write(JSON.stringify({ t_ms: Date.now() - start, ch: (bytes[0] & 0x0f) + 1, note: bytes[1], vel: bytes[2] }) + '\n');
+    }
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    // Live per-channel note list (the "what notes is it actually sending" answer,
+    // without waiting for the Ctrl+C summary). Distinct notes per channel, capped.
+    const noteSummary = [...noteOnsByChannel.keys()].sort((a, b) => a - b)
+        .map((ch) => {
+            const ns = [...noteOnsByChannel.get(ch)!.keys()].sort((a, b) => a - b);
+            const shown = ns.length > 16 ? `${ns.slice(0, 16).join(',')},…` : ns.join(',');
+            return `ch${ch}:[${shown}]`;
+        })
+        .join(' ');
+    const last = lastNote
+        ? ` last:${lastNote.note}(${noteName(lastNote.note)}) ch${lastNote.ch} v${lastNote.vel}`
+        : '';
     process.stderr.write(
-        `\r[${elapsed}s] ${messageCount} messages, ${byteCount} bytes → ${path.basename(absOut)}     `,
+        `\r[${elapsed}s] ${messageCount} msgs ${byteCount}B${noteSummary ? ` | notes ${noteSummary}` : ''}${last} → ${path.basename(absOut)}     `,
     );
 });
 
@@ -191,10 +256,13 @@ console.error('Trigger MIDI traffic on the device or in your editor. Press Ctrl+
 process.on('SIGINT', () => {
     console.error('\n\nStopping...');
     try { input.closePort(); } catch { /* already closed */ }
+    eventsStream.end();
     stream.end(() => {
         const elapsed = ((Date.now() - start) / 1000).toFixed(1);
         console.error(`✓ Saved ${messageCount} messages (${byteCount} bytes) over ${elapsed}s to:`);
         console.error(`  ${absOut}`);
+        console.error(`  ${eventsPath}  (timestamped note-ons; measure_loop.ts reads this)`);
+        printSummary();
         process.exit(0);
     });
 });

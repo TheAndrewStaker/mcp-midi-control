@@ -24,10 +24,12 @@ Before you install, here's exactly what the AI can and can't do to your gear.
 
 ## The three safety gates
 
-Every supported device (AM4, Axe-Fx II, Hydrasynth) enforces the same
-three rules at the server level. They're not "the AI is supposed to
-follow"; they're "the server refuses to do this regardless of what the AI
-asks." Documented in `docs/SAFE-EDIT-WORKFLOW.md` if you want the
+Every supported device enforces the same three rules at the server level,
+applied to whatever that device can persist — the working buffer and stored
+presets on the guitar amps and the Hydrasynth, a stored kit and its wave pool
+on the Roland SPD-SX, a project slot on the Novation Circuit Tracks. They're not
+"the AI is supposed to follow"; they're "the server refuses to do this
+regardless of what the AI asks." Documented in `docs/SAFE-EDIT-WORKFLOW.md` if you want the
 implementation details.
 
 ### Gate 1: save-authorization

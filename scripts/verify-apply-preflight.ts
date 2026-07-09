@@ -602,9 +602,10 @@ check(
   JSON.stringify(preflight16.info),
 );
 check(
-  'warning names the silent-override + retry (set tempo to NONE)',
+  'warning explains the stored-but-inaudible lock + retry (set tempo to NONE)',
   tempoWarn16 !== undefined
-    && /silently ignores/i.test(tempoWarn16.info)
+    && /stored/i.test(tempoWarn16.info)
+    && /inaudible|tempo-derived/i.test(tempoWarn16.info)
     && /none/i.test(tempoWarn16.retry_action ?? ''),
   JSON.stringify(tempoWarn16),
 );

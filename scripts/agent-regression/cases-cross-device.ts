@@ -393,4 +393,19 @@ export const CROSS_DEVICE_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 240,
     },
   },
+
+  // ── Coverage: describe_rig (multi-device orchestration cornerstone) ────────
+  {
+    id: 'cross-describe-rig-overview',
+    device: 'am4', // device field is for harness availability; describe_rig is rig-wide (no port)
+    description: 'Multi-device orchestration: a "what gear can you control / show me the whole rig" request should call describe_rig (the whole-rig overview, no port) FIRST, not enumerate per-device describe_device calls or guess. describe_rig is the Decision-2 orchestration cornerstone and had zero agent-sweep coverage. Pure introspection, mock-runnable. Catches an agent that fabricates the device list or reaches for list_midi_ports (lower-level) when asked about controllable gear.',
+    prompt: 'What music gear can you control through this server? Give me the whole rig — which devices are set up and which are connected right now.',
+    expectations: {
+      must_call: ['describe_rig'],
+      must_not_call: ['describe_device'], // a whole-rig question is describe_rig's job, not N per-device calls
+      max_tools: 4,
+      text_not_contains: ['I cannot', 'I am not able', 'no access'],
+      max_wall_seconds: 90,
+    },
+  },
 ];

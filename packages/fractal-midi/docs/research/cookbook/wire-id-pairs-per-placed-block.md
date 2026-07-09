@@ -6,7 +6,7 @@ discovered:  cont (-DECODE-NOTES.md lines 25-67)
 verified_on:
   - axe-fx-ii-q8.02
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-wire-id-pairs-per-placed-block
+golden: STUB (structural-only; de-facto coverage: the block-name → wire-ids table in packages/fractal-gen2/src/blockBinaryLayout.ts + fractal-midi/src/gen2/axe-fx-ii/blockTypes.ts)
 relates_to: [alphabetical-name-cascade-block-ordering]
 consumed_in:
   - packages/fractal-gen2/src/blockBinaryLayout.ts (block-name → wire-ids table from FUN_00595260)
@@ -82,8 +82,8 @@ extracted.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-wire-id-pairs-per-placed-block` runs
-fixtures asserting:
+No inline fixture ships (golden is STUB). A functional case, if added,
+would assert:
 1. K=1 case: `Enhancer → [135]`
 2. K=2 case: `Amp → [106, 107]`
 3. K=4 case: `Filter → [131, 132, 164, 165]` (non-consecutive pair pattern)

@@ -13,6 +13,7 @@ export {
   SCENE_MIDI_TYPE_ENUM,
   encode,
   decode,
+  internalFromDisplay,
   formatDisplay,
   roundDisplayValue,
   formatUnitSuffix,
@@ -20,6 +21,13 @@ export {
   findEnumCandidates,
 } from './params.js';
 export type { Param, ParamKey, Unit } from './params.js';
+export {
+  RAW_INT_NONE_SENTINEL,
+  isRawIntRegister,
+  rawIntRegisterHasNone,
+  decodeRawIntRegister,
+  encodeRawIntRegister,
+} from './midiRegisters.js';
 export {
   PARAM_NAMES,
 } from './paramNames.js';
@@ -93,6 +101,41 @@ export {
   encodeAm4PresetName,
   decodeAm4PresetNameFromFrame,
 } from './presetBinary.js';
+
+// Preset CONTAINER decode — the 0x77/0x78/0x79 dump body IS the gen-3
+// preset container (4 chunks, 8,192-byte raw_patch): CRC-validated,
+// footer-XOR-checked, Huffman-decompressed. Body field map partial.
+export {
+  AM4_CONTAINER_CHUNK_COUNT,
+  AM4_RAW_PATCH_SIZE,
+  AM4_RAW_PATCH_NAME_OFFSET,
+  AM4_RAW_PATCH_NAME_LENGTH,
+  AM4_RAW_PATCH_MAGIC,
+  AM4_CHUNK_DISCRIMINATOR,
+  AM4_FW_WORD_1P01,
+  AM4_FW_WORD_2P00,
+  AM4_SCENE_COUNT,
+  AM4_BODY_SCENE_NAME_OFFSET,
+  AM4_BODY_SCENE_RECORD_STRIDE,
+  AM4_BODY_SCENE_NAME_LENGTH,
+  AM4_BODY_AMP_GAIN_CHA_OFFSET,
+  AM4_BODY_VOLATILE_WORD_OFFSET,
+  parseAm4PresetDump,
+  decodeAm4RawPatch,
+} from './presetContainer.js';
+export type { ParsedAm4PresetDump, Am4DecodedPreset } from './presetContainer.js';
+
+// Decoded-body block-record chain — walk the body to the AMP block record and
+// surface its per-channel (A/B/C/D) param VALUES. Amp block only (validated
+// record shape); other blocks stay omitted pending per-block captures.
+export {
+  AM4_BODY_CHANNEL_STRIDE,
+  AM4_BODY_BLOCK_HEADER_BYTES,
+  AM4_BODY_AMP_CHANNEL_COUNT,
+  locateAm4AmpBlock,
+  decodeAm4AmpBlock,
+} from './bodyChain.js';
+export type { Am4AmpBlockValues } from './bodyChain.js';
 
 // Data tables — cache + type-applicability + enums.
 export { CACHE_PARAMS } from './cacheParams.js';

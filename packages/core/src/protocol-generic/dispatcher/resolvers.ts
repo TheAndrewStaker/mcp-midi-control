@@ -17,7 +17,7 @@ import {
   type DeviceDescriptor,
   type DispatchErrorDetails,
 } from '../types.js';
-import { resolveConceptKeyForBlock } from '../concept-keys.js';
+import { resolveDescriptorConceptKey } from '../concept-keys.js';
 import { resolveParamAlias } from '../cross-device-aliases.js';
 
 import { requireDevice } from './core.js';
@@ -81,7 +81,7 @@ export function resolveParamName(
   // block context provides the block prefix). The dispatcher rewrites
   // the typed concept-key to the device-local canonical name before the
   // writer sees it.
-  const conceptResult = resolveConceptKeyForBlock(descriptor.id, block, input);
+  const conceptResult = resolveDescriptorConceptKey(descriptor.concept_keys, block, input);
   if (
     conceptResult !== undefined
     && conceptResult.localName in schema.params

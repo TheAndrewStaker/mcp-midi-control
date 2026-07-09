@@ -18,7 +18,7 @@
  * Prereq: AM4 connected, AM4-Edit CLOSED, and no other app holding the port
  * (incl. a running MCP server). Run: npx tsx scripts/_research/probe-am4-channel-blocked.ts
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 const AM4_MODEL = 0x15;
 const FRACTAL_MFR = [0x00, 0x01, 0x74] as const;

@@ -263,7 +263,8 @@ const EFFECT_TYPE_OVERRIDES: Record<string, EnumOverlayEntry> = {
   // oracle for gen-3 amp ordinals (FM9 ordinals 65/179/264 exceed AM4's 248
   // entries and the names disagree), so labeling it from AM4 would fabricate
   // wrong amp model names. The amp model names come from the SHARED gen-3 read
-  // roster (gen3ReadRosters, the 284 factory-correlated DISTORT models) layered
+  // roster (gen3ReadRosters, the complete 331 DISTORT models: factory-correlated
+  // base unioned with the device-true FM9 cache roster) layered
   // at the catalog, and the ordinal IS the discrete-SET value, so amp set-by-name
   // resolves off that roster. This overlay just stays out of amp's way.
   //

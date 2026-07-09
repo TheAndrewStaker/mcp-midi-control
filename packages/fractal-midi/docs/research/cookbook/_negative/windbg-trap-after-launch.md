@@ -6,7 +6,8 @@ discovered:  (AM4-Edit label-loader hunt)
 verified_on:
   - am4-edit-1.x-windows
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-windbg-trap-after-launch
+golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
+retest_when: never (structural — labels are written once at startup before a user-attachable trap can arm, so the trap cannot fire by construction; juce-binarydata-zip is the permanent replacement)
 relates_to: [juce-binarydata-zip]
 consumed_in: []
 ---
@@ -53,6 +54,14 @@ zero debugger involvement. The mechanism is documented in
   the specific class that defeats it.
 - A *kernel-mode* probe with an earlier attach point. Out of scope
   for this project; JUCE BinaryData is cheaper.
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "WinDbg breakpoint label loader" / "trap-after-launch editor labels"
+- "labels written once at startup" / "stack frame too shallow memcpy"
+- "JUCE BinaryData ZIP" (the working alternative)
 
 ## Refinement history
 

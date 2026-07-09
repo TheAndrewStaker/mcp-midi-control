@@ -210,6 +210,45 @@ export function decode(param: Param, internalValue: number): number {
 }
 
 /**
+ * Exact inverse of `decode`: convert a UI/display value back to the AM4's
+ * normalized [0,1] internal float (the read-register space; the wire u32 is
+ * `round(internal × READ_VALUE_DENOMINATOR)`, see `setParam.ts`).
+ *
+ * Branch-for-branch mirror of `decode`, INCLUDING the degenerate-log10
+ * linear fallback (log10 with a non-positive or collapsed range decodes
+ * linearly, so it must also encode linearly), so that
+ * `decode(param, internalFromDisplay(param, d)) === d` for every display
+ * value in `[displayMin, displayMax]`.
+ *
+ * Note this is the inverse of the READ decode, NOT the same space as
+ * `encode` (which produces the absolute physical float the MESSAGE_SET
+ * write action carries — the firmware maps between the two spaces).
+ * For params whose write-float space coincides with the normalized space
+ * (displayMin 0, displayMax === unit scale, e.g. `knob_0_10`), the two
+ * agree — hardware-anchored by the `buildSetParamNorm` probe (normalized
+ * 0.7 landed at display 7.0 on amp.gain) and the pinned read captures
+ * (display 3.00/5.00/6.00 ↔ u32 19660/32767/39320).
+ *
+ * Verified by `scripts/verify-display-first-fractal.ts` (round-trip gate
+ * over every param's display grid + the hardware anchors above), which
+ * runs in `test:codec`.
+ */
+export function internalFromDisplay(param: Param, displayValue: number): number {
+  if (param.unit === 'enum') return displayValue;
+  const { displayMin, displayMax } = param;
+  if (displayMax === displayMin) return 0; // decode is constant; degenerate
+  if (
+    param.scaling === 'log10' &&
+    displayMin > 0 &&
+    displayMax > 0
+  ) {
+    return Math.log(displayValue / displayMin) / Math.log(displayMax / displayMin);
+  }
+  // Linear (default) — also the degenerate-log10 fallback branch.
+  return (displayValue - displayMin) / (displayMax - displayMin);
+}
+
+/**
  * Decimal places for display values, per unit. Matches AM4-Edit's on-screen
  * convention so read tool output ("amp.gain is 5.00") doesn't surface the
  * Q15 quantization residue ("amp.gain is 4.9999"). Used by `formatDisplay`.

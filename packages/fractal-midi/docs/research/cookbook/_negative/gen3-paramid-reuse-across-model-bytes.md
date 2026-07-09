@@ -9,7 +9,8 @@ verified_on:
   - fm3-edit-binary
   - vp4-edit-binary
 firmware_sensitive: true
-golden: scripts/cookbook-verify.ts#case-gen3-paramid-reuse-across-model-bytes
+golden: STUB (structural-only; negative finding — device-true catalogs are drift-gated by the per-device catalog checks; see Symptoms / grep terms)
+retest_when: never (measured firmware fact — paramIds are per-firmware per-effect ordinals, 6.9%/18.6%/99.5% divergence from the III; device-true catalogs mined from each editor binary are the permanent lane)
 relates_to: [per-effect-paramtable-dispatcher, iii-multiproduct-editor-binary, iii-fn01-action-code-per-model-byte, param-descriptor-16byte]
 consumed_in:
   - scripts/_research/scan-editor-param-tables.ts
@@ -97,6 +98,14 @@ coverage with no hardware and no Ghidra.
 - Cross-GENERATION reuse (gen-2 Axe-Fx II `fn=0x02` vs gen-3 `fn=0x01`)
   was never on the table; this entry is specifically about reuse WITHIN
   the gen-3 family, which looks safe and is not.
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "reuse III paramIds for FM3/FM9/VP4" / "gen-3 shared codec shared catalog"
+- "paramId same across model bytes" / "III catalog stopgap"
+- "silent wrong-param write" (the failure mode an III-borrowed paramId produces)
 
 ## Refinement history
 

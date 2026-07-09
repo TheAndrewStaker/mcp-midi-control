@@ -1,19 +1,25 @@
 # Install on macOS
 
-A short, one-time setup. It takes ~10–15 minutes, most of it waiting on
-downloads. You do **not** need to be a developer, pay any fee, or edit any
-files by hand.
+A short, one-time setup. It takes ~5–10 minutes, most of it waiting on
+downloads. You do **not** need to be a developer, install a compiler, pay any
+fee, or edit any files by hand.
 
-## Why this is a "build it on your Mac" install (and why that's good)
+> **A one-click install is coming.** A Claude Desktop Extension (`.mcpb`) that
+> installs from inside Claude Desktop with no Terminal at all is in progress
+> (see [accessibility plan](design/accessibility-blind-support.md)). Until it
+> ships, the Terminal steps below are the way in, and they are short.
 
-The Windows version ships as a ready-made download. On a Mac, a downloaded,
-unsigned program gets blocked by Apple's security (Gatekeeper) with an
-"unidentified developer" wall, and getting past it is fiddly, especially on
-macOS Sequoia. We avoid that entirely: instead of downloading a ready-made
-binary, your Mac **builds the MIDI engine itself** during setup. Anything your
-own Mac compiles is trusted automatically, so there are **no security prompts
-and no Apple Developer fee** involved. The only cost is a one-time free
-"Command Line Tools" download from Apple.
+## Why this install is friction-free (no compiler, no security prompts)
+
+The MIDI engine ships as a **prebuilt binary** that `npm` downloads for your
+Mac's chip (Apple Silicon or Intel). Two things follow:
+
+- **No build tools.** Earlier versions compiled the engine on your Mac (which
+  needed Apple's Command Line Tools). That is no longer required: the binary is
+  already built for your platform.
+- **No Gatekeeper "unidentified developer" wall.** A binary fetched by `npm`
+  (not downloaded in a web browser) is not quarantined by macOS, so it loads
+  with no security prompt and no Apple Developer fee.
 
 ## Steps
 
@@ -23,43 +29,45 @@ and no Apple Developer fee** involved. The only cost is a one-time free
 
 2. **Open Terminal.** Press `Cmd+Space`, type `Terminal`, press Return.
 
-3. **Install Apple's free developer tools.** Paste this and press Return:
-
-   ```
-   xcode-select --install
-   ```
-
-   A window pops up. Click **Install** and wait (~8 minutes). This is free and
-   does **not** require any paid Apple account. If it says they're already
-   installed, just continue.
-
-4. **Download the software with `git` (not your web browser).** Using `git`
-   avoids the macOS security block that a browser download would trigger. Paste:
+3. **Download the software with `git` (not your web browser).** Using `git`
+   avoids the macOS security block that a browser download would trigger. Paste
+   and press Return:
 
    ```
    git clone https://github.com/TheAndrewStaker/mcp-midi-control.git ~/mcp-midi-control
    ```
 
-   (If Terminal offers to install developer tools here, click Install, let it
-   finish, then run the line again.)
+   (If Terminal offers to install developer tools the first time you use `git`,
+   click Install, let it finish, then run the line again.)
 
-5. **Run setup.** Paste these lines, pressing Return after each:
+4. **Run setup.** Paste these lines, pressing Return after each:
 
    ```
    cd ~/mcp-midi-control
    npm run setup-mac
    ```
 
-   `setup-mac` builds the MIDI engine on your Mac and registers the server with
+   `setup-mac` downloads the prebuilt MIDI engine and registers the server with
    Claude Desktop for you, so you never touch a config file. (If you prefer, you
    can instead double-click **`setup-mac.command`** in the `~/mcp-midi-control`
    folder in Finder; it does the same thing.)
 
-6. **Restart Claude Desktop.** Fully quit it with `Cmd+Q` (closing the window is
+5. **Restart Claude Desktop.** Fully quit it with `Cmd+Q` (closing the window is
    not enough), then reopen it.
 
-7. **Plug in your gear by USB** and ask Claude to connect. Fractal and ASM
+6. **Plug in your gear by USB** and ask Claude to connect. Fractal and ASM
    units work on macOS with no driver: macOS recognizes them automatically.
+
+> **Rare fallback: if setup says the MIDI engine could not load.** This only
+> happens if no prebuilt binary matched your Mac. Install Apple's free Command
+> Line Tools, then rebuild the engine:
+>
+> ```
+> xcode-select --install
+> cd ~/mcp-midi-control && npm rebuild @julusian/midi
+> ```
+>
+> The Command Line Tools are free and do not need any paid Apple account.
 
 ## Which devices work over USB on a Mac
 
@@ -115,8 +123,20 @@ Then fully quit and reopen Claude Desktop.
 
 ## Notes for the maintainer
 
-This Mac path is **source-build by design**: local compilation is the only
-fee-free path that's free of Gatekeeper friction at runtime today. A future
-double-click `.mcpb` Desktop Extension is the better long-term UX, but it needs
-the native dependency swapped from `midi` to `@julusian/midi` (an API-compatible
-drop-in that ships N-API prebuilds) first.
+**Update:** the native dependency has been swapped from `midi` to
+`@julusian/midi` (API-compatible drop-in, ships N-API prebuilts). Two
+consequences, both pending on-Mac confirmation (validate on the Intel iMac for
+darwin-x64 and a community Apple-Silicon owner for darwin-arm64):
+
+1. **The Xcode Command Line Tools step (step 3) is now usually unnecessary.**
+   `npm install` fetches a prebuilt binary instead of compiling, so common Macs
+   (arm64 / x64) need no toolchain. An npm-fetched prebuild is *not* quarantined
+   (npm/git/curl don't set `com.apple.quarantine`), so it stays Gatekeeper-clean
+   at runtime — the same property local compilation gave us. Keep `xcode-select`
+   documented only as a fallback for platforms without a matching prebuild. Do
+   not drop it from the user steps until a Mac confirms the prebuild fetch.
+2. **The `.mcpb` Desktop Extension is now unblocked** — it was gated on exactly
+   this swap. That double-click, no-Terminal, no-Gatekeeper install is the front
+   door we want for non-technical and screen-reader users; see
+   `docs/design/accessibility-blind-support.md`. This source-build path stays as
+   the fallback.

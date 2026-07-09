@@ -55,7 +55,11 @@ import {
   AXE_FX_III_BLOCKS,
   GEN3_READ_ROSTERS,
 } from '../src/gen3/axe-fx-iii/index.js';
-import { FM3_PARAMS } from '../src/gen3/fm3/index.js';
+import {
+  FM3_PARAMS,
+  FM3_FAMILY_JOIN_DISCRETE,
+  FM3_FAMILY_JOIN_PROVENANCE,
+} from '../src/gen3/fm3/index.js';
 import {
   FM9_PARAMS,
   FM9_ENUM_OVERRIDES,
@@ -66,6 +70,10 @@ import {
   FM9_DRIVE_ROSTER,
   FM9_REVERB_TYPE_ROSTER,
 } from '../src/gen3/fm9/rosters.generated.js';
+import {
+  FM9_CAB_BANK_NAMES,
+  FM9_CAB_ROSTERS_BY_BANK,
+} from '../src/gen3/fm9/cabRosters.generated.js';
 import { VP4_PARAMS } from '../src/gen3/vp4/index.js';
 import {
   KNOWN_PARAMS as GEN1_KNOWN_PARAMS,
@@ -177,9 +185,17 @@ const CATALOGS: DeviceCatalog[] = [
         'no capture tools) generates the full table — see the capture guides.',
       'Enum display names: resolve via axe-fx-iii.json GEN3_READ_ROSTERS ' +
         '(family-shared); no FM3-specific overrides exist yet.',
+      'FM3_FAMILY_JOIN_DISCRETE routes type/count selectors as DISCRETE ordinals ' +
+        '(symbol -> encode-bound maxOrdinal): the enum-flow correction the FM9/III ' +
+        'received, applied via (family, SYMBOL) join against sibling evidence ' +
+        '(FM9 cache enum rows + FM9/III hardware roundtrips; provenance per row in ' +
+        'FM3_FAMILY_JOIN_PROVENANCE). Family-pattern evidence, community-beta; an ' +
+        'FM3 SET->GET roundtrip is the pending hardware confirm.',
     ],
     data: {
       FM3_PARAMS,
+      FM3_FAMILY_JOIN_DISCRETE,
+      FM3_FAMILY_JOIN_PROVENANCE,
     },
   },
   {
@@ -196,6 +212,13 @@ const CATALOGS: DeviceCatalog[] = [
       'Effective enum table per param = GEN3_READ_ROSTERS (axe-fx-iii.json, ' +
         'family-shared) overlaid by FM9_ENUM_OVERRIDES — the DEVICE override wins ' +
         'per ordinal where both define one.',
+      'FM9_CAB_ROSTERS_BY_BANK carries the factory cab/IR name tables keyed by ' +
+        'CABINET_BANK ordinal (0=FACTORY 1, 1=FACTORY 2, 3=LEGACY; USER/SCRATCHPAD ' +
+        'are device-owner content and never ship). BANK-CONDITIONED: the same ' +
+        'CABINET_TYPE ordinal names a different IR per bank, so do NOT use these as ' +
+        'a flat CABINET_TYPE enum table — resolve name -> (bank, ordinal) and set ' +
+        'BOTH params. Community-beta (cache-derived, cross-validated over six ' +
+        'firmware caches; index-0 alignment not yet hardware-anchored).',
     ],
     data: {
       FM9_PARAMS,
@@ -204,6 +227,8 @@ const CATALOGS: DeviceCatalog[] = [
       FM9_AMP_ROSTER,
       FM9_DRIVE_ROSTER,
       FM9_REVERB_TYPE_ROSTER,
+      FM9_CAB_BANK_NAMES,
+      FM9_CAB_ROSTERS_BY_BANK,
     },
   },
   {

@@ -6,7 +6,7 @@ discovered:  (2026-05-20;  hardware-verified)
 verified_on:
   - axe-fx-ii-q8.02
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-ii-fn1f-atomic-read
+golden: scripts/verify-axe-fx-ii-getpreset-channel-walk.ts (offline fn=0x1F channel-blocked dump decode)
 relates_to: [ii-axeedit-opcode-table, septet-14bit, ii-state-broadcast-triple-write, am4-fn1f-atomic-read, ii-fn0e-query-states]
 consumed_in:
   - fractal-midi/docs/devices/axe-fx-ii/SYSEX-MAP.md
@@ -98,7 +98,7 @@ is the legacy path; fn=0x1F is the structural improvement.
   positional ushort array (chunk position equals param position, packed
   via `packValue16`); it is NOT block-record-keyed and NOT
   byte2-mask-preserving. The `block-record-stride-8` and
-  `paramBase-plus-paramId` primitives apply to the preset binary, not to
+  `parambase-plus-paramid` primitives apply to the preset binary, not to
   this reply.
 - **DO NOT** route this through the scene-walk legacy path. The
   scene-walk is 4-8x slower and produces the same data; it exists only
@@ -118,10 +118,11 @@ is the legacy path; fn=0x1F is the structural improvement.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-ii-fn1f-atomic-read` checks that the
-fn byte constant `FN_GET_ALL_PARAMS = 0x1F` exists in
-`fractal-midi/src/gen2/axe-fx-ii/setParam.ts` and is referenced in any
-shipped atomic-read code path.
+`scripts/verify-axe-fx-ii-getpreset-channel-walk.ts` exercises the
+fn=0x1F read path fully offline (channel-blocked dump decode against a
+purpose-built fake connection). The fn byte constant
+`FN_GET_ALL_PARAMS = 0x1F` ships in
+`fractal-midi/src/gen2/axe-fx-ii/setParam.ts`.
 
 Live wire verification ships in the project via the  workstream's
 research scripts ( era); see the
@@ -147,7 +148,7 @@ reply layout decode.
   (byte2 carries only the top 2 value bits), NOT the preset-binary
   21-bit byte2-mask-preservation scheme and NOT block-record-keyed. The
   stale links to `septet-21bit-byte2-mask-preservation`,
-  `block-record-stride-8`, and `paramBase-plus-paramId` were preset-binary
+  `block-record-stride-8`, and `parambase-plus-paramid` were preset-binary
   primitives misattributed to this live read path; see
   [[ii-state-broadcast-triple-write]].
 - 2026-05-22 (Rosetta-stone cookbook audit): promoted to cookbook

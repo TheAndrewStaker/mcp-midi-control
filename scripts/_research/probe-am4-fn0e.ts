@@ -15,7 +15,7 @@
  * Read-only by policy: sends only a query, never a SET / save / preset-store.
  * Run: npx tsx scripts/_research/probe-am4-fn0e.ts
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 const AM4_MODEL = 0x15;
 const FRACTAL_MFR = [0x00, 0x01, 0x74] as const;

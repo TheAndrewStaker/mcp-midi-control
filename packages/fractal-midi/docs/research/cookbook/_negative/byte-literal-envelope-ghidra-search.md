@@ -6,7 +6,8 @@ discovered:  (II dispatcher mining)
 verified_on:
   - axe-edit-ii-32bit
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-byte-literal-envelope-ghidra-search
+golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
+retest_when: never (structural — multi-device Fractal editors load the model byte at runtime by construction; the 4-byte-prefix scan + model-load inspection is the permanent replacement)
 relates_to: [param-descriptor-16byte, ii-axeedit-opcode-table]
 consumed_in: []
 ---
@@ -54,6 +55,14 @@ the function. See SESSIONS.md  for the disassembly walk.
   hard-coded by an emitter that is not multi-device-capable.
   Editor-side emitters are multi-device; bespoke firmware-side
   emitters may be single-device.
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "Ghidra search F0 00 01 74 10" / "5-byte SysEx envelope literal search"
+- "model byte loaded at runtime" / "zero hits envelope search"
+- "search 4-byte prefix F0 00 01 74" (the working alternative)
 
 ## Refinement history
 

@@ -37,7 +37,7 @@
  *   npx tsx scripts/_research/probe-am4-fn19-payload-variants.ts
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 

@@ -6,7 +6,7 @@ discovered: HW-AM4-FN1F probe (2026-05-22; hardware-verified)
 verified_on:
   - am4
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-am4-fn1f-atomic-read
+golden: packages/fractal-midi/test/am4/setparam.test.ts (buildGetAllParams request-shape byte goldens)
 relates_to: [ii-fn1f-atomic-read, septet-14bit, xor-7f-envelope-checksum, am4-pidlow-register-families]
 consumed_in:
   - fractal-midi/docs/devices/am4/SYSEX-MAP.md

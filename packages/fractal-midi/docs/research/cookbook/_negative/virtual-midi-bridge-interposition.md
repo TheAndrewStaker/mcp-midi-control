@@ -7,7 +7,8 @@ verified_on:
   - axe-edit-ii-on-windows
   - am4-edit-on-windows
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-virtual-midi-bridge-interposition
+golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
+retest_when: never (structural — AxeEdit II / AM4-Edit filter MIDI ports by driver class, so a bridge between editor and real device cannot appear in the picker; the gen-3 AXE-prefixed loopMIDI EMULATION carve-out is already a shipped positive lane and is explicitly not ruled out here)
 relates_to: []
 consumed_in: []
 ---
@@ -61,6 +62,15 @@ AxeEdit III, and AM4-Edit. See memory `feedback_capture_methodology`.
   the [loopMIDI editor-emulation capture guide](../../../capture-guides/loopmidi-editor-emulation.md)
   and [[gen3-fn01-grid-set-position-insert]]. The driver-class filter
   documented above still applies to AxeEdit II / AM4-Edit on Windows.
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "loopMIDI bridge capture editor traffic" / "virtual MIDI port interpose Fractal editor"
+- "editor filters ports by driver class" / "port missing from editor picker"
+- "use USBPcap instead" (the working capture lane); note the carve-out:
+  full device EMULATION via an `AXE`-prefixed loopMIDI port is NOT ruled out
 
 ## Refinement history
 

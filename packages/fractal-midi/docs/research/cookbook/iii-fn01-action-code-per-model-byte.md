@@ -6,7 +6,7 @@ discovered: 2026-05-22 (cookbook crosscheck mining of ghidra-axe-edit-iii-action
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-fn01-action-code-per-model-byte
+golden: STUB (structural-only; de-facto coverage: the consumed_in dump-citation — actions-and-shapes dump per-caller dispatch lines)
 relates_to: [iii-fn01-set-parameter-envelope, iii-multiproduct-editor-binary]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-actions-and-shapes.txt
@@ -119,8 +119,7 @@ FUN_14033ec70(param_1 + 0x38, &local_48, *(undefined8 *)(param_1 + 0x40));
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-iii-fn01-action-code-per-model-byte`
-runs as a STUB (the structural claim is "the actions-and-shapes
+This entry's golden is a STUB (the structural claim is "the actions-and-shapes
 dump contains the cited per-caller dispatch lines"; the
 `consumed_in:` path existence check enforces this). The verified
 table above is the corpus; future agents adding new split sites

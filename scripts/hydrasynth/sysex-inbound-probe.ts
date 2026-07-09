@@ -17,7 +17,7 @@
  *
  * Run:  npx tsx scripts/hydrasynth/sysex-inbound-probe.ts
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 const HYDRA_PORT_NEEDLES = ['hydrasynth', 'asm hydra'];
 const SYSEX_PREFIX = [0xf0, 0x00, 0x20, 0x2b, 0x00, 0x6f];

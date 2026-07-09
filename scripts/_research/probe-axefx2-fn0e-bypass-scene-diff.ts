@@ -10,7 +10,7 @@
  * RESTORES original bypass + scene before exit. Reversible working-buffer
  * writes only; nothing saved to flash. Uses shipped fractal-midi builders.
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import {

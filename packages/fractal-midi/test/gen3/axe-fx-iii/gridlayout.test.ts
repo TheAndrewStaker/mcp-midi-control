@@ -6,6 +6,13 @@
  *      f0 00 01 74 12 01 2e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 38 f7
  * 2. parseGen3GridLayout round-trips a hand-packed synthetic grid (the
  *    MSB-first 7-bit packing must invert exactly).
+ * 3. FM3 goldens: two real checksum-valid frames from
+ *    `samples/captured/fm3-community-2026-06-12/fm3-probe-output.json`
+ *    (job3; block-targeted sub=0x2E replies, 590 + 606 bytes) decode to the
+ *    grid the device's own fn=0x13 status dump names for that preset:
+ *    Input1(37)@r1c0 -> Amp1(58)@r1c1 -> Output1(42)@r1c2. These lock the
+ *    FM3 4x12 geometry AND the tail-anchored region rule (the 606-byte
+ *    length variant shifts the region 361 -> 377 and must decode the same).
  *
  * The real-capture cross-validation (10 responses → coherent grid whose
  * effect IDs match blockTypes.ts) runs in `scripts/verify-gen3-grid-layout.ts`
@@ -56,7 +63,10 @@ function buildSyntheticFrame(
     writeBitsMsb(region, base + 16, c.cable, 8); // bits 16-23: cable mask
   }
   const filler = new Array(GRID_REGION_OFFSET).fill(0);
-  return [0xf0, ...filler, ...region, 0xf7];
+  // Trailing 0x00 stands in for the checksum byte: the parser tail-anchors
+  // the region against the final [checksum, F7] pair (it does not verify
+  // the checksum value).
+  return [0xf0, ...filler, ...region, 0x00, 0xf7];
 }
 
 const cases: Array<() => void> = [];
@@ -116,6 +126,74 @@ cases.push(() => {
     threw = true;
   }
   assert(threw, 'a frame too short for the grid region must throw');
+});
+
+// 6. FM3 real-capture goldens (fm3-community-2026-06-12, job3): both frames —
+//    including the 606-byte length variant — decode to the fn=0x13 oracle grid.
+const FM3 = 0x11;
+const FM3_FRAME_DRIVE_590 =
+  'F0 00 01 74 11 01 2E 00 76 00 00 00 3A 00 00 00 00 00 00 70 03 5B 00 20 00 00 04 00 00 00 ' +
+  '00 00 00 00 00 48 3E 45 10 28 36 63 05 6A 64 32 50 2E 57 23 3D 5A 61 3A 19 2C 45 13 55 5C ' +
+  '20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 00 53 31 59 2D 66 29 44 40 20 10 08 04 02 01 ' +
+  '00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 12 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 07 20 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 28 00 02 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 4C F7';
+const FM3_FRAME_AMP_606 =
+  'F0 00 01 74 11 01 2E 00 3A 00 0A 00 3A 00 00 00 00 00 00 70 03 5B 00 20 00 00 04 00 00 00 ' +
+  '00 00 00 00 02 26 28 45 10 28 36 63 05 6A 64 32 50 2E 57 23 3D 5A 61 3A 19 2C 45 13 55 5C ' +
+  '20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 00 53 31 59 2D 66 29 44 40 20 10 08 04 02 01 ' +
+  '00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 12 ' +
+  '40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 07 20 00 08 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 01 28 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 70 F7';
+
+function assertFm3OracleGrid(cells: ReturnType<typeof parseGen3GridLayout>, label: string): void {
+  assert(cells.length === 3, `${label}: expected the 3-cell oracle grid, got ${cells.length}`);
+  const at = (row: number, col: number) => cells.find((c) => c.row === row && c.col === col);
+  const input = at(1, 0)!;
+  const amp = at(1, 1)!;
+  const output = at(1, 2)!;
+  assert(input?.effectId === 37 && !input.isShunt && input.cableInputMask === 0, `${label}: r1c0 must be Input1 (37)`);
+  assert(amp?.effectId === 58 && amp.cableInputMask === 0x04, `${label}: r1c1 must be Amp1 (58) cable 0x04`);
+  assert(output?.effectId === 42 && output.cableInputMask === 0x04, `${label}: r1c2 must be Output1 (42) cable 0x04`);
+}
+
+cases.push(() => {
+  assertFm3OracleGrid(parseGen3GridLayout(parseHex(FM3_FRAME_DRIVE_590), FM3), 'FM3 590B');
+});
+
+cases.push(() => {
+  // The 16-byte-longer variant tail-anchors to region offset 377 (not 361)
+  // and MUST decode identically — this is the length-variant rule golden.
+  assertFm3OracleGrid(parseGen3GridLayout(parseHex(FM3_FRAME_AMP_606), FM3), 'FM3 606B');
 });
 
 export function runGen3GridLayoutTests(): void {

@@ -7,7 +7,7 @@
       "env": {
         "MCP_MOCK_TRANSPORT": "${MCP_MOCK_TRANSPORT:-0}"
       },
-      "timeout": 30000
+      "timeout": 360000
     }
   }
 }

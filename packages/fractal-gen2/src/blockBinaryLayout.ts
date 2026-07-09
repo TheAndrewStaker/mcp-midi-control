@@ -8,7 +8,41 @@
  * OFFSET (ushorts between channel-X paramBase and channel-Y paramBase)
  * for each block-name.
  *
- * Status — 2026-05-22 (Session 116 cont 2, BK-070):
+ * ── SUPERSEDED AS A LOOKUP PATH — 2026-07-02 (preset-image TLV decode) ──
+ *
+ *   The preset image is a self-describing TLV chain: from word 130 of
+ *   the de-framed 4096-word image, `[wire_id, payload_len, payload]`
+ *   repeats until wire_id 0 (see `presetImageTlv.ts`, confirmed 388/388
+ *   across the factory banks + live hardware dumps). Every width in
+ *   this table equals that chain's `payload_len + 2`, and widths DRIFT
+ *   across firmware (factory Q8.02 bank Amp payload 234 vs live Q8.02
+ *   hardware 236 — i.e. width 236 vs the 238 measured below). New code
+ *   should walk the chain of the dump in hand via
+ *   `parsePresetImage(deframePresetImage(parsed))` and never trust a
+ *   static width table. The earlier guidance ("use this table for
+ *   known-composition presets only"; "a per-preset calibration probe is
+ *   the safest path") is OBSOLETE — no calibration probe is needed;
+ *   the dump self-describes its layout. The block serialization order
+ *   is ALPHABETICAL by the AxeEdit canonical DISPLAY name (spaces /
+ *   punctuation ignored — "Tremolo/Panner" under T, not this table's
+ *   PanTrem label), then a system tail that is an ordered subsequence
+ *   of [Tone Match, Noisegate, Output, Feedback Send, Feedback
+ *   Return, Controllers] (388/388 corpus). That resolves the "sort
+ *   algorithm anomalies" recorded below: Batch D's "PanTrem before
+ *   Vocoder/VolPan" is just the display name — "Tremolo/Panner" (T)
+ *   alphabetically precedes "Vocoder"/"Volume/Pan" (V); this table's
+ *   PanTrem label was never the sort key. "Mixer always last" matches
+ *   Mixer being a canBypass-false system-tail block. Either way, the
+ *   per-dump TLV walk makes order PREDICTION unnecessary for
+ *   read-modify-write.
+ *
+ *   This table is KEPT as hardware provenance (the measured widths and
+ *   X→Y offsets are BK-070 hardware evidence, and `wireIds` /
+ *   `EFFECT_ID_TO_BLOCK_NAME` remain the canonical id↔name map used by
+ *   the TLV walker). Do not extend the width columns; extend the
+ *   walker instead.
+ *
+ * Status — 2026-05-22 (Session 116 cont 2, BK-070), historical:
  *
  *   Widths measured across 5 hardware batches (see
  *   `scripts/_research/bk070-measure-widths.ts`). Cross-batch
@@ -16,32 +50,13 @@
  *   Compressor=42 (A+E), Flanger=50 (B+E), GraphicEQ=40 (B+E),
  *   ParametricEQ=50 (C+E), Pitch=172 (C+E), Rotary=40 (C+D),
  *   RingMod=12 (C+D). Same number every time the block is placed,
- *   regardless of what else is in the preset.
+ *   regardless of what else is in the preset. (2026-07-02: "stable"
+ *   holds within one firmware build; the widths are firmware
+ *   snapshots — see the TLV note above.)
  *
- * Sort algorithm — partially cracked:
- *
- *   The binary order is NOT a simple sort. Several heuristics
- *   explored (cascade order, alphabetical by cascade key, alphabetical
- *   by display name, groupCode alphabetical, block_id ascending) each
- *   match SOME batches but fail others. Empirical observations:
- *
- *   - Batches A, C, E follow cascade-order EXCEPT EffectsLoop in
- *     Batch A lands after Filter (its cascade position) but BEFORE
- *     it alphabetically would suggest.
- *   - Batch D has PanTrem appearing BEFORE Vocoder/VolPan, even
- *     though cascade order puts Vocoder(30) + VolPan(31) before
- *     PanTrem(32). This matches alphabetical-by-cascade-key
- *     (P < V), but contradicts Batch A.
- *   - Batch B has Mixer (canBypass=false) always sorted to the END,
- *     regardless of cascade position (Mixer is cascade pos 18,
- *     observed last in Batch B).
- *
- * Until the algorithm is fully reverse-engineered (likely via more
- * Ghidra mining of AxeEdit.exe), use this table for known-composition
- * presets only. For general atomic_apply against arbitrary
- * compositions, a per-preset calibration probe is the safest path
- * (probe each target block once, derive its actual paramBase from
- * the diff, then patch the binary).
+ * Sort algorithm — RESOLVED 2026-07-02 (see above; the historical
+ * anomaly notes lived here and are preserved in the cookbook entry
+ * `parambase-plus-paramid` refinement history).
  */
 
 /** Axe-Fx II canonical block-name as used by AxeEdit's FUN_00595260
@@ -61,7 +76,9 @@ export type AxeFxIIBlockName =
  *
  *   widthUshorts: total ushorts the block-name reserves in the binary,
  *     measured between consecutive placed blocks. STABLE across
- *     compositions (verified Session 116 cont 2 cross-batch).
+ *     compositions (verified Session 116 cont 2 cross-batch) but a
+ *     FIRMWARE SNAPSHOT — equals the self-described TLV payload_len + 2
+ *     of the firmware that produced the measurement (see module note).
  *
  *   xToYOffsetUshorts: ushorts between channel-X paramBase and
  *     channel-Y paramBase for this block. Per-block-name constant.

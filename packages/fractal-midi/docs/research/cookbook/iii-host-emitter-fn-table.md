@@ -6,7 +6,7 @@ discovered: Sessions 82-83 (Ghidra mining of AxeEdit III)
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-host-emitter-fn-table
+golden: STUB (structural-only; de-facto coverage: the consumed_in fn-byte-name-map dump citations)
 relates_to: [ii-axeedit-opcode-table, vendor-envelope-descriptor-table, iii-fn40-as-store-preset-begin, iii-fn01-set-parameter-envelope]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-fnbyte-name-map.txt
@@ -87,8 +87,8 @@ because the editor binary uses them in the wild.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-iii-host-emitter-fn-table` checks that
-every `FN_*` constant in `fractal-midi/src/gen3/axe-fx-iii/setParam.ts`
+No inline fixture ships (golden is STUB). The intended invariant: every
+`FN_*` constant in `fractal-midi/src/gen3/axe-fx-iii/setParam.ts`
 appears in the mined fn-byte-name map text dump.
 
 Live wire-byte validation is partial: a subset of fn bytes have

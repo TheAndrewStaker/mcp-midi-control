@@ -1,9 +1,12 @@
 /**
  * FM9 device-true enum overrides (read-leg {broadcast ordinal -> name}).
  *
- * The gen-3 family shares one effect codec, but the model rosters (amp / drive
- * selectors) are device-specific: FM9 ordinals do NOT match the III/FM3 or AM4
- * tables. The amp and drive (FUZZ) rosters below are the FM9's OWN model lists,
+ * The gen-3 family (III/FM3/FM9) shares one effect codec AND one model-selector
+ * ordinal space: FM9 ordinals match the III/FM3 tables on every shared ordinal
+ * (the shared base just omitted the models absent from any factory preset, now
+ * unioned in). The roster divergence is AM4-vs-gen-3 only — AM4 (a different
+ * codec generation) renumbered its amp table, so its ordinals do NOT match gen-3.
+ * The amp and drive (FUZZ) rosters below are the FM9's OWN model lists,
  * mined from the FM9-Edit `effectDefinitions` cache (firmware 11.0) and emitted
  * by `scripts/gen-fm9-rosters-from-cache.ts`. Each is VALIDATED at generation
  * time against the FM9 hardware ordinal anchors:
@@ -37,6 +40,7 @@
  * `gen3-enum-label-septet-stream`.
  */
 import { FM9_AMP_ROSTER, FM9_DRIVE_ROSTER, FM9_REVERB_TYPE_ROSTER } from './rosters.generated.js';
+import { FM9_CAB_BANK_NAMES } from './cabRosters.generated.js';
 
 export const FM9_ENUM_OVERRIDES: Readonly<Record<string, Readonly<Record<number, string>>>> = {
   // DISTORT block = the gen-3 AMP (effect id 58), paramId 10 = amp model.
@@ -66,4 +70,15 @@ export const FM9_ENUM_OVERRIDES: Readonly<Record<string, Readonly<Record<number,
   FILTER_TYPE: {
     6: 'Peaking',
   },
+
+  // CABINET block (effect id 100+), paramIds 0/1 = per-IR-slot BANK selectors.
+  // Full 5-way vocabulary from the FM9-Edit cache CABINET_BANK enum record
+  // (cross-validated across six firmware caches; see cabRosters.generated.ts).
+  // The bank↔name mapping is UNCONDITIONAL (unlike CABINET_TYPE, whose
+  // ordinal space is bank-conditioned and therefore ships as bank-keyed data
+  // + resolveFm9CabName instead of a flat enum table). Set-by-name works:
+  // "set cab bank 1 to Legacy" → ordinal 3, then set the type ordinal from
+  // the resolver. Community-beta (cache-derived, no hardware anchor yet).
+  CABINET_BANK1: FM9_CAB_BANK_NAMES,
+  CABINET_BANK2: FM9_CAB_BANK_NAMES,
 };

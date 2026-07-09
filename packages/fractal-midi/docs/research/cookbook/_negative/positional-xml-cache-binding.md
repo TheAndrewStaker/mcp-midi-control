@@ -7,8 +7,9 @@ verified_on:
   - axe-edit-ii-1.x
   - axe-edit-iii-1.40
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-positional-xml-cache-binding
-relates_to: [juce-binarydata-zip, param-descriptor-16byte, paramBase-plus-paramId]
+golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
+retest_when: never (measured — 20-40% inversion rate; the XML records the editor's UI layout by construction, not the device param table, so the positional binding cannot become correct)
+relates_to: [juce-binarydata-zip, param-descriptor-16byte, parambase-plus-paramid]
 consumed_in: []
 ---
 
@@ -48,7 +49,7 @@ metadata) with one of:
 - **Wire capture matched to a known UI action.** The device echoes
   paramId in its response. One capture per param resolves the
   binding without trusting the XML's positional order.
-- **[[paramBase-plus-paramId]]** address-calculation primitive on II,
+- **[[parambase-plus-paramid]]** address-calculation primitive on II,
   for block-types whose `paramBase` has been measured.
 
 ## What this does NOT rule out
@@ -59,6 +60,14 @@ metadata) with one of:
 - Using XML to discover unregistered parameter *names*. The names
   are useful inputs to a paramId-recovery probe even when the
   position is not.
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "positional XML wire-id binding" / "N-th parameterName binds N-th wire id"
+- "__block_layout.xml positional order" / "XML order is UI layout"
+- "20-40% inversion rate" (the measured failure)
 
 ## Refinement history
 

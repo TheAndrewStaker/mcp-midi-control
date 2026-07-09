@@ -21,10 +21,18 @@
 >    (the server's `sub=0x09` discrete write) actually change the model on the panel?
 >    This is the one write path still unconfirmed on the FM9 (the 2026-06-17 test
 >    confirmed *continuous* writes; discrete is a different sub-action).
-> 2. **`save_preset` + `set_block`** — confirm a save survives a preset switch, and a
->    block placement lands on the grid.
+> 2. **`save_preset`** — confirm a save survives a preset switch. (`set_block`
+>    placement is now confirmed: the 2026-06-19 verify probe placed a block and the
+>    device's own fn=0x13 status dump listed it.)
 > 3. **One log-taper knob SET capture** — see [captures-gen3.md C1](captures-gen3.md)
 >    (the roundtrip used raw wire values, so it did not pin the log-taper curve).
+> 4. **Live meters confirmation (new, community-beta)** — ask *"how much CPU is my
+>    current preset using?"* and compare `get_preset`'s reported `cpu_percent` to the
+>    FM9's own CPU meter (Home/Layout page). Also glance at whether `output_left/right`
+>    track the output level meters while audio plays. Decoded from the `sub=0x2E` grid
+>    frame and cross-validated against an FM9 capture, but not yet front-panel-confirmed.
+>    (The device INPUT meter is intentionally not surfaced — its offset isn't portable
+>    across the gen-3 family.)
 >
 > For everything the device can report about itself, the one-command read-only
 > [harvest script](harvest-script.md) covers it with no capture tools.
@@ -55,8 +63,9 @@ it started.
 ### Probe 2 -- write-verify (confirms your FM9 ACCEPTS our writes)
 Continuous writes are already hardware-confirmed (2026-06-17), so this probe now
 matters mainly for the **discrete set-by-name** path (changing an amp/drive *model*
-by name) and `save_preset` / `set_block`, which are the writes still unconfirmed on
-the FM9 (see the top-of-page asks). Run it if you can spare a few minutes; it sets a
+by name) and `save_preset`, which are the writes still unconfirmed on the FM9
+(`set_block` placement is now confirmed — the probe places a block and the device's
+fn=0x13 status dump lists it). Run it if you can spare a few minutes; it sets a
 restore point and reloads your preset at the end.
 - **Windows:** double-click **`fm9-verify.cmd`** in the install folder.
 - **Mac / source checkout:** `npm run fm9:verify`.

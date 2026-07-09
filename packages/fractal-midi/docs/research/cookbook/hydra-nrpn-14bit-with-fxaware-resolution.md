@@ -6,7 +6,7 @@ discovered:  (Hydrasynth NRPN catalog hardware verification)
 verified_on:
   - hydrasynth-explorer-v2.2.0
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-hydra-nrpn-14bit-with-fxaware-resolution
+golden: scripts/hydrasynth/verify-nrpn-display.ts (39 hardware-locked goldens)
 relates_to: [hydra-sysex-envelope-base64-crc32]
 consumed_in:
   - packages/hydrasynth/src/nrpn.ts

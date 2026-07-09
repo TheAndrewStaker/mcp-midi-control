@@ -14,29 +14,33 @@
  * `connectAxeFxII`) live in their device packages and delegate to
  * `connect()` here with device-specific needles + onboarding hints.
  */
-import type { Input, Output } from 'midi';
+import type { Input, Output } from '@julusian/midi';
 import { createRequire } from 'node:module';
 
 /**
- * node-midi is loaded LAZILY (and synchronously via createRequire — the
- * `connect()` / `listMidiPorts()` contracts are sync) so merely importing this
- * module never touches the native binding. That keeps serial-only sessions
- * (FM3 over USB-CDC) working where the binding is absent — e.g. an
- * `npm install --ignore-scripts` clone with no node-gyp toolchain
- * (community field report, 2026-06-12).
+ * The native MIDI binding (`@julusian/midi`, an API-compatible node-midi fork
+ * that ships N-API prebuilds for every platform we target) is loaded LAZILY and
+ * synchronously via createRequire — the `connect()` / `listMidiPorts()`
+ * contracts are sync — so merely importing this module never touches the native
+ * binding. That keeps serial-only sessions (FM3 over USB-CDC) working where the
+ * binding is absent — e.g. an `npm install --ignore-scripts` clone (community
+ * field report, 2026-06-12). With @julusian/midi the common case is a prebuilt
+ * binary (no node-gyp toolchain needed); it falls back to compiling only when no
+ * prebuild matches the platform.
  */
-let midiModule: typeof import('midi') | undefined;
-function loadMidi(): typeof import('midi') {
+let midiModule: typeof import('@julusian/midi') | undefined;
+function loadMidi(): typeof import('@julusian/midi') {
   if (midiModule === undefined) {
     try {
-      midiModule = createRequire(import.meta.url)('midi') as typeof import('midi');
+      midiModule = createRequire(import.meta.url)('@julusian/midi') as typeof import('@julusian/midi');
     } catch (err) {
       const cause = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `The MIDI transport module ("midi" / node-midi) failed to load: ${cause}\n` +
+        `The MIDI transport module ("@julusian/midi") failed to load: ${cause}\n` +
         'This is an installation problem (missing or broken native binding), not a device ' +
-        'problem. If you installed with --ignore-scripts, run "npm rebuild midi" to build the ' +
-        'binding. Serial-only devices (FM3 over USB-CDC) do not need node-midi.',
+        'problem. @julusian/midi normally installs a prebuilt binary; if you installed with ' +
+        '--ignore-scripts, run "npm rebuild @julusian/midi" to fetch/build it. Serial-only ' +
+        'devices (FM3 over USB-CDC) do not need it.',
       );
     }
   }
@@ -81,6 +85,16 @@ export interface MidiConnection {
    * construction" instead of silently reporting an empty timeline.
    */
   hasInput: boolean;
+  /**
+   * Cheap liveness signal: true while the underlying OS port handle is open.
+   * HONEST LIMITS: this is the OS open-flag, re-evaluated only at open/close —
+   * it is a NEGATIVE catch (unplugged / closed), NOT a positive health check.
+   * A WinMM handle poisoned mid-send is NOT released by closePort() and still
+   * reports open (STATE.md 2026-06-10), so `isPortOpen() === true` does not
+   * prove the handle can send. The only robust liveness signal is a round-trip
+   * (a transfer's first ACK). Optional — transports/mocks may omit it.
+   */
+  isPortOpen?: () => boolean;
   close: () => void;
 }
 
@@ -255,6 +269,7 @@ function mockPortEntries(
     `AM4 MIDI ${dirSuffix} (mock)`,
     `Axe-Fx II MIDI ${dirSuffix} (mock)`,
     `Hydrasynth MIDI ${dirSuffix} (mock)`,
+    `Circuit Tracks MIDI ${dirSuffix} (mock)`,
   ];
   return fakeNames.map((name, i) => {
     const lower = name.toLowerCase();
@@ -428,6 +443,7 @@ export function mockConnect(opts: MockConnectOptions): MidiConnection {
       return () => handlers.delete(handler);
     },
     hasInput: true,
+    isPortOpen: () => true,
     close: () => { handlers.clear(); },
   };
 }
@@ -437,6 +453,17 @@ export function mockConnect(opts: MockConnectOptions): MidiConnection {
  * with a diagnostic message listing visible ports if no match is found.
  */
 export function connect(opts: ConnectOptions): MidiConnection {
+  // Mock-transport fallback (agent-regression / no hardware): devices WITHOUT a
+  // registered mock factory (Circuit Tracks, VP4, the SPD-SX MIDI surface) reach
+  // the generic connect() and would fail with "no port found". Under the mock
+  // flag, hand them a generic fire-and-forget mock instead — writes succeed, no
+  // SysEx is synthesized (these surfaces are fire-and-forget: CC / NRPN / note
+  // sends, .ncs/sample transfers). Devices WITH a factory never reach here in mock
+  // mode (their connectXXX short-circuits first). Production (flag unset) is
+  // untouched. See MockResponder / mockConnect.
+  if (process.env.MCP_MOCK_TRANSPORT === '1') {
+    return mockConnect({ responder: () => [] });
+  }
   const midi = loadMidi();
   const input = new midi.Input();
   const output = new midi.Output();
@@ -452,9 +479,6 @@ export function connect(opts: ConnectOptions): MidiConnection {
     throw buildNotFoundError(opts.needles, ins, outs, opts.notFoundLeadIn, opts.notFoundHints ?? []);
   }
 
-  // Enable SysEx (false = don't ignore SysEx); ignore timing + active-sensing.
-  input.ignoreTypes(false, true, true);
-
   const handlers = new Set<(bytes: number[]) => void>();
   const dispatch = (bytes: number[]): void => {
     for (const h of handlers) h(bytes);
@@ -466,6 +490,13 @@ export function connect(opts: ConnectOptions): MidiConnection {
 
   input.openPort(inputPort);
   output.openPort(outputPort);
+
+  // Enable SysEx (false = don't ignore SysEx); ignore timing + active-sensing.
+  // MUST come AFTER openPort: @julusian/midi resets the ignore-flags to their
+  // defaults (SysEx ignored) when the port opens, so calling this earlier is
+  // silently wiped and every inbound SysEx reply is dropped. node-midi tolerated
+  // the earlier call; @julusian does not.
+  input.ignoreTypes(false, true, true);
 
   // openPort() does NOT throw on failure: RtMidi prints the error to
   // stderr ("MidiInWinMM::openPort: error creating Windows MM MIDI
@@ -523,6 +554,9 @@ export function connect(opts: ConnectOptions): MidiConnection {
       return () => handlers.delete(handler);
     },
     hasInput: true,
+    isPortOpen: () => {
+      try { return input.isPortOpen() && output.isPortOpen(); } catch { return false; }
+    },
     close: () => {
       handlers.clear();
       input.closePort();
@@ -530,6 +564,38 @@ export function connect(opts: ConnectOptions): MidiConnection {
     },
   };
   return conn;
+}
+
+/**
+ * A `MidiConnection` for devices that have no MIDI pipe in their current
+ * transport mode — storage-transport devices (SPD-SX in WAVE MGR mode).
+ * Every I/O method throws with a clear, device-named message. Storage
+ * reader/writer methods read `ctx.storage.root` and never call these, so the
+ * throw only fires if a method is miswired to use the wire on a storage device
+ * — i.e. it's a loud guardrail, not a code path taken in normal operation.
+ *
+ * Lets `DispatchCtx.conn` stay required (no churn across the ~156 existing
+ * `ctx.conn` sites in MIDI devices) while still modeling endpoints that aren't
+ * MIDI at all.
+ */
+export function createNullMidiConnection(deviceName: string): MidiConnection {
+  const fail = (): never => {
+    throw new Error(
+      `${deviceName} is on a storage transport (no MIDI connection in this mode). ` +
+        'This operation tried to use the MIDI wire on a device that talks over a ' +
+        'mounted drive — use the storage path (ctx.storage.root) instead.',
+    );
+  };
+  return {
+    send: fail,
+    lastSendError: undefined,
+    receiveSysEx: () => Promise.reject(new Error(`${deviceName}: no MIDI input on a storage transport.`)),
+    receiveSysExMatching: () => Promise.reject(new Error(`${deviceName}: no MIDI input on a storage transport.`)),
+    onMessage: () => () => { /* no inbound on a storage transport */ },
+    hasInput: false,
+    isPortOpen: () => false,
+    close: () => { /* nothing to close */ },
+  };
 }
 
 export function toHex(bytes: number[] | Uint8Array): string {

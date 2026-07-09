@@ -730,6 +730,45 @@ against an UNPLACED Reverb block (wire-acked working-buffer state, not an
 audible change); the SET/read-back byte evidence stands, but audibility on a
 placed block awaits the re-run.
 
+## FM9 hardware verify (fw 11.0, Windows, gen3-verify probe, 2026-06-19) 🟢
+
+A community FM9 owner on **Windows** ran the read + write-verify probes
+(`samples/captured/fm9-windows-verify-2026-06-19/`; analysis
+`docs/_private/FM9-WINDOWS-VERIFY-ANALYSIS-2026-06-20.md`). This is the FIRST
+Windows gen-3 write confirmation; it overturned a transient "Windows writes fail"
+hypothesis (writes work; the earlier Claude Desktop failures were an agent-layer
+issue, not transport).
+
+- **`set_block` PLACEMENT confirmed**: a Drive placed at r1c14 appeared in the
+  device's own `fn=0x13` STATUS_DUMP afterward. (Was the only unconfirmed FM3 op;
+  now hardware-confirmed on FM9.) The LIVE write path still has no positive ack,
+  so the codec reports it `unconfirmed`, not `acked`.
+- **`switch_scene` (0x0C)** set+read-back matched (set wire 1 → query read 1).
+- **`fn=0x01 sub=0x1F` current-type-name read confirmed across three blocks**
+  (extends the FM3 single-point result above): reverb (eff66/pid10) → "Small Room",
+  amp (eff58/pid10) → "59 Bassguy Bright", drive (eff118/pid0) → "Rat Distortion".
+  Reply layout: `idx19` = LEN (= nameLen+1), `idx21+` = the 8→7 packed name,
+  NUL-terminated. **`sub=0x09` GET on a type param returns the SAME name** with the
+  float32 value field zeroed (so "value 0" was a parser misread, since fixed).
+  Goldens: `test/gen3/axe-fx-iii/typename.test.ts`.
+- **`fn=0x01 sub=0x2E` is ONE layout for both target shapes** (corrected
+  2026-07-01): the EMPTY-target query and a BLOCK-TARGETED `sub=0x2E`
+  (effectId+paramId in the target slot) both return the same status frame —
+  preset name (septet-packed), live meters, and the routing grid in the tail.
+  The earlier "block-targeted = preset-name frame, NOT a grid" reading (FM9,
+  2026-06-19) was vacuously true: that session's scratch preset had an all-zero
+  grid region. Proof: the three block-targeted FM3 replies in
+  `samples/captured/fm3-community-2026-06-12/fm3-probe-output.json` (job3)
+  carry a grid that exactly matches the same session's `fn=0x13` status dump
+  (Input1 37 → Amp1 58 → Output1 42). `parseGen3GridLayout` accepts both shapes.
+- **No catalog drift**: all 42 blocks' `fn=0x1F` item counts match the device-true
+  FM9 catalog (channels × (maxPid+1)); the 6-channel Multiplexer (42=6×7) prompted
+  widening the reader's channel-stride candidates to {6,4,3,2,1}.
+
+Still community-beta on FM9: discrete enum **set**-by-name and `save_preset`
+persistence (continuous `set_param` was skipped here — the scratch preset had no
+placed block; re-run on a preset WITH a reverb to close it on Windows).
+
 ## Undocumented function bytes seen in the wild
 
 The v1.4 PDF documents 0x0A through 0x14 plus 0x13. Several captures
@@ -989,7 +1028,7 @@ block-edit ops. All are `fn=0x01` with a sub-action byte at position 6; the
 | `0x30` | cell RESET / CLEAR (also the insert companion) | gridPos @12-13 | matched; semantics Ghidra-anchored (see the 2026-06-09 mine section below) |
 | `0x26` | STORE / save-to-location | presetNum @12-13 (LSB-first) | matched |
 | `0x35` | routing / connect | 26-byte frame; b21/b22/b23 encode src+dest cell | matched (6-row + 4-row) |
-| `0x2E` | live grid READ (empty target) | request `01 2e 00` + zeros; reply ~755B with grid bitstream @byte 361 | decoded; FM9-cross-validated (read below) |
+| `0x2E` | live grid READ (status frame; empty OR block target) | request `01 2e 00` + zeros; reply ~755B (FM9) / 590-606B (FM3) with a TAIL-ANCHORED grid bitstream (byte 361 on the canonical lengths) | decoded; FM9-cross-validated + FM3 geometry pinned (read below) |
 
 `gridPos = col*ROWS + row` (0-indexed, column-major). **Grid shapes
 (wire + official-spec confirmed): III / FM9 = 6 rows × 14 cols; FM3 = 4
@@ -1045,7 +1084,7 @@ Key structural differences:
 
 Captures archived: `samples/captured/fm3-routing-probe-*.json` (gitignored).
 
-#### sub=0x2E SET_GRID_LAYOUT (live grid READ) — decoded, FM9-cross-validated
+#### sub=0x2E SET_GRID_LAYOUT (live grid READ) — decoded, FM9-cross-validated, FM3 geometry pinned
 
 The editors read a preset's whole routing grid live with an **empty-target**
 `fn=0x01 sub=0x2E` query (no block id in the target slot):
@@ -1055,11 +1094,16 @@ request (23B):  F0 00 01 74 <model> 01 2E 00 00 00 00 00 00 00 00 00 00 00 00 00
 reply (~755B):  F0 00 01 74 <model> 01 2E 00 … <grid bitstream> … <cs> F7
 ```
 
-The grid lives in a **7-bit-packed bitstream** starting at **byte 361** of the
-reply (offset into the mido data, i.e. after `F0`). Cells are addressed by:
+The grid lives in a **7-bit-packed bitstream** that is **TAIL-ANCHORED**: the
+last `ceil((46 + cols·rows·32) / 7)` bytes before the trailing `[checksum, F7]`.
+On the canonical 755-byte FM9 frame that lands at mido byte 361; on the FM3 the
+frames arrive as both 590 (→ 361) and 606 bytes (→ 377), and the tail anchor
+decodes all of them without per-length cases. Cells are addressed by:
 
 ```
-cell_start_bit = 46 + col·192 + row·32        (cols 0..13; rows 0..5 III/FM9, 0..3 FM3)
+cell_start_bit = 46 + col·(rows·32) + row·32
+   III/FM9: 6 rows × 14 cols (col stride 192)
+   FM3:     4 rows × 12 cols (col stride 128)
 bits  0-7  = (effectId | shuntIndex) << 1
 bits  8-15 = block type   (0x08 = shunt, 0x00 = real block)
 bits 16-23 = incoming-cable bitmask
@@ -1079,8 +1123,64 @@ resolves in `blockTypes.ts` (Amp 58, Cab 62, Comp 46, GEQ 50, Chorus 78, Drive
 118). Cross-oracle validation = ships community-beta; awaits a device key-press
 to confirm. Codec: `gridLayout.ts` (`buildRequestGridLayout` / `parseGen3GridLayout`);
 goldens `test/gen3/axe-fx-iii/gridlayout.test.ts`; cross-validation
-`scripts/verify-gen3-grid-layout.ts`. **Region offset + strides are
-FM9-validated; III shares the codec, FM3 (4-row) region offset unconfirmed.**
+`scripts/verify-gen3-grid-layout.ts`. **Strides are FM9- and FM3-validated;
+III shares the codec (community-beta). FM3 geometry (4×12, tail-anchored
+region) pinned 2026-07-01 offline** against the three checksum-valid
+block-targeted replies in
+`samples/captured/fm3-community-2026-06-12/fm3-probe-output.json` (job3),
+oracled by the same session's `fn=0x13` status dump: all three — including the
+606-byte length variant — decode to exactly Input1(37)@r1c0 → Amp1(58)@r1c1 →
+Output1(42)@r1c2 (cables 0x04). Goldens: the two embedded FM3 frames in
+`test/gen3/axe-fx-iii/gridlayout.test.ts` + the capture cross-validation in
+`scripts/verify-gen3-grid-layout.ts`.
+
+#### sub=0x2E live-meters payload (CPU + output meters) — decoded, FM9-cross-validated
+
+The **same** empty-target sub=0x2E reply carries live telemetry in fixed low
+offsets, **before** the grid region. Offsets are into the FULL frame WITH the
+leading `F0` (so `f[0]=F0`, `f[5]=fn`, `f[6]=sub`):
+
+```
+cpu_percent   = 32 + f[37] * 0.5      (7-bit field → range 32.0 .. 95.5 %)
+output_left   = f[35] / 127           (0..1, momentary peak)
+output_right  = f[36] / 127           (0..1, momentary peak)
+```
+
+**Provenance + evidence:** offsets/arithmetic from the MIT-licensed **ForgeFX**
+project (its own FM3 fw-12.0 hardware testing), INDEPENDENTLY cross-validated
+here against our FM9 capture `fm9-receive-preset-from-device-harp-2026-06-04`
+(model 0x12). The 10 sub=0x2E reads are all of the SAME static preset, so the
+*behavioral oracle* is "a byte that VARIES across reads is live telemetry, a
+byte that is CONSTANT is grid/preset data." In the capture, exactly `f[35]`
+(32..122) and `f[36]` (7..119) vary widely — a stereo output meter bouncing
+with the audio — while `f[37]` is CONSTANT at 66 (→ a steady 65.0 % DSP load,
+plausible for a preset's fixed cost). This matches the CPU-steady /
+meters-bouncing signature and agrees with ForgeFX's offsets. Codec:
+`liveMeters.ts` (`parseGen3LiveMeters`); goldens
+`test/gen3/axe-fx-iii/livemeters.test.ts`; the capture cross-validation runs in
+`scripts/verify-gen3-grid-layout.ts`. Surfaced as `live_meters` on gen-3
+`get_preset` (active buffer) — free, since the grid read already pulls this frame.
+
+**INPUT meter deliberately NOT surfaced.** ForgeFX reads an input meter at
+`f[588]`, but that offset is FM3-frame-length-specific (the FM3 frame is ~590B,
+so f[588] sits at its tail). On FM9 the frame is 755B and index 588 lands INSIDE
+the static grid bitstream region (starts at 361): in our capture `f[588]` is
+CONSTANT across all 10 reads (= grid data, not a live input level). Emitting it
+as "input" would be a wrong, frame-coincidental value on every non-FM3 device,
+so we ship only the three device-invariant low-offset fields. The
+verify script asserts `f[588]` stays constant on FM9 to lock this rationale.
+
+#### Scene / tempo current-state reads (fn=0x0C `7F` / fn=0x14 `7F 7F`)
+
+Both are spec-documented, golden-verified query opcodes (`buildGetScene` /
+`parseSceneResponse`, `buildGetTempo` / `parseTempoResponse`). gen-3
+`get_preset` (active buffer) issues the **scene** query and surfaces the result
+as `active_scene` — it is a safe read with no side-effect. The **tempo** query
+is deliberately NOT auto-issued from `get_preset`: `get_tempo` (the `7F 7F`
+sentinel) is reported to have SET the tempo to 250 BPM on *early-firmware* III,
+so firing it as a side-effect of a status read would be a silent-write footgun.
+Exposing tempo wants an explicit, opt-in `get_tempo` tool carrying that caveat,
+not a get_preset side-effect.
 
 ### Ghidra-decoded write surface, 2026-06-09 actions-and-shapes mine (decoded / hardware-unverified)
 

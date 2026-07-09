@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/am4",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Fractal AM4 device descriptor, writer, and reader.",
   "private": true,
   "license": "Apache-2.0",

@@ -1,0 +1,21 @@
+{
+  "name": "@mcp-midi-control/ve-500",
+  "version": "0.6.0",
+  "description": "Boss VE-500 Vocal Performer device descriptor, writer, reader for the unified MCP surface.",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./*": "./dist/*"
+  },
+  "dependencies": {
+    "@mcp-midi-control/core": "*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "roland-midi": "*",
+    "@julusian/midi": "^3.6.1",
+    "zod": "^4.4.2"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

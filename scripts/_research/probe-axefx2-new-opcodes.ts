@@ -42,7 +42,7 @@
  * Findings auto-write to samples/captured/probe-axefx2-new-opcodes-findings.md.
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 

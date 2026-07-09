@@ -6,7 +6,7 @@ discovered:
 verified_on:
   - axe-fx-ii-q8.02 (partial — sanity probe queued)
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-display-q16-fixedpoint
+golden: scripts/verify-msg.ts (AM4 continuous-param byte goldens exercise the Q16 encode byte-exactly; decode sanity probe still queued)
 relates_to: [display-log10-scaling]
 consumed_in:
   - fractal-midi/src/am4/setParam.ts (the `u32 as Q16` continuous-float coercion)
@@ -46,10 +46,10 @@ the tool boundary via `resolveValue` / `resolveEnumValue`.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-display-q16-fixedpoint` runs against
-captured  probe fixtures. Currently 1 fixture (Test Crunch
-parameters);  sanity probe will add the multi-knob-position
-fixtures needed to promote to `matched`.
+`scripts/verify-msg.ts` AM4 continuous-param byte goldens (built from
+captured frames) exercise the Q16 encode path byte-exactly. The queued
+sanity probe will add the multi-knob-position fixtures needed to
+promote to `matched`.
 
 ## Refinement history
 

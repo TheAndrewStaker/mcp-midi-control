@@ -712,7 +712,7 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
   // caller omitted `slot`, the patch lives in WORKING MEMORY only — say so
   // instead of "applied to H128", which reads as if a slot were written.
   if (slot === undefined && !save) {
-    lines.push(`Patch loaded into the working buffer (RAM only, NOT saved — the device was navigated to ${target.display} first, but that slot's stored contents are untouched and the patch reverts on the next patch load). ${params.length} override${params.length === 1 ? '' : 's'} written via SysEx in ${elapsedMs} ms. Audition on the front panel to confirm; if it isn't audible, call reconnect_midi and retry.`);
+    lines.push(`Patch loaded into the working buffer (RAM only, NOT saved; the device was navigated to ${target.display} first, but that slot's stored contents are untouched and the patch reverts on the next patch load). ${params.length} override${params.length === 1 ? '' : 's'} written via SysEx in ${elapsedMs} ms. Audition on the front panel to confirm; if it isn't audible, call reconnect_midi and retry.`);
   } else {
     lines.push(`Patch applied to ${target.display}${save ? '' : "'s working memory (RAM only, not saved)"}, ${params.length} override${params.length === 1 ? '' : 's'} written via SysEx in ${elapsedMs} ms. Audition the patch on the front panel to confirm; if it isn't audible, call reconnect_midi and retry.`);
   }

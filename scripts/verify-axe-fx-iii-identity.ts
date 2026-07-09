@@ -75,8 +75,18 @@ const EXPECTED = {
   // and the phantom firstId:null Amp row removed (block count 51→50).
   // CATALOG (family,name,paramId) is unchanged (no param mining); only the
   // describe_device SURFACE slugs/names and the BLOCKS roster changed.
+  //
+  // Re-blessed AGAIN for the roundtrip-derived discrete-ordinal overlay
+  // (III_ROUNDTRIP_DISCRETE): ~92 III type/model/mode/count params the
+  // editor-cache enum path missed are now classified `unit: 'enum'` (and routed
+  // DISCRETE) because the device's own full roundtrip sweep proved it quantizes
+  // a continuous SET to a small ordinal. CATALOG (family,name,paramId) and
+  // BLOCKS are UNCHANGED — only the SURFACE `unit` field flips for those params.
+  // WIRE byte-identity is intact: no wire builder was touched, a discrete SET
+  // still emits sub=0x09 float32(ordinal). Only paramCount stays 1711 (no params
+  // added/removed); the hash changes solely from the unit reclassification.
   catalog: { count: 2216, hash: '109f858e07b904de65b8782edb41383d746844b0dce309ffd6628fabd2d30223' },
-  surface: { blockCount: 50, paramCount: 1711, hash: '29474bd103125ac7852b3d1caa8351a8866460e5a26b5bb8506d37d32adeef6c' },
+  surface: { blockCount: 50, paramCount: 1711, hash: 'e9223a3de7f593f752277c57bde3e2cc4f3eefdf5fe4fc3c0b9e77b324f3cc23' },
   blocks: { count: 50, hash: '07db286053f0f4bd242e14c45697f5bbc612f642c5c7f6c7fdd9dd0e9dd7dd51' },
 };
 

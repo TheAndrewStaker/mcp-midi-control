@@ -15,7 +15,7 @@
  *   - Run: npx ts-node scripts/probe.ts
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 // ─── Checksum ───────────────────────────────────────────────────────────────
 

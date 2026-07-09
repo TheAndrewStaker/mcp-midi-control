@@ -62,14 +62,68 @@ follow-ups feel out of sync with reality.
 
 ---
 
+## Re-mine before you request (the highest-yield lane, proven repeatedly)
+
+**Before asking anyone — the maintainer, a community owner, a collaborator —
+for new evidence, re-examine the evidence already on disk against everything
+decoded SINCE that evidence was filed.** Old captures don't expire; the tools
+to read them improve. A capture that was opaque in May is frequently
+transparent in July because a sibling device's decode supplied the container,
+the packing primitive, or the oracle.
+
+This is not theoretical. The single largest decode day in the project
+(2026-07-02) produced FOUR results, all from data that had been sitting in
+`samples/` for weeks, none requiring a new capture or a key-press:
+
+- **AM4 preset dump = the gen-3 Huffman container** — the corpus (104 factory
+  presets + warm pairs) was on disk since May; the container codec since
+  early June. Nobody had pointed one at the other. Refuted the May
+  "encoder non-determinism" negative and reopened the whole AM4
+  stored/atomic/authoring lane.
+- **FM3 live-grid geometry** — pinned from sub=0x2E replies captured
+  2026-06-12 and flagged "un-mined" in the artifacts manifest ever since.
+- **VP4 structure blob** (name, scene names, current scene, full chain) —
+  fully field-decoded from the 2026-06 captures using a packing primitive
+  that was already in the cookbook; the two "not recoverable" negatives fell.
+- **II preset-body "Huffman" claim refuted** — adjudicated entirely from
+  dumps on disk; reopened the parked atomic-apply lane.
+
+**The synthesis cadence exists to force exactly this.** Tunnel vision is the
+default failure mode: each session solves what's in front of it and never
+re-crosses old evidence with new primitives. The periodic synthesis pass
+(`docs/process/synthesis-prompt.md`, committed artifacts in
+`fractal-midi/docs/research/synthesis-log/`) is the mechanism — all four
+2026-07-02 results trace to a single synthesis pass or the review that
+triggered it. `scripts/cookbook-verify.ts` warns when the newest cookbook
+entry outruns the newest synthesis artifact by 21+ days; treat that warning
+as "decodes are sitting on disk unclaimed," not as noise. When a new
+container/packing/oracle primitive lands, the cross-device transfer reflex
+(below) plus a scan of `captured-artifacts.md` for "un-mined" entries is the
+same move in miniature — do it same-session.
+
+**The un-mined ledger is structured and machine-checked.** When a manifest
+entry flags un-mined material, add one greppable line per item (keep the
+surrounding prose; the structured line supplements it):
+`UNMINED[YYYY-MM-DD]: <artifact path or pointer> — <what would close it /
+which primitive is missing>`, optionally suffixed
+`(deferred: YYYY-MM-DD <reason>)` for consciously-parked items.
+`scripts/verify-re-ledger.ts` (in preflight) warns on items older than 30
+days, nags legacy prose markers into the structured form, sweeps
+`samples/captured/` for on-disk artifacts absent from both manifests, and
+under `--strict` (release gate) fails on non-deferred items older than 60
+days. When an item is mined, delete or strike its UNMINED line in the same
+session.
+
 ## Capture methods, in order of preference
 
 **Community-ask hierarchy (changed 2026-06-09):** when asking a device owner
-for evidence, the order is now (1) the editor's `effectDefinitions_*.cache`
-file (offline, the file already exists after one editor sync; full dictionary,
-see the cache bullet below), (2) the one-command harvest script
-(`scripts/harvest-device-metadata.ts`; device connected, no capture tooling),
-and only THEN (3) a targeted wire capture for the few shapes neither covers.
+for evidence, the order is now (0) **re-mine what's already on disk against
+current primitives (see above)**, then (1) the editor's
+`effectDefinitions_*.cache` file (offline, the file already exists after one
+editor sync; full dictionary, see the cache bullet below), (2) the
+one-command harvest script (`scripts/harvest-device-metadata.ts`; device
+connected, no capture tooling), and only THEN (3) a targeted wire capture for
+the few shapes neither covers.
 
 ### Hardware-free lanes (exhaust these BEFORE queuing maintainer time)
 

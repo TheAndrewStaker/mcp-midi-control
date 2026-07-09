@@ -14,10 +14,16 @@
  *     encoding. Recovered 2026-05-21 from  calibration captures
  *     (`samples/exports/{ABCDEFG, Test 1234}.syx`).
  *
- * The remaining structured fields (block-type IDs, parameter values,
- * per-scene bypass / channel state, routing) are NOT yet mapped; same
- * calibration methodology (apply known state, dump, diff) is the path
- * to decode them.
+ * SUPERSEDED FOR STRUCTURE (2026-07-02): the dump body is now fully
+ * container-decoded — it is the gen-3 preset container verbatim (see
+ * `presetContainer.ts` / `decodeAm4RawPatch`: 3-to-16 unpack → 8,192-byte
+ * CRC-validated raw_patch → Huffman-decompressed body with scene names and
+ * LE-u16 param values). The "3-byte-per-2-char chunked encoding" below is
+ * the container's 3-to-16 word packing applied to the ASCII name words at
+ * raw_patch offset 0x08 (frame offset 0x21 = header 13 + frame overhead 6 +
+ * discriminator 2 + 4 words × 3 bytes). This module's name codec remains
+ * valid and byte-identical; the decoded-BODY field map (beyond name/scenes/
+ * pinned params) is still partial — see presetContainer.ts.
  *
  * # Name wire format
  *

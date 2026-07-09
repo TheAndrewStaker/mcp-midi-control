@@ -5,7 +5,7 @@
  *
  *   npx tsx scripts/_research/_loopmidi-selftest.ts "Reply"
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 const needle = (process.argv[2] ?? 'Reply').toLowerCase();
 const findIdx = (io: midi.Input | midi.Output) => {

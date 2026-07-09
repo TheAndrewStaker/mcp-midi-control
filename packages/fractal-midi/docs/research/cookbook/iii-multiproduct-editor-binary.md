@@ -6,7 +6,7 @@ discovered: 2026-05-22 (cookbook crosscheck mining of ghidra-axe-edit-iii-action
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-multiproduct-editor-binary
+golden: STUB (structural-only; de-facto coverage: the consumed_in dump citation + literal line refs in the body)
 relates_to: [vendor-envelope-descriptor-table, iii-host-emitter-fn-table, iii-fn01-set-parameter-envelope, iii-fn01-action-code-per-model-byte]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-actions-and-shapes.txt
@@ -137,8 +137,7 @@ the model-byte arm explicitly.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-iii-multiproduct-editor-binary`
-runs as a STUB (covered by existing verify-* scripts plus the
+This entry's golden is a STUB (covered by existing verify-* scripts plus the
 dump-citation in `consumed_in`). The structural assertion is "the
 actions-and-shapes dump contains both Pattern A and Pattern B
 dispatch sites at the cited line numbers"; this is enforced by the

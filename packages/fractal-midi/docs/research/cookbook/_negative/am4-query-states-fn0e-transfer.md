@@ -4,7 +4,8 @@ class: fn-byte-mapping
 status: non-matching
 verified_on:
   - am4-edit
-golden: scripts/cookbook-verify.ts#case-am4-query-states-fn0e-transfer
+golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
+retest_when: never (closed at both layers — AM4-Edit never emits fn 0x0E across 21036 frames, and the 2026-05-30 firmware probe answered with a near-empty body, not per-block state records)
 relates_to: [ii-fn0e-query-states, am4-fn1f-atomic-read, am4-pidlow-register-families]
 consumed_in: []
 ---
@@ -67,6 +68,14 @@ is therefore CLOSED.
 Single capture (one preset). A one-variable confirmation (toggle a
 scene/bypass and re-probe to confirm the body is invariant) would harden
 it, but payoff is low now that AM4 get_preset defaults to active-only.
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "AM4 fn 0x0E QUERY_STATES" / "port II QUERY_STATES to AM4"
+- "AM4 whole-preset block-state read shortcut" / "batch AM4 channel state"
+- "AM4-Edit fn-byte vocabulary" (fn 0x01 / 0x08 / 0x47 / 0x64 only)
 
 ## Refinement history
 

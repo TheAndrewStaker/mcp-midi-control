@@ -8,8 +8,10 @@ device speaks, without pulling in a MIDI transport library.
 > family (Axe-Fx III / FM3 / FM9 / VP4) at codec and calibration via
 > public-capture verification and editor-binary mining, and the Axe-Fx
 > Standard/Ultra (gen-1) as a set + parameter-read descriptor. The gen-3
-> family stays community-driven for hardware verification; see the
-> per-device notes in the coverage table.
+> family stays community-driven for hardware verification, with owner
+> confirmation now accumulating (the FM3's core surface field-confirmed,
+> and Axe-Fx III + FM9 reads and continuous writes owner-confirmed in
+> 2026-06); see the per-device notes in the coverage table.
 
 > **Unaffiliated community library.** "Fractal Audio", "AM4",
 > "Axe-Fx", "Axe-Fx II", "Axe-Fx III", "FM3", "FM9", and "VP4" are
@@ -60,7 +62,7 @@ import { buildSetParam, KNOWN_PARAMS } from 'fractal-midi/am4';
 
 // Build the SysEx bytes for "set amp gain to 7.5" (display value in)
 const bytes = buildSetParam('amp.gain', 7.5);
-// → number[] starting with 0xF0 ... ending 0xF7 — send via your MIDI library
+// → number[] starting with 0xF0 ... ending 0xF7. Send via your MIDI library
 
 // Inspect the dictionary directly
 console.log(KNOWN_PARAMS['amp.gain']);
@@ -76,20 +78,20 @@ import { buildSetBlockParameterValue, KNOWN_PARAMS } from 'fractal-midi/gen2/axe
 import { buildSetParameter, PARAMS_BY_FAMILY } from 'fractal-midi/gen3/axe-fx-iii';
 ```
 
-> **Breaking change in 0.4.0 — generation-prefixed subpaths.** Device
+> **Breaking change in 0.4.0: generation-prefixed subpaths.** Device
 > subpaths are now organized by Fractal codec generation:
 > `fractal-midi/gen1` (Axe-Fx Standard/Ultra, formerly `/axe-fx-gen1`),
 > `fractal-midi/gen2/axe-fx-ii` (formerly `/axe-fx-ii`), and
 > `fractal-midi/gen3/{axe-fx-iii,fm3,fm9,vp4}` (formerly `/axe-fx-iii`,
 > `/fm3`, `/fm9`, `/vp4`). `fractal-midi/am4` and `fractal-midi/shared`
 > are unchanged (the AM4 is its own codec, not one of the three
-> generations), and **`catalog/*.json` paths are unchanged** — JSON
+> generations), and **`catalog/*.json` paths are unchanged**, JSON
 > consumers are unaffected.
 
 ### Not using TypeScript? Use the JSON catalog
 
 `catalog/` ships a generated, language-agnostic export of every device's
-parameter dictionary, block tables, enum rosters, and ranges — one JSON file
+parameter dictionary, block tables, enum rosters, and ranges: one JSON file
 per device. Read it straight from the installed package
 (`node_modules/fractal-midi/catalog/<device>.json`) or from a pinned git tag.
 Pin a version rather than copying the files: calibration fixes and enum-roster
@@ -103,11 +105,11 @@ the TypeScript source on every change and CI-gated against drift.
 |---|---|---|---|---|
 | AM4 | ✅ | ✅ | ✅ | ✅ |
 | Axe-Fx II | ✅ | ✅ | ✅ | ✅ |
-| Axe-Fx III | ✅ (full catalog) | ✅ ([see note](#axe-fx-iii-codec-note)) | ✅ ([see note](#axe-fx-iii-calibration-note)) | 🟡 community beta ([see note](#axe-fx-iii-hardware-note)) |
-| FM3 | ✅ (device-true, mined from FM3-Edit) | ✅ (shared gen-3) | 🟡 (linear; some non-linear pending) | 🟡 community beta ([see note](#fm3--fm9) — core surface field-confirmed 2026-06) |
-| FM9 | ✅ (device-true, mined from FM9-Edit) | ✅ (shared gen-3) | 🟡 (linear; some non-linear pending) | ❌ community beta |
+| Axe-Fx III | ✅ (full catalog) | ✅ ([see note](#axe-fx-iii-codec-note)) | ✅ ([see note](#axe-fx-iii-calibration-note)) | 🟡 community beta ([see note](#axe-fx-iii-hardware-note), owner-confirmed reads + continuous writes 2026-06) |
+| FM3 | ✅ (device-true, mined from FM3-Edit) | ✅ (shared gen-3) | 🟡 (linear; some non-linear pending) | 🟡 community beta ([see note](#fm3--fm9), core surface field-confirmed 2026-06) |
+| FM9 | ✅ (device-true, mined from FM9-Edit) | ✅ (shared gen-3) | 🟡 (linear; some non-linear pending) | 🟡 community beta ([see note](#fm3--fm9), owner-confirmed reads + continuous writes 2026-06) |
 | VP4 | ✅ (device-true, mined from VP4-Edit) | ✅ (gen-3 envelope; own fn=0x01 write frame, decoded byte-exact from community captures, fw 4.03) | 🟡 (continuous writes take raw wire values; calibration pending) | 🟡 community beta (reads confirmed via community captures; decoded writes untested on hardware) |
-| Axe-Fx Standard/Ultra (gen-1) | ✅ (922 params) | ✅ (nibble-split, set + param read) | 🟡 (linear; 171 non-linear pending) | ❌ community beta (no gen-1 hardware) |
+| Axe-Fx Standard/Ultra (gen-1) | ✅ (922 params) | ✅ (nibble-split; set, param read, patch-dump get_preset subset) | 🟡 (linear; 171 non-linear pending) | ❌ community beta (no gen-1 hardware) |
 
 ### Coverage notes
 
@@ -144,9 +146,13 @@ as display guidance the user can correct via GitHub issue.
 #### Axe-Fx III hardware note
 
 The 🟡 hardware-verified status means the maintainer does not own an
-Axe-Fx III for round-trip confirmation. Community users running the
-device are invited to file GitHub issues against any wire or label
-that disagrees with their hardware.
+Axe-Fx III for round-trip confirmation. A 2026-06 owner test did confirm
+`get_param` and continuous `set_param` on real III hardware (device echo
+plus a read-back matching the front panel), the first on-device
+confirmation of the III (the gen-3 byte-identity anchor); discrete
+set-by-name, `save_preset`, `set_block`, and the live grid read stay
+community beta. Community users running the device are invited to file
+GitHub issues against any wire or label that disagrees with their hardware.
 
 #### FM3 / FM9
 
@@ -158,7 +164,11 @@ never reused from the III) on the shared gen-3 codec. Calibration
 covers the linear params; some non-linear display formulas are still
 pending. Neither has been hardware-verified by the maintainer, so they
 remain community beta. The FM9 has real community captures confirming
-the shared read and preset-dump paths. The FM3's core surface was
+the shared read and preset-dump paths, plus a 2026-06 owner test that
+round-tripped `get_param` and continuous `set_param` on the device
+(acknowledged, values confirmed on the FM9-Editor display); discrete
+set-by-name, `save_preset`, `set_block`, and the live grid read stay
+community beta on the FM9. The FM3's core surface was
 hardware-confirmed end-to-end by a 2026-06-12 community field test over
 its USB-serial transport (discovery, framing, the whole read path,
 continuous SET, bypass, scene and preset switching, all through this

@@ -7,6 +7,9 @@ verified_on:
   - axe-edit-iii-1.40
 firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-iii-block-name-string-cascade
+retest_when:
+  - regenerated III preset-related Ghidra dumps (case-iii-block-name-string-cascade re-adjudicates the strcmp grep automatically on every cookbook-verify run)
+  - a decoded III preset-body block-ORDER primitive (only the strcmp IMPLEMENTATION claim is negative; the alphabetical-ordering claim is an open question per "What this does NOT rule out")
 relates_to: [alphabetical-name-cascade-block-ordering, vendor-envelope-descriptor-table]
 consumed_in: []
 ---
@@ -91,6 +94,14 @@ section: the III variant is not pending discovery, it is structurally
 absent from the editor's serialization code path. The cookbook reader
 can stop treating the III as a near-term promotion target for that
 primitive.
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "III strcmp block name cascade" / "grep III dumps for Amp Cab strings"
+- "port AEImageDepot cascade to III" / "III block-name string table"
+- "III preset serialization descriptor-table-driven" (what it is instead)
 
 ## Refinement history
 

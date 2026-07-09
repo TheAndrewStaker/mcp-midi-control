@@ -49,8 +49,8 @@
  * - samples/captured/probe-ii-xy-channel-read-findings.md
  */
 
-import midi from 'midi';
-import type { Input as MidiInput, Output as MidiOutput } from 'midi';
+import midi from "@julusian/midi";
+import type { Input as MidiInput, Output as MidiOutput } from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { guardAgainstRunningEditors } from '../_lib/editor-guard.js';
 import {

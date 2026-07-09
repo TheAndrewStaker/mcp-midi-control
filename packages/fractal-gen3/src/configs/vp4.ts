@@ -100,12 +100,16 @@ export const VP4_CONFIG: FractalModernConfig = {
   write_allowlist: ['set_param', 'set_params', 'set_bypass', 'save_preset'],
   verification:
     'Model byte 0x14 wire-confirmed. The gen-3 envelope/checksum/septet layer and the block ' +
-    'effect-ID table are confirmed on VP4 hardware (community captures, fw 4.03). The VP4 fn=0x01 ' +
+    'effect-ID table are confirmed on VP4 hardware (community captures, fw 4.03). get_preset ' +
+    '(active) reads the whole-preset STRUCTURE in one round-trip: preset name, 4 scene names, ' +
+    'current scene, and the 4-slot chain, via the eid206 pid0 tc=0x1f blob (byte-decoded from ' +
+    'the same captures; community-beta, this server issuing the read is untested on hardware). ' +
+    'The VP4 fn=0x01 ' +
     'WRITE frame is decoded byte-exact (its own shape: no sub-action, a tc sub-opcode, a ' +
     'swapped-septet float). set_param (continuous knobs; raw 0..65534 value, %/ms calibration ' +
-    'pending — enum/type set refuses), set_bypass, and save_preset ship as community-beta (untested ' +
+    'pending; enum/type set refuses), set_bypass, and save_preset ship as community-beta (untested ' +
     'on hardware, confirm on the front panel). set_block / apply_preset (placement value→slot math ' +
-    'undecoded — cannot build a move) and switch_scene (value↔scene mapping unconfirmed) stay GATED. ' +
+    'undecoded; cannot build a move) and switch_scene (value↔scene mapping unconfirmed) stay GATED. ' +
     'Param catalog ' +
     'is VP4-true (mined from VP4-Edit; paramIds device-specific). No amp/cab.',
   params_by_family: VP4_PARAMS_BY_FAMILY,
@@ -129,14 +133,14 @@ export const VP4_CONFIG: FractalModernConfig = {
     beta_status: [
       'COMMUNITY BETA. Reads work. WRITES decoded byte-exact from a community',
       'capture, shipping UNTESTED (confirm on the VP4 front panel):',
-      '• set_param / set_params — CONTINUOUS knobs only; the value is the raw',
+      '• set_param / set_params: CONTINUOUS knobs only; the value is the raw',
       '  0..65534 wire field (NOT calibrated to %/ms yet). Setting an enum/TYPE',
       '  selector refuses (no captured evidence).',
       '• set_bypass, save_preset.',
       'GENUINELY UNDECODED, still gated (refuse): set_block / apply_preset',
-      '(block-placement value→slot math is unknown — we cannot build a move),',
+      '(block-placement value→slot math is unknown; we cannot build a move),',
       'switch_scene (value↔scene mapping), switch_preset, rename. These are not',
-      'just untested — the wire bytes are undecoded. Do not present a gated',
+      'just untested; the wire bytes are undecoded. Do not present a gated',
       'write as applied; do not present a continuous value as an exact %/ms.',
     ].join('\n'),
     device_note: [
@@ -145,10 +149,16 @@ export const VP4_CONFIG: FractalModernConfig = {
       'scenes, A-D channels, A01..Z04 preset locations, and NO amp/cab.',
       'The param catalog is VP4-true (mined from VP4-Edit\'s own binary).',
       '',
+      'get_preset (active) returns the preset name, the 4 scene names, the',
+      'current scene, and the real 4-slot chain (slot numbers are chain',
+      'positions; gaps = empty slots) from ONE structure-blob read; narrate',
+      'it as a linear signal path. Community beta: capture-decoded, untested',
+      'on hardware; ask the user to confirm against the front panel.',
+      '',
       'WRITES (community beta, byte-exact captured wire shape, untested on',
-      'hardware — tell the user to confirm on the front panel):',
+      'hardware; tell the user to confirm on the front panel):',
       'set_param/set_params (CONTINUOUS knobs; value is the raw 0..65534 wire',
-      'field, not %/ms — enum/TYPE set refuses), set_bypass, and save_preset',
+      'field, not %/ms; enum/TYPE set refuses), set_bypass, and save_preset',
       '(needs explicit save intent). STILL GATED (wire bytes undecoded, not just',
       'untested): set_block / apply_preset (block placement), switch_scene,',
       'switch_preset, rename. Do not present a gated write as applied.',

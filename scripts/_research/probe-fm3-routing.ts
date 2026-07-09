@@ -28,7 +28,7 @@
  * The probe is read-only: it never sends any SysEx to FM3-Edit.
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';

@@ -1,8 +1,8 @@
 # Captures: VP4
 
-> The VP4's parameter SET, bypass, and save frames are decoded from a community capture (fw 4.03) and ship community-beta; block placement and scene switching stay gated until their wire shapes are captured. The captures below close the gated shapes plus display calibration. The VP4 reuses the gen-3 effects codec, so confirmed writes also validate assumptions shared with the III/FM3/FM9.
+> The VP4's parameter SET, bypass, and save frames are decoded from a community capture (fw 4.03) and ship community-beta; block placement and scene switching stay gated until their wire shapes are captured. The whole-preset STRUCTURE READ (name / scene names / current scene / 4-slot chain) is now decoded and shipping. The captures below close the gated write shapes plus display calibration. The VP4 reuses the gen-3 effects codec, so confirmed writes also validate assumptions shared with the III/FM3/FM9.
 
-## Status (updated 2026-06-09)
+## Status (updated 2026-07-01)
 
 Two community captures (Kevin Iudicello, VP4 fw 4.03) are decoded — see
 [`docs/devices/vp4/SYSEX-MAP.md`](../devices/vp4/SYSEX-MAP.md):
@@ -16,11 +16,36 @@ Two community captures (Kevin Iudicello, VP4 fw 4.03) are decoded — see
   swapped, normalized [0,1] for continuous params), and the **SAVE**, **param SET**
   (continuous+discrete), and **bypass** frames. So C1 (param SET) and most of the write
   surface are **captured**.
+- **2026-07-01 (mining pass over both captures): the eid206 pid0 `0x1f` STRUCTURE BLOB is
+  field-decoded** — preset name, all four scene names, the CURRENT scene index, and the
+  serial 4-slot chain (effectIds, empty slots included), oracle-matched against the
+  annotated move cascade and scene switch in both presets. `get_preset` on the VP4 now
+  reads the whole structure in one round-trip (community-beta, untested on hardware).
+  This also overturned two earlier negatives (the preset name and the slot order WERE in
+  the capture all along — wrong unpack scheme). See the SYSEX-MAP "STRUCTURE blob" section.
 
-**Still open:** block-placement value→slot math (`set_block` stays gated) and the scene
-value mapping — the targeted captures below (C-move, C-scene) close these. VP4-Edit reads
-via `fn=0x01` GET and writes via `fn=0x01` `tc`-coded SET (no `fn=0x1F`, no `09/52`
-sub-action) — see the family-wide read-path note in the decode-status doc.
+**Still open:** block-placement value→slot math (`set_block` stays gated; the blob's
+chain table is now the diff oracle — see the surgical C1 below), the scene WRITE value
+mapping (the read side is solved), display calibration, and a discrete type-select
+example. VP4-Edit reads via `fn=0x01` GET and writes via `fn=0x01` `tc`-coded SET (no
+`fn=0x1F`, no `09/52` sub-action) — see the family-wide read-path note in the
+decode-status doc.
+
+---
+
+## P0 — fn=0x0C scene-query probe (zero cost, read-only, no capture tooling)
+
+Highest value-per-minute ask, needs only the MCP server (or any SysEx send tool), no
+Wireshark/MIDI Monitor. The gen-3 family documents a read-only scene QUERY:
+
+```
+F0 00 01 74 14 0C 7F cs F7      (cs = XOR(F0..7F) & 0x7F = 0x12)
+```
+
+Send it to the VP4 and report whether anything comes back (paste the reply bytes).
+It has **no write side-effect** (the `7F` sentinel is the documented query form). If the
+VP4 answers it — and then accepts the fn=0x0C SET form — `switch_scene` ships WITHOUT
+needing the `pid13` value decode at all. One frame, possibly a whole capability.
 
 **Before any capture, two no-tooling asks come first:** (1) the VP4-Edit
 **cache file** (`effectDefinitions_14_*.cache`) -- its format is fully decoded, and one
@@ -103,19 +128,35 @@ unlock display units + placement + scenes + type selects in one go.
 
 ---
 
-## C1 -- Block move, before+after (covered by C0; kept as a fallback)
-**~5 min | [SETUP.md](SETUP.md) required**
+## C1 -- Block moves + delete/re-add, minimal pairs (SURGICAL — updated 2026-07-01)
+**~10 min | [SETUP.md](SETUP.md) required**
 
-The serial block-placement wire shape is the main blocker for authoring. This capture
-unlocks it **two ways**: (a) it should contain the actual move write frame, and (b) even
-if it doesn't, VP4-Edit's read poll exposes the routing descriptor, so a clean
-before→after pair lets us *diff* it and crack the slot layout from reads alone.
+The placement REGISTERS are now identified (`eid206 pid10` = delete, `pid15`/`pid16` =
+move pair) and the chain STATE is fully readable (the pid0 `0x1f` structure blob), so
+what remains is exactly the **value math** of the write frames. That takes MINIMAL
+PAIRS: single isolated gestures whose from/to is known, so each write value maps to one
+(from, to) pair. Keep VP4-Edit's poll running (it re-reads the blob after each gesture —
+that's our before/after oracle for free), pause ~3 s between actions, and note each
+action + its order:
 
-1. Start recording. Note preset, firmware, VP4-Edit version, and the current slot order.
-2. Let VP4-Edit sit ~3 s so it finishes one full read sweep (the "before" state).
-3. Move **one** block from one slot to a different, **empty** slot (e.g. slot 4 → slot 1).
-   Note the from/to slot numbers.
-4. Let it sit ~3 s again (the "after" state). Stop.
+1. **Moves (the key data):** one block at a time, note from/to each —
+   - move a block slot **1 → 2** (adjacent, up-chain);
+   - move it back **2 → 1** (the reverse pair);
+   - move a block slot **1 → 4** (long move);
+   - move a block **into an EMPTY slot** (no cascade) and then **onto an occupied
+     slot** (with cascade). The cascade vs no-cascade pair separates the gesture value
+     from the resulting layout.
+2. **Delete + re-add:** delete one block (note which slot), pause, then re-add the SAME
+   block type into a chosen slot. (Pins `pid10`'s value math and captures the ADD frame,
+   which no capture holds yet.)
+3. **Scene pairs, exhaustive:** switch scenes covering every from→to direction you have
+   patience for — at minimum `1→2, 2→3, 3→4, 4→1, 1→3, 2→4` — noting each pair. (The
+   single captured `pid13` value `0x01` for a 1→3 switch is not enough to solve the
+   mapping; exhaustive pairs are.)
+4. **Front-panel-vs-editor causality:** do ONE move and ONE scene switch **from the
+   pedal's front panel** (not the editor) while recording. This separates what the
+   DEVICE emits/accepts from what VP4-Edit merely displays, and shows whether the same
+   pid registers carry panel-originated changes.
 
 ---
 

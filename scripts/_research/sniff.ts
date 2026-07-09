@@ -24,7 +24,7 @@
  * Press Ctrl+C to stop; the log is flushed on exit.
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

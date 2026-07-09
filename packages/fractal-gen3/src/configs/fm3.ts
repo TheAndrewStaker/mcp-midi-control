@@ -97,7 +97,7 @@ export const FM3_CONFIG: FractalModernConfig = {
   device_true_roster: true,
   canonical_terms: {
     block: 'block',
-    slot: 'grid cell (row 1..4, col 1..12)',
+    slot: 'grid location (row 1..4, col 1..12)',
     preset: 'preset',
     scene: 'scene 1..8',
     channel: 'channel A/B/C/D',
@@ -116,7 +116,7 @@ export const FM3_CONFIG: FractalModernConfig = {
       'and the SysEx preset switch end-to-end through this server\'s own code;',
       'a 2026-06-10 community session confirmed set-by-name discrete set_param',
       'via frames byte-identical to this server\'s encoder. set_block and',
-      'save_preset remain hardware-unverified — confirm those on the device.',
+      'save_preset remain hardware-unverified; confirm those on the device.',
     ].join('\n'),
   },
   example_spec: FM3_EXAMPLE_SPEC,

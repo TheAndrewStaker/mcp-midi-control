@@ -348,6 +348,9 @@ export function connectSerial(opts: SerialConnectOptions = {}): MidiConnection {
       return () => handlers.delete(handler);
     },
     hasInput: true,
+    // Deferred-open facade: undefined `port` = not opened yet (not dead → true);
+    // an opened port that flipped isOpen=false (unplug/driver reset) → false.
+    isPortOpen: () => !closed && (port ? port.isOpen !== false : true),
     close: () => {
       closed = true;
       handlers.clear();

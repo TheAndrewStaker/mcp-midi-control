@@ -36,8 +36,9 @@ Acceptance:
 - Last line says `OK release bundle ready`.
 - `build/staging/node.exe` reports the pinned Node version when run
   with `--version`.
-- `build/staging/node_modules/midi/build/Release/midi.node` exists
-  (the native node-midi binary).
+- `@julusian/midi` loads + enumerates under the bundled node (the build
+  script load-tests this; the prebuilt binary lives at
+  `build/staging/node_modules/@julusian/midi/prebuilds/midi-<plat>-<arch>/node-napi-v7.node`).
 - `build/staging/dist/server/index.js` exists.
 - `build/staging/setup.cmd`, `build/staging/uninstall.cmd`, and
   `build/staging/install/{merge,unmerge}-mcp-config.ps1` all present.

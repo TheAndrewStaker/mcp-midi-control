@@ -27,10 +27,14 @@ audition-vs-save rules are identical. There is a synth-specific walk in
 Conversation 7.
 
 Any USB MIDI device works today through generic-MIDI primitives (CC,
-NRPN, SysEx, program change, notes, clock). A handful of devices have
-hardware-verified depth (whole-preset or whole-patch authoring, tone
+NRPN, SysEx, program change, notes, clock). A growing set of devices have
+deeper, first-class support (whole-preset or whole-patch authoring, tone
 lineage, cross-device translation): the Fractal AM4 and Axe-Fx II XL+,
-and the ASM Hydrasynth Explorer, with the Axe-Fx III in community beta.
+and the ASM Hydrasynth Explorer are hardware-verified, with several more in
+community beta — the modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4) and
+the original Axe-Fx Standard/Ultra, the Novation Circuit Tracks (groove and
+melody sequencing), the Roland SPD-SX (kit and sample authoring), and the Boss
+VE-500 vocal processor.
 
 This guide is written for musicians, not developers. It is a set of
 conversations that prove the tool works and build up your fluency.

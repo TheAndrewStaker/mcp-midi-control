@@ -58,9 +58,15 @@ export const FM9_CONFIG: FractalModernConfig = {
     'server): get_param + continuous set_param round-trip acked on the device with values ' +
     'confirmed on the FM9-Editor display; channel-specific reads and alias resolution (gain→drive) ' +
     'confirmed too. The READ path and the CONTINUOUS SET path are now FM9-hardware-confirmed ' +
-    'end-to-end through this codec\'s own frames. Still community-beta pending the same owner\'s ' +
-    'confirmation: discrete enum set-by-name (FM3-hardware-confirmed via the shared codec), ' +
-    'save_preset, set_block placement, and the live grid read (fn=0x01 sub=0x2E).',
+    'end-to-end through this codec\'s own frames. UPDATE 2026-06-19 (community FM9 owner, ' +
+    'Windows, gen3-verify probe): set_block PLACEMENT is hardware-confirmed (a placed Drive ' +
+    'appeared in the device fn=0x13 status dump) and switch_scene round-trips (set scene 1, ' +
+    'read back 1); the first Windows gen-3 write confirmation. The current-type-name READ ' +
+    '(fn=0x01 sub=0x1F → device name string) is wire-confirmed: get_param on an enum returns ' +
+    'the device\'s own model name (reverb "Small Room", amp "59 Bassguy Bright", drive ' +
+    '"Rat Distortion"). Still community-beta pending confirmation: discrete enum set-by-name ' +
+    '(FM3-hardware-confirmed via the shared codec), save_preset persistence, and the live grid ' +
+    'read (fn=0x01 sub=0x2E).',
   params_by_family: FM9_PARAMS_BY_FAMILY,
   device_true_roster: true,
   // Device-true FM9 model rosters, mined from the FM9-Edit effectDefinitions
@@ -72,7 +78,7 @@ export const FM9_CONFIG: FractalModernConfig = {
   enum_overrides: FM9_ENUM_OVERRIDES,
   canonical_terms: {
     block: 'block',
-    slot: 'grid cell (row 1..6, col 1..14)',
+    slot: 'grid location (row 1..6, col 1..14)',
     preset: 'preset',
     scene: 'scene 1..8',
     channel: 'channel A/B/C/D',
@@ -90,9 +96,14 @@ export const FM9_CONFIG: FractalModernConfig = {
       '(e.g. amp "Texas Star Clean", drive "Blues OD", reverb "Music Hall"):',
       'the full device-true rosters are wired, not just a few captured points.',
       'get_param, continuous set_param, and channel-specific reads are',
-      'FM9-hardware-confirmed (community owner test, fw 11.0). Discrete',
-      'set-by-name, save_preset, set_block, and the live grid read are',
-      'decoded but not yet FM9-confirmed — confirm those on the device.',
+      'FM9-hardware-confirmed (community owner test, fw 11.0). set_block',
+      'placement and switch_scene are now FM9/Windows hardware-confirmed too',
+      '(2026-06-19 verify probe: a placed Drive showed up in the device fn=0x13',
+      'status dump; scene set+read-back matched). Reading a block\'s CURRENT',
+      'type/model NAME is wire-confirmed (get_param on an enum returns the',
+      'device\'s own name, e.g. reverb "Small Room", via fn=0x01 sub=0x1F).',
+      'Still decoded-but-unconfirmed on FM9: discrete set-by-name and',
+      'save_preset persistence; confirm those on the device.',
     ].join('\n'),
   },
   example_spec: WIDE_GRID_EXAMPLE_SPEC,

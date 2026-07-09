@@ -12,6 +12,8 @@ The III, FM3, and FM9 share one codec, so one capture from any of the three usua
 - Read path (fn=0x1F poll → 0x74/0x75/0x76 burst). Shared codec, so this also covers III and FM3.
 - Preset receive (fn=0x03 → 0x77/0x78/0x79 dump).
 - Grid routing (fn=0x01 sub=0x35), from FM9-Edit and FM3-Edit loopMIDI captures.
+- Block placement (fn=0x01 sub=0x32 `set_block`) + scene switch (fn=0x0C `switch_scene`), confirmed on the FM9 by the 2026-06-19 Windows verify probe (a placed block appeared in the device's own fn=0x13 status dump).
+- Reading a block's CURRENT type/model NAME (fn=0x01 sub=0x1F → device name string), byte-exact on FM9 (reverb "Small Room", amp "59 Bassguy Bright", drive "Rat Distortion") and FM3 ("Rat Distortion").
 
 **Already built and evidence-backed (the remaining gap is a key-press, not a capture):** the SET wire (float32 at payload position 12; discrete type/model selects use sub `09 00`, continuous knobs use sub `52 00`) is byte-exact against real FM3 and FM9 captures, set-by-name rides straight off the read rosters, and `.syx` authoring is self-validating against the device's own CRC. Confirming these is a front-panel test on the testing pages above, not a capture.
 
@@ -75,14 +77,17 @@ The ask is now for **FM3, Axe-Fx III, and VP4 owners**, and it is bigger than am
 **One requirement:** the editor must have actually connected to your device at least once (that sync is what fills the file). A never-connected install writes a placeholder stub with no names and filler ranges; if your file is one of those, connect the editor to the device once and let it finish syncing, then grab the file again. **Ask for the cache file before asking anyone to sweep dropdowns or capture wire traffic.**
 
 > **Why this is the top III/FM3/VP4 ask right now (concrete payoff):** the III/FM3/VP4
-> cache copies currently on hand are exactly those unsynced placeholder stubs — the
-> III's has 1,737 records but **zero** enum-vocabulary entries; the FM3 and VP4 copies
-> are 3–33-record stubs. Without enum data, those devices route every type/mode
-> selector (amp/drive/reverb *model*, delay/pitch *type*, etc.) generically. A
-> **device-synced** cache carries the per-param enum kind + counts, and that single
-> file is what let the FM9 correct **~351 parameters** from wrong-wire to right-wire
-> (type selectors now send as discrete ordinals instead of continuous floats). One
-> synced cache does the same for your III / FM3 / VP4, offline, with no capture tools.
+> cache copies currently on hand are unsynced placeholder stubs — the III's has 1,737
+> records but **zero** enum-vocabulary entries; the FM3 and VP4 copies are 3–33-record
+> stubs. A **device-synced** cache carries the per-param enum kind + counts + name
+> lists, and that single file is what let the FM9 correct **~351 parameters** from
+> wrong-wire to right-wire (type selectors now send as discrete ordinals instead of
+> continuous floats). The III and FM3 have since received the same correction from
+> *indirect* evidence (the III from its 2026-06-18 hardware roundtrip as oracle; the
+> FM3 from sibling family-join data, 2026-07-02) — a synced cache is the device's OWN
+> dictionary, so it mechanically confirms (or corrects) those overlays, adds every
+> enum's name list, and pins device-true display ranges/steps/tapers. For the VP4 it
+> is still the primary unlock. All offline, no capture tools.
 
 **Wire-sweep fallback (only if the cache is unavailable):** the wire records the ordinal, a screenshot records the name.
 

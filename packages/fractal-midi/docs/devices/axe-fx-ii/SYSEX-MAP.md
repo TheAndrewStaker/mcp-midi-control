@@ -23,6 +23,16 @@
 
 ## Recent additions
 
+**2026-07-02:** the de-framed preset image's inner structure is
+DECODED: a self-describing TLV chain from word 130 (modifier records →
+effect blocks alphabetical by squashed display name → fixed system
+tail), with `paramBase = tlvWord + 2` and channel-Y at
+`+payload_len/2`. Confirmed 388/388 (384 factory presets + 4 live
+hardware dumps); the BK-070 one-variable hardware diffs land at
+exactly the predicted words. See § 6 "De-framed image layout" below;
+decoder `packages/fractal-gen2/src/presetImageTlv.ts`; cookbook
+`ii-preset-image-tlv-chain`.
+
 **2026-05-20:** Ghidra mining of `Axe-Edit.exe`
 recovered the full 94-opcode wire vocabulary as a static
 `OpcodeDescriptor` table in `.rdata`. Documented in
@@ -872,6 +882,75 @@ The two zero bytes following each character likely reserve space for
 larger character sets (UTF-something) but are unused for ASCII. AM4
 encodes preset names without this padding, the family format is not
 identical at every level.
+
+(2026-07-02 refinement: the "3-byte triplets" are the general word
+encoding of the whole body — each triplet is one 16-bit native ushort,
+`lo7 | mid7<<7 | (b2 & 0x03)<<14`, byte 2's high 5 bits reserved. The
+name is simply words 2..33 of the de-framed image, one ASCII char per
+word. See § 6b.)
+
+### 6b. De-framed image layout: the TLV chain 🟢
+
+**Decoded 2026-07-02.** De-framing the 64 × `0x78` chunk payloads
+(each `[count=64 as 2 septets] + 64 × 3-byte words`) yields a fixed
+4096-word image. Its structure — confirmed on **388/388 dumps** (384
+factory presets, Q8.02 XL+ banks A/B/C, + 4 live hardware dumps:
+`samples/captured/bk070-loop-amp-bass-2-baseline.syx`,
+`samples/captured/hw132/{sentinel-eb-alpha,sentinel-eb-bravo,stored-slot-7}.syx`):
+
+| Words | Content |
+|---|---|
+| 0 | format tag **2049** (388/388) |
+| 2..33 | preset name, 1 ASCII char per word, 0-terminated |
+| 36..129 | record table: stride 8, max 12 entries, `[block_id, flag, 0×6]`. **GRID / signal-chain order metadata** — ids ≥ 200 are unplaced/shunt placeholders never serialized. NOT a placed-block enumerator, NOT layout order (Test Crunch table order Comp,Drive,Amp,Cab,Delay,Reverb vs serialized Amp@132..Reverb@678) |
+| 130.. | **TLV chain**: repeated `[wire_id, payload_len, payload...]`; `wire_id == 0` terminates |
+| 2048.. | tone-match bulk region, ONLY when block 170 is in the chain (4/388); sits after the chain terminator; preserve verbatim |
+
+TLV chain contents, in order (388/388):
+
+1. **Modifier records**: `wire_id` = modifier slot 1..20, always
+   `payload_len` 15, always before the first block TLV. 15-word
+   payload layout undecoded — read-only.
+2. **Effect blocks**, ALPHABETICAL by the AxeEdit canonical DISPLAY
+   name, spaces/punctuation ignored ("Tremolo/Panner" sorts under T;
+   "Multiband Compressor" precedes "Multi Delay"). Multi-instance
+   blocks adjacent.
+3. **System tail**: ordered subsequence of `[170 Tone Match,
+   139 Noisegate, 140 Output, 142 Feedback Send, 143 Feedback Return,
+   141 Controllers]`; 139/140/141 always present; Feedback Send/Return
+   sit BETWEEN Output and Controllers.
+
+**Param addressing** (a block TLV at word `i`):
+
+```
+paramBase        = i + 2
+channel-X param p → word[paramBase + p]
+channel-Y param p → word[paramBase + payload_len/2 + p]   (X/Y blocks; payload_len even)
+```
+
+BK-070 hardware anchors (Test Crunch, Amp TLV `[106, 236]` @ word 130
+→ paramBase 132): the one-variable hardware diffs land at exactly
+word 252 = 132+118+2 (amp.bass ch-Y, `bk070-loop-amp-bass-2-*`) and
+word 255 = 132+118+5 (amp.master_volume ch-Y,
+`bk070-loop-amp-master-vol-3-*`). `word[paramBase]` of the Amp TLV is
+the amp-type ordinal ('59 Bassguy = 0 at word 149 on factory A000,
+where one modifier record precedes the Amp TLV). Every BK-070
+measured width = `payload_len + 2`; every measured X→Y offset =
+`payload_len / 2` (Amp 118, Cab 39, Comp 20, Delay 70, Drive 21,
+Reverb 45).
+
+**Payload lengths are per-dump self-described and drift across
+firmware**: the Q8.02 factory bank files carry Amp `payload_len` 234;
+live Q8.02 hardware dumps carry 236. Never trust a static width
+table — walk the chain of the dump in hand.
+
+Decoder: `packages/fractal-gen2/src/presetImageTlv.ts`
+(`deframePresetImage` / `parsePresetImage` / `getParamWord`). Golden +
+corpus sweep: `scripts/verify-ii-preset-image-tlv.ts` (root
+`test:codec`). Cookbook: `ii-preset-image-tlv-chain` (+ corrections in
+`block-record-stride-8`, `parambase-plus-paramid`). OPEN: modifier
+15-word layout; per-block scene/bypass/X-Y state words inside
+payloads; ids ≥ 200 semantics.
 
 ## 7. Block IDs (from wiki) 🟡
 

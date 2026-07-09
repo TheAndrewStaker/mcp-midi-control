@@ -36,6 +36,26 @@ export {
   deviceByModelByte,
   deviceBySlug,
 } from './device.js';
+// Preset-container codec (0x77/0x78/0x79 dump inner layer): 3-to-16
+// septet pack/unpack, dynamic Huffman, CRC-16/CCITT, raw_patch CRC +
+// footer XOR. Shared by gen-3 (III/FM3/FM9/VP4) and AM4.
+export {
+  RAW_PATCH_CRC_OFFSET,
+  RAW_PATCH_DECOMP_SIZE_OFFSET,
+  RAW_PATCH_COMP_SIZE_OFFSET,
+  RAW_PATCH_BODY_OFFSET,
+  CRC_INIT,
+  decode3to16,
+  encode16to3,
+  huffmanUncompress,
+  huffmanCompress,
+  crc16ccitt,
+  computeRawPatchCrc,
+  computeRawPatchXor,
+  decodeRawPatch,
+  reencodeRawPatch,
+} from './presetContainer.js';
+export type { DecodedRawPatch } from './presetContainer.js';
 export {
   LINEAGE_BLOCKS,
   loadLineage,

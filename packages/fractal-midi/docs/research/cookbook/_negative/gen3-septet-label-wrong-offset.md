@@ -7,6 +7,7 @@ verified_on:
   - fm9-fw-11.00
 firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-gen3-septet-label-wrong-offset
+retest_when: never (trap-record — the byte-5 alignment is capture-proven and golden-gated; this entry exists as the offset-sweep tripwire, not as a re-testable hypothesis)
 relates_to: [gen3-enum-label-septet-stream, iii-byte-stream-septet-pack-8to7]
 consumed_in: []
 ---
@@ -48,6 +49,14 @@ yields only the param CURRENT-values (`sub=0x1a`) and the active cab's IR
 list (`sub=0x2e`). The full per-type list dumps only when the **Type
 dropdown itself is opened**. Ask testers to open the dropdown, not just the
 block.
+
+## Symptoms / grep terms
+
+Search these before re-attempting (or before re-concluding "no labels"):
+
+- "gen-3 enum labels not on wire" / "labels device-resident"
+- "septet unpack no readable strings" / "SPFGAD identity blob only"
+- "8-to-7 unpack start offset" / "byte 5 vs byte 6 alignment"
 
 ## Refinement history
 

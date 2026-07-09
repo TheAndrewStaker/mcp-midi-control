@@ -17,9 +17,9 @@
  *      Node runtime, install wrappers (setup.cmd, uninstall.cmd,
  *      instructions.txt) and PowerShell helpers into build/staging/.
  *   5. Run `npm ci --omit=dev` inside build/staging/ using the BUNDLED Node
- *      (so native node-midi compiles against the same V8 ABI we ship).
- *   6. Verify staging by invoking the bundled node --version and asserting
- *      the entry point + native node-midi binary are present.
+ *      (fetches @julusian/midi's N-API prebuilt binary — no compile needed).
+ *   6. Verify staging by invoking the bundled node --version and load-testing
+ *      the entry point + the @julusian/midi and serialport native bindings.
  *   7. Package build/staging/ into a versioned ZIP at build/dist/.
  *
  * Usage:
@@ -27,7 +27,7 @@
  *   npm run build:installer -- --clean   # also wipe build/node-cache
  *
  * Why bundle Node + node_modules instead of using `pkg`/`nexe`/SEA:
- *   See docs/_private/DECISIONS.md packager row. The native node-midi `.node`
+ *   See docs/_private/DECISIONS.md packager row. The native @julusian/midi `.node`
  *   addon is friendliest with file-on-disk distribution; single-binary
  *   tools handle native addons via fragile runtime extraction.
  */
@@ -67,19 +67,20 @@ const RELEASE_ZIP_PATH = path.join(DIST_DIR, `${RELEASE_DIR_NAME}.zip`);
 const cleanFlag = process.argv.includes('--clean');
 
 async function main() {
-  // ABI guard: the running Node's major must match the bundled Node's
-  // major, otherwise native addons compiled during `npm install` will
-  // have the wrong ABI and the smoke-boot fails with ERR_DLOPEN_FAILED.
-  // This catches the exact failure mode that burned 5 CI iterations on
-  // the alpha.2 release (CI Node 20 / ABI 115, bundled Node 24 / ABI 137).
+  // Node-major consistency note (no longer ABI-critical). The native MIDI
+  // binding is now `@julusian/midi`, which ships N-API (node-napi-v7) prebuilds.
+  // N-API is ABI-stable across Node majors, so a prebuilt binary fetched during
+  // `npm ci` loads under the bundled Node regardless of the build host's Node
+  // major — the ERR_DLOPEN_FAILED ABI-mismatch class that burned the alpha.2
+  // release (CI Node 20 vs bundled Node 24) cannot happen with the prebuild. We
+  // keep a soft warning for consistency, and the real gate is the staging
+  // load-test below (it actually `require()`s the binding under the bundled node).
   const runningMajor = process.version.split('.')[0];
   const bundledMajor = `v${NODE_VERSION.split('.')[0]}`;
   if (runningMajor !== bundledMajor) {
-    throw new Error(
-      `ABI mismatch: build-installer is running on Node ${process.version} ` +
-      `but bundles Node v${NODE_VERSION}. The native midi.node addon will ` +
-      `be compiled for ${runningMajor} but loaded by ${bundledMajor}. ` +
-      `Align your local Node (or CI setup-node) with .node-version.`,
+    console.warn(
+      `[build] note: building on Node ${process.version} while bundling Node v${NODE_VERSION}. ` +
+      `Harmless with @julusian/midi's N-API prebuild (ABI-stable); the staging load-test is authoritative.`,
     );
   }
   console.log(`[build] MCP MIDI Control installer staging -bundling Node v${NODE_VERSION}`);
@@ -132,7 +133,7 @@ async function main() {
   //   ├── package.json  (lean root: NO workspaces; deps = non-workspace only)
   //   ├── node_modules/
   //   │   ├── @modelcontextprotocol/sdk/  (npm install populates)
-  //   │   ├── midi/                       (npm install populates, native build)
+  //   │   ├── @julusian/midi/             (npm install populates, N-API prebuild)
   //   │   ├── zod/                        (npm install populates)
   //   │   └── @mcp-midi-control/
   //   │       ├── core/{package.json,dist/}        (copied from packages/core)
@@ -163,6 +164,8 @@ async function main() {
     'fractal-gen2',
     'fractal-gen3',
     'hydrasynth',
+    'circuit-tracks',
+    'spd-sx',
     'server-all',
   ] as const;
 
@@ -178,7 +181,7 @@ async function main() {
   // workspace package now imports the Fractal codec from this published npm
   // package. The bundle must install it at the root so runtime walk-up
   // resolution from `node_modules/@mcp-midi-control/*/dist/*.js` finds it.
-  const leafDeps = ['@modelcontextprotocol/sdk', 'fractal-midi', 'midi', 'serialport', 'zod'] as const;
+  const leafDeps = ['@modelcontextprotocol/sdk', 'fractal-midi', '@julusian/midi', 'serialport', 'zod'] as const;
   const leanDeps: Record<string, string> = {};
   for (const d of leafDeps) {
     const v = devPkg.devDependencies?.[d] ?? devPkg.dependencies?.[d];
@@ -246,20 +249,18 @@ async function main() {
     copyAsCrlf(path.join(PROJECT_ROOT, 'installer', f), path.join(installerHelperDir, f));
   }
 
-  // 5. Production-only npm install using the BUNDLED node + npm. This
-  // guarantees the native node-midi binary is compiled against the same
-  // V8 ABI as the node.exe we ship, regardless of what's on PATH. Only
-  // the three leaf deps install.
+  // 5. Production-only npm install using the BUNDLED node + npm. With
+  // @julusian/midi this fetches a per-platform N-API prebuilt binary (no
+  // compile), so the binding is ABI-stable across Node majors. Only the leaf
+  // deps install.
   //
   // ORDER MATTERS: install FIRST, copy workspace packages AFTER. If we
   // pre-place the workspace packages, npm install treats them as
   // orphans (no declaration in the lean package.json) and prunes them.
-  // CI and the bundled Node must run the SAME major version (both
-  // Node 24) so prebuild-install downloads a midi.node with the right
-  // ABI. If they diverge, the prebuilt has the wrong ABI and the
-  // smoke-boot fails with ERR_DLOPEN_FAILED. The version alignment
-  // is enforced by .github/workflows/release.yml `node-version: '24'`
-  // matching NODE_VERSION above.
+  // N-API means the bundled Node major no longer has to match the build host's
+  // (the prebuild is selected by platform, not Node version), so the old
+  // ERR_DLOPEN_FAILED ABI-mismatch class is gone; the staging load-test still
+  // verifies the binding actually loads under the bundled node.
   console.log('[build] Installing leaf production deps with bundled node + npm');
   execSync(
     `"${cachedNodeExe}" "${cachedNpmCli}" install --omit=dev --no-package-lock`,
@@ -322,14 +323,24 @@ async function main() {
     throw new Error(`Entry point missing at ${stagedEntry}`);
   }
 
-  const stagedNativeMidi = path.join(STAGING, 'node_modules', 'midi', 'build', 'Release', 'midi.node');
-  if (!fs.existsSync(stagedNativeMidi)) {
+  // @julusian/midi ships per-platform N-API prebuilds
+  // (node_modules/@julusian/midi/prebuilds/midi-<plat>-<arch>/node-napi-v7.node);
+  // the exact path varies by platform, so a LOAD test under the bundled node beats
+  // a file-path check (same approach as serialport below). This also proves the
+  // prebuild actually loads + enumerates, not just that a file exists.
+  try {
+    execSync(
+      `"${path.join(STAGING, 'node.exe')}" -e "const m=require('@julusian/midi'); new m.Output().getPortCount(); new m.Input().getPortCount();"`,
+      { cwd: STAGING, stdio: 'pipe' },
+    );
+  } catch (err) {
     throw new Error(
-      `Native node-midi binary missing at ${stagedNativeMidi}.\n` +
-      `npm install probably skipped the native build step. Try: rm -rf build/staging/node_modules ` +
-      `&& re-run this script.`
+      `@julusian/midi native binding failed to load under the bundled node (MIDI would be dead in the ZIP): ` +
+      `${err instanceof Error ? err.message : String(err)}\n` +
+      `Try: rm -rf build/staging/node_modules && re-run this script.`,
     );
   }
+  console.log('[build] @julusian/midi native binding loads + enumerates under bundled node.');
 
   // serialport (the FM3 USB-CDC transport) loads its native binding from
   // @serialport/bindings-cpp prebuilds — layout varies by version, so a
@@ -462,7 +473,7 @@ async function main() {
   console.log(`        release ZIP:     ${RELEASE_ZIP_PATH} (${zipSizeMb} MB)`);
   console.log(`        bundled node:    ${versionOutput}`);
   console.log(`        entry point:     node_modules/@mcp-midi-control/server-all/dist/server/index.js`);
-  console.log(`        native node-midi: node_modules/midi/build/Release/midi.node`);
+  console.log(`        native MIDI:     node_modules/@julusian/midi/prebuilds/midi-<plat>-<arch>/node-napi-v7.node`);
   console.log('');
   console.log('Next: smoke-test the ZIP on a clean Win11 VM per docs/RELEASE-RUNBOOK.md');
 }

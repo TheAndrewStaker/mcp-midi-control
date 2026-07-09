@@ -9,9 +9,10 @@
  *   - `buildBlocks()` / `buildBlockTypes()` — iterates KNOWN_PARAMS +
  *     AXE_FX_II_BLOCKS once at module load to produce the per-block
  *     schemas + block-type metadata the unified surface consumes.
- *   - `parseAxeFxIILocation(location)` — string ("0".."16383") or
- *     0..16383 integer → 0..16383 wire preset number, with
- *     DispatchError for invalid input.
+ *   - `parseAxeFxIILocation(location)` — 1-indexed display slot (string
+ *     "1".."16384" or 1..16384 integer, matching the front panel) →
+ *     0..16383 wire preset number (returns input − 1), with
+ *     DispatchError for invalid input (0 and >16384 are rejected).
  *
  * Everything here is wire-free; the goldens exercise these encoders
  * directly without a MIDI handle.
@@ -238,7 +239,7 @@ export function parseAxeFxIILocation(location: string | number): number {
       throw new DispatchError(
         'bad_location',
         'Fractal Axe-Fx II XL+',
-        `Slot '${location}' is not valid on Fractal Axe-Fx II — expected a 1-indexed display slot (1..16384), not a bank/letter code.`,
+        `Slot '${location}' is not valid on Fractal Axe-Fx II; expected a 1-indexed display slot (1..16384), not a bank/letter code.`,
         { retry_action: 'Pass an integer or string-of-digits slot number (e.g. 700 for display slot 700).' },
       );
     }

@@ -21,6 +21,7 @@ import type {
   BlockLayoutSnapshot,
   DeviceReader,
   DispatchCtx,
+  GetPresetOptions,
   LocationRef,
   OverwriteTargetInfo,
   PresetBinaryDump,
@@ -44,9 +45,13 @@ import {
   buildReadParam,
   buildRequestActiveBufferDump,
   buildRequestStoredPresetDump,
+  decodeAm4RawPatch,
+  decodeAm4AmpBlock,
   formatLocationCode,
   decode as am4Decode,
   roundDisplayValue,
+  isRawIntRegister,
+  decodeRawIntRegister,
   isReadResponseLong,
   parseLongReadBypassFlag,
   READ_TYPE_LONG,
@@ -79,6 +84,8 @@ import {
 } from 'fractal-midi/am4';
 
 import { parseAm4Location } from './schema.js';
+import { isDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
+import { AM4_DIRTY_LABEL } from '../tools/safeEdit.js';
 
 // Active-location state register (mirrors safeEdit.ts) — read by
 // checkOverwriteTarget to tell a refresh-of-current from a clobber-of-other.
@@ -150,28 +157,6 @@ function decodeChannelSelector(
       `channel wire ${wire} (0x${wire.toString(16)}) not in enumValues ` +
       `(have ${Object.keys(enumValues ?? {}).join(',')}); float32 interpretation = ${asFloat}`,
   };
-}
-
-/**
- * Read a channel-bearing block's ACTIVE channel as an A/B/C/D letter.
- * Best-effort: returns `{ failureReason }` (never throws) when the selector
- * register can't be resolved (notably amp; see `decodeChannelSelector`).
- */
-async function readActiveChannelLetter(
-  conn: import('@mcp-midi-control/core/midi/transport.js').MidiConnection,
-  blockType: string,
-): Promise<{ letter?: string; failureReason?: string }> {
-  const channelKey = `${blockType}.channel` as ParamKey;
-  const channelParam = KNOWN_PARAMS[channelKey] as Param | undefined;
-  if (channelParam === undefined) {
-    return { failureReason: `no '${blockType}.channel' param registered in the codec` };
-  }
-  try {
-    const parsed = await sendReadAndParse(conn, channelParam.pidLow, channelParam.pidHigh);
-    return decodeChannelSelector(parsed, channelParam.enumValues as Record<number, string> | undefined);
-  } catch (err) {
-    return { failureReason: err instanceof Error ? err.message : String(err) };
-  }
 }
 
 async function readBypassState(
@@ -334,7 +319,7 @@ function formatApplicableKnobs(blockType: string, am4Name: string): string | und
   if (doesNotApply.length > 0) {
     lines.push(
       `notExposed: ${doesNotApply.join(', ')}  ` +
-      `(real-amp parity — these knobs do NOT exist on this model; the AM4 silently no-ops writes to them; ` +
+      `(real-amp parity: these knobs do NOT exist on this model; the AM4 silently no-ops writes to them; ` +
       `do not include in apply_preset / set_params calls when this type is active)`,
     );
   }
@@ -427,6 +412,140 @@ export async function readSaveSnapshot(
   };
 }
 
+/** AM4 model byte, surfaced on the whole_preset view (matches descriptor). */
+const AM4_MODEL_ID = 0x15;
+
+/**
+ * STORED get_preset by location (A01..Z04). Requests the flash dump for the
+ * given location (fn 0x03 [bank, sub, 0x00]; hardware-confirmed 2026-06-10 to
+ * answer the canonical 6-frame / 12,352-byte 0x77/0x78/0x79 stream WITHOUT
+ * touching the working buffer), reassembles the multi-fragment dump (the
+ * ~3,082 B × 4 chunks arrive as separate SysEx messages — `receivePresetDumpStream`
+ * owns the reassembly, the same createSysExAssembler-style collector
+ * `export_preset` uses), and decodes the container via `decodeAm4RawPatch`
+ * (the AM4 body IS the gen-3 preset container: 3→16 unpack → CRC-16/CCITT +
+ * footer-XOR validation → Huffman decompress). The decode is byte-validated
+ * offline against the 104-preset factory bank + hardware exports.
+ *
+ * Latency: ONE stored-dump round-trip — ~150-200 ms on hardware (Session 51
+ * capture: the 6 frames arrive within ~250 ms of the request). Well inside the
+ * performance budget for an overt single-preset read; no per-param loop.
+ *
+ * Read-only: the stored-dump request issues no write and touches no write gate
+ * (working buffer untouched), but it follows the same subscribe-before-send
+ * read pattern the other readers use so the response can't outrace the listener.
+ *
+ * LABELED OMISSION: the decoded body's per-param word->knob VALUES are NOT
+ * surfaced — the body field map is only partially pinned (preset name + the 4
+ * scene names + amp.gain chA so far). Decoding every block/param value is the
+ * follow-on field-map decode (a separate in-flight task), so the snapshot
+ * honestly says so rather than guessing. `whole_preset` carries name + scene
+ * names + the self-validating CRC flag; `paramBlockBytes` (decompressed body
+ * size) is surfaced as evidence the body actually decoded.
+ */
+async function getStoredPresetSnapshot(
+  ctx: DispatchCtx,
+  location: string | number,
+): Promise<PresetSnapshot> {
+  const readStartedMs = Date.now();
+  const locationIndex = parseAm4Location(location);
+  const code = formatLocationDisplay(locationIndex);
+
+  // Subscribe to the 6-message dump stream BEFORE sending the request.
+  const streamPromise = receivePresetDumpStream(ctx.conn, { timeoutMs: 2000 });
+  ctx.conn.send(buildRequestStoredPresetDump(locationIndex));
+  let stream;
+  try {
+    stream = await streamPromise;
+  } catch (err) {
+    throw new DispatchError(
+      'no_ack',
+      'Fractal AM4',
+      `get_preset(${code}): stored-location dump got no response; ${err instanceof Error ? err.message : String(err)}. ` +
+        `Check the AM4 is connected (try reconnect_midi) and an editor isn't holding the port.`,
+    );
+  }
+
+  // Concatenate header + 4 chunks + footer in wire order → a valid .syx dump.
+  const flat: number[] = [...stream.headerBytes];
+  for (const chunk of stream.chunkBytes) for (const b of chunk) flat.push(b);
+  for (const b of stream.footerBytes) flat.push(b);
+
+  let decoded;
+  try {
+    decoded = decodeAm4RawPatch(Uint8Array.from(flat));
+  } catch (err) {
+    throw new DispatchError(
+      'no_ack',
+      'Fractal AM4',
+      `get_preset(${code}): the stored dump from the AM4 did not decode as a preset container ` +
+        `(${err instanceof Error ? err.message : String(err)}).`,
+    );
+  }
+
+  const paramBlockBytes = decoded.decompressedBody.length;
+
+  // Walk the decoded body's block-record chain to the AMP block and surface
+  // its per-channel (A/B/C/D) param VALUES. Amp block only: it is the one block
+  // with a validated record shape + ordinal-bounded TYPE enum to reject
+  // false-positive markers (cab/FX share the chain structure but their per-block
+  // stride/formula is unverified — an honest omission until a per-block capture
+  // confirms transfer). The walker locates the config-dependent marker (0x0934
+  // vs 0x0A92 vs absent) — never a hardcoded offset. See fractal-midi bodyChain.ts.
+  const ampBlock = decodeAm4AmpBlock(decoded.decompressedBody, decoded.decompSize);
+
+  const read_warnings: string[] = [
+    `Snapshot source: STORED preset at location ${code} (fn 0x03 flash dump; working buffer untouched). ` +
+      `Container decoded, CRC ${decoded.crcValid ? 'valid' : 'INVALID (the dump may be corrupt; values unreliable)'}, ` +
+      `footer XOR ${decoded.footerXorValid ? 'matches' : 'MISMATCH'}, ` +
+      `Huffman body ${decoded.huffmanComplete ? 'terminated cleanly' : 'did NOT terminate at decompSize'} ` +
+      `(${paramBlockBytes} B decompressed, fw word 0x${decoded.fwWord.toString(16).padStart(4, '0')}).`,
+    ampBlock !== undefined
+      ? 'AMP param VALUES are surfaced (whole_preset.amp), all four channels A/B/C/D, decoded byte-exact from ' +
+        'the body block-record chain. The four warm-pair-anchored fields (amp.type, amp.gain chA/chB, amp.master chA) ' +
+        'are CONFIRMED against hardware captures; the remaining amp knobs ride the SAME confirmed record geometry ' +
+        '(marker + 0x130 channel stride + pidHigh-rule) and are formula-extrapolated from those anchors. ' +
+        'NON-amp block VALUES (cab / drive / delay / reverb / etc.) are NOT surfaced: those blocks share the chain ' +
+        'structure but their per-block param formula is not yet capture-confirmed, so they are honestly omitted ' +
+        'rather than guessed. For any live value use get_param / get_params, or read the ACTIVE buffer with ' +
+        'get_preset (no location); that path returns full per-block params from the fn 0x1F poll.'
+      : 'This preset has NO amp block (empty location or an intentional no-amp DI patch), so no amp values are ' +
+        'surfaced. NON-amp block VALUES are not decoded from the stored dump yet (field map pending); use ' +
+        'get_param / get_params or read the ACTIVE buffer with get_preset (no location) for live values.',
+    'AM4 stored get_preset is community-beta: the container decode is byte-validated offline against the ' +
+      '104-preset factory bank + hardware exports (self-validating CRC + footer XOR), and the stored-dump request ' +
+      'is hardware-confirmed (2026-06-10, no working-buffer side effect); confirm the name + scene names ' +
+      '(and amp model/knobs, if present) against the front panel and report the result.',
+  ];
+
+  return {
+    name: decoded.name,
+    // The body's slot-assignment (which block sits in slot 1..4) is not yet
+    // decoded, so no positioned `slots[]` are surfaced. The amp block's VALUES
+    // ride on whole_preset.amp (the gen-3 stored path does the same via amp1).
+    slots: [],
+    whole_preset: {
+      source: 'stored-dump',
+      model: 'Fractal AM4',
+      model_id: AM4_MODEL_ID,
+      preset_name: decoded.name,
+      crc_valid: decoded.crcValid,
+      scene_names: decoded.sceneNames,
+      ...(ampBlock !== undefined ? { amp: ampBlock.channels } : {}),
+    },
+    read_warnings,
+    _meta: {
+      device: 'Fractal AM4',
+      read_at_ms: Date.now(),
+      // The stored dump carries all four scene NAMES, not a single active
+      // scene's state — so it is not scoped to one active scene.
+      active_scene_only: false,
+      routing_omitted: true,
+      read_duration_ms: Date.now() - readStartedMs,
+    },
+  };
+}
+
 // ── Reader adapter ──────────────────────────────────────────────────
 //
 // `getParam` wraps the existing `sendReadAndParse` + `decode` pipeline
@@ -449,7 +568,12 @@ export const reader: DeviceReader = {
       await switchBlockChannel(ctx.conn, block, channel);
     }
     const { parsed, raw_response } = await sendReadAndParseRaw(ctx.conn, param.pidLow, param.pidHigh);
-    const wire = param.unit === 'enum'
+    // The MIDI-config registers (global map + per-scene MIDI slots) store a
+    // literal integer in the read u32; every other non-enum param is a
+    // normalized Q16 float. Reading a raw-int register through the Q16 path
+    // divides by 65534 and displays ~0 (BUG-6). See midiRegisters.ts.
+    const rawInt = isRawIntRegister(param);
+    const wire = param.unit === 'enum' || rawInt
       ? parsed.asUInt32LE()
       : parsed.asInternalFloat();
     let display: number | string;
@@ -466,6 +590,8 @@ export const reader: DeviceReader = {
       } else {
         display = Math.round(wire);
       }
+    } else if (rawInt) {
+      display = decodeRawIntRegister(param, wire);
     } else {
       display = roundDisplayValue(param, am4Decode(param, wire));
     }
@@ -548,7 +674,7 @@ export const reader: DeviceReader = {
       throw new DispatchError(
         'bad_location',
         'Fractal AM4',
-        `export_preset: location index ${location} out of range — the AM4 has 104 stored locations, index 0..103 (A01..Z04).`,
+        `export_preset: location index ${location} out of range; the AM4 has 104 stored locations, index 0..103 (A01..Z04).`,
       );
     }
     const code = formatLocationCode(location);
@@ -561,7 +687,7 @@ export const reader: DeviceReader = {
       throw new DispatchError(
         'no_ack',
         'Fractal AM4',
-        `export_preset: stored-location dump of ${code} got no response — ${err instanceof Error ? err.message : String(err)}. Check the AM4 is connected (try reconnect_midi).`,
+        `export_preset: stored-location dump of ${code} got no response; ${err instanceof Error ? err.message : String(err)}. Check the AM4 is connected (try reconnect_midi).`,
       );
     }
     const flat: number[] = [...stream.headerBytes];
@@ -636,19 +762,27 @@ export const reader: DeviceReader = {
     return readSaveSnapshot(ctx, parseAm4Location(location));
   },
 
-  async getPreset(ctx: DispatchCtx, options?: { include_channel_state?: boolean }): Promise<PresetSnapshot> {
-    // Default OFF, matching II, but the cost asymmetry the old default was
-    // built around is gone. The fn 0x1F `0x75` body is CHANNEL-BLOCKED: it
-    // already carries all four channels (A/B/C/D, FIXED order, quarter 0 = A)
-    // at `channel * stride + pidHigh` (stride = itemCount / 4). So
-    // include_channel_state:true now reads B/C/D straight from the SAME dump
-    // already read for the active channel: no per-param fn 0x02 loop, no
-    // channel-state mutation (the old path did ~1182 serial GETs, ~6-60 s, and
-    // mutated device channel state). Default OFF still returns only the active
-    // channel to keep the response small and avoid the (amp-unreliable)
-    // channel-selector read implying more than it can. Channel-blocked layout
-    // confirmed on live AM4 hardware 2026-06-04 (cookbook am4-fn1f-atomic-read).
-    const includeChannelState = options?.include_channel_state ?? false;
+  async getPreset(ctx: DispatchCtx, options?: GetPresetOptions): Promise<PresetSnapshot> {
+    // STORED-PRESET path: when a location is given (A01..Z04), dump that stored
+    // slot (fn 0x03 flash dump) and container-decode its name + scene names.
+    // This is the byte-exact stored snapshot; the ACTIVE-buffer path below
+    // (no location) keeps its fn 0x1F per-block param read. See
+    // getStoredPresetSnapshot for the latency + labeled-omission notes.
+    if (options?.location !== undefined) {
+      return getStoredPresetSnapshot(ctx, options.location);
+    }
+
+    // ALL FOUR channels are returned for every channel-bearing block. The
+    // fn 0x1F `0x75` body is CHANNEL-BLOCKED: it already carries A/B/C/D
+    // (FIXED order, quarter 0 = A) at `channel * stride + pidHigh` (stride =
+    // itemCount / 4), so the full per-channel snapshot costs no extra wire
+    // round-trips beyond the chunk read every block needs anyway. This is
+    // also the BUG-1 fix: the old default returned only one channel and
+    // labeled it 'active' from the block's channel-selector register, which
+    // reads back derived/cached firmware state on the amp and mis-attributed
+    // the active tone. The `include_channel_state` option is now a no-op (all
+    // channels always returned). Channel-blocked layout confirmed on live AM4
+    // hardware 2026-06-04 (cookbook am4-fn1f-atomic-read).
     // Server-side timer around the SysEx read loop — surfaced as
     // _meta.read_duration_ms (client-independent; alpha.17 finding).
     const readStartedMs = Date.now();
@@ -690,55 +824,35 @@ export const reader: DeviceReader = {
 
         // Shape decision: must match II reader so the response is consistent
         // across every channel-bearing block on every device. Non-channel
-        // blocks use flat `params`; channel blocks surface params under
-        // `params_by_channel`.
+        // blocks use flat `params`; channel blocks surface ALL FOUR channels
+        // under `params_by_channel`.
+        //
+        // BUG-1 (2026-07-04 AM4 session): we no longer try to name a single
+        // "active" channel from the block's channel-selector register. The
+        // amp selector reads back derived/cached firmware state, not the
+        // channel index, so decodeChannelSelector produced a false-confident
+        // channel A while the active scene was on B — an agent state-anchored
+        // on the wrong tone. The fn 0x1F `0x75` dump is channel-blocked and
+        // already carries all four channels (A/B/C/D, FIXED order, quarter 0 =
+        // A) at `channel * stride + pidHigh`, so returning every channel is
+        // FREE (no extra wire read) and hides nothing. Which channel the
+        // active scene selects is derivable from `active_scene` + a live
+        // get_param read (a plain get_param with no channel arg returns the
+        // active channel's value). Channel-blocked layout confirmed on live
+        // AM4 hardware 2026-06-04 (cookbook am4-fn1f-atomic-read).
         let params: PresetSlotSpec['params'];
         let paramsByChannel: PresetSlotSpec['params_by_channel'];
         let channelStatus: PresetSnapshotSlot['channel_status'];
         if (!CHANNEL_BLOCKS.has(blockType)) {
           params = decodeChannelParams(blockType, chunks, 0);
-        } else if (includeChannelState) {
-          // All four channels from the SAME fn 0x1F dump via channel-stride
-          // indexing (FIXED order A/B/C/D, quarter 0 = A). This replaces the
-          // old ~1182 serial per-param fn 0x02 GETs across B/C/D (~6-60 s) AND
-          // the channel-state mutation (switchBlockChannel + switch back): the
-          // dump already holds all four channels at `channel * stride + pidHigh`
-          // (stride = itemCount / 4). Live-hardware-confirmed 2026-06-04. No
-          // active-channel resolution is needed for attribution.
+        } else {
           const allChannelParams: Record<string, Record<string, number | string>> = {};
           for (let c = 0; c < 4; c++) {
             const chParams = decodeChannelParams(blockType, chunks, c);
             if (Object.keys(chParams).length > 0) allChannelParams[channelLetter(c)] = chParams;
           }
           paramsByChannel = allChannelParams;
-          channelStatus = Object.keys(allChannelParams).length === 4 ? 'all_channels' : 'active';
-        } else {
-          // Default path: return only the ACTIVE channel's quarter. The
-          // selector read is reliable for reverb/delay/drive; amp's register
-          // returns derived/cached firmware state (see decodeChannelSelector),
-          // so amp degrades to channel A with channel_status='unknown'.
-          const { letter: activeChannel, failureReason } =
-            await readActiveChannelLetter(ctx.conn, blockType);
-          if (activeChannel !== undefined) {
-            const idx = ['A', 'B', 'C', 'D'].indexOf(activeChannel);
-            paramsByChannel = {
-              [activeChannel]: decodeChannelParams(blockType, chunks, idx < 0 ? 0 : idx),
-            };
-            channelStatus = 'active';
-          } else {
-            // Selector unresolved: show channel A (quarter 0) as a best-effort
-            // key. channel_status='unknown' signals the attribution is a
-            // fallback, not a hardware-confirmed active-channel read.
-            paramsByChannel = { A: decodeChannelParams(blockType, chunks, 0) };
-            channelStatus = 'unknown';
-            if (failureReason !== undefined) {
-              errors.push(
-                `slot ${slotIdx + 1} (${blockType}): channel-selector read failed -> ${failureReason}. ` +
-                `channel_status='unknown' is a fallback; showing channel A (quarter 0 of the dump). ` +
-                `Pass include_channel_state:true to read all four channels A/B/C/D directly.`,
-              );
-            }
-          }
+          channelStatus = 'all_channels';
         }
 
         slots.push({
@@ -773,10 +887,21 @@ export const reader: DeviceReader = {
       activeScene = undefined;
     }
 
-    const hasChannelBearing = layoutSlots.some((b) => CHANNEL_BLOCKS.has(b));
-    const channelStateHint = (!includeChannelState && hasChannelBearing)
-      ? 'Only the active channel is included. Pass include_channel_state:true to get_preset for the full per-channel read (A/B/C/D, decoded from the same fn 0x1F dump; fast, no channel-state mutation).'
-      : undefined;
+    // GAP-1: current stored-location pointer (best-effort, one read) + the
+    // in-memory dirty flag. Lets an agent plan navigation / dirty-buffer
+    // gating from the same call. `is_dirty` sees edits made through this
+    // server only (the AM4 emits no dirty push), so front-panel edits are
+    // invisible to it.
+    let currentLocation: string | undefined;
+    try {
+      const parsed = await sendReadAndParse(ctx.conn, LOCATION_STATE_PID_LOW, LOCATION_STATE_PID_HIGH);
+      const idx = parsed.asUInt32LE();
+      if (idx >= 0 && idx <= 103) currentLocation = formatLocationDisplay(idx);
+    } catch {
+      currentLocation = undefined;
+    }
+    const dirty = isDirty(AM4_DIRTY_LABEL);
+
     return {
       slots,
       active_scene: activeScene,
@@ -786,10 +911,11 @@ export const reader: DeviceReader = {
         read_at_ms: Date.now(),
         active_scene_only: true,
         routing_omitted: true,
-        channel_state_omitted: !includeChannelState && hasChannelBearing,
-        both_channels_read: includeChannelState,
+        channel_state_omitted: false,
+        both_channels_read: true,
         read_duration_ms: Date.now() - readStartedMs,
-        ...(channelStateHint !== undefined ? { channel_state_hint: channelStateHint } : {}),
+        ...(currentLocation !== undefined ? { current_location: currentLocation } : {}),
+        is_dirty: dirty,
       },
     };
   },
@@ -866,7 +992,7 @@ export const reader: DeviceReader = {
       const knobs = formatApplicableKnobs(blockType, am4Name);
       const loudness = formatLoudnessAppendix(am4Name);
       const parts = [recordText, knobs, loudness].filter((s): s is string => Boolean(s));
-      return `── ${am4Name} ──\n${parts.join('\n')}`;
+      return `${am4Name}\n${parts.join('\n')}`;
     });
     return {
       ok: true,
@@ -891,7 +1017,7 @@ export const reader: DeviceReader = {
         const knobs = formatApplicableKnobs(blockType, rec.am4Name);
         const loudness = formatLoudnessAppendix(rec.am4Name);
         const parts = [recordText, knobs, loudness].filter((s): s is string => Boolean(s));
-        return `── ${rec.am4Name} ──\n${parts.join('\n')}`;
+        return `${rec.am4Name}\n${parts.join('\n')}`;
       });
       out[blockType] = `${records.length} ${blockType} records:\n\n${blocks.join('\n\n')}`;
     }

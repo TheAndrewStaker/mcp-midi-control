@@ -797,6 +797,18 @@ before any code can ship to `packages/am4/`.**
 
 ### 10.10 Warm-cache hypothesis FALSIFIED (2026-05-28)
 
+> **MECHANISM EXPLAINED (2026-07-02):** the "encoder non-determinism"
+> verdict below is superseded in mechanism (not in conclusion). The dump
+> body is the gen-3 preset container (3-to-16 pack → CRC'd raw_patch →
+> dynamic-Huffman body; see `SYSEX-MAP.md` §10b "Container decode" and
+> `src/am4/presetContainer.ts`). The per-export churn is the dynamic
+> Huffman CODE TABLE being rebuilt each export plus ONE volatile decoded
+> u16 @ body `0x140E` — the same warm pairs diff by exactly 2 bytes at
+> the DECODED layer, and the amp-gain pairs localize to a single u16
+> (chA gain @ body `0x0958` = `0x828E` for display 5.1). Flat-byte
+> diffing of the compressed stream stays ruled out; decoded-layer
+> diffing via `decodeAm4RawPatch` is the supported lane.
+
 The founder ran `am4-warm-pair-capture.ts` on hardware in the same
 MCP session as the Bug B / Bug C fixes for the alpha.13 desktop-
 test triage. Result: the warm-cache hypothesis is **falsified**.

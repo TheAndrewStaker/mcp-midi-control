@@ -1,10 +1,11 @@
 ---
 name: iii-byte-stream-septet-pack-8to7
 class: bit-level
-status: matched-singleton
+status: matched
 discovered: 2026-05-22 (cookbook mine of ghidra-axe-edit-iii-store-preset.txt)
 verified_on:
   - axe-edit-iii-binary
+  - vp4-fw-4.03 (device-EMITTED: the eid206 structure blob's 220 packed bytes unpack with this exact scheme across 392 captured responses / two sessions — see [[vp4-eid206-structure-blob]])
 firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-iii-byte-stream-septet-pack-8to7
 relates_to: [septet-14bit, septet-21bit-byte2-mask-preservation, iii-fn01-set-parameter-envelope]
@@ -137,22 +138,20 @@ runs the pack algorithm against a small set of fixtures (N=1, 2, 7,
 Decompile reference: `FUN_14033f2d0` at envelope positions L1278-1317
 of `fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-store-preset.txt`.
 
-## Path to `matched`
+## Path to `matched` — ACHIEVED 2026-07-01
 
-Promotion from `matched-singleton` to `matched` requires a second
-axis point. The cheapest paths:
+Promoted `matched-singleton` → `matched`: the second axis point is **VP4
+firmware 4.03 itself** (a device, not an editor binary). The VP4's eid206
+pid0 tc=0x1f structure blob ([[vp4-eid206-structure-blob]]) packs its
+192-byte payload with this exact scheme — all 392 captured device responses
+across two sessions/presets unpack to clean ASCII names + the oracle-matched
+chain table with `unpackValueChunked` (the shipped inverse), and garble under
+MSB-first or non-restarting variants. This also upgrades the evidence class:
+the primitive is now confirmed as something Fractal FIRMWARE emits, not just
+editor-side code.
 
-- Scan AxeEdit II's Ghidra dump for the identical
-  `if bitsConsumed == 8 / carry shift / 7-bit output mask` loop
-  pattern. If present, AxeEdit II becomes the second axis.
-- Cross-check AM4-Edit similarly. AM4's set-param path does not
-  exercise a tail payload in production, but the function may exist
-  in the binary as dead code for the long-broadcast variant.
-- Cross-check against the III firmware itself (not just the editor)
-  if a III firmware-binary dump becomes available.
-
-Hardware verification is NOT required for promotion; this is a pure
-encoding primitive verifiable from binaries alone.
+Remaining cheap axes if ever needed (III firmware dump, AxeEdit II Ghidra
+scan) are listed in the 2026-05-22 history below.
 
 ## Refinement history
 
@@ -161,3 +160,9 @@ encoding primitive verifiable from binaries alone.
   `FUN_14033f2d0` at L1278-1317. The cookbook entry +
   `scripts/cookbook-verify.ts` golden case shipped same-session per
   the cookbook same-session discipline.
+- 2026-07-01 (VP4 structure-blob decode): promoted to `matched` on the
+  VP4-firmware axis; the shipped TS implementation of the inverse is
+  `unpackValueChunked` (`shared/packValue.ts`) — the AM4 chunked
+  sliding-window unpack and this packer are the SAME algorithm (the
+  "flush every 7 inputs" carry reset ≡ the chunk restart; independently
+  asserted by `test/gen3/axe-fx-iii/subactions.test.ts`).

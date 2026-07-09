@@ -262,9 +262,13 @@ async function main(): Promise<void> {
     }
   }
 
-  // 2. default → only the ACTIVE channel (B), reading B's quarter (not A).
+  // 2. default (no options) → ALL FOUR channels, same as include_channel_state
+  //    (BUG-1, 2026-07-04): the default no longer trusts the unreliable amp
+  //    channel-selector to name one "active" channel. The channel-blocked dump
+  //    holds every channel for free, so all four are returned and the active
+  //    one is derivable from active_scene + a live get_param.
   {
-    const ctx: DispatchCtx = { conn: makeFakeConn(1 /* B active */), descriptor: AM4_DESCRIPTOR };
+    const ctx: DispatchCtx = { conn: makeFakeConn(1 /* B active — now irrelevant to getPreset */), descriptor: AM4_DESCRIPTOR };
     let snap: PresetSnapshot | undefined;
     try { snap = await reader.getPreset(ctx); }
     catch (err) { check('default get_preset resolves', false, err instanceof Error ? err.message : String(err)); }
@@ -272,13 +276,15 @@ async function main(): Promise<void> {
       check('default get_preset resolves', true);
       const slot = snap.slots.find((s) => s.block_type === 'reverb');
       const pbc = slot?.params_by_channel;
-      check("default: channel_status === 'active'", slot?.channel_status === 'active', `status=${slot?.channel_status}`);
-      check('default: params_by_channel has B only', !!pbc && pbc.B !== undefined && pbc.A === undefined, `keys=${pbc ? Object.keys(pbc).join(',') : 'undefined'}`);
-      check(
-        "default: active channel B returns B's quarter, not channel A's",
-        pbc?.B?.mix === expectedDisplay(MIX, wireFor(1, MIX.pidHigh)) && pbc?.B?.mix !== expectedDisplay(MIX, wireFor(0, MIX.pidHigh)),
-        `B.mix=${pbc?.B?.mix} expectB=${expectedDisplay(MIX, wireFor(1, MIX.pidHigh))} A-quarter=${expectedDisplay(MIX, wireFor(0, MIX.pidHigh))}`,
-      );
+      check("default: channel_status === 'all_channels'", slot?.channel_status === 'all_channels', `status=${slot?.channel_status}`);
+      check('default: params_by_channel has A/B/C/D', !!pbc && ['A', 'B', 'C', 'D'].every((k) => pbc[k] !== undefined), `keys=${pbc ? Object.keys(pbc).join(',') : 'undefined'}`);
+      if (pbc !== undefined) {
+        let allMatch = true;
+        for (let c = 0; c < 4; c++) {
+          if (pbc[['A', 'B', 'C', 'D'][c]]?.mix !== expectedDisplay(MIX, wireFor(c, MIX.pidHigh))) allMatch = false;
+        }
+        check('default: each quarter decodes to the expected wire value (no active-only truncation)', allMatch);
+      }
     }
   }
 

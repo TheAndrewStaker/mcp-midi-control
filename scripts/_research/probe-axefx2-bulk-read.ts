@@ -26,7 +26,7 @@
  * samples/captured/probe-axefx2-bulk-read.syx for offline analysis.
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 

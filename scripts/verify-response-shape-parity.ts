@@ -101,13 +101,21 @@ const PRESET_SNAPSHOT_CONTRACT: ShapeContract = {
     'chain_integrity',
     'read_warnings',
     'live_grid',
+    'live_meters',
   ],
 };
 
 // PresetSnapshot._meta sub-envelope contract.
 const PRESET_SNAPSHOT_META_CONTRACT: ShapeContract = {
   required: ['device', 'read_at_ms', 'active_scene_only', 'routing_omitted'],
-  optional: ['channel_state_omitted', 'both_channels_read', 'read_duration_ms', 'channel_state_hint'],
+  optional: [
+    'channel_state_omitted',
+    'both_channels_read',
+    'read_duration_ms',
+    'channel_state_hint',
+    'current_location',
+    'is_dirty',
+  ],
 };
 
 // ReadResult (get_param / get_params element) contract.
@@ -144,6 +152,8 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // live_grid is the gen-3 live sub=0x2E routing-grid read; AM4 is a
       // linear 4-slot device with no grid, so there is no grid to read.
       live_grid: 'AM4 is a linear 4-slot device with no routing grid; the gen-3 live_grid read does not apply.',
+      // live_meters rides the gen-3 sub=0x2E frame; AM4 has no such frame.
+      live_meters: 'AM4 has no gen-3 sub=0x2E telemetry frame; live CPU/output meters do not apply.',
       // The preset name field is only populated when present; the AM4
       // reader omits the key entirely on the working-buffer snapshot.
       name: 'AM4 working-buffer snapshot does not read the preset name into the envelope.',
@@ -151,7 +161,13 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // partial read fails. On a clean read neither device emits it.
       read_warnings: 'Conditional field, present only on a partial-read failure; absent on a clean read.',
     },
-    presetSnapshotMeta: {},
+    presetSnapshotMeta: {
+      // BUG-1 (2026-07-04): AM4 get_preset now always returns all four
+      // channels, so there is no "channel state omitted" nudge to emit.
+      // The hint was the omission signal; with nothing omitted it is
+      // correctly absent. II still emits it (its default omits inactive Y).
+      channel_state_hint: 'AM4 get_preset now returns all four channels (BUG-1 fix), so the "channel state omitted" nudge is never applicable.',
+    },
     readResult: {},
   },
   'axe-fx-ii': {
@@ -163,6 +179,8 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // live_grid is the gen-3 live sub=0x2E grid read; the Axe-Fx II is a
       // different (gen-2) codec with no sub=0x2E grid query.
       live_grid: 'Axe-Fx II is a gen-2 device; the gen-3 live_grid (fn=0x01 sub=0x2E) read does not apply.',
+      // live_meters rides the gen-3 sub=0x2E frame; the gen-2 II has no such frame.
+      live_meters: 'Axe-Fx II is a gen-2 device with no sub=0x2E telemetry frame; live CPU/output meters do not apply.',
       // read_warnings is conditional on BOTH devices: present only when a
       // partial read fails. On a clean read neither device emits it.
       read_warnings: 'Conditional field, present only on a partial-read failure; absent on a clean read.',
@@ -175,6 +193,12 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // legitimately absent here. AM4's mock places a channel-bearing block,
       // so it emits the hint and is held to the contract.
       channel_state_hint: 'Axe-Fx II mock has an empty grid (no channel-bearing block placed), so the omission nudge is legitimately absent; emitted on real presets with a channel-bearing block.',
+      // current_location + is_dirty are surfaced by the AM4 reader (GAP-1,
+      // 2026-07-04): the active stored-location pointer and the in-memory
+      // dirty flag. The II reader does not yet read/track them, so it omits
+      // them. Candidate to add to the II reader in a future pass.
+      current_location: 'AM4-only (GAP-1): the II reader does not yet surface the active stored-location pointer.',
+      is_dirty: 'AM4-only (GAP-1): the II reader does not yet surface a working-buffer dirty flag.',
     },
     readResult: {},
   },
@@ -189,9 +213,11 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // Slot indices are sequential placeholders, not grid edges; routing is
       // never read (routing_omitted: true in _meta).
       routing: 'Gen-3 has no decoded grid/routing read; slot indices are sequential placeholders, not edges.',
-      // The poll loop does not query the preset name (0x0D QUERY_PATCH_NAME);
-      // the snapshot declares the key but leaves it undefined.
-      active_scene: 'Gen-3 get_preset does not read the active scene index in the v1 block-inventory snapshot.',
+      // Gen-3 get_preset (active buffer) now ISSUES a scene query (fn=0x0C `7F`)
+      // and surfaces active_scene when the device answers — but the shipped mock
+      // does not respond to the scene query, so active_scene is legitimately
+      // omitted in THIS parity run (and present on real hardware).
+      active_scene: 'Gen-3 get_preset issues a fn=0x0C scene query, but the parity mock does not answer it, so active_scene is omitted here (present on hardware).',
       // read_warnings IS declared by the gen-3 reader (it always attaches the
       // block-inventory caveat), so it is NOT allow-listed here.
     },
@@ -202,6 +228,11 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // channel_state_hint is an Axe-Fx II-specific nudge field; the gen-3
       // reader does not emit it.
       channel_state_hint: 'Gen-3 reader does not emit the Axe-Fx II include_channel_state nudge; channel state is uniformly omitted in the block-inventory snapshot.',
+      // current_location + is_dirty are AM4-only for now (GAP-1, 2026-07-04);
+      // the gen-3 reader does not read the active-location pointer or track a
+      // dirty flag.
+      current_location: 'AM4-only (GAP-1): the gen-3 reader does not surface the active stored-location pointer.',
+      is_dirty: 'AM4-only (GAP-1): the gen-3 reader does not surface a working-buffer dirty flag.',
     },
     readResult: {
       // The gen-3 reader projects a value out of the bulk-read burst and does

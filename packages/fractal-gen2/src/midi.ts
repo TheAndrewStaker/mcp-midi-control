@@ -19,7 +19,7 @@
  * `axe-fx` / `axefx` needles routes correctly on the founder's
  * two-Fractal-device setup.
  */
-import type { Input, Output } from 'midi';
+import type { Input, Output } from '@julusian/midi';
 import { createRequire } from 'node:module';
 
 import { createSysExAssembler } from '@mcp-midi-control/core/midi/transport.js';
@@ -34,18 +34,19 @@ import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/buffe
  * node-gyp toolchain booting the server; the binding is only required
  * when an Axe-Fx II port is actually listed or opened.
  */
-let midiModule: typeof import('midi') | undefined;
-function loadMidi(): typeof import('midi') {
+let midiModule: typeof import('@julusian/midi') | undefined;
+function loadMidi(): typeof import('@julusian/midi') {
   if (midiModule === undefined) {
     try {
-      midiModule = createRequire(import.meta.url)('midi') as typeof import('midi');
+      midiModule = createRequire(import.meta.url)('@julusian/midi') as typeof import('@julusian/midi');
     } catch (err) {
       const cause = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `The MIDI transport module ("midi" / node-midi) failed to load: ${cause}\n` +
+        `The MIDI transport module ("@julusian/midi") failed to load: ${cause}\n` +
         'This is an installation problem (missing or broken native binding), not a device ' +
-        'problem. If you installed with --ignore-scripts, run "npm rebuild midi" to build the ' +
-        'binding. Serial-only devices (FM3 over USB-CDC) do not need node-midi.',
+        'problem. @julusian/midi normally installs a prebuilt binary; if you installed with ' +
+        '--ignore-scripts, run "npm rebuild @julusian/midi" to fetch/build it. Serial-only ' +
+        'devices (FM3 over USB-CDC) do not need it.',
       );
     }
   }
@@ -283,9 +284,8 @@ export function connectAxeFxII(): AxeFxIIConnection {
   const handlers = new Set<(bytes: number[]) => void>();
 
   if (inIdx >= 0) {
-    // Don't ignore SysEx (false), do ignore timing clock + active-sensing (true, true).
-    // Wire the listener BEFORE openPort so we don't race the device.
-    input.ignoreTypes(false, true, true);
+    // Wire the listener BEFORE openPort so we don't race the device; the
+    // SysEx ignore-flags are (re)set AFTER openPort — see below.
     // node-midi's WinMM backend hands each filled driver buffer up as its
     // own `message` event, so any SysEx longer than RT_SYSEX_BUFFER_SIZE
     // (2048 bytes, set in midi/binding.gyp) arrives split across multiple
@@ -312,6 +312,12 @@ export function connectAxeFxII(): AxeFxIIConnection {
       assemble(bytes);
     });
     input.openPort(inIdx);
+    // Don't ignore SysEx (false), do ignore timing clock + active-sensing.
+    // MUST come AFTER openPort: @julusian/midi resets the ignore-flags to
+    // their defaults (SysEx ignored) on openPort, so an earlier call is
+    // silently wiped and every inbound SysEx reply is dropped. node-midi
+    // tolerated the earlier call; @julusian does not.
+    input.ignoreTypes(false, true, true);
     if (!input.isPortOpen()) {
       // Same silent-failure mode as the output side. A connection with a
       // dead INPUT is the worst state: writes fire, every read times out,

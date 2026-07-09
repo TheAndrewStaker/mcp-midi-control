@@ -22,6 +22,13 @@
  *   • FM9 (gen-3): describe_device + community-beta guidance that
  *     advertises set-by-name, list_params, set_param amp/drive type
  *     BY MODEL NAME (device-true rosters), get_param wired.
+ *   • Axe-Fx III (gen-3): describe_device + save_note + set-by-name
+ *     guidance, list_params, set_param amp.type by name, get_param wired.
+ *   • FM3 (gen-3, USB-CDC serial): describe_device (4×12 grid note +
+ *     save_note), list_params, set_param amp.type by name (FM3-hardware-
+ *     confirmed leg), get_param wired. NOTE: the FM3 is a SERIAL device —
+ *     it appears in list_midi_ports only via the serial-candidates section
+ *     (or a DIN/loopMIDI port named "FM3"); absence skips, never fails.
  *   • Hydrasynth: describe_device, NRPN apply_patch (no flash-save claim).
  *
  * NOT covered (would require flash writes):
@@ -34,6 +41,8 @@
  *   npm run launch-verify -- --port axefx2      # Axe-Fx II only
  *   npm run launch-verify -- --port axefx-gen1  # gen-1 only
  *   npm run launch-verify -- --port fm9         # FM9 only
+ *   npm run launch-verify -- --port axe-fx-iii  # Axe-Fx III only
+ *   npm run launch-verify -- --port fm3         # FM3 only
  *   npm run launch-verify -- --port hydrasynth  # Hydrasynth only
  *
  * EXIT CODES:
@@ -56,7 +65,7 @@ interface CliOpts {
 }
 
 function parseCli(argv: string[]): CliOpts {
-  const opts: CliOpts = { ports: ['am4', 'axefx2', 'axefx-gen1', 'fm9', 'hydrasynth'] };
+  const opts: CliOpts = { ports: ['am4', 'axefx2', 'axefx-gen1', 'axe-fx-iii', 'fm3', 'fm9', 'hydrasynth', 'circuit'] };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port') opts.ports = [argv[++i]];
@@ -829,6 +838,43 @@ async function verifyAxefxGen1(client: Client): Promise<void> {
     );
   }
 
+  // get_preset is now WIRED on gen-1 (fn 0x03 -> fn 0x04 patch dump, SPEC-
+  // PINNED SUBSET: name + effect-grid layout; per-param values NOT decoded).
+  // Without a responding gen-1 unit in the harness the dump request times out
+  // and returns `no_ack` — that is a clean skip; the key assertion is that it
+  // no longer refuses with capability_not_supported (the dump path exists).
+  {
+    const r = await client.callTool({
+      name: 'get_preset',
+      arguments: { port: 'axe-fx-gen1' },
+    });
+    const t = extractText(r);
+    record(
+      'gen1 get_preset is wired (not capability_not_supported)',
+      !/capability_not_supported/i.test(t),
+      t.slice(0, 200),
+    );
+    if (/no_ack/i.test(t)) {
+      console.log('  ⊘ gen1 get_preset: no device answered the fn 0x03 dump request (expected without gen-1 hardware) — dump content not verified.');
+    }
+  }
+
+  // get_preset bank-C stored reads must refuse BEFORE any wire bytes: the
+  // spec flags the bank-C request byte as OR'd with an unknown value, so
+  // presets >= 256 are unpinned. Deterministic — needs no device reply.
+  {
+    const r = await client.callTool({
+      name: 'get_preset',
+      arguments: { port: 'axe-fx-gen1', location: 300 },
+    });
+    const t = extractText(r);
+    record(
+      'gen1 get_preset refuses bank-C locations (>=256, unpinned request byte)',
+      /capability_not_supported|bank.?c/i.test(t),
+      t.slice(0, 200),
+    );
+  }
+
   // save_preset must refuse (no save on gen-1).
   {
     const r = await client.callTool({
@@ -981,6 +1027,209 @@ async function verifyFm9(client: Client): Promise<void> {
   }
 }
 
+async function verifyAxefxIii(client: Client): Promise<void> {
+  console.log('\n── Axe-Fx III (gen-3) ────────────────────────────────────────');
+
+  // describe_device — capabilities + guidance advertises set-by-name.
+  {
+    const r = await client.callTool({ name: 'describe_device', arguments: { port: 'axe-fx-iii' } });
+    const t = extractText(r);
+    let parsed: unknown;
+    try { parsed = JSON.parse(t); } catch { parsed = undefined; }
+    const caps = (parsed as { capabilities?: Record<string, unknown> })?.capabilities;
+    const guidance = (parsed as { agent_guidance?: Record<string, string> })?.agent_guidance;
+    record('axe-fx-iii describe_device returns capabilities', !isError(r) && !!caps, t.slice(0, 200));
+    record(
+      'axe-fx-iii support_tier is community-beta',
+      (caps as { support_tier?: string } | undefined)?.support_tier === 'community-beta',
+      `support_tier=${String((caps as Record<string, unknown> | undefined)?.support_tier)}`,
+    );
+    // The III's device_note is device-specific (the gen-3 byte-identity anchor,
+    // 6x14 grid); set-by-name is advertised family-wide via param_addressing.
+    record(
+      'axe-fx-iii device_note names the 6x14 grid',
+      !!guidance?.device_note && /6x14|6×14/i.test(guidance.device_note),
+      `device_note present=${!!guidance?.device_note}`,
+    );
+    record(
+      'axe-fx-iii param_addressing advertises set-by-name (not numeric-only)',
+      !!guidance?.param_addressing && /by name/i.test(guidance.param_addressing) && /Texas Star/i.test(guidance.param_addressing),
+      `param_addressing present=${!!guidance?.param_addressing}`,
+    );
+    // supports_save=false must come WITH the save_note clarification (same
+    // family-wide contract as the FM9 check above).
+    const saveNote = (caps as { save_note?: string } | undefined)?.save_note;
+    record(
+      'axe-fx-iii capabilities.save_note clarifies that explicit save_preset works',
+      typeof saveNote === 'string' && /save_preset/.test(saveNote) && /ARE available|does NOT mean/i.test(saveNote),
+      `save_note=${String(saveNote).slice(0, 120)}`,
+    );
+  }
+
+  // list_params amp — catalog present.
+  {
+    const r = await client.callTool({ name: 'list_params', arguments: { port: 'axe-fx-iii', block: 'amp' } });
+    const t = extractText(r);
+    record('axe-fx-iii list_params amp returns catalog', !isError(r) && /type|gain|drive|level/i.test(t), t.slice(0, 200));
+  }
+
+  // set_param amp.type BY NAME — the shared gen-3 read rosters resolve the
+  // model name to its ordinal; the dispatch must build the wire without a
+  // capability gate or a "numeric only" rejection. Working-buffer only.
+  {
+    const r = await client.callTool({
+      name: 'set_param',
+      arguments: { port: 'axe-fx-iii', block: 'amp', name: 'type', value: 'Texas Star Clean' },
+    });
+    const t = extractText(r);
+    record('axe-fx-iii set_param amp.type "Texas Star Clean" (set-by-name) succeeds', !isError(r), t.slice(0, 300));
+    record(
+      'axe-fx-iii set_param response does NOT claim flash save',
+      !isError(r) && !/saved to|persisted to|stored to|wrote to flash/i.test(t),
+      t.slice(0, 300),
+    );
+  }
+
+  // get_param amp.type — read leg wired (III read path is hardware-confirmed).
+  {
+    const r = await client.callTool({
+      name: 'get_param',
+      arguments: { port: 'axe-fx-iii', block: 'amp', name: 'type' },
+    });
+    const t = extractText(r);
+    record('axe-fx-iii get_param amp.type is wired (not capability_not_supported)',
+      !/capability_not_supported/i.test(t), t.slice(0, 300));
+  }
+}
+
+async function verifyFm3(client: Client): Promise<void> {
+  console.log('\n── FM3 (gen-3, USB-CDC serial) ───────────────────────────────');
+
+  // describe_device — capabilities + FM3-specific guidance (4×12 grid).
+  {
+    const r = await client.callTool({ name: 'describe_device', arguments: { port: 'fm3' } });
+    const t = extractText(r);
+    let parsed: unknown;
+    try { parsed = JSON.parse(t); } catch { parsed = undefined; }
+    const caps = (parsed as { capabilities?: Record<string, unknown> })?.capabilities;
+    const guidance = (parsed as { agent_guidance?: Record<string, string> })?.agent_guidance;
+    record('fm3 describe_device returns capabilities', !isError(r) && !!caps, t.slice(0, 200));
+    record(
+      'fm3 support_tier is community-beta',
+      (caps as { support_tier?: string } | undefined)?.support_tier === 'community-beta',
+      `support_tier=${String((caps as Record<string, unknown> | undefined)?.support_tier)}`,
+    );
+    // The FM3 grid is 4×12 (NOT the III/FM9 6×14) — the device_note must say
+    // so, or an agent authors specs against the wrong grid.
+    record(
+      'fm3 device_note names the smaller 4×12 grid',
+      !!guidance?.device_note && /4×12|4x12/i.test(guidance.device_note),
+      `device_note present=${!!guidance?.device_note}`,
+    );
+    record(
+      'fm3 param_addressing advertises set-by-name (not numeric-only)',
+      !!guidance?.param_addressing && /by name/i.test(guidance.param_addressing) && /Texas Star/i.test(guidance.param_addressing),
+      `param_addressing present=${!!guidance?.param_addressing}`,
+    );
+    const saveNote = (caps as { save_note?: string } | undefined)?.save_note;
+    record(
+      'fm3 capabilities.save_note clarifies that explicit save_preset works',
+      typeof saveNote === 'string' && /save_preset/.test(saveNote) && /ARE available|does NOT mean/i.test(saveNote),
+      `save_note=${String(saveNote).slice(0, 120)}`,
+    );
+  }
+
+  // list_params amp — FM3-true catalog present.
+  {
+    const r = await client.callTool({ name: 'list_params', arguments: { port: 'fm3', block: 'amp' } });
+    const t = extractText(r);
+    record('fm3 list_params amp returns catalog', !isError(r) && /type|gain|drive|level/i.test(t), t.slice(0, 200));
+  }
+
+  // set_param amp.type BY NAME — discrete set-by-name is FM3-hardware-
+  // confirmed (2026-06-10 community session: frames byte-identical to this
+  // server's encoder). Working-buffer only, reverts on preset switch.
+  {
+    const r = await client.callTool({
+      name: 'set_param',
+      arguments: { port: 'fm3', block: 'amp', name: 'type', value: 'Texas Star Clean' },
+    });
+    const t = extractText(r);
+    record('fm3 set_param amp.type "Texas Star Clean" (set-by-name) succeeds', !isError(r), t.slice(0, 300));
+    record(
+      'fm3 set_param response does NOT claim flash save',
+      !isError(r) && !/saved to|persisted to|stored to|wrote to flash/i.test(t),
+      t.slice(0, 300),
+    );
+  }
+
+  // get_param amp.type — read leg wired (FM3 reads are hardware-confirmed,
+  // 2026-06-12 serial field test).
+  {
+    const r = await client.callTool({
+      name: 'get_param',
+      arguments: { port: 'fm3', block: 'amp', name: 'type' },
+    });
+    const t = extractText(r);
+    record('fm3 get_param amp.type is wired (not capability_not_supported)',
+      !/capability_not_supported/i.test(t), t.slice(0, 300));
+  }
+}
+
+async function verifyCircuit(client: Client): Promise<void> {
+  console.log('\n── Novation Circuit Tracks ───────────────────────────────────');
+
+  // describe_device — capabilities + agent_guidance. The project_upload guidance
+  // must carry the overwrite-gate contract (confirm_overwrite), the #0 first-class
+  // gate; a regression that dropped it would let an agent clobber a slot silently.
+  {
+    const r = await client.callTool({ name: 'describe_device', arguments: { port: 'circuit' } });
+    const t = extractText(r);
+    let parsed: unknown;
+    try { parsed = JSON.parse(t); } catch { parsed = undefined; }
+    const caps = (parsed as { capabilities?: Record<string, unknown> })?.capabilities;
+    const guidance = (parsed as { agent_guidance?: Record<string, string> })?.agent_guidance;
+    record('circuit describe_device returns capabilities', !isError(r) && !!caps, t.slice(0, 200));
+    record(
+      'circuit project_upload guidance carries the overwrite gate (confirm_overwrite)',
+      !!guidance?.project_upload && /confirm_overwrite/i.test(guidance.project_upload),
+      `project_upload present=${!!guidance?.project_upload}`,
+    );
+    record(
+      'circuit sample_upload guidance carries the overwrite gate (confirm_overwrite)',
+      !!guidance?.sample_upload && /confirm_overwrite/i.test(guidance.sample_upload),
+      `sample_upload present=${!!guidance?.sample_upload}`,
+    );
+  }
+
+  // list_params filter — catalog present (a real Circuit synth block).
+  {
+    const r = await client.callTool({ name: 'list_params', arguments: { port: 'circuit', block: 'filter' } });
+    const t = extractText(r);
+    record('circuit list_params filter returns catalog', !isError(r) && /frequency|resonance|cutoff/i.test(t), t.slice(0, 200));
+  }
+
+  // get_param reads SYNTH patch params (osc/filter/env/lfo/mixer/fx/eq) off the
+  // working-buffer patch decode (HW-CIRCUIT-001); drum/project/macro/mod-matrix
+  // have no readback and refuse. Verify a synth param READS a decoded value
+  // (not a refusal, not a fabricated blank).
+  {
+    const r = await client.callTool({ name: 'get_param', arguments: { port: 'circuit', block: 'filter', name: 'frequency' } });
+    const t = extractText(r);
+    record('circuit get_param reads a synth param (filter.frequency) via patch decode',
+      !isError(r) && /frequency/i.test(t) && /(wire_value|display_value)/i.test(t), t.slice(0, 200));
+  }
+
+  // list_pattern_recipes(port) — Circuit is a pattern target advertising the
+  // live_stream + ncs_upload realizers.
+  {
+    const r = await client.callTool({ name: 'list_pattern_recipes', arguments: { port: 'circuit' } });
+    const t = extractText(r);
+    record('circuit is a pattern target advertising live_stream + ncs_upload',
+      !isError(r) && /live_stream/.test(t) && /ncs_upload/.test(t), t.slice(0, 250));
+  }
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1020,8 +1269,20 @@ async function main(): Promise<void> {
     const hasAm4 = /am4/i.test(portsText);
     const hasAxefx = /axe[- ]fx/i.test(portsText);
     const hasAxefxGen1 = /axe[- ]fx.*(ultra|standard)/i.test(portsText);
+    const hasAxefxIii = /axe[- ]?fx ?iii|axefx ?3/i.test(portsText);
     const hasFm9 = /fm9/i.test(portsText);
+    // FM3 presence differs from every other device: the FM3 is a USB-CDC
+    // SERIAL device, not USB MIDI, so it appears either as a MIDI port line
+    // (DIN-via-interface / loopMIDI test rigs) or in the serial-candidates
+    // section list_midi_ports appends ("Serial (USB-CDC) ports — FM3 control
+    // channel"). The tool's escape-hatch line ("If one of these is an FM3,
+    // set MCP_FM3_SERIAL_PATH=…") prints whenever NON-Fractal serial ports
+    // exist, so a bare /fm3/i would false-positive — exclude that line.
+    const hasFm3 = portsText
+      .split('\n')
+      .some((line) => /fm[- ]?3/i.test(line) && !/MCP_FM3_SERIAL_PATH/.test(line));
     const hasHydra = /hydrasynth|hydra/i.test(portsText);
+    const hasCircuit = /circuit/i.test(portsText);
 
     if (opts.ports.includes('am4')) {
       if (!hasAm4) {
@@ -1058,12 +1319,41 @@ async function main(): Promise<void> {
         await verifyFm9(client);
       }
     }
+    if (opts.ports.includes('axe-fx-iii')) {
+      if (!hasAxefxIii) {
+        console.log('\n── Axe-Fx III (gen-3) ────────────────────────────────────────');
+        console.log('  ⊘ Axe-Fx III not visible in list_midi_ports — skipping checks.');
+        console.log('  Note: III verification runs against a real port matching /axe-?fx ?iii/i (or a loopMIDI port named "Axe-Fx III").');
+      } else {
+        await verifyAxefxIii(client);
+      }
+    }
+    if (opts.ports.includes('fm3')) {
+      if (!hasFm3) {
+        console.log('\n── FM3 (gen-3, USB-CDC serial) ───────────────────────────────');
+        console.log('  ⊘ FM3 not visible in list_midi_ports — skipping checks.');
+        console.log('  Note: the FM3 is a SERIAL device over USB (not USB MIDI). It shows up either as a');
+        console.log('  Fractal-looking serial candidate in list_midi_ports, a DIN/loopMIDI port named "FM3",');
+        console.log('  or via MCP_FM3_SERIAL_PATH=<COMx or /dev/...> when it enumerates without metadata.');
+      } else {
+        await verifyFm3(client);
+      }
+    }
     if (opts.ports.includes('hydrasynth')) {
       if (!hasHydra) {
         console.log('\n── Hydrasynth ────────────────────────────────────────────────');
         console.log('  ⊘ Hydrasynth not visible in list_midi_ports — skipping checks.');
       } else {
         await verifyHydrasynth(client);
+      }
+    }
+    if (opts.ports.includes('circuit')) {
+      if (!hasCircuit) {
+        console.log('\n── Novation Circuit Tracks ───────────────────────────────────');
+        console.log('  ⊘ Circuit Tracks not visible in list_midi_ports — skipping checks.');
+        console.log('  Note: Circuit verification runs against a real port matching /circuit/i.');
+      } else {
+        await verifyCircuit(client);
       }
     }
 

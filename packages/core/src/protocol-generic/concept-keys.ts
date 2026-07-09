@@ -306,12 +306,26 @@ export const CONCEPT_KEYS: Readonly<Record<string, ConceptKeyMap>> = Object.free
     'axe-fx-iii': 'release',
   },
 
-  // ── Hydrasynth-specific synth concepts ──────────────────────────
-  // These are synth-only — Fractal devices don't have these concepts,
-  // so they map only on hydrasynth. The lookup helper returns
-  // `undefined` when called for a Fractal device with these keys.
+  // ── Synth concepts ──────────────────────────────────────────────
+  // Synth-only — Fractal (guitar) devices don't have these concepts, so
+  // they map only on hydrasynth here. NON-Fractal synths (e.g. Novation
+  // Circuit Tracks) are outside the `DevicePortSlug` union this registry
+  // is keyed by; they declare their own slice in `descriptor.concept_keys`
+  // and resolve through `resolveDescriptorConceptKey`. The shared
+  // canonical key (`osc.waveform`, `filter.cutoff`, …) is the same word
+  // on every synth — only the storage of the mapping differs.
+  //
+  // Only NAME-router concepts that mean the same knob/selector on every
+  // synth live here. Time-table params (env/LFO times) are deliberately
+  // NOT promoted to shared keys: Circuit exposes them as raw 0..127
+  // counts while Hydrasynth exposes display ms/seconds, so a shared key
+  // would imply a numeric portability the values don't have. Hydra keeps
+  // its own `env.*` keys below (single-device, no cross-device promise).
   'osc.pitch': {
     hydrasynth: 'semi',
+  },
+  'osc.waveform': {
+    hydrasynth: 'type',
   },
   'env.attack': {
     hydrasynth: 'attack',
@@ -327,6 +341,9 @@ export const CONCEPT_KEYS: Readonly<Record<string, ConceptKeyMap>> = Object.free
   },
   'lfo.rate': {
     hydrasynth: 'rate',
+  },
+  'lfo.waveform': {
+    hydrasynth: 'wave',
   },
 });
 
@@ -385,6 +402,43 @@ export function resolveConceptKeyForBlock(
   const blockKey = block.trim().toLowerCase();
   const conceptKey = `${blockKey}.${conceptOrParamName.trim().toLowerCase()}`;
   return resolveConceptKey(port, conceptKey);
+}
+
+/**
+ * Resolve a concept-key against a device's OWN `descriptor.concept_keys`
+ * map — the authoritative per-descriptor source the dispatcher uses.
+ *
+ * This is what unblocks devices that are NOT in the Fractal-family
+ * `DevicePortSlug` union the shared `CONCEPT_KEYS` registry is keyed by
+ * (e.g. Novation Circuit Tracks, id `'circuit-tracks'`). Such a device
+ * participates in the concept-key vocabulary simply by populating
+ * `concept_keys` with its own `{ <block>.<concept>: localName }` slice.
+ *
+ * Fractal / Hydrasynth descriptors populate `concept_keys` from their
+ * shared-registry slice via `listConceptKeysForDevice`, so routing them
+ * through this helper is behaviour-identical to the old
+ * `resolveConceptKeyForBlock(descriptor.id, …)` path. Devices with no
+ * `concept_keys` (gen-1) get `undefined`, exactly as before.
+ *
+ * Mirrors `resolveConceptKeyForBlock`'s input contract: accepts a
+ * fully-qualified key (`filter.cutoff`) verbatim, or prepends the known
+ * `block` to a bare concept (`cutoff` → `filter.cutoff`). Map keys are
+ * canonical lowercase concept-keys; lookup is case-insensitive on input.
+ */
+export function resolveDescriptorConceptKey(
+  conceptKeys: Readonly<Record<string, string>> | undefined,
+  block: string,
+  conceptOrParamName: string,
+): ResolvedConceptKey | undefined {
+  if (conceptKeys === undefined) return undefined;
+  const keyLower = conceptOrParamName.includes('.')
+    ? conceptOrParamName.trim().toLowerCase()
+    : `${block.trim().toLowerCase()}.${conceptOrParamName.trim().toLowerCase()}`;
+  if (!keyLower.includes('.')) return undefined;
+  const localName = conceptKeys[keyLower];
+  if (localName === undefined) return undefined;
+  const dotIdx = keyLower.indexOf('.');
+  return { block: keyLower.slice(0, dotIdx), localName, conceptKey: keyLower };
 }
 
 /**

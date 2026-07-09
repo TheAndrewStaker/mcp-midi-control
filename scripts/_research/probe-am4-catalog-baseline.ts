@@ -14,7 +14,7 @@
  * Prereq: AM4 connected, AM4-Edit closed, port free.
  * Run: npx tsx scripts/_research/probe-am4-catalog-baseline.ts [label]
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 
 const AM4_MODEL = 0x15;

@@ -37,6 +37,7 @@ registerParamKindResolver('axe-fx-ii', resolveAxeFxIIParamKind);
 
 import {
   buildApplyPresetAtOps,
+  buildApplyPresetOps,
   type ApplyPresetAtOp,
 } from '@mcp-midi-control/fractal-gen2/tools/applyExecutor.js';
 import { translateSpec } from '@mcp-midi-control/fractal-gen2/descriptor/writer.js';
@@ -231,6 +232,50 @@ console.log('\nCase 4: scenes + a slot-level bypassed block omitted from a scene
   check('4a: scene 1 (omits reverb) inherits slot bypassed:true → Reverb 1 BYPASSED', revScene1Bypassed, ops.filter((o) => isSceneBypass(o) && o.summary.includes('Reverb 1')).map((o) => o.summary).join(' | '));
   const revScene2Engaged = ops.some((op) => isSceneBypass(op) && op.summary.startsWith('[scene 2]') && op.summary.includes('Reverb 1') && op.summary.includes('ENGAGED'));
   check('4b: scene 2 (explicit bypassed:false) overrides → Reverb 1 ENGAGED', revScene2Engaged);
+}
+
+// ── Case 5: fresh-build clears every non-content cell (BUG-8 guard) ───────
+//
+// The 2026-07-04 II hardware session reported ghost blocks surviving a
+// recipe apply over a dense preset. Op-generation is NOT the cause:
+// buildApplyPresetOps (the working-buffer path) emits a clear_cell for
+// every grid cell it does not place a CONTENT block into, so the wire
+// sequence always requests a fresh 4×12 canvas before placing the chain.
+// This locks that invariant so a regression that drops the clear pre-pass
+// is caught at build time. (The runtime skip-empty-cells optimization in
+// runApplyPresetAtOps is a separate, hardware-only path — if ghosts recur
+// on device, capture the apply summaries[] to inspect the skip decisions.)
+console.log('\nCase 5: fresh-build clears every non-content cell (BUG-8 guard)');
+{
+  const spec: PresetSpec = {
+    slots: [
+      { slot: { row: 2, col: 1 }, block_type: 'amp' },
+      { slot: { row: 2, col: 4 }, block_type: 'cab' },
+      { slot: { row: 2, col: 6 }, block_type: 'reverb' },
+    ],
+  };
+  const ops = buildApplyPresetOps(translateSpec(spec) as Parameters<typeof buildApplyPresetOps>[0]);
+  const contentCells = new Set(['2,1', '2,4', '2,6']);
+  const clearedCells = new Set(
+    ops
+      .filter((o): o is ApplyPresetAtOp & { cellRef: { row: number; col: number } } =>
+        o.kind === 'clear_cell' && o.cellRef !== undefined)
+      .map((o) => `${o.cellRef.row},${o.cellRef.col}`),
+  );
+  let allNonContentCleared = true;
+  const missing: string[] = [];
+  for (let row = 1; row <= 4; row++) {
+    for (let col = 1; col <= 12; col++) {
+      const key = `${row},${col}`;
+      if (contentCells.has(key)) continue;
+      if (!clearedCells.has(key)) { allNonContentCleared = false; missing.push(key); }
+    }
+  }
+  check('5a: every non-content cell (48 − 3) gets a clear_cell op', allNonContentCleared, `missing: ${missing.join(' ')}`);
+  check('5b: content cells are NOT cleared (placement overwrites them)',
+    ![...contentCells].some((c) => clearedCells.has(c)));
+  check('5c: working-buffer ops carry no switch_preset / save',
+    !ops.some((o) => o.kind === 'switch_preset' || o.kind === 'save'));
 }
 
 // ── Report ───────────────────────────────────────────────────────────────

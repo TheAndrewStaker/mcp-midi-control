@@ -20,6 +20,7 @@ import {
   executeExportStoredPreset,
   executeGetPreset,
   executePortPreset,
+  executeReadSampleDirectory,
   executeRestorePreset,
 } from '../dispatcher.js';
 import type { PresetSpec } from '../types.js';
@@ -133,7 +134,7 @@ export function registerPresetTools(server: McpServer): void {
   };
   server.registerTool('get_preset', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
-    description: 'Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. Use for state-anchoring before a tone edit (read, summarize, propose, then targeted set_param / set_params). Default: active-channel params only. Pass include_channel_state: true for the per-channel nested shape (params_by_channel; II X/Y, AM4 A/B/C/D). Use instance on set_param/set_params to target a specific block (e.g. Amp 2). Scope: active scene only; no scenes 2..N, no routing. GEN-3 (Axe-Fx III / FM3 / FM9): pass `location` (integer preset number) to read a STORED preset and get the FULL decoded patch in `whole_preset` (routing grid, per-channel A/B/C/D block types, all 8 scene names plus per-scene bypass/channel, amp model plus knobs, modifiers, scene controllers; FM9-confirmed). Without location, gen-3 live read: `live_grid` = positioned routing (fn=0x01 sub=0x2E); `slots` = per-block param values. Performance: II ~2 s; AM4 ~0.3 s; gen-3 location read ~1-2 s. Hydra returns capability_not_supported. DO NOT feed the snapshot back into apply_preset (FRESH-BUILD clears unlisted slots plus scenes); use set_param / set_params for changed knobs. Re-call to verify.',
+    description: 'Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. Use for state-anchoring before a tone edit (read, summarize, propose, then targeted set_param / set_params). Default: active-channel params only. Pass include_channel_state: true for the per-channel nested shape (params_by_channel; II X/Y, AM4 A/B/C/D). Use instance on set_param/set_params to target a specific block (e.g. Amp 2). Scope: active scene only; no scenes 2..N, no routing. GEN-3 (Axe-Fx III / FM3 / FM9): pass `location` (integer preset number) to read a STORED preset and get the FULL decoded patch in `whole_preset` (routing grid, per-channel A/B/C/D block types, all 8 scene names plus per-scene bypass/channel, amp model plus knobs, modifiers, scene controllers; FM9-confirmed). Without location, gen-3 live read: `live_grid` = positioned routing (fn=0x01 sub=0x2E); `slots` = per-block param values; `live_meters.cpu_percent` = the preset\'s DSP/CPU load (answer "how much headroom?"); `active_scene` = current scene index. Performance: II ~2 s; AM4 ~0.3 s; gen-3 location read ~1-2 s. Hydra returns capability_not_supported. DO NOT feed the snapshot back into apply_preset (FRESH-BUILD clears unlisted slots plus scenes); use set_param / set_params for changed knobs. Re-call to verify.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       include_channel_state: z
@@ -169,14 +170,14 @@ export function registerPresetTools(server: McpServer): void {
 
   server.registerTool('export_preset', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    description: "Back up a preset to a byte-exact `.syx` file on disk. Two modes: (1) omit `location` to dump the ACTIVE working-buffer preset, INCLUDING unsaved edits (AM4, Axe-Fx II, gen-3 family; Hydrasynth and Axe-Fx Standard/Ultra return capability_not_supported); (2) pass `location` as an integer preset index to dump that STORED slot from device flash without touching the working buffer (AM4: index 0..103 = locations A01..Z04; gen-3 family: 0-based preset number, FM9 wire-confirmed). The .syx is Fractal-compatible: sync it (point `directory` at OneDrive), reload in the manufacturer's editor, or restore via import_preset. Writes to `directory`, else a `mcp-midi-backups` folder under the user's home; file named `<device>-<preset>-<timestamp>.syx`. Returns file_path, byte_length, frame_count, and a `source` field saying exactly what was dumped. Does NOT write to the hardware.",
+    description: "Back up a preset to a byte-exact file on disk. Two modes: (1) omit `location` to dump the ACTIVE working-buffer preset, including unsaved edits (AM4, Axe-Fx II, gen-3 family; Hydrasynth and Axe-Fx Standard/Ultra return capability_not_supported); (2) pass `location` as an integer preset index to dump that STORED slot from device flash without touching the working buffer (AM4: 0..103 = A01..Z04; gen-3: 0-based preset number, FM9 wire-confirmed; Circuit Tracks: project slot 0..63, a byte-exact `.ncs` project, the read half of upload_project, where an empty slot reports `empty:true` and writes no file). Fractal dumps are `.syx` (sync via `directory` to OneDrive, reload in the manufacturer's editor; AM4 and Axe-Fx II also restore via import_preset, gen-3 does not); a Circuit dump is `.ncs` (restore via upload_project). Writes to `directory`, else a `mcp-midi-backups` folder under the user's home. Returns file_path, byte_length, frame_count, and a `source` field. Does NOT write to hardware.",
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       location: z.union([z.string(), z.number()]).optional().describe(
-        'Optional stored preset location to export (integer index, 0-based). When given, exports that stored slot directly from device flash, leaving the working buffer untouched; when omitted, exports the active working-buffer preset. Stored-location export: AM4 (0..103 = A01..Z04, e.g. M03 = 12*4+2 = 50) and gen-3 (Axe-Fx III / FM3 / FM9 / VP4). Active-buffer export also works on the Axe-Fx II.',
+        'Optional stored preset location to export (integer index, 0-based). When given, exports that stored slot directly from device flash, leaving the working buffer untouched; when omitted, exports the active working-buffer preset. Stored-location export: AM4 (0..103 = A01..Z04, e.g. M03 = 12*4+2 = 50), gen-3 (Axe-Fx III / FM3 / FM9 / VP4), and Circuit Tracks (project slot 0..63). Active-buffer export also works on the Axe-Fx II. Circuit Tracks has no active buffer to export, so always pass a project slot.',
       ),
       directory: z.string().optional().describe(
-        'Destination folder for the .syx file. Optional. Defaults to a `mcp-midi-backups` folder under the user\'s home directory. Point this at a cloud-synced folder (e.g. a OneDrive path) so backups reach the user\'s other devices. Created if it does not exist.',
+        'Destination folder for the backup file (.syx, or .ncs for Circuit Tracks). Optional. Defaults to a `mcp-midi-backups` folder under the user\'s home directory. Point this at a cloud-synced folder (e.g. a OneDrive path) so backups reach the user\'s other devices. Created if it does not exist.',
       ),
     },
   }, async ({ port, location, directory }) => {
@@ -191,11 +192,25 @@ export function registerPresetTools(server: McpServer): void {
       } else {
         dump = await executeExportActivePreset({ port });
       }
+      // An EMPTY stored slot (Circuit project slots can be empty) is a clean
+      // read-before-write answer, not a backup; report it, write no file.
+      if (dump.empty) {
+        return asText({
+          ok: true,
+          empty: true,
+          device: dump.device,
+          source: dump.source,
+          message: `Nothing was exported: ${dump.source ?? 'the requested location is empty'}. No backup file written.`,
+        });
+      }
       const baseDir = directory !== undefined && directory.trim().length > 0
         ? directory.trim()
         : path.join(homedir(), 'mcp-midi-backups');
       await mkdir(baseDir, { recursive: true });
-      const fileName = `${sanitizeForFilename(dump.device)}-${sanitizeForFilename(dump.name ?? 'preset')}-${backupTimestamp()}.syx`;
+      // Most devices dump a Fractal `.syx`; a device whose native container
+      // differs (Circuit Tracks `.ncs`) declares its own extension.
+      const ext = dump.file_extension ?? 'syx';
+      const fileName = `${sanitizeForFilename(dump.device)}-${sanitizeForFilename(dump.name ?? 'preset')}-${backupTimestamp()}.${ext}`;
       const filePath = path.join(baseDir, fileName);
       await writeFile(filePath, Buffer.from(dump.bytes));
       return asText({
@@ -211,6 +226,20 @@ export function registerPresetTools(server: McpServer): void {
         frame_count: dump.frame_count,
         format: dump.format,
       });
+    } catch (err) {
+      return asError(err);
+    }
+  });
+
+  server.registerTool('list_samples', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    description: "Read a device's named sample pool and return each slot's stored name (the sampler-archetype \"what's in the pool\" read; the names author_kit / the groove packer reference). Circuit Tracks: the active Pack's shared 64-slot drum-sample pool (the 4 drum tracks pick from it), read over MIDI, so it needs a bidirectional connection (close Novation Components so the port is free) and takes a few seconds (probes all 64 slots). SPD-SX (WAVE MGR storage mode): the wave pool read from the mounted drive (can be hundreds of waves). So you can see what each slot holds by name (\"kick\", \"snare\", \"closed hat\") and map sounds semantically. Read-only; sends no write. Returns { occupied, total, slots:[{slot, device_slot, name}] }; name is omitted for empty slots. Devices without a named sample pool (Fractal, Hydrasynth) return capability_not_supported.",
+    inputSchema: {
+      port: z.string().describe(PORT_DESC),
+    },
+  }, async ({ port }) => {
+    try {
+      return asText(await executeReadSampleDirectory({ port }));
     } catch (err) {
       return asError(err);
     }

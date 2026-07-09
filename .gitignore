@@ -19,12 +19,21 @@ docs/wiki/
 # in the repo; download from each publisher's site to your local clone.
 # See docs/manuals/README.md for the expected file list.
 #
-# The .txt extractions of these PDFs ARE committed (derivative
-# reference material under fair-use interoperability research) so
-# contributors and Claude Code agents can grep them without
-# re-supplying the source PDFs.
+# The .txt extractions of the Fractal and ASM device manuals ARE committed
+# (derivative reference material under fair-use interoperability research;
+# those devices required deep protocol reverse-engineering) so contributors
+# and Claude Code agents can grep them without re-supplying the source PDFs.
 docs/manuals/*.pdf
+docs/manuals/**/*.pdf
 docs/devices/*/manuals/*.pdf
+
+# This release adds no new manufacturer manuals (even Fractal). The raw manual
+# .txt/.pdf added after 0.5.0 are kept LOCAL only; the synthesis / RE notes we
+# authored FROM them (the .md files) stay tracked. Only the raw text leaves.
+docs/manuals/other-gear/*.txt
+docs/manuals/other-gear/*.pdf
+docs/manuals/circuit_tracks_*.txt
+packages/fractal-midi/docs/devices/am4/manuals/ct-guide.txt
 
 # samples/ is entirely local-only — captures, factory preset exports
 # (Fractal IP, don't redistribute), debug logs, and decoded outputs
@@ -32,7 +41,16 @@ docs/devices/*/manuals/*.pdf
 # artifacts that DO ship with the binary (e.g. data/factory-data.json,
 # data/axefx2-factory-data.json) live in `data/` so this gitignore
 # stays simple.
-samples/
+# Ignore samples/ contents (not the dir itself) so a single sub-path can be
+# re-included below. Equivalent to the old `samples/` for everything else.
+samples/*
+
+# ...except the drum-sources docs: the audio stays local, but the README +
+# manifest are committed so the tree can be rebuilt after a delete.
+!samples/drum-sources/
+samples/drum-sources/*
+!samples/drum-sources/README.md
+!samples/drum-sources/manifest.json
 
 # Local user backups of preset dumps. Created automatically by the
 # backup_location MCP tool (and by the auto-backup path in
@@ -47,6 +65,9 @@ backups/
 scripts/_research/gen1-out/
 scripts/_research/gen2-out/
 scripts/_research/archive-crawl/
+# Decoded USB-capture timeline dumps — regenerable from the decode/diff .py
+# scripts against the (gitignored) captures in samples/. Scratch, not durable.
+scripts/_research/_*.txt
 
 # Agent-regression sweep artifacts — local-only analytics corpus.
 # Per-case stream-json traces (~100 KB each, 30+ per full sweep) and
@@ -93,3 +114,15 @@ scripts/_workflows/
 # Scratch output from II enum-extraction pipeline (regenerable)
 scripts/_scratch_ii_*.json
 scripts/_scratch_ii_*.mjs
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# regenerable groove analysis output
+scripts/groove-analysis/groove_catalog.json
+scripts/groove-analysis/_setsel.json
+
+# Circuit groove-pack intermediate artifacts (regenerable)
+scripts/groove-analysis/_packed*.json
+scripts/_cap_prep.mjs

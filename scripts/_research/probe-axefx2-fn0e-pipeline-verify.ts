@@ -13,7 +13,7 @@
  * Record identification: sort records by state28 (28-bit b1..b4), zip to
  * placed blockIds ascending.
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import {

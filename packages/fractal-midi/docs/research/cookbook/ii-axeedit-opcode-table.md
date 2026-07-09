@@ -6,7 +6,7 @@ discovered:  (2026-05-20; Ghidra mining of Axe-Edit.exe)
 verified_on:
   - axe-edit-ii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-ii-axeedit-opcode-table
+golden: STUB (structural-only; de-facto coverage: docs/devices/axe-fx-ii/axeedit-opcode-table.md + the FUNC_* constants in src/gen2/axe-fx-ii)
 relates_to: [param-descriptor-16byte, vendor-envelope-descriptor-table]
 consumed_in:
   - fractal-midi/docs/devices/axe-fx-ii/axeedit-opcode-table.md
@@ -76,7 +76,7 @@ opcode, confirming the -1 offset is universal across the table.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-ii-axeedit-opcode-table` checks that
+No inline fixture ships (golden is STUB). The de-facto invariant is that
 the documented 94-entry table is consistent with the live-captured
 opcode set in `fractal-midi/docs/devices/axe-fx-ii/axeedit-opcode-table.md`
 and that every shipped `FUNC_*` constant in

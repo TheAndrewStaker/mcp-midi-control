@@ -6,7 +6,9 @@ discovered:  ( cross-model save attempt)
 verified_on:
   - axe-fx-ii-xl-plus
 firmware_sensitive: true
-golden: scripts/cookbook-verify.ts#case-am4-77-as-save-on-ii
+golden: STUB (structural-only; negative finding, no pure-CPU fixture; see Symptoms / grep terms)
+retest_when:
+  - a decoded II save-to-location wire shape (mine AxeEdit II's save path; see STATE-AXEFX2.md — the moment II's native single-location save is known, this envelope-transfer verdict is moot rather than re-testable)
 relates_to: [ii-fn1f-atomic-read, vendor-envelope-descriptor-table]
 consumed_in: []
 ---
@@ -66,6 +68,14 @@ documented Fractal behavior for malformed-but-envelope-valid input).
   level dispatch.
 - A future "byte-substitute the AM4 envelope" attempt against a
   Fractal device with no native save dispatcher. Out of scope.
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "AM4 0x77 as save on II" / "0x77 save-to-location Axe-Fx II"
+- "byte-substitute model byte save" / "swap model byte 0x15 to 0x07"
+- "0x77 envelope inert" / "acked but no write"
 
 ## Refinement history
 

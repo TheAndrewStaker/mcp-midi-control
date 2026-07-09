@@ -86,10 +86,13 @@ function writeGridBits(region: number[], bit: number, value: number, n: number):
 
 /**
  * Build the device's reply to an empty-target `fn=0x01 sub=0x2E` grid query: a
- * ~754-byte frame whose tail (mido byte 361+) carries the 7-bit-packed grid.
- * Lays the placed effect IDs across row 0 (Input at col 0), so the reader
- * decodes a coherent live grid (used by get_preset's active path). Geometry
- * matches gridLayout.ts: cell_start_bit = 46 + col*192 + row*32.
+ * 755-byte frame (the canonical 6-row length) whose TAIL carries the
+ * 7-bit-packed grid, ending [checksum, F7] like the real device — the parser
+ * anchors the region from the tail, so the checksum byte is load-bearing for
+ * frame shape (its value is not verified). Lays the placed effect IDs across
+ * row 0 (Input at col 0), so the reader decodes a coherent live grid (used by
+ * get_preset's active path). Geometry matches gridLayout.ts:
+ * cell_start_bit = 46 + col*192 + row*32.
  */
 function buildGridLayoutResponse(modelByte: number, placedEffectIds: readonly number[]): number[] {
   const region = new Array(391).fill(0);
@@ -103,7 +106,8 @@ function buildGridLayoutResponse(modelByte: number, placedEffectIds: readonly nu
   const header = [SYSEX_START, ...MFR_PREFIX, modelByte, 0x01, 0x2e];
   const frame = [...header];
   while (frame.length < 362) frame.push(0x00); // pad to mido offset 361 (frame idx 362)
-  frame.push(...region, SYSEX_END);
+  frame.push(...region);
+  frame.push(frame.reduce((a, b) => a ^ b, 0) & 0x7f, SYSEX_END); // [checksum, F7] tail
   return frame;
 }
 

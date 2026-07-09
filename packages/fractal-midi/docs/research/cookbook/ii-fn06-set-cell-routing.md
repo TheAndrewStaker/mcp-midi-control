@@ -6,7 +6,7 @@ discovered:  (2026-05-13; hardware-decoded)
 verified_on:
   - axe-fx-ii-q8.02
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-ii-fn06-set-cell-routing
+golden: scripts/verify-axe-fx-ii-encoding.ts (byte-exact fn=0x06 edge fixtures)
 relates_to: [ii-axeedit-opcode-table]
 consumed_in:
   - fractal-midi/docs/devices/axe-fx-ii/SYSEX-MAP.md

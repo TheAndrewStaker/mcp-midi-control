@@ -30,13 +30,19 @@ import {
   packValue16,
   PARAMS_BY_FAMILY,
   resolveGen3EnumOrdinal,
+  encode5SeptetFloat32,
+  decode5SeptetFloat32,
   type Param,
 } from 'fractal-midi/gen3/axe-fx-iii';
 import { mockConnect } from '@mcp-midi-control/core/midi/transport.js';
 import { makeGen3BroadcastMockResponder } from '@mcp-midi-control/fractal-gen3/parityMock.js';
 import { FM3_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm3';
 import { FM9_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm9';
-import { VP4_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/vp4';
+import {
+  VP4_PARAMS_BY_FAMILY,
+  buildVp4GetStructureBlob,
+  parseVp4StructureBlob,
+} from 'fractal-midi/gen3/vp4';
 import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { encodeValue } from '@mcp-midi-control/core/protocol-generic/dispatcher/resolvers.js';
@@ -180,11 +186,15 @@ console.log('\nFM9 amp model names (per-device enum override, partial):');
   check('FM9 amp.type decode(179) → "Texas Star Clean"', ampSchema?.decode(179) === 'Texas Star Clean', `got ${ampSchema?.decode(179)}`);
   check('FM9 amp.type decode(9999) → 9999 (unknown ordinal passes through, partial table)', ampSchema?.decode(9999) === 9999, `got ${ampSchema?.decode(9999)}`);
   // P1: the shared gen-3 read roster names amps on ALL of III/FM3/FM9. The
-  // FM9-SPECIFIC hardware-captured points (e.g. 65="SV Bass 2", which is absent
-  // from the shared table) still must NOT leak to the III.
+  // amp model ordinal space is family-wide (one effect codec): every shared
+  // ordinal agrees across III/FM3/FM9, and the factory-correlated base is now
+  // unioned with the device-true FM9 cache roster (== Fractal wiki), so the
+  // formerly-unnamed ordinals (e.g. 65="SV Bass 2") name on III/FM3 too. These
+  // additions are evidence-strong (device cache + wiki agree) but untested on
+  // III/FM3 hardware — community-beta, like the rest of the gen-3 amp roster.
   const iiiAmp = AXEFX3_DESCRIPTOR.blocks['amp']?.params['type'];
   check('III amp.type decode(264) → "SV Bass 1" (shared gen-3 read roster)', iiiAmp?.decode(264) === 'SV Bass 1', `got ${iiiAmp?.decode(264)}`);
-  check('III amp.type decode(65) → 65 (FM9-specific override does NOT leak to III)', iiiAmp?.decode(65) === 65, `got ${iiiAmp?.decode(65)}`);
+  check('III amp.type decode(65) → "SV Bass 2" (complete shared gen-3 amp roster)', iiiAmp?.decode(65) === 'SV Bass 2', `got ${iiiAmp?.decode(65)}`);
   // Set-by-name now works for amps too: the read ordinal IS the set value.
   check('FM9 amp.type 264 numeric passthrough → 264', encodeValue(FM9_DESCRIPTOR, 'amp', 'type', 264) === 264);
   check('FM9 set amp.type "SV Bass 1" by name → ordinal 264 (set-by-name unblocked)',
@@ -387,8 +397,30 @@ async function writerChecks(): Promise<void> {
 
     const { ctx: ctx2 } = fakeCtx();
     let ok12 = false;
-    try { ok12 = (await FM3_DESCRIPTOR.writer.setBlock!(ctx2, { row: 4, col: 12 }, { block_type: 'reverb' })).acked === true; } catch { ok12 = false; }
+    // set_block has no positive ack; an in-grid placement that isn't rejected
+    // returns unconfirmed (sent, verify on device), not acked. "Accepted" = sent
+    // without a 0x64 rejection / throw.
+    try { const r12 = await FM3_DESCRIPTOR.writer.setBlock!(ctx2, { row: 4, col: 12 }, { block_type: 'reverb' }); ok12 = r12.acked === true || r12.unconfirmed === true; } catch { ok12 = false; }
     check('FM3 set_block {row:4,col:12} accepted (12-col grid)', ok12);
+
+    // FM3 (4-row) places via a sub=0x30 cell-select THEN the sub=0x32 insert —
+    // the FM3 ignores the insert's cell without the prior cursor move (ForgeFX
+    // live-confirmed on hardware 2026-06-27). The sub-action is payload byte 0
+    // (frame index 6); both frames carry the FM3 model byte 0x11.
+    const { ctx: ctx3, sent: sent3 } = fakeCtx();
+    await FM3_DESCRIPTOR.writer.setBlock!(ctx3, { row: 2, col: 3 }, { block_type: 'reverb' });
+    check('FM3 set_block emits sub=0x30 select THEN sub=0x32 insert (two frames)',
+      sent3.length === 2 && sent3[0][6] === 0x30 && sent3[1][6] === 0x32,
+      JSON.stringify(sent3.map((f) => `0x${f[6]?.toString(16)}`)));
+    check('FM3 select+insert both carry model byte 0x11', sent3.every((f) => f[4] === 0x11));
+  }
+
+  // Axe-Fx III (6-row): single-frame insert, no pre-select (the confirmed path).
+  {
+    const { ctx, sent } = fakeCtx();
+    try { await AXEFX3_DESCRIPTOR.writer.setBlock!(ctx, { row: 1, col: 1 }, { block_type: 'reverb' }); } catch { /* ignore */ }
+    check('III set_block emits ONE frame (sub=0x32 insert only, no 0x30 pre-select)',
+      sent.length === 1 && sent[0][6] === 0x32, JSON.stringify(sent.map((f) => `0x${f[6]?.toString(16)}`)));
   }
 
   // FM9 6x14: the same col 14 is IN-grid and must be accepted + emit model 0x12.
@@ -397,7 +429,7 @@ async function writerChecks(): Promise<void> {
     let ok = false;
     try {
       const r = await FM9_DESCRIPTOR.writer.setBlock!(ctx, { row: 1, col: 14 }, { block_type: 'reverb' });
-      ok = r.acked === true;
+      ok = r.acked === true || r.unconfirmed === true; // sent, not rejected (no positive ack)
     } catch { ok = false; }
     check('FM9 set_block {row:1,col:14} accepted (within 6x14 grid)', ok);
     check('FM9 in-grid set_block emitted a model-0x12 frame', sent.length === 1 && sent[0][4] === 0x12, JSON.stringify(sent[0]?.slice(0, 6)));
@@ -428,7 +460,7 @@ async function writerChecks(): Promise<void> {
   {
     const { ctx } = fakeCtx();
     let ok6 = false;
-    try { ok6 = (await FM9_DESCRIPTOR.writer.setBlock!(ctx, { row: 6, col: 1 }, { block_type: 'reverb' })).acked === true; } catch { ok6 = false; }
+    try { const r6 = await FM9_DESCRIPTOR.writer.setBlock!(ctx, { row: 6, col: 1 }, { block_type: 'reverb' }); ok6 = r6.acked === true || r6.unconfirmed === true; } catch { ok6 = false; }
     check('FM9 set_block {row:6,col:1} accepted (6-row grid)', ok6);
 
     // {row:1,col:2} -> gridPos = (2-1)*6 + (1-1) = 6 (stride-6, not the old 4).
@@ -600,6 +632,71 @@ async function vp4Checks(): Promise<void> {
   { const { ctx, sent } = fakeCtx(); await refuses('switch_preset', () => VP4_DESCRIPTOR.writer.switchPreset!(ctx, 'A01'), sent); }
   { const { ctx, sent } = fakeCtx(); await refuses('switch_scene', () => VP4_DESCRIPTOR.writer.switchScene!(ctx, 2), sent); }
   { const { ctx, sent } = fakeCtx(); await refuses('rename', () => VP4_DESCRIPTOR.writer.rename!(ctx, 'preset', 'X'), sent); }
+
+  // STRUCTURE READ (eid206 pid0 tc=0x1f): one blob read gives preset name,
+  // scene names, current scene, and the serial 4-slot chain. Byte-decoded
+  // from two fw 4.03 community captures; community-beta. Mock the device
+  // with a REAL captured response frame (preset "Y1: Main Bank", post
+  // scene-1→3, chain DLY/DRV/PHR/WAH) and drive get_preset end-to-end.
+  {
+    const hex = (b: readonly number[]) => b.map((x) => x.toString(16).padStart(2, '0')).join('');
+    check(
+      'vp4 structure-blob GET frame byte-exact vs capture',
+      hex(buildVp4GetStructureBlob()) === 'f000017414014e0100001f000000000040f7',
+      hex(buildVp4GetStructureBlob()),
+    );
+    const V1_STRUCTURE_FRAME = (
+      'f000017414014e0100001f0000004001300000000004000000004000000218480710' +
+      '49560b255c2021182d66590040201008040201004020100804020100402010080402' +
+      '01000052305d64020100402010080402010040201008040201004020100804020100' +
+      '4020100800053b05502022192d460b64402010080402010040201008040201004020' +
+      '1008040201004000281a0c171b15642022192d460b64402010080402010040201008' +
+      '0402010040201008040002114a6c305e240201004020100804020100402010080402' +
+      '0100402010080402010040200011400000016c0000000b200000005e0000000037f7'
+    ).match(/../g)!.map((h) => Number.parseInt(h, 16));
+    const parsed = parseVp4StructureBlob(V1_STRUCTURE_FRAME);
+    check('vp4 parseVp4StructureBlob decodes the captured frame',
+      parsed.presetName === 'Main Bank' && parsed.currentSceneDisplay === 3,
+      JSON.stringify({ name: parsed.presetName, scene: parsed.currentSceneDisplay }));
+
+    // Reader end-to-end: a mock conn answers ONLY the structure GET with the
+    // captured frame (the fn=0x1F block polls stay unanswered, as on a device
+    // whose fn=0x1F support is unconfirmed — the structure fields must still
+    // come through).
+    let handler: ((b: number[]) => void) | undefined;
+    const ctx = {
+      conn: {
+        send: (b: number[]) => {
+          // the structure GET: fn=0x01, eid 206 (4E 01), tc=0x1f at index 10
+          if (b[5] === 0x01 && b[6] === 0x4e && b[7] === 0x01 && b[10] === 0x1f && handler) {
+            const h = handler;
+            setTimeout(() => h(V1_STRUCTURE_FRAME), 0);
+          }
+        },
+        receiveSysExMatching: () => Promise.reject(new Error('mock-timeout')),
+        onMessage: (h: (b: number[]) => void) => { handler = h; return () => { handler = undefined; }; },
+        close: () => {},
+      },
+    } as unknown as Parameters<NonNullable<DeviceDescriptor['reader']['getPreset']>>[0];
+    const snap = await VP4_DESCRIPTOR.reader!.getPreset!(ctx);
+    check('vp4 get_preset name from the structure blob', snap.name === 'Main Bank', JSON.stringify(snap.name));
+    check('vp4 get_preset active_scene = 3 (1-based display)', snap.active_scene === 3, String(snap.active_scene));
+    check(
+      'vp4 get_preset scene names from the structure blob',
+      JSON.stringify(snap.scenes?.map((s) => s.name)) === JSON.stringify(['Raw', 'Wah Delay', 'Phaser Delay', 'Delay']),
+      JSON.stringify(snap.scenes?.map((s) => s.name)),
+    );
+    check(
+      'vp4 get_preset routing_omitted=false (the chain IS the routing)',
+      snap._meta?.routing_omitted === false,
+      String(snap._meta?.routing_omitted),
+    );
+    check(
+      'vp4 get_preset warning names the structure read + the fn=0x1F audit item',
+      (snap.read_warnings ?? []).some((w) => w.includes('eid206 pid0 tc=0x1f') && w.includes('fn=0x1F')),
+      JSON.stringify(snap.read_warnings),
+    );
+  }
 }
 await vp4Checks();
 
@@ -1254,6 +1351,36 @@ console.log('\nC10: enum set-by-name resolver (name → read-roster ordinal):');
   const noEnum = resolveGen3EnumOrdinal('REVERB_MIX', '50');
   check('resolveGen3EnumOrdinal(REVERB_MIX, ...) → noEnum (continuous param)',
     'noEnum' in noEnum, JSON.stringify(noEnum));
+}
+
+console.log('\nC11: 0x64 multipurpose-response reject predicate hardening:');
+{
+  const fm3 = createModernFractalCodec(0x11);
+  // A genuine rejection: F0 00 01 74 11 64 [echoed_fn] [result_code] [cs] F7.
+  const reject = [0xf0, 0x00, 0x01, 0x74, 0x11, 0x64, 0x01, 0x06, 0x00, 0xf7];
+  check('reject [fn=01,code=06] is a multipurpose response', fm3.isMultipurposeResponse(reject) === true);
+  const parsed = fm3.parseMultipurposeResponse(reject);
+  check('reject parses → echoedFn 1, resultCode 6', parsed.echoedFn === 1 && parsed.resultCode === 6);
+  check('reject matches when expectedFn echoes the sent fn (0x01)', fm3.isMultipurposeResponse(reject, 0x01) === true);
+  check('reject REJECTED when expectedFn is a different op (0x0A) — echoed-fn guard',
+    fm3.isMultipurposeResponse(reject, 0x0a) === false);
+  // A longer 0x64 frame (e.g. an unsolicited tuner/tempo status stream) must NOT
+  // be read as a reject, or its first two bytes become a garbage [fn,code].
+  const stream = [0xf0, 0x00, 0x01, 0x74, 0x11, 0x64, 1, 2, 3, 4, 5, 6, 7, 8, 0x00, 0xf7];
+  check('long 0x64 frame (payload>4) is NOT a reject — length guard',
+    fm3.isMultipurposeResponse(stream) === false);
+}
+
+console.log('\nC12: 5-septet float32 codec vs independent captured vectors (ForgeFX / fm3-protocol):');
+{
+  // ForgeFX's FractalSysex.cs pins these against the sKuhLight/fm3-protocol
+  // Python ref (FM3 fw 12.0) — a DIFFERENT provenance from ours (BoodieTraps /
+  // our FM9 capture), so byte agreement is genuine cross-validation of the
+  // gen-3 SET value field (float32 at payload pos 12, LSB-first 5×7).
+  const hex5 = (a: readonly number[]) => a.map((b) => b.toString(16).padStart(2, '0')).join('');
+  check('encode5SeptetFloat32(3740.5) → 0010272b04', hex5(encode5SeptetFloat32(3740.5)) === '0010272b04', hex5(encode5SeptetFloat32(3740.5)));
+  check('encode5SeptetFloat32(55.2) → 4d19731204', hex5(encode5SeptetFloat32(55.2)) === '4d19731204', hex5(encode5SeptetFloat32(55.2)));
+  check('decode5SeptetFloat32(00 10 27 2b 04) → 3740.5', decode5SeptetFloat32(0x00, 0x10, 0x27, 0x2b, 0x04) === 3740.5, String(decode5SeptetFloat32(0x00, 0x10, 0x27, 0x2b, 0x04)));
 }
 
 console.log('');

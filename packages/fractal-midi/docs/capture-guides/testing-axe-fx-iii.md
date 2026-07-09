@@ -9,15 +9,19 @@
 >
 > **Highest-value III ask now: the editor cache file** (offline, no tools, no
 > hardware time — see [captures-gen3.md C2](captures-gen3.md)). The III cache copies we
-> currently hold are *unsynced placeholder stubs* (no enum/model vocabulary), so the
-> III still routes its type/mode selectors generically. A cache from an III-Edit
-> install that has **synced to your device** carries the full model rosters and the
-> per-param enum data — the same file unlocked ~351 corrected params on the FM9. This
+> currently hold are *unsynced placeholder stubs* (no enum/model vocabulary). The III's
+> type/mode selectors were corrected to discrete routing in 2026-06-20 using the
+> roundtrip above as the oracle, but a cache from an III-Edit install that has
+> **synced to your device** is the device's own dictionary: it mechanically confirms
+> that correction, adds every enum's name list, and pins device-true display
+> ranges/steps/tapers — the same file unlocked ~351 corrected params on the FM9. This
 > is the single biggest III unlock and needs zero capture tooling.
 >
-> **Remaining write confirmations** (short front-panel checks): discrete set-by-name
-> (T3), `save_preset` (T4), and `set_block`. Continuous writes (T3's gain example)
-> are already confirmed.
+> **Remaining write confirmations**: discrete set-by-name (T3), `save_preset` (T4),
+> and `set_block`. Continuous writes (T3's gain example) are already confirmed. The
+> fastest way to close everything except `save_preset` in one sitting is the
+> **write-verify probe (T6)** — one self-restoring run covers discrete set-by-name,
+> `set_bypass`, `switch_scene`, and `set_block`.
 
 See [README.md](README.md) for setup. Want to record captures too? See [captures-gen3.md](captures-gen3.md).
 
@@ -69,14 +73,23 @@ Check the preset name at location 5 after saving and report whether it landed. T
 
 ---
 
-## T5 -- Probe (Windows only)
-**~5 min | no capture tools | Windows**
+## T5 -- Read-back probe
+**~5 min | no capture tools**
 
 A read-only diagnostic that ships with the tool. It polls your active preset, runs a few read-only queries, and writes a JSON to your Desktop. It never writes or changes a preset.
 
-Quit Axe-Edit III, then double-click **`axefx3-probe.cmd`** in the install folder. Send back `axefx3-probe-output.json` from your Desktop.
+Quit Axe-Edit III, then double-click **`axefx3-probe.cmd`** in the install folder (Windows ZIP), or run `npm run axefx3:probe` in the install directory terminal (Mac / source install). Send back `axefx3-probe-output.json`.
 
-*Mac users: the probe runs via `npm run axefx3:probe` in the install directory terminal. T2--T4 above cover the same ground without it.*
+---
+
+## T6 -- Write-verify probe *(closes the remaining write confirmations in one run)*
+**~5 min | no capture tools**
+
+The companion diagnostic that confirms the device **accepts and applies our writes**: it sends each shipped write op against the loaded preset and reads the result back — continuous `set_param` (both wire forms), discrete set-by-name (it sets reverb type to *Music Hall*, a value chosen to be decisive for the corrected wire), `set_bypass`, `switch_scene`, and `set_block`. One run flips those from "untested" to "confirmed" for the III — and because the III is the gen-3 byte-identity anchor, family-wide.
+
+**Safe:** it NEVER saves; it records your active preset number first and reloads it at the end (and on Ctrl-C), which discards every working-buffer change. It does discard any unsaved edits you had open, so store or abandon those first.
+
+Quit Axe-Edit III, then double-click **`axefx3-verify.cmd`** in the install folder (Windows ZIP), or run `npm run axefx3:verify` (Mac / source install). Load a preset that **has a Reverb block and no Drive block** first — the probe skips the reverb tests if no reverb is placed, and skips `set_block` if a Drive is already there. Send back `axefx3-verify-output.json` from your Desktop (Windows) or `axe-fx-iii-verify-output.json` from the install directory (Mac).
 
 ---
 

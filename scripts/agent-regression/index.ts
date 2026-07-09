@@ -58,6 +58,8 @@ async function detectAvailableDevices(): Promise<{ devices: Set<Device>; probeEr
     if (/axe[- ]?fx ?iii|axefx ?3/i.test(text)) available.add('axe-fx-iii');
     if (/\bfm ?3\b|fm-3/i.test(text)) available.add('fm3');
     if (/\bfm ?9\b|fm-9/i.test(text)) available.add('fm9');
+    if (/\bvp[- ]?4\b/i.test(text)) available.add('vp4');
+    if (/ve-?500/i.test(text)) available.add('ve-500');
     if (/hydrasynth|hydra/i.test(text)) available.add('hydrasynth');
   } catch (err) {
     // Probe failure: capture the error so the sweep header can flag it.
@@ -254,6 +256,12 @@ async function main(): Promise<void> {
       skipped.push({ case: c, reason: `mockFixture requires mock transport; skip in --real-hardware` });
       continue;
     }
+    // requiresHardware cases need a real device response (SysEx readback / ack-gated
+    // transfer) the mock can't synthesize; run them only on the bench.
+    if (!args.realHardware && c.requiresHardware === true) {
+      skipped.push({ case: c, reason: `requiresHardware: needs a real device response; run via --real-hardware` });
+      continue;
+    }
     runnable.push(c);
   }
   cases = runnable;
@@ -279,14 +287,33 @@ async function main(): Promise<void> {
   if (codeState.dirty) {
     console.log(`Code state: ${codeState.sha} + uncommitted changes${codeState.tree_sha ? ` (tree ${codeState.tree_sha})` : ''} — results tagged dirty.\n`);
   }
+
+  // NOTE on residue hygiene: the Windows 0xC0000142 spawn cascade is driven by
+  // leftover processes from a PRIOR killed sweep. We do NOT auto-reap here — a
+  // reap from inside the running sweep would match this process's own launcher
+  // chain (bash → npx → tsx → node index.ts all carry 'agent-regression/index')
+  // and kill the tree (exit 255). Run `npm run agent-sweep:kill` BEFORE a big
+  // unscoped sweep instead (safe standalone). The defenses that work from inside
+  // the run are below: inter-case spacing, env-retry-with-backoff, env-tagging,
+  // and the abort-on-cascade guard.
+  const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+  const INTER_CASE_MS = 1200; // let the OS release per-spawn handles between claude -p children
+  const CASCADE_ABORT = 3;    // consecutive OS spawn-refusals → stop (the machine needs a break)
+  let consecutiveEnv = 0;
+
   for (const testCase of cases) {
+    if (completed > 0) await sleep(INTER_CASE_MS);
     const result = await runCase({ case: testCase, model: args.model, verbose: args.verbose });
     completed += 1;
-    const verdict = result.passed
-      ? (result.flaked ? '⚠ PASS (retry)' : '✓ PASS')
-      : '✗ FAIL';
+    const verdict = result.environmental
+      ? '⊘ ENV (OS spawn refusal — not run)'
+      : result.passed
+        ? (result.flaked ? '⚠ PASS (retry)' : '✓ PASS')
+        : '✗ FAIL';
     console.log(`[${completed}/${total}] ${verdict}  ${result.case.id}  [${result.case.device}]  ${result.tool_calls.length} tools / ${result.wall_seconds.toFixed(1)}s`);
-    if (!result.passed) {
+    if (result.environmental) {
+      // Don't print the env failure as a test failure; it's an OS condition.
+    } else if (!result.passed) {
       for (const f of result.failures) console.log(`    ✗ ${f}`);
       console.log(`    sequence: ${formatToolSequence(result)}`);
     } else if (result.flaked) {
@@ -298,15 +325,35 @@ async function main(): Promise<void> {
       via: 'sweep',
       model: args.model ?? 'claude-sonnet-4-6',
     });
+
+    // Abort-on-cascade: once the OS starts refusing spawns it does not recover
+    // mid-run, so stop with an actionable message instead of marking the rest
+    // ENV. The env-retry-with-backoff in runCase already tried to recover.
+    consecutiveEnv = result.environmental ? consecutiveEnv + 1 : 0;
+    if (consecutiveEnv >= CASCADE_ABORT) {
+      console.error(
+        `\n⚠ Aborting: ${consecutiveEnv} consecutive OS spawn refusals (Windows 0xC0000142) — the cascade does not ` +
+        `recover mid-run. The remaining ${total - completed} case(s) were NOT run.\n` +
+        `  Recover: \`npm run agent-sweep:kill\`, wait ~30s, then re-run (smaller --device scopes are immune).`,
+      );
+      break;
+    }
   }
 
   // ── Summary ────────────────────────────────────────────────────
-  const passed = results.filter((r) => r.passed).length;
-  const flaked = results.filter((r) => r.passed && r.flaked).length;
-  const failed = results.length - passed;
+  // Environmental non-runs are excluded from pass/fail accounting (they measure
+  // the OS, not the case) and reported on their own line.
+  const envCount = results.filter((r) => r.environmental).length;
+  const scored = results.filter((r) => !r.environmental);
+  const passed = scored.filter((r) => r.passed).length;
+  const flaked = scored.filter((r) => r.passed && r.flaked).length;
+  const failed = scored.length - passed;
+  const notRun = total - results.length;
   console.log('━'.repeat(70));
   const skipNote = skipped.length > 0 ? `, ${skipped.length} skipped` : '';
-  console.log(`Summary: ${passed}/${results.length} passed${flaked > 0 ? ` (${flaked} flaked, passed on retry)` : ''}${skipNote}.\n`);
+  const envNote = envCount > 0 ? `, ${envCount} env (OS spawn refusal, not scored)` : '';
+  const abortNote = notRun > 0 ? `, ${notRun} not run (cascade abort)` : '';
+  console.log(`Summary: ${passed}/${scored.length} passed${flaked > 0 ? ` (${flaked} flaked, passed on retry)` : ''}${envNote}${abortNote}${skipNote}.\n`);
   if (skipped.length > 0) {
     console.log('Skipped:');
     for (const s of skipped) console.log(`  ⊘ ${s.case.id}: ${s.reason}`);
@@ -315,7 +362,7 @@ async function main(): Promise<void> {
   console.log('| Case | Device | Result | Tools | Wall |');
   console.log('|---|---|---|---|---|');
   for (const r of results) {
-    const tag = r.passed ? (r.flaked ? '⚠ flake' : '✓') : '✗';
+    const tag = r.environmental ? '⊘ env' : r.passed ? (r.flaked ? '⚠ flake' : '✓') : '✗';
     console.log(`| ${r.case.id} | ${r.case.device} | ${tag} | ${r.tool_calls.length} | ${r.wall_seconds.toFixed(1)}s |`);
   }
 

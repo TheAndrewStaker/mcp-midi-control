@@ -32,7 +32,7 @@
  * full operator procedure (3 phases: tweak, run script, power-cycle +
  * verify).
  */
-import midi, { Input, Output } from 'midi';
+import midi, { Input, Output } from "@julusian/midi";
 
 const HYDRA_PORT_NEEDLES = ['hydrasynth', 'asm hydra'];
 

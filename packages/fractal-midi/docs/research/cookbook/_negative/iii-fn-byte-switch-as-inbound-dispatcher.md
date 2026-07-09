@@ -7,7 +7,9 @@ verified_on:
   - axe-edit-iii-binary
   - am4-edit-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-fn-byte-switch-as-inbound-dispatcher
+golden: STUB (structural-only; negative finding — verification is grep-against the inbound-dispatcher dumps in consumed_in; see Search terms to avoid re-attempting)
+retest_when:
+  - a new AxeEdit III / AM4-Edit major release whose inbound dispatch shape changes (re-run the inbound-dispatcher dump + top-40 fn-byte-literal scan — the entry's own refinement history names this as the only re-opening evidence)
 relates_to: [iii-async-workflow-fn-registry, iii-workflow-state-machine-executor, ii-axeedit-opcode-table]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-inbound-dispatcher.txt

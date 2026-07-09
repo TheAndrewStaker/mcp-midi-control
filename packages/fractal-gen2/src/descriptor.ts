@@ -30,10 +30,16 @@
  * see `docs/_private/axefx2-descriptor-plan.md` § 9).
  */
 
-import type { DeviceDescriptor, PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
+import type {
+  DeviceDescriptor,
+  PresetSpec,
+  CompatibleTypesQuery,
+  CompatibleTypesResult,
+} from '@mcp-midi-control/core/protocol-generic/types.js';
 import { registerParamKindResolver } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
 
 import { AXE_FX_II_BLOCKS, KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/gen2/axe-fx-ii';
+import { findCompatibleTypes as axefx2FindCompatibleTypes } from 'fractal-midi/gen2/axe-fx-ii';
 
 import { listConceptKeysForDevice } from '@mcp-midi-control/core/protocol-generic/concept-keys.js';
 
@@ -203,6 +209,25 @@ const AXEFX2_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> =
   multidelay: ['time_1', 'feedback_1', 'level_1', 'time_2', 'feedback_2', 'level_2'],
 });
 
+/**
+ * find_compatible_types wrapper — delegates to the codec and adds the
+ * dispatcher-shape fields. Wiring this makes the dispatcher's STRUCTURED
+ * path fire (real per-type narrowing for the blocks whose applicability
+ * table has primary-type gates: compressor + multidelay) instead of the
+ * unfiltered fallback. See `fractal-midi/gen2/axe-fx-ii` applicability.
+ */
+function findCompatibleTypes(query: CompatibleTypesQuery): CompatibleTypesResult {
+  const r = axefx2FindCompatibleTypes(query.block, query.params);
+  return {
+    block: query.block,
+    params_queried: query.params,
+    compatible_types: r.compatible_types,
+    total_types: r.total_types,
+    applicability_known: r.applicability_known,
+    note: r.note,
+  };
+}
+
 export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
   id: 'axe-fx-ii',
   display_name: 'Fractal Axe-Fx II XL+',
@@ -223,21 +248,24 @@ export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
     // addressable via the `instance` arg; writer/reader resolve them with
     // resolveBlockWithInstance.
     has_block_instances: true,
-    preset_location_format: /^([1-9]\d{0,3}|0)$/,
+    // 1-indexed display slot (1..16384). Coarse digit gate (no leading zero,
+    // not 0); parseAxeFxIILocation enforces the exact 1..16384 upper bound.
+    preset_location_format: /^[1-9]\d{0,4}$/,
     supports_save: true,
     supports_lineage: true,
     atomic_read: true,
   },
   canonical_terms: {
     block: 'block',
-    slot: 'grid cell (row 1..4, col 1..12)',
+    slot: 'grid location (row 1..4, col 1..12)',
     preset: 'preset',
     scene: 'scene 1..8',
     channel: 'channel X/Y',
-    location: 'preset slot 0..16383 (front panel = wire + 1)',
+    location: '1-indexed display slot 1..16384 (matches the front panel; wire is 0-indexed internally)',
   },
   blocks: buildBlocks(),
   block_types: buildBlockTypes(),
+  findCompatibleTypes,
   reader,
   writer,
   agent_guidance: AXEFX2_AGENT_GUIDANCE,

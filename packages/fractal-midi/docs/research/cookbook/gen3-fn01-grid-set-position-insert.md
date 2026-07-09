@@ -172,3 +172,12 @@ and the septet effect-id field.
   captured frames for models 0x10/0x11/0x12 in
   `test/gen3/modern-family/catalog.test.ts`. The codec-backed device simulator's
   insert mutator parses the same shape (effectId @8-9, gridPos @12-13).
+- 2026-06-27: the `sub=0x30` cell-select is NOT optional on the FM3. An FM3
+  owner (sKuhLight/ForgeFX) live-confirmed on hardware that the FM3 ignores the
+  insert's target cell unless a `sub=0x30` cursor-move to that cell is sent
+  FIRST (its codec sends select → ~15 ms → insert). The Axe-Fx III and FM9
+  (6-row) place correctly from the insert alone (FM9 fn=0x13 read-back,
+  2026-06-19), so the select is now paired with the insert ONLY on the 4-row FM3
+  placement path (`buildSelectCell` + the gen-3 `setBlock` writer, gated on
+  `grid.rows === 4`); the confirmed 6-row single-frame path is unchanged.
+  Community-beta on FM3.

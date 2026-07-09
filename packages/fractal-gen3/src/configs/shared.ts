@@ -65,7 +65,7 @@ export const MODERN_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.fr
     '    blocks are placed + their live values; do NOT feed it back into',
     '    apply_preset by position.',
     '  - location=N (integer): reads a STORED preset slot and returns the FULL',
-    '    decoded patch in the `whole_preset` field — the routing grid, every',
+    '    decoded patch in the `whole_preset` field: the routing grid, every',
     '    placed block with per-channel (A/B/C/D) effect TYPES, all 8 scene names',
     '    plus per-scene bypass/channel state, the amp model + per-channel amp',
     '    knobs (FM3/FM9), modifier routing, and scene controllers. This decode is',
@@ -94,7 +94,7 @@ export const MODERN_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.fr
   ].join('\n'),
 
   beta_status: [
-    'COMMUNITY BETA — writes are NOT gated. Every supported write',
+    'COMMUNITY BETA: writes are NOT gated. Every supported write',
     '(set_param / set_params / set_block / set_bypass / switch_scene /',
     'apply_preset / save_preset) fires the wire send normally when called.',
     '"Beta" / "untested" / "pending an owner round-trip" are CONFIDENCE',
@@ -112,7 +112,7 @@ export const MODERN_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.fr
     'Writes the protocol supports attempt a wire send and surface device',
     'rejections inline, so an owner can exercise the surface and report',
     'results. save_preset DOES send the gen-3 editor store envelope (fn=0x01',
-    'sub=0x26), captured byte-exact from III-Edit / FM9-Edit — it is UNTESTED',
+    'sub=0x26), captured byte-exact from III-Edit / FM9-Edit; it is UNTESTED',
     'for flash persistence (confirm by switching away and back), not refused.',
     'Only auto-save during navigation stays gated (no silent unverified flash',
     'write), and on a write-gated device (VP4) every device-state write refuses',

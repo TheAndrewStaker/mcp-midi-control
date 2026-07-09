@@ -7,7 +7,7 @@
  *
  * Run: npx tsx scripts/_research/probe-comp-effect-type-global.ts
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 
 const MODEL = 0x07;
 const MFR = [0x00, 0x01, 0x74] as const;

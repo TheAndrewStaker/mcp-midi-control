@@ -340,8 +340,8 @@ export const PATCH_OFFSETS: readonly PatchOffsetSpec[] = [
   // "1/4 D" via the FX_DELAYS_SYNC_ON enum) when bpmsync=1. Session 47
   // HW-060 retest: agent learned to favour bpmsync for rhythmic
   // delays after manual user fixup.
-  { name: 'delaytimesyncoff',   byte: 372, enc: 'u16le', label: 'Delay Time (free ms — bpmsync=0)' },
-  { name: 'delaytimesyncon',    byte: 372, enc: 'u16le', label: 'Delay Time (musical division — bpmsync=1)' },
+  { name: 'delaytimesyncoff',   byte: 372, enc: 'u16le', label: 'Delay Time (free ms, bpmsync=0)' },
+  { name: 'delaytimesyncon',    byte: 372, enc: 'u16le', label: 'Delay Time (musical division, bpmsync=1)' },
   { name: 'delayfeedback',      byte: 374, enc: 'u16le', label: 'Delay Feedback' },
   { name: 'delayfeedtone',      byte: 376, enc: 'u16le', label: 'Delay Feed Tone (bipolar)' },
   { name: 'delaywettone',       byte: 378, enc: 'u16le', label: 'Delay Wet Tone (bipolar)' },

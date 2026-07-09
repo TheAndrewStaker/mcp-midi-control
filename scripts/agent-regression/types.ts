@@ -10,7 +10,7 @@
  * Reference impl: scripts/agent-regression/runner.ts
  */
 
-export type Device = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'fm3' | 'fm9' | 'axe-fx-gen1' | 'hydrasynth';
+export type Device = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'fm3' | 'fm9' | 'vp4' | 'axe-fx-gen1' | 'hydrasynth' | 'circuit' | 'spd-sx' | 've-500';
 
 /**
  * Mock-transport fixture profile, selected per case to exercise alternate
@@ -151,6 +151,16 @@ export interface AgentRegressionCase {
    */
   disabled?: boolean;
   /**
+   * When true, the case is SKIPPED under the mock transport (default sweep) and
+   * runs ONLY under `--real-hardware`. Use for cases that need a real device
+   * RESPONSE the mock can't synthesize — a SysEx readback (get_preset on a device
+   * whose mock has no responder) or an ack-gated transfer. Distinct from
+   * `disabled` (which removes the case from every sweep): a requiresHardware case
+   * is live, just gated to the bench. Mock-friendly fire-and-forget / storage /
+   * introspection cases leave this unset.
+   */
+  requiresHardware?: boolean;
+  /**
    * Mock-transport fixture profile.
    * When set, the runner injects `MOCK_FIXTURE=<value>` into the per-case
    * `claude -p` spawn so the MCP server child picks it up at module load.
@@ -204,4 +214,13 @@ export interface CaseResult {
   attempts: number;
   /** True when the case passed only after a retry, a visible signal of flakiness. */
   flaked: boolean;
+  /**
+   * True when the case did not actually run on its merits because the OS refused
+   * to spawn the `claude -p` child (Windows 0xC0000142 / STATUS_DLL_INIT_FAILED,
+   * exit 3221225794, or a spawn EPERM/ENOENT) — a process-residue cascade, not a
+   * test or product failure. Environmental results are EXCLUDED from pass/fail
+   * accounting (reported as a separate `env` outcome) so one cascade doesn't wipe
+   * a run's reliability numbers. See the runner's env-retry-with-backoff.
+   */
+  environmental?: boolean;
 }

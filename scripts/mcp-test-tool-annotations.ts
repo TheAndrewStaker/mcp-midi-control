@@ -68,6 +68,10 @@ const DESTRUCTIVE_TOOLS = new Set([
   // import_preset replaces the entire working buffer with a backup (and can
   // overwrite a stored location with save_authorized).
   'import_preset',
+  // apply_pattern's ncs_upload mode persists + overwrites a Circuit project slot
+  // (same act as upload_project); its other modes are reversible, but the hint
+  // reflects the worst case.
+  'apply_pattern',
 ]);
 
 // Names that MUST NOT be destructiveHint: true (working-buffer writes +

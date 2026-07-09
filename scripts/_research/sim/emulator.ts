@@ -16,7 +16,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { SimDevice, type CaptureFrame } from './SimDevice.js';
 import type { FractalModernConfig } from './types.js';
 import { AXE_FX_III_CONFIG } from '@mcp-midi-control/fractal-gen3/configs/axe-fx-iii.js';

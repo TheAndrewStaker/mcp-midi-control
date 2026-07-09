@@ -65,6 +65,7 @@ export function registerNavigationTools(server: McpServer): void {
       '- OVERWRITE GATE (AM4): if the target location is occupied AND is not the location you are editing, the save refuses and returns the occupying preset name. Confirm with the user, then retry with confirm_overwrite: true. Saving over the active location, or to an empty location, proceeds without the gate.',
       '- RECEIPT (AM4): on success the response carries saved_snapshot { block_chain, amp_model, drive_model, preset_name }, read back from the device so you can confirm to the user exactly what landed, not just that it acked.',
       '- Optional `name` (<=32 chars) renames the preset before saving.',
+      '- `instance` selects Synth 1/2 on Circuit Tracks for save (default 1); whole-preset devices (Fractal) ignore it.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
@@ -77,10 +78,13 @@ export function registerNavigationTools(server: McpServer): void {
       confirm_overwrite: z.boolean().optional().describe(
         'Set true to confirm overwriting an occupied, non-active target location. Omit (or false) to be refused (with the occupying preset name surfaced) when the target already holds a preset. Saving to the active location or an empty location does not require this.',
       ),
+      instance: z.number().int().min(1).optional().describe(
+        'Block instance (1-indexed) to save on multi-instance devices. Circuit Tracks: 2 = Synth 2 (default 1 = Synth 1). Ignored/rejected on single-instance devices.',
+      ),
     },
-  }, async ({ port, location, name, confirm_overwrite }) => {
+  }, async ({ port, location, name, confirm_overwrite, instance }) => {
     try {
-      const result = await executeSavePreset({ port, location, name, confirm_overwrite });
+      const result = await executeSavePreset({ port, location, name, confirm_overwrite, instance });
       return asText(result);
     } catch (err) {
       return asError(err);

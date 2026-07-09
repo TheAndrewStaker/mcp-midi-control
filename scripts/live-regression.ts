@@ -452,6 +452,72 @@ async function main(): Promise<void> {
           [`exception: ${err instanceof Error ? err.message : String(err)}`]);
       }
     }
+
+    // ── Circuit Tracks ──────────────────────────────────────────────
+    // Circuit is detected via list_midi_ports visibility (its get_param
+    // refuses by design, so the get_param liveness probe the Fractal
+    // devices use doesn't apply here). All Circuit cases are self-
+    // restoring: the reads are read-only and the overwrite-gate case
+    // exercises the REFUSAL path, which writes nothing to the device.
+    const portsText = extractText(await client.callTool({ name: 'list_midi_ports', arguments: {} }));
+    const circuitAvailable = /circuit/i.test(portsText);
+    console.log(`\nCircuit Tracks connected: ${circuitAvailable ? 'yes' : 'NO (cases will skip)'}`);
+
+    if (!circuitAvailable) {
+      record('Circuit Tracks live cases', true, ['Circuit not visible in list_midi_ports'], true);
+    } else {
+      // get_param reads SYNTH patch params (osc/filter/env/lfo/mixer/fx/eq) off the
+      // working-buffer patch decode (shipped 21f6a6b, HW-CIRCUIT-001); drum/project/
+      // macro/mod-matrix have no readback and refuse. A synth param must READ a
+      // decoded value (not refuse, not fabricate a blank).
+      {
+        const r = await client.callTool({ name: 'get_param', arguments: { port: 'circuit', block: 'filter', name: 'frequency' } });
+        const t = extractText(r);
+        record('Circuit get_param reads a synth param (filter.frequency) via patch decode',
+          !isError(r) && /frequency/i.test(t) && /(wire_value|display_value)/i.test(t), debugOnFail('get_param', r));
+      }
+
+      // Find an occupied project slot by reading candidates (read-only).
+      // get_preset decodes a stored project; an empty slot's snapshot name is
+      // "(empty slot N)". Likely-occupied slots tried first to keep it quick.
+      const nameOf = (t: string): string => /"name"\s*:\s*"([^"]+)"/.exec(t)?.[1] ?? '';
+      const candidates = [0, 1, 2, 32, 33];
+      let occupiedSlot: number | undefined;
+      let occupiedName = '';
+      for (const slot of candidates) {
+        const r = await client.callTool({ name: 'get_preset', arguments: { port: 'circuit', location: slot } });
+        if (isError(r)) continue;
+        const t = extractText(r);
+        if (!/empty slot/i.test(t)) { occupiedSlot = slot; occupiedName = nameOf(t); break; }
+      }
+
+      if (occupiedSlot === undefined) {
+        record('Circuit get_preset reads a stored project', true,
+          [`no occupied slot among candidates ${candidates.join(',')} — cannot test the gate non-destructively`], true);
+      } else {
+        record('Circuit get_preset reads a stored project off a slot', true,
+          [`slot ${occupiedSlot} → "${occupiedName}"`]);
+
+        // SELF-RESTORING overwrite-gate case: upload_project to the OCCUPIED
+        // slot WITHOUT confirm_overwrite must REFUSE and write nothing (the #0
+        // gate). Because it refuses, the slot is untouched (non-destructive).
+        const ncs = path.resolve(process.cwd(), 'samples', 'circuit-tracks', 'grooves', 'aqua_regia.ncs');
+        const r = await client.callTool({
+          name: 'upload_project',
+          arguments: { port: 'circuit', file: ncs, slot: occupiedSlot },
+        });
+        const t = extractText(r);
+        const refused = isError(r) && /overwrit|confirm_overwrite/i.test(t);
+        record('Circuit overwrite gate REFUSES an occupied slot without confirm_overwrite',
+          refused, refused ? [`refused slot ${occupiedSlot}; nothing written`] : debugOnFail('upload_project', r).concat([`text=${t.slice(0, 160)}`]));
+
+        // Confirm NON-DESTRUCTIVE: re-read the slot; the project name is unchanged.
+        const after = await client.callTool({ name: 'get_preset', arguments: { port: 'circuit', location: occupiedSlot } });
+        const afterName = nameOf(extractText(after));
+        record('Circuit slot unchanged after the refused upload (self-restoring)',
+          !isError(after) && afterName === occupiedName, [`name before="${occupiedName}" after="${afterName}"`]);
+      }
+    }
   } finally {
     await client.close();
   }
@@ -549,8 +615,12 @@ async function checkDevice(client: Client, port: string): Promise<boolean> {
     });
     if (isError(probe)) {
       const t = extractText(probe);
-      // Connection-layer errors mean hardware is not reachable.
-      if (/not found in the MIDI device list|cannot open|stale handle/i.test(t)) {
+      // Connection-layer errors mean hardware is not reachable. Covers both the
+      // legacy "not found in the MIDI device list" envelope and the current
+      // "<Device> not found. Looked for any output port ..." one (else a
+      // disconnected device false-positives as connected and its cases FAIL
+      // instead of SKIP — observed on a Circuit-only rig, 2026-06-22).
+      if (/not found in the MIDI device list|not found\. Looked for|No MIDI port matching|cannot open|stale handle/i.test(t)) {
         return false;
       }
     }

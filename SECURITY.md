@@ -29,7 +29,7 @@ In scope:
 - The vendor protocol layers (`packages/am4/src/`,
   `packages/fractal-gen1/src/`, `packages/fractal-gen2/src/`,
   `packages/fractal-gen3/src/`, `packages/hydrasynth/src/`).
-- The codec package (`packages/fractal-midi/src/`) — parses untrusted
+- The codec package (`packages/fractal-midi/src/`): parses untrusted
   SysEx / capture input and is published independently to npm.
 - Scripts under `scripts/` that process untrusted input (e.g. cache
   parsers, capture parsers).

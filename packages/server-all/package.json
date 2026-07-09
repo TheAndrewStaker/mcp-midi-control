@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/server-all",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "MCP server entry point composing all device packages.",
   "private": true,
   "license": "Apache-2.0",
@@ -16,9 +16,13 @@
     "@mcp-midi-control/core": "*",
     "@mcp-midi-control/fractal-gen3": "*",
     "@mcp-midi-control/hydrasynth": "*",
+    "@mcp-midi-control/circuit-tracks": "*",
+    "@mcp-midi-control/spd-sx": "*",
+    "@mcp-midi-control/ve-500": "*",
+    "@mcp-midi-control/boss-rc": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "fractal-midi": "*",
-    "midi": "^2.0.0",
+    "@julusian/midi": "^3.6.1",
     "zod": "^4.4.2"
   },
   "scripts": {

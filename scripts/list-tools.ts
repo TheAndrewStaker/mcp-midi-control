@@ -48,6 +48,30 @@ const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
   // describe_device.agent_guidance is queued but not on this sprint's
   // path. Honest cap until then.
   ['apply_patch', 6000],
+  // apply_pattern: the sequencer-authoring surface (Circuit Tracks drums +
+  // melodic note tracks, SPD-SX). Carries five pattern-source forms (recipe /
+  // voices / notation / tab / midi_file), the step-string / mini-notation /
+  // Euclidean grammar, note-token pitch syntax, the key/transpose/scale
+  // controls, the live_stream / record_capture / ncs_upload mode semantics,
+  // the external_targets routing surface that drives a connected SPD-SX off
+  // the Circuit's MIDI 1/2 tracks, and (2026-07-01) one-line pointers to the
+  // arrangement (whole-song), drum-role fold, and dry_run piece-compression
+  // surfaces whose detail lives in the param descriptions. Migration to
+  // describe_device.agent_guidance is queued. Honest cap.
+  ['apply_pattern', 3300],
+  // import_songsterr: gained the whole_song arrangement mode (2026-07-01);
+  // the description carries a one-line pointer, detail in whole_song/fuzz
+  // param descriptions. Honest cap.
+  ['import_songsterr', 1300],
+  // author_kit: the sampler-archetype kit-authoring surface (Roland SPD-SX).
+  // Carries the pad-order assignment forms (index / name / -1) AND the object
+  // per-pad form (note / poly-mono voice / mute group / dynamics) that switches
+  // to the device full-kit format, plus the overwrite gate + power-cycle note,
+  // AND (new) the set_notes PATCH mode = non-destructive per-pad note edit on an
+  // existing kit (preserves levels/FX; refuses minimal kits). Two modes in one
+  // verb justify the larger cap. Migration to describe_device.agent_guidance
+  // pending. Honest cap.
+  ['author_kit', 2200],
   // apply_preset: spec-shape, target_location semantics, verify_chain,
   // and the audition-vs-save discipline all live in the description.
   // Migration to describe_device.agent_guidance pending post-announce.
@@ -64,11 +88,11 @@ const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
   ['lookup_lineage', 1200],
   // get_preset: the active-channel default plus the include_channel_state
   // opt-in (per-device channel shape + latency tradeoff), the active-scene
-  // scope caveat, per-device performance notes, and the read-mutate-write
-  // discipline all live in the description. Migration to
-  // describe_device.agent_guidance is the planned trim path; pending
-  // post-announce.
-  ['get_preset', 1200],
+  // scope caveat, per-device performance notes, the gen-3 live_meters/
+  // active_scene discovery hint, and the read-mutate-write discipline all live
+  // in the description. Migration to describe_device.agent_guidance is the
+  // planned trim path; pending post-announce.
+  ['get_preset', 1320],
 ]);
 
 interface ToolAnnotations {
@@ -83,6 +107,8 @@ interface ToolEntry {
   description: string;
   charCount: number;
   annotations?: ToolAnnotations;
+  /** Agent-visible inputSchema param `.describe()` strings (also linted for em-dashes). */
+  paramDescriptions: string[];
 }
 
 /**
@@ -143,7 +169,11 @@ async function listAllTools(): Promise<ToolEntry[]> {
   const entries: ToolEntry[] = (listed.tools ?? []).map((t) => {
     const description = typeof t.description === 'string' ? t.description : '';
     const annotations = (t.annotations ?? undefined) as ToolAnnotations | undefined;
-    return { name: t.name, description, charCount: description.length, annotations };
+    const props = (t.inputSchema?.properties ?? {}) as Record<string, { description?: unknown }>;
+    const paramDescriptions = Object.values(props)
+      .map((p) => (typeof p.description === 'string' ? p.description : ''))
+      .filter((s) => s.length > 0);
+    return { name: t.name, description, charCount: description.length, annotations, paramDescriptions };
   });
   entries.sort((a, b) => a.name.localeCompare(b.name));
   await client.close();
@@ -365,18 +395,25 @@ async function main(): Promise<void> {
     // periods, colons, or parens). Scans actual tool descriptions as
     // returned by tools/list, not source files, so it catches what the
     // agent sees regardless of how the description was authored.
-    const emDashOffenders: { name: string; count: number }[] = [];
+    // Scans BOTH the top-level description AND every inputSchema param
+    // description (both are agent-visible). Param descriptions were a blind spot
+    // that let em-dashes ship past a green check (tool-surface review 2026-06-23).
+    const emDashOffenders: { name: string; count: number; where: string }[] = [];
     for (const tool of all) {
-      const count = (tool.description.match(/—/g) || []).length;
-      if (count > 0) emDashOffenders.push({ name: tool.name, count });
+      const descCount = (tool.description.match(/—/g) || []).length;
+      const paramCount = tool.paramDescriptions.reduce((n, p) => n + (p.match(/—/g) || []).length, 0);
+      if (descCount + paramCount > 0) {
+        const where = [descCount > 0 ? 'description' : '', paramCount > 0 ? 'param(s)' : ''].filter(Boolean).join(' + ');
+        emDashOffenders.push({ name: tool.name, count: descCount + paramCount, where });
+      }
     }
     if (emDashOffenders.length > 0) {
       console.error(
-        `Em-dash lint: ${emDashOffenders.length} tool description(s) contain em-dashes. ` +
+        `Em-dash lint: ${emDashOffenders.length} tool(s) have em-dashes in agent-visible text (description and/or param descriptions). ` +
         `Substitute commas, periods, colons, or parens per the global no-em-dash rule.`,
       );
       for (const o of emDashOffenders) {
-        console.error(`  - ${o.name}: ${o.count} em-dash(es)`);
+        console.error(`  - ${o.name}: ${o.count} em-dash(es) in ${o.where}`);
       }
       failed = true;
     }

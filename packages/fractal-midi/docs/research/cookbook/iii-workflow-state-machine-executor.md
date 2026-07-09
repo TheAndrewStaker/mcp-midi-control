@@ -6,7 +6,7 @@ discovered: 2026-05-22 (cookbook mine of ghidra-axe-edit-iii-inbound-dispatcher.
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-workflow-state-machine-executor
+golden: STUB (structural-only; grep-against-dump verification, see Verification path)
 relates_to: [iii-async-workflow-fn-registry, iii-fn01-action-code-per-model-byte, iii-fn01-set-parameter-envelope, iii-multiproduct-editor-binary]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-inbound-dispatcher.txt

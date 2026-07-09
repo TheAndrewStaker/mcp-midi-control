@@ -1,6 +1,6 @@
 # Testing: VP4
 
-> The VP4 **reads** are implemented (get_param, get_preset) and hardware-unverified. **First writes ship too**, decoded byte-exact from a community capture (fw 4.03) and untested on hardware: continuous-knob set_param (raw wire values, %/ms calibration pending), set_bypass, and save_preset. Block placement (set_block / apply_preset), scene switching, and enum/TYPE sets stay **gated** until their wire shapes are captured. See [captures-vp4.md](captures-vp4.md) for what unlocks the rest.
+> The VP4 **reads** are implemented (get_param, get_preset) and hardware-unverified. `get_preset` now includes the **whole-preset structure read** (decoded 2026-07-01 from the fw 4.03 captures): preset name, all four scene names, the CURRENT scene, and the 4-slot chain in one round-trip. **First writes ship too**, decoded byte-exact from a community capture (fw 4.03) and untested on hardware: continuous-knob set_param (raw wire values, %/ms calibration pending), set_bypass, and save_preset. Block placement (set_block / apply_preset), scene switching, and enum/TYPE sets stay **gated** until their wire shapes are captured. See [captures-vp4.md](captures-vp4.md) for what unlocks the rest — including a zero-cost read-only scene-query probe (P0 there).
 
 See [README.md](README.md) for setup.
 
@@ -24,7 +24,10 @@ Paste the response. Confirms detection and shape (4-slot serial chain).
 
 > "What's loaded on my VP4 right now?"
 
-The block list and preset name should match the panel. **A wrong block list or name is the single highest-value bug to report.**
+Expect the **preset name, the four scene names, which scene is active, and the blocks in
+their real slot order (1..4, empty slots included)** — all from the newly decoded
+structure read. Everything should match the panel. **A wrong name, scene, or slot order is
+the single highest-value bug to report** (it's the first hardware exercise of this read).
 
 ---
 

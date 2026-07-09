@@ -6,7 +6,7 @@ discovered:
 verified_on:
   - axe-fx-ii-q8.02
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-scene-state-ushort
+golden: STUB (structural-only; de-facto coverage: packages/fractal-gen2/src/sceneChannelMap.ts consumer; no byte-exact fixture)
 relates_to: [septet-21bit-byte2-mask-preservation, alphabetical-name-cascade-block-ordering, block-record-stride-8]
 consumed_in:
   - packages/fractal-gen2/src/sceneChannelMap.ts (BLOCK_LAYOUT_MAP scene state)
@@ -82,7 +82,8 @@ preferable to 8 sequential SET_BLOCK_CHANNEL frames (which is what the
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-scene-state-ushort` runs:
+No inline fixture ships (golden is STUB). A functional case, if added,
+would run:
 1. Decode known capture: ushort `0x0301` → bypass scenes {1,2}, channel-Y
    scene {1}.
 2. Encode round-trip: encode bypass_mask=0x07 + channelY_mask=0x80,

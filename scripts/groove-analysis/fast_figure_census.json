@@ -1,0 +1,138 @@
+[
+ {
+  "file": "Anup-Groove1-Pattern11.mid",
+  "lib": "Anup Midi Pack",
+  "note": 36,
+  "voice": "kick",
+  "bpm": 148,
+  "n_hits": 4,
+  "span_ms": 152.0,
+  "avg_gap_ms": 50.7,
+  "rate_hz": 19.7,
+  "vels": [
+   94,
+   116,
+   119,
+   127
+  ]
+ },
+ {
+  "file": "Anup-Groove1-Pattern11.mid",
+  "lib": "Anup Midi Pack",
+  "note": 36,
+  "voice": "kick",
+  "bpm": 148,
+  "n_hits": 4,
+  "span_ms": 152.0,
+  "avg_gap_ms": 50.7,
+  "rate_hz": 19.7,
+  "vels": [
+   94,
+   116,
+   119,
+   127
+  ]
+ },
+ {
+  "file": "Anup-Groove1-Pattern14.mid",
+  "lib": "Anup Midi Pack",
+  "note": 36,
+  "voice": "kick",
+  "bpm": 148,
+  "n_hits": 4,
+  "span_ms": 152.0,
+  "avg_gap_ms": 50.7,
+  "rate_hz": 19.7,
+  "vels": [
+   94,
+   94,
+   101,
+   111
+  ]
+ },
+ {
+  "file": "Anup-Groove1-Pattern14.mid",
+  "lib": "Anup Midi Pack",
+  "note": 36,
+  "voice": "kick",
+  "bpm": 148,
+  "n_hits": 4,
+  "span_ms": 152.0,
+  "avg_gap_ms": 50.7,
+  "rate_hz": 19.7,
+  "vels": [
+   94,
+   94,
+   101,
+   111
+  ]
+ },
+ {
+  "file": "Anup-Groove1-Pattern15.mid",
+  "lib": "Anup Midi Pack",
+  "note": 36,
+  "voice": "kick",
+  "bpm": 148,
+  "n_hits": 4,
+  "span_ms": 152.0,
+  "avg_gap_ms": 50.7,
+  "rate_hz": 19.7,
+  "vels": [
+   94,
+   94,
+   101,
+   111
+  ]
+ },
+ {
+  "file": "Anup-Groove1-Pattern15.mid",
+  "lib": "Anup Midi Pack",
+  "note": 36,
+  "voice": "kick",
+  "bpm": 148,
+  "n_hits": 4,
+  "span_ms": 152.0,
+  "avg_gap_ms": 50.7,
+  "rate_hz": 19.7,
+  "vels": [
+   94,
+   94,
+   101,
+   111
+  ]
+ },
+ {
+  "file": "Anup-Groove1-Pattern16.mid",
+  "lib": "Anup Midi Pack",
+  "note": 36,
+  "voice": "kick",
+  "bpm": 148,
+  "n_hits": 4,
+  "span_ms": 152.0,
+  "avg_gap_ms": 50.7,
+  "rate_hz": 19.7,
+  "vels": [
+   94,
+   94,
+   101,
+   111
+  ]
+ },
+ {
+  "file": "Anup-Groove1-Pattern16.mid",
+  "lib": "Anup Midi Pack",
+  "note": 36,
+  "voice": "kick",
+  "bpm": 148,
+  "n_hits": 4,
+  "span_ms": 152.0,
+  "avg_gap_ms": 50.7,
+  "rate_hz": 19.7,
+  "vels": [
+   94,
+   94,
+   101,
+   111
+  ]
+ }
+]

@@ -7,7 +7,7 @@ verified_on:
   - axe-fx-ii-q8.02
   - axe-fx-ii-q9.04
 firmware_sensitive: true
-golden: scripts/cookbook-verify.ts#case-fn28-enum-dump
+golden: STUB (structural-only; de-facto coverage: scripts/_research/probe-axefx2-enum-dump.ts diff loop vs the local capture)
 relates_to: [trim-tolerant-display-match, editor-cache-section-record-grammar]
 consumed_in:
   - scripts/extract-axe-fx-ii-params.ts (ENUM_VALUE_OVERRIDES generator)
@@ -61,8 +61,9 @@ example, but 4 others surfaced in the same  sweep).
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-fn28-enum-dump` runs against the
-captured `samples/captured/probe-axefx2-enum-dump.syx` fixture. Asserts:
+No inline fixture ships (golden is STUB — the capture is local-only).
+The de-facto check is `scripts/_research/probe-axefx2-enum-dump.ts`'s
+diff loop against `samples/captured/probe-axefx2-enum-dump.syx`. Asserts:
 - 145 enum tables dumped without truncation (the original fixture has one
   truncation case at amp.effect_type, an artifact of node-midi's 2048-byte
   WinMM fragmentation, since fixed; see Refinement history)

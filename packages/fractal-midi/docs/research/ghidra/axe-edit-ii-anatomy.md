@@ -104,7 +104,7 @@ indexed-symbol coverage.
   close this in one Ghidra run.
 - **The "compute preset binary size from placed blocks" function.**
   Hypothesized to contain the per-block-name WIDTH table that would
-  generalize [[../cookbook/paramBase-plus-paramId]] from `partial-N1`
+  generalize [[../cookbook/parambase-plus-paramid]] from `partial-N1`
   → `matched`. ** ruled this out**: the encoder lives
   in firmware, not in AxeEdit.exe. The AxeEdit binary only CONSUMES
   the device-encoded output; full sort-algorithm crack requires

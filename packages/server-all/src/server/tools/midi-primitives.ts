@@ -74,6 +74,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
         description: [
             'Send a MIDI Control Change to any CC-responsive device. Channel 1..16 (musician convention), controller 0..127, value 0..127.',
             'Prefer the unified set_param tools for registered devices (AM4 / Axe-Fx / Hydrasynth) which understand block/param semantics; use send_cc for devices without a dedicated wrapper.',
+            'CAUTION (unsaved edits): a raw CC can recall a stored preset over the working buffer with NO dirty-buffer gate. Bank Select (CC 0/32) arms a preset load, and some gear maps a CC directly to patch recall, silently discarding unsaved edits. If the buffer may be dirty, export_preset (or save) first.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe(
@@ -140,6 +141,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
         description: [
             'Switch patches on any PC-responsive device. Sends optional Bank Select (CC 0 MSB + CC 32 LSB), then Program Change.',
             'Channel 1..16, program 0..127, banks 0..127 (omit unused bank args).',
+            'CAUTION (unsaved edits): unlike switch_preset, this raw Program Change has NO dirty-buffer gate. On most gear it loads the stored preset straight over the working buffer, silently discarding any unsaved edits. If the current buffer may hold unsaved changes, export_preset (or save) first.',
         ].join(' '),
         inputSchema: {
             port: z.string().describe('Case-insensitive name-substring identifying the target MIDI port.'),

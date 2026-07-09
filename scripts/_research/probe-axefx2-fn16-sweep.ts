@@ -7,7 +7,7 @@
  * for a few paramIds to read the live current value (calibrates G0).
  * Goal: pin which group is min/max/default/step/count. Read-only.
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 

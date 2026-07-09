@@ -6,7 +6,8 @@ discovered: 2026-05-22 (cookbook-mine of ghidra-axe-edit-iii-store-preset.txt)
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-fn40-as-store-preset-begin
+golden: STUB (structural-only; negative finding — caller-chain evidence in ghidra-axe-edit-iii-store-preset.txt; see Symptoms / grep terms)
+retest_when: never (caller-chain proven — fn=0x40 is LOAD_PRESET, identified by the 3000-byte inbound-buffer read signature; the store path is the 0x77/0x78/0x79 exchange itself with the preset index patched into the 0x77 header)
 relates_to: [iii-host-emitter-fn-table, vendor-envelope-descriptor-table, msb-first-14bit-preset-payload]
 consumed_in: []
 ---
@@ -87,6 +88,14 @@ calls don't pre-allocate response buffers of that size. This
 heuristic, applied during caller-chain analysis, would have ruled
 out the fn=0x40-as-store-begin hypothesis without needing the full
 STORE-dispatcher trace. Filed for future cookbook synthesis review.
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "fn 0x40 store preset begin" / "III save handshake fn byte"
+- "0x40 is LOAD_PRESET" / "store workflow has no handshake fn-byte"
+- "3000-byte inbound buffer" (the read-request diagnostic signature)
 
 ## Refinement history
 

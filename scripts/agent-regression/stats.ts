@@ -14,7 +14,7 @@
  */
 import path from 'node:path';
 
-import { RESULTS_LOG, loadRows, type LoggedRow } from './resultsLog.js';
+import { RESULTS_LOG, loadRows, isEnvironmentalRow, type LoggedRow } from './resultsLog.js';
 
 type Row = LoggedRow;
 
@@ -86,25 +86,31 @@ function main(): void {
     `${rows[0]?.timestamp.slice(0, 10)}..${rows[rows.length - 1]?.timestamp.slice(0, 10)}. ` +
     `${dirtyRuns} run(s) against a dirty tree.\n`,
   );
-  console.log('case                                 runs   pass  flake   wall p50/p95   last');
-  console.log('─'.repeat(86));
+  const totalEnv = rows.filter(isEnvironmentalRow).length;
+  console.log('case                                 runs   pass  flake    env   wall p50/p95   last');
+  console.log('─'.repeat(94));
   const names = [...byCase.keys()].sort();
   for (const name of names) {
-    const list = byCase.get(name)!;
+    const all = byCase.get(name)!;
+    // Pass/flake rates exclude environmental (OS spawn-refusal) rows — they
+    // measure the machine, not the case. They get their own count column.
+    const env = all.filter(isEnvironmentalRow).length;
+    const list = all.filter((r) => !isEnvironmentalRow(r));
     const passes = list.filter((r) => r.passed).length;
     const flakes = list.filter((r) => r.passed && r.flaked).length;
     const walls = list.map((r) => r.wall_seconds).sort((a, b) => a - b);
     const p50 = percentile(walls, 50);
     const p95 = percentile(walls, 95);
-    const last = list[list.length - 1];
-    const lastV = last.passed ? (last.flaked ? '⚠' : '✓') : '✗';
+    const last = list[list.length - 1] ?? all[all.length - 1];
+    const lastV = last.passed ? (last.flaked ? '⚠' : '✓') : (isEnvironmentalRow(last) ? '⊘' : '✗');
     console.log(
       `${name.padEnd(36)} ${String(list.length).padStart(4)}  ${pct(passes, list.length)}  ` +
-      `${pct(flakes, list.length)}   ${p50.toFixed(0).padStart(4)}s/${p95.toFixed(0).padStart(4)}s   ` +
+      `${pct(flakes, list.length)}  ${String(env).padStart(4)}   ${p50.toFixed(0).padStart(4)}s/${p95.toFixed(0).padStart(4)}s   ` +
       `${lastV} ${last.sha}${last.dirty ? '*' : ''}`,
     );
   }
-  console.log('\n* last run was against a dirty (uncommitted) tree — sha is the baseline, not the exact code.');
+  console.log(`\nenv = environmental (OS spawn-refusal, 0xC0000142) non-runs, excluded from pass/flake (${totalEnv} total in corpus).`);
+  console.log('* last run was against a dirty (uncommitted) tree — sha is the baseline, not the exact code.');
   console.log('Drill in: --case=<id> for history, --recent=N for the latest runs.');
 }
 

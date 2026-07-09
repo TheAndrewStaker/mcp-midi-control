@@ -9,6 +9,16 @@ This is a snapshot of the public landscape as of 2026-05. Useful for
 new contributors who want to know where existing community knowledge
 ends and where original RE begins on this project.
 
+A 2026-06-27 two-pass survey (prompted by the C#/.NET entrant **ForgeFX**,
+which credits this project + `fractal-syx-codec` for its gen-3 decode)
+re-confirmed the landscape below and added named entries for the broader
+public roster — see the "Competitive landscape: other public Fractal
+decoders" subsection in this repo's `docs/REFERENCES.md`. Net unchanged:
+no public open-source project parses the full stored preset; the deepest
+decoders (FracTool / FracPad III) stay closed donationware. The three
+anonymized open libraries below map to `bspaulding/axe-fx-midi` (Rust),
+`tysonlt/AxeFxControl` (Arduino), and `laxu/AxeFx2VirtualPedalboard` (TS).
+
 ---
 
 ## The non-open landscape (for context)

@@ -1506,12 +1506,28 @@ console.log('\nfind_compatible_types (AM4 applicability):');
 }
 
 {
-  // Axe-Fx II has no findCompatibleTypes implementation — falls back to full type list.
+  // Axe-Fx II now implements findCompatibleTypes (BUG-9 full). Reverb has no
+  // primary-type gates in the II applicability table, so it still returns the
+  // full roster with applicability_known: false (honest "no filtering data").
   const r = findCompatibleTypes({ port: 'axe-fx-ii', block: 'reverb', params: ['time'] });
   assert(
-    'Axe-Fx II find_compatible_types falls back with applicability_known: false',
-    r.applicability_known === false,
-    `applicability_known=${r.applicability_known}`,
+    'Axe-Fx II reverb (no primary gates) → full roster, applicability_known: false',
+    r.applicability_known === false && r.compatible_types.length === r.total_types && r.total_types > 0,
+    `known=${r.applicability_known}, compat=${r.compatible_types.length}/${r.total_types}`,
+  );
+
+  // multidelay DOES carry primary-type gates (DELAY_MODEL): `diffusion` only
+  // exists on the Plex types, so the structured path narrows the roster and
+  // reports applicability_known: true — the real BUG-9-full capability.
+  const m = findCompatibleTypes({ port: 'axe-fx-ii', block: 'multidelay', params: ['diffusion'] });
+  assert(
+    'Axe-Fx II multidelay.diffusion → structured narrowing (applicability_known: true)',
+    m.applicability_known === true
+      && m.compatible_types.length > 0
+      && m.compatible_types.length < m.total_types
+      && m.compatible_types.includes('PLEX DELAY')
+      && !m.compatible_types.includes('QUAD-TAP'),
+    `known=${m.applicability_known}, compat=${JSON.stringify(m.compatible_types)}/${m.total_types}`,
   );
 }
 
@@ -1722,6 +1738,56 @@ console.log('\nBK-076 routing-mask pre-flight (II grid):');
         && /routing_mask=0/.test(entry.reason ?? '')
         && /set_cell_routing|apply_preset/.test(entry.retry_action ?? ''),
       `entry=${JSON.stringify(entry)}`,
+    );
+  }
+
+  // Review-fix regression: grid devices key block_types by INSTANCE ("amp 1",
+  // "reverb 2"), not the bare slug. isPseudoBlock must strip the trailing
+  // " N" before deciding, else every real II block reads as a pseudo-block
+  // and its unrouted/unplaced warning is silently dropped for the whole device.
+  {
+    _resetBlockLayoutCacheForTests();
+    const descriptor = {
+      id: 'test-ii-instance-keys',
+      display_name: 'Stub II',
+      block_types: { 'amp 1': {}, 'amp 2': {}, 'cab 1': {}, 'reverb 1': {} },
+      reader: {
+        getBlockLayoutSnapshot: async () => ({
+          placedBlocks: new Set(['amp', 'cab']),
+          unroutedBlocks: new Set(['amp']),
+        }),
+      },
+    } as unknown as StubDescriptor;
+    const ctx = stubCtx('test-conn-instkeys');
+    const warnings = await collectRoutingMaskWarnings(descriptor, ctx, 'amp', 'gain');
+    assert(
+      'instance-suffixed block_types: unrouted amp STILL warns (isPseudoBlock strips " N")',
+      warnings.length === 1 && warnings[0].dropped_param === 'gain',
+      `warnings=${JSON.stringify(warnings)}`,
+    );
+  }
+
+  // ...and a genuine pseudo-block (not a placeable type, e.g. AM4 'global')
+  // stays exempt even on a device with instance-suffixed block_types.
+  {
+    _resetBlockLayoutCacheForTests();
+    const descriptor = {
+      id: 'test-ii-pseudo',
+      display_name: 'Stub II',
+      block_types: { 'amp 1': {}, 'cab 1': {} },
+      reader: {
+        getBlockLayoutSnapshot: async () => ({
+          placedBlocks: new Set(['amp']),
+          unroutedBlocks: new Set(['global']),
+        }),
+      },
+    } as unknown as StubDescriptor;
+    const ctx = stubCtx('test-conn-pseudo');
+    const warnings = await collectRoutingMaskWarnings(descriptor, ctx, 'global', 'scene_cc');
+    assert(
+      'pseudo-block "global" (no matching block_types slug) stays exempt',
+      warnings.length === 0,
+      `warnings=${JSON.stringify(warnings)}`,
     );
   }
 

@@ -8,7 +8,7 @@
  * compressor.level did) and GAP (device has a real range, catalog has none ->
  * authoritative input for the II range gap-fill). Read-only: only fn 0x16 sent.
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync } from 'node:fs';
 import { KNOWN_PARAMS } from '../../packages/fractal-midi/src/gen2/axe-fx-ii/params.js';
 import { IDS_BY_GROUP } from '../../packages/fractal-midi/src/gen2/axe-fx-ii/blockTypes.js';

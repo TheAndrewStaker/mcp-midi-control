@@ -6,7 +6,7 @@ discovered:  (bright_cap mismatch root-cause)
 verified_on:
   - axe-fx-ii-q8.02
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-display-log10-scaling
+golden: scripts/verify-axe-fx-ii-calibration.ts (hardware-anchored log10 round-trips, e.g. compressor.ratio/attack/release)
 relates_to: [display-q16-fixedpoint]
 consumed_in:
   - fractal-midi/src/gen2/axe-fx-ii/params.ts (entries with `scaling: 'log10'`)
@@ -54,9 +54,10 @@ fixed-point ([[display-q16-fixedpoint]]) or direct mapping.
 
 ## Verification path
 
-`scripts/cookbook-verify.ts#case-display-log10-scaling` runs round-trip
-on the 17 known log10 params, asserting encode-then-decode is
-identity-with-display-precision.
+`scripts/verify-axe-fx-ii-calibration.ts` covers the log10 formula with
+hardware-anchored round-trips (compressor.ratio / attack / release); the
+17 registered `scaling: 'log10'` entries in `params.ts` are the consumed
+surface.
 
 ## Refinement history
 

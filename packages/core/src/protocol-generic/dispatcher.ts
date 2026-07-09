@@ -45,10 +45,12 @@ export {
 } from './dispatcher/resolvers.js';
 export {
   describeDevice,
+  executeDescribeRig,
   executeLookupLineage,
   findCompatibleTypes,
   listParams,
   type ListParamsEntry,
+  type RigDevice,
 } from './dispatcher/discovery.js';
 export {
   executeGetParam,
@@ -71,6 +73,7 @@ export {
   executeExportStoredPreset,
   executeGetPreset,
   executePortPreset,
+  executeReadSampleDirectory,
   executeRestorePreset,
   type PortPresetResult,
 } from './dispatcher/preset.js';
@@ -86,3 +89,10 @@ export {
   type SetMacroRouteArgs,
 } from './dispatcher/navigation-modroute.js';
 export { resetModRouteState } from './dispatcher/modRouteState.js';
+export {
+  executeApplyPattern,
+  executeListPatternRecipes,
+  type ApplyPatternArgs,
+  type ApplyPatternResult,
+  type ListPatternRecipesResult,
+} from './dispatcher/patterns.js';

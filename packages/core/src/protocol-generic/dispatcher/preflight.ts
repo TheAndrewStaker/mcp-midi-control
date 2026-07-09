@@ -49,7 +49,7 @@ import {
   type ValidationInfo,
 } from '../types.js';
 import { resolveParamAlias } from '../cross-device-aliases.js';
-import { resolveConceptKeyForBlock } from '../concept-keys.js';
+import { resolveDescriptorConceptKey } from '../concept-keys.js';
 import { findEnumMatch, resolveEnumAlias } from '../cross-device-enums.js';
 import {
   formatUnknownEnumError,
@@ -323,7 +323,7 @@ function validateParamMap(
     // Step 2: concept-key resolution. If the agent typed a concept-key
     // (either fully-qualified `block.concept` or just `concept` for the
     // current block), rewrite to the device-local name.
-    const conceptResult = resolveConceptKeyForBlock(descriptor.id, blockKey, paramName);
+    const conceptResult = resolveDescriptorConceptKey(descriptor.concept_keys, blockKey, paramName);
     if (
       conceptResult !== undefined
       && conceptResult.localName !== paramName.toLowerCase()

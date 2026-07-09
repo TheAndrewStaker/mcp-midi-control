@@ -4,7 +4,8 @@ class: enum-mapping
 status: non-matching
 verified_on:
   - am4-edit-2.00
-golden: scripts/cookbook-verify.ts#case-am4-edit-dropdown-order-not-wire-order
+golden: STUB (structural-only; negative finding — the resolved wire orders are guarded by scripts/verify-msg.ts enum-table registration cases; see Symptoms / grep terms)
+retest_when: never (structural — editors re-sort dropdowns for display; the device front-panel knob order IS the wire order, and the hardware-sweep lane that resolved this shipped 2026-05-31)
 relates_to: [param-descriptor-16byte]
 consumed_in: []
 ---
@@ -90,6 +91,14 @@ workflow (2026-05-31, both reviewers `sound:false`) established:
   that re-sorts, not the device. So read the device, not the editor.
 - **Whichever source you use, verify index 0 against hardware ground truth**
   (`geq_type` wire 0 = "8 Band Var Q"; `compressor_type` wire 0 = "Output").
+
+## Symptoms / grep terms
+
+Search these before re-attempting:
+
+- "dropdown order wire index" / "enum index from editor dropdown screenshot"
+- "AM4-Edit dropdown re-sorts" / "dropdown top-to-bottom index 0"
+- "front-panel knob order is wire order" (the positive rule that replaces this)
 
 ## RESOLVED (2026-05-31)
 

@@ -146,6 +146,28 @@ export const FM9_CASES: AgentRegressionCase[] = [
     },
   },
   {
+    id: 'fm9-read-cpu-headroom',
+    device: 'fm9',
+    description:
+      'Ask how much CPU/DSP headroom the active FM9 preset uses. Proves the agent reaches for ' +
+      'get_preset (which now surfaces live_meters.cpu_percent from the same sub=0x2E frame as ' +
+      'live_grid) to answer a CPU-load question, rather than claiming it cannot read CPU usage.',
+    prompt:
+      "How much CPU is my current FM9 preset using? Is there headroom to add another block? " +
+      "Just read it, don't change anything.",
+    expectations: {
+      must_call: ['get_preset'],
+      must_not_call: ['apply_preset', 'set_param', 'set_block', 'save_preset'],
+      max_tools: 6,
+      // The agent should report a CPU/DSP figure from live_meters.cpu_percent.
+      text_contains_any: [['CPU'], ['cpu'], ['DSP'], ['%'], ['headroom'], ['load']],
+      text_not_contains: [
+        "can't read", 'cannot read the CPU', 'no CPU', 'CPU usage is not', 'I saved',
+      ],
+      max_wall_seconds: 240,
+    },
+  },
+  {
     id: 'fm9-amp-applicability',
     device: 'fm9',
     description:

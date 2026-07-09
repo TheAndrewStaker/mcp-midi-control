@@ -12,8 +12,11 @@ a new set of tools.
 Any USB MIDI device works today via generic-MIDI primitives (CC, NRPN,
 SysEx, program change, notes, clock). Hardware-verified depth (whole-preset
 and whole-patch authoring, lineage, cross-device translation) currently
-covers the Fractal AM4, Axe-Fx II XL+, and ASM Hydrasynth Explorer, with
-the Axe-Fx III in community beta.
+covers the Fractal AM4, Axe-Fx II XL+, and ASM Hydrasynth Explorer. In
+community beta: the modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4),
+the original Axe-Fx Standard/Ultra, and three non-guitar devices: the
+Novation Circuit Tracks (sequencer), the Roland SPD-SX (sample pad), and
+the Boss VE-500 (vocal processor).
 
 This folder holds the documentation for contributors and Claude Code
 agents working in this repo. End-user install and usage docs live in the

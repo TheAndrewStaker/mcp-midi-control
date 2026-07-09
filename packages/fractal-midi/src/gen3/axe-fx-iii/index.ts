@@ -19,6 +19,11 @@ export type { AxeFxIIIBlock, ConfidenceTag } from './blockTypes.js';
 export { PARAMS, PARAMS_BY_FAMILY, PARAM_BY_KEY, FAMILIES } from './params.js';
 export type { Unit, Param } from './params.js';
 
+// Roundtrip-derived discrete-ordinal overlay (param firmware symbol -> maxOrdinal).
+// Params the editor-cache enum path missed but the device treats as ORDINALS;
+// routed DISCRETE instead of continuous so the device stores the right ordinal.
+export { III_ROUNDTRIP_DISCRETE } from './roundtripDiscrete.generated.js';
+
 // Enum vocabulary overlay — universal Fractal conventions + AM4-
 // verified shared symbols + III-specific direct overrides. See
 // `enumOverlay.ts` for evidence chain and provenance tagging.
@@ -62,6 +67,8 @@ export {
   buildSetParameter,
   buildSetParameterContinuous,
   buildGetParameter,
+  buildRequestCurrentTypeName,
+  SUB_ACTION_GET_TYPE_NAME,
   buildSetParameterBypass,
   isSetGetParameterResponse,
   parseSetGetParameterResponse,
@@ -154,6 +161,12 @@ export {
   parseGen3GridLayout,
 } from './gridLayout.js';
 export type { Gen3GridLayoutCell } from './gridLayout.js';
+
+// Live telemetry (CPU + stereo output meters) carried in the SAME fn=0x01
+// sub=0x2E frame as the routing grid. FM9-cross-validated; community beta.
+// See `liveMeters.ts` for the evidence chain and the omitted-input rationale.
+export { parseGen3LiveMeters } from './liveMeters.js';
+export type { Gen3LiveMeters } from './liveMeters.js';
 
 // Per-amp-model valid-DISTORT-param table (powers findCompatibleTypes for the
 // amp block). See `ampTypeValidParams.generated.ts`.

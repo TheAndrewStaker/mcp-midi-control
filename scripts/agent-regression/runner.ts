@@ -17,16 +17,49 @@
 
 import { spawn, execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+import { buildKit } from '@mcp-midi-control/spd-sx/codec/kitXml.js';
+import { encodeWavePrm, nameToNm } from '@mcp-midi-control/spd-sx/codec/wavePrm.js';
+import { isEnvironmentalSignature } from './resultsLog.js';
 
 import type {
   AgentRegressionCase,
   CaseResult,
   ToolCall,
 } from './types.js';
+
+/**
+ * Build (once) a deterministic SPD-SX storage fixture for sampler-archetype
+ * cases and return its root, to be injected as `MCP_SPDSX_ROOT`. The SPD-SX is a
+ * storage-transport device (no MIDI mock): its reader needs a mounted `Roland/
+ * SPD-SX` tree with a KIT dir. The reader uses only the PRM (wave names/paths)
+ * and KIT (pad→wave) XML — not the WAV DATA — so a PRM + KIT fixture is enough
+ * (mirrors the verify-spdsx hybrid-descriptor golden). Three waves + one kit.
+ */
+let spdsxFixtureRoot: string | undefined;
+function getSpdsxFixtureRoot(): string {
+  if (spdsxFixtureRoot !== undefined) return spdsxFixtureRoot;
+  const root = path.join(tmpdir(), 'agent-regression-spdsx', 'Roland', 'SPD-SX');
+  const prm = path.join(root, 'WAVE', 'PRM', '00');
+  const kit = path.join(root, 'KIT');
+  mkdirSync(prm, { recursive: true });
+  mkdirSync(kit, { recursive: true });
+  const waves = ['kick', 'snare', 'hat'];
+  waves.forEach((name, i) => {
+    writeFileSync(path.join(prm, `0${i}.spd`), encodeWavePrm(nameToNm(name), `00/${name}.wav`, 0));
+  });
+  // Kit 1 (file kit000.spd): pads 1-3 → waves 0,1,2; the rest empty. Written
+  // UNCONDITIONALLY (like the PRMs above) so a persisted temp dir from a prior
+  // run can't leave a stale kit if the codec ever changes.
+  writeFileSync(path.join(kit, 'kit000.spd'), buildKit('Demo Kit', [0, 1, 2]));
+  spdsxFixtureRoot = root;
+  return root;
+}
 
 const MCP_CONFIG_PATH = path.resolve('scripts/agent-regression/mcp-config.json');
 const TRACES_DIR = path.resolve('scripts/agent-regression/traces');
@@ -69,20 +102,65 @@ interface RunOptions {
  * retried once by default. If the retry passes, the case is flagged
  * `flaked: true` so flakiness stays visible.
  */
+/**
+ * Classify a result as an environmental (OS spawn-refusal) non-run vs a real
+ * outcome, via the SHARED signature predicate (so the runtime path and the
+ * historical stats path use one detector — no split). The Windows 0xC0000142
+ * (STATUS_DLL_INIT_FAILED) cascade: instant exit, zero tool calls.
+ */
+function isEnvironmentalResult(result: CaseResult): boolean {
+  return isEnvironmentalSignature({
+    passed: result.passed,
+    environmental: result.environmental,
+    tool_count: result.tool_calls.length,
+    wall_seconds: result.wall_seconds,
+    failures: result.failures,
+  });
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
 export async function runCase(opts: RunOptions): Promise<CaseResult> {
   const maxRetries = opts.max_retries ?? 1;
+  // Environmental (OS spawn-refusal) failures get their OWN retry budget with
+  // backoff (NO reap — an in-process reap would kill the sweep's own launcher
+  // chain), separate from the instant LLM-flake retry: an immediate re-spawn
+  // fails identically, but a few seconds of backoff lets the OS release the
+  // handles that triggered the cascade. After the budget, the case is returned
+  // tagged environmental (NOT counted as a real pass/fail).
+  const maxEnvRetries = 2;
+  let envAttempts = 0;
   let lastResult: CaseResult | undefined;
-  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+  let attempt = 1;
+  const flakeCap = maxRetries + 1;
+  while (attempt <= flakeCap) {
     const result = await runCaseOnce({ ...opts });
     if (result.passed) {
       return { ...result, attempts: attempt, flaked: attempt > 1 };
     }
-    lastResult = result;
-    if (attempt <= maxRetries && opts.verbose === true) {
-      console.error(`[retry] ${opts.case.id} failed attempt ${attempt}/${maxRetries + 1}, retrying`);
+    if (isEnvironmentalResult(result)) {
+      if (envAttempts < maxEnvRetries) {
+        envAttempts++;
+        const backoffMs = 4000 * envAttempts;
+        if (opts.verbose === true) {
+          console.error(`[env-retry] ${opts.case.id}: OS spawn refusal (0xC0000142). backoff ${backoffMs}ms (${envAttempts}/${maxEnvRetries})`);
+        }
+        // Backoff only — NO in-process reap: a reap from inside the sweep would
+        // kill this runner's own launcher chain. The wait gives the OS time to
+        // release the per-spawn handles that triggered the refusal.
+        await sleep(backoffMs);
+        continue; // re-spawn WITHOUT consuming a flake attempt
+      }
+      // Exhausted env retries: hand back tagged, not a real failure.
+      return { ...result, attempts: attempt, flaked: false, environmental: true };
     }
+    lastResult = result;
+    if (attempt < flakeCap && opts.verbose === true) {
+      console.error(`[retry] ${opts.case.id} failed attempt ${attempt}/${flakeCap}, retrying`);
+    }
+    attempt++;
   }
-  return { ...lastResult!, attempts: maxRetries + 1, flaked: false };
+  return { ...lastResult!, attempts: flakeCap, flaked: false };
 }
 
 interface RunOnceOptions {
@@ -250,6 +328,11 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
   };
   if (testCase.mockFixture !== undefined) {
     childEnv.MOCK_FIXTURE = testCase.mockFixture;
+  }
+  // Sampler archetype (SPD-SX, storage transport): point the server at a
+  // deterministic on-disk fixture instead of a real mounted drive.
+  if (testCase.device === 'spd-sx' && process.env.AGENT_REGRESSION_REAL_HARDWARE !== '1') {
+    childEnv.MCP_SPDSX_ROOT = getSpdsxFixtureRoot();
   }
 
   // Apply the case's setup (if any) BEFORE the agent prompt fires.

@@ -22,7 +22,7 @@ export const HYDRASYNTH_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
     'macro / mod-matrix routes after the patch dump; those need Param TX/RX =',
     'NRPN (the base patch lands over SysEx regardless). recipes[] lists only',
     'hardware-confirmed recipes; the founder may name an unverified id to',
-    'audition — apply_patch resolves any valid recipe_id.',
+    'audition; apply_patch resolves any valid recipe_id.',
   ].join(' '),
 
   device_precondition: [

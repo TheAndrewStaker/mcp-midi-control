@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/fractal-gen2",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Fractal Axe-Fx II device descriptor, writer, reader, and MCP tools.",
   "private": true,
   "license": "Apache-2.0",
@@ -12,7 +12,7 @@
     "@mcp-midi-control/core": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "fractal-midi": "*",
-    "midi": "^2.0.0",
+    "@julusian/midi": "^3.6.1",
     "zod": "^4.4.2"
   },
   "scripts": {

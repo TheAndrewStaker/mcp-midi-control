@@ -8,7 +8,7 @@
  * invariant 28-bit b1..b4 value per record to test what it encodes.
  * RESTORES each block's bypass to baseline. Reversible; nothing saved.
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { buildQueryStates, buildGetGridLayout, buildSetBlockBypass } from 'fractal-midi/gen2/axe-fx-ii';

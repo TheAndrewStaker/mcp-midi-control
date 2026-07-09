@@ -75,7 +75,7 @@
  *     proceed with byte-level decode of the recovered envelope.
  */
 
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 

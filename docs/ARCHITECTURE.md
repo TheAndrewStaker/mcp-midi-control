@@ -21,7 +21,13 @@ targets rather than an afterthought. Any USB MIDI device works today via
 generic-MIDI primitives (CC, NRPN, SysEx, program change, notes, clock).
 Hardware-verified depth (whole-preset and whole-patch authoring, lineage,
 cross-device translation) currently covers the Fractal AM4, Axe-Fx II
-XL+, and ASM Hydrasynth Explorer, with the Axe-Fx III in community beta.
+XL+, and ASM Hydrasynth Explorer. Several more devices are in community beta:
+the modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4), the original Axe-Fx
+Standard/Ultra, the Novation Circuit Tracks (a groovebox sequencer), the Roland
+SPD-SX (a sample pad on a hybrid storage/MIDI transport), the Boss VE-500 vocal
+processor, and the Boss RC-505mk2 Loop Station (a looper on a hybrid
+storage/MIDI transport whose memories are authored as `.RC0` files). Each is a
+descriptor on the same unified surface, not a new tool family.
 
 AM4 is used as the running example throughout this doc because it is the
 device with the deepest decode, not because it is the whole picture.
@@ -54,17 +60,18 @@ among several," all selected with the `port` argument on each tool call.
 │  checksums, block/param tables, preset format)      │
 │  lives in the shared fractal-midi package.          │
 └──────────────────────┬──────────────────────────────┘
-                       │ node-midi (shared transport)
+                       │ @julusian/midi (shared transport)
 ┌──────────────────────▼──────────────────────────────┐
 │  USB/MIDI Transport                                 │
 │  - Per-device USB drivers (Windows)                 │
-│  - node-midi input/output ports                     │
+│  - @julusian/midi input/output ports                │
 └──────────────────────┬──────────────────────────────┘
                        │ USB cable
 ┌──────────────────────▼──────────────────────────────┐
-│  Hardware: Fractal AM4, Axe-Fx II XL+,              │
-│  ASM Hydrasynth, Axe-Fx III (beta), or any          │
-│  USB MIDI device (via generic-MIDI primitives)      │
+│  Hardware: AM4 / Axe-Fx II / III / FM3 / FM9 /      │
+│  VP4 / gen-1, ASM Hydrasynth, Circuit Tracks,       │
+│  Roland SPD-SX, Boss VE-500, or any USB MIDI        │
+│  device (via the generic-MIDI primitives)           │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -268,11 +275,55 @@ state, and optional routing edges. Each device's writer converts
 wire responses back into `PresetSnapshot`.
 
 ### 6. Transport Layer (`packages/core/src/midi/`)
-Thin wrapper around node-midi. Handles port discovery, connection
+Thin wrapper around @julusian/midi (an API-compatible node-midi fork with N-API prebuilds). Handles port discovery, connection
 lifecycle, and raw SysEx send/receive. The transport interface is
 `MidiConnection` (defined in `packages/core/src/midi/transport.ts`),
 which provides `send`, `request`, `onMessage`, and connection
 management methods.
+
+#### Transport abstraction (two layers)
+
+Devices reach the host over more than one kind of pipe, and the
+abstraction lives at two distinct layers — pick the right one when adding
+a device:
+
+- **Byte-stream layer — `MidiConnection`.** Anything that carries raw MIDI
+  byte frames is a `MidiConnection`, regardless of the physical pipe. USB
+  MIDI and the FM3's USB-CDC serial both live here: the FM3's
+  `serialTransport.ts` implements `MidiConnection` over serial because
+  serial just carries the same MIDI bytes through a different pipe. A new
+  MIDI-over-X transport is a new `MidiConnection` implementation.
+
+- **Endpoint layer — `DispatchCtx` / `openCtx`.** Some devices are not a
+  MIDI byte stream at all. The Roland SPD-SX in WAVE MGR mode is a mounted
+  USB mass-storage volume whose kits/waves are `.spd` files — a filesystem,
+  not a stream of MIDI messages. That can never be a `MidiConnection`, so
+  the generalization happens one level up, at the dispatch context.
+
+`DeviceDescriptor.transport` declares the kind:
+
+| `transport.kind` | Endpoint | `DispatchCtx` carries |
+|---|---|---|
+| `'midi'` (default) | USB MIDI port (via `ensureConnection`) | `conn` |
+| `'serial'` | USB-CDC serial (FM3) | `conn` (serial-backed `MidiConnection`) |
+| `'storage'` | mounted drive (`resolveRoot()`) | `storage.root` (+ a null-object `conn`) |
+| `'hybrid'` | resolved at call time | `storage.root` if mounted, else MIDI `conn` |
+
+`openCtx` (`dispatcher/core.ts`) branches on `transport.kind`. For
+`'storage'` it requires a mounted root or throws `device_not_mounted`; the
+`conn` it returns is a null object that throws on any MIDI I/O, so a
+storage device's reader/writer methods read `ctx.storage.root` and never
+touch the wire. Existing MIDI devices omit `transport` (default `'midi'`)
+and are completely unaffected — `conn` stays required and the ~156
+`ctx.conn` call sites are untouched.
+
+**Hybrid devices** (SPD-SX) expose both surfaces on one descriptor, with
+the two USB modes mutually exclusive on the hardware. `openCtx` resolves
+the live transport per call: drive mounted → the storage reader/writer
+methods (kit/wave authoring); else a MIDI port → the MIDI methods (kit
+recall via `switch_preset`, pad triggers). A verb that needs the other
+mode returns `capability_not_supported`. The full reasoning is in
+[docs/design/device-archetypes-and-transport.md](design/device-archetypes-and-transport.md).
 
 ---
 

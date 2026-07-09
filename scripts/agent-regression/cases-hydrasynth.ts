@@ -126,4 +126,58 @@ export const HYDRASYNTH_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 90,
     },
   },
+
+  // ── Large coverage: patch recipe + macro + system param ───────────────────
+  {
+    id: 'hydrasynth-archetype-patch-macro-system',
+    device: 'hydrasynth',
+    description:
+      'Synth archetype, large coverage: a multi-step "set up a pad, wire a macro, set the master volume" request should walk the synth surface — apply_patch (load the warm_analog_pad recipe, auditioned not saved), set_macro (a performance macro), and set_system_param (master volume, a global CC). All three are mock-supported (per the per-tool hydra cases) and clearly induced by the explicit prompt. Catches an agent that hand-authors 15 params instead of using the recipe, or saves an audition.',
+    // "set macro 1 to 64" (concrete value) not a bare "set macro 1": the vague
+    // form is under-specified (set it to WHAT?), so the agent skipped set_macro
+    // on attempt 1 and only added it on retry (the 100%-flake the review caught).
+    prompt:
+      'Set up my Hydrasynth for a warm pad: load the warm_analog_pad patch (just audition it, do not save), set macro 1 to 64, and turn the master volume up to 100. Summarize what you did.',
+    expectations: {
+      must_call: ['apply_patch', 'set_macro', 'set_system_param'],
+      max_tools: 9,
+      min_tools: 3,
+      tool_call_validators: [{
+        tool: 'apply_patch',
+        check: (args) => {
+          if (args.recipe_id !== 'warm_analog_pad') return `apply_patch recipe_id should be "warm_analog_pad", got ${JSON.stringify(args.recipe_id)}.`;
+          if (args.save === true) return 'apply_patch must not save on an audition request.';
+          return true;
+        },
+      }],
+      max_wall_seconds: 180,
+    },
+  },
+
+  // ── Coverage: init_patch (start from a blank init buffer) ──────────────────
+  {
+    id: 'hydrasynth-init-patch',
+    device: 'hydrasynth',
+    description: 'init_patch coverage: "reset to a clean init patch / start from scratch" should route to init_patch (loads the Hydrasynth init buffer), NOT apply_patch with a recipe or a hand-authored spec. init_patch had no agent-sweep coverage. Catches an agent that conflates "start from init" with loading a named patch.',
+    prompt: 'Reset my Hydrasynth to a clean init patch so I can start building a sound from scratch. Just load the init patch, do not save.',
+    expectations: {
+      must_call: ['init_patch'],
+      max_tools: 4,
+      tool_call_validators: [{
+        tool: 'init_patch',
+        check: (args) => {
+          // Lenient: the agent may omit `port` (single Hydrasynth → implicit
+          // routing); only a port that's explicitly the WRONG device is a fail.
+          // must_call: ['init_patch'] is the actual coverage assertion.
+          if (typeof args.port === 'string' && args.port.trim() !== '' && !/hydra/i.test(args.port)) {
+            return `init_patch port, when given, should target the Hydrasynth, got ${String(args.port)}.`;
+          }
+          return true;
+        },
+      }],
+      // No false-confidence about persisting an init.
+      text_not_contains: ['I saved', 'saved the init', 'init patch is saved'],
+      max_wall_seconds: 90,
+    },
+  },
 ];

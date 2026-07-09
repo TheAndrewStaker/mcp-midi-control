@@ -5,7 +5,7 @@
  * to get the true display range + taper, then restore. These are non-audio
  * amp/cab knobs (resonance / cathode / room size), safe to sweep fully.
  */
-import midi from 'midi';
+import midi from "@julusian/midi";
 import { writeFileSync } from 'node:fs';
 import { guardAgainstRunningEditors } from '../_lib/editor-guard.js';
 import {

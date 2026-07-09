@@ -100,6 +100,15 @@ export interface ApplyPresetSkippedParam {
 export interface ApplyPresetSlotInput {
     position: number;
     block_type: string;
+    /**
+     * Explicit target channel for a channel-capable block (amp / drive /
+     * reverb / delay). When omitted and `params` (flat) is supplied, the
+     * write defaults to channel A (BUG-4 fix) rather than whatever
+     * channel the device happens to have active. Every scene that doesn't
+     * explicitly map this block's channel (via `ApplyPresetSceneInput.channels`)
+     * also defaults to A, so a fresh build lands audibly on channel A
+     * without further configuration.
+     */
     channel?: string | number;
     params?: Record<string, number | string>;
     channels?: Record<string, Record<string, number | string>>;
@@ -335,6 +344,25 @@ export function prepareApplyPresetWrites(
             if (canonicalBlock === 'none') {
                 throw new Error(`${at}: params supplied but block_type is "none" (empty slot). Remove params or pick a real block type.`);
             }
+            // BUG-4 fix: flat params with no explicit `channel` must land
+            // somewhere deterministic, not whatever channel the device
+            // happens to have active when this call runs (which could be
+            // whatever the previous preset/scene left selected). Default
+            // to channel A; the scene-channel completion pass below
+            // defaults every placed channel-block to A on any scene that
+            // doesn't explicitly point it elsewhere, so a fresh build's
+            // params are audible on the (also-A-by-default) landing scene
+            // without the caller doing anything special. Explicit `channel`
+            // (handled above) or `channels` (handled below) overrides this.
+            if (slot.channel === undefined && slot.channels === undefined && CHANNEL_BLOCKS.has(canonicalBlock)) {
+                const channelKey = `${canonicalBlock}.channel` as ParamKey;
+                prepared.push({
+                    kind: 'channel',
+                    block: canonicalBlock,
+                    index: 0,
+                    bytes: buildSetParam(channelKey, 0),
+                });
+            }
             const ordered = Object.entries(slot.params).sort(([a], [b]) =>
                 a === 'type' ? -1 : b === 'type' ? 1 : 0,
             );
@@ -518,15 +546,10 @@ export function prepareApplyPresetWrites(
     // FRESH-BUILD CLEARING - unlisted scenes (Session 52, Stranglehold H03 fix):
     for (const sceneNum of [1, 2, 3, 4] as const) {
         if (userListedScenes.has(sceneNum)) continue;
-        const chList: PreparedScene['channels'] = [];
-        for (const [block] of placedBlocks) {
-            if (!CHANNEL_BLOCKS.has(block)) continue;
-            chList.push({ block, letter: 'A', index: 0 });
-        }
         preparedScenes.push({
             sceneIndex: sceneNum - 1,
             oneBased: sceneNum,
-            channels: chList,
+            channels: [],
             bypass: [],
             name: '',
         });
@@ -540,7 +563,9 @@ export function prepareApplyPresetWrites(
                 sceneIndex: ps.sceneIndex,
                 bytes: buildSwitchScene(ps.sceneIndex),
             });
+            const explicitlyMappedChannelBlocks = new Set<string>();
             for (const ch of ps.channels) {
+                explicitlyMappedChannelBlocks.add(ch.block);
                 const channelKey = `${ch.block}.channel` as ParamKey;
                 prepared.push({
                     kind: 'scene_channel',
@@ -548,6 +573,25 @@ export function prepareApplyPresetWrites(
                     index: ch.index,
                     sceneIndex: ps.sceneIndex,
                     bytes: buildSetParam(channelKey, ch.index),
+                });
+            }
+            // BUG-4 completeness: any placed channel-block this scene
+            // doesn't explicitly map defaults to channel A, deterministic
+            // regardless of whatever channel the device inherited from the
+            // previous preset/scene. Mirrors the bypass-completeness pass
+            // below (placedBlocks not explicitly bypassed default to
+            // active=false=engaged) so channel state is just as complete
+            // as bypass state for every scene, listed or unlisted.
+            for (const [block] of placedBlocks) {
+                if (!CHANNEL_BLOCKS.has(block)) continue;
+                if (explicitlyMappedChannelBlocks.has(block)) continue;
+                const channelKey = `${block}.channel` as ParamKey;
+                prepared.push({
+                    kind: 'scene_channel',
+                    block,
+                    index: 0,
+                    sceneIndex: ps.sceneIndex,
+                    bytes: buildSetParam(channelKey, 0),
                 });
             }
             const explicitlyBypassedBlocks = new Set<string>();
