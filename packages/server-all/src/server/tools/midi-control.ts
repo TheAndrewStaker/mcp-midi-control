@@ -53,7 +53,7 @@ export function registerMidiControlTools(server: McpServer): void {
                 : matchedInput || matchedOutput
                     ? `Device matching "${needles!.join('" / "')}" partially visible (one direction missing). Check USB cable and driver.`
                     : inputs.length === 0 && outputs.length === 0
-                        ? 'No MIDI ports of any kind are visible. This usually means no MIDI driver is installed.'
+                        ? `No MIDI ports of any kind are visible, so nothing to match "${needles!.join('" / "')}" against. This usually means no MIDI driver is installed.`
                         : `No MIDI ports match "${needles!.join('" / "')}". Check USB cable, power, and driver.`
             : matchedInput && matchedOutput
                 ? 'AM4 input + output both visible. The server will connect to these on the next tool call.'
