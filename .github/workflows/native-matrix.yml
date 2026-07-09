@@ -43,11 +43,18 @@ jobs:
       # Linux needs the ALSA sequencer kernel module for RtMidi virtual
       # ports (openVirtualPort). It is not loaded by default on headless
       # CI images. macOS CoreMIDI needs nothing. No-op elsewhere.
-      - name: Load ALSA sequencer (Linux only)
+      - name: Load ALSA virtual MIDI (Linux only)
         if: runner.os == 'Linux'
         run: |
-          sudo modprobe snd-seq snd-seq-dummy 2>/dev/null \
-            || echo "snd-seq unavailable on this runner; the MIDI enumerate + virtual-loopback steps skip gracefully (the prebuilt-load check still runs)."
+          sudo apt-get update -qq && sudo apt-get install -y -qq libasound2-dev alsa-utils || true
+          # snd-virmidi creates a virtual sound card with MIDI ports AND the
+          # ALSA sequencer (/dev/snd/seq), so RtMidi can initialise a client
+          # and enumerate on a headless runner (the standard MIDI-CI approach).
+          # snd-seq alone does not create /dev/snd/seq without a card.
+          sudo modprobe snd-virmidi midi_devs=1 2>/dev/null \
+            || sudo modprobe snd_virmidi midi_devs=1 2>/dev/null \
+            || echo "snd-virmidi modprobe failed; MIDI-backed steps fall back to the graceful zero-port handling."
+          if [ -e /dev/snd/seq ]; then echo "ALSA sequencer present (/dev/snd/seq); RtMidi can init + enumerate."; else echo "WARNING: no /dev/snd/seq; RtMidi cannot create a sequencer client on this runner."; fi
 
       - name: Install dependencies
         run: npm ci
