@@ -235,22 +235,34 @@ export function listMidiPorts(
   needles: readonly string[] = [],
 ): { inputs: MidiPortInfo[]; outputs: MidiPortInfo[] } {
   const midi = loadMidi();
-  const input = new midi.Input();
-  const output = new midi.Output();
+  let inputs: MidiPortInfo[] = [];
+  let outputs: MidiPortInfo[] = [];
   try {
-    const inputs = enumeratePorts(input, 'input', needles);
-    const outputs = enumeratePorts(output, 'output', needles);
-    if (process.env.MCP_MOCK_TRANSPORT === '1') {
-      return {
-        inputs: [...inputs, ...mockPortEntries('input', needles, inputs.length)],
-        outputs: [...outputs, ...mockPortEntries('output', needles, outputs.length)],
-      };
+    const input = new midi.Input();
+    const output = new midi.Output();
+    try {
+      inputs = enumeratePorts(input, 'input', needles);
+      outputs = enumeratePorts(output, 'output', needles);
+    } finally {
+      input.closePort();
+      output.closePort();
     }
-    return { inputs, outputs };
-  } finally {
-    input.closePort();
-    output.closePort();
+  } catch {
+    // RtMidi could not initialise a client (e.g. headless Linux with no
+    // ALSA sequencer at /dev/snd/seq, or a machine with no MIDI backend at
+    // all). The prebuilt binary still LOADED (loadMidi succeeded); there is
+    // just no usable MIDI backend here. Treat it as zero ports so the caller
+    // shows the "no MIDI driver visible" verdict instead of crashing.
+    inputs = [];
+    outputs = [];
   }
+  if (process.env.MCP_MOCK_TRANSPORT === '1') {
+    return {
+      inputs: [...inputs, ...mockPortEntries('input', needles, inputs.length)],
+      outputs: [...outputs, ...mockPortEntries('output', needles, outputs.length)],
+    };
+  }
+  return { inputs, outputs };
 }
 
 /**
