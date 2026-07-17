@@ -37,8 +37,8 @@ jobs:
       - name: Lint (no internal refs)
         run: npm run verify-no-internal-refs
 
-      - name: Cookbook verify
-        run: npm run cookbook-verify
+      - name: Primitives verify
+        run: npm run primitives-verify
 
       - name: Tools inventory check
         run: npm run tools:inventory-check

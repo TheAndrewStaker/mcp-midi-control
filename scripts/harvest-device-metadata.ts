@@ -144,7 +144,7 @@ const WATCHDOG_MS = 30_000;
 const DEFAULT_MAX_MINUTES = 10;
 
 // gen-3 fn=0x01 read sub-actions this script is allowed to emit. These are
-// the editor's own connect/sync READ queries (cookbook
+// the editor's own connect/sync READ queries (primitive
 // gen3-editor-sync-read-surface, byte-exact captures). sub=0x09 (typed
 // SET/GET) is deliberately ABSENT: a sub=0x09 frame with value 0 is a
 // write of 0 on some params, so it never leaves this script.

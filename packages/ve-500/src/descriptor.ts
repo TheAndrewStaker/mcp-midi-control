@@ -63,8 +63,12 @@ export const VE500_DESCRIPTOR: DeviceDescriptor = {
       '(DT1 0x7F000104) did NOT persist a MIDI-set value, but the editor\'s connect handshake always sends ' +
       'Editor Communication Mode ON first, so save_preset now sends that before the store and waits for the ' +
       'device\'s store-ack echo; a set + save + recall round-trip persisted correctly on the maintainer\'s ' +
-      'unit. NOT yet wired: factory preset (P01–P50) recall (Bank Select mapping undecoded, gated) and ' +
-      'whole-patch get_preset.',
+      'unit. NEWLY WIRED 2026-07-09 (community-beta, hardware-unverified): switch_preset for factory presets ' +
+      'P01–P50, via a DT1 write to the "Current Patch Number" register (Setup > SetupCommon, decoded from ' +
+      'the editor\'s own patch-switch handler, NOT a Program Change). Also new: the SYSTEM/global param ' +
+      'region (MIDI, USB, tuner, preference, input/output + their EQs, and a few patch-shaped sections ' +
+      'reused at system scope) via set_param/get_param/get_params/list_params under system_* blocks. Still ' +
+      'NOT wired: whole-patch get_preset.',
     has_scenes: false,
     has_channels: false,
     supports_save: true,

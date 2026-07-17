@@ -203,6 +203,16 @@ const HDR4_READ_PRESET_NAME_LO = 0x20;
 //     those, HW-107). Exercises the navigation gate preferring the
 //     device-true bit: a fresh session (in-memory tracker clean) is still
 //     correctly refused because the device reports the buffer edited.
+//   - 'edited-bit-lag' (device-side propagation lag, 2026-07-10): the
+//     GET_PATCH descriptor ALWAYS reports byte[21] & 0x04 = CLEAR, even
+//     immediately after an acked write — simulating the device's edited
+//     bit lagging behind our own just-landed write (caught live: an
+//     audition-then-switch slipped the gate because the bit read landed
+//     before the device flipped it). Exercises `isActiveBufferDirty`'s
+//     propagation-race guard in packages/am4/src/tools/safeEdit.ts: within
+//     `DIRTY_MARK_TRUST_WINDOW_MS` of `markDirty`, the in-memory tracker is
+//     trusted over a CLEAR device bit, so a set_param immediately followed
+//     by switch_preset(warn) must still REFUSE.
 type MockFixture =
   | 'clean-scratch'
   | 'populated-z01'
@@ -211,7 +221,8 @@ type MockFixture =
   | 'slow-response'
   | 'partial-ack'
   | 'drop-first-ack'
-  | 'front-panel-edited';
+  | 'front-panel-edited'
+  | 'edited-bit-lag';
 const MOCK_FIXTURE: MockFixture = ((): MockFixture => {
   const raw = process.env.MOCK_FIXTURE;
   if (
@@ -221,7 +232,8 @@ const MOCK_FIXTURE: MockFixture = ((): MockFixture => {
     raw === 'slow-response' ||
     raw === 'partial-ack' ||
     raw === 'drop-first-ack' ||
-    raw === 'front-panel-edited'
+    raw === 'front-panel-edited' ||
+    raw === 'edited-bit-lag'
   ) return raw;
   return 'clean-scratch';
 })();
@@ -506,7 +518,10 @@ function buildGetAllParamsTriple(outgoing: number[]): number[][] {
 //   - CLEARED on save-to-location (action 0x1B) and on switch-preset.
 //   - Scene-switch (a view change, not a buffer edit) leaves it unchanged.
 // Under MOCK_FIXTURE='front-panel-edited' the bit reads SET regardless,
-// simulating an out-of-band edit the in-memory tracker can't see.
+// simulating an out-of-band edit the in-memory tracker can't see. Under
+// MOCK_FIXTURE='edited-bit-lag' the bit reads CLEAR regardless — even right
+// after an acked write — simulating the device-side propagation lag the
+// DIRTY_MARK_TRUST_WINDOW_MS guard in safeEdit.ts exists to catch.
 const GET_PATCH_ACTION_LO = 0x1f;
 const ACTION_SAVE_TO_LOCATION_LO = 0x1b;
 const PRESET_CONTROL_PID_LOW = 0x00ce;
@@ -522,10 +537,16 @@ let mockBufferEdited = false;
  * Build the GET_PATCH descriptor response. Echoes the request envelope +
  * addressing fields (bytes 1..11), sets byte[21] to the edited flag, and
  * pads to the device's descriptor length. `front-panel-edited` forces the
- * bit so the gate can be exercised with the in-memory tracker clean.
+ * bit SET so the gate can be exercised with the in-memory tracker clean.
+ * `edited-bit-lag` forces the bit CLEAR regardless of `edited`, so the gate
+ * can be exercised with the in-memory tracker freshly dirtied but the
+ * device bit not yet caught up.
  */
 function buildGetPatchResponse(outgoing: number[], edited: boolean): number[] {
-  const reportEdited = edited || MOCK_FIXTURE === 'front-panel-edited';
+  const reportEdited =
+    MOCK_FIXTURE === 'edited-bit-lag'
+      ? false
+      : edited || MOCK_FIXTURE === 'front-panel-edited';
   const body: number[] = new Array<number>(GET_PATCH_RESPONSE_TOTAL_BYTES - 2).fill(0);
   body[0] = SYSEX_START;
   for (let i = 1; i <= 11; i++) body[i] = outgoing[i] ?? 0;

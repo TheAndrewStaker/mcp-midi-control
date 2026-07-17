@@ -1,0 +1,305 @@
+{
+  "_source": "Fractal Audio wiki - Cab_models_list.md (DynaCabs section) + hw-133-am4-cab-dropdown-2026-07-15.png (device-order roster, AM4 fw 2.00)",
+  "_extractedAt": "2026-07-15",
+  "_recordCount": 45,
+  "_note": "am4Name matches AM4_DYNACAB_ROSTER (fractal-midi/am4 params) exactly; array order = device wire order (0-based). wikiName given only where the wiki spelling differs from the device picker.",
+  "records": [
+    {
+      "am4Name": "1x8 5F1 Tweed",
+      "basedOn": { "primary": "Fender Tweed Champ (5F1) combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "8\" speaker",
+      "description": "8\" speaker in a Fender Champ combo."
+    },
+    {
+      "am4Name": "1x8 Princetone",
+      "basedOn": { "primary": "Fender Tweed Princeton (5F2) combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "8\" Jupiter",
+      "description": "\"Very nice sounding\" 8\" Jupiter speaker in a 5F2 Tweed Princeton."
+    },
+    {
+      "am4Name": "1x10 BF Princetone",
+      "basedOn": { "primary": "blackface Fender Princeton Reverb combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "10\" speaker",
+      "description": "10\" speaker in a blackface Fender Princeton combo with reverb."
+    },
+    {
+      "am4Name": "1x10 Metro Blues",
+      "basedOn": { "primary": "MESA Subway Blues combo", "manufacturer": "MESA/Boogie", "source": "wiki:Cab_models_list" },
+      "speaker": "10\" Eminence Black Shadow",
+      "description": "10\" Eminence Black Shadow speaker in a MESA Subway Blues combo. Also available as a commercial DynaCab pack."
+    },
+    {
+      "am4Name": "1x10 SF Princetone",
+      "basedOn": { "primary": "silverface Fender Princeton combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "10\" speaker",
+      "description": "10\" speaker in a silverface Fender Princeton combo."
+    },
+    {
+      "am4Name": "1x12 AC20",
+      "basedOn": { "primary": "Morgan AC20 Deluxe combo", "manufacturer": "Morgan", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion G12 Alnico Blue",
+      "description": "12\" G12 Alnico Blue speaker in a Morgan AC20 Deluxe combo. Also available as a commercial DynaCab pack."
+    },
+    {
+      "am4Name": "1x12 Black Magick",
+      "basedOn": { "primary": "Supro 1695T Black Magick combo", "manufacturer": "Supro", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Jensen P12Q",
+      "description": "Jensen P12Q speaker in a Supro Black Magick."
+    },
+    {
+      "am4Name": "1x12 Car Ambler",
+      "basedOn": { "primary": "Carr Rambler combo", "manufacturer": "Carr", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" (probably Eminence Elsinore)",
+      "description": "12\" speaker, probably Eminence Elsinore, in a Carr Rambler combo."
+    },
+    {
+      "am4Name": "1x12 Deluxe Tweed",
+      "basedOn": { "primary": "narrow-panel Fender Tweed Deluxe (5E3) combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion Alnico Blue",
+      "description": "12\" Celestion Alnico Blue speaker in a Tweed Fender Deluxe combo."
+    },
+    {
+      "am4Name": "1x12 Deluxe Verb",
+      "basedOn": { "primary": "blackface Fender Deluxe Reverb combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Jensen C12K",
+      "description": "12\" Jensen C12K speaker in a Fender Deluxe Reverb combo."
+    },
+    {
+      "am4Name": "1x12 Div13 CJ11",
+      "basedOn": { "primary": "Divided By 13 CJ11 combo", "manufacturer": "Divided By 13", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion G12M",
+      "description": "12\" Celestion G12M speaker in a Divided By 13 CJ11 combo."
+    },
+    {
+      "am4Name": "1x12 G12T-100",
+      "basedOn": { "primary": "custom 1x12 cabinet", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion G12T-100",
+      "description": "12\" Celestion G12T-100 speaker in a 1x12 cabinet. \"It's a custom cabinet.\""
+    },
+    {
+      "am4Name": "1x12 Hot Kitty",
+      "basedOn": { "primary": "Bad Cat Hot Cat 30 combo", "manufacturer": "Bad Cat", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" custom Celestion V30",
+      "description": "12\" custom Celestion V30 speaker in a Bad Cat Hot Cat 30 combo."
+    },
+    {
+      "am4Name": "1x12 Jr Blues",
+      "basedOn": { "primary": "Fender Blues Junior combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" (Eminence or Jensen)",
+      "description": "12\" speaker (Eminence or Jensen) in a Fender Blues Junior."
+    },
+    {
+      "am4Name": "1x12 Nuclear Tone",
+      "basedOn": { "primary": "Swart Atomic Space Tone combo", "manufacturer": "Swart", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Mojotone BV-25m",
+      "description": "12\" Mojotone BV-25m speaker in a Swart Atomic Space Tone."
+    },
+    {
+      "am4Name": "1x12 Scholz",
+      "basedOn": { "primary": "MojoTone West Coast 1x12 cabinet", "manufacturer": "MojoTone", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Scholz SugarCone (aka Classic)",
+      "description": "MojoTone West Coast 1x12 cabinet with a 12\" Scholz SugarCone (aka Classic) speaker."
+    },
+    {
+      "am4Name": "1x12 Tweed 20112",
+      "basedOn": { "primary": "Victoria 20112 Deluxe Tweed combo", "manufacturer": "Victoria", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Eminence",
+      "description": "12\" Eminence speaker in a Victoria 20112 Deluxe Tweed combo."
+    },
+    {
+      "am4Name": "1x12 Vibrato Lux",
+      "basedOn": { "primary": "brownface Fender Vibrolux (6G11) combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" speaker",
+      "description": "12\" speaker in a brownface Fender Vibrolux combo."
+    },
+    {
+      "am4Name": "1x15 Heart Key",
+      "basedOn": { "primary": "Hartke bass combo", "manufacturer": "Hartke", "source": "wiki:Cab_models_list" },
+      "speaker": "15\" HyDrive",
+      "description": "15\" HyDrive speaker in a Hartke bass combo.",
+      "flags": ["bass"]
+    },
+    {
+      "am4Name": "1x15 Portabass",
+      "basedOn": { "primary": "Ampeg Portaflex bass cabinet", "manufacturer": "Ampeg", "source": "wiki:Cab_models_list" },
+      "speaker": "15\" Eminence",
+      "description": "15\" Eminence speaker in an Ampeg Portaflex bass cabinet.",
+      "flags": ["bass"]
+    },
+    {
+      "am4Name": "1x15 Vibroverb",
+      "wikiName": "1x15 Vibratoverb",
+      "basedOn": { "primary": "1964 blackface Fender Vibroverb combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "15\" JBL D130",
+      "description": "15\" JBL D130 speaker in a Fender Vibroverb combo."
+    },
+    {
+      "am4Name": "2x10 Heart Key",
+      "basedOn": { "primary": "Hartke bass combo", "manufacturer": "Hartke", "source": "wiki:Cab_models_list" },
+      "speaker": "10\" HyDrive paper/aluminum cone",
+      "description": "10\" HyDrive paper/aluminum cone speakers in a Hartke bass combo.",
+      "flags": ["bass"]
+    },
+    {
+      "am4Name": "2x10 Super 6G4",
+      "basedOn": { "primary": "1960 brownface Fender Super (6G4) combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "10\" speakers",
+      "description": "10\" speakers in a brownface Fender Super combo."
+    },
+    {
+      "am4Name": "2x12 65 Bassguy",
+      "basedOn": { "primary": "1965 blackface Fender Bassman combo/cabinet", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "original 12\" speakers",
+      "description": "Original 12\" speakers in a blackface Fender Bassman combo or cabinet."
+    },
+    {
+      "am4Name": "2x12 5153 Stealth",
+      "basedOn": { "primary": "EVH 5150 III Stealth 2x12 cabinet", "manufacturer": "EVH", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion G12H (G12H EVH or G12H 30W Anniversary)",
+      "description": "Two 12\" Celestion G12H speakers, G12H EVH or G12H 30W Ann, in an EVH 5150 III Stealth cabinet."
+    },
+    {
+      "am4Name": "2x12 Chiefman",
+      "basedOn": { "primary": "Matchless Chieftain combo", "manufacturer": "Matchless", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" custom Celestion G12H75",
+      "description": "12\" custom Celestion G12H75 speakers in a Matchless Chieftain combo."
+    },
+    {
+      "am4Name": "2x12 Class-A 30W",
+      "basedOn": { "primary": "1963 VOX AC-30 combo", "manufacturer": "VOX", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Alnico Silver Bell",
+      "description": "12\" Alnico Silver Bell speakers in a 1963 VOX AC-30 combo with an unusual cross-pattern beam blocker.",
+      "fractalQuotes": [
+        {
+          "text": "That cab is ridiculous. It's a one-of-a-kind cab. All the AC30 cabs I've ever seen have a single bar in front of the speaker, this one has a cross. It has the original Vox speakers in it and is in pristine condition. A user was kind enough to lend it to us.",
+          "url": "https://forum.fractalaudio.com/threads/cab-lab-4-release-%F0%9F%94%88%F0%9F%A7%AA.198578/post-2469819",
+          "attribution": "Fractal Audio"
+        }
+      ]
+    },
+    {
+      "am4Name": "2x12 Double Verb",
+      "basedOn": { "primary": "1966 blackface Fender Twin Reverb combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "original 12\" Fender speakers",
+      "description": "Original 12\" Fender speakers in a blackface Fender Twin Reverb combo. Also available as a commercial DynaCab pack."
+    },
+    {
+      "am4Name": "2x12 Lead 80",
+      "basedOn": { "primary": "2x12 cabinet, possibly Bogner Shiva", "manufacturer": "Bogner", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion Classic Lead 80",
+      "description": "12\" Celestion Classic Lead 80 speakers in a 2x12 cabinet, possibly Bogner Shiva."
+    },
+    {
+      "am4Name": "2x12 Texas Star",
+      "basedOn": { "primary": "MESA Lone Star 2x12 combo/cabinet", "manufacturer": "MESA/Boogie", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" (probably Celestion (M)C90 aka Black Shadow)",
+      "description": "12\" speakers (probably Celestion (M)C90 aka Black Shadow, based on Classic Lead 80) in a MESA Lone Star 2x12 combo or cabinet."
+    },
+    {
+      "am4Name": "4x10 Bassguy RI",
+      "basedOn": { "primary": "1959 Fender Bassman reissue combo", "manufacturer": "Fender", "source": "wiki:Cab_models_list" },
+      "speaker": "10\" Jensen P10",
+      "description": "10\" Jensen P10 speakers in a 1959 Fender Bassman reissue combo."
+    },
+    {
+      "am4Name": "4x12 1960TV",
+      "basedOn": { "primary": "Marshall 1960TV tall vertical angled 4x12 cabinet", "manufacturer": "Marshall", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion G12 greenback",
+      "description": "12\" G12 greenback speakers in a tall vertical angled Marshall 1960 cabinet. Also available as a commercial DynaCab pack."
+    },
+    {
+      "am4Name": "4x12 5153",
+      "basedOn": { "primary": "EVH 5150 III 4x12 cabinet", "manufacturer": "EVH", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion",
+      "description": "Four 12\" Celestion speakers in an EVH 5150 III cabinet."
+    },
+    {
+      "am4Name": "4x12 5153 Stealth",
+      "basedOn": { "primary": "EVH 5150 III Stealth 4x12 cabinet", "manufacturer": "EVH", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion G12 EVH 20W",
+      "description": "Four 12\" Celestion G12 EVH 20W speakers in an EVH 5150 III Stealth cabinet."
+    },
+    {
+      "am4Name": "4x12 Citrus",
+      "basedOn": { "primary": "Orange 4x12 cabinet", "manufacturer": "Orange", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion V30",
+      "description": "12\" Celestion V30 speakers in an Orange 4x12 cabinet."
+    },
+    {
+      "am4Name": "4x12 Friedman GB",
+      "basedOn": { "primary": "Friedman 4x12 cabinet", "manufacturer": "Friedman", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion greenback",
+      "description": "12\" Celestion greenback speakers in a Friedman 4x12 cabinet. The real Friedman cab mixes two Greenbacks and two V30s; the DynaCabs capture the individual speakers, and the impedance curve is for the cabinet as a whole.",
+      "fractalQuotes": [
+        {
+          "text": "The Friedman cab has two Greenbacks and two V30s. The impedance curve is for the cabinet as a whole. The DynaCabs are for the individual speakers. Therefore the same impedance curve applies to both DynaCabs.",
+          "url": "https://forum.fractalaudio.com/threads/dynacab-pack-limited-public-beta.198581/post-2470963",
+          "attribution": "Fractal Audio"
+        }
+      ]
+    },
+    {
+      "am4Name": "4x12 Friedman V30",
+      "basedOn": { "primary": "Friedman 4x12 cabinet", "manufacturer": "Friedman", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion V30",
+      "description": "12\" Celestion V30 speakers in a Friedman 4x12 cabinet (the same mixed GB+V30 cab as 4x12 Friedman GB, V30 capture)."
+    },
+    {
+      "am4Name": "4x12 Lerxst",
+      "basedOn": { "primary": "Lerxst 4x12 cabinet", "manufacturer": "Lerxst", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion (probably greenbacks)",
+      "description": "12\" Celestion speakers (probably greenbacks) in a Lerxst 4x12 cabinet."
+    },
+    {
+      "am4Name": "4x12 Recto Slant",
+      "basedOn": { "primary": "MESA Rectifier slant 4x12 cabinet", "manufacturer": "MESA/Boogie", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" speakers",
+      "description": "12\" speakers in a slanted 4x12 MESA Rectifier cabinet."
+    },
+    {
+      "am4Name": "4x12 Recto Straight",
+      "basedOn": { "primary": "MESA Rectifier straight 4x12 cabinet", "manufacturer": "MESA/Boogie", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" speakers",
+      "description": "12\" speakers in a straight 4x12 MESA Rectifier cabinet."
+    },
+    {
+      "am4Name": "4x12 Rumble EV12L",
+      "basedOn": { "primary": "Dumble 4x12 cabinet", "manufacturer": "Dumble", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Electro-Voice EV-12L",
+      "description": "12\" EV-12L speakers in a Dumble 4x12 cabinet."
+    },
+    {
+      "am4Name": "4x12 Rumble EV12S",
+      "basedOn": { "primary": "Dumble 4x12 cabinet", "manufacturer": "Dumble", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Electro-Voice EV-12S",
+      "description": "12\" EV-12S speakers in a Dumble 4x12 cabinet."
+    },
+    {
+      "am4Name": "4x12 Solo 100",
+      "basedOn": { "primary": "Soldano 4x12 cabinet", "manufacturer": "Soldano", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" speakers",
+      "description": "12\" speakers in a Soldano 4x12 cabinet."
+    },
+    {
+      "am4Name": "4x12 USA Mc90",
+      "wikiName": "4x12 USA MC90",
+      "basedOn": { "primary": "'80s MESA 4x12 cabinet with metal grille (\"Cliff's Boogie\" cab)", "manufacturer": "MESA/Boogie", "source": "wiki:Cab_models_list" },
+      "speaker": "12\" Celestion (M)C90 (similar to Classic Lead 80)",
+      "description": "12\" Celestion (M)C90 speakers in an '80s MESA 4x12 cabinet with a metal grille, aka \"Cliff's Boogie\" cab.",
+      "fractalQuotes": [
+        {
+          "text": "My main gigging cab for years was a Mesa 4x12 with a quad of C90s. Loved that cab.",
+          "url": "https://forum.fractalaudio.com/threads/free-black-shadow-mc-90-ir.148138/#post-1752294",
+          "attribution": "Fractal Audio"
+        }
+      ]
+    },
+    {
+      "am4Name": "8x10 SV Bass",
+      "basedOn": { "primary": "Ampeg SVT 8x10 bass cabinet", "manufacturer": "Ampeg", "source": "wiki:Cab_models_list" },
+      "speaker": "eight 10\" speakers",
+      "description": "Eight 10\" speakers in an Ampeg SVT bass cabinet. From the \"Dr. Bonkers 8x10 SBB Bass\" DynaCab Pack.",
+      "flags": ["bass"]
+    }
+  ]
+}

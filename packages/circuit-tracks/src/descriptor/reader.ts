@@ -40,6 +40,7 @@ import type {
   PresetSnapshot,
   PresetSnapshotSlot,
   ReadResult,
+  PackDirectoryDump,
   SampleDirectoryDump,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
@@ -49,6 +50,7 @@ import { readCurrentPatch, readStoredPatch, readStoredPatchViaLoad, instanceToSy
 import { isPatchDumpParam, OFFSET_BY_PARAM } from '../codec/patchLayout.js';
 import { downloadProject } from '../ncs/uploadProject.js';
 import { readSampleDirectory } from '../ncs/sampleDirectory.js';
+import { readPackDirectory } from '../ncs/packDirectory.js';
 import { TRANSFER_CONSTANTS } from '../ncs/transfer.js';
 import { decodeNotePattern, DEFAULT_GATE, type NoteStep } from '../ncs/notePattern.js';
 import { decodeDrumPattern, drumPatternToString, DEFAULT_DRUM_CHOICE } from '../ncs/drumPattern.js';
@@ -268,6 +270,12 @@ export const reader: DeviceReader = {
    * clean read-before-write answer, so we flag it (`empty: true`, no bytes)
    * rather than error. A CRC mismatch, though, is a HARD failure — never hand
    * back unverified bytes as a "backup" (a corrupt backup is worse than none).
+   *
+   * Reads `ctx.pack` — the same field the overwrite gate and the write itself
+   * read. That matters most on the backup-before-overwrite path: a backup that
+   * saved Pack 1's slot while the write destroyed Pack 5's would hand back a
+   * reassuring "backed up" receipt for a file that is not the thing that was
+   * overwritten, which is worse than no backup at all.
    */
   async dumpStoredPresetBinary(location: number, ctx: DispatchCtx): Promise<PresetBinaryDump> {
     if (!Number.isInteger(location) || location < 0 || location > 63) {
@@ -283,7 +291,8 @@ export const reader: DeviceReader = {
     // same multi-frame session as a write; refresh a possibly idle-suspended
     // handle first so it self-heals instead of aborting mid-handshake.
     const conn = ctx.reconnect ? ctx.reconnect() : ctx.conn;
-    const dl = await downloadProject(conn, location, { reconnect: ctx.reconnect });
+    const dl = await downloadProject(conn, location, { pack: ctx.pack, reconnect: ctx.reconnect });
+    const packDesc = `Pack ${(ctx.pack ?? 0) + 1}`;
     if (dl.empty) {
       return {
         bytes: new Uint8Array(0),
@@ -292,16 +301,16 @@ export const reader: DeviceReader = {
         format: 'circuit-ncs-project',
         file_extension: 'ncs',
         empty: true,
-        source: `stored project slot ${location} (empty, nothing to export)`,
+        source: `stored project slot ${location} on ${packDesc} (empty, nothing to export)`,
       };
     }
     if (!dl.ok || !dl.bytes) {
-      throw new DispatchError('no_ack', DEVICE_LABEL, `Could not read project slot ${location}: ${dl.error ?? 'no data returned'}.`);
+      throw new DispatchError('no_ack', DEVICE_LABEL, `Could not read project slot ${location} on ${packDesc}: ${dl.error ?? 'no data returned'}.`);
     }
     if (!dl.crcOk) {
       throw new DispatchError(
         'no_ack', DEVICE_LABEL,
-        `Read of slot ${location} failed its device CRC check; the transfer was partial or corrupt. ` +
+        `Read of slot ${location} on ${packDesc} failed its device CRC check; the transfer was partial or corrupt. ` +
         `Not returning a backup from unverified bytes; reconnect and retry.`,
       );
     }
@@ -316,15 +325,21 @@ export const reader: DeviceReader = {
       format: 'circuit-ncs-project',
       file_extension: 'ncs',
       name: name || `Project ${location + 1}`,
-      source: `stored project slot ${location} (device shows "Project ${location + 1}"; CRC-verified)`,
+      source: `stored project slot ${location} on ${packDesc} (device shows "Project ${location + 1}"; CRC-verified)`,
     };
   },
 
   /**
-   * Read the pack's shared 64-slot drum-sample pool and return each slot's
+   * Read Pack 1's shared 64-slot drum-sample pool and return each slot's
    * stored name. Read-only; needs a bidirectional connection. Naming a pool
    * semantically ("kick", "snare", "hat") lets the groove packer target slots
    * by meaning instead of a fixed layout.
+   *
+   * NOT pack-aware: the underlying dir read hardcodes pack 0 (see
+   * `ncs/sampleDirectory.ts`), so this always reports PACK 1's pool no matter
+   * what `ctx.pack` says. Projects + patches are pack-aware; samples are the
+   * remaining half (design doc §6). Callers must not read this as "the selected
+   * pack's pool".
    */
   async readSampleDirectory(ctx: DispatchCtx): Promise<SampleDirectoryDump> {
     if (!ctx.conn.hasInput) {
@@ -334,6 +349,36 @@ export const reader: DeviceReader = {
       );
     }
     return readSampleDirectory(ctx.conn);
+  },
+
+  /**
+   * List the microSD card's packs by name (up to 32). One round trip; the
+   * device answers a pack-scoped DIR_CONTROL with a count + one entry per pack.
+   * Hardware-confirmed 2026-07-16 (5 packs read by name, first attempt) —
+   * `docs/design/circuit-pack-addressing.md`.
+   *
+   * This is how an agent learns which packs exist BEFORE aiming a destructive
+   * write at one: nothing on the wire reports which pack the front panel has
+   * selected, so the pack must be chosen deliberately and passed explicitly.
+   *
+   * Maps the codec's wire-side entry (0-based `index`) to the display-first
+   * shape (`pack`, 1-based, the same value the `pack` args take). The 0-based
+   * index never reaches the tool surface as a bare `index`, so it cannot be
+   * mistaken for the arg.
+   */
+  async readPackDirectory(ctx: DispatchCtx): Promise<PackDirectoryDump> {
+    if (!ctx.conn.hasInput) {
+      throw new DispatchError(
+        'no_ack', DEVICE_LABEL,
+        'list_packs needs a bidirectional MIDI connection (input + output) to read the pack names back; the Circuit input port was not available. Close Novation Components so the port is free, then retry.',
+      );
+    }
+    const dir = await readPackDirectory(ctx.conn);
+    return {
+      count: dir.count,
+      packs: dir.packs.map((p) => ({ pack: p.device_pack, name: p.name, wire_index: p.index })),
+      note: dir.note,
+    };
   },
 
   /**
@@ -355,6 +400,20 @@ export const reader: DeviceReader = {
     // "patch:N" → read a stored synth PATCH via the file-transfer READ (fileType
     // 0x04), distinct from the default numeric location which reads a PROJECT.
     if (typeof loc === 'string' && /^patch\b/i.test(loc.trim())) {
+      // A patch read goes through the device's WORKING BUFFER (Program Change +
+      // dump), which always follows the pack selected on the front panel. There
+      // is no pack field to set, so an explicit `pack` cannot be honored: refuse
+      // rather than hand back the front panel's pack as if the arg had applied.
+      if (ctx.pack !== undefined && ctx.pack !== 0) {
+        throw new DispatchError(
+          'capability_not_supported',
+          DEVICE_LABEL,
+          `A "patch:N" read is served from the device's working buffer, which always follows the pack selected on the ` +
+          `front panel, so it cannot be pointed at Pack ${ctx.pack + 1} over the wire. Drop the pack arg to read the ` +
+          `patch from whichever pack the device currently has loaded, or select Pack ${ctx.pack + 1} on the device first. ` +
+          `(A numeric project location DOES honor pack.)`,
+        );
+      }
       return readStoredPatchSnapshot(ctx, loc);
     }
     const slot = typeof loc === 'number' ? loc : Number.parseInt(String(loc), 10);
@@ -373,15 +432,19 @@ export const reader: DeviceReader = {
     // Reconnect-before-transfer (restart-research H2): refresh a possibly idle-
     // suspended handle before the multi-frame project read.
     const conn = ctx.reconnect ? ctx.reconnect() : ctx.conn;
-    const dl = await downloadProject(conn, slot, { reconnect: ctx.reconnect });
+    // `pack` comes off the ctx, like every other pack-scoped leg. Omitting it
+    // here made get_preset's `pack` arg a silent no-op that served Pack 1's slot
+    // as though the arg had been honored (caught in review, 2026-07-16).
+    const dl = await downloadProject(conn, slot, { pack: ctx.pack, reconnect: ctx.reconnect });
+    const packDesc = `Pack ${(ctx.pack ?? 0) + 1}`;
     // An EMPTY slot is a clean, expected answer (read-before-write safety), not an
     // error — return an empty snapshot so the caller learns "nothing stored here"
     // without a scary failure. The transfer layer has already closed the session.
     if (dl.empty) {
       return {
-        name: `(empty slot ${slot})`,
+        name: `(empty slot ${slot} on ${packDesc})`,
         slots: [],
-        read_warnings: [`Slot ${slot} holds no stored project; it is empty. Safe to write (nothing to overwrite).`],
+        read_warnings: [`Slot ${slot} on ${packDesc} holds no stored project; it is empty. Safe to write (nothing to overwrite).`],
         _meta: {
           device: DEVICE_LABEL,
           read_at_ms: Date.now(),

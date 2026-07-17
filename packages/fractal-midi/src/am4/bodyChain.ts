@@ -6,7 +6,7 @@
  * (proof: an amp type-swap shrank a body's decompSize 5344 -> 4528 —
  * downstream offsets shift when a block's type changes, so a fixed table
  * cannot describe it). Diff-anchored against the AM4 factory bank +
- * hardware warm-pair captures (2026-07-02); see cookbook
+ * hardware warm-pair captures (2026-07-02); see primitive
  * `am4-body-block-record-chain` and the AM4 SYSEX-MAP body section.
  *
  * ── Structure (AMP block, byte-exact) ────────────────────────────────

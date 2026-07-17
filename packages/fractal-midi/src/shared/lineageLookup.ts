@@ -21,6 +21,10 @@ const KNOWLEDGE_DIR = path.join(__dirname, 'lineage');
 export const LINEAGE_BLOCKS = [
   'amp', 'drive', 'reverb', 'delay', 'compressor',
   'phaser', 'chorus', 'flanger', 'wah',
+  // 2026-07-15 (BK-104): AM4 stock DynaCab roster (45 records; names match
+  // AM4_DYNACAB_ROSTER / amp.dynacab_*_cab enum labels exactly). Facts from
+  // the wiki Cab_models_list DynaCabs section: real cab, speaker, quotes.
+  'dynacab',
 ] as const;
 export type LineageBlock = typeof LINEAGE_BLOCKS[number];
 
@@ -44,6 +48,8 @@ export interface LineageRecord {
   powerTubes?: string;
   matchingDynaCab?: string;
   originalCab?: string;
+  // dynacab-specific: the physical speaker in the captured cab
+  speaker?: string;
   // drive-specific
   categories?: string[];
   clipTypes?: string[];
@@ -78,6 +84,9 @@ export function scoreRecord(rec: LineageRecord, query: string): number {
   if (rec.basedOn?.productName?.toLowerCase().includes(q)) score += 12;
   if (rec.am4Name.toLowerCase().includes(q)) score += 10;
   if (rec.basedOn?.primary.toLowerCase().includes(q)) score += 8;
+  // Speaker asks ("greenback", "V30", "EV12L", "alnico") are the natural
+  // reverse-lookup entry point for the dynacab corpus.
+  if (rec.speaker && rec.speaker.toLowerCase().includes(q)) score += 8;
   if (rec.wikiName && rec.wikiName.toLowerCase().includes(q)) score += 5;
   if (rec.description && rec.description.toLowerCase().includes(q)) score += 5;
   for (const an of rec.artistNotes ?? []) {
@@ -112,6 +121,7 @@ export function formatLineageRecord(rec: LineageRecord, includeQuotes: boolean, 
   if (rec.powerTubes) lines.push(`powerTubes: ${rec.powerTubes}`);
   if (rec.originalCab) lines.push(`originalCab: ${rec.originalCab}`);
   if (rec.matchingDynaCab) lines.push(`matchingDynaCab: ${rec.matchingDynaCab}`);
+  if (rec.speaker) lines.push(`speaker: ${rec.speaker}`);
   if (rec.basedOn) {
     const parts: string[] = [`basedOn: ${rec.basedOn.primary}`];
     if (rec.basedOn.manufacturer) parts.push(`manufacturer=${rec.basedOn.manufacturer}`);

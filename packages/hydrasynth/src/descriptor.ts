@@ -149,6 +149,39 @@ export const HYDRASYNTH_DESCRIPTOR: DeviceDescriptor = {
     has_macro_routing: true,
     macro_count: 8,
     macro_dest_slots: 8,
+    /**
+     * Melodic voice names this synth answers to as an EXTERNAL note destination:
+     * a host sequencer (Circuit Tracks) authors a pitched part onto one of its
+     * outward MIDI tracks and the Hydrasynth plays it (`apply_pattern`
+     * `external_targets: [{device:'hydrasynth', track:'midi1'}]`), alongside a
+     * drum part on the other track.
+     *
+     * NOTE what this does and does not claim. `pattern_realizers` is deliberately
+     * ABSENT: the Hydrasynth does not sequence itself, so it is not a pattern
+     * target in its own right and `apply_pattern port:'hydrasynth'` still refuses.
+     * This map exists because `buildExternalOverrides` gates on
+     * `capabilities.voice_map` being present BEFORE it reaches the `voice_notes`
+     * pin path, so a synth with no map cannot be routed to at all, even fully
+     * pinned. (Verified 2026-07-16: dispatcher/externalRouting.ts throws
+     * not_a_pattern_target on `extMap === undefined`.)
+     *
+     * The `channel` here is nominal and unused for external routing: the real
+     * channel always comes from the HOST's `external_tracks[track]` (the Circuit's
+     * MIDI 1 = ch3). The note is only a fallback for an un-pitched step; a melodic
+     * voice carries its own pitch from its note tokens ("c2 ~ g2 ~"), so these
+     * defaults rarely apply. Set the synth to receive on the host track's channel.
+     *
+     * Melodic names are an OPEN vocabulary (unlike the closed DRUM_ROLES enum), so
+     * this is a starter set matching the Circuit's own melodic naming. Anything
+     * outside it routes via `external_targets[].voice_notes` pinning.
+     */
+    voice_map: {
+      bass: { channel: 1, note: 36 },   // C2
+      chord: { channel: 1, note: 60 },  // C4
+      lead: { channel: 1, note: 72 },   // C5
+      arp: { channel: 1, note: 60 },    // C4
+      pad: { channel: 1, note: 60 },    // C4 — ambience
+    },
   },
   canonical_terms: {
     block: 'module',                 // OSC / Filter / Env / LFO / Mutator / etc.

@@ -10,7 +10,7 @@
  *
  * paramId provenance: the device's OWN editor binary (validated 100% vs
  * the III Ghidra control). NOT reused from the III — reuse mis-addresses
- * FM3 6.9% / FM9 18.6% / VP4 99.5% of shared params. See cookbook
+ * FM3 6.9% / FM9 18.6% / VP4 99.5% of shared params. See primitives
  * `_negative/gen3-paramid-reuse-across-model-bytes` and
  * `docs/_private/MINING-FINDINGS-FM-VP4.md`.
  *
@@ -174,7 +174,7 @@ lines.push(` * paramId provenance: ${prefix}-Edit's OWN param tables (direct PE 
 lines.push(` * scan, validated 100% vs the III Ghidra control). NOT reused from the`);
 lines.push(` * Axe-Fx III: reusing III paramIds would mis-address ${reuseWrong.length}/${sharedAudited.length}`);
 lines.push(` * (${sharedAudited.length ? ((100 * reuseWrong.length) / sharedAudited.length).toFixed(1) : '0'}%) of this device's shared-with-III params. See`);
-lines.push(` * docs/_private/MINING-FINDINGS-FM-VP4.md and the cookbook negative entry`);
+lines.push(` * docs/_private/MINING-FINDINGS-FM-VP4.md and the primitives negative entry`);
 lines.push(` * gen3-paramid-reuse-across-model-bytes.`);
 lines.push(` *`);
 lines.push(` * Coverage: ${wire.length} wire-addressable params across ${families.length} families.`);

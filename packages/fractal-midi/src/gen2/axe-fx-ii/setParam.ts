@@ -343,10 +343,15 @@ export function isGetPresetNameResponse(
 
 /**
  * Parse a GET_PRESET_NAME response. Body is null-terminated ASCII
- * starting at byte 6.
+ * starting at byte 6. `expectedModelId` must match the frame's model
+ * byte (defaults to the XL+ for back-compat; pass the config's model
+ * byte for other family members, e.g. AX8 `0x08`).
  */
-export function parseGetPresetNameResponse(bytes: number[]): string {
-    if (!isGetPresetNameResponse(bytes)) {
+export function parseGetPresetNameResponse(
+    bytes: number[],
+    expectedModelId: number = AXE_FX_II_XL_PLUS_MODEL_ID,
+): string {
+    if (!isGetPresetNameResponse(bytes, expectedModelId)) {
         throw new Error('Bytes do not match GET_PRESET_NAME response shape');
     }
     let nullIdx = -1;
@@ -410,7 +415,7 @@ export function buildGetAllParams(
  * - response is payload-insensitive (empty request and a block-selector
  *   request return the same frame shape).
  *
- * SEMANTICS (hardware-verified on Q8.02, see cookbook ii-fn0e-query-states):
+ * SEMANTICS (hardware-verified on Q8.02, see primitive ii-fn0e-query-states):
  * byte0 is the per-block LIVE state in the active scene — bit 0x01 = engaged
  * (1) vs bypassed (0), bit 0x02 = channel (set = X, clear = Y). Bytes 1..4
  * (`state28`) are a per-block address monotonic in blockId; sorting records
@@ -489,7 +494,7 @@ export function parseQueryStatesResponse(bytes: number[]): QueryStateRecord[] {
  * is a per-block address monotonic in blockId. Sorting records by
  * `state28` and zipping to the placed effectIds sorted ascending binds
  * each record to its block. Hardware-verified 11/11 against independent
- * fn 0x02 bypass + fn 0x11 channel reads (see cookbook
+ * fn 0x02 bypass + fn 0x11 channel reads (see primitive
  * ii-fn0e-query-states). The tag byte then yields the active-scene state.
  *
  * Throws if the counts differ (the caller must pass exactly the placed,
@@ -555,8 +560,11 @@ export interface GridCell {
  *   bytes[2]: routing flags
  *   bytes[3]: unused (per wiki)
  */
-export function parseGetGridLayoutResponse(bytes: number[]): GridCell[] {
-    if (!isGetGridLayoutResponse(bytes)) {
+export function parseGetGridLayoutResponse(
+    bytes: number[],
+    expectedModelId: number = AXE_FX_II_XL_PLUS_MODEL_ID,
+): GridCell[] {
+    if (!isGetGridLayoutResponse(bytes, expectedModelId)) {
         throw new Error('Bytes do not match GET_GRID_LAYOUT response shape');
     }
     const cells: GridCell[] = [];
@@ -602,8 +610,11 @@ export function isSceneNumberResponse(
     return true;
 }
 
-export function parseSceneNumberResponse(bytes: number[]): number {
-    if (!isSceneNumberResponse(bytes)) {
+export function parseSceneNumberResponse(
+    bytes: number[],
+    expectedModelId: number = AXE_FX_II_XL_PLUS_MODEL_ID,
+): number {
+    if (!isSceneNumberResponse(bytes, expectedModelId)) {
         throw new Error('Bytes do not match SCENE_NUMBER response shape');
     }
     return bytes[6] & 0x7f;
@@ -1260,7 +1271,7 @@ export function parseSetCellRoutingResponse(bytes: readonly number[]): SetCellRo
  * state regardless of fn=0x11 channel selection). Full value array
  * required (itemCount must match block's total position count).
  * Encoding is per-position: some positions use wire16 (0..65534),
- * others use display-integer scale. See cookbook entry
+ * others use display-integer scale. See primitive entry
  * `ii-state-broadcast-triple-write` and `HW-125-FINDINGS-2026-05-25.md`.
  */
 export interface BuildStateBroadcastOptions extends BuildOptions {

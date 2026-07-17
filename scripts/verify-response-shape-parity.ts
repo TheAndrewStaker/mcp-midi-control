@@ -115,6 +115,15 @@ const PRESET_SNAPSHOT_META_CONTRACT: ShapeContract = {
     'channel_state_hint',
     'current_location',
     'is_dirty',
+    // BK-081 (2026-07-09): Axe-Fx II atomic whole-preset-image read path.
+    // 'read_path' names whether the snapshot's params came from the ONE
+    // atomic preset-image dump (tear-free across blocks) or the legacy
+    // per-block fn=0x1F loop; 'image_read_fallback_reason' explains why the
+    // image path was skipped/partial, when it was. II-only for now, not
+    // yet promoted into core's PresetSnapshotMeta type (see
+    // descriptor/reader.ts PresetSnapshotMetaWithReadPath).
+    'read_path',
+    'image_read_fallback_reason',
   ],
 };
 
@@ -167,6 +176,11 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // The hint was the omission signal; with nothing omitted it is
       // correctly absent. II still emits it (its default omits inactive Y).
       channel_state_hint: 'AM4 get_preset now returns all four channels (BUG-1 fix), so the "channel state omitted" nudge is never applicable.',
+      // BK-081 (2026-07-09): the atomic whole-preset-image read path is
+      // Axe-Fx-II-specific (the II's 0x77/0x78/0x79 preset-image dump);
+      // AM4 has its own atomic read shape and does not emit this field.
+      read_path: 'BK-081 atomic-image read-path field is Axe-Fx-II-specific; AM4 does not emit it.',
+      image_read_fallback_reason: 'BK-081 atomic-image read-path field is Axe-Fx-II-specific; AM4 does not emit it.',
     },
     readResult: {},
   },
@@ -233,6 +247,11 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // dirty flag.
       current_location: 'AM4-only (GAP-1): the gen-3 reader does not surface the active stored-location pointer.',
       is_dirty: 'AM4-only (GAP-1): the gen-3 reader does not surface a working-buffer dirty flag.',
+      // BK-081 (2026-07-09): the atomic whole-preset-image read path is
+      // Axe-Fx-II-specific; the gen-3 reader has its own atomic block-
+      // inventory read shape and does not emit this field.
+      read_path: 'BK-081 atomic-image read-path field is Axe-Fx-II-specific; the gen-3 reader does not emit it.',
+      image_read_fallback_reason: 'BK-081 atomic-image read-path field is Axe-Fx-II-specific; the gen-3 reader does not emit it.',
     },
     readResult: {
       // The gen-3 reader projects a value out of the bulk-read burst and does

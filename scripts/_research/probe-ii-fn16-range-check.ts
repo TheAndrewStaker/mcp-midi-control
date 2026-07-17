@@ -2,7 +2,7 @@
  * Axe-Fx II fn 0x16 GET_PARAM_INFO targeted range check (READ-ONLY).
  *
  * Settles two cache-vs-convention divergences by asking the device for its
- * OWN min/max/default (cookbook ii-fn16-get-param-info: G1/G2/G3 = float32
+ * OWN min/max/default (primitive ii-fn16-get-param-info: G1/G2/G3 = float32
  * min/max/default, 5-septet LE plain):
  *   - phaser.depth   (Phaser 1 effectId 122, paramId 5): cache says log10 [10..100]
  *   - compressor.level (Compressor 1 effectId 100, paramId 4): cache says -20..20

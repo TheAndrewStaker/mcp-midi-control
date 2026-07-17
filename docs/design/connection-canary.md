@@ -1,7 +1,20 @@
 # Connection canary + transfer robustness: design plan
 
-**Status:** post-review. The **in-transfer guard (Layer C) is BUILT + tested**;
-the connection canary (Layer A) is reframed to recovery-hygiene and is pending.
+**Status:** post-review, Phase A (connection-arbiter.md R2) SHIPPED 2026-07-09.
+**Layer C (in-transfer guard) is BUILT + tested** (unchanged, 2026-06-20).
+**Layer A (the connection canary) is now ALSO BUILT**: `ensureConnection`
+(`packages/core/src/server-shared/connections.ts`) runs the free liveness
+check (`isHandleHealthy`, `packages/core/src/server-shared/handleHealth.ts`)
+proactively before handing back a CACHED handle, so a replug or a handle that
+died mid-send on a prior call self-heals on the NEXT call. **Layer B
+(read-path staleness participation) is BUILT for the Circuit's .ncs transfer**:
+`uploadProject`/`downloadProject` feed `recordAckOutcome` on every outcome
+except a legitimate empty-slot answer. The item-4 slow-send timer is ALSO now
+built (log + mark `slowSendSuspect`, not "refuse"; see below). See
+"Phase A / 2026-07-09" note inline at each Layer's section for exactly what
+shipped and where; the recovery-hygiene framing below (item 2) still holds:
+this remains "recovery hygiene, not prevention," now shipped rather than
+pending.
 **Trigger:** the Circuit Tracks rebooted ~3 times during a 2026-06-20 session,
 each time coinciding with a SysEx file-transfer (`ncs_upload` / `get_preset`)
 that hit `Internal RtMidi error` on a stale handle or stranded a session.
@@ -24,25 +37,46 @@ The review **reframed the fix and corrected this plan.** Key conclusions:
    hygiene** (self-heals replugs / already-failed handles), not prevention.
 
 3. **The headline fix is the in-transfer guard (Layer C), now BUILT:**
-   pre-flight `handleHealth(conn)` (isPortOpen + lastSendError) at the top of
+   pre-flight liveness check (isPortOpen + lastSendError) at the top of
    `uploadProject`/`downloadProject`, plus each loop send wrapped in try/catch to
    **abort at the first failed block** instead of firing the rest into a dead
    port. See `packages/circuit-tracks/src/ncs/uploadProject.ts`. The plan's
    original "poll `lastSendError` after each send" was UNREACHABLE (send throws),
    now corrected to try/catch. `isPortOpen()` is exposed on `MidiConnection` but
    is a NEGATIVE catch only (a WinMM poisoned-but-present handle still reports
-   open), documented honestly, not oversold.
+   open), documented honestly, not oversold. **2026-07-09 update:** the
+   pre-flight check used to be a private `handleHealth(conn)` copy in this
+   file; it is now the shared `isHandleHealthy(conn)` in
+   `packages/core/src/server-shared/handleHealth.ts` (same logic, same
+   signals, no behavior change; verified byte-for-byte against
+   `scripts/verify-circuit-ncs-transfer.ts`), so the acquire-time canary
+   (Layer A, below) and this in-transfer pre-flight now share one
+   implementation instead of two copies that could drift.
 
 4. **A failure mode the original plan was BLIND to: a *blocked* send.**
    `@julusian`'s send runs synchronously on the JS thread; if the device queue
    stalls mid-block the native call NEVER RETURNS, throws nothing, sets no
    `lastSendError`, and freezes the event loop (the historical wedge). NONE of
-   the current mitigations catch this. A slow-send timer (log + refuse if a
-   single send exceeds ~250 ms) is the only defense and is NOT yet built.
+   the mitigations built through 2026-06-20 caught this. **2026-07-09 update:
+   the slow-send timer is now BUILT** (`connect()` in
+   `packages/core/src/midi/transport.ts` wall-clocks each synchronous
+   `sendMessage`; a send over `SLOW_SEND_THRESHOLD_MS` = 250ms logs a warning
+   and sets `conn.slowSendSuspect`, which `isHandleHealthy` treats as
+   unhealthy on the NEXT acquire). Note this is "log + mark suspect for the
+   next health check," not "refuse" as originally floated: refusing
+   mid-transfer would require interrupting a send already in flight, which is
+   impossible for a synchronous native call (see the honest limit below,
+   unchanged). The TRUE blocked-forever hang is still invisible to
+   everything in-process: nothing here claims to catch it, only the
+   slow-but-completed case.
 
 5. **Layer B corrected:** do NOT feed empty-slot read timeouts into
    `recordAckOutcome`: "no READ_INIT" is a legitimate empty-slot answer, not a
-   dead handle; distinguish by handshake-ack position.
+   dead handle; distinguish by handshake-ack position. **2026-07-09: BUILT**
+   for the Circuit's `.ncs` transfer: `downloadProject` calls
+   `recordAckOutcome` on every outcome except `empty: true`;
+   `runUploadFramePlan` (the write side) calls it on every outcome, matching
+   how AM4's write path already fed the same counter.
 
 ### Experiments required BEFORE resuming device transfers
 
@@ -96,6 +130,15 @@ ack-less writes** (`STALE_HANDLE_TIMEOUT_THRESHOLD = 2`,
 `recordAckOutcome`, `:86-96`). Reads and fire-and-forget sends never increment
 the counter, so a dead handle can persist indefinitely.
 
+**2026-07-09 update: this section now describes the PRE-Phase-A state.**
+`ensureConnection` now ALSO runs the free `isHandleHealthy` canary before
+returning a cached handle (Layer A below is BUILT), so the "no liveness
+check" line above no longer holds; kept verbatim as the historical record of
+what Phase A fixed. The counter-based staleness detection described here is
+UNCHANGED and still the mechanism `STALE_HANDLE_TIMEOUT_THRESHOLD` gates;
+the canary is a second, independent, cheaper signal layered on top of it, not
+a replacement.
+
 Two distinct failure modes have hit the device this session:
 
 - **F1: stranded transfer session (FIXED).** An empty-slot read returned
@@ -115,13 +158,19 @@ and a mid-send death on a file transfer can reboot the device.
 
 ## 2. Goals / non-goals
 
-**Goals**
+**Goals** (all three DONE as of 2026-07-09, Phase A):
 - A USB replug or stale handle self-heals on the **next** tool call ("just
-  works"), instead of "first call fails, second succeeds."
+  works"), instead of "first call fails, second succeeds." ✅ `ensureConnection`
+  canary (Layer A, below).
 - A multi-block **transfer never starts on a handle it can't verify**, and
   **aborts immediately** if a send fails mid-transfer (don't keep firing blocks
-  into a dead port; that's what strands/reboots the device).
-- Read-path failures participate in staleness detection.
+  into a dead port; that's what strands/reboots the device). ✅ Layer C
+  (already built 2026-06-20), now backed by the shared `isHandleHealthy`
+  instead of a private copy.
+- Read-path failures participate in staleness detection. ✅ Layer B, below:
+  built for the Circuit's `.ncs` transfer specifically; other devices' read
+  paths were not touched in this pass (see connection-arbiter.md's
+  "what Phase A explicitly did NOT touch").
 
 **Non-goals**
 - The **Windows WinMM poisoned-handle wedge** (a handle that died mid-send is
@@ -133,47 +182,78 @@ and a mid-send death on a file transfer can reboot the device.
 
 ## 3. Design
 
-### Layer A: Liveness canary in `ensureConnection` (headline)
+### Layer A: Liveness canary in `ensureConnection` (headline): BUILT 2026-07-09
 
-Before returning a cached handle (`connections.ts:152-153`), run a **cheap
-liveness check**; if it fails, force-reconnect proactively instead of handing
-back a dead handle.
+Before returning a cached handle, `ensureConnection`
+(`packages/core/src/server-shared/connections.ts`) now runs a **cheap
+liveness check**; if it fails, it force-reconnects proactively instead of
+handing back a dead handle (same code path the existing counter-stale /
+`forceReconnect` branches already used), just a third trigger condition.
 
-Two signals, both already available:
-1. **Port-presence**: re-enumerate OS ports (`listMidiPorts()`,
-   `transport.ts:224`, no open needed) and confirm a port still matches the
-   device needle. A vanished name = unplugged → reconnect.
-2. **Last-send health**: `cached.conn.lastSendError` (already on the
-   `MidiConnection` interface, `transport.ts:62`). If the last send threw (the
-   `Internal RtMidi error`), the handle is suspect → reconnect.
+**As shipped**, the signals are `isHandleHealthy(conn)`
+(`packages/core/src/server-shared/handleHealth.ts`):
+1. **Port-presence**: `conn.isPortOpen()` (already exposed on
+   `MidiConnection` by the time this shipped; the "open question" below
+   about exposing it was resolved by an earlier session). This checks the
+   HELD handle's own OS flag, not a fresh `listMidiPorts()` re-enumeration:
+   cheaper (no full port-list scan) and equivalent for this purpose (the
+   handle we're about to hand back is the only one in question). A vanished
+   port makes this `false` → reconnect. Still a NEGATIVE catch only (a WinMM
+   handle poisoned mid-send keeps reporting open, poison-probe-verified,
+   see item 3 above).
+2. **Last-send health**: `conn.lastSendError`. If the last send on this
+   handle threw (the `Internal RtMidi error` case), the handle is suspect →
+   reconnect. The ONLY reliable Windows liveness signal per the poison probe.
+3. **`slowSendSuspect`** (the item-4 stretch goal, also shipped): a
+   completed-but-slow (>250ms) send on this handle from a PRIOR call →
+   reconnect as a precaution.
 
-```
-const existing = connections.get(label);
-if (existing) {
-  if (!isHandleHealthy(label, existing.conn)) {  // port present AND no lastSendError
-    closeMidiSafely(existing.conn); connections.delete(label); /* fall through to reopen */
-  } else {
-    return existing.conn;
-  }
-}
+Actual shape (`connections.ts`, inline in `ensureConnection`):
+```ts
+const counterStale = (cached?.consecutiveTimeouts ?? 0) >= STALE_HANDLE_TIMEOUT_THRESHOLD;
+const canaryStale = cached !== undefined && !forceReconnect && !counterStale
+    && !isHandleHealthy(cached.conn).ok;
+const stale = counterStale || canaryStale;
+if (forceReconnect || stale) { /* same discard-and-reopen path as today */ }
 ```
 
 This converts the common replug/stale case from "first call fails" → "next call
-just works." Port scans are cheap (the code already says so, `:146-147`).
+just works," for EVERY device that goes through this registry (not just
+Circuit Tracks). No probe send is added: the check only reads state the
+handle already tracks, so there is no extra round trip and no budget impact.
+Tested offline in `scripts/verify-handle-health-retry.ts` (both signals, plus
+"a healthy handle is reused with zero redundant reconnects").
 
-**Open question (for review):** `isPortOpen()` is the strongest liveness signal
-but is NOT exposed on `MidiConnection` (only used inside `connect()`,
-`transport.ts:485`). Options: (a) expose `isAlive()` on the interface (touches
-both transports + mock); (b) rely on port-presence + `lastSendError` only.
-Leaning (a) for a true probe; (b) is lower-touch but misses a dead-but-present
-handle that hasn't sent yet.
+**Open question (for review), RESOLVED:** went with reading the held handle's
+own `isPortOpen()` rather than a fresh `listMidiPorts()` re-enumeration:
+`isPortOpen()` was already exposed on `MidiConnection` by an earlier session
+(so option (a) below was moot by the time this shipped), and it answers the
+exact question ("is THIS handle's port still open") more cheaply than
+scanning every port on the bus. Kept for historical context:
+~~`isPortOpen()` is the strongest liveness signal but is NOT exposed on
+`MidiConnection`... Options: (a) expose `isAlive()`... (b) rely on
+port-presence + `lastSendError` only.~~
 
-### Layer B: Read-path staleness participation
+### Layer B: Read-path staleness participation: BUILT 2026-07-09 (Circuit only)
 
 Today only ack-decoded writes call `recordAckOutcome`. A read that times out
 should also nudge staleness (or trigger the canary). Without this, a
 `get_preset`/`get_param` after a replug keeps using the dead handle, the most
 common "is it back?" action a user takes.
+
+**As shipped**: `packages/circuit-tracks/src/ncs/uploadProject.ts`'s
+`downloadProject` (public read entry point for the `.ncs` transfer) now calls
+`recordAckOutcome(r.ok, 'circuit')` on every outcome EXCEPT `r.empty === true`
+(per the correction above, a missing READ_INIT is a legitimate "the slot is
+free" answer, not evidence the handle is dead, and must not count toward the
+stale-counter threshold). The write side (`runUploadFramePlan`, shared by
+project AND sample uploads) records every outcome unconditionally, matching
+how AM4's write path already feeds the same counter. **Scope note**: this
+pass only wired the Circuit's own `.ncs` read/write leaf functions; the
+generic `get_param`/`get_preset` read paths on OTHER devices (AM4, Axe-Fx,
+Hydrasynth) were NOT touched and still do not feed `recordAckOutcome` from
+their read side. That remains open follow-on work if the same "a replug keeps
+using the dead handle on a read" gap is confirmed on those devices too.
 
 ### Layer C: Transfer pre-flight + mid-send abort (device-safety critical)
 
@@ -193,23 +273,40 @@ When the canary or pre-flight forces a reconnect that then fails (port truly
 gone / WinMM wedge), surface the existing "powered? cable seated? restart the
 host app?" guidance; do not retry-loop into the device.
 
-## 4. Test plan (all offline, mock connection)
+## 4. Test plan (all offline, mock connection): DONE 2026-07-09
 
 - Canary: cached handle whose `lastSendError` is set → `ensureConnection`
   rebuilds it (mock factory returns a fresh handle); healthy handle → returned
-  as-is (no rebuild).
-- Canary: needle no longer present in `listMidiPorts()` → rebuild.
-- Read-path: a timed-out read increments staleness / trips the canary.
+  as-is (no rebuild). ✅ `scripts/verify-handle-health-retry.ts`.
+- Canary: needle no longer present in `listMidiPorts()` → rebuild. **Shipped
+  differently than planned**: rather than a fresh `listMidiPorts()` scan, the
+  canary reads the held handle's own `isPortOpen()` (see Layer A's resolved
+  open question); same intent (a vanished/closed port triggers rebuild),
+  cheaper mechanism. Covered by the `isPortOpen: () => false` case in
+  `verify-handle-health-retry.ts`.
+- Read-path: a timed-out read increments staleness / trips the canary. ✅ for
+  the Circuit's `.ncs` download (`verify-circuit-ncs-transfer.ts`'s
+  stale-handle block); NOT yet extended to other devices' read paths (see
+  Layer B's scope note).
 - Transfer pre-flight: `uploadProject` on a handle with `lastSendError` set →
-  refuses to start (0 data frames sent).
+  refuses to start (0 data frames sent). ✅ unchanged, still green
+  (`verify-circuit-ncs-transfer.ts`).
 - Transfer mid-send abort: a mock whose `send` sets `lastSendError` on block 3
-  → the loop stops at block 3, not 20; `finally` still attempts close.
-- Existing always-close regression stays green.
+  → the loop stops at block 3, not 20; `finally` still attempts close. ✅
+  unchanged, still green.
+- Existing always-close regression stays green. ✅ confirmed byte-for-byte
+  after the `isHandleHealthy`/`withReconnectRetry` fold-in (same error
+  strings, same frame counts, same close-ordering).
+- Additionally covered (not in the original plan): `withReconnectRetry` never
+  retries more than once even when the retry ALSO fails (no infinite retry,
+  no double-reconnect storm); `reconnect()` itself throwing surfaces a
+  combined honest error instead of an uncaught throw.
 
 ## 5. What this does and does NOT guarantee
 
 - **Does**: dramatically cut mid-send deaths (pre-flight + abort), self-heal
-  replugs (canary), stop reads stranding a dead handle (Layer B).
+  replugs (canary: now for every registry-backed device, not just Circuit),
+  stop the Circuit's `.ncs` reads from stranding a dead handle (Layer B).
 - **Does NOT**: guarantee the device never reboots. If a handle dies *exactly*
   between the pre-flight check and the first block, a partial send can still
   occur (smaller window, not zero). And the WinMM poisoned-handle wedge is
@@ -229,4 +326,8 @@ host app?" guidance; do not retry-loop into the device.
    not re-tested, project memory.)
 4. Should transfers be gated behind an explicit health gate the way writes are
    behind read-before-write, i.e. never run `ncs_upload` without a fresh canary
-   pass in the same call?
+   pass in the same call? **RESOLVED, yes: built as Layer C's pre-flight
+   (already shipped 2026-06-20, now backed by the shared `isHandleHealthy`)
+   plus the NEW acquire-time canary in `ensureConnection` (2026-07-09): a
+   transfer gets a health-checked handle from `ensureConnection` AND re-checks
+   it itself before the first frame, so both seams gate on the same signals.**

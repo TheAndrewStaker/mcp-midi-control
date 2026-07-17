@@ -96,7 +96,7 @@ function unpack3to2(p: Buffer): Buffer {
     const b2 = p[i + 2] & 0x7f; // mask byte
     const u =
       (b0 | (b1 << 7)) & 0xffff;
-    // b2 carries high bits — apply per cookbook septet-21bit-byte2-mask-preservation
+    // b2 carries high bits — apply per primitive septet-21bit-byte2-mask-preservation
     const hi = ((b2 & 0x03) << 14) | (u & 0x3fff);
     out.push(hi & 0xff);
     out.push((hi >> 8) & 0xff);

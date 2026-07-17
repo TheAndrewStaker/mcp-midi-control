@@ -169,8 +169,8 @@ export async function readPresetName(
 //
 // Wire shape (HW-AM4-FN1F probe, 2026-05-22 — same envelope as Axe-Fx II
 // fn 0x1F but with model byte 0x15 and a 2-byte septet effectId payload
-// instead of II's no-payload request). See cookbook
-// `am4-fn1f-atomic-read` and `docs/devices/am4/SYSEX-MAP.md` §6oa.
+// instead of II's no-payload request). See the
+// `am4-fn1f-atomic-read` primitive and `docs/devices/am4/SYSEX-MAP.md` §6oa.
 //
 //   Header (fn 0x74):
 //     F0 00 01 74 15 74 [eid_lo eid_hi] [size_lo size_hi] [cs] F7

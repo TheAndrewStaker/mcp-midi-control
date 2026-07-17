@@ -27,7 +27,7 @@ manifest).
 2. The "Status" column flags `✅ landed` (output is current and mined),
    `🟡 output exists, partially mined` (re-read with a TS parser to
    extract more), `🔜 run pending`, or `🚫 superseded`.
-3. The "Cookbook primitive" column names which cookbook entry consumes
+3. The "Primitive" column names which primitive entry consumes
    this script's output. Many scripts feed multiple primitives.
 
 ---
@@ -37,44 +37,44 @@ manifest).
 Walk symbol tables, `.rdata` arrays, or direct-pattern scans to
 recover paramId → name catalogs.
 
-| Script | Target | Discovers | Output | Status | Cookbook primitive |
+| Script | Target | Discovers | Output | Status | Primitive |
 |---|---|---|---|---|---|
-| `MineAM4EditParamResolver.java` | AM4-Edit | paramId → name pairs via resolver-table walk | `ghidra-am4-paramnames.json/.txt` | ✅ landed | [[../docs/research/cookbook/param-descriptor-16byte]] |
-| `MineAxeEditIIParamResolver.java` | AxeEdit (II 32-bit) | II paramId → name (early approach) | `ghidra-axeedit2-paramnames.json/.txt` | 🟡 superseded by SeekParamTablesII | [[../docs/research/cookbook/param-descriptor-16byte]] |
-| `MineAxeEditIII.java` | AxeEdit III | III paramId → name (v1) | `ghidra-axe-edit-iii-paramnames*.json` | 🟡 superseded by v2 | [[../docs/research/cookbook/param-descriptor-16byte]] |
-| `MineAxeEditIIIv2.java` | AxeEdit III | III paramId → name (v2, refined stride) | `ghidra-axe-edit-iii-paramnames-v2.json` | ✅ landed | [[../docs/research/cookbook/param-descriptor-16byte]] |
-| `MineAxeEditIIIParamResolver.java` | AxeEdit III | III resolver-table variant mining | `ghidra-axe-edit-iii-resolver.json` | ✅ landed | [[../docs/research/cookbook/param-descriptor-16byte]] |
+| `MineAM4EditParamResolver.java` | AM4-Edit | paramId → name pairs via resolver-table walk | `ghidra-am4-paramnames.json/.txt` | ✅ landed | [[../docs/research/primitives/param-descriptor-16byte]] |
+| `MineAxeEditIIParamResolver.java` | AxeEdit (II 32-bit) | II paramId → name (early approach) | `ghidra-axeedit2-paramnames.json/.txt` | 🟡 superseded by SeekParamTablesII | [[../docs/research/primitives/param-descriptor-16byte]] |
+| `MineAxeEditIII.java` | AxeEdit III | III paramId → name (v1) | `ghidra-axe-edit-iii-paramnames*.json` | 🟡 superseded by v2 | [[../docs/research/primitives/param-descriptor-16byte]] |
+| `MineAxeEditIIIv2.java` | AxeEdit III | III paramId → name (v2, refined stride) | `ghidra-axe-edit-iii-paramnames-v2.json` | ✅ landed | [[../docs/research/primitives/param-descriptor-16byte]] |
+| `MineAxeEditIIIParamResolver.java` | AxeEdit III | III resolver-table variant mining | `ghidra-axe-edit-iii-resolver.json` | ✅ landed | [[../docs/research/primitives/param-descriptor-16byte]] |
 | `MineAxeEditIIIActionsAndShapes.java` | AxeEdit III | III fn=0x01 SET_PARAMETER action codes + 93 caller bodies | `ghidra-axe-edit-iii-actions-and-shapes.txt` (1.5 MB) | 🟡 output exists, ~70 sub-actions un-mined | (see synthesis-log 2026-05-22 §1d) |
-| `MineAxeEditIIIEnvelopeEmitters.java` | AxeEdit III | III host-side emitter call sites for envelope-shape decode | `ghidra-axe-edit-iii-envelope-emitters.txt` | ✅ landed | [[../docs/research/cookbook/vendor-envelope-descriptor-table]] |
+| `MineAxeEditIIIEnvelopeEmitters.java` | AxeEdit III | III host-side emitter call sites for envelope-shape decode | `ghidra-axe-edit-iii-envelope-emitters.txt` | ✅ landed | [[../docs/research/primitives/vendor-envelope-descriptor-table]] |
 
 ## Dump*: serialize discovered structures
 
 Walk a known structure and emit text/JSON of its contents.
 
-| Script | Target | Discovers | Output | Status | Cookbook primitive |
+| Script | Target | Discovers | Output | Status | Primitive |
 |---|---|---|---|---|---|
-| `DumpAM4ParamNames.java` | AM4-Edit | AM4 param names | `ghidra-am4-edit-paramnames.json` | ✅ landed | [[../docs/research/cookbook/param-descriptor-16byte]] |
+| `DumpAM4ParamNames.java` | AM4-Edit | AM4 param names | `ghidra-am4-edit-paramnames.json` | ✅ landed | [[../docs/research/primitives/param-descriptor-16byte]] |
 | `DecompileAM4InboundDumpHandlers.java` | AM4-Edit | Focused decompile of 7 candidate AM4-Edit functions flagged by `FindAM4EditPresetParser` (high-0x77 / high-0x78 hits + the workflow registration helper) | `ghidra-am4-edit-inbound-dump-handlers.txt` (~4.7k lines) | ✅ landed 2026-05-28; classified high-0x77 candidates as JUCE UI false positives; documented `FUN_140196500` two-array storage layout |
 | `DumpAM4DeviceManagerVtable.java` | AM4-Edit | (V1, symbol-table lookup) Aborted attempt to look up `AM4DeviceManager::vftable` by name: Ghidra synthesizes the label but doesn't expose it under that exact string for headless `SymbolTable` queries | (no usable output) | 🚫 superseded by V2; kept for the negative finding (symbol-lookup-for-rendered-vtable-names doesn't work in headless) |
 | `DumpAM4DeviceManagerVtableV2.java` | AM4-Edit | Extracts `AM4DeviceManager::vftable` + `FasStateMachine::vftable` + sentinel addresses via head-scan of LEA refs in the ctor `FUN_1402df090` / `FUN_14031d230` | `ghidra-am4-edit-devicemanager-vtable-v2.txt` (~3.5k lines, includes 64-slot dump + decompiles of slots 0-15) | ✅ landed 2026-05-28; confirmed `AM4DeviceManager` root class @ 0x1412c2460, `FasStateMachine` workflow base @ 0x1412b2c48 |
 | `DumpAM4DeviceMgrStateMachineVtable.java` | AM4-Edit | V3: full-body scan of `FUN_14031d230` to identify `DeviceMgrStateMachine::vftable` (skips the sentinel and FasStateMachine vtables found by V2). Dumps 64-slot vtable + decompiles longest-bodied methods | `ghidra-am4-edit-devicemgrstatemachine-vtable.txt` (~1.2k lines) | ✅ landed 2026-05-28; vtable @ 0x1412c4138; slots 30/12/22/45 are the remaining chunk-1-parser candidates (slot 23 ruled out as RNG) |
 | `DecompileAndClassifyDMSMSlots.java` | AM4-Edit | Per-slot classification of 6 DMSM vtable candidates + 7 AM4DeviceManager candidates against the 22 chunk-1 anchor byte offsets, stride hints (0x3 / 0x12 / 0x27), buffer-read patterns, and negative-signal substrings (JUCE UI, `__components.xml` persistence, LCG RNG, single-instance dialog). Per slot: verdict + capped decompile | `ghidra-am4-edit-classify-dmsm-slots.txt` (~2k lines) | ✅ landed 2026-05-28; ALL 13 candidates ruled out as the chunk-1 parser. Pinned `FUN_1402ddb80` (AMDM slot 4) as the inbound message dispatcher as a side-finding; the follow-up chases the stream-end path `FUN_1402da830` |
-| `DecompileAM4InboundStreamPath.java` | AM4-Edit | Classifies the dispatcher `FUN_1402ddb80`'s 8 first-level callees + 3 supporting size readers / allocators with the same scoring scheme as the prior slot-classification pass plus switch/case counting for state-machine-executor detection | `ghidra-am4-edit-inbound-stream-path.txt` (~1.8k lines) | ✅ landed 2026-05-28 (terminal pass). Predicted AM4 analog of III's `FUN_1401f4390` (`FUN_1402da830`) decompiled to a single-param SET_PARAMETER unpacker, not a state-machine executor. `FUN_1401da990` revealed the canonical inbound-parse: descriptor-table-driven via the 54 mined tables. **Definitive negative**: AM4-Edit contains NO chunk-1 inner per-param decoder. New cookbook entry `_negative/editor-side-chunk-1-inner-decode`. Decode arc closes at the editor-binary level |
-| `DumpAEImageDepotVtable.java` | AxeEdit (II) | AEImageDepot vftable @ 0xeacff8: class architecture | `ghidra-aeimagedepot-vtable.txt` (1714 lines) | ✅ landed | [[../docs/research/cookbook/alphabetical-name-cascade-block-ordering]] |
-| `DumpAxeEditIIChunkDescriptorTables.java` | AxeEdit (II) | II envelope-spec chunk descriptor tables | `ghidra-axe-edit-chunk-descriptors.txt` | ✅ landed | [[../docs/research/cookbook/vendor-envelope-descriptor-table]] |
-| `DumpAxeEditIIFooterHash.java` | AxeEdit (II) | `FUN_00544cc0` (XOR-fold hash) disassembly | `ghidra-axeedit2-footer-hash.txt` | ✅ landed | [[../docs/research/cookbook/xor-fold-hash]] |
-| `DumpAxeEditIIIDumpDescriptors.java` | AxeEdit III | III envelope-spec descriptor tables at 0x1407ab440 + 0x1407aba40 | `ghidra-axe-edit-iii-dump-descriptors.txt` | ✅ landed; parsed 2026-05-22 via `parse-ghidra-decompile.ts` | [[../docs/research/cookbook/vendor-envelope-descriptor-table]] |
-| `DumpAxeEditIIIMiscDescriptors.java` | AxeEdit III | III caller-refs + 24 additional descriptor tables 0x1407aac70..0x1407abb60 | `ghidra-axe-edit-iii-misc-descriptors.txt` | ✅ landed; parsed 2026-05-22; **table 0x1407ab940 = 1024-ushort payload = III preset binary** | [[../docs/research/cookbook/vendor-envelope-descriptor-table]] |
-| `DumpAxeEditIIIParamNames.java` | AxeEdit III | III param names | `ghidra-axe-edit-iii-paramnames.json` | ✅ landed | [[../docs/research/cookbook/param-descriptor-16byte]] |
+| `DecompileAM4InboundStreamPath.java` | AM4-Edit | Classifies the dispatcher `FUN_1402ddb80`'s 8 first-level callees + 3 supporting size readers / allocators with the same scoring scheme as the prior slot-classification pass plus switch/case counting for state-machine-executor detection | `ghidra-am4-edit-inbound-stream-path.txt` (~1.8k lines) | ✅ landed 2026-05-28 (terminal pass). Predicted AM4 analog of III's `FUN_1401f4390` (`FUN_1402da830`) decompiled to a single-param SET_PARAMETER unpacker, not a state-machine executor. `FUN_1401da990` revealed the canonical inbound-parse: descriptor-table-driven via the 54 mined tables. **Definitive negative**: AM4-Edit contains NO chunk-1 inner per-param decoder. New primitive entry `_negative/editor-side-chunk-1-inner-decode`. Decode arc closes at the editor-binary level |
+| `DumpAEImageDepotVtable.java` | AxeEdit (II) | AEImageDepot vftable @ 0xeacff8: class architecture | `ghidra-aeimagedepot-vtable.txt` (1714 lines) | ✅ landed | [[../docs/research/primitives/alphabetical-name-cascade-block-ordering]] |
+| `DumpAxeEditIIChunkDescriptorTables.java` | AxeEdit (II) | II envelope-spec chunk descriptor tables | `ghidra-axe-edit-chunk-descriptors.txt` | ✅ landed | [[../docs/research/primitives/vendor-envelope-descriptor-table]] |
+| `DumpAxeEditIIFooterHash.java` | AxeEdit (II) | `FUN_00544cc0` (XOR-fold hash) disassembly | `ghidra-axeedit2-footer-hash.txt` | ✅ landed | [[../docs/research/primitives/xor-fold-hash]] |
+| `DumpAxeEditIIIDumpDescriptors.java` | AxeEdit III | III envelope-spec descriptor tables at 0x1407ab440 + 0x1407aba40 | `ghidra-axe-edit-iii-dump-descriptors.txt` | ✅ landed; parsed 2026-05-22 via `parse-ghidra-decompile.ts` | [[../docs/research/primitives/vendor-envelope-descriptor-table]] |
+| `DumpAxeEditIIIMiscDescriptors.java` | AxeEdit III | III caller-refs + 24 additional descriptor tables 0x1407aac70..0x1407abb60 | `ghidra-axe-edit-iii-misc-descriptors.txt` | ✅ landed; parsed 2026-05-22; **table 0x1407ab940 = 1024-ushort payload = III preset binary** | [[../docs/research/primitives/vendor-envelope-descriptor-table]] |
+| `DumpAxeEditIIIParamNames.java` | AxeEdit III | III param names | `ghidra-axe-edit-iii-paramnames.json` | ✅ landed | [[../docs/research/primitives/param-descriptor-16byte]] |
 | `DumpAxeEditIIIParamTables.java` | AxeEdit III | III param tables (v1) | `ghidra-axe-edit-iii-paramtables.json` | 🟡 superseded by V2 |  |
-| `DumpAxeEditIIIParamTablesV2.java` | AxeEdit III | III param tables (v2, refined) | `ghidra-axe-edit-iii-paramtables-v2.json` | ✅ landed | [[../docs/research/cookbook/param-descriptor-16byte]] |
+| `DumpAxeEditIIIParamTablesV2.java` | AxeEdit III | III param tables (v2, refined) | `ghidra-axe-edit-iii-paramtables-v2.json` | ✅ landed | [[../docs/research/primitives/param-descriptor-16byte]] |
 | `DumpAxeEditIIIPatchParserDeep.java` | AxeEdit III | III patch-parser call graph (deep) | `ghidra-axe-edit-iii-patch-parsers.txt` (115 KB) | 🟡 output exists, un-mined | (transfer candidate: II alphabetical cascade) |
-| `DumpAxeEditIIIPresetReceiver.java` | AxeEdit III | III preset-receiver flow (the III preset round-trip) | `ghidra-axe-edit-iii-preset-receiver.txt` (371 KB) | 🟡 output exists, contains III block-name cascade analog | [[../docs/research/cookbook/alphabetical-name-cascade-block-ordering]] (III transfer) |
-| `DumpAxeEditIIIStorePresetFlow.java` | AxeEdit III | III store-preset flow (`FUN_140337060` + descriptor table 0x1407ab2f0) | `ghidra-axe-edit-iii-store-preset.txt` (81 KB) | 🟡 output exists, III hash function reachable here | [[../docs/research/cookbook/xor-fold-hash]] (III transfer) |
+| `DumpAxeEditIIIPresetReceiver.java` | AxeEdit III | III preset-receiver flow (the III preset round-trip) | `ghidra-axe-edit-iii-preset-receiver.txt` (371 KB) | 🟡 output exists, contains III block-name cascade analog | [[../docs/research/primitives/alphabetical-name-cascade-block-ordering]] (III transfer) |
+| `DumpAxeEditIIIStorePresetFlow.java` | AxeEdit III | III store-preset flow (`FUN_140337060` + descriptor table 0x1407ab2f0) | `ghidra-axe-edit-iii-store-preset.txt` (81 KB) | 🟡 output exists, III hash function reachable here | [[../docs/research/primitives/xor-fold-hash]] (III transfer) |
 | `DumpAxeEditIIOpcodeTable.java` | AxeEdit (II) | II opcode table (94 fn-bytes) | `ghidra-axe-edit-iii-opcode-map.txt` | ✅ landed |  |
 | `DumpAxeEditIIPresetDispatchHandlers.java` | AxeEdit (II) | II preset-dispatch handler table | `ghidra-axe-edit-preset-handlers.txt` | ✅ landed |  |
 | `DumpAxeEditIISysExCore.java` | AxeEdit (II) | II SysEx core dispatch | `ghidra-axe-edit-sysex-core.txt` | ✅ landed |  |
-| `DumpFooterHashCallContext.java` | AxeEdit (II) | Footer-hash call sites (cross-refs to `FUN_00544cc0`) | `ghidra-axeedit2-hash-call-ctx.txt` | ✅ landed | [[../docs/research/cookbook/xor-fold-hash]] |
+| `DumpFooterHashCallContext.java` | AxeEdit (II) | Footer-hash call sites (cross-refs to `FUN_00544cc0`) | `ghidra-axeedit2-hash-call-ctx.txt` | ✅ landed | [[../docs/research/primitives/xor-fold-hash]] |
 | `DumpFractalEditorOpcodeTable.java` | Generic | Multi-binary opcode table dump (32-bit) |  | 🟡 misc |  |
 | `DumpFractalEditorOpcodeTable64.java` | Generic | Multi-binary opcode table dump (64-bit) |  | 🟡 misc |  |
 | `DumpMessageDirectory.java` | Generic | Message directory dump (older approach) |  | 🚫 superseded by Map*HostEmitters |  |
@@ -105,7 +105,7 @@ Walk a known structure and emit text/JSON of its contents.
 | `FindAxeEditIIVtableUsers.java` | AxeEdit (II) | II vtable consumer functions | `ghidra-axe-edit-vtable-users.txt` | ✅ landed |
 | `FindAxeEditRouting.java` | AxeEdit (II) | II routing emitter |  | ✅ landed |
 | `FindEncoder.java` | Generic | Generic encoder-pattern discovery |  | 🟡 misc |
-| `FindLabelSource.java` | Generic | JUCE BinaryData label source |  | ✅ superseded by [[../docs/research/cookbook/juce-binarydata-zip]] |
+| `FindLabelSource.java` | Generic | JUCE BinaryData label source |  | ✅ superseded by [[../docs/research/primitives/juce-binarydata-zip]] |
 | `FindParamTable.java` | Generic | Param table discovery (early) |  | 🚫 superseded by SeekParamTables |
 | `FindRoutingCaller.java` | Generic | Routing caller-site discovery |  | ✅ landed |
 
@@ -118,6 +118,7 @@ Walk a known structure and emit text/JSON of its contents.
 | `MapAxeEditIIIHostEmitters.java` | AxeEdit III | III fn-byte → emitter map (14-instruction window) | `ghidra-axe-edit-iii-host-emitter-map.txt` | 🟡 superseded by PreciseAxeEditIIIHostEmitters |
 | `PreciseAxeEditIIIHostEmitters.java` | AxeEdit III | III fn-byte → emitter map (PcodeOp data-flow; 45 callers, 27 distinct fn-bytes with workflow labels) | `ghidra-axe-edit-iii-host-emitters-precise.txt` | ✅ landed |
 | `AssociateAxeEditIIIFnByteWithName.java` | AxeEdit III | III fn-byte → name correlation | `ghidra-axe-edit-iii-fnbyte-name-map.txt` | ✅ landed |
+| `FindAxeEditIIIIndirectFnByteCallers.java` | AxeEdit III | BK-054: broader (non-`isCall()`-filtered) reference scan for the 5 fn=0x08/0x43 emit wrappers `DecodeAxeEditIIINewFnBytes.java` reported as "no callers"; decompiles the 2 un-mined fn=0x00 emit sites; control-checks the scan technique against the known fn=0x77 builder | `ghidra-axe-edit-iii-indirect-fn-callers.txt` | ✅ landed 2026-07-09; **negative** for the "hidden workflow-name registry" hypothesis (the only refs found are mundane PE `.pdata` unwind-table rows); control PASSED (reproduced both known fn=0x77 call sites) |
 | `ExtractVariantResolver.java` | AxeEdit (II) | II variant resolver tables |  | ✅ landed |
 | `TraceAxeEditIIStateBuilders.java` | AxeEdit (II) | II state builder call graph (v1) |  | 🟡 superseded by V2 |
 | `TraceAxeEditIIStateBuildersV2.java` | AxeEdit (II) | II state builder call graph (v2 refined) |  | ✅ landed |
@@ -170,7 +171,7 @@ that pattern.
 ## Refinement history
 
 - 2026-05-22 (initial registry): all 68 scripts enumerated, status
-  flags added, cookbook cross-links populated. Synthesis-pass 2026-05-22
+  flags added, primitives cross-links populated. Synthesis-pass 2026-05-22
   identified ~10 of these scripts as having un-mined output sitting
   in `samples/captured/decoded/`; flagged `🟡 output exists` for those.
 - v1.5 dump-extraction tier (plan §11): the headline TS extractor
@@ -178,3 +179,16 @@ that pattern.
   both III descriptor-table dump files. 26 III tables + 34 caller-refs
   extracted; III preset binary envelope shape confirmed at table
   `0x1407ab940` (1024 ushorts, byte-identical to II shape).
+- 2026-07-09 (BK-054 outer fn-byte dispatch mine): `FindAxeEditIIIIndirectFnByteCallers.java`
+  added (the script count at the top of this file predates several other
+  additions and was already stale before this session; not reconciled here,
+  out of this session's scope). Run via `run-axeedit3-indirect-fn-callers.cmd`
+  against the existing `ghidra-axe-edit-3` project (`-process`, not
+  `-import`, no re-analysis needed). One headless run, no fights: decompiled
+  the 2 un-mined fn=0x00 emit sites, ran a broader (non-`isCall()`) reference
+  scan on the 5 "no callers" fn=0x08/0x43 wrappers (negative: only `.pdata`
+  unwind-table rows, no hidden workflow registry), and control-checked the
+  scan technique against the known fn=0x77 builder (PASS). See
+  `packages/fractal-midi/docs/devices/axe-fx-iii/SYSEX-MAP.md` "BK-054" section
+  for the consolidated findings and `docs/research/primitives/iii-host-emitter-fn-table.md`
+  for the primitive update.

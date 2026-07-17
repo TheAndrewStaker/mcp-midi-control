@@ -71,7 +71,7 @@ for (const K of [2, 4, 8, 16, 20, 32, 64, 92, 128, 130]) {
 
 // Maybe the field is NOT effectId but a byte-offset into the preset binary
 // (paramBase). Either way, what matters for the perf goal is the STATE field.
-// Decode (b3,b4) loFirst as the scene-state ushort per cookbook.
+// Decode (b3,b4) loFirst as the scene-state ushort per the primitives corpus.
 console.log('\n=== (b3,b4) as scene-state ushort (loFirst) ===');
 for (let r = 0; r < RECS.length; r++) {
   const [, , , b3, b4] = RECS[r];

@@ -13,6 +13,7 @@
  */
 
 import { connect, type MidiConnection } from '../midi/transport.js';
+import { isHandleHealthy } from './handleHealth.js';
 
 /**
  * Max time we wait for the device to echo a WRITE after we send it. The
@@ -131,7 +132,20 @@ export function ensureConnection(
     forceReconnect = false,
 ): MidiConnection {
     const cached = connections.get(label);
-    const stale = (cached?.consecutiveTimeouts ?? 0) >= STALE_HANDLE_TIMEOUT_THRESHOLD;
+    const counterStale = (cached?.consecutiveTimeouts ?? 0) >= STALE_HANDLE_TIMEOUT_THRESHOLD;
+    // R2 handle-health canary (docs/design/connection-canary.md Layer A;
+    // docs/design/connection-arbiter.md R2: "ships first, no lock required").
+    // Before handing back a CACHED handle, run the FREE in-band liveness check
+    // (no probe send: isHandleHealthy only reads state the handle already
+    // tracks). This is what converts "USB replug -> first call fails, second
+    // call succeeds" into "the NEXT call just works," for every device that
+    // goes through this registry, not just the ones with their own bespoke
+    // pre-flight check (uploadProject.ts). Skipped when we're already
+    // reconnecting for another reason (forceReconnect / counter-stale); no
+    // point running a redundant check right before we discard the entry anyway.
+    const canaryStale = cached !== undefined && !forceReconnect && !counterStale
+        && !isHandleHealthy(cached.conn).ok;
+    const stale = counterStale || canaryStale;
     if (forceReconnect || stale) {
         if (cached) closeMidiSafely(cached.conn);
         connections.delete(label);

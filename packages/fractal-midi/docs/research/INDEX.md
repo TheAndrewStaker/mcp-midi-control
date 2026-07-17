@@ -5,18 +5,18 @@ engineering work on Fractal Audio's SysEx wire protocols. Read this
 before opening a new probe, capture, or Ghidra dump, the answer may
 already exist.
 
-The cookbook (item 1 below) is the **encoding primitive Rosetta stone**.
+The primitives corpus (item 1 below) is the **encoding-primitive Rosetta stone**.
 Most "I need to decode X" questions are actually "is X an instance of
-a known primitive?", check the cookbook first.
+a known primitive?", check the primitives corpus first.
 
 ---
 
-## 1. Encoding Cookbook (the Rosetta stone)
+## 1. Encoding Primitives (the Rosetta stone)
 
-**[`cookbook/INDEX.md`](cookbook/INDEX.md)**: 18 primitive entries
+**[`primitives/INDEX.md`](primitives/INDEX.md)**: 18 primitive entries
 (seed corpus), organized by name + status. Each entry has formal
 definition, where it's used, edge cases, applicability + misapplication
-notes, verification path, and refinement history. The cookbook turns
+notes, verification path, and refinement history. The primitives corpus turns
 decode work from infinite-capture into mechanical composition.
 
 Highlights of what's already in:
@@ -34,12 +34,12 @@ Highlights of what's already in:
   msb-first preset payload, etc.)
 
 When you discover, refine, or rule out a primitive, register it the
-same session. See `cookbook/INDEX.md` § "Adding to this index" for the
+same session. See `primitives/INDEX.md` § "Adding to this index" for the
 discipline.
 
 ## 2. Per-device decode status
 
-| Device | Wire-map | Decode status | Cookbook coverage |
+| Device | Wire-map | Decode status | Primitives coverage |
 |---|---|---|---|
 | **AM4** | [`devices/am4/SYSEX-MAP.md`](../devices/am4/SYSEX-MAP.md) | 100% catalog (mature) | ~7 primitives apply directly |
 | **Axe-Fx II** | [`devices/axe-fx-ii/SYSEX-MAP.md`](../devices/axe-fx-ii/SYSEX-MAP.md) | ~97.4% catalog, preset-binary round-trip working | ~15 primitives apply (highest density) |
@@ -90,7 +90,7 @@ Check this before writing a new script.
 agent runs that look across the whole accumulated finding-corpus to
 spot connections single sessions miss. The first synthesis surfaced
 ~4.3 MB of un-mined material across 30 dump files; cite reports back
-into cookbook entries' Refinement history when they trigger updates.
+into primitive entries' Refinement history when they trigger updates.
 
 ---
 
@@ -98,7 +98,7 @@ into cookbook entries' Refinement history when they trigger updates.
 
 **Session start (codec/protocol RE work):**
 
-1. Open `cookbook/INDEX.md`, is the thing you're about to decode an
+1. Open `primitives/INDEX.md`, is the thing you're about to decode an
    instance of a known primitive?
 2. If yes → apply the primitive, register a new fixture if it adds
    verification value.

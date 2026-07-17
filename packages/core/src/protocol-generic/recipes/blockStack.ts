@@ -781,7 +781,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: 2,
             block_type: 'filter',
-            params: p({ type: 'Peaking', freq: 500, q: 1.2, gain: -4, mix: 100 }),
+            params: p({ type: 'Peaking', frequency: 500, q: 1.2, gain: -4, mix: 100 }),
           },
           {
             slot: 3,

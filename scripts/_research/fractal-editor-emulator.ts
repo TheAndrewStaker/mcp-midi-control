@@ -8,7 +8,7 @@
  * argv wrapper. The controlled-capture runner (`sim/controlled-capture.ts`)
  * calls the same `runEmulator` with per-capture instructions + auto-decode.
  *
- * ## Background (why this exists despite the negative cookbook entry)
+ * ## Background (why this exists despite the negative primitive entry)
  *
  * `_negative/virtual-midi-bridge-interposition.md` said Fractal editors
  * filter class-compliant virtual ports out of their picker. That was

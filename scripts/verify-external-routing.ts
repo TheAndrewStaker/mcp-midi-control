@@ -10,8 +10,15 @@
 import { clearRegistry, registerDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
 import { buildExternalOverrides } from '@mcp-midi-control/core/protocol-generic/dispatcher/externalRouting.js';
 import { clearRigLinksCache, getRigLinks, trackForDevice, RIG_LINKS_ENV } from '@mcp-midi-control/core/protocol-generic/rigLinks.js';
+import { clearRigManifestCache, RIG_MANIFEST_ENV } from '@mcp-midi-control/core/protocol-generic/openrig/manifest.js';
 import { CIRCUIT_TRACKS_DESCRIPTOR } from '@mcp-midi-control/circuit-tracks/descriptor.js';
 import { SPD_SX_DESCRIPTOR } from '@mcp-midi-control/spd-sx/descriptor.js';
+
+// Hermetic: trackForDevice now consults the rig manifest (resolveRigLinks), so a
+// stray MCP_RIG_MANIFEST in the environment must not leak in and satisfy a
+// "no rig link -> error" assertion by resolving a track from the manifest.
+delete process.env[RIG_MANIFEST_ENV];
+clearRigManifestCache();
 
 let failures = 0;
 const check = (name: string, cond: boolean, extra = '') => {

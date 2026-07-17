@@ -65,5 +65,23 @@ device reconciles it on load.
 `setDrumSampleBinding(buf, [0,1,2,3])` writes the canonical stoken role layout
 (kick/snare/closed_hat/ride on slots 1..4, matches `pack_groove.py SAMPLE_SLOT`).
 Used to repair Project 33 on 2026-06-27 (re-uploaded, read-back byte-identical).
-Next: wire it into `apply_pattern mode:ncs_upload` so every authored groove sets
-its binding from the voice→role→slot map (see `groove-instrument-mapping.md`).
+
+**WIRED end-to-end 2026-07-09.** `authorPlanIntoProject` / `authorArrangementIntoProject`
+(`packages/circuit-tracks/src/descriptor/writer.ts`) already called
+`setDrumSampleBinding` from `plan.upload.drum_binding`, defaulting to the
+canonical `[0,1,2,3]` layout whenever drum tracks are authored; this half was
+done 2026-06-27 and goldened in `scripts/verify-circuit-ncs.ts`. The residual
+gap (found 2026-07-09) was one layer up: `apply_pattern`'s tool schema and the
+dispatcher (`packages/core/src/protocol-generic/{tools,dispatcher}/patterns.ts`
++ `patterns/compile.ts`) never threaded a caller-supplied override through to
+`RealizePlan.upload.drum_binding`, so the "overridable" part of the feature was
+unreachable from any real `apply_pattern` call: every upload silently got the
+default `[0,1,2,3]` regardless of what a caller asked for. Closed by adding an
+optional top-level `drum_binding: number[4]` arg to `apply_pattern` (same
+argument-shape precedent as `drum_flips`: a plain, additive, optional field;
+absent ⇒ byte-identical to before). Project-global, so it applies to both a
+single-pattern upload and a multi-section `arrangement`. New goldens: the
+`authorArrangementIntoProject` 5th-param override (previously untested) and a
+`compileToPlan` passthrough check that golden-locks the plumbing itself.
+See `docs/design/groove-instrument-mapping.md` item 3: the "done" note there
+covered only the writer half; the tool-surface half is what closed today.

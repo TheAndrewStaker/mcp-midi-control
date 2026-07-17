@@ -11,7 +11,7 @@
  *                       table, because paramIds are firmware-specific
  *                       ordinals (reusing the III's mis-addresses FM3 13.4%
  *                       / FM9 24% of the symbols they share with the III, see
- *                       cookbook `_negative/gen3-paramid-reuse-across-model-bytes`).
+ *                       the `_negative/gen3-paramid-reuse-across-model-bytes` primitive).
  *   - `resolveEffectId` block-name -> effect ID (shared; the III's).
  *
  * The III passes the III catalog and, with `dropEmptyMappedBlocks: false`,

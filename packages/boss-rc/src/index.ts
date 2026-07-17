@@ -12,6 +12,7 @@
 
 export * from './codec/rc0.js';
 export * from './codec/mk2.js';
+export * as rc600 from './codec/rc600.js';
 export * from './storage/discovery.js';
 export * from './storage/memoryStore.js';
 export * from './descriptor.js';

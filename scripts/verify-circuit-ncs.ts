@@ -32,6 +32,13 @@ import {
   roleOfSampleName, rolesByDirectory, bindingFromDirectory,
 } from '@mcp-midi-control/circuit-tracks/ncs/sampleRoles.js';
 import {
+  readSampleDirectory, parseDirListHeader, parseDirEntry, buildReadFileRequest, fileIdFor,
+  SAMPLE_DIRECTORY_CONSTANTS,
+} from '@mcp-midi-control/circuit-tracks/ncs/sampleDirectory.js';
+import { makeMessage, fileId, buildUploadFrames, TRANSFER_CONSTANTS as TRANSFER_SUB_CONSTANTS } from '@mcp-midi-control/circuit-tracks/ncs/transfer.js';
+import { parsePackListHeader, parsePackEntry, readPackDirectory, FILE_TYPE_PACK } from '@mcp-midi-control/circuit-tracks/ncs/packDirectory.js';
+import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
+import {
   decodeNotePattern, setNoteStep, clearNoteStep, setNotePattern, DEFAULT_GATE, DEFAULT_NOTE_VELOCITY,
 } from '@mcp-midi-control/circuit-tracks/ncs/notePattern.js';
 import { noteStepBase, NOTE_STEP_REGION, NOTE_STEP_BYTES } from '@mcp-midi-control/circuit-tracks/ncs/format.js';
@@ -44,6 +51,8 @@ import {
   SCALE_CHROMATIC, SCALE_ROOT_OFFSET, SCALE_TYPE_OFFSET,
 } from '@mcp-midi-control/circuit-tracks/ncs/scale.js';
 import type { RealizePlan, RealizeNoteEvent } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { compileToPlan, type NeutralPattern } from '@mcp-midi-control/core/protocol-generic/patterns/index.js';
+import { CIRCUIT_TRACKS_DESCRIPTOR } from '@mcp-midi-control/circuit-tracks/descriptor.js';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -668,6 +677,17 @@ check('noteStepBase(midi2,0) = META[56]-896', noteStepBase('midi2', 0) === 0x20b
       b[META_OFFSETS[drumBlockIndex(0, 0)]] === 15 && b[META_OFFSETS[drumBlockIndex(0, 2)]] === 7);
     check('arrangement chain: single section → kind single, no chain',
       authorArrangementIntoProject(new Uint8Array(NCS_FILE_SIZE), [{ name: 'a', plan: verse }], [0]).layout.kind === 'single');
+
+    // 5th param `drumBinding`: project-global override, same contract as
+    // authorPlanIntoProject's plan.upload.drum_binding (tested above).
+    const bOverride = new Uint8Array(NCS_FILE_SIZE);
+    authorArrangementIntoProject(bOverride, [
+      { name: 'verse', plan: verse }, { name: 'chorus', plan: chorus },
+    ], [0, 0, 1], undefined, [0, 7, 2, 11]);
+    check('arrangement: drumBinding override honored (Drum2=crash slot7, Drum4=china slot11)',
+      JSON.stringify(getDrumSampleBinding(bOverride)) === JSON.stringify([0, 7, 2, 11]));
+    check('arrangement: drumBinding defaults to canonical [0,1,2,3] when omitted',
+      JSON.stringify(getDrumSampleBinding(b)) === JSON.stringify([0, 1, 2, 3]));
   }
 
   // SCENES mode: 9 plays don't fit the 8-slot chain; runs compress to ≤4 scenes.
@@ -700,6 +720,30 @@ check('noteStepBase(midi2,0) = META[56]-896', noteStepBase('midi2', 0) === 0x20b
       [0, 1, 2].every((sc) => JSON.stringify(getSceneDrumChain(buf, sc, 0)) === '{"start":0,"end":2}'));
     check('arrangement scenes: scene-chain end = 3 scenes', getSceneChainEnd(buf) === 3);
   }
+}
+
+// ── apply_pattern plumbing: compileToPlan forwards upload.drum_binding ──
+// setDrumSampleBinding + authorPlanIntoProject/authorArrangementIntoProject
+// were already wired (tested above); the actual gap was one layer up:
+// apply_pattern's tool schema and the dispatcher's CompileOptions.upload
+// never carried a caller-supplied override through to RealizePlan.upload.
+// Golden-lock the identity passthrough so a future refactor can't silently
+// drop it again (compileToPlan just spreads opts.upload onto the plan).
+{
+  const pattern: NeutralPattern = {
+    name: 'plumbing', steps: 4, bars: 1,
+    voices: { kick: { steps: [{ on: true }, { on: false }, { on: false }, { on: false }] } },
+  };
+  const withOverride = compileToPlan(pattern, CIRCUIT_TRACKS_DESCRIPTOR.capabilities, {
+    bpm: 120, mode: 'ncs_upload', upload: { slot: 5, drum_binding: [0, 7, 2, 11] },
+  });
+  check('compileToPlan forwards upload.drum_binding unchanged',
+    JSON.stringify(withOverride.upload?.drum_binding) === JSON.stringify([0, 7, 2, 11]), JSON.stringify(withOverride.upload));
+  const withoutOverride = compileToPlan(pattern, CIRCUIT_TRACKS_DESCRIPTOR.capabilities, {
+    bpm: 120, mode: 'ncs_upload', upload: { slot: 5 },
+  });
+  check('compileToPlan: drum_binding absent stays undefined (not defaulted at this layer)',
+    withoutOverride.upload?.drum_binding === undefined);
 }
 
 // ── dry_run: author + fit-check with ZERO device I/O ──────────────────
@@ -745,6 +789,203 @@ await (async () => {
   }
 })();
 
+// ── Sample-directory READ, re-decoded 2026-07-09 (sampleDirectory.ts) ──
+// Literal bytes lifted directly from samples/captured/get_pack_from_circuit_tracks.pcapng
+// (Novation Components "Get Pack from Circuit Tracks", a genuine READ action;
+// decoded via scripts/_research/decode-circuit-usbmidi.py). Anchors the parser
+// + request-builder byte-exactly, and the mocked round trip below golden-locks
+// the safety property this whole re-decode exists for: the listing NEVER sends
+// a WRITE_INIT/DATA/FINISH/SET_FILENAME frame (the destructive 2026-06-27 bug).
+{
+  const SUB = TRANSFER_SUB_CONSTANTS.SUBCMD;
+
+  // DIR_CONTROL reply headers (sub 0x0b): project 52 entries, patch-bank 16.
+  const projectHeader = [0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, 0x0b, 0x03, 0x00, 0x34, 0x00, 0xf7];
+  const ph = parseDirListHeader(projectHeader);
+  check('parseDirListHeader: project dir header → fileType 3, pack 0, count 52',
+    ph?.fileType === 0x03 && ph?.pack === 0 && ph?.count === 52, JSON.stringify(ph));
+
+  const patchHeader = [0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, 0x0b, 0x04, 0x00, 0x10, 0x00, 0xf7];
+  const pph = parseDirListHeader(patchHeader);
+  check('parseDirListHeader: patch-bank dir header → fileType 4, pack 0, count 16',
+    pph?.fileType === 0x04 && pph?.pack === 0 && pph?.count === 16, JSON.stringify(pph));
+
+  check('parseDirListHeader: rejects a non-DIR_CONTROL message',
+    parseDirListHeader([0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, 0x0c, 0, 0, 0, 0xf7]) === undefined);
+
+  // DIR_ENTRY replies (sub 0x0c): project slot 0, patch-bank slot 5.
+  const name0 = [...'00_Hello Tracks.ncs'].map((c) => c.charCodeAt(0));
+  const entry0 = [0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, 0x0c, 0x03, 0x00, 0x00, ...name0, 0xf7];
+  const e0 = parseDirEntry(entry0);
+  check('parseDirEntry: project slot 0 → "00_Hello Tracks.ncs"',
+    e0?.fileType === 0x03 && e0?.pack === 0 && e0?.slot === 0 && e0?.name === '00_Hello Tracks.ncs', JSON.stringify(e0));
+
+  const name5 = [...'05_PATCHBANK.cpb'].map((c) => c.charCodeAt(0));
+  const entry5 = [0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, 0x0c, 0x04, 0x00, 0x05, ...name5, 0xf7];
+  const e5 = parseDirEntry(entry5);
+  check('parseDirEntry: patch-bank slot 5 → "05_PATCHBANK.cpb"',
+    e5?.fileType === 0x04 && e5?.pack === 0 && e5?.slot === 5 && e5?.name === '05_PATCHBANK.cpb', JSON.stringify(e5));
+
+  check('parseDirEntry: rejects a non-DIR_ENTRY message', parseDirEntry(projectHeader) === undefined);
+
+  check('fileIdFor builds the shared [fileType,pack,slot] shape',
+    JSON.stringify(fileIdFor(0x05, 0, 11)) === JSON.stringify([0x05, 0, 11]));
+
+  // Per-file READ REQUEST: byte-exact vs the capture's sample slot-0 request,
+  // and the project slot-7 request (same shape, only fileType/slot differ).
+  const reqSample0 = buildReadFileRequest(SAMPLE_DIRECTORY_CONSTANTS.FILE_TYPE_SAMPLE, 0, 0);
+  const capturedSample0 = [0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x02, 0xf7];
+  check('buildReadFileRequest(sample, pack0, slot0) byte-exact vs the capture',
+    JSON.stringify(reqSample0) === JSON.stringify(capturedSample0),
+    reqSample0.map((b) => b.toString(16).padStart(2, '0')).join(' '));
+
+  const reqProject7 = buildReadFileRequest(SAMPLE_DIRECTORY_CONSTANTS.FILE_TYPE_PROJECT, 0, 7);
+  const capturedProject7 = [0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x07, 0x02, 0xf7];
+  check('buildReadFileRequest(project, pack0, slot7) byte-exact vs the capture',
+    JSON.stringify(reqProject7) === JSON.stringify(capturedProject7));
+
+  // ── readSampleDirectory: full mocked round trip, no hardware ──
+  // A scripted MidiConnection stub: replies are keyed off what was just sent,
+  // queued for the NEXT matching receive (mirrors the real register-before-send
+  // ordering readSampleDirectory uses). Backlog is a deliberate simplification
+  // of the real transport (which drops unmatched messages instead of queueing
+  // them) so a message that arrives before anyone is listening for it can
+  // still be picked up later — exactly the "stale reply sitting in the queue"
+  // shape the 2026-07-10 prelude-desync bug needs to reproduce. `register`
+  // honors a real timeout (via setTimeout) so production's best-effort drain
+  // step doesn't hang the test when there is nothing queued to drain.
+  function makeMockDirConn(scriptedReply: (msg: number[]) => number[][] | undefined): { conn: MidiConnection; sent: number[][] } {
+    const sent: number[][] = [];
+    const backlog: number[][] = [];
+    const waiters: { predicate: (m: number[]) => boolean; resolve: (v: number[]) => void; timer?: ReturnType<typeof setTimeout> }[] = [];
+    function deliver(msg: number[]): void {
+      const idx = waiters.findIndex((w) => w.predicate(msg));
+      if (idx !== -1) {
+        const w = waiters.splice(idx, 1)[0];
+        if (w.timer) clearTimeout(w.timer);
+        w.resolve(msg);
+      } else {
+        backlog.push(msg);
+      }
+    }
+    function register(predicate: (m: number[]) => boolean, timeoutMs?: number): Promise<number[]> {
+      const idx = backlog.findIndex(predicate);
+      if (idx !== -1) return Promise.resolve(backlog.splice(idx, 1)[0]);
+      return new Promise<number[]>((resolve, reject) => {
+        const waiter: { predicate: (m: number[]) => boolean; resolve: (v: number[]) => void; timer?: ReturnType<typeof setTimeout> } =
+          { predicate, resolve };
+        waiters.push(waiter);
+        if (timeoutMs !== undefined) {
+          waiter.timer = setTimeout(() => {
+            const i = waiters.indexOf(waiter);
+            if (i !== -1) waiters.splice(i, 1);
+            reject(new Error('mock receive timeout'));
+          }, timeoutMs);
+        }
+      });
+    }
+    const conn = {
+      hasInput: true,
+      send: (bytes: number[]) => {
+        sent.push(bytes);
+        const replies = scriptedReply(bytes);
+        if (replies) for (const r of replies) deliver(r);
+      },
+      receiveSysEx: (t?: number) => register(() => true, t),
+      receiveSysExMatching: (predicate: (m: number[]) => boolean, t?: number) => register(predicate, t),
+    } as unknown as MidiConnection;
+    return { conn, sent };
+  }
+
+  await (async () => {
+    const { conn, sent } = makeMockDirConn((bytes) => {
+      if (bytes[7] === SUB.DIR_CONTROL && bytes[8] === SAMPLE_DIRECTORY_CONSTANTS.FILE_TYPE_SAMPLE) {
+        const kick = [...'kick'].map((c) => c.charCodeAt(0));
+        const snare = [...'snare'].map((c) => c.charCodeAt(0));
+        return [
+          makeMessage(SUB.DIR_CONTROL, [0x05, 0x00, 0x02, 0x00]), // count = 2
+          makeMessage(SAMPLE_DIRECTORY_CONSTANTS.DIR_ENTRY, [0x05, 0x00, 0x03, ...kick]),  // slot 3
+          makeMessage(SAMPLE_DIRECTORY_CONSTANTS.DIR_ENTRY, [0x05, 0x00, 0x0a, ...snare]), // slot 10
+        ];
+      }
+      // OPEN_SESSION / QUERY_INFO / the two probe DIR_CONTROL calls: any placeholder reply.
+      return [makeMessage(SUB.ACK, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])];
+    });
+
+    const result = await readSampleDirectory(conn);
+    check('readSampleDirectory (mocked): occupied=2, total=64',
+      result.occupied === 2 && result.total === 64, JSON.stringify({ occupied: result.occupied, total: result.total }));
+    check('readSampleDirectory (mocked): slot 3 = "kick", slot 10 = "snare"',
+      result.slots[3].name === 'kick' && result.slots[10].name === 'snare');
+    check('readSampleDirectory (mocked): unlisted slots stay empty (e.g. slot 0)',
+      result.slots[0].name === undefined && result.slots[0].device_slot === 1);
+    check('readSampleDirectory (mocked): carries the hardware-confirmed listing caveat',
+      /hardware-confirmed/i.test(result.capacity_note ?? ''), result.capacity_note);
+    check('readSampleDirectory (mocked): NEVER sends WRITE_INIT/DATA/FINISH/SET_FILENAME (the 2026-06-27 destructive shape)',
+      sent.every((m) => !([SUB.WRITE_INIT, SUB.WRITE_DATA, SUB.WRITE_FINISH, SUB.SET_FILENAME] as number[]).includes(m[7])));
+    check('readSampleDirectory (mocked): closes the session',
+      sent[sent.length - 1][7] === SUB.CLOSE_SESSION);
+  })();
+
+  // ── readSampleDirectory: STALE PRELUDE REPLY does not desync the listing
+  // (2026-07-10 hardware bug: occupied=0 on a real 64-sample pack) ──
+  // Byte-cited from the 2026-07-10 bench diagnostic: a short, non-listing
+  // DIR_CONTROL reply — `f0 00 20 29 01 64 03 0b 02 05 f7` (sub=0x0b, but
+  // msg[8]=0x02, only 11 bytes) — was still sitting in the receive queue when
+  // the listing phase opened. The queue then also held the REAL sample
+  // listing header (`0b 05 00 40 00` — fileType=SAMPLE, pack 0, count
+  // 0x40=64) and all 64 DIR_ENTRY replies with names matching Components
+  // ("00_PCM.wav", "01_stoken_4_02_kick2.wav", ...). Placing the stale frame
+  // FIRST in the mock's delivery order (ahead of the real header) reproduces
+  // exactly the ordering the bug hit: the OLD loose matcher
+  // (`m[7] === SUB.DIR_CONTROL`) would have consumed the stale frame and
+  // returned occupied=0; the fixed STRICT matcher must skip it and still find
+  // the real header + all 64 entries.
+  await (async () => {
+    const STALE_HEADER_FRAME = [0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, 0x0b, 0x02, 0x05, 0xf7];
+    check('stale frame fixture matches the bench diagnostic byte-for-byte',
+      JSON.stringify(STALE_HEADER_FRAME) === JSON.stringify([0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, 0x0b, 0x02, 0x05, 0xf7]));
+    check('stale frame is too short to be a well-formed listing header (11 < 13 bytes)',
+      STALE_HEADER_FRAME.length === 11 && STALE_HEADER_FRAME.length < 13);
+    check('parseDirListHeader rejects the stale frame outright', parseDirListHeader(STALE_HEADER_FRAME) === undefined);
+
+    // Slots 0/1 are the exact names cited in the 2026-07-10 bench diagnostic
+    // ("samples pack 0 ... correct names (00_PCM.wav,
+    // 01_stoken_4_02_kick2.wav, ...)"); the remaining 62 are synthetic filler
+    // so the round trip exercises the full 64-entry count the device reported.
+    const names = Array.from({ length: 64 }, (_, i) => {
+      if (i === 0) return '00_PCM.wav';
+      if (i === 1) return '01_stoken_4_02_kick2.wav';
+      return `${String(i).padStart(2, '0')}_sample.wav`;
+    });
+
+    const { conn, sent } = makeMockDirConn((bytes) => {
+      if (bytes[7] === SUB.DIR_CONTROL && bytes[8] === SAMPLE_DIRECTORY_CONSTANTS.FILE_TYPE_SAMPLE) {
+        const realHeader = makeMessage(SUB.DIR_CONTROL, [0x05, 0x00, 0x40, 0x00]); // count 0x40 = 64
+        const entries = names.map((name, slot) =>
+          makeMessage(SAMPLE_DIRECTORY_CONSTANTS.DIR_ENTRY, [0x05, 0x00, slot, ...[...name].map((c) => c.charCodeAt(0))]));
+        // Stale frame arrives FIRST, ahead of the real header + all 64 entries.
+        return [STALE_HEADER_FRAME, realHeader, ...entries];
+      }
+      return [makeMessage(SUB.ACK, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])];
+    });
+
+    const result = await readSampleDirectory(conn);
+    check('readSampleDirectory (stale-frame mocked): occupied=64, total=64 (matcher skipped the stale frame)',
+      result.occupied === 64 && result.total === 64, JSON.stringify({ occupied: result.occupied, total: result.total }));
+    check('readSampleDirectory (stale-frame mocked): slot 0 = "00_PCM.wav"',
+      result.slots[0].name === '00_PCM.wav', result.slots[0].name);
+    check('readSampleDirectory (stale-frame mocked): every slot 0..63 has the expected name',
+      names.every((name, i) => result.slots[i].name === name));
+    check('readSampleDirectory (stale-frame mocked): carries the hardware-confirmed listing caveat',
+      /hardware-confirmed/i.test(result.capacity_note ?? ''), result.capacity_note);
+    check('readSampleDirectory (stale-frame mocked): NEVER sends WRITE_INIT/DATA/FINISH/SET_FILENAME',
+      sent.every((m) => !([SUB.WRITE_INIT, SUB.WRITE_DATA, SUB.WRITE_FINISH, SUB.SET_FILENAME] as number[]).includes(m[7])));
+    check('readSampleDirectory (stale-frame mocked): closes the session',
+      sent[sent.length - 1][7] === SUB.CLOSE_SESSION);
+  })();
+}
+
 // ── Name-match resolver: sample directory → roles → binding (sampleRoles.ts) ──
 {
   const dir = (names: (string | undefined)[]) => ({
@@ -775,6 +1016,215 @@ await (async () => {
     rolesByDirectory(dir([undefined, undefined, undefined, undefined, undefined, 'kick'])).get('kick')?.[0] === 5);
 }
 
+// ── Pack addressing + pack directory goldens ──────────────────────────
+//
+// The mechanical guard against re-introducing the pre-2026-07-16 septet model,
+// which read the fileId's middle byte as (slot >> 7) and silently pinned every
+// transfer to Pack 1.
+//
+// EVIDENCE TIERS (do not conflate):
+//  - CAPTURE-EXACT: the parser + header/entry checks use byte strings lifted
+//    verbatim from real Components captures in samples/captured/ (see
+//    packDirectory.ts "Evidence"), plus the 0b 02 05 frame off the maintainer's
+//    own 5-pack device.
+//  - GENERALIZED: the pack-2/pack-4 fileId + buildUploadFrames checks assert the
+//    decoded byte POSITION for fileType/pack combinations no capture contains
+//    (no capture shows a project write to pack 2 or 4). They encode the
+//    "positional, not a type quirk" claim the two captures jointly support, not
+//    literal observed bytes. Sound, but an inference — flagged, not smuggled in.
+//
+// The PURE layer is below; the async I/O driver (readPackDirectory's prelude
+// sequencing, matcher races, entry loop) is pinned in its own section further
+// down, added 2026-07-16 to close the gap flagged in circuit-pack-addressing.md §6.
+{
+  const SYX = (...tail: number[]) => [0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, ...tail, 0xf7];
+
+  // fileId = [fileType, pack, slot]. Pack 0 default keeps every legacy byte.
+  check('fileId(slot) defaults to pack 0 (byte-identical to the pre-fix septet model for all legal slots 0..63)',
+    [0, 1, 42, 63].every((s) => {
+      const f = fileId(s);
+      return f[0] === 0x03 && f[1] === 0x00 && f[2] === s && f[1] === ((s >> 7) & 0x7f);
+    }));
+
+  // Capture send-pack-to-circuit-tracks-pack-2-*.pcapng: `0d 03 01 03` =
+  // fileType 03 (project), pack 01 (= device Pack 2), slot 03. The septet model
+  // would decode that middle byte as slot 128+, which does not exist (64 slots).
+  check('fileId(3, pack 1) = [03,01,03], matching the pack-2 capture 0d 03 01 03',
+    fileId(3, 1).join() === [0x03, 0x01, 0x03].join());
+
+  check('fileId pack byte is independent of slot (pack 2 + slot 0 = [03,02,00], per the pack-3 capture 0d 05 02 00 shape)',
+    fileId(0, 2).join() === [0x03, 0x02, 0x00].join());
+
+  // buildUploadFrames must scope the session to the SAME pack it writes to.
+  {
+    const ncs = new Uint8Array(NCS_FILE_SIZE);
+    const framesP1 = buildUploadFrames(ncs, 5);       // default pack 0
+    const framesP5 = buildUploadFrames(ncs, 5, undefined, 4); // device Pack 5
+    const listing = (fr: ReturnType<typeof buildUploadFrames>) =>
+      fr.find((f) => f.label === 'dir_listing')!.bytes;
+    check('buildUploadFrames dir_listing carries pack 0 by default (0b 03 00, the legacy bytes)',
+      listing(framesP1).join() === makeMessage(0x0b, [0x03, 0x00]).join());
+    check('buildUploadFrames dir_listing carries the target pack (pack 4 → 0b 03 04; capture shows 0b 03 01 for Pack 2)',
+      listing(framesP5).join() === makeMessage(0x0b, [0x03, 0x04]).join());
+    check('buildUploadFrames write_init fid carries the pack byte (pack 4, slot 5)',
+      framesP5.find((f) => f.label === 'write_init')!.ack!.fid.join() === [0x03, 0x04, 0x05].join());
+    check('buildUploadFrames rejects an out-of-range pack', (() => {
+      try { buildUploadFrames(ncs, 0, undefined, 32); return false; } catch { return true; }
+    })());
+  }
+
+  // PACK listing header: 11 bytes `0b 02 <count>` (no pack field, single-byte
+  // count) — two bytes shorter than a 13-byte FILE header.
+  check('parsePackListHeader reads count=1 (pack-2 capture: 0b 02 01 → one entry)',
+    parsePackListHeader(SYX(0x0b, FILE_TYPE_PACK, 0x01))?.count === 1);
+  check('parsePackListHeader reads count=2 (pack-3 capture: 0b 02 02 → two entries)',
+    parsePackListHeader(SYX(0x0b, FILE_TYPE_PACK, 0x02))?.count === 2);
+  // The maintainer's own device, 2026-07-10 bench run — the frame sampleDirectory.ts
+  // recorded as an 11-byte "malformed straggler". It is this header, count=5,
+  // matching the 5 packs the device shows on its front panel.
+  check('parsePackListHeader reads count=5 from the 2026-07-10 device frame 0b 02 05 (the "malformed straggler")',
+    parsePackListHeader(SYX(0x0b, FILE_TYPE_PACK, 0x05))?.count === 5);
+  // A 13-byte FILE header must never be mistaken for a pack header, and vice versa.
+  check('parsePackListHeader REJECTS a 13-byte FILE header (0b 03 00 34 00 = project dir, 52 entries)',
+    parsePackListHeader(SYX(0x0b, 0x03, 0x00, 0x34, 0x00)) === undefined);
+  check('parsePackListHeader REJECTS a sub=0x0c DIR_ENTRY',
+    parsePackListHeader(SYX(0x0c, FILE_TYPE_PACK, 0x00, 0x41)) === undefined);
+
+  // PACK entry: name starts at msg[10] (no slot byte). Parsing it with the FILE
+  // entry layout would eat "0" as a slot and yield "0_ST & Roland".
+  {
+    const name = (s: string) => [...s].map((c) => c.charCodeAt(0));
+    const e0 = parsePackEntry(SYX(0x0c, FILE_TYPE_PACK, 0x00, ...name('00_ST & Roland')));
+    check('parsePackEntry reads index 0 + full name "00_ST & Roland" (pack-2 + pack-3 captures)',
+      e0?.index === 0 && e0?.name === '00_ST & Roland');
+    const e1 = parsePackEntry(SYX(0x0c, FILE_TYPE_PACK, 0x01, ...name('00_invasion-test-og')));
+    check('parsePackEntry reads index 1 + name "00_invasion-test-og" (pack-3 capture)',
+      e1?.index === 1 && e1?.name === '00_invasion-test-og');
+    check('parsePackEntry does NOT eat the name\'s first char as a slot byte (the FILE-entry layout bug)',
+      e0?.name !== '0_ST & Roland');
+    check('parsePackEntry REJECTS a FILE-type DIR_ENTRY (fileType 0x03)',
+      parsePackEntry(SYX(0x0c, 0x03, 0x00, 0x00, ...name('00_Hello.ncs'))) === undefined);
+  }
+}
+
+// ── readPackDirectory: the async I/O DRIVER, mocked (no hardware) ──────────
+//
+// Closes the gap named in circuit-pack-addressing.md §6 ("readPackDirectory has
+// no offline test"). It is hardware-confirmed (2026-07-16, 5 packs read by name
+// first attempt) but was not regression-pinned, while its sibling
+// readSampleDirectory has mocked round-trips INCLUDING a prelude-desync repro.
+// They share the identical prelude, so this driver is exposed the same way: a
+// stale short DIR_CONTROL frame left in the receive queue can be mistaken for
+// the listing header and yield a confident, wrong "0 packs".
+{
+  const name = (s: string) => [...s].map((c) => c.charCodeAt(0));
+  const SUB_DIR_CONTROL = 0x0b;
+  const SUB_DIR_ENTRY = 0x0c;
+  const SUB_CLOSE_SESSION = 0x41;
+  const MSG = (...tail: number[]) => [0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x03, ...tail, 0xf7];
+
+  /** Mock conn: scripted replies + a backlog, mirroring makeMockDirConn above. */
+  function mockConn(scripted: (msg: number[]) => number[][] | undefined): { conn: MidiConnection; sent: number[][] } {
+    const sent: number[][] = [];
+    const backlog: number[][] = [];
+    const waiters: { predicate: (m: number[]) => boolean; resolve: (v: number[]) => void; timer?: ReturnType<typeof setTimeout> }[] = [];
+    const deliver = (msg: number[]): void => {
+      const idx = waiters.findIndex((w) => w.predicate(msg));
+      if (idx !== -1) {
+        const w = waiters.splice(idx, 1)[0];
+        if (w.timer) clearTimeout(w.timer);
+        w.resolve(msg);
+      } else backlog.push(msg);
+    };
+    const register = (predicate: (m: number[]) => boolean, timeoutMs?: number): Promise<number[]> => {
+      const idx = backlog.findIndex(predicate);
+      if (idx !== -1) return Promise.resolve(backlog.splice(idx, 1)[0]);
+      return new Promise<number[]>((resolve, reject) => {
+        const waiter: { predicate: (m: number[]) => boolean; resolve: (v: number[]) => void; timer?: ReturnType<typeof setTimeout> } = { predicate, resolve };
+        waiters.push(waiter);
+        if (timeoutMs !== undefined) {
+          waiter.timer = setTimeout(() => {
+            const i = waiters.indexOf(waiter);
+            if (i !== -1) waiters.splice(i, 1);
+            reject(new Error('mock receive timeout'));
+          }, timeoutMs);
+        }
+      });
+    };
+    const conn = {
+      hasInput: true,
+      send: (bytes: number[]) => { sent.push(bytes); const r = scripted(bytes); if (r) for (const m of r) deliver(m); },
+      receiveSysEx: (t?: number) => register(() => true, t),
+      receiveSysExMatching: (p: (m: number[]) => boolean, t?: number) => register(p, t),
+    } as unknown as MidiConnection;
+    return { conn, sent };
+  }
+
+  // THREE packs, deliberately NOT five. The pack header's count byte sits at
+  // msg[9] and the maintainer's card holds 5 packs — so a fixture of 5 would
+  // "pass" against a reader that read the count from the wrong place, or from a
+  // frame that merely happens to carry a 5. That is exactly the coincidence that
+  // nearly confirmed the old `readActivePackIndex` model (5 packs, on Pack 5).
+  // A count that matches nothing else in the fixture cannot be right by luck.
+  const PACK_NAMES = ['00_73 pack from CT', '00_ST & Roland', '00_invasion-test-og'];
+  // The pack listing header is EXACTLY 11 bytes: [F0 hdr(6) 0b 02 count F7].
+  const packHeader = (count: number) => MSG(SUB_DIR_CONTROL, FILE_TYPE_PACK, count);
+  const listingReplies = (): number[][] => [
+    packHeader(PACK_NAMES.length),
+    ...PACK_NAMES.map((n, i) => MSG(SUB_DIR_ENTRY, FILE_TYPE_PACK, i, ...name(n))),
+  ];
+
+  await (async () => {
+    const { conn, sent } = mockConn((b) =>
+      (b[7] === SUB_DIR_CONTROL && b[8] === FILE_TYPE_PACK) ? listingReplies() : undefined);
+    const r = await readPackDirectory(conn);
+    check('readPackDirectory (mocked): count matches the device header',
+      r.count === PACK_NAMES.length, JSON.stringify({ count: r.count }));
+    check('readPackDirectory (mocked): every pack name decoded in order',
+      r.packs.length === PACK_NAMES.length && r.packs.every((p, i) => p.name === PACK_NAMES[i]),
+      JSON.stringify(r.packs.map((p) => p.name)));
+    check('readPackDirectory (mocked): index is 0-based wire, device_pack is 1-based panel',
+      r.packs.every((p, i) => p.index === i && p.device_pack === i + 1),
+      JSON.stringify(r.packs.map((p) => [p.index, p.device_pack])));
+    check('readPackDirectory (mocked): read-only, sends no write/transfer subcommand',
+      sent.every((m) => ![0x01, 0x02, 0x03, 0x07].includes(m[7])));
+    check('readPackDirectory (mocked): closes the session',
+      sent[sent.length - 1][7] === SUB_CLOSE_SESSION, JSON.stringify(sent[sent.length - 1]));
+  })();
+
+  // CROSS-TALK, the pack reader's mirror of the 2026-07-10 sample-pool desync.
+  //
+  // Note which direction the hazard runs here. The frame that desynced the
+  // SAMPLE reader was `0b 02 05` — and for the PACK reader that is not garbage
+  // at all: it is a well-formed pack header reading count 5. (That frame is the
+  // maintainer's own 5-pack device announcing five packs; misreading it as an
+  // "active pack index" is the bug the decode corrected.) So the pack reader's
+  // exposure is the opposite one: a 13-byte FILE listing header (fileType 0x03
+  // project / 0x05 sample) still in the queue must NOT be consumed as a pack
+  // header. Delivered FIRST, ahead of the real pack header.
+  await (async () => {
+    const FILE_HEADER = MSG(SUB_DIR_CONTROL, 0x05, 0x00, 0x40, 0x00); // 13-byte sample listing header, count 64
+    const { conn } = mockConn((b) =>
+      (b[7] === SUB_DIR_CONTROL && b[8] === FILE_TYPE_PACK) ? [FILE_HEADER, ...listingReplies()] : undefined);
+    const r = await readPackDirectory(conn);
+    check('readPackDirectory (cross-talk mocked): a FILE listing header in the queue is not read as a pack header',
+      r.count === PACK_NAMES.length && r.packs.length === PACK_NAMES.length,
+      JSON.stringify({ count: r.count, packs: r.packs.length, note: 'a count of 64 here would mean it ate the sample header' }));
+    check('readPackDirectory (cross-talk mocked): names still land in order',
+      r.packs.every((p, i) => p.name === PACK_NAMES[i]), JSON.stringify(r.packs.map((p) => p.name)));
+  })();
+
+  // A device that answers NOTHING must report zero packs, not hang or throw:
+  // list_packs is the pre-flight for a destructive write, so its failure mode
+  // has to be a clean, readable answer.
+  await (async () => {
+    const { conn } = mockConn(() => undefined);
+    const r = await readPackDirectory(conn);
+    check('readPackDirectory (silent device): returns count 0 rather than throwing',
+      r.count === 0 && r.packs.length === 0, JSON.stringify(r));
+  })();
+}
+
 console.log('');
 if (failed > 0) { console.error(`x ${failed} ncs check(s) FAILED.`); process.exit(1); }
-console.log('OK verify-circuit-ncs: .ncs drum + synth pattern codec + plan→project authoring verified (synthetic round-trip + byte-precision).');
+console.log('OK verify-circuit-ncs: .ncs drum + synth pattern codec + plan→project authoring + pack addressing verified (synthetic round-trip + byte-precision + capture-exact pack goldens).');

@@ -77,7 +77,7 @@ section above for the workflow.
 
 | Command | When to run | Requires |
 |---|---|---|
-| `npm run preflight` | Before every PR. Runs typecheck + 12 verifiers + cookbook gate + tool inventory lint. | Nothing. ~1 minute. |
+| `npm run preflight` | Before every PR. Runs typecheck + 12 verifiers + primitives gate + tool inventory lint. | Nothing. ~1 minute. |
 | `npm run build` | If you touched TypeScript under `packages/*/src/`. Pre-installs the dist Claude Desktop spawns. | Nothing. ~30 s. |
 | `npm run launch-verify` | If you touched anything wire-protocol related (wire builders, parsers, dispatcher, descriptor reader/writer). Runs the actual server against connected hardware. | A supported device on USB. |
 | `npm run live-regression` | Same as launch-verify but covers more scenarios. | A supported device on USB. |
@@ -342,7 +342,7 @@ rules keep the project on solid ground:
    text, tooltip strings, or factory preset content into the repo. Facts
    are free; copied expression is not.
 
-**Cite provenance.** Every decode written into a `SYSEX-MAP.md` or cookbook
+**Cite provenance.** Every decode written into a `SYSEX-MAP.md` or primitive
 entry must say how it was learned (capture file + byte offset, or the
 published-spec section). This is both how the next contributor verifies it
 and the project's evidence that the work is independent.

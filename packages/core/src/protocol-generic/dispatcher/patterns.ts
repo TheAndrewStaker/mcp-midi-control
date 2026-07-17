@@ -36,7 +36,7 @@ import {
   type RoundRobinSpec,
   type Step,
 } from '../patterns/index.js';
-import { openCtx, requireDevice } from './core.js';
+import { openCtx, openOfflineCtx, requireDevice, toWirePack } from './core.js';
 import { backupProjectSlot } from './backup.js';
 
 /** Hard cap on a single blocking realize, mirroring send_sequence's 30 s budget. */
@@ -84,6 +84,13 @@ export interface ApplyPatternArgs {
   ncs_template?: string;
   /** ncs_upload only: target project slot 0..63 on the device. */
   ncs_slot?: number;
+  /**
+   * ncs_upload only: which microSD pack to write, 1-BASED as the device numbers
+   * it (`pack: 5` = the front panel's "Pack 5"). Default 1. Converted to the
+   * 0-based wire index once, at `openCtx`, and carried on the ctx from there —
+   * see `DispatchCtx.pack` for why it must not travel as a per-call argument.
+   */
+  pack?: number;
   /** Semitone shift applied to authored pitches (the C-based recipes → any key). Takes precedence over `key`. */
   transpose?: number;
   /** Target key root (C, G, Eb, F#…). Sugar for `transpose` = the root's semitone offset from C (0..11). */
@@ -94,6 +101,15 @@ export interface ApplyPatternArgs {
   round_robin?: RoundRobinSpec;
   /** ncs_upload only: per-step sample flips — {"drum1": {"9": 2}} flips Drum1 step 9 to sample slot 2 (multiple pieces on one track). */
   drum_flips?: Record<string, Record<string, number>>;
+  /**
+   * ncs_upload only: point each of the 4 drum tracks (Drum1..Drum4, in order)
+   * at a specific kit sample slot 0..63, overriding the default canonical
+   * stoken layout (kick/snare/closed_hat/ride on slots 0..3) that authoring
+   * otherwise writes. Project-global: one binding per project, so it applies
+   * whether authoring a single pattern or a multi-section `arrangement`. See
+   * docs/design/circuit-drum-binding.md.
+   */
+  drum_binding?: number[];
   /** ncs_upload only: overwrite gate — true to write an occupied project slot (see SAFE-EDIT-WORKFLOW.md). */
   confirm_overwrite?: boolean;
   /** ncs_upload only: backup-before-overwrite. Default true — save the slot's current project before clobbering it. */
@@ -109,7 +125,8 @@ export interface ApplyPatternArgs {
    * ncs_upload only: route some/all voices to an EXTERNAL device sequenced via
    * one of the host's outward MIDI tracks (Circuit Tracks MIDI 1 / MIDI 2 → e.g.
    * a Roland SPD-SX). Each entry names the external `device` (its port id/name),
-   * optionally the host `track` (defaults from the rig links / MCP_RIG_LINKS), and
+   * optionally the host `track` (defaults from the rig links: the rig manifest
+   * when configured, else MCP_RIG_LINKS), and
    * optionally the `voices` to route (defaults to every pattern voice the external
    * device can place). Those voices author onto the host MIDI track using the
    * EXTERNAL device's note map; voices not listed still play the host's internal
@@ -387,12 +404,12 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
   }
 
   // ncs_upload authors a project file + pushes it; gather its bespoke inputs.
-  let upload: { template_path?: string; slot: number; scale?: string; drum_flips?: Record<string, Record<string, number>>; confirm_overwrite?: boolean; dry_run?: boolean } | undefined;
+  let upload: { template_path?: string; slot: number; scale?: string; drum_flips?: Record<string, Record<string, number>>; drum_binding?: number[]; confirm_overwrite?: boolean; dry_run?: boolean } | undefined;
   if (mode === 'ncs_upload') {
     if (args.ncs_slot === undefined) {
       throw new PatternError('bad_grid', 'ncs_upload requires ncs_slot (the 0..63 project slot to write).');
     }
-    upload = { template_path: args.ncs_template, slot: args.ncs_slot, scale: args.scale, drum_flips: args.drum_flips, confirm_overwrite: args.confirm_overwrite, dry_run: args.dry_run };
+    upload = { template_path: args.ncs_template, slot: args.ncs_slot, scale: args.scale, drum_flips: args.drum_flips, drum_binding: args.drum_binding, confirm_overwrite: args.confirm_overwrite, dry_run: args.dry_run };
   }
 
   // External-instrument routing (ncs_upload only): some/all voices resolve against
@@ -457,7 +474,12 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
     };
   }
 
-  const ctx = openCtx(descriptor);
+  // A dry run reaches here only for ncs_upload (the live modes returned above):
+  // the writer authors + fit-checks against the LOCAL template and stops before
+  // any read, gate, or transfer, so it needs no port. Opening one would fail the
+  // flag's own use case — planning with the rig unplugged.
+  const wirePack = toWirePack(args.pack);
+  const ctx = args.dry_run ? openOfflineCtx(descriptor, { pack: wirePack }) : openCtx(descriptor, { pack: wirePack });
   // Backup-before-overwrite (ncs_upload only, default on). ncs_upload authors a
   // project into the target slot; when confirm_overwrite authorizes clobbering
   // an occupied slot, the writer's gate skips its read, so save the slot's
@@ -612,8 +634,11 @@ async function executeApplyArrangement(
     warnings.push(...compressionLines(unionPattern, caps, extResolutions, hitsByVoice));
   }
 
-  const upload = { template_path: args.ncs_template, slot: args.ncs_slot, scale: args.scale, confirm_overwrite: args.confirm_overwrite, dry_run: args.dry_run };
-  const ctx = openCtx(descriptor);
+  const upload = { template_path: args.ncs_template, slot: args.ncs_slot, scale: args.scale, drum_binding: args.drum_binding, confirm_overwrite: args.confirm_overwrite, dry_run: args.dry_run };
+  // Same contract as the single-pattern path: a dry run authors against the
+  // local template only, so it opens no port.
+  const wirePack = toWirePack(args.pack);
+  const ctx = args.dry_run ? openOfflineCtx(descriptor, { pack: wirePack }) : openCtx(descriptor, { pack: wirePack });
   // Backup-before-overwrite: same contract as the single-pattern ncs_upload.
   // A dry run touches nothing, so it also reads nothing.
   let backupNote = '';

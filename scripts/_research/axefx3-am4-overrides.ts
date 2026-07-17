@@ -155,10 +155,10 @@ export const EXPLICIT_III_TO_AM4: Readonly<Record<string, string>> = {
   // DynaCab catalog under its `amp` block (per AM4 manual p. 25);
   // III's CABINET family reuses the same enumeration. Range 0..31,
   // count semantics.
-  CABINET_DYNACAB_TYPE1: 'amp.dynacab_type_1',
-  CABINET_DYNACAB_TYPE2: 'amp.dynacab_type_2',
-  CABINET_DYNACAB_MIC1: 'amp.dynacab_mic_1',
-  CABINET_DYNACAB_MIC2: 'amp.dynacab_mic_2',
+  CABINET_DYNACAB_TYPE1: 'amp.dynacab_1_cab',
+  CABINET_DYNACAB_TYPE2: 'amp.dynacab_2_cab',
+  CABINET_DYNACAB_MIC1: 'amp.dynacab_1_mic',
+  CABINET_DYNACAB_MIC2: 'amp.dynacab_2_mic',
   // Drive clip-type selector. DISTORT_CLIPTYPE1 already auto-joins
   // via FAMILY_TO_AM4_BLOCKS[DISTORT] → drive.clip_type; the `2`
   // instance suffix breaks the auto-join name, so we land it

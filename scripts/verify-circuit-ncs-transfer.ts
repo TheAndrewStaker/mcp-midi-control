@@ -16,7 +16,7 @@ import {
   makeMessage, msbDeinterleave, msbInterleave, TRANSFER_CONSTANTS,
 } from '@mcp-midi-control/circuit-tracks/ncs/transfer.js';
 import { NCS_FILE_SIZE } from '@mcp-midi-control/circuit-tracks/ncs/format.js';
-import { downloadProject, probeProjectSlot, runUploadFramePlan, readActivePackIndex, uploadProject } from '@mcp-midi-control/circuit-tracks/ncs/uploadProject.js';
+import { downloadProject, probeProjectSlot, runUploadFramePlan, readPackCount, uploadProject } from '@mcp-midi-control/circuit-tracks/ncs/uploadProject.js';
 import {
   FILE_TYPE_SAMPLE, buildSampleUploadFrames, sampleBlockCount, sampleFileId,
 } from '@mcp-midi-control/circuit-tracks/samples/sampleTransfer.js';
@@ -483,7 +483,13 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
     const setf = fr.find((f) => f.label.startsWith('set_filename'))!;
     check('buildSampleUploadFrames(pack 2): SET_FILENAME = 07 05 02 05',
       setf.bytes[7] === SUB.SET_FILENAME && setf.bytes[8] === FILE_TYPE_SAMPLE && setf.bytes[9] === 0x02 && setf.bytes[10] === 5);
-    // readActivePackIndex parses the index byte from the 0b 02 reply.
+    // readPackCount parses the COUNT byte from the pack-directory header reply
+    // (0b 02 <count>). CORRECTED 2026-07-16: this used to assert the byte was an
+    // "active pack index" — it is the number of packs on the card, confirmed by
+    // the pack-2 capture (0b 02 01, one pack), the pack-3 capture (0b 02 02, two
+    // packs), and the maintainer's 5-pack device (0b 02 05). See
+    // docs/design/circuit-pack-addressing.md §3. There is NO command that reports
+    // the ACTIVE pack; do not reintroduce that reading on this frame.
     let handler: ((m: number[]) => void) | undefined;
     const conn = {
       send: (b: number[]) => { if (b[7] === SUB.DIR_CONTROL && b[8] === 0x02) queueMicrotask(() => handler?.(makeMessage(SUB.DIR_CONTROL, [0x02, 0x03]))); },
@@ -491,8 +497,8 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
       hasInput: true, isPortOpen: () => true, close: () => { /* */ },
       receiveSysEx: async () => { throw new Error('m'); }, receiveSysExMatching: async () => { throw new Error('m'); },
     } as unknown as MidiConnection;
-    const idx = await readActivePackIndex(conn, 500);
-    check('readActivePackIndex parses 0b 02 reply → active pack 3', idx === 3, String(idx));
+    const n = await readPackCount(conn, 500);
+    check('readPackCount parses the 0b 02 header reply → card holds 3 packs (COUNT, not an active-pack index)', n === 3, String(n));
   }
   // upload_project: confirm:true → SKIPS the occupancy read, writes (ok:true).
   {

@@ -53,12 +53,14 @@ function splitSysEx(bytes: Uint8Array): number[][] {
 export async function restorePresetBinaryAxeFxII(
   ctx: DispatchCtx,
   bytes: Uint8Array,
-  options?: { target_location?: LocationRef; save_authorized?: boolean },
+  options?: { target_location?: LocationRef; save_authorized?: boolean; modelId?: number; deviceLabel?: string },
 ): Promise<RestorePresetResult> {
+  const deviceLabel = options?.deviceLabel ?? DEVICE_LABEL;
+  const modelId = options?.modelId; // undefined -> buildStorePreset falls back to its own XL+ default
   if (bytes.length !== PRESET_DUMP_LEN) {
     throw new DispatchError(
       'value_out_of_range',
-      DEVICE_LABEL,
+      deviceLabel,
       `apply_preset restore: Axe-Fx II preset binary must be ${PRESET_DUMP_LEN} bytes; got ${bytes.length}. ` +
         `Pass the .syx that export_preset wrote for THIS device (an AM4 or other-model dump will not fit).`,
     );
@@ -71,7 +73,7 @@ export async function restorePresetBinaryAxeFxII(
   if (messages.length !== FRAME_COUNT) {
     throw new DispatchError(
       'value_out_of_range',
-      DEVICE_LABEL,
+      deviceLabel,
       `apply_preset restore: preset binary parsed to ${messages.length} SysEx messages; expected ${FRAME_COUNT}.`,
     );
   }
@@ -100,9 +102,9 @@ export async function restorePresetBinaryAxeFxII(
   let saved_to_location: string | number | undefined;
   let storeOk = true;
   if (options?.save_authorized && options?.target_location !== undefined) {
-    const wire = parseAxeFxIILocation(options.target_location);
+    const wire = parseAxeFxIILocation(options.target_location, deviceLabel);
     const ackP = ctx.conn.receiveSysExMatching(isStorePresetResponse, STORE_TIMEOUT_MS);
-    ctx.conn.send(buildStorePreset(wire));
+    ctx.conn.send(modelId !== undefined ? buildStorePreset(wire, { modelId }) : buildStorePreset(wire));
     try {
       const parsedAck = parseStorePresetResponse(await ackP);
       storeOk = parsedAck.ok;

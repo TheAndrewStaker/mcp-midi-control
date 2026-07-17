@@ -15,7 +15,7 @@
  *
  * The name-tail cases additionally cross-validate the production packer
  * (`packValueChunked`) against an independent reimplementation of the
- * editor's streaming 8-to-7 packer (FUN_14033f2d0, cookbook
+ * editor's streaming 8-to-7 packer (FUN_14033f2d0, primitive
  * [[iii-byte-stream-septet-pack-8to7]]): the two algorithms must agree
  * byte-for-byte on every frame.
  */
@@ -115,7 +115,7 @@ cases.push(() => {
 });
 
 // Case 2: gridPos 15 (r4c3 on a 6-row grid) — the same cell the insert
-// cookbook entry cites with captured byte12 = 0x0f.
+// primitive entry cites with captured byte12 = 0x0f.
 cases.push(() => {
   const got = buildClearBlock({ row: 4, col: 3 }, III);
   const want = parseHex('f0 00 01 74 10 01 30 00 00 00 00 00 0f 00 00 00 00 00 00 00 00 2b f7');

@@ -32,7 +32,7 @@
  */
 
 import { AM4_LABEL } from '@mcp-midi-control/core/server-shared/connections.js';
-import { isDirty, markClean } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
+import { isDirty, markClean, msSinceMarkedDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 import type { DirtyGuardResult, OnEditedMode } from '@mcp-midi-control/core/server-shared/safeEdit.js';
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import { formatLocationDisplay, buildSaveToLocation, isCommandAck } from 'fractal-midi/am4';
@@ -53,9 +53,27 @@ export const AM4_DIRTY_LABEL = AM4_LABEL;
  * (timeout / device busy) — that flag reliably reflects OUR edits even
  * when the device read doesn't land.
  */
+/**
+ * Propagation-race guard window: if OUR in-memory tracker was marked
+ * dirty within this many ms and the device-true edited bit reads clean,
+ * trust the tracker. The device bit can lag our own just-sent write by
+ * a beat (caught live 2026-07-10: audition-then-switch slipped the gate
+ * because the bit read landed before the device set it). A human cannot
+ * front-panel-save within 2s of our write landing, which is the only
+ * legitimate way the bit clears while our flag is still set, so inside
+ * the window the tracker is the truer signal. Outside it, the device
+ * bit stays authoritative (it sees front-panel edits and saves).
+ */
+const DIRTY_MARK_TRUST_WINDOW_MS = 2000;
+
 async function isActiveBufferDirty(conn: MidiConnection): Promise<boolean> {
   try {
-    return await readActiveBufferEditedBit(conn);
+    const deviceBit = await readActiveBufferEditedBit(conn);
+    if (deviceBit) return true;
+    const sinceMark = msSinceMarkedDirty(AM4_DIRTY_LABEL);
+    return isDirty(AM4_DIRTY_LABEL)
+      && sinceMark !== undefined
+      && sinceMark < DIRTY_MARK_TRUST_WINDOW_MS;
   } catch {
     return isDirty(AM4_DIRTY_LABEL);
   }

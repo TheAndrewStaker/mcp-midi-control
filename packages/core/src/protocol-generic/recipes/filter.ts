@@ -31,8 +31,8 @@
  *     numeric type codes for III until the enum vocabulary lands.
  *
  * Param name mapping:
- *   - AM4 : `type`, `freq`, `q`, `low_cut`, `high_cut` (cacheParams
- *     filter.*).
+ *   - AM4 : `type`, `frequency`, `q`, `low_cut`, `high_cut` (cacheParams
+ *     filter.*; `freq` renamed 2026-07-15, BK-106 dedupe).
  *   - II  : `effect_type`, `frequency`, `q`, `low_cut`, `hi_cut`
  *     (KNOWN_PARAMS filter.*). Note `hi_cut` not `high_cut`.
  *   - III : `FILTER_TYPE`, `FILTER_FREQ`, `FILTER_Q`, `FILTER_LOWCUT`,
@@ -60,7 +60,7 @@ export const FILTER_RECIPES: Readonly<Record<string, FilterRecipeSpec>> = Object
     params_per_device: {
       am4: {
         type: 'Low-Pass',
-        freq: 4000,
+        frequency: 4000,
         q: 0.7,
       },
       'axe-fx-ii': {
@@ -84,7 +84,7 @@ export const FILTER_RECIPES: Readonly<Record<string, FilterRecipeSpec>> = Object
     params_per_device: {
       am4: {
         type: 'High-Pass',
-        freq: 200,
+        frequency: 200,
         q: 0.7,
       },
       'axe-fx-ii': {
@@ -109,7 +109,7 @@ export const FILTER_RECIPES: Readonly<Record<string, FilterRecipeSpec>> = Object
     params_per_device: {
       am4: {
         type: 'Band-Pass',
-        freq: 1200,
+        frequency: 1200,
         q: 1.5,
         low_cut: 500,
         high_cut: 3000,

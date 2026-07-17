@@ -28,7 +28,8 @@ import { PARAMETER_NAME_TO_CACHE_ID } from 'fractal-midi/am4';
 
 const OUT_JSON = 'samples/captured/decoded/labels/bridge-report.json';
 const OUT_MD   = 'samples/captured/decoded/labels/bridge-report.md';
-const OUT_TS   = 'src/fractal/am4/parameterBridge.ts';
+// Post-monorepo-reorg path (was src/fractal/am4/ before packages/ split).
+const OUT_TS   = 'packages/fractal-midi/src/am4/parameterBridge.ts';
 mkdirSync('samples/captured/decoded/labels', { recursive: true });
 
 // ── Block-name mapping: paramNames key → XML EditorControls "name" ──

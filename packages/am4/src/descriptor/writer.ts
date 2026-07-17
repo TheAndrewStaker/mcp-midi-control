@@ -67,6 +67,7 @@ import {
 } from 'fractal-midi/am4';
 import { unpackValue } from 'fractal-midi/shared';
 import {
+  mergeAutoApplied,
   prepareApplyPresetWrites,
   runApplyPresetAt,
   runApplyPresetWires,
@@ -754,6 +755,7 @@ export const writer: DeviceWriter = {
           duration_ms: result.wallTimeMs,
           saved: result.saved,
           warning: warning.length > 0 ? warning : undefined,
+          auto_applied: mergeAutoApplied(result.cabPolish, result.sceneLevels),
         };
       }
       return {
@@ -772,8 +774,10 @@ export const writer: DeviceWriter = {
     let prepared;
     let nameWriteBytes;
     let skipped: ApplyPresetSkippedParam[];
+    let cabPolish;
+    let sceneLevels;
     try {
-      ({ prepared, nameWriteBytes, skipped } = prepareApplyPresetWrites(input));
+      ({ prepared, nameWriteBytes, skipped, cabPolish, sceneLevels } = prepareApplyPresetWrites(input));
     } catch (err) {
       return {
         ok: false,
@@ -802,6 +806,7 @@ export const writer: DeviceWriter = {
       steps: wireResult.totalWrites,
       duration_ms: Date.now() - startMs,
       warning: warning.length > 0 ? warning : undefined,
+      auto_applied: mergeAutoApplied(cabPolish, sceneLevels),
     };
   },
 

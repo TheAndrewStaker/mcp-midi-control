@@ -39,6 +39,7 @@ import {
     recordAckOutcome,
 } from '@mcp-midi-control/core/server-shared/connections.js';
 import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
+import { lookupAmpLoudness } from '@mcp-midi-control/core/fractal-shared/loudness.js';
 import { AM4_DIRTY_LABEL } from './safeEdit.js';
 import {
     channelLetter,
@@ -134,6 +135,88 @@ export interface ApplyPresetInput {
 }
 
 /**
+ * Cab-polish defaults (BK-103b), injected server-side on fresh amp-bearing
+ * builds. Close-mic'd IRs carry excess lows + highs; the validated
+ * mix-ready starting point (cloudkake field report + Fractal's own
+ * published practice, see the cab_polish agent-guidance topic) is a
+ * low cut ~80 Hz / high cut ~6.5 kHz at 12 dB/oct plus a little cab room.
+ *
+ * These were guidance-only first and the 2026-07-16 bench test proved
+ * guidance alone does not fire (the model built a fresh FRFR preset
+ * wide open: 20 Hz / 20 kHz / 0% room). The executor now ENFORCES the
+ * default: every amp channel a fresh build writes gets these params
+ * appended, UNLESS the spec expresses any cab opinion of its own
+ * (any trigger param below, on any channel) - explicit values always win.
+ * The response reports exactly what was injected plus the undo phrase, so
+ * the agent can relay it and one user phrase ("wide open") removes it.
+ */
+const CAB_POLISH_DEFAULTS: ReadonlyArray<readonly [name: string, value: number | string, display: string]> = [
+    ['master_low_cut', 80, '80 Hz'],
+    ['cab_master_high_cut', 6500, '6500 Hz'],  // assertive/mix-safe; Fractal's published start is 7500
+    ['master_low_slope', '12 dB/OCT', '12 dB/OCT'],
+    ['master_high_slope', '12 dB/OCT', '12 dB/OCT'],
+    ['room_level', 8, '8%'],                   // validated band 5-10%
+];
+
+/**
+ * Spec params (canonical amp.* names) that count as "the caller has cab
+ * opinions": any of them anywhere on the amp slot suppresses injection
+ * entirely. cab_section is included because cuts/room inside a bypassed
+ * cab section are dead writes (the 4CM / real-cab case).
+ */
+const CAB_POLISH_TRIGGERS: ReadonlySet<string> = new Set([
+    ...CAB_POLISH_DEFAULTS.map(([n]) => n),
+    'cab_section',
+]);
+
+/** What the executor injected, for response reporting (undefined = nothing). */
+export interface ApplyPresetCabPolish {
+    /** Amp channels (letters) that received the defaults. */
+    channels: string[];
+    /** Display-shaped values injected, keyed by param name. */
+    params: Record<string, string>;
+    /** Relay-ready note incl. the undo phrase. */
+    note: string;
+}
+
+/**
+ * Scene-level initialization report (BK-103b sibling). Every apply_preset
+ * is a FRESH BUILD (unlisted slots/scenes are cleared), but
+ * preset.scene_N_level trims persist in the working buffer from whatever
+ * preset occupied it before - the 2026-07-16 leveling bench left Y4 with
+ * trims 0.3/0/-2.9/-3.1 that would silently shape the NEXT fresh build
+ * there. So the executor always initializes scene levels 1-4:
+ *   - `amp_offsets`: when every scene's amp channel has an in-spec type
+ *     with a known per-amp loudness offset (the lineage corpus), scenes
+ *     get STARTING trims toward the loudest scene (data-driven, labeled
+ *     unverified; measure_loudness closes the loop).
+ *   - `reset`: otherwise, all four to 0 dB (kills stale-trim leakage).
+ */
+export interface ApplyPresetSceneLevels {
+    /** Display-shaped values written, keyed by param name. */
+    values: Record<string, string>;
+    source: 'reset' | 'amp_offsets';
+    /** Relay-ready note. */
+    note: string;
+}
+
+/**
+ * Merge the executor's injections into the generic `ApplyResult.auto_applied`
+ * shape. Returns undefined when nothing was injected.
+ */
+export function mergeAutoApplied(
+    cabPolish: ApplyPresetCabPolish | undefined,
+    sceneLevels: ApplyPresetSceneLevels | undefined,
+): { params: Record<string, string>; channels?: readonly string[]; note: string } | undefined {
+    if (cabPolish === undefined && sceneLevels === undefined) return undefined;
+    return {
+        params: { ...(cabPolish?.params ?? {}), ...(sceneLevels?.values ?? {}) },
+        ...(cabPolish === undefined ? {} : { channels: cabPolish.channels }),
+        note: [cabPolish?.note, sceneLevels?.note].filter((s) => s !== undefined).join(' '),
+    };
+}
+
+/**
  * Validate an apply-preset input and produce the ordered list of wire
  * writes that realise it on the AM4 (block placements, channel switches,
  * param writes, scene switches, scene channel pointers, bypass writes,
@@ -148,6 +231,8 @@ export function prepareApplyPresetWrites(
     prepared: ApplyPresetPreparedWrite[];
     nameWriteBytes: number[] | undefined;
     skipped: ApplyPresetSkippedParam[];
+    cabPolish: ApplyPresetCabPolish | undefined;
+    sceneLevels: ApplyPresetSceneLevels;
 } {
     const { slots, name, scenes, landingScene } = input;
     // --- Validation pass (no MIDI yet) ---
@@ -285,6 +370,46 @@ export function prepareApplyPresetWrites(
         };
     };
 
+    // --- Cab-polish injection state (BK-103b) ---
+    const cabPolishChannels: string[] = [];
+
+    /** Canonicalize an amp param name through the alias table (so an alias spelling still counts as a cab opinion). */
+    const canonicalAmpName = (paramName: string): string => {
+        const literalKey = `amp.${paramName}`;
+        if (literalKey in KNOWN_PARAMS) return paramName;
+        const alias = PARAM_ALIASES[literalKey];
+        return alias !== undefined ? alias.slice(alias.indexOf('.') + 1) : paramName;
+    };
+
+    /** Any cab-polish trigger param anywhere on this amp slot = caller has cab opinions, inject nothing. */
+    const slotHasCabOpinion = (slot: ApplyPresetSlotInput): boolean => {
+        const names: string[] = [];
+        if (slot.params !== undefined) names.push(...Object.keys(slot.params));
+        if (slot.channels !== undefined) {
+            for (const channelParams of Object.values(slot.channels)) {
+                names.push(...Object.keys(channelParams));
+            }
+        }
+        return names.some((n) => CAB_POLISH_TRIGGERS.has(canonicalAmpName(n)));
+    };
+
+    /** Append the cab-polish default writes into the CURRENT channel window and record the letter. */
+    const pushCabPolish = (at: string, letter: string): void => {
+        for (const [paramName, value] of CAB_POLISH_DEFAULTS) {
+            const write = buildParamWrite(`${at} cab-polish default`, 'amp', paramName, value);
+            if (write !== null) prepared.push(write);
+        }
+        cabPolishChannels.push(letter);
+    };
+
+    // Amp type per written channel letter, for the scene-level starting-trim
+    // computation (per-amp loudness offsets are keyed by enum label).
+    const ampTypeLabelByLetter: Record<string, string> = {};
+    const ampTypeLabel = (wireIdx: number): string | undefined =>
+        ((KNOWN_PARAMS['amp.type' as ParamKey] as Param).enumValues as Record<number, string> | undefined)?.[
+            wireIdx
+        ];
+
     slots.forEach((slot, i) => {
         const at = `slots[${i}] (position ${slot.position}, ${slot.block_type})`;
         if (seenPositions.has(slot.position)) {
@@ -308,6 +433,12 @@ export function prepareApplyPresetWrites(
         if (canonicalBlock !== 'none') {
             placedBlocks.set(canonicalBlock, blockTypeValue);
         }
+
+        // BK-103b: a fresh amp-bearing build gets the mix-ready cab
+        // defaults on every channel it writes, unless the spec expresses
+        // ANY cab opinion of its own (explicit values always win).
+        const injectCabPolish = canonicalBlock === 'amp' && !slotHasCabOpinion(slot);
+        let cabPolishInjected = false;
 
         if (slot.channels !== undefined) {
             if (slot.channel !== undefined) {
@@ -363,6 +494,9 @@ export function prepareApplyPresetWrites(
                     bytes: buildSetParam(channelKey, 0),
                 });
             }
+            const flatLetter = slot.channel !== undefined
+                ? (['A', 'B', 'C', 'D'][resolveChannel(slot.channel)] ?? 'A')
+                : 'A';
             const ordered = Object.entries(slot.params).sort(([a], [b]) =>
                 a === 'type' ? -1 : b === 'type' ? 1 : 0,
             );
@@ -372,6 +506,17 @@ export function prepareApplyPresetWrites(
                 // null = applicability gate dropped the param; the
                 // skip is already in `skipped[]`. The remaining writes
                 // in this slot still go through.
+                if (write !== null && canonicalBlock === 'amp' && paramName === 'type') {
+                    const label = ampTypeLabel(write.resolved);
+                    if (label !== undefined) ampTypeLabelByLetter[flatLetter] = label;
+                }
+            }
+            if (injectCabPolish) {
+                // After the ordered params (type sorts first), still inside
+                // this channel's write window - the amp.type reset trap is
+                // why order matters here.
+                pushCabPolish(at, flatLetter);
+                cabPolishInjected = true;
             }
         }
 
@@ -433,8 +578,37 @@ export function prepareApplyPresetWrites(
                     );
                     if (write !== null) prepared.push(write);
                     // null = applicability skip; reason already in `skipped[]`.
+                    if (write !== null && canonicalBlock === 'amp' && effName === 'type') {
+                        const label = ampTypeLabel(write.resolved);
+                        if (label !== undefined) ampTypeLabelByLetter[letter] = label;
+                    }
+                }
+                if (injectCabPolish) {
+                    // Still inside this letter's channel window (after its
+                    // type write, before the next channel switch).
+                    pushCabPolish(`${at} channels.${letter}`, letter);
+                    cabPolishInjected = true;
                 }
             }
+        }
+
+        // BK-103b bare-amp case: the amp was placed with no params at all
+        // (or an empty params object). Pin channel A deterministically
+        // (same BUG-4 rationale as the flat-params default) and inject
+        // there, unless an explicit `channel` already opened a window.
+        if (injectCabPolish && !cabPolishInjected && slot.channels === undefined) {
+            let letter = 'A';
+            if (slot.channel === undefined) {
+                prepared.push({
+                    kind: 'channel',
+                    block: canonicalBlock,
+                    index: 0,
+                    bytes: buildSetParam(`${canonicalBlock}.channel` as ParamKey, 0),
+                });
+            } else {
+                letter = ['A', 'B', 'C', 'D'][resolveChannel(slot.channel)] ?? 'A';
+            }
+            pushCabPolish(at, letter);
         }
     });
 
@@ -556,6 +730,71 @@ export function prepareApplyPresetWrites(
     }
     preparedScenes.sort((a, b) => a.sceneIndex - b.sceneIndex);
 
+    // --- Scene-level initialization (BK-103b sibling; see ApplyPresetSceneLevels) ---
+    // Every apply is a fresh build, but preset.scene_N_level trims persist
+    // in the working buffer from the previous occupant; initialize all 4.
+    // When every scene's amp channel has an in-spec type with a known
+    // loudness offset, seed data-driven starting trims toward the loudest
+    // scene instead of flat zeros.
+    let sceneLevelValues: readonly number[] = [0, 0, 0, 0];
+    let sceneLevelSource: ApplyPresetSceneLevels['source'] = 'reset';
+    if (placedBlocks.has('amp')) {
+        const sceneAmpLetter = (oneBased: number): string => {
+            const ps = preparedScenes.find((p) => p.oneBased === oneBased);
+            const ampCh = ps?.channels.find((c) => c.block === 'amp');
+            // Scenes without an explicit amp mapping default to channel A
+            // (the BUG-4 completion pass writes exactly that).
+            return ampCh !== undefined ? ampCh.letter : 'A';
+        };
+        const offsets: number[] = [];
+        for (const n of [1, 2, 3, 4]) {
+            const label = ampTypeLabelByLetter[sceneAmpLetter(n)];
+            if (label === undefined) break; // channel type is device state, not in-spec
+            const entry = lookupAmpLoudness(label);
+            if (entry === undefined) break; // no corpus offset for this model
+            offsets.push(entry.relative_loudness_dB);
+        }
+        if (offsets.length === 4) {
+            const maxOff = Math.max(...offsets);
+            // Positive-only lift toward the loudest scene, conservatively
+            // clamped: a STARTING point, not a landing (measure_loudness
+            // is the verification loop).
+            const trims = offsets.map((o) => Math.round(Math.min(Math.max(maxOff - o, 0), 12) * 10) / 10);
+            if (trims.some((t) => t !== 0)) {
+                sceneLevelValues = trims;
+                sceneLevelSource = 'amp_offsets';
+            }
+        }
+    }
+    for (const n of [1, 2, 3, 4] as const) {
+        const write = buildParamWrite(
+            `scene levels (fresh-build init, scene ${n})`,
+            'preset',
+            `scene_${n}_level`,
+            sceneLevelValues[n - 1],
+        );
+        if (write !== null) prepared.push(write);
+    }
+    const sceneLevels: ApplyPresetSceneLevels = {
+        values: Object.fromEntries(
+            sceneLevelValues.map((v, i) => [`scene_${i + 1}_level`, `${v.toFixed(1)} dB`]),
+        ),
+        source: sceneLevelSource,
+        note: sceneLevelSource === 'reset'
+            ? 'THE SERVER initialized scene levels 1-4 to 0 dB as part of this apply ' +
+              '(a fresh build resets stale per-scene trims left by whatever preset ' +
+              'previously occupied the buffer); any values read back are from THIS ' +
+              'build, not leftovers. To balance scenes: measure each with ' +
+              'measure_loudness while the player repeats the same passage, then trim ' +
+              'preset.scene_N_level.'
+            : 'THE SERVER seeded scene levels 1-4 as part of this apply, with STARTING ' +
+              'trims from the per-amp loudness offset table (loudest scene = ' +
+              'reference); any values read back are from THIS build, not leftovers. ' +
+              'They are data-driven but UNVERIFIED: confirm with measure_loudness per ' +
+              'scene and adjust. TELL THE USER; to zero them, set ' +
+              'preset.scene_N_level to 0.',
+    };
+
     if (preparedScenes.length > 0) {
         for (const ps of preparedScenes) {
             prepared.push({
@@ -643,7 +882,20 @@ export function prepareApplyPresetWrites(
         }
     }
 
-    return { prepared, nameWriteBytes, skipped };
+    const cabPolish: ApplyPresetCabPolish | undefined = cabPolishChannels.length === 0
+        ? undefined
+        : {
+            channels: cabPolishChannels,
+            params: Object.fromEntries(CAB_POLISH_DEFAULTS.map(([n, , display]) => [n, display])),
+            note:
+                'THE SERVER auto-applied mix-ready cab defaults to the amp as part of ' +
+                'this apply (low cut 80 Hz, high cut 6.5 kHz, 12 dB/OCT slopes, 8% room) ' +
+                'because the spec set no cab params; any values read back are from THIS ' +
+                'build, not leftovers. TELL THE USER and give the undo: on "wide open" ' +
+                '(or similar) set master_low_cut 20, cab_master_high_cut 20000, room_level 0. ' +
+                'To build without them, pass any explicit cab value in the spec.',
+        };
+    return { prepared, nameWriteBytes, skipped, cabPolish, sceneLevels };
 }
 
 /**
@@ -837,6 +1089,10 @@ export type ApplyPresetAtSuccess = {
      * silent device no-op).
      */
     skipped: ApplyPresetSkippedParam[];
+    /** BK-103b: cab-polish defaults the executor injected (undefined = none). */
+    cabPolish?: ApplyPresetCabPolish;
+    /** Scene-level initialization the executor always performs on a fresh build. */
+    sceneLevels?: ApplyPresetSceneLevels;
     wallTimeMs: number;
 };
 export type ApplyPresetAtFailure = {
@@ -886,8 +1142,10 @@ export async function runApplyPresetAt(
     let prepared: ApplyPresetPreparedWrite[];
     let nameWriteBytes: number[] | undefined;
     let skipped: ApplyPresetSkippedParam[];
+    let cabPolish: ApplyPresetCabPolish | undefined;
+    let sceneLevels: ApplyPresetSceneLevels | undefined;
     try {
-        ({ prepared, nameWriteBytes, skipped } = prepareApplyPresetWrites(preset));
+        ({ prepared, nameWriteBytes, skipped, cabPolish, sceneLevels } = prepareApplyPresetWrites(preset));
     } catch (err) {
         return {
             ok: false,
@@ -954,6 +1212,8 @@ export async function runApplyPresetAt(
             },
             saved: false,
             skipped,
+            cabPolish,
+            sceneLevels,
             wallTimeMs: Date.now() - startMs,
         };
     }
@@ -989,6 +1249,8 @@ export async function runApplyPresetAt(
         },
         saved: true,
         skipped,
+        cabPolish,
+        sceneLevels,
         wallTimeMs: Date.now() - startMs,
     };
 }

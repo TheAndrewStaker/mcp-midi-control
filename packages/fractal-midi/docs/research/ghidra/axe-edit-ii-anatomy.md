@@ -2,12 +2,12 @@
 
 Class architecture, key functions, and RVA constants discovered in the
 AxeEdit (II 32-bit) binary. This doc hosts findings that **support**
-cookbook primitives but aren't primitives themselves, anatomy of the
+primitives but aren't primitives themselves, anatomy of the
 binary, not encoding rules.
 
-When a cookbook primitive cites a function or RVA from this binary, it
+When a primitive cites a function or RVA from this binary, it
 links here for the structural context. When new RE work finds new
-class architecture, it lands here (not in cookbook entries, keep
+class architecture, it lands here (not in primitive entries, keep
 those focused on the WHAT of the encoding, not the WHERE in the
 binary).
 
@@ -29,7 +29,7 @@ binary (the body of fn 0x77/0x78/0x79 envelope).
 | `AEImageDepot::vftable` | `0xeacff8` (`.rdata`) | Virtual function table (~14 methods) |
 | `DAT_00f8bb58` |, | Singleton instance |
 | `FUN_004116d0` |, | Constructor |
-| `FUN_00595260` | vftable slot 1 | **The alphabetical-cascade block ordering function** ([[../cookbook/alphabetical-name-cascade-block-ordering]]). Iterates placed-blocks array, emits per-block wire-ids via `FUN_00406350`. |
+| `FUN_00595260` | vftable slot 1 | **The alphabetical-cascade block ordering function** ([[../primitives/alphabetical-name-cascade-block-ordering]]). Iterates placed-blocks array, emits per-block wire-ids via `FUN_00406350`. |
 | `FUN_00406350` |, | Append-ushort-to-list helper (called by `FUN_00595260` to emit wire-ids) |
 
 Block-name cross-references (per `FUN_00595260` disassembly):
@@ -38,7 +38,7 @@ Block-name cross-references (per `FUN_00595260` disassembly):
 |---|---|
 | `DAT_007153e4` | Amp → 106, 107 |
 | `DAT_007153e8` | Cab → 108, 109 |
-| ... | (full table in [[../cookbook/wire-id-pairs-per-placed-block]]) |
+| ... | (full table in [[../primitives/wire-id-pairs-per-placed-block]]) |
 | `DAT_00715428` | (uncertain, see "Refinement history" below) |
 
 ---
@@ -49,7 +49,7 @@ Block-name cross-references (per `FUN_00595260` disassembly):
 
 Trivial 16-bit XOR-fold of decoded native ushorts. Returns the hash
 that lands in the footer field of fn 0x79. 17 lines of disassembly;
-no surprises. See [[../cookbook/xor-fold-hash]] for the formal
+no surprises. See [[../primitives/xor-fold-hash]] for the formal
 definition.
 
 ### `FUN_0054d1d0`, fn 0x79 footer parser (calls `FUN_00544cc0`)
@@ -72,7 +72,7 @@ across the chunk fields. Analog of the III store-preset emitter
 II envelope-spec descriptor tables. Each declares the wire-field
 layout of one envelope family. Shape: `(tag, mid, byte_count)` triples
 terminated by `(-1, -1, -1)` sentinel, see
-[[../cookbook/vendor-envelope-descriptor-table]].
+[[../primitives/vendor-envelope-descriptor-table]].
 
 | Address | Purpose | Shape |
 |---|---|---|
@@ -88,7 +88,7 @@ set the way the III misc-descriptors did.)
 ## Param descriptor table
 
 II uses the 16-byte ParamDescriptor struct per
-[[../cookbook/param-descriptor-16byte]]. The II 32-bit binary table
+[[../primitives/param-descriptor-16byte]]. The II 32-bit binary table
 was recovered via `SeekParamTablesII.java` ( direct-pattern
 scan technique): 1,113 (paramId, symbol) entries at 99%
 indexed-symbol coverage.
@@ -104,7 +104,7 @@ indexed-symbol coverage.
   close this in one Ghidra run.
 - **The "compute preset binary size from placed blocks" function.**
   Hypothesized to contain the per-block-name WIDTH table that would
-  generalize [[../cookbook/parambase-plus-paramid]] from `partial-N1`
+  generalize [[../primitives/parambase-plus-paramid]] from `partial-N1`
   → `matched`. ** ruled this out**: the encoder lives
   in firmware, not in AxeEdit.exe. The AxeEdit binary only CONSUMES
   the device-encoded output; full sort-algorithm crack requires
@@ -126,7 +126,7 @@ indexed-symbol coverage.
 - : II opcode table recovered via
   `DumpAxeEditIIOpcodeTable.java`, 94 wire opcodes.
 - : `FUN_00544cc0` decoded as XOR-fold hash. Bug fix on
-  byte-2-mask preservation ([[../cookbook/septet-21bit-byte2-mask-preservation]]).
+  byte-2-mask preservation ([[../primitives/septet-21bit-byte2-mask-preservation]]).
 -  cont: `AEImageDepot` vtable +
   `FUN_00595260` cascade decoded. Block-name → wire-id table extracted
   (36 rows). Wiki-vs-binary corrections surfaced (block IDs 164-169

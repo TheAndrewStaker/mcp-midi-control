@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/server-all",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "MCP server entry point composing all device packages.",
   "private": true,
   "license": "Apache-2.0",

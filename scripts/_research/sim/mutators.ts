@@ -8,7 +8,7 @@
  * small ack the editor tolerates (the gen-3 editor does not block on a synch
  * ack for these structural writes; it re-queries).
  *
- * Wire shapes (FM9-confirmed, cookbook gen3-fn01-grid-set-position-insert /
+ * Wire shapes (FM9-confirmed, primitives gen3-fn01-grid-set-position-insert /
  * gen3-fn01-store-preset):
  *   - sub=0x32 INSERT  : [effectId:14b @8..9] [gridPos:14b @12..13]; byte9 high
  *                        septet 0x08 marks a shunt, byte8 = shunt instance.
@@ -106,7 +106,7 @@ export function applyWrite(state: SimDeviceState, bytes: number[]): MutationResu
   if (sub === SUB_ROUTING) {
     // sub=0x35 routing edge. The 26-byte frame skeleton is fixed; only four
     // bytes vary. SOLVED by controlled single-cable triangulation (4 cables of
-    // known source->dest geometry; see the cookbook routing table):
+    // known source->dest geometry; see the primitives routing table):
     //   byte 12  : operation — 0x01 / 0x02 connect-vs-disconnect toggle (same
     //              endpoint appears with both; direction still to confirm).
     //   byte 19  : constant 0x02 (edge-record marker).

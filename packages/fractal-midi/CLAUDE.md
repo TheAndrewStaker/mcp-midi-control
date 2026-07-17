@@ -61,7 +61,7 @@ packages/fractal-midi/
 ├── catalog/                  # GENERATED language-agnostic JSON catalog (committed;
 │                             #   never hand-edit; `npm run catalog:export` regenerates,
 │                             #   `catalog:check` gates drift in preflight)
-├── docs/                     # Protocol RE docs (SYSEX-MAP, capture guides, cookbook)
+├── docs/                     # Protocol RE docs (SYSEX-MAP, capture guides, primitives corpus)
 │   └── devices/              # Per-device protocol references
 └── dist/                     # Build output (gitignored)
 ```
@@ -125,6 +125,6 @@ SysEx from display values, parse back, confirm equality. No mocking. When
 adding a new wire builder or parser, add a golden case.
 
 **Protocol docs live here.** Per-device `SYSEX-MAP.md`, opcode tables, capture
-guides, Ghidra scripts, and the encoding cookbook all live under `docs/` in
+guides, Ghidra scripts, and the encoding-primitive corpus all live under `docs/` in
 this package. Consult the relevant `SYSEX-MAP.md` before speculating about
 wire shapes.

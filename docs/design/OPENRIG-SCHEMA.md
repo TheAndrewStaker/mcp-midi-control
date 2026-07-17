@@ -1,7 +1,41 @@
 # OpenRig: a portable schema for a musician's rig (design proposal)
 
-> Status: **design proposal, not built.** Layer-1 (topology) design for review. No
-> server code yet; build is sequenced **after 0.6.0 ships** (see "Sequencing").
+> Status: **Layer-1 BUILT** (2026-07-10, post-0.6.0), incubating in
+> **`packages/openrig/`** (zero-dependency, extractable): the domain model
+> (`types.ts`), the honestly-scoped validator (`validate.ts`: referential
+> integrity + MIDI cycle detection + clock-subgraph well-formedness), the
+> normative JSON Schema (`schema/rig.schema.json`), and the §10 worked example as
+> a typed golden. Wired into the root build/typecheck/test; preflight-green.
+> **Phase B (done):** `bootstrapRig(seeds)` (seed nodes from a generic
+> `DeviceSeed[]`; the human authors the cables) + `toCytoscapeElements(rig)` (the
+> view-only render projection). **Phase C (done):** the server-side descriptor to
+> `DeviceSeed` adapter (`packages/core/src/protocol-generic/openrig/`), a
+> manifest loader (`MCP_RIG_MANIFEST`), `describe_rig` now returns the declared
+> rig + validation + presence-only drift, `MCP_RIG_LINKS` is superseded (the
+> manifest is the one source of truth, `apply_pattern` external_targets reads
+> it), `npm run openrig:bootstrap` seeds a starter, and the maintainer's real rig
+> is a private instance (`docs/_private/rig/rig.json`, gitignored). Two additive
+> model changes came out of authoring that real instance: an optional `note` on
+> Node/Edge (to mark `[planned]`/`[trialing]` cabling honestly) and an
+> `output_role` on output ports + an abstract OUT/front-of-house node convention
+> (§3), because a terminal device's outputs are a first-class setup concern.
+> **Verification checks (done, 2026-07-12):** two pure, easy, musician-facing
+> checks surfaced under `describe_rig`'s `manifest`. `checkRigCompatibility`
+> (`packages/openrig/src/compat.ts`, §4): per cross-device binding, do both ends
+> AGREE (type/channel/cc/note_map) and is the mapping capability-legal (an
+> assignable-CC source the RC-505 can use, a note an SPD-SX pad answers), via an
+> injected `CapabilityLookup` so the package stays extractable; surfaced as
+> `manifest.compatibility` (backed by a new `control_sources` descriptor
+> capability). `checkAudioOutput` (`packages/openrig/src/audio.ts`): the "will I
+> actually hear this instrument?" reachability check (instrument audio out ->
+> monitor/OUT node over enabled audio edges); surfaced as `manifest.audio`.
+> Both validated on the real rig. DEFERRED by maintainer call: live-read MIDI
+> verify (`verify_binding`), looper track<->input assignment, and the complex
+> audio-independence (can-loop-separately) check are overkill for now.
+> **Next (Phase two):** L2/L3 (repertoire + performance), and first-class TRIGGER
+> tooling: the bindings are already the L1 trigger ADDRESSING (which CC/PC/channel
+> fires a song/section change); what remains is authoring/editing them as
+> first-class objects and the per-song VALUES they carry (§4, §7).
 > Working name: **OpenRig** (provisional). This doc seeds a future standalone
 > open-spec repo; this MCP server is its reference implementation + first
 > consumer, and the maintainer's real rig is its first (private) instance.
@@ -163,6 +197,15 @@ declared port; node ids unique; no dangling `physical_link_id`).
   groups on one USB endpoint). An audio port declares `audio: "mono" | "stereo"`;
   two mono ports/edges that form one stereo pair share a `pair` id, and a mixer
   input is a summing destination (N edges in is legal).
+- **Output stage.** An audio OUTPUT port may declare an **`output_role`**
+  (`main` / `monitor` / `sub` / `stem` / `cue`) so tools can reason about and
+  guide the output stage, which is a first-class setup concern (the RC-505 has
+  MAIN + SUB1 + SUB2 + PHONES with per-input routing, so *where each source goes
+  on output* is a real thing to optimize). The rig's output DESTINATION is
+  modeled as an abstract **OUT / front-of-house node** (roles `["monitor"]`,
+  `server_device_id: null`, an `audio_in` port), so a terminal device's main out
+  terminates at a visible OUT area (the Fractal-editor OUT-block metaphor)
+  without committing to a specific mixer/PA. Model the OUT node, not the mixer.
 - **`routing`** (per node): which incoming signals it **consumes** (acts on, does
   not relay), **passes** (soft-thru to an out-port), and **originates/merges** onto
   an out-port, each scoped by kind/type/channel. This is what makes reachability
@@ -665,6 +708,66 @@ SPD-SX's GLOBAL CH is *set* to 4 to match, a configuration choice on the SPD-SX
 side, overriding its own descriptor default of ch10. An earlier draft wrote ch10
 out of GM-drums reflex, exactly the hand-authored drift the source-of-truth rule
 prevents). The cab and thru box are opaque nodes with no capability block.
+
+## 11. Inventory (owned gear) + the rig proposer
+
+**Decided 2026-07-12,** after the maintainer removed an owned-but-unused device (a
+foot controller superseded by another scheme) and asked whether prospective/owned
+gear belongs in the rig config. **It does not: the rig (L1) models what is WIRED
+and in use; owned-but-unwired gear lives in a separate INVENTORY.**
+
+Why not the rig graph: every rig check (audio reachability, binding compatibility,
+presence drift, the connected scan) treats each node as part of the rig, so an
+owned-but-unconnected device pollutes them (drift noise, a false "won't reach
+front-of-house"). And `enabled:false` / `[planned]` is for a SPECIFIC cable you
+are actively about to patch (concrete, near-term), NOT "gear I own that I might
+use someday." Conflating the two overloads a signal that is currently sharp.
+
+**Inventory is a rig-INDEPENDENT layer** (you own the same gear across
+studio/gig/ambient rigs), so it is its own artifact, not a rig field:
+
+```jsonc
+{
+  "openrig_version": "0.1",
+  "id": "my-inventory",
+  "devices": [
+    { "id":"am4", "name":"Fractal AM4", "identity":{"manufacturer":"Fractal","family":"AM4"},
+      "server_device_id":"am4", "note":"..." },
+    { "id":"commander", "name":"MeloAudio MIDI Commander",
+      "identity":{"manufacturer":"MeloAudio","family":"MIDI Commander"},
+      "server_device_id":null, "note":"Owned, not wired; a candidate the proposer can offer." }
+  ]
+}
+```
+
+- A device entry is a NODE minus the wiring (`identity` + optional
+  `server_device_id` + `count?` + `note?`; no ports/edges/routing).
+  `server_device_id` links to a registered descriptor when the server supports the
+  device (L0); `null` = opaque gear you own.
+- **Inventory is the superset; a rig (L1) is a wiring of a SUBSET.** A rig node's
+  device should exist in inventory; the server cross-references to show which
+  owned gear is IN the active rig vs SPARE. Loaded via a `MCP_RIG_INVENTORY` env
+  var (parallel to `MCP_RIG_MANIFEST`).
+- Layering: L0 (device capabilities the server supports) < **Inventory** (what YOU
+  own) < L1 (how you wired a subset) < L2/L3.
+
+**The rig proposer (Phase 2, the payoff).** The reason inventory earns its place:
+a tool `propose_rigs(inventory, goal)` generates candidate WIRINGS from what you
+own, then SCORES each with the checks already built (`checkAudioOutput` +
+`checkRigCompatibility`): "this wiring gives the synth its own loop track and every
+binding is legal; this one doesn't." The inventory feeds the proposer; the checks
+are its scoring function. This is the concrete answer to "propose different chain
+options based on what I own," and a strong showcase.
+
+Status: **BUILT 2026-07-12 (server side).** Loaded via `MCP_RIG_INVENTORY`
+(mirrors the manifest loader) and surfaced as `describe_rig`'s `inventory` field
+with the in-rig-vs-spare cross-reference (`validateInventory` +
+`crossReferenceInventory` in the openrig package; folded into `describe_rig`
+rather than a separate `describe_inventory` tool, to keep the surface low). The
+maintainer's `docs/_private/rig/inventory.json` reports 7 devices wired / 1 spare
+(the Commander). The rig PROPOSER (owned gear -> candidate rigs -> scored by the
+checks) is deliberately NOT a server tool: per the agent-as-UX boundary
+(OPENRIG-UI-RESEARCH.md), the agent composes it from these facts + `edit_rig`.
 
 ---
 

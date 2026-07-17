@@ -400,6 +400,154 @@ Reference impl: `scripts/_research/bk070-modified-push-with-hash.ts`
 (in the mcp-midi-control repo). Verifier:
 `scripts/_research/verify-footer-xor-hash.ts`.
 
+### Byte-2 reserved bits are ROUTINELY non-zero in real presets (2026-07-09 corpus-wide confirmation)
+
+BK-081/BK-084 (the atomic whole-preset-image read + the continuous-param
+read-modify-write patch, `packages/fractal-gen2/src/presetImageRoundTrip.ts`
++ `presetImageContinuousPatch.ts`) needed a per-dump trust gate before
+serving/patching a preset via the TLV-decoded image. An early draft of that
+gate additionally required every word's byte-2 "reserved" top-5 bits to be
+zero (on the theory that non-zero bits signal an untrustworthy dump): a
+388-dump sweep (the same corpus as `verify-ii-preset-image-tlv.ts`: 384
+Q8.02 factory presets + 4 hw132 live captures) REFUTED this: **386/388
+real presets carry non-zero byte-2 bits somewhere in the image** (top
+hotspot: word 480 = 1-based chunk 8, ushort offset 32, on 67 bank-A
+presets; an earlier revision of this sentence said "word 544", an
+off-by-one from 0-based chunk indexing). This is
+NOT a corruption signal; it is exactly the existing, documented
+behavior in primitive `septet-21bit-byte2-mask-preservation`: those bits
+are routine firmware-defined state that a writeback must preserve via
+read-modify-write, never assume-zero. The corrected precondition
+(`verifyRoundTripIdentity`) checks only structural decode success
+(deframe + strict TLV parse) plus a footer-hash-formula match, dropping
+the invalid "byte-2 must be zero" requirement entirely. The actual
+writeback safety comes from `writeUshortAt`'s per-target
+`(origByte2 & 0x7c) | (value >> 14 & 0x03)` mask-preserve, applied only to
+the specific words a patch touches, never a wholesale image
+reconstruction.
+
+### Drive block Y-channel `effect_type` word confirmed byte-exact (2026-07-10)
+
+A reported raw-number leak (`effect_type: 32767` on a drive block's Y
+channel, front panel showing BLACKGLASS 7K) was investigated against a
+hardware-confirmed ground-truth capture. The per-channel addressing
+formula documented above (`channel-Y param p → word[baseWord +
+payloadLen/2 + p]`) holds for the Drive block exactly as it does for
+Amp/Cab: for a Drive TLV `[133, 42]` at `tlvWord`, `baseWord = tlvWord +
+2`, `xToYOffset = 42/2 = 21`. Channel-Y `effect_type` (paramId 0) is
+`word[baseWord + 21 + 0]`, and on the ground-truth capture that word
+holds `36`, and `DRIVE_EFFECT_TYPE_VALUES[36] = "BLACKGLASS 7K"`, matching
+the front panel. Both the offset math and the roster entry check out;
+the leak traced instead to the decode boundary emitting the bare wire
+integer on ANY unmapped select ordinal (fixed in
+`fractal-gen2/src/calibration.ts`'s `decodeEnumWire`, MCP-server side;
+see `docs/_private/STATE-AXEFX2.md` 2026-07-10 for the full account).
+No change to this codec's TLV/offset logic was needed; this section
+exists so a future "drive Y decodes wrong" report starts from a
+confirmed-correct baseline instead of re-deriving the offset formula.
+
+## 2026-07-16 image-ENCODE session: grid, discrete, scenes, splice, 21-bit footer
+
+Everything in this section is corpus-oracled against the on-disk dumps
+(384 Q8.02 factory + bk070/hw132 live captures) and shipped as
+community-beta / hardware-unverified encode lanes in
+`packages/fractal-midi/src/gen2/axe-fx-ii/presetImage/` (Q8.02 / XL+
+scoped). Goldens (root `test:codec`):
+`verify-ii-image-discrete-encode.ts`, `verify-ii-image-scene-words.ts`,
+`verify-ii-image-structural-splice.ts`. The shipped fractal-gen2 read
+path is untouched; the substrate-identity golden pins the two
+implementations byte-identical corpus-wide.
+
+### The footer hash is a 21-BIT XOR-fold (refines the earlier 16-bit reading)
+
+`footer = [h & 0x7f, h>>7 & 0x7f, h>>14 & 0x7f]` where `h` is the
+XOR-fold of the FULL 21-bit words (`lo7 | mid7<<7 | b2<<14`, reserved
+bits included). 500/503 on-disk dumps carry exactly this (the 3 misses
+are the locally hand-modified push-test artifacts); the bk070 scene
+pairs flip the footer's third septet in lockstep with a scene word's
+byte-2 change, which a 16-bit fold cannot produce. The old
+16-bit-fold + preserve-footer-byte-2 rule is the correct projection
+for writes that touch no reserved bits (the continuous RMW lane).
+Primitive: `xor-fold-hash` (refined). Encoder: `computeImageHash21`.
+
+### Scene-state words: TLV-relative location + byte-2 bypass mirror
+
+Per placed block: scene ushort at `baseWord + <block>.bypass
+housekeeping paramId` (low byte = bypass mask scenes 1..8, high byte =
+channel-Y mask; Y bits for scenes 5..8 pattern-extrapolated). NEW
+DECODE: the byte-2 reserved bits at a scene word MIRROR the bypass
+mask for scenes 1..5 (`b2 & 0x7c == (word & 0x1f) << 2`), 4093/4093
+corpus-wide and hardware-paired in both directions; writes must
+maintain the mirror. This decodes the Session-115 NACK 0x13 "byte-2
+matters on a Delay scene word" lesson. The 32 informative bk070 pairs
+replay through the encoder BYTE-identically (mirror + 21-bit footer
+included). Eight families are single-channel full-payload (Filter,
+Formant, MultibandComp, Resonator, RingMod, Synth, FeedbackReturn,
+Output): their bypass pid sits past len/2; no Y half exists. Families
+with no registered bypass pid (QuadChorus, FX Loop, FeedbackSend,
+ToneMatch, Mixer, Noisegate) refuse by name. Primitive:
+`scene-state-ushort` (promoted matched).
+
+### Grid + routing matrix (words 34..129)
+
+48 column-major 2-word cells `(blockId, 4-bit input-connector mask)`
+from word 34; shunts 200..235 unique per preset; grid block multiset
+== TLV chain multiset (502/502); no output-connection field exists
+(implicit tap; factory extends paths to column 12 with shunts).
+Supersedes the block-record-stride-8 reading. Primitive:
+`ii-grid-routing-cell-matrix` (new).
+
+### Discrete (rostered-select) words are raw ordinals
+
+X-channel: 24k+ corpus observations, zero out-of-roster, zero
+sentinels; byte-2 zero on every select word. Oracles: fn 0x28 label
+dump, the 2026-07-10 front-panel-confirmed fixture (drive X word 844 =
+6 T808 OD, Y word 865 = 36 BLACKGLASS 7K), BK-070 amp-ordinal-0
+anchor. Y-channel hazards honored in the encoder: MultiDelay /
+Controllers second halves are NOT X/Y mirrors (refuse outright);
+non-clean families gate Y per-word by read-before-write
+(in-roster-or-sentinel); clean families: CAB CPR GEQ GTE PEQ PHA REV
+ROT WAH (MBC is single-channel, unreachable on Y). Itemized
+exclusions: switches (no census), roster-less selects (cab.cab /
+cab.cab_r raw IR index; display-first), dual-mode tempo selects,
+bypass-pid identity words. `effect_type` patches apply (bytes pinned)
+but carry a note: an image patch bypasses the live fn 0x02
+dependent-param recompute; sonic equivalence hardware-unverified.
+
+### Structural splice (PLACE / REMOVE)
+
+Pinned mechanics: nothing outside the chain moves (word 1 == 0; header
+trailing `00 20` = septet 4096; terminator = 130 + sum(2+len),
+502/502; post-terminator zeros except the chain-independent tone-match
+bulk at word 2048). REMOVE = whole-triplet splice + zero-fill tail +
+grid id swap to a fresh shunt + 21-bit footer recompute; PLACE = the
+inverse at the alphabetical squashed-display-name position. Goldens:
+766/766 remove+re-add ops byte-identical to the original bank bytes;
+A000 + corpus-modal Phaser == factory-A001 chain signature verbatim.
+v1 refusals: tone-match presets, tail-resident blocks (139/140/141/
+142/143/170), modifiers, non-shunt grid targets, headroom past word
+2048. DEFAULT records ship for 5 small families only (Chorus, Flanger,
+Rotary, Phaser, Wah: factory-modal, byte-identical on live hw dumps);
+always-tweaked families are donor-record-only (0 full-modal matches;
+synthesis would be guessing). payloadLen census: constant per wireId
+per source kind; only Amp 106 drifts (factory 234 / live 236); apply
+live-length preference per BLOCK FAMILY. Inserted words carry zero
+reserved bits (no donor exists): named hardware residual.
+
+### Encode-coverage inversion ledger
+
+| Decoder reads | Encoder writes | Status |
+|---|---|---|
+| Continuous knob words | `presetImageContinuousPatch.ts` (fractal-gen2, shipped) | hardware-verified push (2026-05-22) |
+| Rostered-select words (X, gated Y) | `presetImage/discretePatch.ts` | community-beta, hardware-unverified push |
+| Scene-state words + byte-2 mirror | `presetImage/sceneWords.ts` | community-beta; 32/32 hardware pairs replay byte-exact offline |
+| TLV chain membership (PLACE/REMOVE) | `presetImage/structure.ts` | community-beta; byte-identity + A001-synthesis oracles; push acceptance of novel compositions untested (label reads LOUDER) |
+| Grid cell ids (block <-> shunt swap) | `presetImage/grid.ts` | community-beta (rides the splice ops) |
+| Grid connector masks | NOT ENCODED (live fn 0x05/0x06 own routing) | out by design |
+| Modifier records | NOT ENCODED (preserve verbatim; dangling-target warning on remove) | out: 15-word layout undecoded (payload[8] target field is WEAK) |
+| Tone-match bulk (word 2048+) | NOT ENCODED (structural ops refuse tone-match presets) | out by design |
+| Preset name words 2..33 | NOT ENCODED here (live rename path exists) | out of scope this session |
+
 ## Side findings
 
 - The descriptor lookup tables FUN_00552c30/c60 use the same 3-int-

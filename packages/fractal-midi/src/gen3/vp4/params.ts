@@ -11,7 +11,7 @@
  * scan, validated 100% vs the III Ghidra control). NOT reused from the
  * Axe-Fx III: reusing III paramIds would mis-address 1539/1553
  * (99.1%) of this device's shared-with-III params. See
- * docs/_private/MINING-FINDINGS-FM-VP4.md and the cookbook negative entry
+ * docs/_private/MINING-FINDINGS-FM-VP4.md and the primitive negative entry
  * gen3-paramid-reuse-across-model-bytes.
  *
  * Coverage: 1690 wire-addressable params across 48 families.

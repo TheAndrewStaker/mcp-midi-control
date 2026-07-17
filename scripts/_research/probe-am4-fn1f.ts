@@ -52,12 +52,12 @@
  * # What to do with the result
  *
  * - If silent across all shapes → fn 0x1F is unsupported on AM4.
- *   Close the lane as a negative finding (cookbook _negative entry).
+ *   Close the lane as a negative finding (primitives _negative entry).
  * - If 0x74/0x75/0x76 triple returned → port the II `readAllParams`
  *   pattern to AM4 (codec primitive in `fractal-midi/src/am4/setParam.ts`
  *   + descriptor wrap in `packages/am4/src/descriptor/reader.ts`).
  * - If a different envelope shape returned → decode + register the
- *   new primitive in the cookbook + ship a codec helper.
+ *   new primitive in the primitives corpus + ship a codec helper.
  */
 import midi from "@julusian/midi";
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -265,7 +265,7 @@ async function main(): Promise<void> {
   md.push('## Next actions');
   md.push('');
   md.push('- If every shape is `silent`: register negative finding in');
-  md.push('  `fractal-midi/docs/research/cookbook/_negative/` —');
+  md.push('  `fractal-midi/docs/research/primitives/_negative/` —');
   md.push('  `am4-fn-1f-unsupported.md`. AM4 has no bulk-read primitive');
   md.push('  analogous to II; per-paramId loop is the canonical path.');
   md.push('- If any shape is `state_broadcast_triple`: add a `buildGetAllParams`');

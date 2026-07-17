@@ -13,11 +13,22 @@
  */
 
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
+import { isHandleHealthy, withReconnectRetry } from '@mcp-midi-control/core/server-shared/handleHealth.js';
+import { recordAckOutcome } from '@mcp-midi-control/core/server-shared/connections.js';
 import { NCS_FILE_SIZE } from './format.js';
 import {
   blockAddress, buildUploadFrames, crc32, fileId, makeMessage, msbDeinterleave, TRANSFER_CONSTANTS,
   type UploadFrame,
 } from './transfer.js';
+
+/**
+ * Matches `CIRCUIT_TRACKS_DESCRIPTOR.connection_label` in `../descriptor.ts`:
+ * the registry key `ensureConnection` / `recordAckOutcome` key this device's
+ * handle-health state under. Hardcoded here (rather than threaded through
+ * every call site) because this module IS the Circuit's transfer driver;
+ * there is only ever one label for it.
+ */
+const CIRCUIT_LABEL = 'circuit';
 
 const SUB = TRANSFER_CONSTANTS.SUBCMD;
 const HDR = TRANSFER_CONSTANTS.HEADER;
@@ -73,6 +84,15 @@ export interface UploadResult { ok: boolean; slot: number; blocks: number; error
  * run in milliseconds).
  */
 export interface TransferOptions {
+  /**
+   * 0-based microSD PACK index to read/write (device Pack 1 = 0). Default 0.
+   *
+   * Before the 2026-07-16 pack-addressing fix this was not a parameter at all:
+   * the fileId's pack byte was hardcoded, so every transfer this server made
+   * addressed Pack 1 regardless of which pack the front panel had selected.
+   * Read the card's packs by name with `readPackDirectory` (packDirectory.ts).
+   */
+  pack?: number;
   /** READ_INIT / per-chunk data wait, ms (download). Default 5000. */
   responseTimeoutMs?: number;
   /** Per-ACK wait, ms (upload). Default 4000. */
@@ -118,39 +138,45 @@ export interface TransferOptions {
   singleClose?: boolean;
 }
 
-/**
- * Pre-flight + in-transfer liveness check. A multi-block transfer must NEVER be
- * started on, or continued through, a dead/poisoned handle: a send that throws
- * (or silently sets lastSendError) mid-transfer leaves the device half-written
- * and can watchdog-reboot it (the 2026-06-20 incident). This is the headline
- * guard — it sits where the device actually gets hurt, unlike the connection
- * canary which fires once before any byte. HONEST LIMIT: isPortOpen() is a
- * negative catch only and cannot see a synchronous-BLOCKED send (which never
- * returns and sets no error); that path stays unhandled here.
- */
-function handleHealth(conn: MidiConnection): { ok: boolean; reason?: string } {
-  if (conn.isPortOpen && !conn.isPortOpen()) {
-    return { ok: false, reason: 'MIDI port is not open (device unplugged or handle closed)' };
-  }
-  if (conn.lastSendError) {
-    return { ok: false, reason: `connection handle is in an error state (${conn.lastSendError.message})` };
-  }
-  return { ok: true };
-}
+// Pre-flight + in-transfer liveness check. A multi-block transfer must NEVER be
+// started on, or continued through, a dead/poisoned handle: a send that throws
+// (or silently sets lastSendError) mid-transfer leaves the device half-written
+// and can watchdog-reboot it (the 2026-06-20 incident). This is the headline
+// guard; it sits where the device actually gets hurt, unlike the connection
+// canary (ensureConnection, Layer A) which fires once before any byte of THIS
+// call. Generalized 2026-07-09 (BK-097 Phase A): this used to be a private
+// copy of the same check; now both this pre-flight AND the acquire-time
+// canary share `isHandleHealthy` (server-shared/handleHealth.ts), so a fix to
+// one signal (e.g. the slowSendSuspect stretch goal) reaches both call sites.
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 /**
- * Read the byte the device returns in its `0b 02` DIR_CONTROL reply
- * (`F0 …03 0b 02 <IDX> F7`). It was HYPOTHESIZED to be the active pack index that
- * must ride in every sample frame, but the 2026-06-28 review FALSIFIED that: in the
- * repo's `_web`/`_our` capture pair this byte is invariant (`01`) while working
- * Components writes pack byte `0` in its frames — so the device does NOT copy it,
- * and this is more likely a count/status than an index. NOT wired into the upload
- * path (uploadSample/Kit write pack byte 0, Components-proven); kept as a SAFE probe
- * (sends only OPEN/0b01/0900/0b02/CLOSE — never the 0x05 dir session that wipes) for
- * when a clean 2+-pack capture settles what this byte means. Returns 0 if unread.
+ * Read how many PACKS the card holds, from the device's `0b 02` DIR_CONTROL
+ * reply (`F0 …03 0b 02 <COUNT> F7`). Returns 0 if unread.
+ *
+ * SETTLED 2026-07-16 — this byte is the pack COUNT. The 2026-06-28 review had
+ * FALSIFIED the original "active pack index" theory (the byte was invariant `01`
+ * while working Components frames wrote pack byte `0`) but could not say what it
+ * WAS, and left this probe waiting on "a clean 2+-pack capture". That capture
+ * existed on disk the whole time:
+ *
+ *   - `send-pack-to-circuit-tracks-pack-2-*.pcapng`  → `0b 02 01`, card had 1 pack
+ *   - `…-single-sample-…-pack-3-*.pcapng`            → `0b 02 02`, card had 2 packs
+ *   - maintainer's device, 2026-07-16                → `0b 02 05`, front panel shows 5 packs
+ *
+ * Count, not index — which also explains the 2026-06-28 "invariant 01": that was
+ * a one-pack card. The frame is the pack-directory listing HEADER
+ * (`packDirectory.ts` `parsePackListHeader`); the device follows it with one
+ * DIR_ENTRY per pack carrying the names.
+ *
+ * The pack a transfer targets is CHOSEN (the fileId's pack byte, `fileId(slot,
+ * pack)`), never read back from here. There is NO known command reporting which
+ * pack is ACTIVE.
+ *
+ * SAFE probe: sends only OPEN/0b01/0900/0b02/CLOSE — never the 0x05 dir session
+ * that wipes. Prefer `readPackDirectory` (count + names + indices).
  */
-export async function readActivePackIndex(conn: MidiConnection, timeoutMs = 2000): Promise<number> {
+export async function readPackCount(conn: MidiConnection, timeoutMs = 2000): Promise<number> {
   const inbox = attach(conn);
   try {
     conn.send(makeMessage(SUB.OPEN_SESSION));
@@ -160,16 +186,28 @@ export async function readActivePackIndex(conn: MidiConnection, timeoutMs = 2000
     conn.send(makeMessage(SUB.QUERY_INFO, [0x01, 0x00]));
     await sleep(40); inbox.clear();
     conn.send(makeMessage(SUB.DIR_CONTROL, [0x02]));
-    // core frame = [00 20 29 01 64 03 0b 02 <IDX>]: subcmd at [6]=0x0b, arg at [7]=0x02, index at [8].
+    // core frame = [00 20 29 01 64 03 0b 02 <COUNT>]: subcmd at [6]=0x0b, fileType at [7]=0x02, count at [8].
     const reply = await inbox.take((c) => c.length >= 9 && c[6] === SUB.DIR_CONTROL && c[7] === 0x02, timeoutMs);
     return reply ? (reply[8] & 0x7f) : 0;
   } catch {
-    return 0; // a wire fault here just falls back to legacy pack-0 behavior
+    return 0; // a wire fault here just reports "unknown"
   } finally {
     try { conn.send(makeMessage(SUB.CLOSE_SESSION)); } catch { /* port already gone */ }
     inbox.stop();
   }
 }
+
+/**
+ * @deprecated MISNAMED + SEMANTICALLY WRONG. This never read an "active pack
+ * index": the byte is the pack COUNT (see `readPackCount` above and
+ * `docs/design/circuit-pack-addressing.md` §3). Kept only as a compatibility
+ * shim; call `readPackCount`, or `packDirectory.ts` `readPackDirectory` for the
+ * count PLUS every pack's name and 0-based index.
+ *
+ * There is NO known command that reports which pack is ACTIVE. Do not
+ * reintroduce one on this frame.
+ */
+export const readActivePackIndex = readPackCount;
 
 /**
  * Drive an ordered {@link UploadFrame} plan onto the wire with the full
@@ -181,24 +219,25 @@ export async function readActivePackIndex(conn: MidiConnection, timeoutMs = 2000
 export async function runUploadFramePlan(
   conn: MidiConnection, frames: UploadFrame[], opts: TransferOptions = {},
 ): Promise<{ ok: boolean; error?: string }> {
-  const first = await runFramePlanOnce(conn, frames, opts);
   // Recover ONLY from a handle-level fault (stale/dead handle), and only when a
   // reconnect is available. A no-ACK (device busy / wrong view) is NOT a handle
   // fault — retrying it on a fresh handle would just fail again, so we don't.
-  if (first.ok || !first.staleFault || !opts.reconnect) {
-    return { ok: first.ok, error: first.error };
-  }
-  await sleep(200 * (opts.sleepScale ?? 1)); // let the dying port settle before reopening
-  let fresh: MidiConnection;
-  try {
-    fresh = opts.reconnect();
-  } catch (e) {
-    return { ok: false, error: `${first.error}; auto-reconnect also failed (${errMsg(e)}); call reconnect_midi and retry.` };
-  }
-  // Retry the WHOLE transfer once on the fresh handle. Disable a second retry.
-  const second = await runFramePlanOnce(fresh, frames, { ...opts, reconnect: undefined });
-  if (second.ok) return { ok: true };
-  return { ok: false, error: `${second.error} (auto-reconnected and retried once; still failed; check the device is powered and the cable seated)` };
+  // `withReconnectRetry` (server-shared/handleHealth.ts) is the shared R2
+  // mechanism this used to hand-roll: reconnect + retry the WHOLE transfer
+  // ONCE on the fresh handle, never more.
+  const r = await withReconnectRetry(conn, (c) => runFramePlanOnce(c, frames, opts), {
+    reconnect: opts.reconnect,
+    settleMs: 200 * (opts.sleepScale ?? 1),
+  });
+  // Layer B (connection-canary.md correction): the write path's every outcome
+  // is a real ack-or-not answer (never a "legitimate empty slot" exemption
+  // like the read path below), so every result participates in the shared
+  // staleness counter, matching how AM4's write path already feeds it.
+  // Shared by both project AND sample uploads (both call this function), so
+  // this one recordAckOutcome call generalizes staleness participation for
+  // the whole Circuit file-transfer surface.
+  recordAckOutcome(r.ok, CIRCUIT_LABEL);
+  return { ok: r.ok, error: r.error };
 }
 
 /**
@@ -220,7 +259,7 @@ async function runFramePlanOnce(
     // Pre-flight: refuse to start a multi-block write on a handle we can't verify.
     // Return BEFORE setting `started`, so the finally never touches a handle we
     // just refused (don't send a close into a dead/closed port).
-    const pf = handleHealth(conn);
+    const pf = isHandleHealthy(conn);
     if (!pf.ok) return { ok: false, error: `refused to start transfer: ${pf.reason}`, staleFault: true };
     started = true;
     // Reset any half-open session, then run the frame plan. Every send is
@@ -297,12 +336,17 @@ async function runFramePlanOnce(
   }
 }
 
-/** Upload a 160,780-byte project to `slot` (0..63). Requires a bidirectional conn (hasInput). */
+/**
+ * Upload a 160,780-byte project to `slot` (0..63) of `opts.pack` (0-based
+ * microSD pack index; device Pack 1 = 0, the default and the only pack this
+ * path could reach before the 2026-07-16 pack-addressing fix).
+ * Requires a bidirectional conn (hasInput).
+ */
 export async function uploadProject(
   conn: MidiConnection, ncs: Uint8Array, slot: number, opts: TransferOptions = {},
 ): Promise<UploadResult> {
   if (ncs.length !== NCS_FILE_SIZE) throw new RangeError(`.ncs must be ${NCS_FILE_SIZE} bytes, got ${ncs.length}`);
-  const frames = buildUploadFrames(ncs, slot);
+  const frames = buildUploadFrames(ncs, slot, undefined, opts.pack ?? 0);
   const dataCount = frames.filter((f) => f.label.startsWith('write_data')).length;
   const r = await runUploadFramePlan(conn, frames, opts);
   return { ok: r.ok, slot, blocks: dataCount, error: r.error };
@@ -359,16 +403,18 @@ export async function probeProjectSlot(
 export async function downloadProject(
   conn: MidiConnection, slot: number, opts: TransferOptions = {},
 ): Promise<DownloadResult> {
-  const first = await downloadOnce(conn, slot, opts);
-  if (first.ok || first.empty || !first.staleFault || !opts.reconnect) return first;
-  await sleep(200 * (opts.sleepScale ?? 1)); // let the dying port settle before reopening
-  let fresh: MidiConnection;
-  try {
-    fresh = opts.reconnect();
-  } catch (e) {
-    return { ok: false, slot, crcOk: false, error: `${first.error}; auto-reconnect also failed (${errMsg(e)}); call reconnect_midi and retry.` };
-  }
-  return downloadOnce(fresh, slot, { ...opts, reconnect: undefined });
+  const r = await withReconnectRetry(conn, (c) => downloadOnce(c, slot, opts), {
+    reconnect: opts.reconnect,
+    settleMs: 200 * (opts.sleepScale ?? 1),
+  });
+  // Layer B (connection-canary.md correction): a missing READ_INIT is a
+  // LEGITIMATE empty-slot answer, not a dead handle: it must NOT feed the
+  // shared staleness counter (recordAckOutcome), or an ordinary "check if
+  // this slot is free" read would look identical to a stale handle after a
+  // couple of calls. Every OTHER read outcome (success, CRC mismatch, a real
+  // handle-level staleFault) DOES participate, same as the write path.
+  if (!r.empty) recordAckOutcome(r.ok, CIRCUIT_LABEL);
+  return r;
 }
 
 async function downloadOnce(
@@ -376,13 +422,14 @@ async function downloadOnce(
 ): Promise<DownloadResult & { staleFault?: boolean }> {
   const wait = opts.responseTimeoutMs ?? 5000;
   const ss = opts.sleepScale ?? 1;
-  const fid = fileId(slot);
+  const pack = opts.pack ?? 0;
+  const fid = fileId(slot, pack);
   const inbox = attach(conn);
   let started = false; // true once we've sent into a session that finally must close
   try {
     // Pre-flight: never drive the session state machine on a handle we can't
     // verify (an aborted read strands the session and correlated with reboots).
-    const pf = handleHealth(conn);
+    const pf = isHandleHealthy(conn);
     if (!pf.ok) return { ok: false, slot, crcOk: false, error: `refused to start read: ${pf.reason}`, staleFault: true };
     started = true;
     // Reset any half-open session left by a prior aborted transfer, else the
@@ -394,13 +441,19 @@ async function downloadOnce(
       conn.send(makeMessage(SUB.DIR_CONTROL, [0x01])); await sleep(100 * ss); inbox.clear();
       conn.send(makeMessage(SUB.QUERY_INFO, [0x01, 0x00])); await sleep(100 * ss); inbox.clear();
       conn.send(makeMessage(SUB.DIR_CONTROL, [0x02])); await sleep(100 * ss); inbox.clear();
-      // HARDENING TODO (occupancy pre-check): this dir-listing response is currently
-      // DRAINED. Decoding it would tell us which slots are occupied BEFORE we issue
-      // the per-slot read below — so we'd never ask the firmware to dump a
+      // Scope the session to THIS pack's project directory (2026-07-16: the
+      // second byte is the 0-based pack, not a constant — see transfer.ts fileId).
+      //
+      // HARDENING TODO (occupancy pre-check): this dir-listing response is still
+      // DRAINED. Decoding it would tell us which slots are occupied BEFORE we
+      // issue the per-slot read below — so we'd never ask the firmware to dump a
       // non-existent project (the empty-slot read that stranded the device on
-      // 2026-06-20). The format is not yet reverse-engineered; needs a capture.
-      // Until then the always-close `finally` keeps an empty-slot read safe.
-      conn.send(makeMessage(SUB.DIR_CONTROL, [0x03, 0x00])); await sleep(500 * ss); inbox.clear();
+      // 2026-06-20). The "needs a capture" note here is now STALE: the reply IS
+      // decoded — `sampleDirectory.ts` `parseDirListHeader` / `parseDirEntry`
+      // read exactly this exchange byte-exact for fileType 0x03 (project, count
+      // 52 confirmed). Wiring it in is plumbing, not RE. Until then the
+      // always-close `finally` keeps an empty-slot read safe.
+      conn.send(makeMessage(SUB.DIR_CONTROL, [0x03, pack & 0x7f])); await sleep(500 * ss); inbox.clear();
       conn.send(makeMessage(SUB.WRITE_INIT, [...blockAddress(0), ...fid, 0x02]));
     } catch (e) {
       return { ok: false, slot, crcOk: false, error: `send failed during read handshake: ${errMsg(e)} (aborted; finally closes the session)`, staleFault: true };

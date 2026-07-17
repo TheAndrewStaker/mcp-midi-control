@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/circuit-tracks",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Novation Circuit Tracks device descriptor (synth + drum control) + pattern-target capability.",
   "private": true,
   "license": "Apache-2.0",

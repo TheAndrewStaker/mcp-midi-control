@@ -771,7 +771,7 @@ step is Ghidra mining of the AM4 firmware itself (not AM4-Edit,
 which we already searched for the encoder and found only the
 header re-stamper `FUN_1402298f0`). The device firmware blob is
 in `samples/factory/AM4_firmware_v2p00.syx`; the JUCE pattern
-analysis from cookbook `juce-binarydata-zip.md` may not apply
+analysis from primitive `juce-binarydata-zip.md` may not apply
 since AM4 firmware isn't JUCE-based, but a brute-force string
 walk targeting the param-table layout would be the fallback.
 
@@ -833,8 +833,8 @@ positions cannot be isolated by paired diffing from this side.
 > Reproduced independently (no-mutation redump = 2541 of 12352 bytes
 > differ; one-variable swap = 2909, so the swap adds only ~370 diffs on
 > top of the ~2541 noise floor). This non-determinism is now registered
-> as the cookbook negative
-> [`_negative/am4-preset-dump-flat-byte-diff`](../../research/cookbook/_negative/am4-preset-dump-flat-byte-diff.md).
+> as the primitive negative
+> [`_negative/am4-preset-dump-flat-byte-diff`](../../research/primitives/_negative/am4-preset-dump-flat-byte-diff.md).
 > Consequence for the `fn 0x01 action=0x1F` snapshot footer: the
 > `0xB0` per-slot block-type codes (`BLOCK_TYPE_VALUES` pidLows) decoded
 > there CANNOT be cross-corroborated from this dump primitive, so the
@@ -923,7 +923,7 @@ a local AM4-Edit Ghidra project):
   #33 / #37) and the workflow registration helper. Output:
   `samples/captured/decoded/ghidra-am4-edit-inbound-dump-handlers.txt`.
 
-The cookbook rule `_negative/byte-literal-envelope-ghidra-search.md`
+The primitive rule `_negative/byte-literal-envelope-ghidra-search.md`
 applies: don't search the full 5-byte `F0 00 01 74 15` envelope (the
 model byte 0x15 is loaded at runtime from a device-handle struct).
 
@@ -949,7 +949,7 @@ FUN_140060fb0(&local_handle, "Workflow Name");
 `FUN_140196500` is the registration helper, appends `fn-byte` (param_2)
 to an int32 array at `param_1 + 0x18` AND a byte flag (param_3) to a
 byte array at `param_1 + 0x28`. 139 callers across the binary; almost
-all from `FUN_1402d83d0`. This refines the cookbook entry
+all from `FUN_1402d83d0`. This refines the primitive entry
 [[iii-async-workflow-fn-registry]] from `matched-singleton` →
 `matched` (AM4 added as a second device-family axis; entry updated
 in the same session).
@@ -1048,7 +1048,7 @@ a `(workflow_name, workflow_object_addr, vtable_addr,
 vtable_methods[])` table. Modeled on
 `DumpAxeEditIIIDumpDescriptors.java` (already in the repo).
 
-### 11.6 Cookbook + status
+### 11.6 Primitives + status
 
 - **Updated:** [[iii-async-workflow-fn-registry]] → status promoted
   matched-singleton → matched (added AM4 binary as second device-
@@ -1317,7 +1317,7 @@ hypotheses for where it goes:
   device emits the final fn=0x01 closing a multi-frame response, this
   handler may consume the accumulated buffer and route it to the
   workflow's state-machine executor (analog of III's `FUN_1401f4390`
-  per cookbook `[[iii-workflow-state-machine-executor]]`).
+  per primitive `[[iii-workflow-state-machine-executor]]`).
 
 Hypothesis (B) is the higher-probability path because it matches III's
 architecture, III's stream-end marker (fn=0x01) calls into the state
@@ -1368,9 +1368,9 @@ FUN_1402da830 + their first-level callees, and score with the same
 22 anchor offsets + stride hints + buffer patterns used in §12.1.
 Modeled directly on `DecompileAndClassifyDMSMSlots.java`.
 
-### 12.6 Cookbook impact
+### 12.6 Primitives impact
 
-- **No cookbook entry promoted.** The §11 prediction that
+- **No primitive entry promoted.** The §11 prediction that
   `[[iii-workflow-state-machine-executor]]` would promote
   matched-singleton → matched once the AM4 analog landed is held
   open; the AM4 analog is one hop further than this session reached.
@@ -1454,7 +1454,7 @@ directly? No, on three independent grounds:
    display labels, not byte positions in the preset binary.
 
 The portable mining technique that DID land cross-device 2026-05-22
-is the **outer envelope descriptor table** (cookbook
+is the **outer envelope descriptor table** (primitive
 `[[vendor-envelope-descriptor-table]]`). AM4-Edit carries 54
 descriptor tables at `0x1405dc190..0x1405dd160`; the chunk-1 outer
 descriptor at `0x1405dcf40` is byte-identical-shape to III's
@@ -1543,7 +1543,7 @@ mirror III's `FUN_1401f4390`) is **falsified**.
 The cVar5==0x08 library-load handler shows the **canonical AM4-Edit
 inbound-parse pattern**:
 
-1. **Model-byte dispatch** (cookbook `[[iii-multiproduct-editor-binary]]`).
+1. **Model-byte dispatch** (primitive `[[iii-multiproduct-editor-binary]]`).
    `cVar2 = pcVar6[4]` reads the model byte from the SysEx envelope
    (position +4 in `F0 00 01 74 [model] [fn] ...`). The function
    branches:
@@ -1555,7 +1555,7 @@ inbound-parse pattern**:
      (truncated by the 260-line cap).
    - `cVar2 == 0x14` / `0x15` (??/AM4): the ELSE branch.
 
-2. **Descriptor-table walk** (cookbook
+2. **Descriptor-table walk** (primitive
    `[[vendor-envelope-descriptor-table]]`). For AM4 specifically, the
    ELSE branch walks `&DAT_1405dccf0`, one of the 54 mined
    descriptor tables, which the synthesis log records as:
@@ -1613,7 +1613,7 @@ This is the same architecture III uses (per `presetDump.ts` L47).
 **The "missing parser" is a cross-device architectural pattern, not
 an AM4-Edit-specific gap.**
 
-### 13.7 Cookbook impact
+### 13.7 Primitives impact
 
 - **Promoted** `[[_negative/iii-fn-byte-switch-as-inbound-dispatcher]]`
   to its final, refined form: AM4-Edit's hybrid dispatch (small-via-
@@ -1627,7 +1627,7 @@ an AM4-Edit-specific gap.**
   function-shape level. Promotion to `matched` is no longer reachable
   via AM4, would need to land in a different binary (Axe-Edit II,
   Hydrasynth editor) instead.
-- **NEW negative cookbook entry needed**: `_negative/editor-side-
+- **NEW negative primitive entry needed**: `_negative/editor-side-
   chunk-1-inner-decode.md`: documents the rule-out that bulk
   preset-binary inner per-param layout exists in any Fractal editor
   binary. Verified on AM4 (the first three hops, 2026-05-28) and III
@@ -1716,7 +1716,7 @@ After stripping the 2-byte per-chunk length prefix and concatenating:
   raw packed firmware = 7,096 × 480 = 3,406,080 bytes (all 7-bit clean)
 ```
 
-The wrapper shape mirrors the preset-binary 3-frame envelope (`0x77`/`0x78`/`0x79`) at the byte-shape level; only the fn-bytes differ. This is consistent with `[[vendor-envelope-descriptor-table]]` cookbook primitive, Fractal's editor binaries reuse a single envelope-descriptor shape for both preset transport and firmware transport.
+The wrapper shape mirrors the preset-binary 3-frame envelope (`0x77`/`0x78`/`0x79`) at the byte-shape level; only the fn-bytes differ. This is consistent with `[[vendor-envelope-descriptor-table]]` primitive, Fractal's editor binaries reuse a single envelope-descriptor shape for both preset transport and firmware transport.
 
 ### 14.2 What's NOT solved
 

@@ -22,7 +22,7 @@
  *      assigns to a device only if (a) that device has >= MIN_HITS
  *      keyword matches AND (b) it leads the next-highest device by a
  *      DOMINANCE factor. Otherwise the session stays in main STATE.md
- *      (cross-device / cookbook / MCP-server-architecture material).
+ *      (cross-device / primitives / MCP-server-architecture material).
  *
  *   3. Write the slim main STATE.md (preamble + cross-device sessions
  *      + per-device index pointers + tail) and four device shards.
@@ -300,7 +300,7 @@ function buildShard(
   lines.push(`>`);
   lines.push(`> Read alongside:`);
   lines.push(`> - \`STATE.md\` — orchestrator + cross-device sessions`);
-  lines.push(`>   (cookbook progress, MCP-server architecture, MVP scope).`);
+  lines.push(`>   (primitives progress, MCP-server architecture, MVP scope).`);
   lines.push(`> - \`HARDWARE-TASKS-${profile.key === 'AM4' ? 'AM4' : profile.key === 'AXEFX2' ? 'AXEFX2' : profile.key === 'AXEFX3' ? 'AXEFX3' : 'HYDRASYNTH'}.md\` —`);
   lines.push(`>   the founder-facing hardware backlog for this device.`);
   lines.push('');
@@ -331,7 +331,7 @@ function buildMain(
   lines.push('Device-specific session entries split out of this file on');
   lines.push('2026-05-22 (Session 117 cont 2) to reduce parallel-agent races.');
   lines.push('Open the device shard for that device\'s chronological log;');
-  lines.push('cross-device + cookbook + MCP-server-architecture sessions stay');
+  lines.push('cross-device + primitives + MCP-server-architecture sessions stay');
   lines.push('here.');
   lines.push('');
   lines.push('| Device | Sessions in shard | File |');

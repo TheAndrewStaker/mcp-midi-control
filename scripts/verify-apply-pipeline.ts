@@ -315,7 +315,10 @@ for (const tc of TEST_CASES) {
     check('Multi-block -- amp.input_drive float32 matches 7.0', Math.abs(decoded - 7.0) < 0.01, `decoded=${decoded}`);
   }
 
-  const levelOps = ops.filter((op) => op.kind === 'param' && op.summary.includes('level'));
+  // Exact-name match: BK-103c injects cab-polish defaults (incl. room_level)
+  // on a fresh cab-bearing build, so a loose includes('level') would also
+  // catch the injected 'Cab 1.room_level' write.
+  const levelOps = ops.filter((op) => op.kind === 'param' && op.summary.startsWith('Cab 1.level '));
   check('Multi-block -- cab.level param op exists', levelOps.length === 1);
   if (levelOps.length === 1) {
     const decoded = decodeFloat32FromSysEx(levelOps[0].bytes);

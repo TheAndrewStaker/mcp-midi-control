@@ -480,6 +480,34 @@ hardware-validation pass.
 
 ---
 
+## The guidance field must know about the feature you just added
+
+**Named pitfall, cost a review to catch (2026-07-17).** When a result carries a
+"what do I do next" field (`next_step`, `retry_action`, a fit note), that field is
+the contract for steering the agent. It is computed in the same function as the
+feature, by different code, and it silently rots the moment the two disagree.
+
+The case: `import_songsterr whole_song` gained `project_plan` (a song chunked into
+device-sized projects) attached exactly when the song does not fit one project. But
+`next_step`'s "does not fit" branch was untouched and still said *"raise fuzz to
+merge more, or arrange a sub-span with from_measure/to_measure"* — the two lossy
+workarounds `project_plan` was built to replace. So **the exact condition that
+computed the feature also told the agent to do the old thing instead.** An agent
+reading `next_step` literally (which is its documented contract) would never
+discover the plan sitting beside it in the same response.
+
+Nothing failed. Tests passed, the field was populated, and the shape was correct.
+It was invisible precisely because both halves were individually right.
+
+The rule: **when you add a field, grep the result's guidance text for the condition
+that gates it.** If a branch of `next_step` fires under the same predicate as your
+new field and does not mention it, that branch is now wrong. Same applies to
+`retry_action` on an error whose remedy you just changed.
+
+Corollary: a feature that is only discoverable AFTER calling the tool is
+half-shipped. Declare an `outputSchema` (see above) so the model can plan around
+the shape before it calls, rather than learning it from the response.
+
 ## Agent guidance for tool use
 
 The unified tool descriptions stay focused on the tool's mechanics.

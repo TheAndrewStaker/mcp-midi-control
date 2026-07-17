@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/core",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Shared MCP dispatcher, param-kind resolver, and protocol-generic types.",
   "private": true,
   "license": "Apache-2.0",
@@ -11,8 +11,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@julusian/midi": "^3.6.1",
+    "openrig": "*",
     "serialport": "^13.0.0",
     "zod": "^4.4.2"
+  },
+  "optionalDependencies": {
+    "audify": "^1.10.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"

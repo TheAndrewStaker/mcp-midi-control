@@ -11,7 +11,7 @@ persistent, DO NOT delete; orphans all III scripts in
 
 The III preset binary envelope is **byte-identical in shape** to the
 II preset binary envelope. Both use the same
-[[../cookbook/vendor-envelope-descriptor-table]] mechanism. Descriptor
+[[../primitives/vendor-envelope-descriptor-table]] mechanism. Descriptor
 tables at `0x1407ab440` + `0x1407aba40` + 24 more in `.rdata`
 declare the per-fn envelope shapes. **Table `0x1407ab940` carries
 the 1024-ushort × 3-byte preset-binary payload, the III equivalent
@@ -116,13 +116,13 @@ Dynamic fn-byte emits (runtime-determined, not constant): 3 sites.
 - **III XOR-fold hash function**: clone `DumpAxeEditIIFooterHash.java`
   → III variant; the hash function is callable from `FUN_140337060`'s
   call graph. ~1 hour Ghidra batch. Closes III preset round-trip
-  modified-push validation (transfer of [[../cookbook/xor-fold-hash]]
+  modified-push validation (transfer of [[../primitives/xor-fold-hash]]
   to III).
 - **III block-name cascade analog**: `ghidra-axe-edit-iii-preset-receiver.txt`
   (371 KB) almost certainly contains the III analog of II's
   `AEImageDepot::FUN_00595260`. ~2 hours TS work (grep for alphabetical
   block-name cascade). Transfer of
-  [[../cookbook/alphabetical-name-cascade-block-ordering]] to III.
+  [[../primitives/alphabetical-name-cascade-block-ordering]] to III.
 - **III inbound dispatcher response shapes**:   `ghidra-axe-edit-iii-inbound-dispatcher.txt` (524 KB) decodes
   fn 0x14 GET reply, fn 0x28 enum dump, state-broadcast envelopes.
   1-day TS parse yields III SET → GET parity.

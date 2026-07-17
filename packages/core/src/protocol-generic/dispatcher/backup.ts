@@ -89,7 +89,7 @@ export async function backupProjectSlot(
   if (dump.empty) {
     return {
       status: 'skipped_empty',
-      note: `Project slot ${slot} was empty, nothing to back up.`,
+      note: `Project slot ${slot}${ctx.pack !== undefined && ctx.pack !== 0 ? ` on Pack ${ctx.pack + 1}` : ''} was empty, nothing to back up.`,
     };
   }
   const baseDir = opts.directory !== undefined && opts.directory.trim().length > 0
@@ -97,18 +97,27 @@ export async function backupProjectSlot(
     : path.join(homedir(), 'mcp-midi-backups');
   await mkdir(baseDir, { recursive: true });
   const ext = dump.file_extension ?? 'syx';
-  const slotTag = `slot${String(slot).padStart(2, '0')}`;
+  // Pack-tag the artifact on pack-addressed devices (Circuit Tracks). The same
+  // slot number exists in every pack, so without this two backups of DIFFERENT
+  // projects differ only by timestamp — and the restore hint below could not
+  // tell the user which pack to put it back in.
+  const packTag = ctx.pack !== undefined && ctx.pack !== 0 ? `pack${ctx.pack + 1}-` : '';
+  const slotTag = `${packTag}slot${String(slot).padStart(2, '0')}`;
   const fileName =
     `${sanitizeForFilename(descriptor.display_name)}-${slotTag}-${sanitizeForFilename(dump.name ?? 'project')}-${backupTimestamp()}.${ext}`;
   const filePath = path.join(baseDir, fileName);
   await writeFile(filePath, Buffer.from(dump.bytes));
+  const where = ctx.pack !== undefined && ctx.pack !== 0 ? ` on Pack ${ctx.pack + 1}` : '';
+  const restoreHint = ctx.pack !== undefined && ctx.pack !== 0
+    ? `restore it with upload_project (slot ${slot}, pack ${ctx.pack + 1}) if needed.`
+    : 'restore it with upload_project if needed.';
   return {
     status: 'saved',
     file_path: filePath,
     byte_length: dump.byte_length,
     name: dump.name,
     note:
-      `Backed up the existing project in slot ${slot} (${dump.name ?? 'unnamed'}, ${dump.byte_length} bytes) ` +
-      `to ${filePath} before overwriting — restore it with upload_project if needed.`,
+      `Backed up the existing project in slot ${slot}${where} (${dump.name ?? 'unnamed'}, ${dump.byte_length} bytes) ` +
+      `to ${filePath} before overwriting. To undo, ${restoreHint}`,
   };
 }

@@ -146,6 +146,25 @@ async function verifyAm4(client: Client): Promise<void> {
       typeof terms?.location === 'string' && /A1\.\.Z4/.test(terms.location),
       `location=${terms?.location}`,
     );
+    // BK-103 (2026-07-15): mix-ready cab polish defaults must reach the agent,
+    // reference the CORRECT registers (master_low_cut, NOT the old misnamed
+    // cab_master_low_cut = proximity), and carry the amp-type reset trap.
+    const guidance = (parsed as { agent_guidance?: Record<string, string> })?.agent_guidance;
+    record(
+      'am4 agent_guidance carries cab_polish with correct keys + reset trap',
+      !!guidance?.cab_polish &&
+        /master_low_cut/.test(guidance.cab_polish) &&
+        !/cab_master_low_cut/.test(guidance.cab_polish) &&
+        /room_level/.test(guidance.cab_polish) &&
+        /RESETS/.test(guidance.cab_polish) &&
+        /wide open/.test(guidance.cab_polish),
+      `cab_polish present=${!!guidance?.cab_polish}`,
+    );
+    record(
+      'am4 agent_guidance cab_polish advertises DynaCab selection by name',
+      !!guidance?.cab_polish && /dynacab_1_cab/.test(guidance.cab_polish),
+      `cab_polish present=${!!guidance?.cab_polish}`,
+    );
   }
 
   // get_param — amp.gain (works regardless of active type)
@@ -1283,6 +1302,24 @@ async function main(): Promise<void> {
       .some((line) => /fm[- ]?3/i.test(line) && !/MCP_FM3_SERIAL_PATH/.test(line));
     const hasHydra = /hydrasynth|hydra/i.test(portsText);
     const hasCircuit = /circuit/i.test(portsText);
+
+    // measure_loudness (BK-105): hardware-independent contract check. With
+    // no input_device the tool must return the OS input roster and ask (the
+    // agent-as-UX shape), never capture. On a machine whose audio backend
+    // is unavailable (Linux CI has no device), a graceful capture-engine
+    // error is also a pass; a thrown/hung call is the only failure.
+    console.log('\n── measure_loudness (device-independent) ─────────────────────');
+    {
+      const res = await client.callTool({ name: 'measure_loudness', arguments: {} });
+      const text = extractText(res);
+      const listShape = /"devices"\s*:/.test(text) && /input_device/i.test(text);
+      const gracefulUnavailable = /failed to load|unavailable/i.test(text);
+      record(
+        'measure_loudness with no args returns the input roster (or a graceful engine error)',
+        listShape || gracefulUnavailable,
+        text.slice(0, 300),
+      );
+    }
 
     if (opts.ports.includes('am4')) {
       if (!hasAm4) {

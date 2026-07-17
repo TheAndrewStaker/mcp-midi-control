@@ -12,7 +12,7 @@ import {
 } from '../types.js';
 
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
-import { assertInstanceSupported, openCtx, requireDevice } from './core.js';
+import { assertInstanceSupported, openCtx, requireDevice, withHandleRetry } from './core.js';
 import { resolveBlockName } from './resolvers.js';
 
 /**
@@ -28,7 +28,8 @@ export async function executeSetBlock(args: {
   change: BlockChange;
 }): Promise<WriteResult & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.writer.setBlock === undefined) {
+  const setBlock = descriptor.writer.setBlock;
+  if (setBlock === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -41,7 +42,9 @@ export async function executeSetBlock(args: {
     args.change.block_type ? `set_block ${args.change.block_type}` : 'set_block',
   );
   const ctx = openCtx(descriptor);
-  const result = await descriptor.writer.setBlock(ctx, args.slot, args.change);
+  // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
+  // handle-level fault (see dispatcher/core.ts withHandleRetry).
+  const result = await withHandleRetry(ctx, (c) => setBlock(c, args.slot, args.change));
   // BK-075: block placement just changed; invalidate the cached layout
   // snapshot so the next set_param pre-flight re-reads.
   invalidateBlockLayoutCache(descriptor.id);
@@ -60,7 +63,8 @@ export async function executeSetBypass(args: {
   instance?: number;
 }): Promise<WriteResult & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.writer.setBypass === undefined) {
+  const setBypass = descriptor.writer.setBypass;
+  if (setBypass === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -70,7 +74,8 @@ export async function executeSetBypass(args: {
   assertInstanceSupported(descriptor, args.instance, `set_bypass ${args.block}`);
   const canonical_block = resolveBlockName(descriptor, args.block);
   const ctx = openCtx(descriptor);
-  const result = await descriptor.writer.setBypass(ctx, canonical_block, args.bypassed, args.instance);
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault.
+  const result = await withHandleRetry(ctx, (c) => setBypass(c, canonical_block, args.bypassed, args.instance));
   return { ...result, device: descriptor.display_name };
 }
 

@@ -1,9 +1,20 @@
 /**
- * Axe-Fx II DeviceDescriptor — `DeviceWriter` implementation.
+ * Axe-Fx II family DeviceWriter: `createWriter(config)` factory.
  *
  * Wraps the existing Axe-Fx II protocol layer (setParam.ts, params.ts,
  * blockTypes.ts, applyExecutor.ts) into the `DeviceWriter` contract
  * from `src/protocol/generic/types.ts`.
+ *
+ * BK-094 / BK-GEN2-FACTORY: this file was converted from a single XL+-only
+ * `writer` object literal into `createWriter(config: AxeFxIIConfig)` so the
+ * AX8 (and any future Axe-Fx II family model) can bind the SAME writer logic
+ * to its own model byte + block-availability filter, mirroring the
+ * `fractal-gen3` factory (`createModernFractalDescriptor`/`makeWriter`) and
+ * `boss-rc`'s `createBossRcDescriptor`. `export const writer` below preserves
+ * the pre-existing XL+ singleton for every caller that imports it by that
+ * name (scripts, tests, `descriptor.ts`); behavior is byte-identical to
+ * before this change (XL+'s `config.modelByte` is the same `0x07` default
+ * every builder already fell back to).
  *
  * Two flavors of method:
  *   - Pure builders (`buildSetParam`, `buildSwitchPreset`,
@@ -15,9 +26,22 @@
  *     `applyPreset`, `applySetlist`, `rename`) — drive the wire
  *     round-trip via `ctx.conn` + the shared applyExecutor pipeline.
  *
- * Legacy `axefx2_*` tools keep working in parallel through v0.1.x;
- * this writer is what the unified `set_param` / `apply_preset` / etc.
- * dispatchers call at runtime.
+ * MODEL-BYTE THREADING. Every direct wire-builder call below passes
+ * `{ modelId: config.modelByte }` (or an inline `modelId` field on builders
+ * that take one options object, e.g. `buildSetGridCell`). Since the
+ * BK-GEN2-FACTORY follow-up (2026-07-15), `applyPreset` / `applySetlist`
+ * are threaded too: `tools/applyExecutor.ts` takes the model byte via
+ * `BuildOptions.modelId` (pure op builders) + `RunOptions.modelId`
+ * (runtime reads/verifies, matchers, parsers), so every frame the apply
+ * pipeline emits carries `config.modelByte` (AX8: 0x08). The `gateWrite`
+ * mechanism below stays for any future config that needs per-op gating
+ * (mirrors gen-3's VP4 `write_allowlist`); no current gen-2 config gates.
+ *
+ * BLOCK-AVAILABILITY FILTER. `config.isBlockAvailable` (undefined for XL+ =
+ * no filter) gates block resolution: `resolveBlockOrThrow` /
+ * `resolveBlockWithInstance` refuse a block/instance the config's predicate
+ * rejects (e.g. AX8's "Amp 2") with a clear message instead of silently
+ * building a frame the device will never answer.
  *
  * Per Q3 / Q6 (Session 66 wrap, 2026-05-12): scene-name rename and
  * multi-scene authoring are out of MVP scope. `rename(target='scene:N')`
@@ -98,9 +122,12 @@ import {
 import {
   buildApplyPresetAtOps,
   buildApplyPresetOps,
+  mergeAutoApplied,
   runApplyPresetAtOps,
   type ApplyPresetAtInput,
+  type ApplyPresetCabPolish,
   type ApplyPresetInput,
+  type ApplyPresetSceneLevels,
 } from '../tools/applyExecutor.js';
 import { checkAudibility } from '../tools/audibility.js';
 import { findParamFuzzy } from 'fractal-midi/gen2/axe-fx-ii';
@@ -109,16 +136,18 @@ import { restorePresetBinaryAxeFxII } from './presetRestore.js';
 import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 
 import { findBlockBySlug, parseAxeFxIILocation } from './schema.js';
-
-const DEVICE_LABEL = 'Fractal Axe-Fx II XL+';
+import type { AxeFxIIConfig } from './config.js';
+import { AXE_FX_II_XL_PLUS_CONFIG } from '../configs/xl-plus.js';
 
 // Group codes whose firmware rejects fn=0x2e (SET_PARAM_DIRECT) for
 // continuous/knob params. These blocks use fn=0x02 (SET with wire
-// integer) for ALL param types. Hardware-confirmed 2026-05-26:
+// integer) for ALL param types. Hardware-confirmed 2026-05-26 (XL+):
 // compressor.effect_type already rejected fn=0x2e (Session 125); alpha.7
 // field test showed all compressor knobs (threshold, ratio, attack,
 // release, level) also no-op via fn=0x2e while fn=0x02 lands correctly
 // for effect_type on the same block. Extending fn=0x02 to all CPR params.
+// Model-generic: the compressor block + its firmware quirk are shared
+// across the whole gen-2 family (same codec, same block table).
 const FN02_ONLY_GROUPS = new Set(['CPR']);
 
 // Channel-switch settle window. The Axe-Fx II silently absorbs param
@@ -133,580 +162,723 @@ const GRID_CELL_RESPONSE_TIMEOUT_MS = 800;
 const GET_NAME_TIMEOUT_MS = 800;
 const GET_BLOCK_CHANNEL_TIMEOUT_MS = 800;
 
-// ── Param-name → AxeFxIIParam ───────────────────────────────────────
-// Resolution shared with legacy axefx2_* tools via paramAliases.ts.
-
-function findParamByName(block: AxeFxIIBlock, name: string): AxeFxIIParam | undefined {
-  return findParamFuzzy(block, name);
-}
-
-function resolveBlockOrThrow(slugOrName: string): AxeFxIIBlock {
-  // Try descriptor-style slug first ("amp", "reverb"), then legacy
-  // display-name resolver ("Amp 1", "Reverb 1") as fallback.
-  const fromSlug = findBlockBySlug(slugOrName);
-  if (fromSlug) return fromSlug;
-  const fromName = resolveBlock(slugOrName);
-  if (fromName) return fromName;
-  const sample = AXE_FX_II_BLOCKS.slice(0, 6).map((b) => `"${b.name}"`).join(', ');
-  throw new DispatchError(
-    'unknown_block',
-    DEVICE_LABEL,
-    `Block '${slugOrName}' is not valid on Fractal Axe-Fx II. First few: ${sample}… (call list_params for the full list).`,
-  );
-}
-
-function resolveBlockWithInstance(slugOrName: string, instance?: number): AxeFxIIBlock {
-  const base = resolveBlockOrThrow(slugOrName);
-  if (instance === undefined || instance === 1) return base;
-  const idsInGroup = IDS_BY_GROUP[base.groupCode];
-  const targetId = idsInGroup?.[instance - 1];
-  if (targetId === undefined) {
-    const max = idsInGroup?.length ?? 1;
-    throw new DispatchError(
-      'value_out_of_range',
-      DEVICE_LABEL,
-      `Block '${slugOrName}' instance ${instance} out of range on Fractal Axe-Fx II (max instances for ${base.groupCode}: ${max}).`,
-    );
-  }
-  const target = BLOCK_BY_ID[targetId];
-  if (target === undefined) {
-    throw new DispatchError(
-      'unknown_block',
-      DEVICE_LABEL,
-      `Block '${slugOrName}' instance ${instance}: effectId ${targetId} not found in block table.`,
-    );
-  }
-  return target;
-}
-
 /**
- * Enumerate valid param names on a block by walking `KNOWN_PARAMS`
- * and filtering on `groupCode`. Used by the shared unknown-param
- * error formatter so the error string lists every valid knob name
- * for the block, ordered by closeness to the bad input.
+ * Build a `DeviceWriter` bound to one Axe-Fx II family config. See the
+ * module docstring above for the model-byte-threading + block-filter +
+ * apply_preset-gate contract every config gets for free.
  */
-function listParamNamesForBlock(block: AxeFxIIBlock): string[] {
-  const out: string[] = [];
-  for (const key of Object.keys(KNOWN_PARAMS)) {
-    const p = KNOWN_PARAMS[key as keyof typeof KNOWN_PARAMS] as AxeFxIIParam;
-    if (p.groupCode === block.groupCode && !out.includes(p.name)) {
-      out.push(p.name);
+export function createWriter(config: AxeFxIIConfig): DeviceWriter {
+  const DEVICE_LABEL = config.displayName;
+  const modelOpts = { modelId: config.modelByte };
+  // Build-time options for the apply pipeline (tools/applyExecutor.ts):
+  // model byte on every emitted frame + this config's block-availability
+  // filter (refuses e.g. AX8 "Amp 2" at build time, before any wire I/O).
+  const applyBuildOpts = {
+    modelId: config.modelByte,
+    isBlockAvailable: config.isBlockAvailable,
+    deviceLabel: DEVICE_LABEL,
+  };
+
+  /**
+   * Refuse a device-state write the config has gated (AX8's apply_preset /
+   * apply_setlist; see the module docstring). No-op on a non-gated config
+   * (XL+) or an allowlisted op.
+   */
+  function gateWrite(op: string): void {
+    if (!config.writesGated) return;
+    if (config.writeAllowlist?.includes(op)) return;
+    const allowed = config.writeAllowlist?.length
+      ? ` Confirmed writes on ${DEVICE_LABEL}: ${config.writeAllowlist.join(', ')}.`
+      : '';
+    throw new DispatchError(
+      'capability_not_supported',
+      DEVICE_LABEL,
+      `${op} is GATED on ${DEVICE_LABEL}: ${config.gatedWriteReason ?? 'this write path is not yet confirmed for this model.'}${allowed}`,
+    );
+  }
+
+  // ── Param-name → AxeFxIIParam ───────────────────────────────────────
+  // Resolution shared with legacy axefx2_* tools via paramAliases.ts.
+
+  function findParamByName(block: AxeFxIIBlock, name: string): AxeFxIIParam | undefined {
+    return findParamFuzzy(block, name);
+  }
+
+  /** Refuse a block instance this config's `isBlockAvailable` filter rejects. */
+  function checkBlockAvailable(block: AxeFxIIBlock): void {
+    if (config.isBlockAvailable !== undefined && !config.isBlockAvailable(block)) {
+      throw new DispatchError(
+        'unknown_block',
+        DEVICE_LABEL,
+        `Block '${block.name}' is not present on ${DEVICE_LABEL} (single-instance-only or absent on this model). ` +
+        `Call list_params or describe_device to see the blocks this device actually exposes.`,
+      );
     }
   }
-  return out;
-}
 
-function findParamOrThrow(block: AxeFxIIBlock, name: string): AxeFxIIParam {
-  const p = findParamByName(block, name);
-  if (p) return p;
-  throw new DispatchError(
-    'unknown_param',
-    DEVICE_LABEL,
-    formatUnknownParamError({
-      deviceName: DEVICE_LABEL,
-      block: block.name,
-      badParam: name,
-      knownNames: listParamNamesForBlock(block),
-    }),
-  );
-}
+  function resolveBlockOrThrow(slugOrName: string): AxeFxIIBlock {
+    // Try descriptor-style slug first ("amp", "reverb"), then legacy
+    // display-name resolver ("Amp 1", "Reverb 1") as fallback.
+    const fromSlug = findBlockBySlug(slugOrName);
+    const resolved = fromSlug ?? resolveBlock(slugOrName);
+    if (!resolved) {
+      const sample = AXE_FX_II_BLOCKS.slice(0, 6).map((b) => `"${b.name}"`).join(', ');
+      throw new DispatchError(
+        'unknown_block',
+        DEVICE_LABEL,
+        `Block '${slugOrName}' is not valid on ${DEVICE_LABEL}. First few: ${sample}… (call list_params for the full list).`,
+      );
+    }
+    checkBlockAvailable(resolved);
+    return resolved;
+  }
 
-// ── Channel resolution helper ───────────────────────────────────────
+  function resolveBlockWithInstance(slugOrName: string, instance?: number): AxeFxIIBlock {
+    const base = resolveBlockOrThrow(slugOrName);
+    if (instance === undefined || instance === 1) return base;
+    const idsInGroup = IDS_BY_GROUP[base.groupCode];
+    const targetId = idsInGroup?.[instance - 1];
+    if (targetId === undefined) {
+      const max = idsInGroup?.length ?? 1;
+      throw new DispatchError(
+        'value_out_of_range',
+        DEVICE_LABEL,
+        `Block '${slugOrName}' instance ${instance} out of range on ${DEVICE_LABEL} (max instances for ${base.groupCode}: ${max}).`,
+      );
+    }
+    const target = BLOCK_BY_ID[targetId];
+    if (target === undefined) {
+      throw new DispatchError(
+        'unknown_block',
+        DEVICE_LABEL,
+        `Block '${slugOrName}' instance ${instance}: effectId ${targetId} not found in block table.`,
+      );
+    }
+    checkBlockAvailable(target);
+    return target;
+  }
 
-function normalizeChannel(channel: string | number | undefined): AxeFxIIChannel | undefined {
-  if (channel === undefined) return undefined;
-  if (typeof channel === 'number') {
-    if (channel === 0) return 'X';
-    if (channel === 1) return 'Y';
+  /**
+   * Enumerate valid param names on a block by walking `KNOWN_PARAMS`
+   * and filtering on `groupCode`. Used by the shared unknown-param
+   * error formatter so the error string lists every valid knob name
+   * for the block, ordered by closeness to the bad input.
+   */
+  function listParamNamesForBlock(block: AxeFxIIBlock): string[] {
+    const out: string[] = [];
+    for (const key of Object.keys(KNOWN_PARAMS)) {
+      const p = KNOWN_PARAMS[key as keyof typeof KNOWN_PARAMS] as AxeFxIIParam;
+      if (p.groupCode === block.groupCode && !out.includes(p.name)) {
+        out.push(p.name);
+      }
+    }
+    return out;
+  }
+
+  function findParamOrThrow(block: AxeFxIIBlock, name: string): AxeFxIIParam {
+    const p = findParamByName(block, name);
+    if (p) return p;
+    throw new DispatchError(
+      'unknown_param',
+      DEVICE_LABEL,
+      formatUnknownParamError({
+        deviceName: DEVICE_LABEL,
+        block: block.name,
+        badParam: name,
+        knownNames: listParamNamesForBlock(block),
+      }),
+    );
+  }
+
+  // ── Channel resolution helper ───────────────────────────────────────
+
+  function normalizeChannel(channel: string | number | undefined): AxeFxIIChannel | undefined {
+    if (channel === undefined) return undefined;
+    if (typeof channel === 'number') {
+      if (channel === 0) return 'X';
+      if (channel === 1) return 'Y';
+      throw new DispatchError(
+        'bad_channel',
+        DEVICE_LABEL,
+        `Channel index ${channel} is out of range on ${DEVICE_LABEL} (valid: 0=X, 1=Y).`,
+      );
+    }
+    const upper = channel.trim().toUpperCase();
+    if (upper === 'X' || upper === 'Y') return upper as AxeFxIIChannel;
     throw new DispatchError(
       'bad_channel',
       DEVICE_LABEL,
-      `Channel index ${channel} is out of range on Fractal Axe-Fx II (valid: 0=X, 1=Y).`,
+      `Channel '${channel}' is not valid on ${DEVICE_LABEL} (channels are X/Y).`,
+      { valid_options: ['X', 'Y'] },
     );
   }
-  const upper = channel.trim().toUpperCase();
-  if (upper === 'X' || upper === 'Y') return upper as AxeFxIIChannel;
-  throw new DispatchError(
-    'bad_channel',
-    DEVICE_LABEL,
-    `Channel '${channel}' is not valid on Fractal Axe-Fx II (channels are X/Y).`,
-    { valid_options: ['X', 'Y'] },
-  );
-}
 
-// ── Pure builders ───────────────────────────────────────────────────
+  // ── Pure builders ───────────────────────────────────────────────────
 
-export const writer: DeviceWriter = {
-  buildSetParam(blockSlug, name, wireValue): number[] {
-    const block = resolveBlockOrThrow(blockSlug);
-    const param = findParamOrThrow(block, name);
-    if (FN02_ONLY_GROUPS.has(block.groupCode)) {
-      return buildSetBlockParameterValueInteger(
-        { effectId: block.id, paramId: param.paramId },
-        wireValue,
-      );
-    }
-    const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
-    const displayValue = kind.decodeWire !== undefined ? kind.decodeWire(wireValue) : wireValue;
-    return buildSetBlockParameterValue(
-      { effectId: block.id, paramId: param.paramId },
-      typeof displayValue === 'number' ? displayValue : wireValue,
-    );
-  },
-
-  buildChannelSwitch(blockSlug, channel): number[] {
-    const block = resolveBlockOrThrow(blockSlug);
-    if (!block.canBypass) {
-      // canBypass is the closest proxy we have for "exposes channels" —
-      // the channel field doesn't model "has channels" yet. Return empty
-      // when channels aren't a concept for this block.
-      return [];
-    }
-    return buildSetBlockChannel(block.id, channel === 0 ? 'X' : 'Y');
-  },
-
-  buildSwitchPreset(location): number[] {
-    return buildSwitchPreset(parseAxeFxIILocation(location));
-  },
-
-  buildSavePreset(location, _name): number[] {
-    // Pure builder returns ONLY the STORE bytes. Rename is a separate
-    // wire op handled by the execute path.
-    return buildStorePreset(parseAxeFxIILocation(location));
-  },
-
-  buildSwitchScene(scene): number[] {
-    if (!Number.isInteger(scene) || scene < 1 || scene > 8) {
-      throw new DispatchError(
-        'bad_location',
-        DEVICE_LABEL,
-        `Scene index ${scene} out of range on Fractal Axe-Fx II (valid: 1..8).`,
-      );
-    }
-    return buildSetSceneNumber(scene - 1);
-  },
-
-  // ── Execute: param writes ─────────────────────────────────────────
-
-  async setParam(ctx, blockSlug, name, wireValue, channel, instance): Promise<WriteResult> {
-    const block = resolveBlockWithInstance(blockSlug, instance);
-    const param = findParamOrThrow(block, name);
-    const channelWire = normalizeChannel(channel);
-
-    // Channel-write safety (Session 102 fresh-machine finding). A
-    // `buildSetBlockChannel` here mutates the block's channel pointer
-    // on multiple scenes at once on Axe-Fx II (X/Y model), corrupting
-    // the non-active scenes the user didn't intend to touch. The safe
-    // pattern is to assert that the active scene's block is ALREADY on
-    // the requested channel; if so the param write lands on that
-    // channel's slot directly and no channel switch is needed. If the
-    // active channel differs, refuse and point the agent at
-    // `switch_scene` (or omit the channel arg). Root fix lives in
-    // BK-070 via the preset-binary apply path.
-    if (channelWire !== undefined && block.canBypass) {
-      const reqBytes = buildGetBlockChannel(block.id);
-      const ackPromise = ctx.conn.receiveSysExMatching(
-        (bytes) => isGetBlockChannelResponse(bytes, block.id),
-        GET_BLOCK_CHANNEL_TIMEOUT_MS,
-      );
-      ctx.conn.send(reqBytes);
-      let active: AxeFxIIChannel;
-      try {
-        const ack = await ackPromise;
-        active = parseGetBlockChannelResponse(ack);
-      } catch (err) {
-        throw new DispatchError(
-          'no_ack',
-          DEVICE_LABEL,
-          `set_param: cannot verify ${block.name} channel before write; ${err instanceof Error ? err.message : String(err)}. ` +
-          `Likely cause: ${block.name} is not placed on the active grid. Place the block first or omit the channel arg.`,
+  const writer: DeviceWriter = {
+    buildSetParam(blockSlug, name, wireValue): number[] {
+      const block = resolveBlockOrThrow(blockSlug);
+      const param = findParamOrThrow(block, name);
+      if (FN02_ONLY_GROUPS.has(block.groupCode)) {
+        return buildSetBlockParameterValueInteger(
+          { effectId: block.id, paramId: param.paramId },
+          wireValue,
+          modelOpts,
         );
       }
-      if (active !== channelWire) {
+      const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
+      const displayValue = kind.decodeWire !== undefined ? kind.decodeWire(wireValue) : wireValue;
+      return buildSetBlockParameterValue(
+        { effectId: block.id, paramId: param.paramId },
+        typeof displayValue === 'number' ? displayValue : wireValue,
+        modelOpts,
+      );
+    },
+
+    buildChannelSwitch(blockSlug, channel): number[] {
+      const block = resolveBlockOrThrow(blockSlug);
+      if (!block.canBypass) {
+        // canBypass is the closest proxy we have for "exposes channels";
+        // the channel field doesn't model "has channels" yet. Return empty
+        // when channels aren't a concept for this block.
+        return [];
+      }
+      return buildSetBlockChannel(block.id, channel === 0 ? 'X' : 'Y', modelOpts);
+    },
+
+    buildSwitchPreset(location): number[] {
+      return buildSwitchPreset(parseAxeFxIILocation(location, DEVICE_LABEL), modelOpts);
+    },
+
+    buildSavePreset(location, _name): number[] {
+      // Pure builder returns ONLY the STORE bytes. Rename is a separate
+      // wire op handled by the execute path.
+      return buildStorePreset(parseAxeFxIILocation(location, DEVICE_LABEL), modelOpts);
+    },
+
+    buildSwitchScene(scene): number[] {
+      if (!Number.isInteger(scene) || scene < 1 || scene > 8) {
         throw new DispatchError(
-          'capability_not_supported',
+          'bad_location',
           DEVICE_LABEL,
-          `set_param: refusing to write ${block.name}.${param.name} on channel ${channelWire}; the active scene has ${block.name} on channel ${active}. ` +
-          `On Axe-Fx II, switching a block's channel mutates the channel pointer across multiple scenes at once (not just the active scene), which silently corrupts other scenes' patches. ` +
-          `Safe pattern: call switch_scene first to a scene that already has ${block.name} on channel ${channelWire}, OR omit the channel arg to write to whichever channel the active scene is already on.`,
-          {
-            valid_options: [active],
-            retry_action:
-              `Either call switch_scene to a scene that has ${block.name} on channel ${channelWire}, or drop the channel arg and write to the active channel (${active}).`,
-          },
+          `Scene index ${scene} out of range on ${DEVICE_LABEL} (valid: 1..8).`,
         );
       }
-      // Channels already aligned — skip the SET_BLOCK_CHANNEL write
-      // entirely; the param write below will land on this channel.
-    }
+      return buildSetSceneNumber(scene - 1, modelOpts);
+    },
 
-    const isEnum = param.controlType === 'select' || 'enumValues' in param;
-    const forceFn02 = FN02_ONLY_GROUPS.has(block.groupCode);
-    let bytes: number[];
-    if (isEnum || forceFn02) {
-      bytes = buildSetBlockParameterValueInteger(
-        { effectId: block.id, paramId: param.paramId },
-        wireValue,
-      );
-    } else {
-      const paramKind = resolveParamKind('axe-fx-ii', param.block, param.name);
-      const displayForWire = paramKind.decodeWire !== undefined ? paramKind.decodeWire(wireValue) : wireValue;
-      bytes = buildSetBlockParameterValue(
-        { effectId: block.id, paramId: param.paramId },
-        typeof displayForWire === 'number' ? displayForWire : wireValue,
-      );
-    }
-    ctx.conn.send(bytes);
-    // Unified-surface edit: ctx.conn bypasses the transport-layer
-    // isEditOutbound detection the legacy axefx2_* tools rely on, so mark
-    // the working buffer dirty explicitly (parity with AM4 + modern family).
-    markDirty(AXEFX_DIRTY_LABEL);
-    // Axe-Fx II SET is fire-and-forget — no wire ack. We surface
-    // acked: true to match the AM4 descriptor's success shape and let
-    // the warning carry the no-ack semantics.
-    //
-    // Reverse-display via the cross-device paramKind helper: one source
-    // of truth for "wire -> display." Schema, reader, writer, and apply
-    // executor all consult the same resolver so display_value matches
-    // whatever set_param's encode closure round-trips to.
-    const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
-    const display: number | string = kind.decodeWire !== undefined
-      ? kind.decodeWire(wireValue)
-      : wireValue;
-    return {
-      op: 'set_param',
-      target: `${blockSlug}.${param.name}`,
-      block: blockSlug,
-      name: param.name,
-      wire_value: wireValue,
-      display_value: display,
-      acked: true,
-      channel: channelWire,
-      warning: 'Axe-Fx II SET is fire-and-forget; verify by audible/visible response on the device.',
-    };
-  },
+    // ── Execute: param writes ─────────────────────────────────────────
 
-  async setParams(ctx, ops): Promise<BatchWriteResult> {
-    const writes: WriteResult[] = [];
-    let acked_count = 0;
-    let unacked_count = 0;
-    // BK-071 type-knob applicability pre-flight, in-batch only. If the
-    // batch contains a type write (e.g. `compressor.type=Pedal`), every
-    // subsequent op against the same block is gated against the
-    // just-written type via checkApplicability. Without a prior type
-    // write in the batch, the check returns `'unknown'` (we don't track
-    // device-side active type cross-call) and the write proceeds.
-    //
-    // Mirrors the AM4 pattern at packages/am4/src/descriptor/writer.ts
-    // (sans the lastKnownType cross-call cache — AM4 has a stickier
-    // implementation; II ships the in-batch slice first and can grow
-    // the cross-call cache later when the same surprises surface here).
-    const inBatchTypes: Record<string, number> = {};
-    for (const op of ops) {
-      const isTypeOp = op.name === 'type' || op.name === 'mode';
-      if (!isTypeOp) {
-        const check = checkApplicability(`${op.block}.${op.name}`, {
-          currentTypes: inBatchTypes,
-        });
-        if (check.applicable === false) {
-          const activeIndex = inBatchTypes[op.block];
+    async setParam(ctx, blockSlug, name, wireValue, channel, instance): Promise<WriteResult> {
+      gateWrite('set_param');
+      const block = resolveBlockWithInstance(blockSlug, instance);
+      const param = findParamOrThrow(block, name);
+      const channelWire = normalizeChannel(channel);
+
+      // Channel-write safety (Session 102 fresh-machine finding). A
+      // `buildSetBlockChannel` here mutates the block's channel pointer
+      // on multiple scenes at once on Axe-Fx II (X/Y model), corrupting
+      // the non-active scenes the user didn't intend to touch. The safe
+      // pattern is to assert that the active scene's block is ALREADY on
+      // the requested channel; if so the param write lands on that
+      // channel's slot directly and no channel switch is needed. If the
+      // active channel differs, refuse and point the agent at
+      // `switch_scene` (or omit the channel arg). Root fix lives in
+      // BK-070 via the preset-binary apply path.
+      if (channelWire !== undefined && block.canBypass) {
+        const reqBytes = buildGetBlockChannel(block.id, modelOpts);
+        const ackPromise = ctx.conn.receiveSysExMatching(
+          (bytes) => isGetBlockChannelResponse(bytes, block.id, config.modelByte),
+          GET_BLOCK_CHANNEL_TIMEOUT_MS,
+        );
+        ctx.conn.send(reqBytes);
+        let active: AxeFxIIChannel;
+        try {
+          const ack = await ackPromise;
+          active = parseGetBlockChannelResponse(ack);
+        } catch (err) {
+          throw new DispatchError(
+            'no_ack',
+            DEVICE_LABEL,
+            `set_param: cannot verify ${block.name} channel before write; ${err instanceof Error ? err.message : String(err)}. ` +
+            `Likely cause: ${block.name} is not placed on the active grid. Place the block first or omit the channel arg.`,
+          );
+        }
+        if (active !== channelWire) {
+          throw new DispatchError(
+            'capability_not_supported',
+            DEVICE_LABEL,
+            `set_param: refusing to write ${block.name}.${param.name} on channel ${channelWire}; the active scene has ${block.name} on channel ${active}. ` +
+            `On Axe-Fx II, switching a block's channel mutates the channel pointer across multiple scenes at once (not just the active scene), which silently corrupts other scenes' patches. ` +
+            `Safe pattern: call switch_scene first to a scene that already has ${block.name} on channel ${channelWire}, OR omit the channel arg to write to whichever channel the active scene is already on.`,
+            {
+              valid_options: [active],
+              retry_action:
+                `Either call switch_scene to a scene that has ${block.name} on channel ${channelWire}, or drop the channel arg and write to the active channel (${active}).`,
+            },
+          );
+        }
+        // Channels already aligned; skip the SET_BLOCK_CHANNEL write
+        // entirely; the param write below will land on this channel.
+      }
+
+      const isEnum = param.controlType === 'select' || 'enumValues' in param;
+      const forceFn02 = FN02_ONLY_GROUPS.has(block.groupCode);
+      let bytes: number[];
+      if (isEnum || forceFn02) {
+        bytes = buildSetBlockParameterValueInteger(
+          { effectId: block.id, paramId: param.paramId },
+          wireValue,
+          modelOpts,
+        );
+      } else {
+        const paramKind = resolveParamKind('axe-fx-ii', param.block, param.name);
+        const displayForWire = paramKind.decodeWire !== undefined ? paramKind.decodeWire(wireValue) : wireValue;
+        bytes = buildSetBlockParameterValue(
+          { effectId: block.id, paramId: param.paramId },
+          typeof displayForWire === 'number' ? displayForWire : wireValue,
+          modelOpts,
+        );
+      }
+      ctx.conn.send(bytes);
+      // Unified-surface edit: ctx.conn bypasses the transport-layer
+      // isEditOutbound detection the legacy axefx2_* tools rely on, so mark
+      // the working buffer dirty explicitly (parity with AM4 + modern family).
+      markDirty(AXEFX_DIRTY_LABEL);
+      // Axe-Fx II SET is fire-and-forget, no wire ack. We surface
+      // acked: true to match the AM4 descriptor's success shape and let
+      // the warning carry the no-ack semantics.
+      //
+      // Reverse-display via the cross-device paramKind helper: one source
+      // of truth for "wire -> display." Schema, reader, writer, and apply
+      // executor all consult the same resolver so display_value matches
+      // whatever set_param's encode closure round-trips to.
+      const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
+      const display: number | string = kind.decodeWire !== undefined
+        ? kind.decodeWire(wireValue)
+        : wireValue;
+      return {
+        op: 'set_param',
+        target: `${blockSlug}.${param.name}`,
+        block: blockSlug,
+        name: param.name,
+        wire_value: wireValue,
+        display_value: display,
+        acked: true,
+        channel: channelWire,
+        warning: `${DEVICE_LABEL} SET is fire-and-forget; verify by audible/visible response on the device.`,
+      };
+    },
+
+    async setParams(ctx, ops): Promise<BatchWriteResult> {
+      gateWrite('set_params');
+      const writes: WriteResult[] = [];
+      let acked_count = 0;
+      let unacked_count = 0;
+      // BK-071 type-knob applicability pre-flight, in-batch only. If the
+      // batch contains a type write (e.g. `compressor.type=Pedal`), every
+      // subsequent op against the same block is gated against the
+      // just-written type via checkApplicability. Without a prior type
+      // write in the batch, the check returns `'unknown'` (we don't track
+      // device-side active type cross-call) and the write proceeds.
+      //
+      // Mirrors the AM4 pattern at packages/am4/src/descriptor/writer.ts
+      // (sans the lastKnownType cross-call cache; AM4 has a stickier
+      // implementation; II ships the in-batch slice first and can grow
+      // the cross-call cache later when the same surprises surface here).
+      const inBatchTypes: Record<string, number> = {};
+      for (const op of ops) {
+        const isTypeOp = op.name === 'type' || op.name === 'mode';
+        if (!isTypeOp) {
+          const check = checkApplicability(`${op.block}.${op.name}`, {
+            currentTypes: inBatchTypes,
+          });
+          if (check.applicable === false) {
+            const activeIndex = inBatchTypes[op.block];
+            writes.push({
+              op: 'set_param',
+              target: `${op.block}.${op.name}`,
+              block: op.block,
+              name: op.name,
+              acked: false,
+              warning:
+                `Skipped (does not apply): ${op.block}.${op.name} is not exposed on ` +
+                `${op.block}.type wire ${activeIndex}. The Axe-Fx II would silently no-op ` +
+                `this write; the wire address has no audible effect on this type. ` +
+                `Report as "not applied" and skip in the next iteration; call ` +
+                `list_params(${op.block}) for the knobs that apply on the current type.`,
+            });
+            unacked_count++;
+            continue;
+          }
+        }
+        try {
+          const r = await writer.setParam!(ctx, op.block, op.name, op.value as number, op.channel, op.instance);
+          writes.push(r);
+          if (r.acked) {
+            acked_count++;
+            if (isTypeOp) {
+              inBatchTypes[op.block] = Math.round(op.value as number);
+            }
+          } else {
+            unacked_count++;
+          }
+        } catch (err) {
           writes.push({
             op: 'set_param',
             target: `${op.block}.${op.name}`,
             block: op.block,
             name: op.name,
             acked: false,
-            warning:
-              `Skipped (does not apply): ${op.block}.${op.name} is not exposed on ` +
-              `${op.block}.type wire ${activeIndex}. The Axe-Fx II would silently no-op ` +
-              `this write; the wire address has no audible effect on this type. ` +
-              `Report as "not applied" and skip in the next iteration; call ` +
-              `list_params(${op.block}) for the knobs that apply on the current type.`,
+            warning: err instanceof Error ? err.message : String(err),
           });
           unacked_count++;
-          continue;
         }
       }
-      try {
-        const r = await writer.setParam!(ctx, op.block, op.name, op.value as number, op.channel, op.instance);
-        writes.push(r);
-        if (r.acked) {
-          acked_count++;
-          if (isTypeOp) {
-            inBatchTypes[op.block] = Math.round(op.value as number);
-          }
-        } else {
-          unacked_count++;
+      return { writes, acked_count, unacked_count };
+    },
+
+    // ── Execute: preset navigation ────────────────────────────────────
+
+    async switchPreset(ctx, location): Promise<WriteResult> {
+      gateWrite('switch_preset');
+      const n = parseAxeFxIILocation(location, DEVICE_LABEL);
+      const slot = n + 1;
+      ctx.conn.send(buildSwitchPreset(n, modelOpts));
+      // Switching loads a stored preset → the working buffer matches flash →
+      // clean. Explicit markClean (belt-and-suspenders with the connection's
+      // isCleanOutbound hook; and the only markClean under MCP_MOCK_TRANSPORT,
+      // whose mock connection has no outbound hook).
+      markClean(AXEFX_DIRTY_LABEL);
+      // Switch is fire-and-forget; no ack from the device. Settle window
+      // matches the legacy axefx2_apply_preset behavior.
+      await new Promise((res) => setTimeout(res, CHANNEL_SWITCH_SETTLE_MS));
+      return {
+        op: 'switch_preset',
+        target: String(slot),
+        acked: true,
+        info: `Loaded display slot ${slot} (wire ${n}). Any unsaved working-buffer edits were discarded.`,
+      };
+    },
+
+    async savePreset(ctx, location, name): Promise<WriteResult> {
+      gateWrite('save_preset');
+      const n = parseAxeFxIILocation(location, DEVICE_LABEL);
+      const slot = n + 1;
+      // Optional rename FIRST (fire-and-forget; the device persists the
+      // rename through the subsequent STORE).
+      if (name !== undefined && name.length > 0) {
+        try {
+          ctx.conn.send(buildSetPresetName(name, modelOpts));
+        } catch (err) {
+          return {
+            op: 'save_preset',
+            target: String(slot),
+            acked: false,
+            warning: `Rename to "${name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+          };
         }
-      } catch (err) {
-        writes.push({
-          op: 'set_param',
-          target: `${op.block}.${op.name}`,
-          block: op.block,
-          name: op.name,
-          acked: false,
-          warning: err instanceof Error ? err.message : String(err),
-        });
-        unacked_count++;
       }
-    }
-    return { writes, acked_count, unacked_count };
-  },
-
-  // ── Execute: preset navigation ────────────────────────────────────
-
-  async switchPreset(ctx, location): Promise<WriteResult> {
-    const n = parseAxeFxIILocation(location);
-    const slot = n + 1;
-    ctx.conn.send(buildSwitchPreset(n));
-    // Switching loads a stored preset → the working buffer matches flash →
-    // clean. Explicit markClean (belt-and-suspenders with the connection's
-    // isCleanOutbound hook; and the only markClean under MCP_MOCK_TRANSPORT,
-    // whose mock connection has no outbound hook).
-    markClean(AXEFX_DIRTY_LABEL);
-    // Switch is fire-and-forget; no ack from the device. Settle window
-    // matches the legacy axefx2_apply_preset behavior.
-    await new Promise((res) => setTimeout(res, CHANNEL_SWITCH_SETTLE_MS));
-    return {
-      op: 'switch_preset',
-      target: String(slot),
-      acked: true,
-      info: `Loaded display slot ${slot} (wire ${n}). Any unsaved working-buffer edits were discarded.`,
-    };
-  },
-
-  async savePreset(ctx, location, name): Promise<WriteResult> {
-    const n = parseAxeFxIILocation(location);
-    const slot = n + 1;
-    // Optional rename FIRST (fire-and-forget — the device persists the
-    // rename through the subsequent STORE).
-    if (name !== undefined && name.length > 0) {
+      const ackPromise = ctx.conn.receiveSysExMatching(
+        isStorePresetResponse,
+        STORE_RESPONSE_TIMEOUT_MS,
+      );
+      ctx.conn.send(buildStorePreset(n, modelOpts));
+      // The store envelope going out transitions the buffer to clean, same as
+      // the connection's isCleanOutbound hook, which fires on send (not ack). So
+      // this also works under MCP_MOCK_TRANSPORT, whose mock connection has no
+      // outbound hook and doesn't synthesize the STORE ack.
+      markClean(AXEFX_DIRTY_LABEL);
       try {
-        ctx.conn.send(buildSetPresetName(name));
+        const ack = await ackPromise;
+        const parsed = parseStorePresetResponse(ack);
+        if (!parsed.ok && process.env.MCP_MOCK_TRANSPORT === undefined) {
+          // The STORE send already marked the buffer clean (outbound hook +
+          // explicit markClean above), but the device REJECTED the store, so the
+          // edits did not persist. Re-dirty on real hardware so the safe-edit
+          // gate keeps protecting the unsaved edits on the next navigation.
+          markDirty(AXEFX_DIRTY_LABEL);
+        }
+        return {
+          op: 'save_preset',
+          target: String(slot),
+          acked: parsed.ok,
+          info: parsed.ok
+            ? (name
+                ? `Saved "${name}" to display slot ${slot} (wire ${n}).`
+                : `Working buffer saved to display slot ${slot} (wire ${n}).`)
+            : undefined,
+          warning: parsed.ok
+            ? undefined
+            : `Device returned result code 0x${parsed.resultCode.toString(16)}; save likely rejected. The working buffer is left marked unsaved so the edits aren't lost.`,
+        };
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Timed out waiting for the STORE ack: the clean-on-send was premature and
+        // the save state is unknown. Re-dirty on real hardware so a failed save
+        // can't silently drop the edits on the next switch. Under MCP_MOCK_TRANSPORT
+        // no STORE ack is synthesized, so the timeout is expected and the buffer
+        // stays clean (the dirty-gate regression relies on clean-on-send there).
+        if (process.env.MCP_MOCK_TRANSPORT === undefined) {
+          markDirty(AXEFX_DIRTY_LABEL);
+        }
         return {
           op: 'save_preset',
           target: String(slot),
           acked: false,
-          warning: `Rename to "${name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+          warning: `No STORE_PRESET ack within ${STORE_RESPONSE_TIMEOUT_MS}ms: ${msg}. Save state unknown; the working buffer is left marked unsaved so edits aren't lost. Verify on the device.`,
         };
       }
-    }
-    const ackPromise = ctx.conn.receiveSysExMatching(
-      isStorePresetResponse,
-      STORE_RESPONSE_TIMEOUT_MS,
-    );
-    ctx.conn.send(buildStorePreset(n));
-    // The store envelope going out transitions the buffer to clean — same as
-    // the connection's isCleanOutbound hook, which fires on send (not ack). So
-    // this also works under MCP_MOCK_TRANSPORT, whose mock connection has no
-    // outbound hook and doesn't synthesize the STORE ack.
-    markClean(AXEFX_DIRTY_LABEL);
-    try {
-      const ack = await ackPromise;
-      const parsed = parseStorePresetResponse(ack);
-      if (!parsed.ok && process.env.MCP_MOCK_TRANSPORT === undefined) {
-        // The STORE send already marked the buffer clean (outbound hook +
-        // explicit markClean above), but the device REJECTED the store, so the
-        // edits did not persist. Re-dirty on real hardware so the safe-edit
-        // gate keeps protecting the unsaved edits on the next navigation.
-        markDirty(AXEFX_DIRTY_LABEL);
-      }
-      return {
-        op: 'save_preset',
-        target: String(slot),
-        acked: parsed.ok,
-        info: parsed.ok
-          ? (name
-              ? `Saved "${name}" to display slot ${slot} (wire ${n}).`
-              : `Working buffer saved to display slot ${slot} (wire ${n}).`)
-          : undefined,
-        warning: parsed.ok
-          ? undefined
-          : `Device returned result code 0x${parsed.resultCode.toString(16)}; save likely rejected. The working buffer is left marked unsaved so the edits aren't lost.`,
-      };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // Timed out waiting for the STORE ack: the clean-on-send was premature and
-      // the save state is unknown. Re-dirty on real hardware so a failed save
-      // can't silently drop the edits on the next switch. Under MCP_MOCK_TRANSPORT
-      // no STORE ack is synthesized, so the timeout is expected and the buffer
-      // stays clean (the dirty-gate regression relies on clean-on-send there).
-      if (process.env.MCP_MOCK_TRANSPORT === undefined) {
-        markDirty(AXEFX_DIRTY_LABEL);
-      }
-      return {
-        op: 'save_preset',
-        target: String(slot),
-        acked: false,
-        warning: `No STORE_PRESET ack within ${STORE_RESPONSE_TIMEOUT_MS}ms: ${msg}. Save state unknown; the working buffer is left marked unsaved so edits aren't lost. Verify on the device.`,
-      };
-    }
-  },
+    },
 
-  async switchScene(ctx, scene): Promise<WriteResult> {
-    if (!Number.isInteger(scene) || scene < 1 || scene > 8) {
-      throw new DispatchError(
-        'bad_location',
-        DEVICE_LABEL,
-        `Scene index ${scene} out of range on Fractal Axe-Fx II (valid: 1..8).`,
-      );
-    }
-    ctx.conn.send(buildSetSceneNumber(scene - 1));
-    await new Promise((res) => setTimeout(res, CHANNEL_SWITCH_SETTLE_MS));
-    try {
-      const scenePromise = ctx.conn.receiveSysExMatching(
-        isSceneNumberResponse,
-        GET_BLOCK_CHANNEL_TIMEOUT_MS,
-      );
-      ctx.conn.send(buildGetSceneNumber());
-      const sceneWire = parseSceneNumberResponse(await scenePromise);
-      const confirmed = sceneWire + 1;
-      if (confirmed !== scene) {
+    async switchScene(ctx, scene): Promise<WriteResult> {
+      gateWrite('switch_scene');
+      if (!Number.isInteger(scene) || scene < 1 || scene > 8) {
+        throw new DispatchError(
+          'bad_location',
+          DEVICE_LABEL,
+          `Scene index ${scene} out of range on ${DEVICE_LABEL} (valid: 1..8).`,
+        );
+      }
+      ctx.conn.send(buildSetSceneNumber(scene - 1, modelOpts));
+      await new Promise((res) => setTimeout(res, CHANNEL_SWITCH_SETTLE_MS));
+      try {
+        const scenePromise = ctx.conn.receiveSysExMatching(
+          (bytes) => isSceneNumberResponse(bytes, config.modelByte),
+          GET_BLOCK_CHANNEL_TIMEOUT_MS,
+        );
+        ctx.conn.send(buildGetSceneNumber(modelOpts));
+        const sceneWire = parseSceneNumberResponse(await scenePromise, config.modelByte);
+        const confirmed = sceneWire + 1;
+        if (confirmed !== scene) {
+          return {
+            op: 'switch_scene',
+            target: `scene:${scene}`,
+            acked: false,
+            warning: `Scene switch sent but device reports scene ${confirmed} (expected ${scene}). Verify on the front panel.`,
+          };
+        }
         return {
           op: 'switch_scene',
           target: `scene:${scene}`,
-          acked: false,
-          warning: `Scene switch sent but device reports scene ${confirmed} (expected ${scene}). Verify on the front panel.`,
+          acked: true,
+          info: `Switched to scene ${scene} (wire ${scene - 1}). Subsequent param writes land in this scene's context.`,
+        };
+      } catch {
+        return {
+          op: 'switch_scene',
+          target: `scene:${scene}`,
+          acked: true,
+          info: `Switched to scene ${scene} (wire ${scene - 1}). Verify not available; subsequent writes target this scene.`,
         };
       }
-      return {
-        op: 'switch_scene',
-        target: `scene:${scene}`,
-        acked: true,
-        info: `Switched to scene ${scene} (wire ${scene - 1}). Subsequent param writes land in this scene's context.`,
-      };
-    } catch {
-      return {
-        op: 'switch_scene',
-        target: `scene:${scene}`,
-        acked: true,
-        info: `Switched to scene ${scene} (wire ${scene - 1}). Verify not available; subsequent writes target this scene.`,
-      };
-    }
-  },
+    },
 
-  // ── Execute: block layout ─────────────────────────────────────────
+    // ── Execute: block layout ─────────────────────────────────────────
 
-  async setBlock(ctx, slot: SlotRef, change: BlockChange): Promise<WriteResult> {
-    if (typeof slot === 'number') {
-      throw new DispatchError(
-        'bad_location',
-        DEVICE_LABEL,
-        `set_block on Fractal Axe-Fx II uses grid coordinates: pass slot as { row: 1..4, col: 1..12 }, not a single integer.`,
-        { retry_action: 'Pass slot: { row, col }.' },
-      );
-    }
-    const { row, col } = slot;
-    if (change.block_type === undefined) {
-      throw new DispatchError(
-        'capability_not_supported',
-        DEVICE_LABEL,
-        `set_block on Fractal Axe-Fx II currently only handles block placement. Pass block_type to place/clear; use set_bypass for bypass writes; use set_param for channel switches.`,
-        { retry_action: 'Call set_bypass(port, block, bypassed) or set_param(port, block, ...) for the other writes.' },
-      );
-    }
-    let blockId: number;
-    if (change.block_type === 'none' || change.block_type === 'empty') {
-      blockId = 0;
-    } else {
-      // instance selects which block of the type (Amp 2, Reverb 3, …);
-      // undefined / 1 returns the base block, so existing placements are
-      // byte-identical.
-      const target = resolveBlockWithInstance(change.block_type, change.instance);
-      blockId = target.id;
-    }
-    const bytes = buildSetGridCell({ row, col, blockId });
-    const ackPromise = ctx.conn.receiveSysExMatching(
-      isSetGridCellResponse,
-      GRID_CELL_RESPONSE_TIMEOUT_MS,
-    );
-    ctx.conn.send(bytes);
-    // Structural edit dirties the working buffer (ctx.conn bypasses the
-    // transport isEditOutbound detection, so mark it here).
-    markDirty(AXEFX_DIRTY_LABEL);
-    try {
-      const ack = await ackPromise;
-      const parsed = parseSetGridCellResponse(ack);
-      const blockName = blockId === 0 ? 'empty' : (BLOCK_BY_ID[blockId]?.name ?? `block #${blockId}`);
-      return {
-        op: 'set_block',
-        target: `r${row}c${col}=${blockName}`,
-        acked: parsed.ok,
-        info: parsed.ok
-          ? `Placed ${blockName} at row ${row}, col ${col}. Note: this write does NOT propagate routing; downstream cells' input masks still point at the previous occupant's position.`
-          : undefined,
-        warning: parsed.ok
-          ? undefined
-          : `Device returned result code 0x${parsed.resultCode.toString(16)}; placement rejected.`,
-      };
-    } catch (err) {
-      return {
-        op: 'set_block',
-        target: `r${row}c${col}`,
-        acked: false,
-        warning: `No SET_GRID_CELL ack within ${GRID_CELL_RESPONSE_TIMEOUT_MS}ms: ${err instanceof Error ? err.message : String(err)}.`,
-      };
-    }
-  },
-
-  async setBypass(ctx, blockSlug, bypassed, instance?): Promise<WriteResult> {
-    const block = resolveBlockWithInstance(blockSlug, instance);
-    if (!block.canBypass) {
-      throw new DispatchError(
-        'capability_not_supported',
-        DEVICE_LABEL,
-        `Block '${block.name}' on Fractal Axe-Fx II cannot be bypassed (e.g. Mixer / Input / Output blocks).`,
-      );
-    }
-    ctx.conn.send(buildSetBlockBypass(block.id, bypassed));
-    markDirty(AXEFX_DIRTY_LABEL); // bypass edit dirties the working buffer
-    return {
-      op: 'set_bypass',
-      target: `${block.name}:${bypassed ? 'bypassed' : 'engaged'}`,
-      acked: true,
-      info: `${block.name} set to ${bypassed ? 'BYPASSED' : 'ENGAGED'}. Axe-Fx II SET is fire-and-forget; verify on the device.`,
-    };
-  },
-
-  // ── Execute: apply preset ─────────────────────────────────────────
-
-  async applyPreset(ctx, spec: PresetSpec, target?: LocationRef, options?): Promise<ApplyResult> {
-    const startMs = Date.now();
-    const shouldSave = options?.save ?? false;
-    let translated: ApplyPresetAtInput | ApplyPresetInput;
-    try {
-      translated = translateSpec(spec);
-    } catch (err) {
-      return {
-        ok: false,
-        steps: 0,
-        duration_ms: Date.now() - startMs,
-        failed_step: {
-          index: 0,
-          description: 'validate',
-          error: err instanceof Error ? err.message : String(err),
-        },
-      };
-    }
-
-    if (target !== undefined) {
-      // parseAxeFxIILocation returns wire (0-indexed); the executor's
-      // internal `preset_number` field IS wire.
-      const presetNumber = parseAxeFxIILocation(target);
-      let fullOps: ReturnType<typeof buildApplyPresetAtOps>;
-      try {
-        fullOps = buildApplyPresetAtOps(
-          { ...translated, preset_number: presetNumber },
+    async setBlock(ctx, slot: SlotRef, change: BlockChange): Promise<WriteResult> {
+      gateWrite('set_block');
+      if (typeof slot === 'number') {
+        throw new DispatchError(
+          'bad_location',
+          DEVICE_LABEL,
+          `set_block on ${DEVICE_LABEL} uses grid coordinates: pass slot as { row: 1..4, col: 1..12 }, not a single integer.`,
+          { retry_action: 'Pass slot: { row, col }.' },
         );
+      }
+      const { row, col } = slot;
+      if (change.block_type === undefined) {
+        throw new DispatchError(
+          'capability_not_supported',
+          DEVICE_LABEL,
+          `set_block on ${DEVICE_LABEL} currently only handles block placement. Pass block_type to place/clear; use set_bypass for bypass writes; use set_param for channel switches.`,
+          { retry_action: 'Call set_bypass(port, block, bypassed) or set_param(port, block, ...) for the other writes.' },
+        );
+      }
+      let blockId: number;
+      if (change.block_type === 'none' || change.block_type === 'empty') {
+        blockId = 0;
+      } else {
+        // instance selects which block of the type (Amp 2, Reverb 3, …);
+        // undefined / 1 returns the base block, so existing placements are
+        // byte-identical. checkBlockAvailable inside resolveBlockWithInstance
+        // refuses an instance this config doesn't expose (e.g. AX8 Amp 2).
+        const target = resolveBlockWithInstance(change.block_type, change.instance);
+        blockId = target.id;
+      }
+      const bytes = buildSetGridCell({ row, col, blockId, modelId: config.modelByte });
+      const ackPromise = ctx.conn.receiveSysExMatching(
+        isSetGridCellResponse,
+        GRID_CELL_RESPONSE_TIMEOUT_MS,
+      );
+      ctx.conn.send(bytes);
+      // Structural edit dirties the working buffer (ctx.conn bypasses the
+      // transport isEditOutbound detection, so mark it here).
+      markDirty(AXEFX_DIRTY_LABEL);
+      try {
+        const ack = await ackPromise;
+        const parsed = parseSetGridCellResponse(ack);
+        const blockName = blockId === 0 ? 'empty' : (BLOCK_BY_ID[blockId]?.name ?? `block #${blockId}`);
+        return {
+          op: 'set_block',
+          target: `r${row}c${col}=${blockName}`,
+          acked: parsed.ok,
+          info: parsed.ok
+            ? `Placed ${blockName} at row ${row}, col ${col}. Note: this write does NOT propagate routing; downstream cells' input masks still point at the previous occupant's position.`
+            : undefined,
+          warning: parsed.ok
+            ? undefined
+            : `Device returned result code 0x${parsed.resultCode.toString(16)}; placement rejected.`,
+        };
       } catch (err) {
-        // Synchronous validation throws from buildApplyPresetAtOps
-        // (duplicate id, instance/row/col out of range, routing edge
-        // resolution failure, etc.) — surface as structured failed_step
-        // instead of bubbling up to the unified surface as an opaque
-        // `isError:true` text payload. Pre-fix (alpha.1): "blocks[1]
-        // (Amp 1): block id 'amp' is already used..." landed as
-        // isError text with no `ok`/`failed_step` fields.
+        return {
+          op: 'set_block',
+          target: `r${row}c${col}`,
+          acked: false,
+          warning: `No SET_GRID_CELL ack within ${GRID_CELL_RESPONSE_TIMEOUT_MS}ms: ${err instanceof Error ? err.message : String(err)}.`,
+        };
+      }
+    },
+
+    async setBypass(ctx, blockSlug, bypassed, instance?): Promise<WriteResult> {
+      gateWrite('set_bypass');
+      const block = resolveBlockWithInstance(blockSlug, instance);
+      if (!block.canBypass) {
+        throw new DispatchError(
+          'capability_not_supported',
+          DEVICE_LABEL,
+          `Block '${block.name}' on ${DEVICE_LABEL} cannot be bypassed (e.g. Mixer / Input / Output blocks).`,
+        );
+      }
+      ctx.conn.send(buildSetBlockBypass(block.id, bypassed, modelOpts));
+      markDirty(AXEFX_DIRTY_LABEL); // bypass edit dirties the working buffer
+      return {
+        op: 'set_bypass',
+        target: `${block.name}:${bypassed ? 'bypassed' : 'engaged'}`,
+        acked: true,
+        info: `${block.name} set to ${bypassed ? 'BYPASSED' : 'ENGAGED'}. ${DEVICE_LABEL} SET is fire-and-forget; verify on the device.`,
+      };
+    },
+
+    // ── Execute: apply preset ─────────────────────────────────────────
+    //
+    // NOTE (BK-094 follow-up, 2026-07-15): the apply pipeline
+    // (tools/applyExecutor.ts) is model-byte-parameterized. Every
+    // buildApplyPreset[At]Ops call below passes `applyBuildOpts`
+    // (config.modelByte + the config's block-availability filter) and
+    // every runApplyPresetAtOps call passes `modelOpts`, so the whole
+    // op stream, including the runtime grid read / safety mute /
+    // channel + scene verifies, carries this config's model byte.
+    // XL+ behavior is byte-identical (0x07 was already the codec default).
+
+    async applyPreset(ctx, spec: PresetSpec, target?: LocationRef, options?): Promise<ApplyResult> {
+      gateWrite('apply_preset');
+      const startMs = Date.now();
+      const shouldSave = options?.save ?? false;
+      // BK-103c: capture the builder's cab-polish injection report (if the
+      // build injected the mix-ready cab defaults) AND the always-on
+      // scene-level initialization report, merged into `auto_applied` via
+      // `mergeAutoApplied` (AM4 parity: both can fire on one build).
+      let cabPolish: ApplyPresetCabPolish | undefined;
+      let sceneLevels: ApplyPresetSceneLevels | undefined;
+      const buildOptsWithReport = {
+        ...applyBuildOpts,
+        onCabPolish: (report: ApplyPresetCabPolish) => { cabPolish = report; },
+        onSceneLevels: (report: ApplyPresetSceneLevels) => { sceneLevels = report; },
+      };
+      let translated: ApplyPresetAtInput | ApplyPresetInput;
+      try {
+        translated = translateSpec(spec, DEVICE_LABEL);
+      } catch (err) {
+        return {
+          ok: false,
+          steps: 0,
+          duration_ms: Date.now() - startMs,
+          failed_step: {
+            index: 0,
+            description: 'validate',
+            error: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
+
+      if (target !== undefined) {
+        // parseAxeFxIILocation returns wire (0-indexed); the executor's
+        // internal `preset_number` field IS wire.
+        const presetNumber = parseAxeFxIILocation(target, DEVICE_LABEL);
+        let fullOps: ReturnType<typeof buildApplyPresetAtOps>;
+        try {
+          fullOps = buildApplyPresetAtOps(
+            { ...translated, preset_number: presetNumber },
+            buildOptsWithReport,
+          );
+        } catch (err) {
+          // Synchronous validation throws from buildApplyPresetAtOps
+          // (duplicate id, instance/row/col out of range, routing edge
+          // resolution failure, etc.): surface as structured failed_step
+          // instead of bubbling up to the unified surface as an opaque
+          // `isError:true` text payload. Pre-fix (alpha.1): "blocks[1]
+          // (Amp 1): block id 'amp' is already used..." landed as
+          // isError text with no `ok`/`failed_step` fields.
+          return {
+            ok: false,
+            steps: 0,
+            duration_ms: Date.now() - startMs,
+            failed_step: {
+              index: 0,
+              description: 'build_ops',
+              error: err instanceof Error ? err.message : String(err),
+            },
+          };
+        }
+        // Audition-at-target mode strips the trailing STORE op so the
+        // build lives in the working buffer at the target, unsaved.
+        // Reversible by switching presets. The switch_preset head op
+        // still runs; that's the navigation the user asked for.
+        const ops = shouldSave ? fullOps : fullOps.filter((op) => op.kind !== 'save');
+        const result = await runApplyPresetAtOps(ctx.conn, ops, modelOpts);
+        const slot = presetNumber + 1;
+        const firstNack = result.nackedSteps[0];
+        return {
+          ok: result.ok,
+          steps: ops.length,
+          duration_ms: result.elapsedMs,
+          saved: shouldSave && result.ok,
+          auto_applied: mergeAutoApplied(cabPolish, sceneLevels),
+          failed_step: firstNack
+            ? {
+                index: firstNack.index,
+                description: firstNack.summary,
+                error: `result_code=0x${firstNack.resultCode.toString(16)}`,
+              }
+            : undefined,
+          nacked_steps: result.nackedSteps.length > 0
+            ? result.nackedSteps.map((n) => ({
+                index: n.index,
+                description: n.summary,
+                error: `result_code=0x${n.resultCode.toString(16)}`,
+                kind: n.kind,
+              }))
+            : undefined,
+          warning: !result.ok && result.nackedSteps.length === 0
+            ? `STORE_PRESET did not ack within ${STORE_RESPONSE_TIMEOUT_MS}ms; save state unknown.`
+            : !shouldSave && result.ok
+            ? `Auditioning at display slot ${slot}, working buffer only, not saved. ` +
+              `Reversible by switching presets. Call save_preset({port:'${config.connectionLabel}', location:${slot}}) ` +
+              `when the user explicitly asks to save / keep / persist.`
+            : result.nackedSteps.length > 1
+            ? `${result.nackedSteps.length} mid-sequence wire NACK(s); see nacked_steps[] for full list. Pre-fix versions only surfaced the first; the agent should treat the chain as not fully cabled.`
+            : undefined,
+        };
+      }
+
+      // Working-buffer-only path: no switch_preset head, no STORE tail.
+      let ops: ReturnType<typeof buildApplyPresetOps>;
+      try {
+        ops = buildApplyPresetOps(translated, buildOptsWithReport);
+      } catch (err) {
+        // Same structured surface as the target-location branch above;
+        // see comment there for the alpha.1 isError-text rationale.
         return {
           ok: false,
           steps: 0,
@@ -718,19 +890,13 @@ export const writer: DeviceWriter = {
           },
         };
       }
-      // Audition-at-target mode strips the trailing STORE op so the
-      // build lives in the working buffer at the target, unsaved.
-      // Reversible by switching presets. The switch_preset head op
-      // still runs — that's the navigation the user asked for.
-      const ops = shouldSave ? fullOps : fullOps.filter((op) => op.kind !== 'save');
-      const result = await runApplyPresetAtOps(ctx.conn, ops);
-      const slot = presetNumber + 1;
+      const result = await runApplyPresetAtOps(ctx.conn, ops, modelOpts);
       const firstNack = result.nackedSteps[0];
       return {
         ok: result.ok,
         steps: ops.length,
         duration_ms: result.elapsedMs,
-        saved: shouldSave && result.ok,
+        auto_applied: mergeAutoApplied(cabPolish, sceneLevels),
         failed_step: firstNack
           ? {
               index: firstNack.index,
@@ -746,223 +912,188 @@ export const writer: DeviceWriter = {
               kind: n.kind,
             }))
           : undefined,
-        warning: !result.ok && result.nackedSteps.length === 0
-          ? `STORE_PRESET did not ack within ${STORE_RESPONSE_TIMEOUT_MS}ms; save state unknown.`
-          : !shouldSave && result.ok
-          ? `Auditioning at display slot ${slot}, working buffer only, not saved. ` +
-            `Reversible by switching presets. Call save_preset({port:'axe-fx-ii', location:${slot}}) ` +
-            `when the user explicitly asks to save / keep / persist.`
+        warning: result.ok
+          ? `Working buffer configured. Press SAVE on the device or call save_preset to persist.`
           : result.nackedSteps.length > 1
-          ? `${result.nackedSteps.length} mid-sequence wire NACK(s); see nacked_steps[] for full list. Pre-fix versions only surfaced the first; the agent should treat the chain as not fully cabled.`
+          ? `${result.nackedSteps.length} mid-sequence wire NACK(s); see nacked_steps[] for full list.`
           : undefined,
       };
-    }
+    },
 
-    // Working-buffer-only path: no switch_preset head, no STORE tail.
-    let ops: ReturnType<typeof buildApplyPresetOps>;
-    try {
-      ops = buildApplyPresetOps(translated);
-    } catch (err) {
-      // Same structured surface as the target-location branch above;
-      // see comment there for the alpha.1 isError-text rationale.
+    // ── Execute: BK-057 verify chain ──────────────────────────────────
+    //
+    // Read the working-buffer grid via fn 0x20 and run the audibility
+    // walker over all 4 rows. Routing-break detection only on this
+    // path; bypass-MUTE detection lives on the `get_preset` path where
+    // the per-block param dump already includes bypass + bypass_mode
+    // without extra round-trips. Wiring those reads in here would add
+    // ~50 ms per placed block (10+ blocks typical) on every verify
+    // call; the routing walk catches the common BK-057 failure class
+    // for free off the one grid read.
+    //
+    // FX Loop soft note still fires here even without bypass info: the
+    // walker only suppresses the note when the FXL is explicitly known
+    // to be bypassed, and verifyChain doesn't read bypass state, so an
+    // FXL on the active path is reported on this path too. Mild over-
+    // surfacing is preferable to silently dropping the warning.
+    // Read-only: no gateWrite (works the same on every config).
+
+    async verifyChain(ctx, _spec): Promise<ChainIntegrityResult> {
+      const GRID_TIMEOUT_MS = 800;
+      const gridPromise = ctx.conn.receiveSysExMatching(
+        (bytes) => isGetGridLayoutResponse(bytes, config.modelByte),
+        GRID_TIMEOUT_MS,
+      );
+      ctx.conn.send(buildGetGridLayout(modelOpts));
+      let cells;
+      try {
+        const gridBytes = await gridPromise;
+        cells = parseGetGridLayoutResponse(gridBytes, config.modelByte);
+      } catch (err) {
+        return {
+          ok: false,
+          breaks: [],
+          summary: `verify_chain: failed to read grid (${err instanceof Error ? err.message : String(err)}).`,
+          extra_round_trips: 1,
+        };
+      }
+      const report = checkAudibility({ cells });
       return {
-        ok: false,
-        steps: 0,
-        duration_ms: Date.now() - startMs,
-        failed_step: {
-          index: 0,
-          description: 'build_ops',
-          error: err instanceof Error ? err.message : String(err),
-        },
-      };
-    }
-    const result = await runApplyPresetAtOps(ctx.conn, ops);
-    const firstNack = result.nackedSteps[0];
-    return {
-      ok: result.ok,
-      steps: ops.length,
-      duration_ms: result.elapsedMs,
-      failed_step: firstNack
-        ? {
-            index: firstNack.index,
-            description: firstNack.summary,
-            error: `result_code=0x${firstNack.resultCode.toString(16)}`,
-          }
-        : undefined,
-      nacked_steps: result.nackedSteps.length > 0
-        ? result.nackedSteps.map((n) => ({
-            index: n.index,
-            description: n.summary,
-            error: `result_code=0x${n.resultCode.toString(16)}`,
-            kind: n.kind,
-          }))
-        : undefined,
-      warning: result.ok
-        ? `Working buffer configured. Press SAVE on the device or call save_preset to persist.`
-        : result.nackedSteps.length > 1
-        ? `${result.nackedSteps.length} mid-sequence wire NACK(s); see nacked_steps[] for full list.`
-        : undefined,
-    };
-  },
-
-  // ── Execute: BK-057 verify chain ──────────────────────────────────
-  //
-  // Read the working-buffer grid via fn 0x20 and run the audibility
-  // walker over all 4 rows. Routing-break detection only on this
-  // path — bypass-MUTE detection lives on the `get_preset` path where
-  // the per-block param dump already includes bypass + bypass_mode
-  // without extra round-trips. Wiring those reads in here would add
-  // ~50 ms per placed block (10+ blocks typical) on every verify
-  // call; the routing walk catches the common BK-057 failure class
-  // for free off the one grid read.
-  //
-  // FX Loop soft note still fires here even without bypass info: the
-  // walker only suppresses the note when the FXL is explicitly known
-  // to be bypassed, and verifyChain doesn't read bypass state, so an
-  // FXL on the active path is reported on this path too. Mild over-
-  // surfacing is preferable to silently dropping the warning.
-
-  async verifyChain(ctx, _spec): Promise<ChainIntegrityResult> {
-    const GRID_TIMEOUT_MS = 800;
-    const gridPromise = ctx.conn.receiveSysExMatching(
-      isGetGridLayoutResponse,
-      GRID_TIMEOUT_MS,
-    );
-    ctx.conn.send(buildGetGridLayout());
-    let cells;
-    try {
-      const gridBytes = await gridPromise;
-      cells = parseGetGridLayoutResponse(gridBytes);
-    } catch (err) {
-      return {
-        ok: false,
-        breaks: [],
-        summary: `verify_chain: failed to read grid (${err instanceof Error ? err.message : String(err)}).`,
+        ok: report.ok,
+        breaks: report.breaks,
+        ...(report.notes.length > 0 ? { notes: report.notes } : {}),
+        summary: report.summary,
         extra_round_trips: 1,
       };
-    }
-    const report = checkAudibility({ cells });
-    return {
-      ok: report.ok,
-      breaks: report.breaks,
-      ...(report.notes.length > 0 ? { notes: report.notes } : {}),
-      summary: report.summary,
-      extra_round_trips: 1,
-    };
-  },
+    },
 
-  async applySetlist(
-    ctx,
-    entries: readonly SetlistEntrySpec[],
-    options?: SetlistApplyOptions,
-  ): Promise<ApplySetlistResult> {
-    const onError: 'stop' | 'continue' = options?.on_error ?? 'stop';
-    const dryRun = options?.dry_run ?? false;
-    const verifyEnabled = options?.verify ?? false;
-    const startMs = Date.now();
+    async applySetlist(
+      ctx,
+      entries: readonly SetlistEntrySpec[],
+      options?: SetlistApplyOptions,
+    ): Promise<ApplySetlistResult> {
+      gateWrite('apply_setlist');
+      const onError: 'stop' | 'continue' = options?.on_error ?? 'stop';
+      const dryRun = options?.dry_run ?? false;
+      const verifyEnabled = options?.verify ?? false;
+      const startMs = Date.now();
 
-    // Pre-validation: resolve locations, check uniqueness, translate spec,
-    // build ops up front so a bad entry at index 7 doesn't half-execute.
-    const resolved: { location: string; presetNumber: number; ops: ReturnType<typeof buildApplyPresetAtOps>; name?: string }[] = [];
-    const seenPresets = new Set<number>();
-    for (let i = 0; i < entries.length; i++) {
-      const e = entries[i];
-      // parseAxeFxIILocation returns wire (0-indexed); store display
-      // slot in the user-facing `location` field.
-      const presetNumber = parseAxeFxIILocation(e.location);
-      const slot = presetNumber + 1;
-      if (seenPresets.has(presetNumber)) {
-        throw new DispatchError(
-          'bad_location',
-          DEVICE_LABEL,
-          `entries[${i}] (display slot ${slot}): appears more than once in the batch; each preset slot may appear at most once per call.`,
-        );
-      }
-      seenPresets.add(presetNumber);
-      try {
-        const translated = translateSpec(e.spec);
-        const ops = buildApplyPresetAtOps(
-          { ...translated, preset_number: presetNumber },
-        );
-        resolved.push({
-          location: String(slot),
-          presetNumber,
-          ops,
-          name: e.spec.name,
-        });
-      } catch (err) {
-        throw new DispatchError(
-          'value_out_of_range',
-          DEVICE_LABEL,
-          `entries[${i}] (display slot ${slot}): ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-
-    if (dryRun) {
-      return {
-        ok: true,
-        total: resolved.length,
-        applied: 0,
-        failed: 0,
-        remaining: [],
-        results: resolved.map((r) => ({
-          location: r.location,
-          status: 'ok' as const,
-          wallTimeMs: 0,
-        })),
-        totalWallTimeMs: Date.now() - startMs,
-      };
-    }
-
-    const results: SetlistEntryResult[] = [];
-    let applied = 0;
-    let failed = 0;
-    let stopIndex: number | undefined;
-    let finalActiveLocation: string | undefined;
-
-    for (let i = 0; i < resolved.length; i++) {
-      const entry = resolved[i];
-      const entryStart = Date.now();
-      try {
-        const result = await runApplyPresetAtOps(ctx.conn, entry.ops);
-        finalActiveLocation = entry.location;
-
-        let verifyError: string | undefined;
-        if (verifyEnabled && result.ok && entry.name !== undefined) {
-          try {
-            const ackPromise = ctx.conn.receiveSysExMatching(
-              isGetPresetNameResponse,
-              GET_NAME_TIMEOUT_MS,
-            );
-            ctx.conn.send(buildGetPresetName());
-            const ack = await ackPromise;
-            const liveName = parseGetPresetNameResponse(ack);
-            if (liveName !== entry.name) {
-              verifyError = `verify: preset name mismatch. Wrote "${entry.name}", device reports "${liveName}".`;
-            }
-          } catch (err) {
-            verifyError = `verify: GET_PRESET_NAME failed: ${err instanceof Error ? err.message : String(err)}`;
-          }
+      // Pre-validation: resolve locations, check uniqueness, translate spec,
+      // build ops up front so a bad entry at index 7 doesn't half-execute.
+      const resolved: { location: string; presetNumber: number; ops: ReturnType<typeof buildApplyPresetAtOps>; name?: string }[] = [];
+      const seenPresets = new Set<number>();
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        // parseAxeFxIILocation returns wire (0-indexed); store display
+        // slot in the user-facing `location` field.
+        const presetNumber = parseAxeFxIILocation(e.location, DEVICE_LABEL);
+        const slot = presetNumber + 1;
+        if (seenPresets.has(presetNumber)) {
+          throw new DispatchError(
+            'bad_location',
+            DEVICE_LABEL,
+            `entries[${i}] (display slot ${slot}): appears more than once in the batch; each preset slot may appear at most once per call.`,
+          );
         }
-
-        if (result.ok && verifyError === undefined) {
-          applied++;
-          results.push({
-            location: entry.location,
-            status: 'ok',
-            wallTimeMs: Date.now() - entryStart,
+        seenPresets.add(presetNumber);
+        try {
+          const translated = translateSpec(e.spec, DEVICE_LABEL);
+          const ops = buildApplyPresetAtOps(
+            { ...translated, preset_number: presetNumber },
+            applyBuildOpts,
+          );
+          resolved.push({
+            location: String(slot),
+            presetNumber,
+            ops,
+            name: e.spec.name,
           });
-        } else {
+        } catch (err) {
+          throw new DispatchError(
+            'value_out_of_range',
+            DEVICE_LABEL,
+            `entries[${i}] (display slot ${slot}): ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      if (dryRun) {
+        return {
+          ok: true,
+          total: resolved.length,
+          applied: 0,
+          failed: 0,
+          remaining: [],
+          results: resolved.map((r) => ({
+            location: r.location,
+            status: 'ok' as const,
+            wallTimeMs: 0,
+          })),
+          totalWallTimeMs: Date.now() - startMs,
+        };
+      }
+
+      const results: SetlistEntryResult[] = [];
+      let applied = 0;
+      let failed = 0;
+      let stopIndex: number | undefined;
+      let finalActiveLocation: string | undefined;
+
+      for (let i = 0; i < resolved.length; i++) {
+        const entry = resolved[i];
+        const entryStart = Date.now();
+        try {
+          const result = await runApplyPresetAtOps(ctx.conn, entry.ops, modelOpts);
+          finalActiveLocation = entry.location;
+
+          let verifyError: string | undefined;
+          if (verifyEnabled && result.ok && entry.name !== undefined) {
+            try {
+              const ackPromise = ctx.conn.receiveSysExMatching(
+                (bytes) => isGetPresetNameResponse(bytes, config.modelByte),
+                GET_NAME_TIMEOUT_MS,
+              );
+              ctx.conn.send(buildGetPresetName(modelOpts));
+              const ack = await ackPromise;
+              const liveName = parseGetPresetNameResponse(ack, config.modelByte);
+              if (liveName !== entry.name) {
+                verifyError = `verify: preset name mismatch. Wrote "${entry.name}", device reports "${liveName}".`;
+              }
+            } catch (err) {
+              verifyError = `verify: GET_PRESET_NAME failed: ${err instanceof Error ? err.message : String(err)}`;
+            }
+          }
+
+          if (result.ok && verifyError === undefined) {
+            applied++;
+            results.push({
+              location: entry.location,
+              status: 'ok',
+              wallTimeMs: Date.now() - entryStart,
+            });
+          } else {
+            failed++;
+            const errMsg = verifyError
+              ?? (result.lastNack
+                ? `${result.lastNack.summary} → result=0x${result.lastNack.resultCode.toString(16)}`
+                : 'no STORE_PRESET ack arrived');
+            results.push({
+              location: entry.location,
+              status: 'error',
+              error: errMsg,
+              wallTimeMs: Date.now() - entryStart,
+            });
+            if (onError === 'stop') {
+              stopIndex = i;
+              break;
+            }
+          }
+        } catch (err) {
           failed++;
-          const errMsg = verifyError
-            ?? (result.lastNack
-              ? `${result.lastNack.summary} → result=0x${result.lastNack.resultCode.toString(16)}`
-              : 'no STORE_PRESET ack arrived');
           results.push({
             location: entry.location,
             status: 'error',
-            error: errMsg,
+            error: err instanceof Error ? err.message : String(err),
             wallTimeMs: Date.now() - entryStart,
           });
           if (onError === 'stop') {
@@ -970,71 +1101,65 @@ export const writer: DeviceWriter = {
             break;
           }
         }
-      } catch (err) {
-        failed++;
-        results.push({
-          location: entry.location,
-          status: 'error',
-          error: err instanceof Error ? err.message : String(err),
-          wallTimeMs: Date.now() - entryStart,
-        });
-        if (onError === 'stop') {
-          stopIndex = i;
-          break;
-        }
       }
-    }
 
-    const remaining = stopIndex !== undefined
-      ? resolved.slice(stopIndex + 1).map((r) => r.location)
-      : [];
+      const remaining = stopIndex !== undefined
+        ? resolved.slice(stopIndex + 1).map((r) => r.location)
+        : [];
 
-    return {
-      ok: failed === 0,
-      total: resolved.length,
-      applied,
-      failed,
-      remaining,
-      results,
-      totalWallTimeMs: Date.now() - startMs,
-      finalActiveLocation,
-    };
-  },
-
-  // ── Execute: rename ───────────────────────────────────────────────
-
-  async rename(ctx, target: RenameTarget, name): Promise<WriteResult> {
-    if (target === 'preset') {
-      ctx.conn.send(buildSetPresetName(name));
       return {
-        op: 'rename',
-        target: 'preset',
-        acked: true,
-        info: `Working-buffer preset renamed to "${name}". Press SAVE or call save_preset to persist.`,
+        ok: failed === 0,
+        total: resolved.length,
+        applied,
+        failed,
+        remaining,
+        results,
+        totalWallTimeMs: Date.now() - startMs,
+        finalActiveLocation,
       };
-    }
-    // 'scene:N' — no decoded SET_SCENE_NAME on Axe-Fx II yet.
-    throw new DispatchError(
-      'capability_not_supported',
-      DEVICE_LABEL,
-      `rename target '${target}' is not supported on Fractal Axe-Fx II; scene-name writes have no decoded SysEx envelope on this device. Only target='preset' is implemented.`,
-    );
-  },
+    },
 
-  /**
-   * Safe-edit dirty-gate adapter. Delegates to the device-specific
-   * implementation in tools/shared.ts which uses Axe-Fx II's device-
-   * sourced dirty signal (0x74 state-broadcast triple) for authoritative
-   * dirty tracking.
-   */
-  async guardActiveBufferOrSave(ctx, mode) {
-    return guardActiveBufferOrSave(mode, ctx.conn);
-  },
+    // ── Execute: rename ───────────────────────────────────────────────
 
-  async restorePresetBinary(ctx, bytes, options) {
-    return restorePresetBinaryAxeFxII(ctx, bytes, options);
-  },
-};
+    async rename(ctx, target: RenameTarget, name): Promise<WriteResult> {
+      gateWrite('rename');
+      if (target === 'preset') {
+        ctx.conn.send(buildSetPresetName(name, modelOpts));
+        return {
+          op: 'rename',
+          target: 'preset',
+          acked: true,
+          info: `Working-buffer preset renamed to "${name}". Press SAVE or call save_preset to persist.`,
+        };
+      }
+      // 'scene:N': no decoded SET_SCENE_NAME on Axe-Fx II yet.
+      throw new DispatchError(
+        'capability_not_supported',
+        DEVICE_LABEL,
+        `rename target '${target}' is not supported on ${DEVICE_LABEL}; scene-name writes have no decoded SysEx envelope on this device. Only target='preset' is implemented.`,
+      );
+    },
+
+    /**
+     * Safe-edit dirty-gate adapter. Delegates to the device-specific
+     * implementation in tools/shared.ts which uses Axe-Fx II's device-
+     * sourced dirty signal (0x74 state-broadcast triple) for authoritative
+     * dirty tracking. Not gated (a navigation guard, not a device-state write).
+     */
+    async guardActiveBufferOrSave(ctx, mode) {
+      return guardActiveBufferOrSave(mode, ctx.conn, { modelId: config.modelByte, deviceLabel: DEVICE_LABEL });
+    },
+
+    async restorePresetBinary(ctx, bytes, options) {
+      return restorePresetBinaryAxeFxII(ctx, bytes, { ...options, modelId: config.modelByte, deviceLabel: DEVICE_LABEL });
+    },
+  };
+
+  return writer;
+}
+
+/** The XL+ writer: preserved name/shape for every existing caller. */
+export const writer: DeviceWriter = createWriter(AXE_FX_II_XL_PLUS_CONFIG);
 
 // ── PresetSpec → ApplyPresetInput translation ───────────────────────
 //
@@ -1054,8 +1179,14 @@ export const writer: DeviceWriter = {
 // Multi-scene authoring + landingScene restored v0.3 parity audit
 // (Session 68 / HW-106 — switch-write-switch-back walk maps each
 // scene's per-block bypass + channel state).
+//
+// NOTE (BK-094): this translation stays device-generic (no model-byte or
+// block-filter concern): it produces the SAME `ApplyPresetAtInput` /
+// `ApplyPresetInput` shape for every config; `deviceLabel` only changes the
+// error-message prefix. Model byte + block-availability enter downstream,
+// via the `BuildOptions` the writer passes to `applyExecutor.ts`.
 
-export function translateSpec(spec: PresetSpec): ApplyPresetInput {
+export function translateSpec(spec: PresetSpec, deviceLabel = 'Fractal Axe-Fx II XL+'): ApplyPresetInput {
   // v0.4 routing-walk landed (BK-054 step 4). When `spec.routing` is
   // present, every block must specify slot:{row,col} explicitly and the
   // executor emits one fn 0x06 cable per edge. When omitted, the
@@ -1086,8 +1217,8 @@ export function translateSpec(spec: PresetSpec): ApplyPresetInput {
     if (!explicitRouting && row !== 2) {
       throw new DispatchError(
         'value_out_of_range',
-        'Fractal Axe-Fx II',
-        `slot row=${row}: without an explicit routing[] array, Axe-Fx II placement is row-2-only (auto-chain mode wires row 2 left-to-right).`,
+        deviceLabel,
+        `slot row=${row}: without an explicit routing[] array, ${deviceLabel} placement is row-2-only (auto-chain mode wires row 2 left-to-right).`,
         {
           retry_action: 'Either move every block to row 2 ({row:2,col:N}), or supply spec.routing[] with explicit cabling edges between block ids.',
         },
@@ -1116,7 +1247,7 @@ export function translateSpec(spec: PresetSpec): ApplyPresetInput {
       if (nestedCount > 0 && flatCount > 0) {
         throw new DispatchError(
           'value_out_of_range',
-          'Fractal Axe-Fx II',
+          deviceLabel,
           `slots[${col ?? row}] (block ${s.block_type}): params mixes flat values and channel-nested objects.`,
           {
             retry_action: 'Use one shape per slot: flat `{gain: 6}` to write to the current channel, or channel-nested `{X: {gain: 6}}` to address X/Y explicitly.',
@@ -1130,7 +1261,7 @@ export function translateSpec(spec: PresetSpec): ApplyPresetInput {
           if (upper !== 'X' && upper !== 'Y') {
             throw new DispatchError(
               'value_out_of_range',
-              'Fractal Axe-Fx II',
+              deviceLabel,
               `slots[${col ?? row}] (block ${s.block_type}): params has unknown channel key "${chKey}".`,
               {
                 valid_options: ['X', 'Y'],
@@ -1144,14 +1275,14 @@ export function translateSpec(spec: PresetSpec): ApplyPresetInput {
             // Values are display units; resolve strings to numeric
             // indices but keep numeric display values as-is. fn=0x2e
             // takes display floats directly, no wire encoding needed.
-            resolved[k] = resolveDisplayValue(s.block_type, k, v);
+            resolved[k] = resolveDisplayValue(s.block_type, k, v, deviceLabel);
           }
           paramsByChannel[ch] = resolved;
         }
       } else if (flatCount > 0) {
         params = {};
         for (const [k, v] of entries) {
-          params[k] = resolveDisplayValue(s.block_type, k, v as number | string);
+          params[k] = resolveDisplayValue(s.block_type, k, v as number | string, deviceLabel);
         }
       }
     }
@@ -1187,11 +1318,11 @@ export function translateSpec(spec: PresetSpec): ApplyPresetInput {
           const max = idsInGroup?.length ?? 1;
           throw new DispatchError(
             'value_out_of_range',
-            'Fractal Axe-Fx II',
-            `slot {row:${row},col:${col}} (block_type=${s.block_type}): instance=${instanceArg} out of range; Axe-Fx II exposes ${max} ${s.block_type} block${max === 1 ? '' : 's'} (valid instances: 1..${max}).`,
+            deviceLabel,
+            `slot {row:${row},col:${col}} (block_type=${s.block_type}): instance=${instanceArg} out of range; ${deviceLabel} exposes ${max} ${s.block_type} block${max === 1 ? '' : 's'} (valid instances: 1..${max}).`,
             {
               retry_action: max === 1
-                ? `Drop the instance field; only one ${s.block_type} block exists on Axe-Fx II.`
+                ? `Drop the instance field; only one ${s.block_type} block exists on ${deviceLabel}.`
                 : `Pass instance: 1..${max}.`,
             },
           );
@@ -1225,9 +1356,9 @@ export function translateSpec(spec: PresetSpec): ApplyPresetInput {
       if (!Number.isInteger(sc.scene) || sc.scene < 1 || sc.scene > 8) {
         throw new DispatchError(
           'value_out_of_range',
-          'Fractal Axe-Fx II',
+          deviceLabel,
           `scenes[].scene=${sc.scene} out of range (1..8).`,
-          { retry_action: 'Axe-Fx II has 8 scenes per preset; pass scene as 1..8.' },
+          { retry_action: `${deviceLabel} has 8 scenes per preset; pass scene as 1..8.` },
         );
       }
       // Resolve scene-map block keys from slugs → executor display
@@ -1268,7 +1399,7 @@ export function translateSpec(spec: PresetSpec): ApplyPresetInput {
             if (letter !== 'X' && letter !== 'Y') {
               throw new DispatchError(
                 'value_out_of_range',
-                'Fractal Axe-Fx II',
+                deviceLabel,
                 `scenes[${sc.scene}].channels.${blk}=${ch} not a valid Axe-Fx II channel.`,
                 { valid_options: ['X', 'Y'], retry_action: 'Axe-Fx II channels are X or Y only.' },
               );
@@ -1294,9 +1425,9 @@ export function translateSpec(spec: PresetSpec): ApplyPresetInput {
     if (!Number.isInteger(spec.landingScene) || spec.landingScene < 1 || spec.landingScene > 8) {
       throw new DispatchError(
         'value_out_of_range',
-        'Fractal Axe-Fx II',
+        deviceLabel,
         `landingScene=${spec.landingScene} out of range (1..8).`,
-        { retry_action: 'Axe-Fx II has 8 scenes; pass landingScene as 1..8.' },
+        { retry_action: `${deviceLabel} has 8 scenes; pass landingScene as 1..8.` },
       );
     }
     scene = spec.landingScene - 1;
@@ -1320,6 +1451,49 @@ export function translateSpec(spec: PresetSpec): ApplyPresetInput {
 }
 
 /**
+ * Module-scope (unfiltered) block/param resolution for the `translateSpec` /
+ * `resolveDisplayValue` / `encodeParamForApply` apply-path helpers below.
+ *
+ * NOTE (BK-094): `translateSpec` runs OUTSIDE `createWriter`'s closure (it's
+ * a standalone exported function, called before the config-bound writer
+ * object exists), so it can't reach the closure-scoped, block-filtered
+ * `resolveBlockOrThrow`. That's fine in practice: `applyPreset` /
+ * `applySetlist` call `gateWrite('apply_preset' | 'apply_setlist')` FIRST,
+ * before `translateSpec` ever runs, so on a config that gates those ops
+ * (AX8) this code is unreachable; on a config that doesn't (XL+, and any
+ * future un-gated config) it preserves the EXACT pre-refactor resolution +
+ * error-message shape (unfiltered, matches the original `resolveBlockOrThrow`
+ * / `findParamOrThrow` module-level helpers byte-for-byte).
+ */
+function resolveBlockForApplyOrThrow(slugOrName: string, deviceLabel: string): AxeFxIIBlock {
+  const fromSlug = findBlockBySlug(slugOrName);
+  if (fromSlug) return fromSlug;
+  const fromName = resolveBlock(slugOrName);
+  if (fromName) return fromName;
+  const sample = AXE_FX_II_BLOCKS.slice(0, 6).map((b) => `"${b.name}"`).join(', ');
+  throw new DispatchError(
+    'unknown_block',
+    deviceLabel,
+    `Block '${slugOrName}' is not valid on ${deviceLabel}. First few: ${sample}… (call list_params for the full list).`,
+  );
+}
+
+function findParamForApplyOrThrow(block: AxeFxIIBlock, name: string, deviceLabel: string): AxeFxIIParam {
+  const p = findParamFuzzy(block, name);
+  if (p) return p;
+  const knownNames: string[] = [];
+  for (const key of Object.keys(KNOWN_PARAMS)) {
+    const kp = KNOWN_PARAMS[key as keyof typeof KNOWN_PARAMS] as AxeFxIIParam;
+    if (kp.groupCode === block.groupCode && !knownNames.includes(kp.name)) knownNames.push(kp.name);
+  }
+  throw new DispatchError(
+    'unknown_param',
+    deviceLabel,
+    formatUnknownParamError({ deviceName: deviceLabel, block: block.name, badParam: name, knownNames }),
+  );
+}
+
+/**
  * Pre-encode a single param value for the apply path. Funnels through
  * the shared `resolveParamKind` helper so apply_preset, set_param, and
  * the reader all share one display->wire source of truth.
@@ -1333,9 +1507,10 @@ function encodeParamForApply(
   blockSlug: string,
   paramName: string,
   value: number | string,
+  deviceLabel = 'Fractal Axe-Fx II XL+',
 ): number {
-  const block = resolveBlockOrThrow(blockSlug);
-  const param = findParamOrThrow(block, paramName);
+  const block = resolveBlockForApplyOrThrow(blockSlug, deviceLabel);
+  const param = findParamForApplyOrThrow(block, paramName, deviceLabel);
   const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
   if (kind.encodeDisplay !== undefined) {
     return kind.encodeDisplay(value);
@@ -1347,7 +1522,7 @@ function encodeParamForApply(
   if (!Number.isFinite(num)) {
     throw new DispatchError(
       'value_out_of_range',
-      'Fractal Axe-Fx II',
+      deviceLabel,
       `${blockSlug}.${paramName}: expected a number, got "${value}".`,
       { retry_action: 'Pass a finite display value (number or enum string). This param lacks a calibrated display range so wire integers 0..65534 are also accepted.' },
     );
@@ -1355,13 +1530,14 @@ function encodeParamForApply(
   if (!Number.isInteger(num) || num < 0 || num > 65534) {
     throw new DispatchError(
       'value_out_of_range',
-      'Fractal Axe-Fx II',
+      deviceLabel,
       `${blockSlug}.${paramName}: wire value out of range (0..65534): ${num}`,
-      { retry_action: 'Uncalibrated param; pass an integer 0..65534. Call list_params({port:"axe-fx-ii", block:["<block>"], name:["<param>"]}) to confirm the controlType.' },
+      { retry_action: `Uncalibrated param; pass an integer 0..65534. Call list_params({port:"${blockSlug}"}) to confirm the controlType.` },
     );
   }
   return num;
 }
+void encodeParamForApply; // kept for parity with the pre-refactor surface; callers resolve via resolveDisplayValue below
 
 /**
  * Resolve a display value for the apply path WITHOUT wire-encoding.
@@ -1378,9 +1554,10 @@ function resolveDisplayValue(
   blockSlug: string,
   paramName: string,
   value: number | string,
+  deviceLabel = 'Fractal Axe-Fx II XL+',
 ): number {
-  const block = resolveBlockOrThrow(blockSlug);
-  const param = findParamOrThrow(block, paramName);
+  const block = resolveBlockForApplyOrThrow(blockSlug, deviceLabel);
+  const param = findParamForApplyOrThrow(block, paramName, deviceLabel);
   const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
 
   // Enum / string values: must resolve to a numeric index via the
@@ -1394,7 +1571,7 @@ function resolveDisplayValue(
     if (!Number.isFinite(num)) {
       throw new DispatchError(
         'value_out_of_range',
-        'Fractal Axe-Fx II',
+        deviceLabel,
         `${blockSlug}.${paramName}: expected a number, got "${value}".`,
         { retry_action: 'Pass a finite display value (number or enum string).' },
       );
@@ -1408,7 +1585,7 @@ function resolveDisplayValue(
     if (value < kind.displayMin || value > kind.displayMax) {
       throw new DispatchError(
         'value_out_of_range',
-        'Fractal Axe-Fx II',
+        deviceLabel,
         `${blockSlug}.${paramName}: display value ${value} out of range [${kind.displayMin}..${kind.displayMax}].`,
         { retry_action: `Pass a display value between ${kind.displayMin} and ${kind.displayMax}.` },
       );

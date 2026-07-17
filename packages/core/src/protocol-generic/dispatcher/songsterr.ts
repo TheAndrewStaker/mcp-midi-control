@@ -23,6 +23,8 @@ import {
   planArrangement,
   patternLabel,
   arrangementSummary,
+  planProjects,
+  type ProjectPlan,
   tempoAtBeat,
   flattenSongsterrDrums,
   unmappedSummary,
@@ -87,6 +89,13 @@ export interface ImportSongsterrResult {
     windows: number;
     scene_steps: number;
     fits: { one_pattern: boolean; chain_only: boolean; pattern_slots: boolean };
+    /**
+     * How to lay the song across MULTIPLE projects when it does not fit one
+     * (the normal case: a real song is ~25 patterns / ~33 plays vs the device's
+     * 8 and 8). Each entry is ready to drive one apply_pattern call; play them
+     * in listed order. Present only when the song needs more than one project.
+     */
+    project_plan?: ProjectPlan;
   };
   warnings?: string[];
   next_step: string;
@@ -170,9 +179,18 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
       const firstWindow = co.order.indexOf(i);
       const firstMeasure = Math.floor(firstWindow * barsPerWindow); // 0-based, 4/4 approximation
       const marker = markerAt(firstMeasure);
+      // A SILENT window (a count-in, a tab's empty measures) quantizes to no
+      // voices at all. `voices: {}` is unusable downstream: apply_pattern refuses
+      // "`voices` must have at least one voice", so a whole-song arrangement
+      // containing a rest bar could not be authored (it killed both the Amber
+      // intro upload and the Blindside outro, 2026-07-16). Emit an explicit
+      // rest-only line instead, which carries the window's LENGTH and produces
+      // no events — the same shape a hand-authored silent section uses.
+      const grids = quantizedToGrids(q);
+      const voices = Object.keys(grids).length > 0 ? grids : { kick: '.'.repeat(q.steps) };
       return {
         name: patternLabel(i),
-        voices: quantizedToGrids(q),
+        voices,
         steps: q.steps,
         ...(marker !== undefined || firstWindow >= 0
           ? { first_heard: `${marker ? `${marker}, ` : ''}measure ${firstMeasure + 1}` }
@@ -193,12 +211,21 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
         pattern_slots: plan.fitsInPatternSlots,
       },
     };
+    // A song that does not fit ONE project needs a per-project plan, or the caller
+    // is left chunking the order by hand (the 2026-07-16 friction). Only attach it
+    // when it is actually needed, so a song that fits one project stays simple.
+    if (!(plan.fitsViaChainOnly && plan.fitsInPatternSlots)) {
+      base.arrangement.project_plan = planProjects(sections, base.arrangement.order);
+    }
     base.warnings = warnings.length ? warnings : undefined;
     const fitNote = co.order.length <= 8
       ? 'The whole order fits the Circuit pattern chain directly.'
       : plan.sceneCount <= 4 && plan.fitsInPatternSlots
         ? `Needs scene mode (${plan.sceneCount} scene steps).`
-        : `Too long for one project as-is (${co.order.length} plays, ${plan.sceneCount} scene steps vs 8 chained patterns / 4 scenes): raise fuzz to merge more, or arrange a sub-span with from_measure/to_measure.`;
+        : `Too long for one project as-is (${co.order.length} plays, ${plan.sceneCount} scene steps vs 8 chained patterns / 4 scenes). ` +
+          `USE \`arrangement.project_plan\`: it already chunked the song into ${base.arrangement?.project_plan?.projects.length ?? 0} project(s) that each fit, in song order; ` +
+          'drive one apply_pattern call per entry (its `order` + the matching `sections`) and foot-switch between them. ' +
+          'Only fall back to raising fuzz (lossy: flattens fills) or arranging a sub-span with from_measure/to_measure if you do NOT want the whole song.';
     base.next_step =
       `Pass \`arrangement: {sections, order}\` (with each section's voices/steps) to apply_pattern ` +
       `(mode ncs_upload + ncs_slot/ncs_template${bpm !== undefined ? `, bpm:${bpm}` : ''}). ${fitNote}`;

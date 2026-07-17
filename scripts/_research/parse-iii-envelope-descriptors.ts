@@ -224,7 +224,7 @@ const output = {
   source_file: path.relative(repoRoot, DUMP).replaceAll('\\', '/'),
   generated_by: 'scripts/_research/parse-iii-envelope-descriptors.ts',
   notes: [
-    'tag/mid/byte_count semantics per cookbook vendor-envelope-descriptor-table:',
+    'tag/mid/byte_count semantics per primitive vendor-envelope-descriptor-table:',
     'tag = field order key; mid = wire-byte offset from F0; byte_count = field size',
     '(raw bytes, or units x bytes-per-unit for packed septet payloads).',
     'DAT_1412633f8 is the connected model byte; >= 0x10 selects the gen-3 table.',

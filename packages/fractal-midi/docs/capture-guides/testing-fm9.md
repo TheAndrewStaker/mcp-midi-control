@@ -33,6 +33,12 @@
 >    frame and cross-validated against an FM9 capture, but not yet front-panel-confirmed.
 >    (The device INPUT meter is intentionally not surfaced; its offset isn't portable
 >    across the gen-3 family.)
+> 5. **Scene leveling walkthrough (new, community-beta)**: on a preset whose scenes
+>    sit at noticeably different volumes, ask *"balance my scene levels"* and follow
+>    the agent's lead (it switches scenes, asks you to play the same riff per scene,
+>    reads the output meters, and nudges the OUT block's per-scene level trims - no
+>    save unless you ask). Useful to report: did the meter readings track what you
+>    heard, and did the scenes land closer by ear afterwards?
 >
 > For everything the device can report about itself, the one-command read-only
 > [harvest script](harvest-script.md) covers it with no capture tools.

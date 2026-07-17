@@ -1,18 +1,18 @@
-# Cookbook mining: ghidra-am4edit-paramtables.txt
+# Primitives mining: ghidra-am4edit-paramtables.txt
 
 Mined 2026-05-22 against
 `fractal-midi/samples/captured/decoded/ghidra-am4edit-paramtables.txt`
 (87,376 bytes; SeekParamTables64.java output run against
 AM4-Edit.exe, 64-bit image base 0x140000000).
 
-Reading scope was limited to the named dump file and the cookbook
+Reading scope was limited to the named dump file and the primitive
 entries it touches (param-descriptor-16byte, am4-pidlow-register-families,
 am4-fn1f-atomic-read, vendor-envelope-descriptor-table, xor-fold-hash,
-plus the cookbook INDEX). All cited line numbers refer to the dump file.
+plus the primitives INDEX). All cited line numbers refer to the dump file.
 
 ---
 
-## 1. Instances of existing cookbook primitives
+## 1. Instances of existing primitives
 
 ### 1.1 `[[param-descriptor-16byte]]`
 
@@ -22,13 +22,13 @@ patterns (stride=16)`, and the dedup pass reports 47 top-level tables after the
 nesting filter. The table-listing pass (lines 26-2225) lists every table by name +
 RVA + entry count, and every row has the `[index] paramId=N SYMBOL` shape
 that decodes the 16-byte struct (paramId at +0, namePtr at +8) per the
-cookbook's formal definition.
+primitives corpus's formal definition.
 
 Verification highlights (dump line refs):
 
 - Header banner: lines 1-6 cite `SeekParamTables64.java` + `stride=16`.
 - Dedup pass: line 24, "47 top-level tables after nesting filter"
-  (2011 raw candidates collapsed via the cookbook's stride-16 invariant).
+  (2011 raw candidates collapsed via the primitives corpus's stride-16 invariant).
 - Table-listing summary: lines 2227-2231, "47 ParamDescriptor tables / 2105
   entries / 1894 unique symbols / 7% of 24,950 indexed".
 
@@ -47,12 +47,12 @@ Per-table positional order is NOT sorted by paramId: the PATCH table at
 lines 1121-1206 begins `paramId=59, 60, 61, 62, 20, 21, 22, 63, ...`,
 matching the II-side observation that the array's positional index is
 storage order, not the paramId itself (the paramId field is the actual
-identifier). This is the same misapplication failure mode the cookbook
+identifier). This is the same misapplication failure mode the primitive
 entry already warns about (stride-by-4 garbage); confirms the
 stride-by-16 reading for AM4-Edit as well.
 
 **New axis added by this dump:** `am4-edit-binary` (64-bit, image base
-0x140000000). The cookbook already lists `axe-edit-ii-binary`,
+0x140000000). The primitives corpus already lists `axe-edit-ii-binary`,
 `axe-edit-iii-binary`, `am4-edit-binary` under `verified_on`; this dump
 is the file-shaped fixture for the AM4 axis at scale (47 tables, 2105
 entries). Existing `MineAM4EditParamResolver.java` is already in
@@ -67,15 +67,15 @@ entries). Existing `MineAM4EditParamResolver.java` is already in
 
 ### 1.2 `[[am4-pidlow-register-families]]`
 
-The PATCH and GLOBAL totals declared by the cookbook entry (PATCH=85,
+The PATCH and GLOBAL totals declared by the primitive entry (PATCH=85,
 GLOBAL=99) match the AM4-Edit binary tables byte-for-byte.
 
 - PATCH table at `0x1414216d0`, **85 entries** (dump lines 1121-1206).
-  Cookbook claim: "85 params total" - exact match.
+  Primitive claim: "85 params total" - exact match.
 - GLOBAL table at `0x14141a9f0`, **99 entries** (dump lines 843-942).
-  Cookbook claim: "99 params catalogued" - exact match.
+  Primitive claim: "99 params catalogued" - exact match.
 
-PATCH contains the safety-relevant Scene-MIDI sub-registers the cookbook
+PATCH contains the safety-relevant Scene-MIDI sub-registers the primitives corpus
 flagged as Trigger-class in the  refinement:
 
 ```
@@ -91,14 +91,14 @@ flagged as Trigger-class in the  refinement:
 [ 84]  paramId=142    PATCH_SCENE_MIDI_CLEAR
 ```
 
-The cookbook entry decoded `pidHigh=0x0070 = SCENE_MIDI_EXEC`
+The primitive entry decoded `pidHigh=0x0070 = SCENE_MIDI_EXEC`
 from scene-MIDI captures. The dump's AM4-Edit paramId space
 indexes these as paramId=118..121 (per-scene) + paramId=122..137 (per-
 scene-per-msg sub-EXECs); pidHigh on the wire and paramId in the editor
 table use independent numbering, so this is not a contradiction but a
 namespace distinction worth noting (see also negative finding §3.1 below).
 
-GLOBAL family contains the two pid-checked goldens the cookbook cites:
+GLOBAL family contains the two pid-checked goldens the primitives corpus cites:
 
 ```
 [ 42]  paramId=99     GLOBAL_USBLEVEL1                (line 886)
@@ -118,18 +118,18 @@ family decode from .
 
 The two 210-entry ID tables at `0x14141bbe0` (lines 28-239) and
 `0x14142c2e0` (lines 240-451) are the canonical `effectId -> block
-symbol` map that resolves the hardware-probed effectIds in the cookbook
+symbol` map that resolves the hardware-probed effectIds in the primitive
 entry's Probe Evidence table.
 
-Cross-checks against the cookbook's HW-AM4-FN1F probe results:
+Cross-checks against the primitives corpus's HW-AM4-FN1F probe results:
 
-| Cookbook probe shape | Cookbook claim | Dump confirms (line) |
+| Primitive probe shape | Primitive claim | Dump confirms (line) |
 |---|---|---|
 | `scene1` `01 00` | effectId 1 returns chunk | line 30: `paramId=1 ID_GLOBAL` |
 | `amp1` `6a 00` | effectId 106 returns 100-byte chunk | line 135: `paramId=106 ID_TREMOLO1` |
 | amp.gain write probe | only effectId 58 showed paramId-shaped diff at position 11 | line 87: `paramId=58 ID_DISTORT1` (DISTORT1 = AM4's amp/distort block) |
 
-The DISTORT1 = effectId 58 mapping is the load-bearing one: the cookbook
+The DISTORT1 = effectId 58 mapping is the load-bearing one: the primitive
 position-map probe established `chunkPosition === pidHigh` for the amp
 block, and the dump confirms via the effectId table that effectId=58 is
 ID_DISTORT1, which matches the DISTORT param table at `0x14141e930`
@@ -137,14 +137,14 @@ ID_DISTORT1, which matches the DISTORT param table at `0x14141e930`
 probe observed at effectId 58 makes sense: chunk indexed by paramId
 0..255 covers DISTORT's full paramId range).
 
-Open follow-up in the cookbook entry ("extend the position-map probe to
+Open follow-up in the primitive entry ("extend the position-map probe to
 the remaining ~16 distinct chunk sizes to lock the full block <-> effectId
 mapping") becomes mechanical with this dump: the ID table enumerates the
 exact block symbol for every effectId, so the position-map probe only
 needs to fire one write per BLOCK_TYPE (not per effectId), checking
 `chunkPosition === pidHigh` against the symbol family.
 
-**Probe label refinement (minor):** the cookbook's Probe Evidence table
+**Probe label refinement (minor):** the primitives corpus's Probe Evidence table
 labels `effectId 106` as `amp1`. Per the dump (line 135), effectId 106
 is `ID_TREMOLO1`. The "amp1" label was a probe-script naming choice and
 should be re-read as "tremolo1" or "block106" for accuracy. Not a
@@ -177,11 +177,11 @@ Proposed frontmatter:
 name: am4-effectid-block-namespace-table
 class: struct-layout
 status: partial-N1
-discovered: 2026-05-22 (cookbook mine of ghidra-am4edit-paramtables.txt)
+discovered: 2026-05-22 (primitives mine of ghidra-am4edit-paramtables.txt)
 verified_on:
   - am4-edit-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-am4-effectid-block-namespace-table
+golden: scripts/primitives-verify.ts#case-am4-effectid-block-namespace-table
 relates_to: [param-descriptor-16byte, am4-fn1f-atomic-read]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-am4edit-paramtables.txt
@@ -210,7 +210,7 @@ duplicate copy):
 **Why partial-N1:** singleton-axis (AM4 only). Promotion path to
 matched-singleton or matched: confirm whether II / III editor binaries
 ship an identically-shaped effectId enum at known RVAs. The existing II
-Ghidra mining (`MineAxeEditIIParamResolver.java` per cookbook
+Ghidra mining (`MineAxeEditIIParamResolver.java` per primitive
 `param-descriptor-16byte`) likely emitted equivalents; this is a
 mechanical cross-check, no hardware required.
 
@@ -257,11 +257,11 @@ Proposed frontmatter:
 name: am4-block-paramid-base-10-convention
 class: struct-layout
 status: matched-singleton
-discovered: 2026-05-22 (cookbook mine of ghidra-am4edit-paramtables.txt)
+discovered: 2026-05-22 (primitives mine of ghidra-am4edit-paramtables.txt)
 verified_on:
   - am4-edit-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-am4-block-paramid-base-10
+golden: scripts/primitives-verify.ts#case-am4-block-paramid-base-10
 relates_to: [param-descriptor-16byte, am4-effectid-block-namespace-table]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-am4edit-paramtables.txt
@@ -302,11 +302,11 @@ Document in the body of `am4-effectid-block-namespace-table` (§2.1) as a
 
 `[[vendor-envelope-descriptor-table]]` lists AM4 as a transfer
 candidate: "AM4 editor binary descriptor tables not yet surveyed.
-Cookbook entry is currently II + III only."
+Primitive entry is currently II + III only."
 
 This dump file does NOT close that gap. SeekParamTables64.java
 specifically seeks the 16-byte ParamDescriptor shape with paramId at
-+0 and name pointer at +8 (per the cookbook entry's formal definition).
++0 and name pointer at +8 (per the primitive entry's formal definition).
 The vendor-envelope descriptor tables on II / III are a different shape:
 contiguous `(tag, mid, byte_count)` triples terminated by `(-1, -1, -1)`,
 typically 12 bytes per record.  (lines 11-21) scanned only for
@@ -336,7 +336,7 @@ follow-up gap rather than a ruled-out method.
 A future agent might be tempted to read the per-block paramId values in
 this dump as wire pidHigh values directly. They are not.
 
-Evidence: cookbook entry `am4-pidlow-register-families` 
+Evidence: primitive entry `am4-pidlow-register-families` 
 refinement claims `pidHigh = 0x0070 = SCENE_MIDI_EXEC`. 0x70 = 112
 decimal. The dump's PATCH table (line 1121-1206) places PATCH_SCENE_*
 MIDI_EXEC entries at paramId 118..121, NOT 112. paramId=112 is absent
@@ -364,7 +364,7 @@ that should land in the body of `param-descriptor-16byte` and / or
 
 ## Summary
 
-**Cookbook deltas suggested (founder review required before promotion):**
+**Primitives deltas suggested (founder review required before promotion):**
 
 | Entry | Action | Rationale |
 |---|---|---|

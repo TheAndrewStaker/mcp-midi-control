@@ -32,6 +32,33 @@
  *     (`bk070-loop-amp-bass-2-*`, `bk070-loop-amp-master-vol-3-*`)
  *     differ at EXACTLY the predicted channel-Y param words
  *
+ * Section 3 (2026-07-10, "drive Y effect_type leaked 32767" investigation):
+ * a `get_preset include_channel_state:true` live read surfaced a raw wire
+ * int (`32767`) for a drive block's Y-channel `effect_type` instead of a
+ * label, moments after the front panel + a fresh capture confirmed the
+ * device actually held BLACKGLASS 7K (ordinal 36) on that channel. Two
+ * checks:
+ *
+ *   - Golden (skip-if-absent, founder's private fixture path): decode
+ *     `Fractal_Axe-Fx_II_XL-8-String_Bass-...syx` and assert the drive
+ *     block's Y-channel `effect_type` word decodes to "BLACKGLASS 7K",
+ *     pinning the byte-exact word offset (baseWord + xToYOffset + paramId 0)
+ *     against the hardware-confirmed ground truth so a future regression
+ *     in the offset arithmetic or the DRIVE_EFFECT_TYPE_VALUES roster
+ *     re-trips this test.
+ *   - Synthetic: `decodeGroupValues` on a fabricated select-type wire
+ *     value with NO roster entry must emit `"UNKNOWN TYPE (ordinal N)"`,
+ *     never the bare wire integer (the display-first hardening this
+ *     investigation shipped in `calibration.ts`'s `decodeEnumWire`).
+ *
+ * Root-cause note: decoding the ground-truth fixture with this repo's own
+ * TLV walker shows the offset math and the roster entry are BOTH already
+ * correct for that preset (word 865 = 36 = BLACKGLASS 7K); see
+ * STATE-AXEFX2.md 2026-07-10 for the full writeup of what was and wasn't
+ * reproducible. The synthetic case guards the general bug class (any
+ * select-type param whose wire ordinal has no roster row) regardless of
+ * that specific preset's root cause.
+ *
  * Fixtures are git-ignored Fractal IP; missing ones are skipped with a
  * notice so `npm test` stays green on a fresh clone.
  */
@@ -58,6 +85,7 @@ import {
   type PresetImageBlock,
 } from '@mcp-midi-control/fractal-gen2/presetImageTlv.js';
 import { AMP_EFFECT_TYPE_VALUES, BLOCK_BY_ID } from 'fractal-midi/gen2/axe-fx-ii';
+import { decodeGroupValues } from '@mcp-midi-control/fractal-gen2/descriptor/paramGroupIndex.js';
 
 // ── BK-070 hardware anchors (Test Crunch, live Q8.02 hardware) ──────
 // samples/captured/bk070-loop-amp-bass-2-baseline.syx: Amp TLV
@@ -482,6 +510,74 @@ if (corpus.length > 0) {
   }
 } else {
   console.log('  skip  no corpus fixtures present — Section 2 skipped entirely');
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// Section 3: 2026-07-10 drive Y effect_type leak: ground-truth golden
+// + display-first hardening guard
+// ═════════════════════════════════════════════════════════════════════
+
+console.log('\nSection 3: drive Y effect_type leak (2026-07-10)');
+
+// Synthetic: any select-type param whose wire ordinal has no roster row
+// must decode to a labeled decode-gap placeholder, never the bare wire
+// int. Reproduces the reported shape (a channel-Y `effect_type` word
+// holding an unmapped ordinal) without depending on the founder's
+// private fixture.
+{
+  const decoded = decodeGroupValues('DRV', [999999]); // paramId 0 = drive.effect_type
+  check(
+    'synthetic: unmapped select ordinal decodes to labeled placeholder, not a bare number',
+    decoded.out['effect_type'] === 'UNKNOWN TYPE (ordinal 999999)',
+    `got ${JSON.stringify(decoded.out['effect_type'])}`,
+  );
+}
+
+// Ground-truth golden (skip-if-absent; the founder's private backup, not
+// committed Fractal IP). Hardware-confirmed 2026-07-10: this preset's
+// drive block holds X=T808 OD / Y=BLACKGLASS 7K on the front panel.
+{
+  const FIXTURE_PATH =
+    'C:/Users/Steph/mcp-midi-backups/Fractal_Axe-Fx_II_XL-8-String_Bass-2026-07-10_16-46-28.syx';
+  if (!existsSync(FIXTURE_PATH)) {
+    console.log(`  skip  ${FIXTURE_PATH} (not present)`);
+    skipped++;
+  } else {
+    const img = parsePresetImage(deframePresetImage(parsePresetDump(new Uint8Array(readFileSync(FIXTURE_PATH)))));
+    const drive = img.blocks.find((b) => b.blockName === 'Drive');
+    if (drive === undefined) {
+      check('hw fixture: preset has a Drive block', false, 'no Drive TLV in chain');
+    } else {
+      const xWord = getParamWord(img, drive.wireId, 0, 'X');
+      const yWord = getParamWord(img, drive.wireId, 0, 'Y');
+      check(
+        'hw fixture: drive channel-X effect_type word holds T808 OD ordinal (6)',
+        xWord.value === 6,
+        `word ${xWord.wordIndex} = ${xWord.value}`,
+      );
+      check(
+        'hw fixture: drive channel-Y effect_type word holds BLACKGLASS 7K ordinal (36)',
+        yWord.value === 36,
+        `word ${yWord.wordIndex} = ${yWord.value}; expected baseWord(${drive.baseWord}) + xToYOffset(${drive.xToYOffset}) + paramId(0)`,
+      );
+      const perChannel = drive.xToYOffset ?? drive.payloadLen;
+      const xValues = Array.from(img.words.slice(drive.baseWord, drive.baseWord + perChannel));
+      const yStart = drive.baseWord + (drive.xToYOffset ?? 0);
+      const yValues = Array.from(img.words.slice(yStart, yStart + perChannel));
+      const xDecoded = decodeGroupValues('DRV', xValues);
+      const yDecoded = decodeGroupValues('DRV', yValues);
+      check(
+        'hw fixture: decodeGroupValues X effect_type label = "T808 OD"',
+        xDecoded.out['effect_type'] === 'T808 OD',
+        `got ${JSON.stringify(xDecoded.out['effect_type'])}`,
+      );
+      check(
+        'hw fixture: decodeGroupValues Y effect_type label = "BLACKGLASS 7K" (not a raw number)',
+        yDecoded.out['effect_type'] === 'BLACKGLASS 7K',
+        `got ${JSON.stringify(yDecoded.out['effect_type'])}`,
+      );
+    }
+  }
 }
 
 console.log(`\n${pass} ok, ${fail} fail, ${skipped} skipped.`);

@@ -8,18 +8,18 @@
  * missed. The report writes to
  * `fractal-midi/docs/research/synthesis-log/<YYYY-MM-DD>-<slug>.md`.
  *
- * Per the cookbook discipline (CLAUDE.md "Synthesis cadence"), call
+ * Per the primitives discipline (CLAUDE.md "Synthesis cadence"), call
  * this script when any of these triggers fires:
  *
- *   - Cookbook primitive promoted (partial-N1 -> matched, scratch -> matched).
- *   - New `cookbook/_negative/` entry landed.
+ *   - Primitive promoted (partial-N1 -> matched, scratch -> matched).
+ *   - New `primitives/_negative/` entry landed.
  *   - BK-NNN workstream flipped to done.
  *   - Major Ghidra dump output committed.
  *   - >= 10 sessions since last synthesis.
  *
  * Usage:
  *   npx tsx scripts/synthesis-review.ts                       (manual trigger; default slug)
- *   npx tsx scripts/synthesis-review.ts --slug cookbook-audit (custom slug)
+ *   npx tsx scripts/synthesis-review.ts --slug primitives-audit (custom slug)
  *   npx tsx scripts/synthesis-review.ts --trigger "BK-070 closure"
  *   npx tsx scripts/synthesis-review.ts --dry-run             (print prompt + target path; do not spawn)
  *
@@ -33,8 +33,8 @@
  *
  * Model: Opus 4.7 (synthesis needs deep cross-document reasoning).
  *
- * Notes vs cookbook-mine (Mizuchi-style): synthesis-review is a single
- * pass per invocation, not a loop. cookbook-mine is the iterative
+ * Notes vs primitives-mine (Mizuchi-style): synthesis-review is a single
+ * pass per invocation, not a loop. primitives-mine is the iterative
  * mining variant; both share the spawn machinery + the prompt-template
  * registry but have different cadence.
  */

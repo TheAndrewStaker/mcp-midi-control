@@ -1,7 +1,7 @@
 /**
  * Read-only probe: does the AM4 FIRMWARE answer fn 0x0E QUERY_STATES?
  *
- * AM4-Edit never issues fn 0x0E (cookbook
+ * AM4-Edit never issues fn 0x0E (primitives
  * _negative/am4-query-states-fn0e-transfer.md — 0 frames in 21036), but the
  * firmware-level response was explicitly left open as a ~30s read-only probe.
  * This sends the single frame F0 00 01 74 15 0E <cksum> F7 and classifies the

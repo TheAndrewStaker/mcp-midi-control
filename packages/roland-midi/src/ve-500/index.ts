@@ -24,6 +24,7 @@ export {
   blockParams,
   allBlocks,
   VE500_PARAMS,
+  VE500_SYSTEM_PARAMS,
 } from './catalog.js';
 export type { Ve500ParamDef } from './catalog.generated.js';
 export {
@@ -40,3 +41,4 @@ export {
   buildSetPatchName,
   saveAckMatcher,
 } from './save.js';
+export { buildSwitchPatch, CURRENT_PATCH_ADDR } from './patch.js';

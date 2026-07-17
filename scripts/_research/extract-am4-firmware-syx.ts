@@ -22,7 +22,7 @@
  *   samples/captured/decoded/am4-firmware-extracted-meta.json
  *     — envelope structure summary + magic-byte verification.
  *
- * Cookbook: the 8→7 septet unpack here matches
+ * Primitives: the 8→7 septet unpack here matches
  * `[[septet-21bit-byte2-mask-preservation]]` for byte ordering.
  */
 

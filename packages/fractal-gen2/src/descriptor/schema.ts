@@ -101,6 +101,12 @@ export function buildBlocks(): Record<string, BlockSchema> {
   }> = {};
   for (const key of Object.keys(KNOWN_PARAMS)) {
     const param = KNOWN_PARAMS[key as keyof typeof KNOWN_PARAMS] as AxeFxIIParam;
+    // NOTE: this schema is keyed by GROUP slug ("amp"), not by instance, so
+    // it does not vary by config even on a reduced-instance device like the
+    // AX8 (Amp 1 still exists there; only the Amp 2 INSTANCE is absent).
+    // Instance-level availability (e.g. AX8 lacking Amp 2 / Reverb 2) is
+    // filtered in `buildBlockTypes()` below and enforced per-call in the
+    // writer/reader's `resolveBlockWithInstance` (see `descriptor/config.ts`).
     const block = param.block;
     const name = param.name;
     blocks[block] ??= { params: {}, aliases: {}, groupCode: param.groupCode.toUpperCase() };
@@ -175,9 +181,10 @@ function collectAutoAliases(param: AxeFxIIParam, canonicalName: string): string[
 // `set_block` lets the LLM pass either the display name ("Amp 1") or
 // the block-slug ("amp"); the descriptor maps both → effectId.
 
-export function buildBlockTypes(): Record<string, BlockTypeMeta> {
+export function buildBlockTypes(isBlockAvailable?: (block: AxeFxIIBlock) => boolean): Record<string, BlockTypeMeta> {
   const result: Record<string, BlockTypeMeta> = {};
   for (const block of AXE_FX_II_BLOCKS) {
+    if (isBlockAvailable !== undefined && !isBlockAvailable(block)) continue;
     const slug = block.name.toLowerCase();
     result[slug] = {
       wire_value: block.id,
@@ -229,7 +236,7 @@ export function findBlockBySlug(slug: string): AxeFxIIBlock | undefined {
 // Accepts integer or all-digits string. No letter codes (that's the
 // AM4 A01..Z04 encoding).
 
-export function parseAxeFxIILocation(location: string | number): number {
+export function parseAxeFxIILocation(location: string | number, deviceLabel = 'Fractal Axe-Fx II XL+'): number {
   let n: number;
   if (typeof location === 'number') {
     n = location;
@@ -238,8 +245,8 @@ export function parseAxeFxIILocation(location: string | number): number {
     if (!/^\d+$/.test(trimmed)) {
       throw new DispatchError(
         'bad_location',
-        'Fractal Axe-Fx II XL+',
-        `Slot '${location}' is not valid on Fractal Axe-Fx II; expected a 1-indexed display slot (1..16384), not a bank/letter code.`,
+        deviceLabel,
+        `Slot '${location}' is not valid on ${deviceLabel}; expected a 1-indexed display slot (1..16384), not a bank/letter code.`,
         { retry_action: 'Pass an integer or string-of-digits slot number (e.g. 700 for display slot 700).' },
       );
     }
@@ -248,8 +255,8 @@ export function parseAxeFxIILocation(location: string | number): number {
   if (!Number.isInteger(n) || n < 1 || n > 16384) {
     throw new DispatchError(
       'bad_location',
-      'Fractal Axe-Fx II XL+',
-      `Slot ${n} is out of range on Fractal Axe-Fx II (valid: 1..16384, 1-indexed display slot matching the device front panel).`,
+      deviceLabel,
+      `Slot ${n} is out of range on ${deviceLabel} (valid: 1..16384, 1-indexed display slot matching the device front panel; the wire's 14-bit ceiling, see the device's own preset-count note for its PHYSICAL capacity).`,
     );
   }
   return n - 1;

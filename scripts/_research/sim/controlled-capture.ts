@@ -3,7 +3,7 @@
  * to capture and auto-decode ONE isolated editor action, with no hardware.
  *
  * Three capture kinds, each closing one open gen-3 decode
- * (cookbook gen3-editor-sync-read-surface):
+ * (primitive gen3-editor-sync-read-surface):
  *
  *   routing  — drag ONE cable between two known cells. Pins the sub=0x35
  *              endpoint bytes (byte 21 rowMask / byte 22 endpoint) against a

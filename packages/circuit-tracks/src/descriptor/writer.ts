@@ -506,6 +506,18 @@ function parsePatchNumber(location: LocationRef): number {
 }
 
 /**
+ * Device-facing name for a 0-based wire pack index: wire 0 → "Pack 1".
+ *
+ * Every user-facing string about a pack goes through this. The wire is 0-based
+ * and the front panel is 1-based, and an off-by-one here means a receipt that
+ * names the wrong pack — on a destructive write, the receipt is the only thing
+ * telling the user what was just overwritten.
+ */
+function packLabel(pack: number | undefined): string {
+  return `Pack ${(pack ?? 0) + 1}`;
+}
+
+/**
  * Overwrite gate for a PROJECT slot (cf. `docs/SAFE-EDIT-WORKFLOW.md`). The
  * Circuit's project slots are readable, so the gate is occupancy-driven rather
  * than a blanket refuse-by-default: an EMPTY slot is written without friction;
@@ -515,21 +527,29 @@ function parsePatchNumber(location: LocationRef): number {
  * formats into the canonical refusal text. Returns a short note (for the success
  * receipt) when the write is allowed to proceed. Costs one slot READ on the
  * non-confirmed path only.
+ *
+ * The gate reads `ctx.pack` — the SAME field the write reads — so it can never
+ * check one pack's occupancy while the write lands on another. Do not add a
+ * `pack` PARAMETER here: a parameter can be passed at the write and forgotten
+ * at the gate, and that divergence is a silent clobber (the gate clears an
+ * empty Pack 1 slot while the write destroys a project on Pack 5). Pinned by
+ * the divergence golden in `scripts/verify-circuit-pack-gate.ts`.
  */
 async function gateProjectOverwrite(
   ctx: DispatchCtx, slot: number, confirmOverwrite: boolean | undefined,
 ): Promise<string> {
-  if (confirmOverwrite) return `Overwrite authorized by the user for project slot ${slot}.`;
-  const probe = await probeProjectSlot(ctx.conn, slot, { reconnect: ctx.reconnect });
+  const where = packLabel(ctx.pack);
+  if (confirmOverwrite) return `Overwrite authorized by the user for project slot ${slot} on ${where}.`;
+  const probe = await probeProjectSlot(ctx.conn, slot, { pack: ctx.pack, reconnect: ctx.reconnect });
   if (probe.status === 'empty') {
-    return `Project slot ${slot} was read-checked and is empty, nothing to overwrite.`;
+    return `Project slot ${slot} on ${where} was read-checked and is empty, nothing to overwrite.`;
   }
   if (probe.status === 'occupied') {
     const what = probe.name || `Project ${slot + 1}`;
     throw new DispatchError(
       'overwrite_confirmation_required',
       DEVICE_LABEL,
-      `Project slot ${slot} already holds "${what}" (the device shows it as "Project ${slot + 1}"). ` +
+      `Project slot ${slot} on ${where} already holds "${what}" (the device shows it as "Project ${slot + 1}"). ` +
       `Writing here OVERWRITES that project permanently. Tell the user what is stored there and ask before ` +
       `replacing it, then re-call with confirm_overwrite:true. To keep both, pick an empty slot instead.`,
       { retry_action: `Re-call with confirm_overwrite:true to replace "${what}", or choose an empty slot.` },
@@ -540,7 +560,7 @@ async function gateProjectOverwrite(
   throw new DispatchError(
     'overwrite_confirmation_required',
     DEVICE_LABEL,
-    `Could not read project slot ${slot} to check whether it is occupied (${probe.error}), so the upload is held ` +
+    `Could not read project slot ${slot} on ${where} to check whether it is occupied (${probe.error}), so the upload is held ` +
     `rather than risk overwriting a stored project. Reconnect_midi and retry so the slot can be read first; or, ` +
     `if the user wants to write slot ${slot} regardless, re-call with confirm_overwrite:true.`,
     { retry_action: `reconnect_midi and retry, or re-call with confirm_overwrite:true to write regardless.` },
@@ -759,7 +779,7 @@ export const writer: DeviceWriter = {
         ok: true, mode: 'ncs_upload', status: 'dry_run',
         info:
           `DRY RUN: nothing was sent (no reads, no gate, no transfer). "${plan.pattern_name}" authored cleanly against the template. ` +
-          `Would write project slot ${up.slot} (shown as "Project ${up.slot + 1}") after the overwrite gate. Tracks: ${tracksDesc}.${dryScaleNote}` +
+          `Would write project slot ${up.slot} (shown as "Project ${up.slot + 1}") on ${packLabel(ctx.pack)} after the overwrite gate. Tracks: ${tracksDesc}.${dryScaleNote}` +
           ((authored.flips_applied ?? 0) > 0 ? ` Sample flips: ${authored.flips_applied}.` : '') +
           (authored.flip_warnings && authored.flip_warnings.length > 0 ? ` Flip warnings: ${authored.flip_warnings.join('; ')}.` : '') +
           (authored.unrouted > 0 ? ` ${authored.unrouted} event(s) could not be placed.` : '') +
@@ -772,7 +792,7 @@ export const writer: DeviceWriter = {
     // through; an occupied one refuses unless the user authorized the overwrite.
     const gateNote = await gateProjectOverwrite(ctx, up.slot, up.confirm_overwrite);
 
-    const res = await uploadProjectTransport(ctx.conn, buf, up.slot, { reconnect: ctx.reconnect });
+    const res = await uploadProjectTransport(ctx.conn, buf, up.slot, { pack: ctx.pack, reconnect: ctx.reconnect });
     if (!res.ok) {
       return { ok: false, mode: 'ncs_upload', status: 'error', warning: `Upload failed: ${res.error}.` };
     }
@@ -809,9 +829,9 @@ export const writer: DeviceWriter = {
       // back is a follow-up. The INFO text states this so the receipt is honest.
       source: 'device_confirmed',
       info:
-        `Uploaded "${plan.pattern_name}" to project slot ${up.slot} (${res.blocks} blocks, all frames acked; ` +
+        `Uploaded "${plan.pattern_name}" to project slot ${up.slot} on ${packLabel(ctx.pack)} (${res.blocks} blocks, all frames acked; ` +
         `the device's final CRC verdict is not yet read back). ${gateNote} ` +
-        `Tracks written: ${tracksDesc}.${scaleNote}${lengthNote}${flipNote}${flipWarnNote} On the device: Projects view, load project slot ${up.slot}, ` +
+        `Tracks written: ${tracksDesc}.${scaleNote}${lengthNote}${flipNote}${flipWarnNote} On the device: select ${packLabel(ctx.pack)}, then Projects view, load project slot ${up.slot}, ` +
         `shown as "Project ${up.slot + 1}" (the device numbers projects from 1).` +
         (authored.unrouted > 0
           ? ` Note: ${authored.unrouted} event(s) could not be placed (a ch10 note that is not a pad, or a chord past the 6-note slot limit).`
@@ -886,12 +906,12 @@ export const writer: DeviceWriter = {
           `DRY RUN: nothing was sent (no reads, no gate, no transfer). The ${sections.length}-section arrangement authored cleanly ` +
           `and FITS: ${slotDesc}. Advance: ${advanceDesc}. Tracks: ${tracksDesc}.${scaleNote}` +
           (unrouted > 0 ? ` ${unrouted} event(s) could not be placed.` : '') +
-          ` Would write project slot ${up.slot} (shown as "Project ${up.slot + 1}") after the overwrite gate. Re-call without dry_run to write it.`,
+          ` Would write project slot ${up.slot} (shown as "Project ${up.slot + 1}") on ${packLabel(ctx.pack)} after the overwrite gate. Re-call without dry_run to write it.`,
       };
     }
 
     const gateNote = await gateProjectOverwrite(ctx, up.slot, up.confirm_overwrite);
-    const sent = await uploadProjectTransport(ctx.conn, buf, up.slot, { reconnect: ctx.reconnect });
+    const sent = await uploadProjectTransport(ctx.conn, buf, up.slot, { pack: ctx.pack, reconnect: ctx.reconnect });
     if (!sent.ok) {
       return { ok: false, mode: 'ncs_upload' as const, status: 'error', warning: `Upload failed: ${sent.error}.` };
     }
@@ -901,10 +921,10 @@ export const writer: DeviceWriter = {
       status: 'uploaded',
       source: 'device_confirmed',
       info:
-        `Uploaded a ${sections.length}-section arrangement to project slot ${up.slot} (${sent.blocks} blocks, all frames acked; ` +
+        `Uploaded a ${sections.length}-section arrangement to project slot ${up.slot} on ${packLabel(ctx.pack)} (${sent.blocks} blocks, all frames acked; ` +
         `the device's final CRC verdict is not yet read back). ${gateNote} ` +
         `Sections: ${slotDesc}. Advance: ${advanceDesc}. Tracks written: ${tracksDesc}.${scaleNote} ` +
-        `On the device: Projects view, load slot ${up.slot}, shown as "Project ${up.slot + 1}".` +
+        `On the device: select ${packLabel(ctx.pack)}, then Projects view, load slot ${up.slot}, shown as "Project ${up.slot + 1}".` +
         (unrouted > 0 ? ` Note: ${unrouted} event(s) could not be placed.` : ''),
     };
   },
@@ -946,7 +966,7 @@ export const writer: DeviceWriter = {
       info:
         `Uploaded "${filename}" to sample slot ${slot + 1} (device shows 1..64; wire slot ${slot}), ${r.blocks} blocks, all frames acked. ` +
         `${r.note} ` +
-        `This OVERWROTE sample slot ${slot + 1} in the current Pack; its previous sample is gone (overwrite was authorized via confirm_overwrite). ` +
+        `This OVERWROTE sample slot ${slot + 1} in Pack 1 (the sample path is not pack-aware yet, so it always targets Pack 1 regardless of the pack selected on the device); its previous sample is gone (overwrite was authorized via confirm_overwrite). ` +
         `On the device: select any Drum track, open Sample (two pages of 32), the new sample is at position ${slot + 1}. ` +
         `The device's final CRC verdict is not read back yet.`,
     };
@@ -979,7 +999,7 @@ export const writer: DeviceWriter = {
     // busy". Refresh it FIRST so the idle/suspend case self-heals without a manual
     // reconnect_midi, and a subsequent no-ACK is genuinely a busy/held device.
     const conn = ctx.reconnect ? ctx.reconnect() : ctx.conn;
-    const r = await uploadProjectTransport(conn, project, slot, { reconnect: ctx.reconnect });
+    const r = await uploadProjectTransport(conn, project, slot, { pack: ctx.pack, reconnect: ctx.reconnect });
     if (!r.ok) {
       return {
         ok: false, slot, blocks: r.blocks, info: '',
@@ -991,9 +1011,9 @@ export const writer: DeviceWriter = {
       // The project file-transfer is hardware-confirmed end-to-end (2026-06-18);
       // every frame is acked. The device's final CRC verdict is not read back.
       info:
-        `Uploaded a ${NCS_FILE_SIZE}-byte project to slot ${slot} (${r.blocks} blocks, all frames acked; ` +
+        `Uploaded a ${NCS_FILE_SIZE}-byte project to slot ${slot} on ${packLabel(ctx.pack)} (${r.blocks} blocks, all frames acked; ` +
         `the device's final CRC verdict is not yet read back). ${gateNote} ` +
-        `On the device: Projects view, load project slot ${slot}, shown as "Project ${slot + 1}" ` +
+        `On the device: select ${packLabel(ctx.pack)}, then Projects view, load project slot ${slot}, shown as "Project ${slot + 1}" ` +
         `(the device numbers projects from 1). Each drum track plays whatever sample is assigned in ` +
         `Drum track > Sample, so load the matching kit (upload_sample / upload_kit) and assign D1..D4.`,
     };

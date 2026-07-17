@@ -1,0 +1,47 @@
+{
+  "name": "openrig",
+  "version": "0.7.0",
+  "description": "A portable JSON schema for a musician's rig: typed audio + MIDI topology, per-device capabilities, and editable cross-device bindings. Pure TypeScript, zero runtime dependencies.",
+  "license": "Apache-2.0",
+  "author": "Stephen Staker <stephenstaker@gmail.com>",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema/rig.schema.json": "./schema/rig.schema.json"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "midi",
+    "rig",
+    "topology",
+    "graph",
+    "music",
+    "gear",
+    "openrig"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx test/run-all.ts",
+    "preflight": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

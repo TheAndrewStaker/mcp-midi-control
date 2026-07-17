@@ -85,8 +85,8 @@ table a model byte uses.
 ## 3. Divergence guardrails
 
 These are the over-generalizations that turn a reuse into a silent
-mis-write. Each has file-cited evidence in the codec cookbook's `_negative/`
-corpus under `packages/fractal-midi/docs/research/cookbook/`.
+mis-write. Each has file-cited evidence in the codec primitives corpus' `_negative/`
+corpus under `packages/fractal-midi/docs/research/primitives/`.
 
 - **G1: fn=0x1F is not one shape.** Axe-Fx II is whole-preset, no payload,
   one frame. AM4 is per block, effectId payload required, state-broadcast
@@ -161,6 +161,6 @@ scene model, the descriptor-not-tools shape, the safe-edit gates) and the
 extraction workflow (editor binary pattern-scan, editor layout assets for
 labels), not the wire.
 
-The cookbook's job is to tell you which primitives a new device must re-mine
+The primitives corpus' job is to tell you which primitives a new device must re-mine
 versus reuse. When that line is clear, adding a device on an existing codec
 is a config file, and adding a new codec is a new package.

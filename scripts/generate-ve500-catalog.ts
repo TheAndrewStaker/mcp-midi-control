@@ -123,9 +123,13 @@ interface RawBlock {
   child: RawBlock[] | RawParam[];
 }
 
-// --- section name -> clean block id ---
-function blockId(section: string): string {
-  const s = section.replace(/^Patch/, '');
+// --- section suffix (root prefix already stripped) -> clean block id ---
+// Shared between the Temporary tree ("Patch..." sections) and the System tree
+// ("System..." sections): several System sections reuse the SAME struct as a
+// Temporary section verbatim (e.g. SystemEH === PatchEH, address_map.js:556),
+// so the suffix vocabulary is identical; System-only leaf sections (Common,
+// MIDI, USB, TUNER, PREF, INPUT/OUTPUT + their EQs) are added alongside.
+function sectionSuffixId(suffix: string): string {
   const direct: Record<string, string> = {
     Common: 'common',
     BEND: 'bend',
@@ -145,16 +149,36 @@ function blockId(section: string): string {
     CTL: 'ctl',
     ASSIGN_COM: 'assign_common',
     LOOP: 'loop',
+    // System-only leaf sections (address_map.js:538-568)
+    MIDI: 'midi',
+    USB: 'usb',
+    TUNER: 'tuner',
+    PREF: 'pref',
+    INPUT: 'input',
+    OUTPUT: 'output',
   };
-  if (direct[s]) return direct[s];
+  if (direct[suffix]) return direct[suffix];
   let m: RegExpMatchArray | null;
-  if ((m = s.match(/^LFX_HRM(\d)(_MIDI)?$/)))
+  if ((m = suffix.match(/^LFX_HRM(\d)(_MIDI)?$/)))
     return 'harmony' + m[1] + (m[2] ? '_midi' : '');
-  if ((m = s.match(/^LFX_USRINT(\d)$/))) return 'user_interval' + m[1];
-  if ((m = s.match(/^FX(\d)$/))) return 'fx' + m[1];
-  if ((m = s.match(/^REV(\d)$/))) return 'reverb' + m[1];
-  if ((m = s.match(/^ASSIGN(\d)$/))) return 'assign' + m[1];
-  return s.toLowerCase();
+  if ((m = suffix.match(/^LFX_USRINT(\d)$/))) return 'user_interval' + m[1];
+  if ((m = suffix.match(/^FX(\d)$/))) return 'fx' + m[1];
+  if ((m = suffix.match(/^REV(\d)$/))) return 'reverb' + m[1];
+  if ((m = suffix.match(/^ASSIGN(\d)$/))) return 'assign' + m[1];
+  if ((m = suffix.match(/^INPUT_EQ(\d)$/))) return 'input_eq' + m[1];
+  if ((m = suffix.match(/^OUTPUT_EQ(\d)$/))) return 'output_eq' + m[1];
+  return suffix.toLowerCase();
+}
+
+function blockId(section: string): string {
+  return sectionSuffixId(section.replace(/^Patch/, ''));
+}
+
+/** System sections get a `system_` prefix so they never collide with the
+ * Temporary block of the same underlying struct (e.g. SystemEH -> 'system_enhancer',
+ * distinct from the Temporary 'enhancer' block). */
+function systemBlockId(section: string): string {
+  return 'system_' + sectionSuffixId(section.replace(/^System/, ''));
 }
 
 const PREFIXES = [
@@ -194,47 +218,97 @@ interface Entry {
   max: number;
   init: number | string;
   enum_values?: Record<number, string>;
+  /** 'system' = `addr` is the FULL absolute internal address (no patch base
+   *  is added at wire-build time). Absent (default) = per-patch: `addr` is
+   *  patch-relative, add the active/user-patch base. */
+  region?: 'system';
 }
 
-const entries: Entry[] = [];
+function collectEntries(
+  root: RawBlock,
+  makeBlockId: (section: string) => string,
+  region: 'system' | undefined,
+): { entries: Entry[]; collisions: number; enumCount: number } {
+  const entries: Entry[] = [];
+  let collisions = 0;
+  let enumCount = 0;
+  for (const section of root.child as RawBlock[]) {
+    const block = makeBlockId(section.name);
+    const seen = new Set<string>();
+    for (const p of section.child as RawParam[]) {
+      let param = paramSlug(p.name);
+      if (seen.has(param)) {
+        collisions++;
+        param = `${param}_${p.addr}`; // disambiguate by relative addr
+      }
+      seen.add(param);
+      const displayName = p.name.trim(); // address_map.js:404 has a trailing space
+      const enum_values = matchEnum(displayName, p.min, p.max);
+      if (enum_values) enumCount++;
+      entries.push({
+        block,
+        param,
+        display_name: displayName,
+        section: section.name,
+        addr: root.addr + section.addr + p.addr,
+        size: p.size,
+        ofs: p.ofs,
+        min: p.min,
+        max: p.max,
+        init: p.init,
+        ...(enum_values ? { enum_values } : {}),
+        ...(region ? { region } : {}),
+      });
+    }
+  }
+  return { entries, collisions, enumCount };
+}
+
+// Temporary (per-patch) region: `root.addr` is 0x04000000 (Temporary's own
+// base, see address_map.js:576/591); entries stay PATCH-RELATIVE (as before
+// this change) because callers add the active/user-patch base at wire-build
+// time, so we subtract it back out to preserve that contract exactly.
 const temporary = map.layout.find((b) => b.name === 'Temporary');
 if (!temporary) throw new Error('Temporary block not found in editor address map');
+const temporaryPatchRelative: RawBlock = { ...temporary, addr: 0 };
+const {
+  entries,
+  collisions,
+  enumCount,
+} = collectEntries(temporaryPatchRelative, blockId, undefined);
 
-let collisions = 0;
-let enumCount = 0;
-for (const section of temporary.child as RawBlock[]) {
-  const block = blockId(section.name);
-  const seen = new Set<string>();
-  for (const p of section.child as RawParam[]) {
-    let param = paramSlug(p.name);
-    if (seen.has(param)) {
-      collisions++;
-      param = `${param}_${p.addr}`; // disambiguate by relative addr
-    }
-    seen.add(param);
-    const enum_values = matchEnum(p.name, p.min, p.max);
-    if (enum_values) enumCount++;
-    entries.push({
-      block,
-      param,
-      display_name: p.name,
-      section: section.name,
-      addr: section.addr + p.addr,
-      size: p.size,
-      ofs: p.ofs,
-      min: p.min,
-      max: p.max,
-      init: p.init,
-      ...(enum_values ? { enum_values } : {}),
-    });
-  }
-}
+// System (global) region: address_map.js:538-568. `root.addr` is 0x02000000
+// (address_map.js:577/590), kept IN so `addr` is the full absolute internal
+// address; System has no per-instance base to add at wire-build time (unlike
+// Temporary, which is re-based per user patch).
+const system = map.layout.find((b) => b.name === 'System');
+if (!system) throw new Error('System block not found in editor address map');
+const {
+  entries: systemEntries,
+  collisions: systemCollisions,
+  enumCount: systemEnumCount,
+} = collectEntries(system, systemBlockId, 'system');
 
 const blockCount = new Set(entries.map((e) => e.block)).size;
+const systemBlockCount = new Set(systemEntries.map((e) => e.block)).size;
 const banner =
   `// AUTO-GENERATED by scripts/generate-ve500-catalog.ts — DO NOT EDIT BY HAND.\n` +
   `// Source: BOSS VE-500 Editor address_map.js (the manufacturer's encoder).\n` +
-  `// ${entries.length} params across ${blockCount} active-patch sections.\n\n`;
+  `// ${entries.length} per-patch params across ${blockCount} active-patch sections,\n` +
+  `// + ${systemEntries.length} SYSTEM (global) params across ${systemBlockCount} sections.\n\n`;
+
+function renderArray(name: string, list: Entry[]): string {
+  return (
+    `export const ${name}: readonly Ve500ParamDef[] = ${JSON.stringify(
+      list,
+      null,
+      0,
+    )
+      .replace(/\},\{/g, '},\n  {')
+      .replace(/^\[/, '[\n  ')
+      .replace(/\]$/, ',\n]')} as const;\n`
+  );
+}
 
 const body =
   `export interface Ve500ParamDef {\n` +
@@ -242,24 +316,27 @@ const body =
   `  /** Clean param id within the block, e.g. 'enhance', 'type'. */\n  readonly param: string;\n` +
   `  /** Display name from the editor, e.g. 'Enhancer Enhance'. */\n  readonly display_name: string;\n` +
   `  /** Raw editor section name, e.g. 'PatchEH'. */\n  readonly section: string;\n` +
-  `  /** Patch-relative internal address (add the patch base to get the wire address). */\n  readonly addr: number;\n` +
+  `  /** Patch-relative internal address (add the patch base to get the wire address);\n` +
+  `   *  FULL ABSOLUTE address when \`region\` is 'system'. */\n  readonly addr: number;\n` +
   `  /** roland-midi Size constant (INTEGER1xN / INTEGERnx4 / PADDING|n / raw count). */\n  readonly size: number;\n` +
   `  /** Signed-value bias: display = wire - ofs. */\n  readonly ofs: number;\n` +
   `  readonly min: number;\n  readonly max: number;\n  readonly init: number | string;\n` +
   `  /** Wire-ordinal -> panel label, from the editor option tables (only when a\n` +
   `   *  named table exactly covers [min..max]). Absent = plain numeric param. */\n` +
-  `  readonly enum_values?: Readonly<Record<number, string>>;\n}\n\n` +
-  `export const VE500_PARAMS: readonly Ve500ParamDef[] = ${JSON.stringify(
-    entries,
-    null,
-    0,
-  )
-    .replace(/\},\{/g, '},\n  {')
-    .replace(/^\[/, '[\n  ')
-    .replace(/\]$/, ',\n]')} as const;\n`;
+  `  readonly enum_values?: Readonly<Record<number, string>>;\n` +
+  `  /** 'system' = \`addr\` is already the FULL absolute internal address (Setup/System\n` +
+  `   *  root + section + param); no patch base is added at wire-build time. Absent\n` +
+  `   *  (default) = per-patch: \`addr\` is patch-relative. */\n` +
+  `  readonly region?: 'system';\n}\n\n` +
+  renderArray('VE500_PARAMS', entries) +
+  `\n` +
+  renderArray('VE500_SYSTEM_PARAMS', systemEntries);
 
 writeFileSync(OUT, banner + body);
 console.log(
-  `Wrote ${entries.length} params (${blockCount} blocks, ${enumCount} with enum labels) -> ${OUT}` +
-    (collisions ? `  [${collisions} slug collisions disambiguated by addr]` : ''),
+  `Wrote ${entries.length} params (${blockCount} blocks, ${enumCount} with enum labels) + ` +
+    `${systemEntries.length} SYSTEM params (${systemBlockCount} blocks, ${systemEnumCount} with enum labels) -> ${OUT}` +
+    (collisions || systemCollisions
+      ? `  [${collisions + systemCollisions} slug collisions disambiguated by addr]`
+      : ''),
 );

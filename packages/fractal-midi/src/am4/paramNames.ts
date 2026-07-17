@@ -110,9 +110,15 @@ export const PARAM_NAMES: Readonly<Record<string, Readonly<Record<number, ParamN
     67: { name: 'geq_band_6', unit: 'amp_geq_band', displayMin: -12, displayMax: 12 },
     68: { name: 'geq_band_7', unit: 'amp_geq_band', displayMin: -12, displayMax: 12 },
     69: { name: 'geq_band_8', unit: 'amp_geq_band', displayMin: -12, displayMax: 12 },
-    77: { name: 'compressor_clarity', unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
-    82: { name: 'compressor_amount', unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
-    83: { name: 'compressor_threshold', unit: 'db', displayMin: -60, displayMax: 0 },
+    // ids 77/82/83 renamed 2026-07-15 to the UI-label-audit names (audit
+    // rows DISTORT 77/82/83) already used by the hand-authored entries;
+    // the old compressor_* names double-registered the registers (BK-106).
+    // Old names alias in PARAM_ALIASES. NB the hand entry for 77 carries
+    // displayMin 0.1 (corrected cache walk) — kept here so the cache
+    // cross-check agrees.
+    77: { name: 'clarity', unit: 'knob_0_10', displayMin: 0.1, displayMax: 10 },
+    82: { name: 'amount', unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
+    83: { name: 'threshold', unit: 'db', displayMin: -60, displayMax: 0 },
     84: { name: 'master_vol_trim', unit: 'count', displayMin: 0.1, displayMax: 10 },
     104: { name: 'high_treble', unit: 'db', displayMin: -12, displayMax: 12 },
     // 2026-05-16: DISTORT  closeout from
@@ -354,8 +360,11 @@ export const PARAM_NAMES: Readonly<Record<string, Readonly<Record<number, ParamN
     // exactly — needs the 'semitones' unit override since c=1 is
     // structurally ambiguous. Structural registration; -style
     // spot-check still required.
-    56: { name: 'shift_1', unit: 'semitones', displayMin: -24, displayMax: 24 },
-    57: { name: 'shift_2', unit: 'semitones', displayMin: -24, displayMax: 24 },
+    // ids 56/57 renamed 2026-07-15 to the UI-label-audit names already used
+    // by the hand-authored entries (BK-106 double-registration scan); old
+    // shift_1/shift_2 names alias in PARAM_ALIASES.
+    56: { name: 'voice_1_shift', unit: 'semitones', displayMin: -24, displayMax: 24 },
+    57: { name: 'voice_2_shift', unit: 'semitones', displayMin: -24, displayMax: 24 },
     // 2026-05-16: REVERB params from
     // samples/captured/decoded/am4-params-proposed.ts (Ghidra-mined
     // catalog, –83). Routed through paramNames.ts overrides
@@ -466,7 +475,9 @@ export const PARAM_NAMES: Readonly<Record<string, Readonly<Record<number, ParamN
     32: { name: 'master_feedback', unit: 'percent', displayMin: 0, displayMax: 200 },
     47: { name: 'ducker_threshold', unit: 'db', displayMin: -80, displayMax: 20 },
     48: { name: 'ducker_release', unit: 'ms', displayMin: 1, displayMax: 1000 },
-    49: { name: 'diffusor', unit: 'percent', displayMin: 0, displayMax: 100 },
+    // id 49 respelled 2026-07-15 to match the hand-authored diffuser entry
+    // (BK-106 double-registration scan); diffusor aliases in PARAM_ALIASES.
+    49: { name: 'diffuser', unit: 'percent', displayMin: 0, displayMax: 100 },
     50: { name: 'diffusion_time', unit: 'percent', displayMin: 1, displayMax: 100 },
     63: { name: 'eq_q_high_low', unit: 'count', displayMin: 0.1, displayMax: 10 },
     64: { name: 'bit_reduction', unit: 'count', displayMin: 0, displayMax: 24 },
@@ -587,11 +598,17 @@ export const PARAM_NAMES: Readonly<Record<string, Readonly<Record<number, ParamN
     11: { name: 'number_of_voices', unit: 'count', displayMin: 1, displayMax: 4 },
     15: { name: 'high_cut', unit: 'hz', displayMin: 200, displayMax: 20000 },
     21: { name: 'lfo_phase_pct', unit: 'percent', displayMin: 0, displayMax: 100 },
-    22: { name: 'lfo_rate', unit: 'hz', displayMin: 0.1, displayMax: 10 },
-    23: { name: 'width', unit: 'percent', displayMin: 0, displayMax: 100 },
+    // ids 22/23/25/26 renamed 2026-07-15 to the UI-label-audit names the
+    // hand-authored KNOWN_PARAMS entries already carry (audit rows CHORUS
+    // 22/23/25/26) — the old generator names (lfo_rate/width/lfo_freq/
+    // lfo_depth_2) double-registered the same registers under misleading
+    // names (BK-106 scan). Deliberately NOT aliased: each old name reads
+    // as a different control than the register it addressed.
+    22: { name: 'rate_right', unit: 'hz', displayMin: 0.1, displayMax: 10 },
+    23: { name: 'lfo_2_depth', unit: 'percent', displayMin: 0, displayMax: 100 },
     24: { name: 'drive', unit: 'knob_0_10', displayMin: 0.5, displayMax: 500 },
-    25: { name: 'lfo_freq', unit: 'hz', displayMin: 20, displayMax: 2000 },
-    26: { name: 'lfo_depth_2', unit: 'bipolar_percent', displayMin: -200, displayMax: 200 },
+    25: { name: 'low_cut', unit: 'hz', displayMin: 20, displayMax: 2000 },
+    26: { name: 'stereo_spread', unit: 'bipolar_percent', displayMin: -200, displayMax: 200 },
   },
   // geq Expert-Edit additions are merged into the existing geq:
   // entry above (lines ~299) — duplicate removed in cleanup.
@@ -669,8 +686,11 @@ export const PARAM_NAMES: Readonly<Record<string, Readonly<Record<number, ParamN
     //   18 (was unregistered)         → `control_taper` (enum, hand-authored in params.ts)
     //   19 (was `low_cut_frequency`)  → `inductor_bias`
     //   20 (was `inductor_bias`)      → `low_cut_frequency`
-    11: { name: 'min_frequency', unit: 'hz', displayMin: 100, displayMax: 1000 },
-    12: { name: 'max_frequency', unit: 'hz', displayMin: 500, displayMax: 5000 },
+    // ids 11/12 renamed 2026-07-15 to the UI-label-audit names already used
+    // by the hand-authored entries (BK-106 double-registration scan); old
+    // min_frequency/max_frequency names alias in PARAM_ALIASES.
+    11: { name: 'minimum_frequency', unit: 'hz', displayMin: 100, displayMax: 1000 },
+    12: { name: 'maximum_frequency', unit: 'hz', displayMin: 500, displayMax: 5000 },
     13: { name: 'q_resonance', unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
     14: { name: 'q_tracking', unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
     15: { name: 'wah_control', unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
@@ -757,8 +777,11 @@ export const PARAM_NAMES: Readonly<Record<string, Readonly<Record<number, ParamN
     // block non-Type enums skip the generator). compressor.level
     // (pidHigh=0x0000) is out-of-band hand-authored.
     10: { name: 'threshold', unit: 'db', displayMin: -60, displayMax: 20 },
-    12: { name: 'attack', unit: 'ms', displayMin: 0.1, displayMax: 100 },
-    13: { name: 'release', unit: 'ms', displayMin: 2, displayMax: 2000 },
+    // ids 12/13 renamed 2026-07-15 to the UI-label-audit names already used
+    // by the hand-authored entries (BK-106 double-registration scan); old
+    // attack/release names alias in PARAM_ALIASES.
+    12: { name: 'attack_time', unit: 'ms', displayMin: 0.1, displayMax: 100 },
+    13: { name: 'release_time', unit: 'ms', displayMin: 2, displayMax: 2000 },
     19: 'type',
     // Ratio uses the new `ratio` unit (display = internal, scale 1) so
     // Claude reads "ratio 4" as 4:1 not 4 dB. Cache c=1 default would
@@ -818,7 +841,10 @@ export const PARAM_NAMES: Readonly<Record<string, Readonly<Record<number, ParamN
     10: 'type',
     // Blocks Guide §Filter: Frequency is the filter cutoff (20..20000 Hz
     // at cache-c=1 raw). Universal control for every filter type.
-    11: { name: 'freq', unit: 'hz' },
+    // Renamed 2026-07-15 to the UI-label-audit name already used by the
+    // hand-authored entry (BK-106 double-registration scan); the old freq
+    // name aliases in PARAM_ALIASES.
+    11: { name: 'frequency', unit: 'hz' },
     // 2026-04-25: Low/High cut on the
     // filter Config page — `session-32-filter-extended.pcapng`. Cache
     // c=1 raw Hz; needs the 'hz' override since the generator default

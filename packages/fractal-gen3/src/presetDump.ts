@@ -25,7 +25,7 @@
  *    encoding a chunk envelope with a 2-byte field at offset 6 (chunk
  *    index / discriminator) followed by 3072 bytes of packed body (1024
  *    ushorts x 3-byte septet packing). Mining work captured in
- *    `fractal-midi/docs/research/cookbook/vendor-envelope-descriptor-table.md`.
+ *    `fractal-midi/docs/research/primitives/vendor-envelope-descriptor-table.md`.
  *
  * 2. **Factory-bank + on-disk export structural validation** (no hardware
  *    needed). The three III bank files at

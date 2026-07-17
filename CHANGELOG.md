@@ -8,6 +8,85 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.7.0]
+
+A new package, **OpenRig**, gives the agent a structured model of a whole
+multi-device rig instead of just one device at a time: `describe_rig` now
+returns a declared topology (nodes, cables, bindings) plus live validation
+and drift against what's actually connected, and the new `edit_rig` tool
+adds/removes/toggles cables by conversation. The agent also gains real ears:
+`measure_loudness` reads BS.1770 LUFS and true peak from any OS audio input
+(a modeler's own USB audio interface, a mic, a bus), so loudness-matching
+across scenes or devices no longer depends on eyeballing a meter that may not
+exist. Three devices get new or deeper support: Fractal **AX8** (a fractal-gen2
+config) gains `apply_preset`/`apply_setlist`, Boss **RC-600** gets live
+recall plus byte-confirmed storage reads, and Boss **VE-500** gains recall
+plus a cataloged system-parameter surface. Novation **Circuit Tracks**
+patterns and samples can now target any storage pack, not just Pack 1
+(`list_packs` lists them by name). AM4 cabinet/leveling defaults moved from
+guidance text into enforced executor behavior (BK-103b/c), closing a class of
+"the agent was told the right defaults but didn't apply them" gaps. Also
+fixes the release ZIP that shipped without the ve-500/boss-rc/roland-midi/
+openrig packages (#15).
+
+### Added
+
+- **OpenRig**: a new package (`packages/openrig`) modeling a rig as typed
+  nodes (devices) and edges (cables), with per-device capability declarations
+  and editable cross-device bindings. `describe_rig` (existing tool,
+  substantially expanded) now returns the declared manifest, a structural
+  validator (dangling cables, illegal capability assignments, MIDI-loop and
+  clock-well-formedness checks that account for which devices actually relay
+  vs. consume a signal), and presence-only drift against what's connected
+  right now. The new `edit_rig` tool adds or removes a cable, or enables/
+  disables one, against the configured manifest (`MCP_RIG_MANIFEST`).
+  Routing-aware: cycle and legality checks trace which port a signal
+  actually arrives on rather than treating any drawn ring as a cycle.
+- **`measure_loudness`**: real loudness sensing (BS.1770-4 LUFS integrated/
+  momentary, true peak) from any OS audio input, not just devices with a
+  built-in meter. K-weighting and gating verified against the BS.1770-4
+  reference tables and cross-checked against an `ffmpeg ebur128` oracle.
+  Feeds scene- and device-leveling workflows (match loudness across AM4
+  scenes, an RC-505 loop against a synth, etc.) with a measured target
+  instead of a guess.
+- **AX8** (`packages/fractal-gen2`, model byte `0x08`): `apply_preset` and
+  `apply_setlist` are un-gated (community-beta, hardware-unverified). The
+  gen-2 apply executor is now parameterized by model byte across all ~25
+  wire-builder call sites instead of hardcoding the Axe-Fx II XL+'s `0x07`,
+  closing several latent AX8 write paths that had never actually been
+  exercised.
+- **Boss RC-600**: live recall plus storage reads (memory names, ASSIGN
+  tables) decoded and byte-confirmed against real `.RC0` files.
+- **Boss VE-500**: recall plus 248 SYSTEM parameters cataloged through the
+  unified surface (no new tools).
+- **Circuit Tracks**: `list_packs` lists storage packs by name; pattern and
+  sample authoring can target any pack via `drum_binding`, not only Pack 1
+  (the codec previously assumed a single fixed pack).
+
+### Changed
+
+- AM4 cabinet/leveling defaults (BK-103b/c): opinionated cab-polish and
+  scene-leveling behavior is now enforced directly in the apply executors,
+  not left to agent guidance text that could be skipped.
+- AM4 DynaCab lineage corpus and cabinet/mic register selectors expanded;
+  a stale duplicate DynaCab quad (wrong roster order) removed.
+- The encoding-primitive corpus directory was renamed `cookbook` →
+  `primitives` throughout the codebase and docs.
+
+### Fixed
+
+- The release ZIP was missing the `ve-500`, `boss-rc`, `roland-midi`, and
+  `openrig` packages (#15); the bundling step now includes every workspace
+  package the server composes.
+- `apply_preset`'s declared `outputSchema` had drifted from its actual
+  response shape (a field added without a matching schema update), causing
+  MCP hosts that validate `structuredContent` client-side to reject
+  otherwise-successful applies. A new gate (`verify-apply-output-schema`)
+  strict-parses a maximal response literal against the schema so this class
+  of drift fails preflight instead of failing silently in the field.
+- Axe-Fx II cab parameters referenced by a non-active scene's channel are
+  now resolved correctly instead of silently targeting the wrong channel.
+
 ## [0.6.1]
 
 Maintenance and CI hardening. No new device capabilities: the codec, tools, and

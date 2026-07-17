@@ -1,20 +1,20 @@
-# Cookbook mining: ghidra-axe-edit-iii-inbound-dispatcher.txt
+# Primitives mining: ghidra-axe-edit-iii-inbound-dispatcher.txt
 
 Date: 2026-05-22
 Dump file: `fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-inbound-dispatcher.txt` (524,207 bytes)
 Source binary: `Axe-Edit III.exe`
-Mining agent: Senior RE engineer (cookbook-mine sub-agent)
+Mining agent: Senior RE engineer (primitives-mine sub-agent)
 
 ## Headline
 
-The dump exposes two top-level structures of cookbook interest:
+The dump exposes two top-level structures of primitives interest:
 
 1. **`FUN_1401f0f10` (L60-L2285)** is the III editor's **async-workflow registry**. It registers ~60 named workflows. Each workflow declares (a) two sequential workflow-state IDs (e.g. `3,4` / `5,6` / ... up to `0x73,0x74`), (b) a set of fn-bytes the workflow consumes from the device's inbound stream (via `FUN_1401bac70(workflowBuf, fnByte, 1)`), and (c) a UTF-8 workflow name (via `FUN_14005faa0`). This is the per-workflow inbound fn-byte routing table.
 2. **`FUN_1401f4390` (L10986-L13097)** is the **workflow state-machine executor**. The big `switch(iVar27)` at L11215 dispatches on the next workflow state (the IDs registered in step 1). Each state composes a payload, calls `FUN_14033ec70` (the fn=0x01 builder per [[iii-fn01-set-parameter-envelope]]), and many cases pick the action14 via a model-byte chained-equality block. This is the structural counterpart of [[iii-fn01-action-code-per-model-byte]].
 
 There is NO `switch(fnByte)` style inbound dispatcher of the form II ships. III dispatches inbound by registry lookup, not by switch. A future agent searching for a fn-byte switch will not find one in this binary.
 
-## 1. Instances of existing cookbook primitives
+## 1. Instances of existing primitives
 
 ### 1.1 [[iii-host-emitter-fn-table]]
 
@@ -149,11 +149,11 @@ Proposed frontmatter:
 name: iii-async-workflow-fn-registry
 class: dispatch-context
 status: matched-singleton
-discovered: 2026-05-22 (cookbook mine of ghidra-axe-edit-iii-inbound-dispatcher.txt)
+discovered: 2026-05-22 (primitives mine of ghidra-axe-edit-iii-inbound-dispatcher.txt)
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-async-workflow-fn-registry
+golden: scripts/primitives-verify.ts#case-iii-async-workflow-fn-registry
 relates_to: [iii-host-emitter-fn-table, iii-fn01-set-parameter-envelope, iii-multiproduct-editor-binary]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-inbound-dispatcher.txt
@@ -181,11 +181,11 @@ Proposed frontmatter:
 name: iii-workflow-state-machine-executor
 class: dispatch-context
 status: matched-singleton
-discovered: 2026-05-22 (cookbook mine of ghidra-axe-edit-iii-inbound-dispatcher.txt)
+discovered: 2026-05-22 (primitives mine of ghidra-axe-edit-iii-inbound-dispatcher.txt)
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-workflow-state-machine-executor
+golden: scripts/primitives-verify.ts#case-iii-workflow-state-machine-executor
 relates_to: [iii-async-workflow-fn-registry, iii-fn01-action-code-per-model-byte, iii-fn01-set-parameter-envelope, iii-multiproduct-editor-binary]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-inbound-dispatcher.txt
@@ -213,7 +213,7 @@ Proposed frontmatter:
 name: iii-fn-byte-switch-as-inbound-dispatcher
 class: dispatch-context
 status: non-matching
-discovered: 2026-05-22 (cookbook mine of ghidra-axe-edit-iii-inbound-dispatcher.txt)
+discovered: 2026-05-22 (primitives mine of ghidra-axe-edit-iii-inbound-dispatcher.txt)
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
@@ -243,7 +243,7 @@ consumed_in:
 
 ## Notes on consumed_in: path updates
 
-Each existing-primitive entry's `consumed_in:` block should add one line citing this dump (paths above in §1.1-§1.4). I have NOT modified any cookbook files; the founder reviews and promotes.
+Each existing-primitive entry's `consumed_in:` block should add one line citing this dump (paths above in §1.1-§1.4). I have NOT modified any primitives files; the founder reviews and promotes.
 
 ## Out-of-scope but flagged
 

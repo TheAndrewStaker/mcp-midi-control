@@ -34,7 +34,7 @@
  *   6. hand-off to descriptor.writer / descriptor.reader      [per family]
  */
 
-export { openCtx, requireDevice } from './dispatcher/core.js';
+export { assertPackSupported, openCtx, openOfflineCtx, requireDevice, toWirePack, withHandleRetry } from './dispatcher/core.js';
 export {
   encodeSetParam,
   encodeValue,
@@ -51,7 +51,34 @@ export {
   listParams,
   type ListParamsEntry,
   type RigDevice,
+  type RigManifestSummary,
 } from './dispatcher/discovery.js';
+export {
+  descriptorToSeed,
+  bootstrapRigFromRegistry,
+  loadRigManifest,
+  clearRigManifestCache,
+  writeRigManifest,
+  rigManifestSource,
+  executeRigEdit,
+  loadRigInventory,
+  clearRigInventoryCache,
+  RIG_MANIFEST_ENV,
+  RIG_INVENTORY_ENV,
+  type LoadedRigManifest,
+  type RigEditExecResult,
+  type LoadedInventory,
+} from './openrig/index.js';
+export {
+  getRigLinks,
+  deriveRigLinks,
+  resolveRigLinks,
+  rigLinksSource,
+  trackForDevice,
+  clearRigLinksCache,
+  RIG_LINKS_ENV,
+  type RigLinks,
+} from './rigLinks.js';
 export {
   executeGetParam,
   executeGetParams,
@@ -73,6 +100,7 @@ export {
   executeExportStoredPreset,
   executeGetPreset,
   executePortPreset,
+  executeReadPackDirectory,
   executeReadSampleDirectory,
   executeRestorePreset,
   type PortPresetResult,

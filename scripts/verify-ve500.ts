@@ -13,17 +13,20 @@ import {
 } from 'roland-midi/shared';
 import {
   VE500_PARAMS,
+  VE500_SYSTEM_PARAMS,
   findParam,
   buildSetParam,
   buildGetParam,
   buildSavePreset,
   buildCommMode,
+  buildSwitchPatch,
   saveAckMatcher,
   decodeParamReply,
   TEMP_PATCH_ADDR,
 } from 'roland-midi/ve-500';
 import { VE500_DESCRIPTOR } from '@mcp-midi-control/ve-500/descriptor.js';
 import { writer } from '@mcp-midi-control/ve-500/descriptor/writer.js';
+import { reader } from '@mcp-midi-control/ve-500/descriptor/reader.js';
 import { collectApplyPresetPreflight } from '@mcp-midi-control/core/protocol-generic/dispatcher/preflight.js';
 
 let failures = 0;
@@ -194,18 +197,66 @@ check(`catalog params checked (>800)`, checkedParams > 800, `got ${checkedParams
   const u99 = pcBytes(99);
   check('U99 (n=99) sends bare PC 98', u99.length === 1 && u99[0][0] === 0xc0 && u99[0][1] === 98);
 
-  // bad location + gated presets reject (switchPreset is async — await rejections)
+  // bad location rejects (switchPreset is async; await rejections)
   const noop = { conn: { send: () => {} } } as never;
   let badThrew = false;
   await writer.switchPreset!(noop, 'Z9').catch(() => {
     badThrew = true;
   });
   check('bad location rejected', badThrew);
-  let presetThrew = false;
-  await writer.switchPreset!(noop, 'P01').catch(() => {
-    presetThrew = true;
-  });
-  check('preset (P01) recall is gated (undecoded bank)', presetThrew);
+}
+
+// ── 6b. Factory PRESET recall (P01-P50): SysEx "Current Patch Number" write ──
+// Decoded 2026-07-09 from the editor's OWN patch-switch handler (preset_patch.js:126,
+// address_map.js:488-490/570-576), NOT a Program Change. See roland-midi/ve-500/patch.ts.
+// Community-beta: hardware-unverified (the user-memory PC path above IS hardware-confirmed).
+{
+  // P01 -> index 99 (98 users + 1). Hand-verified frame: addr=0x00000000 -> 7bitize -> 00 00 00 00;
+  // INTEGER2x4(99) = [6,3] (99 = 0x63); body = 00 00 00 00 06 03; sum=9; cksum=(128-9)&0x7F=0x77.
+  const p01 = hex(buildSwitchPatch(99));
+  const p01Expect = 'F0 41 10 00 00 00 55 12 00 00 00 00 06 03 77 F7';
+  check('buildSwitchPatch(99) == P01 golden', p01 === p01Expect, `got ${p01}`);
+
+  // U01 -> index 0: same register, value 0.
+  const u01 = hex(buildSwitchPatch(0));
+  const u01Expect = 'F0 41 10 00 00 00 55 12 00 00 00 00 00 00 00 F7';
+  check('buildSwitchPatch(0) == U01 golden (register also recalls users)', u01 === u01Expect, `got ${u01}`);
+
+  function sentFrames(loc: string | number): number[][] {
+    const sent: number[][] = [];
+    const ctx = { conn: { send: (b: number[]) => sent.push(b) } } as never;
+    void writer.switchPreset!(ctx, loc);
+    return sent;
+  }
+
+  // P01 recall is now UN-GATED: writer.switchPreset sends the SysEx write, not a throw.
+  const p01Frames = sentFrames('P01');
+  check('switch_preset(P01) sends exactly one frame', p01Frames.length === 1, JSON.stringify(p01Frames));
+  check(
+    'switch_preset(P01) frame == buildSwitchPatch(99)',
+    p01Frames[0] && hex(p01Frames[0]) === p01Expect,
+    JSON.stringify(p01Frames.map(hex)),
+  );
+  check('switch_preset(P01) sends NO Program Change (no 0xC0)', !p01Frames.some((m) => (m[0] & 0xf0) === 0xc0));
+
+  // P50 -> index 148 (98 + 50).
+  const p50Frames = sentFrames('P50');
+  check('switch_preset(P50) frame == buildSwitchPatch(148)', p50Frames[0] && hex(p50Frames[0]) === hex(buildSwitchPatch(148)));
+
+  // Out-of-range preset numbers still reject.
+  let p51Threw = false;
+  await writer.switchPreset!({ conn: { send: () => {} } } as never, 'P51').catch(() => { p51Threw = true; });
+  check('switch_preset(P51) rejected (only P01-P50 exist)', p51Threw);
+
+  // save_preset still refuses PRESET targets (factory/read-only); un-gating recall
+  // must not un-gate writing to a factory preset.
+  let saveRejected = false;
+  await writer.savePreset!({ conn: { send: () => {} } } as never, 'P01').catch(() => { saveRejected = true; });
+  check('save_preset(P01) still rejected (factory/read-only)', saveRejected);
+
+  // User-memory recall is UNCHANGED: still a bare Program Change, not the SysEx write.
+  const u10Frames = sentFrames('U10');
+  check('switch_preset(U10) still sends bare PC (unchanged, hardware-confirmed path)', u10Frames[0]?.[0] === 0xc0 && u10Frames[0]?.[1] === 9);
 }
 
 // ── 7. apply_preset: example_spec validates + applyPreset emits valid frames ──
@@ -347,6 +398,100 @@ check(`catalog params checked (>800)`, checkedParams > 800, `got ${checkedParams
   const { ctx: rejCtx } = mockCtx('resolve');
   await writer.savePreset!(rejCtx, 'P01').catch(() => { presetRejected = true; });
   check('savePreset rejects a preset target (P01)', presetRejected);
+}
+
+// ── 10. buildSwitchPatch: structural sweep over the FULL 0..148 recall range ──
+{
+  let allOk = true;
+  for (let n = 0; n <= 148; n++) {
+    const frame = buildSwitchPatch(n);
+    const bodyOk =
+      frame[0] === 0xf0 &&
+      frame[frame.length - 1] === 0xf7 &&
+      frame.slice(1, -1).every((b) => b <= 0x7f);
+    const body = frame.slice(8, frame.length - 2);
+    const cksumOk = frame[frame.length - 2] === rolandChecksum(body);
+    const rt = decodeWire(Size.INTEGER2x4, frame.slice(12, 14), 0);
+    if (!bodyOk || !cksumOk || rt !== n) {
+      allOk = false;
+      check(`buildSwitchPatch(${n})`, false, `bodyOk=${bodyOk} cksumOk=${cksumOk} rt=${rt}`);
+      break;
+    }
+  }
+  check('buildSwitchPatch round-trips MIDI-safe+checksum-correct over 0..148', allOk);
+}
+
+// ── 11. SYSTEM (global) catalog: address-region math + set_param/get_param reuse ──
+// Decoded 2026-07-09: address_map.js's System tree (base 0x02000000, lines 538-568),
+// walked by the SAME generator that produces VE500_PARAMS (scripts/generate-ve500-catalog.ts),
+// with `region:'system'` marking `addr` as the FULL absolute address (no patch base added).
+{
+  check(
+    'catalog produced a substantial SYSTEM param set (>200)',
+    VE500_SYSTEM_PARAMS.length > 200,
+    `got ${VE500_SYSTEM_PARAMS.length}`,
+  );
+  const sysBlockCount = new Set(VE500_SYSTEM_PARAMS.map((p) => p.block)).size;
+  check('SYSTEM catalog spans >20 blocks', sysBlockCount > 20, `got ${sysBlockCount}`);
+  check('every SYSTEM entry is tagged region:"system"', VE500_SYSTEM_PARAMS.every((p) => p.region === 'system'));
+  check('no SYSTEM block collides with a per-patch block id', VE500_SYSTEM_PARAMS.every((p) => !VE500_PARAMS.some((t) => t.block === p.block)));
+
+  // Hand-verified anchor: SystemMIDI "MIDI Rx Channel" (address_map.js:396), absolute
+  // addr = System root 0x02000000 + SystemMIDI 0x00000800 + param 0x0 = 0x02000800.
+  // _7bitize(0x02000800) -> 10 00 10 00 (independently hand-computed); INTEGER1x5(3) = [03];
+  // body = 10 00 10 00 03; sum=0x23=35; cksum=(128-35)&0x7F=0x5D.
+  const rxCh = findParam('system_midi', 'midi_rx_channel');
+  check('system_midi.midi_rx_channel resolves', !!rxCh);
+  if (rxCh) {
+    check('system_midi.midi_rx_channel absolute addr == 0x02000800', rxCh.addr === 0x02000800, `got 0x${rxCh.addr.toString(16)}`);
+    const frame = hex(buildSetParam(rxCh, 3));
+    const expect = 'F0 41 10 00 00 00 55 12 10 00 10 00 03 5D F7';
+    check('DT1 system_midi.midi_rx_channel=3', frame === expect, `got ${frame}`);
+    check('read-back round-trips', decodeParamReply(rxCh, buildSetParam(rxCh, 3)) === 3);
+
+    // Reused via the SAME generic writer path as any per-patch param (no new code).
+    const wbuilt = writer.buildSetParam!('system_midi', 'midi_rx_channel', 3);
+    check('writer.buildSetParam(system_midi.midi_rx_channel) == codec', hex(wbuilt) === expect);
+
+    // Reused via the SAME descriptor block map (list_params / set_param dispatch).
+    const schema = VE500_DESCRIPTOR.blocks['system_midi']?.params['midi_rx_channel'];
+    check('descriptor exposes system_midi.midi_rx_channel', !!schema);
+    check('schema encode/decode round-trips (3)', schema?.encode(3) === 3 && schema?.decode(3) === 3);
+
+    // reader.getParam (the get_param dispatch path) also reuses the SAME
+    // generic machinery for a SYSTEM param, with no reader.ts code changes.
+    const readCtx = {
+      conn: {
+        send: () => {},
+        receiveSysExMatching: () => Promise.resolve(buildSetParam(rxCh, 3)),
+      },
+      descriptor: VE500_DESCRIPTOR,
+    } as never;
+    const readResult = await reader.getParam!(readCtx, 'system_midi', 'midi_rx_channel');
+    check('reader.getParam(system_midi.midi_rx_channel) == 3', readResult.wire_value === 3, JSON.stringify(readResult));
+  }
+
+  // Structural invariants over EVERY settable SYSTEM param (min/mid/max, MIDI-safe + checksum).
+  let sysChecked = 0;
+  for (const def of VE500_SYSTEM_PARAMS) {
+    sysChecked++;
+    const samples = [def.min, Math.round((def.min + def.max) / 2), def.max];
+    for (const v of samples) {
+      const frame = buildSetParam(def, v);
+      const bodyOk =
+        frame[0] === 0xf0 &&
+        frame[frame.length - 1] === 0xf7 &&
+        frame.slice(1, -1).every((b) => b <= 0x7f);
+      const body = frame.slice(8, frame.length - 2);
+      const cksumOk = frame[frame.length - 2] === rolandChecksum(body);
+      const rt = decodeParamReply(def, frame);
+      if (!bodyOk || !cksumOk || rt !== v) {
+        check(`SYSTEM param ${def.block}.${def.param} v=${v}`, false, `bodyOk=${bodyOk} cksumOk=${cksumOk} rt=${rt} frame=${hex(frame)}`);
+        break;
+      }
+    }
+  }
+  check('every SYSTEM catalog param checked', sysChecked === VE500_SYSTEM_PARAMS.length);
 }
 
 if (failures) {

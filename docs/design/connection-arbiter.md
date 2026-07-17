@@ -1,6 +1,12 @@
 # Connection arbiter: design
 
-Status: **sound, ready to build (revised after a 5-lens design review).** The
+Status: **Phase A (R2 handle-health) SHIPPED 2026-07-09.** Phase B (R1
+per-endpoint serialization + R3 contention/cancellation) is the remaining
+forward-looking orchestration foundation, not started. See "Phase A: shipped
+2026-07-09" under Phasing below for what landed, where, and what Phase B
+still needs to build on top of it.
+
+Status (pre-Phase-A, kept for context): **sound, ready to build (revised after a 5-lens design review).** The
 mechanical-but-dangerous half of the multi-device song-orchestration vision
 (Decision 2 in [device-archetypes-and-transport.md](device-archetypes-and-transport.md)):
 the agent reasons about *what* each device should do; the arbiter owns *that the
@@ -261,9 +267,49 @@ in-flight op ("busy: apply_pattern started 4 s ago").
 
 ## Phasing
 
-- **Phase A: health/liveness (R2).** In-band reconnect-and-retry-once generalized
-  across devices + the free stale-counter reconnect. No lock, no seam change.
-  Ships the reliability win immediately; fixes the handle-fault class.
+- **Phase A: health/liveness (R2), SHIPPED 2026-07-09.** In-band
+  reconnect-and-retry-once, generalized into
+  `packages/core/src/server-shared/handleHealth.ts`:
+  - `isHandleHealthy(conn)`: the free, no-round-trip liveness check
+    (port-presence + `lastSendError` + the new `slowSendSuspect` flag).
+    Generalizes the bespoke copy that used to live only in
+    `circuit-tracks/ncs/uploadProject.ts`; that file now imports the shared
+    function instead of holding its own copy.
+  - `withReconnectRetry(conn, attempt, opts)`: the reconnect-and-retry-once
+    wrapper. `uploadProject.ts`'s `runUploadFramePlan` / `downloadProject`
+    (both project AND sample transfers, since `uploadSample.ts` calls the
+    same `runUploadFramePlan`) now delegate to it instead of hand-rolling the
+    sleep/reconnect/retry choreography per call site.
+  - **`ensureConnection` (`connections.ts`) runs the canary proactively**
+    before handing back a CACHED handle (connection-canary.md Layer A): a
+    replug or a handle that died mid-send on a PRIOR call self-heals on the
+    very NEXT acquire, with no probe send added. This is the seam-level
+    change: every device that goes through the registry gets it, not just
+    Circuit Tracks.
+  - **Read-path staleness participation** (connection-canary.md Layer B):
+    `uploadProject`/`downloadProject` now call the existing
+    `recordAckOutcome` counter on every outcome EXCEPT a legitimate
+    empty-slot answer (no READ_INIT); a missing READ_INIT is a real "the
+    slot is free" result, not a proof the handle is dead, and must not
+    count toward the stale-counter threshold.
+  - **Stretch goal shipped**: `connect()` (`midi/transport.ts`) wall-clocks
+    each synchronous `sendMessage` call; a send over `SLOW_SEND_THRESHOLD_MS`
+    (250ms) is logged and sets `conn.slowSendSuspect`, which
+    `isHandleHealthy` now treats as unhealthy on the next acquire. Honest
+    limit unchanged from the canary doc: a send that never returns at all
+    (the true queue-stalled hang) still cannot be observed, only "slow but
+    eventually returned."
+  - **What Phase A explicitly did NOT touch**: the `openCtx` seam itself
+    (`protocol-generic/dispatcher/core.ts`) is untouched; `withReconnectRetry`
+    is available for any `execute*` to adopt, but no dispatcher call site was
+    rewired to call it directly (Circuit's own transfer functions are the
+    only current callers). Wiring `withReconnectRetry` through `openCtx`/
+    `execute*` uniformly, so a bare `set_param`/`get_param` on a stale AM4 or
+    Axe-Fx handle also self-heals in-band (today those devices lean on the
+    proactive `ensureConnection` canary alone, which covers the "cached
+    handle already known-bad" case but not "this call's own send just
+    failed"), is unclaimed work: natural Phase A.5 or folded into Phase B's
+    `withEndpoint` seam.
 - **Phase B: serialization + contention + cancellation (R1 + R3).** The
   `withEndpoint(descriptor, fn)` seam, `async-mutex`, lock key = label, the
   reentrancy invariant + composite refactor, `AbortSignal`/MCP cancellation +
@@ -300,10 +346,19 @@ in-flight op ("busy: apply_pattern started 4 s ago").
 
 ## Test plan
 
-Phase A:
+Phase A: DONE, `scripts/verify-handle-health-retry.ts` (new, device-agnostic,
+offline) + the pre-existing `scripts/verify-circuit-ncs-transfer.ts`
+stale-handle block (kept green byte-for-byte through the fold-in):
 - A handle fault inside an op triggers exactly one reconnect-and-retry; a second
-  fault surfaces honestly (no infinite retry).
-- The in-op reconnect is lock-free (does not re-enter / block).
+  fault surfaces honestly (no infinite retry). ✅
+- The in-op reconnect is lock-free (does not re-enter / block). ✅ (no lock
+  exists yet in Phase A, so this is true by construction)
+- Additionally covered: `ensureConnection`'s proactive canary self-heals a
+  cached handle that died between calls (no `forceReconnect` needed) on
+  BOTH signals (`isPortOpen() === false` and `lastSendError` set); a healthy
+  handle is reused with zero redundant reconnects (no "storm"); `reconnect()`
+  itself throwing is surfaced as a combined, honest error instead of an
+  uncaught throw; extra result fields pass through the wrapper untouched.
 
 Phase B:
 - Two concurrent `withEndpoint(d, …)` on the same key **serialize** (the second

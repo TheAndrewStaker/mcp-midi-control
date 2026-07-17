@@ -13,7 +13,7 @@ read fix, import_preset) are treated as context, not findings.
 ## 1. Headline connections agents have missed
 
 **1a. The AM4 preset-dump body has never been tried against the gen-3 Huffman
-codec.** The negative `cookbook/_negative/am4-preset-dump-flat-byte-diff.md`
+codec.** The negative `primitives/_negative/am4-preset-dump-flat-byte-diff.md`
 (May: encoder "non-deterministic," ~20% of 12,352 bytes churn on a no-op
 redump) predates the June whole-preset codec
 (`packages/fractal-gen3/src/presetHuffman.ts`: 3-to-16 de-frame + dynamic
@@ -36,7 +36,7 @@ adjudication is offline.** `_negative/ii-preset-binary-flat-byte-diff.md`
 says the II body is "Huffman-compressed; offsets unstable."
 `packages/fractal-gen2/src/presetDump.ts` (lines 23-29) says Session 113
 static analysis showed it is *NOT* Huffman (a structured serialization with
-data roughly every 3rd byte) and two cookbook primitives
+data roughly every 3rd byte) and two primitives
 ([[preset-name-ascii-triplets]], [[block-record-stride-8]]) register *stable*
 chunk-0 offsets. [[xor-fold-hash]] folds "decoded native ushorts" verified
 390/390, implying a deterministic de-framed word image. Both committed claims
@@ -158,7 +158,7 @@ cheapest oracle and closes three things at once.
   now surfaces `live_meters`/`live_grid` for free. Surfacing the AM4 analogs
   is a local-only parity win.
 
-## 5. Cookbook seed adjustments
+## 5. Primitives seed adjustments
 
 - **Missing, evidence supports today:** gen-3 `fn=0x19 → 0x7a/0x7b/0x7c`
   user-IR/cab dump envelope (87-slot sweep); gen-3 `fn=0x43 → 0x51/0x52`

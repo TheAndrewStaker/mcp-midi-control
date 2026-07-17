@@ -6,15 +6,30 @@
  * Checks:
  *   1. Structural: bundled node runs, entry point + native midi.node
  *      present, package version matches the ZIP name.
- *   2. MCP handshake: serverInfo name/version, 40 tools, resources list.
- *   3. describe_device for every registered port (catches a descriptor
- *      crash or a missing guidance key in the shipped build).
+ *   2. MCP handshake: serverInfo name/version, tool count against the
+ *      README's generated inventory, resources list.
+ *   3. describe_device for every registered port, across every device
+ *      package server-all's index.ts imports (catches a descriptor
+ *      crash, a missing guidance key, OR a device package silently
+ *      absent from the bundled node_modules -see GitHub issue #15,
+ *      where `ve-500`/`boss-rc` shipped missing from the ZIP for two
+ *      releases because nothing in the release pipeline ever booted
+ *      their code paths against a real extracted bundle).
  *   4. Functional mock pass on the Axe-Fx II: apply_preset with routing[]
  *      (default-on verify_chain), get_preset, export_preset (edit-buffer
  *      dump responder) to a temp dir, translate II->FM9 (tempo-division
  *      strip + unmapped-model warning).
  *   5. gen-1 surface honesty: describe_device guidance carries the
  *      parameter-WRITES framing and the C2 capture pointer.
+ *
+ * This is the ONE hermetic gate in the release pipeline: it extracts the
+ * ZIP into an OS tmpdir with no monorepo ancestor directory for Node's
+ * module resolution to fall back into (unlike `build-installer.ts`'s own
+ * smoke-boot, which runs from inside the repo checkout and can silently
+ * pass even when a package is missing from the bundle -see the caveat
+ * comment above its smoke-boot step). Wired into release.yml as a
+ * required step; also run it manually after any change to
+ * `WORKSPACE_PACKAGES` or a workspace package's dependencies.
  *
  * Run: npx tsx scripts/verify-release-zip.ts [path-to-zip]
  * Default zip: build/dist/mcp-midi-control-v<version>.zip
@@ -63,13 +78,27 @@ async function main(): Promise<void> {
   const bundleRoot = existsSync(inner) ? inner : workDir;
   const nodeExe = path.join(bundleRoot, 'node.exe');
   const entry = path.join(bundleRoot, 'node_modules', '@mcp-midi-control', 'server-all', 'dist', 'server', 'index.js');
-  const midiNative = path.join(bundleRoot, 'node_modules', 'midi', 'build', 'Release', 'midi.node');
   check('bundled node.exe present', existsSync(nodeExe), nodeExe);
   check('server entry point present', existsSync(entry), entry);
-  check('native node-midi binary present', existsSync(midiNative), midiNative);
   check('setup.cmd present', existsSync(path.join(bundleRoot, 'setup.cmd')));
   const nodeV = execFileSync(nodeExe, ['--version']).toString().trim();
   check(`bundled node runs (${nodeV})`, /^v\d+\./.test(nodeV));
+  // @julusian/midi ships per-platform N-API prebuilds (path varies by
+  // platform/arch), so a LOAD test under the bundled node is the only
+  // reliable check -a fixed path (the old `midi`/node-midi package's
+  // `build/Release/midi.node`) went stale across the @julusian/midi swap
+  // and silently never failed since this script was never wired into CI.
+  let julusianMidiLoads = true;
+  try {
+    execFileSync(
+      nodeExe,
+      ['-e', "const m=require('@julusian/midi'); new m.Output().getPortCount(); new m.Input().getPortCount();"],
+      { cwd: bundleRoot, stdio: 'pipe' },
+    );
+  } catch {
+    julusianMidiLoads = false;
+  }
+  check('native MIDI binding (@julusian/midi) loads + enumerates under bundled node', julusianMidiLoads);
   // FM3 serial transport: serialport must LOAD under the bundled runtime
   // (native binding via @serialport/bindings-cpp prebuilds; a path check is
   // layout-fragile, a load check is the truth). serialTransport.ts imports
@@ -104,10 +133,28 @@ async function main(): Promise<void> {
     const sv = c.getServerVersion();
     check(`serverInfo ${sv?.name} ${sv?.version}`, sv?.name === 'mcp-midi-control' && sv?.version === version);
     const tools = await c.listTools();
-    check(`tools/list returns 40 tools, got ${tools.tools.length}`, tools.tools.length === 40);
+    // Expected count is read from the README's generated tool-inventory
+    // region (kept fresh by `npm run tools:inventory-check` in preflight)
+    // rather than hardcoded, so this check tracks reality instead of
+    // silently going stale as tools are added.
+    const readmeText = readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+    const inventoryMatch = readmeText.match(/\*\*(\d+) MCP tools registered\.\*\*/);
+    const expectedToolCount = inventoryMatch ? Number(inventoryMatch[1]) : null;
+    check(
+      `tools/list returns ${expectedToolCount ?? '?'} tools (per README inventory), got ${tools.tools.length}`,
+      expectedToolCount !== null && tools.tools.length === expectedToolCount,
+    );
 
     // ── 3. describe_device on every registered port ─────────────────
-    for (const port of ['am4', 'axe-fx-ii', 'axe-fx-iii', 'fm3', 'fm9', 'vp4', 'axe-fx-gen1', 'hydrasynth']) {
+    // Every device package that server-all's index.ts statically imports
+    // must appear here -this loop is what actually exercises the ZIP's
+    // bundled node_modules for each device (see GitHub issue #15: ve-500
+    // and boss-rc shipped absent from the bundle for two releases because
+    // nothing in the release pipeline ever booted their code paths).
+    for (const port of [
+      'am4', 'axe-fx-ii', 'ax8', 'axe-fx-iii', 'fm3', 'fm9', 'vp4', 'axe-fx-gen1',
+      'hydrasynth', 'circuit-tracks', 'spd-sx', 've-500', 'rc-505mk2', 'rc-600',
+    ]) {
       const r = await c.callTool({ name: 'describe_device', arguments: { port } });
       const text = ext(r);
       check(`describe_device(${port})`, !isError(r) && text.length > 1000, text.slice(0, 120));

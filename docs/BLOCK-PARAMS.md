@@ -93,6 +93,14 @@ two non-placeable system blocks:
 - **IR count:** 2 IRs per channel.
 - **Mic options (DynaCab):** Dynamic 1 (SM57), Dynamic 2 (SM7B),
   Ribbon (Royer 121), Condenser (Soyuz 023).
+- **Cab/mic selection by name (2026-07-15):** the stock 45-DynaCab roster
+  and 4-mic roster are registered as enums on `amp.dynacab_1_cab` /
+  `amp.dynacab_2_cab` / `amp.dynacab_1_mic` / `amp.dynacab_2_mic`
+  (rosters exported as `AM4_DYNACAB_ROSTER` / `AM4_DYNACAB_MICS` in
+  `fractal-midi/am4`). Device display shows a 1-based "NN:" prefix; the
+  wire ordinal is 0-based. Selecting a new Amp Type RESETS the cab
+  section via Amp→DynaCab linking, so cab selections/settings must be
+  written AFTER `amp.type`.
 - **Legacy support:** 189 legacy cabs from Axe-Fx II XL+/AX8.
 - **User IR slots:** 256, UltraRes supported.
 - **Factory DynaCabs:** must be installed separately per Fractal instructions.

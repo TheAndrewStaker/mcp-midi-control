@@ -13,7 +13,7 @@ import {
 } from '../types.js';
 
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
-import { assertInstanceSupported, openCtx, requireDevice } from './core.js';
+import { assertInstanceSupported, openCtx, requireDevice, withHandleRetry } from './core.js';
 import { resetModRouteState } from './modRouteState.js';
 
 /**
@@ -29,7 +29,8 @@ export async function executeSwitchPreset(args: {
   on_active_preset_edited?: 'warn' | 'discard' | 'save_active_first';
 }): Promise<WriteResult & { device: string; warningText?: string; refused?: boolean }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.writer.switchPreset === undefined) {
+  const switchPreset = descriptor.writer.switchPreset;
+  if (switchPreset === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -37,6 +38,11 @@ export async function executeSwitchPreset(args: {
     );
   }
   const ctx = openCtx(descriptor);
+  // NOTE: guardActiveBufferOrSave (below) is intentionally NOT wrapped in
+  // Phase A.5's reconnect-and-retry: in 'save_active_first' mode it performs
+  // a SAVE itself (multi-step, not a single leaf op), so it stays out of
+  // scope this phase alongside apply_preset/apply_setlist — see
+  // dispatcher/core.ts's withHandleRetry doc comment.
   if (descriptor.writer.guardActiveBufferOrSave) {
     const mode = args.on_active_preset_edited ?? 'warn';
     const guard = await descriptor.writer.guardActiveBufferOrSave(ctx, mode);
@@ -51,7 +57,8 @@ export async function executeSwitchPreset(args: {
       };
     }
   }
-  const result = await descriptor.writer.switchPreset(ctx, args.location);
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault.
+  const result = await withHandleRetry(ctx, (c) => switchPreset(c, args.location));
   // BK-075: switching to a new preset replaces the working buffer
   // contents entirely; cached layout is now stale.
   invalidateBlockLayoutCache(descriptor.id);
@@ -87,7 +94,8 @@ export async function executeSavePreset(args: {
   // working-untested capability. (Auto-save during navigation stays gated on
   // supports_save in the safe-edit guard — silent unverified flash writes are a
   // separate, stricter concern.)
-  if (descriptor.writer.savePreset === undefined) {
+  const savePreset = descriptor.writer.savePreset;
+  if (savePreset === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -128,7 +136,11 @@ export async function executeSavePreset(args: {
     }
   }
 
-  const result: WriteResult = await descriptor.writer.savePreset(ctx, args.location, args.name, args.instance);
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault. The
+  // preceding overwrite pre-check and the readSaveSnapshot receipt below are
+  // each already best-effort (try/catch, degrade to "could not confirm"), so
+  // only the actual persisting write needs the retry here.
+  const result: WriteResult = await withHandleRetry(ctx, (c) => savePreset(c, args.location, args.name, args.instance));
 
   // ── Receipt (device-agnostic): when the save acked and the device exposes
   // `readSaveSnapshot`, attach saved_snapshot + a human read-back line.
@@ -190,7 +202,8 @@ export async function executeSwitchScene(args: { port: string; scene: number }):
       `Scenes are not a concept on ${descriptor.display_name}.`,
     );
   }
-  if (descriptor.writer.switchScene === undefined) {
+  const switchScene = descriptor.writer.switchScene;
+  if (switchScene === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -206,7 +219,8 @@ export async function executeSwitchScene(args: { port: string; scene: number }):
     );
   }
   const ctx = openCtx(descriptor);
-  const result = await descriptor.writer.switchScene(ctx, args.scene);
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault.
+  const result = await withHandleRetry(ctx, (c) => switchScene(c, args.scene));
   return { ...result, device: descriptor.display_name };
 }
 
@@ -217,7 +231,8 @@ export async function executeSwitchScene(args: { port: string; scene: number }):
  */
 export async function executeRename(args: { port: string; target: string; name: string }): Promise<WriteResult & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.writer.rename === undefined) {
+  const rename = descriptor.writer.rename;
+  if (rename === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -256,7 +271,8 @@ export async function executeRename(args: { port: string; target: string; name: 
     );
   }
   const ctx = openCtx(descriptor);
-  const result = await descriptor.writer.rename(ctx, args.target as RenameTarget, args.name);
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault.
+  const result = await withHandleRetry(ctx, (c) => rename(c, args.target as RenameTarget, args.name));
   return { ...result, device: descriptor.display_name };
 }
 
@@ -270,7 +286,8 @@ export async function executeScanLocations(args: {
   to: string | number;
 }): Promise<{ device: string; scanned: readonly ScannedLocation[]; failed_at?: string; failed_reason?: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.reader.scanLocations === undefined) {
+  const scanLocations = descriptor.reader.scanLocations;
+  if (scanLocations === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -278,6 +295,9 @@ export async function executeScanLocations(args: {
     );
   }
   const ctx = openCtx(descriptor);
-  const result = await descriptor.reader.scanLocations(ctx, args.from, args.to);
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault. A scan is a
+  // bounded batch of independent per-location reads (not a stateful transfer
+  // session), so restarting it whole on a fresh handle is safe.
+  const result = await withHandleRetry(ctx, (c) => scanLocations(c, args.from, args.to));
   return { ...result, device: descriptor.display_name };
 }

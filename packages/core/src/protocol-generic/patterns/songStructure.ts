@@ -175,6 +175,164 @@ export function patternLabel(n: number): string {
   return s;
 }
 
+// ── Project plan ──────────────────────────────────────────────────────
+//
+// A real song does not fit one Circuit project: the device caps a project at 8
+// pattern slots AND its chain at 8 plays, while an ordinary track decomposes to
+// 25 patterns over 33 plays (Blindside "Caught a Glimpse", 2026-07-16). So a song
+// import always ends in the same manual chore: chunk the play order into projects
+// that fit, keep them in song order, and hand each one to apply_pattern.
+//
+// Doing that by hand is the friction this closes. It is a PURE decomposition, not
+// a workflow tool: it returns a plan and writes nothing, so the agent still drives
+// the per-project apply_pattern calls and the overwrite gate still applies.
+//
+// Section names are NOT used, deliberately. They are the obvious way to split a
+// song, but Songsterr tabs frequently ship with `sections: []` (the Blindside tab
+// has none at all), so a section-based split works on some songs and silently has
+// nothing to work with on others. Chunking the ORDER always works.
+
+export interface ProjectPlanEntry {
+  /** 1-based project number within the song (not a device slot; the caller picks slots). */
+  project: number;
+  /** Labels of the distinct patterns this project needs, in first-use order. */
+  patterns: string[];
+  /** This project's slice of the play order, as labels. */
+  order: string[];
+  /** Run-length rendering of `order`, for the receipt. */
+  summary: string;
+  /**
+   * True when this project's FIRST play is a silent pattern (a count-in / rest bar).
+   *
+   * Load-bearing for verification, not cosmetic: a stored-project read decodes only
+   * pattern 1, so a project whose chain legitimately starts silent reads back as
+   * "no content" and is indistinguishable from a failed write. Both the Stranglehold
+   * intro and The Darkness project 1 hit this on 2026-07-16. Check this before
+   * concluding an upload did not land.
+   *
+   * (It previously meant "every pattern is silent", which could never be true: such a
+   * project is dropped before it is emitted, so the field was always false.)
+   */
+  starts_silent: boolean;
+}
+
+export interface ProjectPlan {
+  projects: ProjectPlanEntry[];
+  /**
+   * Run-length summaries of the PROJECTS dropped for holding nothing but silence.
+   *
+   * Deliberately not a list of labels: the same silent pattern can be BOTH kept and
+   * dropped (Blindside "Caught a Glimpse" plays its silent J inside project 2, which
+   * has content, and again alone at the end, which is dropped). Reporting "J" as a
+   * dropped label would claim J never plays, which is false.
+   */
+  dropped_silent_projects: string[];
+  note: string;
+}
+
+/**
+ * Chunk a decomposed song's play order into projects that FIT the device.
+ *
+ * Greedy and order-preserving: fill a project until the next play would exceed
+ * either limit (`maxPlays` chained plays or `maxPatterns` distinct slots), then
+ * start the next. Order is never reordered — a project boundary is a foot-switch
+ * point, so the song must still play front-to-back across them.
+ *
+ * Silent patterns (no hits at all — a count-in bar, or a tab's empty measures)
+ * are kept when they share a project with real content, but a project that would
+ * hold NOTHING BUT silence is dropped: it cannot be authored (the writer refuses
+ * an upload with no routable events) and it would waste a project slot on silence
+ * the player can produce by not starting the sequencer. Dropped labels are
+ * reported rather than silently swallowed.
+ */
+export function planProjects(
+  sections: readonly { name: string; voices: Record<string, string> }[],
+  order: readonly string[],
+  opts: { maxPlays?: number; maxPatterns?: number; maxBackoff?: number } = {},
+): ProjectPlan {
+  const maxPlays = opts.maxPlays ?? 8;
+  const maxPatterns = opts.maxPatterns ?? 8;
+  // How many plays we will give up to avoid cutting through a repeated run.
+  // Small on purpose: a project slot is scarce, so protect the phrase without
+  // wasting half a project on it.
+  const maxBackoff = opts.maxBackoff ?? 2;
+  const hasHits = (v: Record<string, string>): boolean =>
+    Object.values(v).some((line) => /[^\s.\-~]/.test(line));
+  const silentLabels = new Set(sections.filter((s) => !hasHits(s.voices)).map((s) => s.name));
+
+  // Greedy, order-preserving: close a chunk only when the NEXT play would break a
+  // device limit. But "fits the device" is not the only objective — a project
+  // boundary is a FOOT-SWITCH point, so cutting through the middle of a repeated
+  // run hands the player a stomp in the middle of one continuous idea. When a
+  // close is forced mid-run, back off to the last pattern CHANGE so the run stays
+  // whole in the next project, as long as the back-off is cheap (a couple of
+  // plays). A long vamp that simply exceeds maxPlays (A x9) cannot be helped and
+  // is cut at the limit.
+  const chunks: string[][] = [];
+  let cur: string[] = [];
+  const patternsIn = (c: readonly string[]): number => new Set(c).size;
+  for (const label of order) {
+    const wouldPatterns = cur.includes(label) ? patternsIn(cur) : patternsIn(cur) + 1;
+    if (cur.length > 0 && (cur.length + 1 > maxPlays || wouldPatterns > maxPatterns)) {
+      let carry: string[] = [];
+      // Only back off when the cut would land INSIDE a run (the next play repeats
+      // the last one). If the next play is already a change, this cut is at a
+      // musical boundary and nothing is gained.
+      if (label === cur[cur.length - 1]) {
+        let k = cur.length - 1;
+        while (k > 0 && cur[k] === cur[k - 1]) k--;
+        const backoff = cur.length - k;
+        if (k > 0 && backoff <= maxBackoff) carry = cur.splice(k);
+      }
+      chunks.push(cur);
+      cur = carry;
+    }
+    cur.push(label);
+  }
+  if (cur.length > 0) chunks.push(cur);
+
+  const dropped: string[] = [];
+  const projects: ProjectPlanEntry[] = [];
+  for (const chunk of chunks) {
+    const allSilent = chunk.every((l) => silentLabels.has(l));
+    if (allSilent) {
+      dropped.push(runLength(chunk));
+      continue;
+    }
+    const patterns: string[] = [];
+    for (const l of chunk) if (!patterns.includes(l)) patterns.push(l);
+    projects.push({
+      project: projects.length + 1,
+      patterns,
+      order: [...chunk],
+      summary: runLength(chunk),
+      starts_silent: silentLabels.has(chunk[0]),
+    });
+  }
+
+  const note = projects.length === 0
+    ? 'The song produced no authorable project (every pattern is silent).'
+    : `${projects.length} project(s), in song order; each fits the device (<=${maxPatterns} patterns, <=${maxPlays} chained plays). ` +
+      'Foot-switch between them in this order to play the song front-to-back.' +
+      (dropped.length > 0
+        ? ` Dropped ${dropped.length} silent-only project(s) (${dropped.join(', ')}): a project with no hits cannot be authored, and silence needs no slot. ` +
+          'A silent pattern that shares a project with real content is KEPT and still plays.'
+        : '');
+  return { projects, dropped_silent_projects: dropped, note };
+}
+
+/** Run-length a label slice: ["A","A","B"] → "A×2 B". */
+function runLength(labels: readonly string[]): string {
+  const runs: string[] = [];
+  for (let i = 0; i < labels.length; ) {
+    let j = i;
+    while (j < labels.length && labels[j] === labels[i]) j++;
+    runs.push(j - i > 1 ? `${labels[i]}×${j - i}` : labels[i]);
+    i = j;
+  }
+  return runs.join(' ');
+}
+
 // ── Fuzzy coalesce ────────────────────────────────────────────────────
 //
 // Exact dedup barely collapses a human-played track: a ghost note or a fill

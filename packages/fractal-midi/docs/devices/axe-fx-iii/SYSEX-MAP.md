@@ -81,7 +81,7 @@ are NOT in the III's third-party spec:
   working buffer to a preset location (destination presetNum septet @ 12-13,
   LSB-first). Captured byte-exact from III-Edit (0x10) and FM9-Edit (0x12)
   over loopMIDI; this is what the codec's `save_preset` now emits. See the
-  editor-WRITE surface table below and cookbook `gen3-fn01-store-preset`.
+  editor-WRITE surface table below and primitive `gen3-fn01-store-preset`.
   Distinct from the preset-binary **dump** formats, of which there are two
   (both read-confirmed on FM9, see the preset-dump RECEIVE section below):
   a **stored-preset** dump (`fn=0x03 [preset# BE]` → `0x77/0x78/0x79`) and an
@@ -661,7 +661,7 @@ Everything below is FM3 fw 12.00, model byte `0x11`, direct USB:
   state regardless of placement; use `fn=0x13` for placement truth. Reads can
   therefore silently return unplaced-block state (cf. the AM4 phantom-param
   precedent, where a `set_param` on an unplaced block lands in state no dump
-  surfaces). See the corrected fn=0x1F section below and cookbook
+  surfaces). See the corrected fn=0x1F section below and primitive
   [[gen3-fn1f-poll-block-bulk-read]].
 - **Per-block channel count is NOT uniformly 4**: the FM3 itemCount sweep
   contradicts a universal `stride = itemCount / 4`: **Send = 2, Return = 6,
@@ -877,7 +877,7 @@ POLL  F0 00 01 74 [model] 1F [effectId:14b septet-LE] [cs] F7   (10 B)
 The device answers with the `0x74/0x75(×N)/0x76` burst ~1 ms later; there is **no
 separate fn=0x1F response body**. This is structurally identical to the Axe-Fx II's
 `fn=0x1F` SYSEX_GET_ALL_PARAMS atomic read (same opcode, same triple-frame answer,
-same positional body); see cookbook [[am4-fn1f-atomic-read]] and the new
+same positional body); see primitive [[am4-fn1f-atomic-read]] and the new
 [[gen3-fn1f-poll-block-bulk-read]].
 
 - **This is our gen-3 `get_param` / `get_params` read path** (the fn=0x01 sub=0x09
@@ -965,7 +965,7 @@ settled three structural questions:
   on mismatch; this matches the footer XOR already shipping in
   `packages/fractal-gen3/src/presetHuffman.ts` (validated across III + FM9
   factory presets). It is a separate layer from the inner raw-patch CRC.
-  Cookbook: [[xor-fold-hash]].
+  Primitive: [[xor-fold-hash]].
 - **No editor-side store hash exists.** The store-to-device flow re-emits the
   `.syx` file's 0x77/0x78/0x79 bytes verbatim, patching only the 0x77 header's
   preset-index field; the footer travels through untouched.
@@ -1033,7 +1033,7 @@ block-edit ops. All are `fn=0x01` with a sub-action byte at position 6; the
 `gridPos = col*ROWS + row` (0-indexed, column-major). **Grid shapes
 (wire + official-spec confirmed): III / FM9 = 6 rows × 14 cols; FM3 = 4
 rows × 12 cols.** Shunt elements use the insert op with byte 9 (effectId
-high septet) = `0x08`. Full decode + golden: cookbook
+high septet) = `0x08`. Full decode + golden: primitives
 `gen3-fn01-grid-set-position-insert`, `gen3-fn01-store-preset`,
 `gen3-fn01-grid-routing`; method:
 `docs/capture-guides/loopmidi-editor-emulation.md`. The codec's `set_block`
@@ -1599,7 +1599,124 @@ The `A3_*` prefix is plausibly "Axe-Fx III gen-3" naming for push-
 direction or A3-spec-revision messages, distinct from the
 SET/GET request-direction functions.
 
-## BPM table reference
+## BK-054: outer fn-byte dispatch mine (static-analysis-derived, NOT capture-confirmed)
+
+2026-07-09 re-mine of the material above plus new Ghidra work, targeting the
+BK-054 ask ("the outer fn-byte dispatch table") and BK-055 ("the DSP/CPU
+usage query"). Read this section alongside the "Function bytes confirmed"
+table and the "Function names confirmed" `SYSEX_*` table above; it resolves
+(and in one case, definitively closes) open items from both.
+
+### Host-emitted fn-byte inventory, cross-checked (`host-emitters-precise.txt`)
+
+`ghidra-axe-edit-iii-host-emitters-precise.txt` (PcodeOp data-flow trace of
+every call to the two generic SysEx builders, `FUN_1403434b0` /
+`FUN_1403437d0`) is the ground-truth host-emitted fn-byte list: **28
+entries** (vs. the 21 in the "Function bytes confirmed" table above, which
+predates this file's full re-read). The delta (fn bytes host-emitted but
+missing from that table) is `0x00`, `0x01`, `0x03`, `0x04`, `0x08`, `0x43`,
+`0xFF`. Of those, `0x01` (PARAMETER_SETGET), `0x03` (REQUEST_PRESET_DUMP),
+and `0x43` (REQUEST_EDIT_BUFFER_DUMP) are already fully documented elsewhere
+in this file. The genuinely new characterizations, decoded 2026-07-09 via
+`FindAxeEditIIIIndirectFnByteCallers.java` (new script; see the ghidra
+README) plus the pre-existing `DecodeAxeEditIIINewFnBytes.java` dump:
+
+| fn byte | Sites | Decompiled shape | Characterization |
+|---|---|---|---|
+| `0x00` | 3 (2 decompiled here; the 3rd, `FUN_1401f4390`, is the shared grid/routing state machine, deliberately not re-entered; see `DecompileAxeEditIIIRoutingComposer.java`'s own "not a quick win" finding) | Both decompiled sites (`FUN_1401c15d0`, `FUN_14033a750`) hardcode the IDENTICAL call `FUN_1403437d0(buf, 0, 0, 0, 0x7f)`, a bare/near-bare frame with a fixed `0x7F` trailer, the family's universal "query/current-state" sentinel (cf. `0x0C` scene query, `0x14` tempo query). | Query-shaped, parameterless. Role undetermined. Weak cross-device hint: AM4-Edit's OWN inbound dispatcher (a hybrid fn-switch, see `_negative/iii-fn-byte-switch-as-inbound-dispatcher.md` refinement history) labels ITS OWN fn=0x00 as `stream-start`. AM4 and III do not share fn-byte VALUES (see caveat below), so this is a plausibility hint, not a transfer; but it fits: `FUN_1401c15d0`'s caller only sends when `*(param_1+0x210) != 0`, i.e. gated on some connection/session flag, consistent with a session-init ping rather than a data query. |
+| `0x04` | 1 | `FUN_14014d400` (the same function that hosts a dynamic fn-byte emit reached only via decompile, see below). Nearby decompiled context (a sibling helper it calls) references the dialog string `"An error occurred while processing the cab bank."` | Cab-bank/cab-library-adjacent (tentative). Not DSP-related. |
+| `0x08` | 6 | All 6 sites share one shape: pack `(fn, 0, 0, caller-supplied-trailer)` into a small buffer, then hand it to an async collect helper (`FUN_1401133c0` / `FUN_14032eb90` / `FUN_140331eb0`) that grows a linked list of variable-length items as replies arrive, i.e. "send a small request, then asynchronously collect a LIST of items," not a single-value query. | Enumeration/list-request family. **Not bound to any named workflow** in the async-workflow registry (`iii-async-workflow-fn-registry`, full ~140-row registry re-grepped 2026-07-09); none of its rows register fn=0x08. An earlier hypothesis in this session ("`0x08` = AM4-Edit's `Library Load`, transferred cross-device") is REFUTED: the registry shows AM4-Edit's OWN `Library Load` workflow (a DIFFERENT editor binary) is bound to fn=`0x09`, not `0x08`; recorded here as a ruled-out lead so it isn't re-attempted. |
+| `0xFF` | 1 | `FUN_14033db70`: `FUN_1403434b0(param_1, 0xff, param_2, &local_280)` then the same "collect a growing list" pattern as `0x08`. Its one caller, `FUN_1401a1a20`, is ALSO one of the fn=`0x77` PRESET_DUMP HEADER call sites. | Enumeration/list-request, same shape as `0x08`. Candidate: preset/bank-list enumeration (shares a caller with the preset-dump path), unconfirmed. |
+
+**Control check (rules out stale-pointer artifacts):** the same script
+re-ran its reference-scan technique against `FUN_14014d2a0` (the hardcoded
+fn=`0x77` PRESET_DUMP HEADER builder), whose two real call sites are
+independently known from the precise host-emitter map
+(`FUN_14014d400` @ `0x14014db7d` and `@ 0x14014ddf4`). The scan reproduced
+both exactly (**PASS**) before its results on the fn=0x00/0x08/0x43
+targets above were trusted. Full run log:
+`samples/captured/decoded/ghidra-axe-edit-iii-indirect-fn-callers.txt`.
+
+**Negative sub-finding (same run):** `DecodeAxeEditIIINewFnBytes.java`'s
+"no callers" verdict for 5 of these emit-wrapper functions (only CALL-type
+xrefs were checked) is now explained and closed: the ONLY references
+`getReferencesTo` finds for them (ignoring the `isCall()` filter) are their
+own PE `.pdata` (x64 exception-unwind `RUNTIME_FUNCTION`) table rows, i.e.
+mundane compiler-generated metadata that trivially references every
+function in the binary, not a workflow-dispatch table. There is no
+recoverable static caller for these 5 functions; they are reached via a
+dispatch mechanism (likely a C++ `std::function`/lambda/vtable slot) that
+Ghidra's static reference index cannot resolve. Do not re-attempt this
+"maybe there's a hidden {name, fnPtr} registry table" lead without new
+evidence (e.g. a live capture pinning the trigger).
+
+### `SYSEX_DSP_MESSAGE` (and its 13 siblings): fn-byte is UNBOUND, exhaustively, three independent ways
+
+This closes the open question in the "Function names confirmed in AxeEdit
+III binary" table above ("Function-byte assignment for these requires
+Ghidra... none done yet"). Three independent static-analysis techniques
+were run against `Axe-Edit III.exe` (v1.14.31) and **all three came back
+negative** for `SYSEX_DSP_MESSAGE` specifically (and for all 22 of its
+`SYSEX_*` siblings not already bound by the v1.4 PDF):
+
+1. **String-offset-index fit** (`mine-axeedit3-sysex-table.ts`, pre-existing):
+   no single `fn = index + delta` constant fits all 8 known anchors. See
+   [`fn01-decode.md`](fn01-decode.md) "Mined" section.
+2. **Exhaustive code-xref scan** (`FindAxeEditIIISysexNamesIndirect.java`,
+   pre-existing; re-verified this session): PE relocations (36,516
+   scanned, 0 hits), pointer-array scans at strides 4/8/12/16/20/24/32/40/
+   48/64 (0 hits at every stride), and a RIP-relative effective-address scan
+   across **1,395,080 instructions** (0 hits for all 23 `SYSEX_*` strings,
+   `SYSEX_DSP_MESSAGE` included). Raw log:
+   `samples/captured/decoded/ghidra-axe-edit-iii-sysex-xref-attempt.txt`.
+   **No code in `Axe-Edit III.exe` references any `SYSEX_*` string by
+   address, at all**, by any addressing mode Ghidra can detect.
+3. **Async-workflow registry name grep** (new this session, 2026-07-09):
+   the async-workflow registry (`iii-async-workflow-fn-registry`, the
+   canonical inbound-dispatch source; see that primitive) names
+   ~140 workflow-registration call sites in `FUN_1401f0f10`
+   (`ghidra-axe-edit-iii-inbound-dispatcher.txt`). Grepped in full for
+   `dsp`, `cpu`, `usage`, `meter`, `load`, `overload` (case-insensitive):
+   **zero matches** among the workflow NAMES. The one hit for "meter"
+   (`A3MeterCtrl`, a JUCE RTTI class referenced twice in the same dump) is
+   a **per-parameter UI meter widget** (its usage context is a per-param
+   value-update branch keyed on a small display-type code, with a
+   `sqrt()`-scaled VU-ballistics calculation, classic per-block gain-
+   reduction/level meter rendering), not a global CPU/DSP readout.
+
+**Conclusion:** `SYSEX_DSP_MESSAGE`'s function byte cannot be recovered from
+static analysis of `Axe-Edit III.exe`. Either (a) it is vestigial/legacy,
+a name carried over from an earlier internal protocol revision or a shared
+header with another Fractal product, never wired into this editor's actual
+dispatch, or (b) it lives in a different binary this project hasn't mined
+(untested candidate: a shared Fractal library DLL, if `Axe-Edit III.exe`
+loads one; not confirmed to exist). Closing this needs a live capture
+(USBPcap of AxeEdit III's own status-bar DSP meter updating), not more
+Ghidra. See BK-055 below for what already ships instead.
+
+### BK-055: the DSP/CPU-usage capability that already exists (different opcode)
+
+**The underlying capability BK-055 wants is ALREADY DECODED AND SHIPPED**,
+just not via `SYSEX_DSP_MESSAGE`. The gen-3 family's `fn=0x01 sub=0x2E`
+empty-target reply (the SAME frame `parseGen3GridLayout` reads the live
+routing grid from) carries live telemetry in fixed low offsets (see the
+"sub=0x2E live-meters payload" section above): `cpu_percent = 32 +
+f[37]*0.5` (7-bit field, 32.0..95.5% range), plus stereo output meters.
+Cross-validated (independent ForgeFX FM3 hardware testing + our own FM9
+capture's varies-iff-telemetry behavioral oracle); ships in
+`src/gen3/axe-fx-iii/liveMeters.ts` (`parseGen3LiveMeters`), surfaced on
+`get_preset`'s `live_meters` field. Per the shipping-bar rule (evidence, not
+hardware, gates shipping): this is DONE, community-beta, awaiting a
+front-panel cross-check to flip "untested" to "confirmed"; it is NOT a gap.
+
+`scripts/probe-iii-dsp-usage.ts` (new, read-only) exercises exactly this
+path as its PRIMARY job (send the sub=0x2E empty-target query, print
+`cpu_percent`, ask the tester to compare against the front-panel DSP
+meter), plus a clearly-labeled SECONDARY experimental job that tries the
+still-unbound `0x00`/`0x04`/`0x08`/`0xFF` candidates above as bare-envelope
+guesses (never conflated with the decoded sub=0x2E result).
+
+
 
 Forum thread "All Axe Fx III BPM Tempo SysEx 1-200bpm" published
 the full 1-200 BPM mapping for function 0x14. Pattern confirms our

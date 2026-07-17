@@ -91,7 +91,7 @@ with ONE septet-packed blob carrying the active preset's structure: preset name,
 four scene names, the current scene, and the serial 4-slot chain. This is the register
 VP4-Edit itself polls to render the chain: 392 responses across the two captures.
 Codec: `src/gen3/vp4/structureBlob.ts` (`buildVp4GetStructureBlob` /
-`parseVp4StructureBlob`); goldens: `test/gen3/vp4/structureblob.test.ts`; cookbook:
+`parseVp4StructureBlob`); goldens: `test/gen3/vp4/structureblob.test.ts`; primitive:
 `vp4-eid206-structure-blob`.
 
 Request (18 bytes, verbatim in both captures, 202×):
@@ -103,7 +103,7 @@ F0 00 01 74 14 01 4E 01 00 00 1F 00 00 00 00 00 cs F7
 Response (238 bytes): same header through `tc=0x1f`, then `00 00 00`, a 14-bit
 LSB-first length tag `40 01` (= **192** raw bytes, the same length-tag convention as
 the write frame's `04 00`), then **220 packed bytes**, cks, F7. The packed region
-unpacks 8→7 with the CHUNKED LSB-first-with-carry scheme (cookbook
+unpacks 8→7 with the CHUNKED LSB-first-with-carry scheme (primitive
 `iii-byte-stream-septet-pack-8to7`; `unpackValueChunked`, carry restarts every
 8 wire / 7 raw bytes) into a 192-byte raw record:
 
@@ -250,7 +250,7 @@ the 16-byte SAVE ack above. Do NOT use `get_param` for confirmation (telemetry-m
 1. Add VP4-specific builders in `fractal-midi/src/gen3/vp4/setParam.ts` (NOT a mutation of the III
    builders, III divergence is total): the swapped-septet float32 primitive + `buildVp4Save`,
    `buildVp4SetBypass`, a write-echo parser, and (scoped) `buildVp4SetParam`. Golden cases +
-   a cookbook entry + `cookbook-verify`/`verify-msg` cases (preflight requires them).
+   a primitive entry + `primitives-verify`/`verify-msg` cases (preflight requires them).
 2. **Shipped community-beta `untested`** (in `fractal-gen3` via `write_allowlist`):
    continuous `set_param`/`set_params` (raw 0..65534 wire value → normalized float; %/ms
    calibration pending), `set_bypass` (enable=0.0 / bypass-on replicated), `save_preset`

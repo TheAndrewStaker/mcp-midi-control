@@ -39,13 +39,13 @@ have missed by working in isolation.
 ## What to read
 
 **Plan + prior synthesis context:**
-- The maintainer's current working plan (local-only): skim the cookbook
+- The maintainer's current working plan (local-only): skim the primitives
   section plus the finding-category routing table.
 - `fractal-midi/docs/research/synthesis-log/`: prior synthesis
   reports (skim for context, don't repeat their critique)
 
-**Cookbook (current state):**
-- `fractal-midi/docs/research/cookbook/INDEX.md`: primitive registry;
+**Primitives corpus (current state):**
+- `fractal-midi/docs/research/primitives/INDEX.md`: primitive registry;
   read the full INDEX plus sample 3 to 5 entries that match your synthesis
   focus
 
@@ -106,13 +106,13 @@ have missed by working in isolation.
 7. **Negative findings to re-test under new conditions.** Things ruled
    out months ago that may be solvable now with new tooling.
 
-8. **Cookbook seed-list vs reality.** Does the cookbook seed corpus
+8. **Primitives seed-list vs reality.** Does the primitives seed corpus
    match the available evidence, or are seeds aspirational? Are
    primitives missing from the seed list that findings clearly
    support?
 
 9. **Build-gate-relevant misses.** Findings that would be
-   `status: regression` right now if the cookbook-verify suite was
+   `status: regression` right now if the primitives-verify suite was
    enforced: claims shipped but not byte-verified across all
    firmwares.
 
@@ -137,7 +137,7 @@ Write to `fractal-midi/docs/research/synthesis-log/<YYYY-MM-DD>-<short-slug>.md`
    dumps that exist for one device and would plausibly transfer to
    others. State the transfer hypothesis + how to test cheaply.
 
-5. **Cookbook seed adjustments.** Which seeds are shippable today
+5. **Primitives seed adjustments.** Which seeds are shippable today
    (cite the source data), which are still aspirational (cite the
    gap), and what primitives are missing from the seed list that the
    findings clearly support.
@@ -164,9 +164,9 @@ the accumulated finding-corpus.
   `0xe04440`: many sessions of hardware probing close as a 100-line TS
   parser without hardware. ~4.3 MB un-mined material across 30 dump
   files identified.
-- 2026-05-22 (cookbook audit synthesis, agent a588cd9917fa858ce):
-  template re-used for cookbook ↔ source accuracy audit. Caught 1
+- 2026-05-22 (primitives audit synthesis, agent a588cd9917fa858ce):
+  template re-used for primitives ↔ source accuracy audit. Caught 1
   factual inversion (xor-7f-envelope-checksum cross-device claim) + 5
   stale `consumed_in:` paths + stale paramBase width table. The
-  cookbook audit task fits the same template; lens-7 ("cookbook seed
+  primitives audit task fits the same template; lens-7 ("primitives seed
   vs reality") was the load-bearing lens.

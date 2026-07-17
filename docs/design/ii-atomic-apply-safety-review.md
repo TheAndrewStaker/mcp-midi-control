@@ -33,7 +33,7 @@ today, one param at a time.
 
 ## 1. The capability under review
 
-The 2026-07-02 decode ([`cookbook/ii-preset-image-tlv-chain.md`](../../packages/fractal-midi/docs/research/cookbook/ii-preset-image-tlv-chain.md),
+The 2026-07-02 decode ([`primitives/ii-preset-image-tlv-chain.md`](../../packages/fractal-midi/docs/research/primitives/ii-preset-image-tlv-chain.md),
 shipped as [`packages/fractal-gen2/src/presetImageTlv.ts`](../../packages/fractal-gen2/src/presetImageTlv.ts))
 established that the de-framed 4096-word II preset image is a **self-describing
 TLV chain**. The dump in hand describes its own layout:

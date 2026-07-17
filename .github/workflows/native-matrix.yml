@@ -3,11 +3,18 @@ name: native-matrix
 # Cross-platform validation of the native MIDI stack (@julusian/midi +
 # serialport). The Windows path is covered by preflight.yml; this fills the
 # gap that has bitten us: the macOS (.mcpb / no-Xcode) install depends on the
-# darwin-arm64/x64 N-API prebuilts loading AND on the inbound-SysEx receive
+# darwin-arm64 N-API prebuilt loading AND on the inbound-SysEx receive
 # path working, and the maintainer develops on Windows. This runs the
-# virtual-loopback receive test on real macOS (Apple Silicon + Intel) and
+# virtual-loopback receive test on real macOS (Apple Silicon) and
 # Linux runners, so a receive regression (e.g. ignoreTypes-before-openPort)
 # is caught without anyone having to plug in hardware.
+#
+# NOTE (2026-07-10): the darwin-x64 (Intel, macos-13) leg was DROPPED because
+# GitHub-hosted Intel macOS runners no longer schedule reliably (jobs queued
+# ~24h, never picked up, dragging the whole run to a false failure). The
+# darwin-arm64 leg exercises the identical @julusian N-API prebuilt load +
+# receive path, and the darwin-x64 prebuilt is a stable N-API binary; Intel
+# Macs are validated locally on the maintainer's iMac when needed.
 
 on:
   push:
@@ -27,8 +34,6 @@ jobs:
         include:
           - os: macos-14       # Apple Silicon (darwin-arm64) — the blind-user .mcpb target
             label: macos-arm64
-          - os: macos-13       # Intel (darwin-x64) — the maintainer's iMac arch
-            label: macos-x64
           - os: ubuntu-latest  # linux-x64
             label: linux-x64
 

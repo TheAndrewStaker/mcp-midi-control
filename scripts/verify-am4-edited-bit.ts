@@ -28,6 +28,19 @@
  *      device bit: set_param dirties (GET_PATCH=edited → refuse), then
  *      save_preset clears the device bit (GET_PATCH=clean → proceed).
  *
+ *   C. MOCK_FIXTURE=edited-bit-lag — GET_PATCH always reports CLEAR, even
+ *      immediately after an acked write (simulating the device-side bit
+ *      lagging our own write, caught live 2026-07-10 as an
+ *      audition-then-switch gate slip). set_param (marks the in-memory
+ *      tracker dirty, mock acks) followed IMMEDIATELY by
+ *      switch_preset(warn) must REFUSE — only the propagation-race guard
+ *      in `isActiveBufferDirty` (packages/am4/src/tools/safeEdit.ts) can
+ *      produce this, since the device bit itself reads clean. A second,
+ *      fresh process under the SAME fixture with NO write proves the
+ *      negative side: tracker clean + device clean → 'warn' proceeds
+ *      (this also stands in for window-expiry, without sleeping 2s in
+ *      the test).
+ *
  * Run: `npm run build && npx tsx scripts/verify-am4-edited-bit.ts`
  * Status: offline, no hardware required.
  */
@@ -158,6 +171,33 @@ async function main(): Promise<void> {
         [`save isError=${isError(s)}`, `switch isError=${isError(r)}`],
       );
     }
+  });
+
+  // C. Propagation-race guard: device bit permanently lags (always reads
+  //    clear), so only the in-memory tracker's trust window can catch a
+  //    just-landed write.
+  await withClient('edited-bit-lag', async (client) => {
+    await setParam(client, 5);
+    const r = await switchPreset(client, 'A03', 'warn');
+    const text = extractText(r);
+    record(
+      'set_param then IMMEDIATE switch_preset(warn) under a lagging device bit → REFUSES',
+      REFUSAL.test(text),
+      [`isError=${isError(r)}`, `text: ${text.slice(0, 140)}`],
+    );
+  });
+
+  // C-negative: same lagging-bit fixture, but a fresh process with NO write —
+  // tracker clean + device bit clean → 'warn' proceeds. Stands in for the
+  // trust-window EXPIRING without sleeping 2s in the test.
+  await withClient('edited-bit-lag', async (client) => {
+    const r = await switchPreset(client, 'A02', 'warn');
+    const text = extractText(r);
+    record(
+      'fresh session under a lagging device bit, no write → switch_preset(warn) proceeds',
+      !isError(r) && !REFUSAL.test(text),
+      [`isError=${isError(r)}`, `text: ${text.slice(0, 120)}`],
+    );
   });
 
   console.log(`\n────────────────────────────────────────`);

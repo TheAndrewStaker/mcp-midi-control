@@ -15,7 +15,7 @@
  * discrete-vs-continuous kind is a property of the shared algorithm; FM3
  * catalog symbols are classified discrete when the FM9 cache (kind:'enum')
  * and/or the FM9/III hardware roundtrips classify the same (family, SYMBOL)
- * discrete. Join is by SYMBOL, never paramId (cookbook negative
+ * discrete. Join is by SYMBOL, never paramId (primitive negative
  * gen3-paramid-reuse-across-model-bytes).
  *
  * EVIDENCE: family-pattern (STRONG per the shipping bar), community-beta.

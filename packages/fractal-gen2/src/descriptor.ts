@@ -1,11 +1,18 @@
 /**
- * Axe-Fx II DeviceDescriptor — top-level assembler for the BK-051 unified
- * tool surface (Wave 2).
+ * Axe-Fx II family DeviceDescriptor: `createAxeFxIIDescriptor(config)` factory.
+ *
+ * BK-094 / BK-GEN2-FACTORY: converted from a single XL+-only
+ * `AXEFX2_DESCRIPTOR` literal into a factory, mirroring the `fractal-gen3`
+ * factory (`createModernFractalDescriptor`) and `boss-rc`'s
+ * `createBossRcDescriptor`: one gen-2 codec, per-model configs
+ * (`configs/xl-plus.ts`, `configs/ax8.ts`). `export const AXEFX2_DESCRIPTOR`
+ * below preserves the pre-existing name/shape for every caller that imports
+ * it (scripts, tests, `server-all`); behavior is unchanged for the XL+.
  *
  * Wraps the existing Axe-Fx II protocol code (params.ts, blockTypes.ts,
  * setParam.ts, lineageLookup.ts, tools/applyExecutor.ts) into the
  * `DeviceDescriptor` contract from `src/protocol/generic/types.ts`. The
- * wire layer is byte-frozen — no code under `src/fractal/axe-fx-ii/`
+ * wire layer is byte-frozen: no code under `src/fractal/axe-fx-ii/`
  * outside this descriptor directory (and the applyExecutor.ts widening
  * tweaks) is modified. This file is the translation layer between the
  * legacy direct-call shape and the dispatcher-routed shape.
@@ -13,21 +20,22 @@
  * Split into a per-role directory (Session 67, mirroring the AM4
  * descriptor split in Session 65 cont):
  *
- *   - `descriptor/schema.ts`  — makeEncode / makeDecode (per-param
+ *   - `descriptor/config.ts`   `AxeFxIIConfig` (per-model config type)
+ *   - `descriptor/schema.ts`   makeEncode / makeDecode (per-param
  *                                encode/decode closures), buildBlocks,
  *                                buildBlockTypes, parseAxeFxIILocation,
  *                                findBlockBySlug
- *   - `descriptor/writer.ts`  — DeviceWriter (14 methods)
- *   - `descriptor/reader.ts`  — DeviceReader (4 methods)
- *
- * Consumers continue to import `AXEFX2_DESCRIPTOR` from
- * `@/fractal/axe-fx-ii/descriptor.js`; the directory split is internal.
+ *   - `descriptor/writer.ts`   `createWriter(config)` (DeviceWriter, 14 methods)
+ *   - `descriptor/reader.ts`   `createReader(config)` (DeviceReader, 4 methods)
  *
  * Registration order in `src/server/index.ts` is INTENTIONAL: Axe-Fx II
  * registers BEFORE AM4 so the more-specific `/axe-?fx/i` regex fires
  * first on port names like "Fractal Axe-Fx II Port 1". AM4's
  * `/Fractal/i` regex stays as a catch-all (Q4 answered Session 66 wrap;
- * see `docs/_private/axefx2-descriptor-plan.md` § 9).
+ * see `docs/_private/axefx2-descriptor-plan.md` § 9). AX8's `/ax8/i`
+ * pattern registers before both (BK-094): "AX8" doesn't match `/axe-?fx/i`
+ * or `/Fractal/i`'s narrower siblings, but registering the most-specific
+ * pattern first is the established discipline for this file.
  */
 
 import type {
@@ -46,31 +54,26 @@ import { listConceptKeysForDevice } from '@mcp-midi-control/core/protocol-generi
 import { AXEFX2_AGENT_GUIDANCE } from './descriptor/agentGuidance.js';
 import { resolveAxeFxIIParamKind } from './calibration.js';
 import { buildBlocks, buildBlockTypes } from './descriptor/schema.js';
-import { reader } from './descriptor/reader.js';
-import { writer } from './descriptor/writer.js';
-
-/**
- * Per-device concept-key map. Built from the central registry in
- * `concept-keys.ts`. Surfaced via `describe_device.concept_keys` so the
- * agent can read the canonical concept-key -> local-name map in one call.
- */
-const AXEFX2_CONCEPT_KEYS: Readonly<Record<string, string>> = (() => {
-  const out: Record<string, string> = {};
-  for (const entry of listConceptKeysForDevice('axe-fx-ii')) {
-    out[entry.conceptKey] = entry.localName;
-  }
-  return Object.freeze(out);
-})();
+import { createReader } from './descriptor/reader.js';
+import { createWriter } from './descriptor/writer.js';
+import type { AxeFxIIConfig } from './descriptor/config.js';
+import { AXE_FX_II_XL_PLUS_CONFIG } from './configs/xl-plus.js';
+import { AX8_CONFIG } from './configs/ax8.js';
 
 // Plug the Axe-Fx II resolver into the cross-device param-kind registry
 // BEFORE buildBlocks() runs (schema.ts uses resolveParamKind to derive
-// each param's encode/decode closures + display range + unit).
+// each param's encode/decode closures + display range + unit). One
+// registration covers the whole family (AX8 shares the same param
+// dictionary/calibration: same codec, same catalog).
 registerParamKindResolver('axe-fx-ii', resolveAxeFxIIParamKind);
 
-// X/Y channel-bearing block set for the Axe-Fx II XL+ (model byte 0x07,
-// the hardware this descriptor targets).
+// X/Y channel-bearing block set for the Axe-Fx II family (model-generic:
+// this lists which GROUPS support X/Y, not per-instance availability, so it
+// is the same list on the XL+ and the AX8; the AX8's reduced roster is
+// enforced separately via `AxeFxIIConfig.isBlockAvailable` in the writer /
+// reader block resolvers + `buildBlockTypes()`).
 //
-// Source of truth: Fractal Audio wiki "Channels" page → "Which effect
+// Source of truth: Fractal Audio wiki "Channels" page -> "Which effect
 // blocks support X/Y" table, the "Axe-Fx II XL and XL+" row:
 //   Amp, Cab, Chorus, Compressor, Delay, Drive, Flanger, GEQ, Gate,
 //   Mixer, PEQ, Phaser, Pitch, Rotary, Reverb, Tremolo, Wah.
@@ -91,7 +94,7 @@ const XY_CHANNEL_GROUP_CODES: ReadonlySet<string> = new Set([
 ]);
 // The executor's per-channel write path requires a bypassable block, so the
 // advertised list must match what apply actually accepts. Mixer (MIX) is the
-// one wiki-listed X/Y group that is non-bypassable on the II — the hardware
+// one wiki-listed X/Y group that is non-bypassable on the II; the hardware
 // supports X/Y on it, but our apply path can't author it, so intersecting
 // with the bypassable set drops it (advertise only what apply accepts).
 const BYPASSABLE_GROUP_CODES: ReadonlySet<string> = new Set(
@@ -117,12 +120,16 @@ const CHANNEL_BLOCKS: readonly string[] = Object.freeze(
  * upper-case enum spelling per AxeEdit). The spec passes
  * `collectApplyPresetPreflight` with zero errors (verified by
  * `scripts/verify-describe-device.ts`).
+ *
+ * This is the XL+'s example (places a second Amp instance; AX8 supplies its
+ * OWN example via `configs/ax8.ts`'s `AX8_CONFIG.exampleSpec`, since the AX8
+ * lacks Amp 2). `createAxeFxIIDescriptor` uses `config.exampleSpec ?? AXEFX2_EXAMPLE_SPEC`.
  */
 /**
  * Two amp slots in this example demonstrate scene-channel referencing
  * with the canonical auto-derived ids: `amp` (instance 1, the default,
  * suffix dropped) and `amp_2` (instance 2). Scene `channels` / routing
- * `from` / routing `to` always key by these underscore-form ids — NOT
+ * `from` / routing `to` always key by these underscore-form ids, NOT
  * display forms like "Amp 1" / "Amp 2", NOT the literal block_type
  * when multiple instances exist. The preflight resolver also accepts
  * the leniency form `amp_1`, the display form `Amp 1`, and bare
@@ -184,6 +191,10 @@ const AXEFX2_EXAMPLE_SPEC: PresetSpec = {
  * `master_volume` not `master`, `volume` not `level` for drive).
  * Excludes bypass, balance, bypass_mode, globalmix (advanced page),
  * and per-tap multidelay parameters.
+ *
+ * Model-generic: keyed by GROUP slug ("amp"), not per-instance, so this is
+ * unchanged across the whole family (a reduced-instance device like the AX8
+ * still has "Amp 1", just not "Amp 2"; see `AxeFxIIConfig.isBlockAvailable`).
  */
 const AXEFX2_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> = Object.freeze({
   amp: ['effect_type', 'input_drive', 'bass', 'middle', 'treble', 'presence', 'master_volume', 'level'],
@@ -210,11 +221,12 @@ const AXEFX2_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> =
 });
 
 /**
- * find_compatible_types wrapper — delegates to the codec and adds the
+ * find_compatible_types wrapper: delegates to the codec and adds the
  * dispatcher-shape fields. Wiring this makes the dispatcher's STRUCTURED
  * path fire (real per-type narrowing for the blocks whose applicability
  * table has primary-type gates: compressor + multidelay) instead of the
  * unfiltered fallback. See `fractal-midi/gen2/axe-fx-ii` applicability.
+ * Model-generic: the applicability table doesn't vary by model byte.
  */
 function findCompatibleTypes(query: CompatibleTypesQuery): CompatibleTypesResult {
   const r = axefx2FindCompatibleTypes(query.block, query.params);
@@ -228,58 +240,89 @@ function findCompatibleTypes(query: CompatibleTypesQuery): CompatibleTypesResult
   };
 }
 
-export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
-  id: 'axe-fx-ii',
-  display_name: 'Fractal Axe-Fx II XL+',
-  preset_class: 'layout',
-  connection_label: 'axe-fx-ii',
-  port_match: [
-    { pattern: /axe-?fx/i },
-  ],
-  capabilities: {
-    slot_model: 'grid',
-    grid: { rows: 4, cols: 12 },
-    has_scenes: true,
-    scene_count: 8,
-    has_channels: true,
-    channel_names: ['X', 'Y'],
-    channel_blocks: CHANNEL_BLOCKS,
-    // Multiple instances per block type (Amp 1/2, Reverb 1..4, etc.) are
-    // addressable via the `instance` arg; writer/reader resolve them with
-    // resolveBlockWithInstance.
-    has_block_instances: true,
-    // 1-indexed display slot (1..16384). Coarse digit gate (no leading zero,
-    // not 0); parseAxeFxIILocation enforces the exact 1..16384 upper bound.
-    preset_location_format: /^[1-9]\d{0,4}$/,
-    supports_save: true,
-    supports_lineage: true,
-    atomic_read: true,
-  },
-  canonical_terms: {
-    block: 'block',
-    slot: 'grid location (row 1..4, col 1..12)',
-    preset: 'preset',
-    scene: 'scene 1..8',
-    channel: 'channel X/Y',
-    location: '1-indexed display slot 1..16384 (matches the front panel; wire is 0-indexed internally)',
-  },
-  blocks: buildBlocks(),
-  block_types: buildBlockTypes(),
-  findCompatibleTypes,
-  reader,
-  writer,
-  agent_guidance: AXEFX2_AGENT_GUIDANCE,
-  example_spec: AXEFX2_EXAMPLE_SPEC,
-  block_params_summary: AXEFX2_BLOCK_PARAMS_SUMMARY,
-  concept_keys: AXEFX2_CONCEPT_KEYS,
-  // Tempo-lock map: a non-NONE `tempo` enum locks the block's timing
-  // param and silently ignores absolute writes to it. Drives the
-  // co-write advisory in the dispatcher (see tempoLock.ts).
-  tempo_locked_params: {
-    'delay.time': 'delay.tempo',
-    'chorus.rate': 'chorus.tempo',
-    'flanger.rate': 'flanger.tempo',
-    'phaser.rate': 'phaser.tempo',
-    'pantrem.rate': 'pantrem.tempo',
-  },
+// Tempo-lock map: a non-NONE `tempo` enum locks the block's timing
+// param and silently ignores absolute writes to it. Drives the
+// co-write advisory in the dispatcher (see tempoLock.ts). Model-generic:
+// same param dictionary across the family.
+const TEMPO_LOCKED_PARAMS: Readonly<Record<string, string>> = {
+  'delay.time': 'delay.tempo',
+  'chorus.rate': 'chorus.tempo',
+  'flanger.rate': 'flanger.tempo',
+  'phaser.rate': 'phaser.tempo',
+  'pantrem.rate': 'pantrem.tempo',
 };
+
+/**
+ * Build a DeviceDescriptor bound to one Axe-Fx II family config (XL+ or
+ * AX8). `blocks` (buildBlocks(), group-level) and `channel_blocks` /
+ * `block_params_summary` / `agent_guidance` base / `tempo_locked_params` are
+ * shared across the family; `block_types` (buildBlockTypes(), per-instance),
+ * `reader`, `writer`, `capabilities.support_tier`/`verification`,
+ * `example_spec`, and the `device_note` agent-guidance overlay are
+ * per-config.
+ */
+export function createAxeFxIIDescriptor(config: AxeFxIIConfig): DeviceDescriptor {
+  const conceptKeys: Record<string, string> = {};
+  for (const entry of listConceptKeysForDevice(config.id)) {
+    conceptKeys[entry.conceptKey] = entry.localName;
+  }
+
+  return {
+    id: config.id,
+    display_name: config.displayName,
+    preset_class: 'layout',
+    connection_label: config.connectionLabel,
+    port_match: config.portMatch,
+    capabilities: {
+      slot_model: 'grid',
+      grid: { rows: 4, cols: 12 },
+      has_scenes: true,
+      scene_count: 8,
+      has_channels: true,
+      channel_names: ['X', 'Y'],
+      channel_blocks: CHANNEL_BLOCKS,
+      // Multiple instances per block type (Amp 1/2, Reverb 1..4, etc.) are
+      // addressable via the `instance` arg; writer/reader resolve them with
+      // resolveBlockWithInstance, which enforces `config.isBlockAvailable`.
+      has_block_instances: true,
+      // 1-indexed display slot (1..16384). Coarse digit gate (no leading zero,
+      // not 0); parseAxeFxIILocation enforces the exact 1..16384 upper bound
+      // (the wire's 14-bit ceiling, same on every model in the family; a
+      // model's true PHYSICAL preset count, e.g. AX8's 512, is narrower and
+      // documented in `verification`/agent_guidance rather than hard-enforced,
+      // matching how the XL+ never hard-enforced its own 768-preset count).
+      preset_location_format: /^[1-9]\d{0,4}$/,
+      supports_save: true,
+      supports_lineage: true,
+      atomic_read: true,
+      support_tier: config.supportTier,
+      verification: config.verification,
+    },
+    canonical_terms: {
+      block: 'block',
+      slot: 'grid location (row 1..4, col 1..12)',
+      preset: 'preset',
+      scene: 'scene 1..8',
+      channel: 'channel X/Y',
+      location: '1-indexed display slot 1..16384 (matches the front panel; wire is 0-indexed internally)',
+    },
+    blocks: buildBlocks(),
+    block_types: buildBlockTypes(config.isBlockAvailable),
+    findCompatibleTypes,
+    reader: createReader(config),
+    writer: createWriter(config),
+    agent_guidance: config.agentGuidanceOverlay
+      ? { ...AXEFX2_AGENT_GUIDANCE, ...config.agentGuidanceOverlay }
+      : AXEFX2_AGENT_GUIDANCE,
+    example_spec: config.exampleSpec ?? AXEFX2_EXAMPLE_SPEC,
+    block_params_summary: AXEFX2_BLOCK_PARAMS_SUMMARY,
+    concept_keys: Object.keys(conceptKeys).length > 0 ? Object.freeze(conceptKeys) : undefined,
+    tempo_locked_params: TEMPO_LOCKED_PARAMS,
+  };
+}
+
+/** The XL+ descriptor: preserved name/shape for every existing caller. */
+export const AXEFX2_DESCRIPTOR: DeviceDescriptor = createAxeFxIIDescriptor(AXE_FX_II_XL_PLUS_CONFIG);
+
+/** The AX8 descriptor (BK-094). See `configs/ax8.ts` for citations + gating. */
+export const AX8_DESCRIPTOR: DeviceDescriptor = createAxeFxIIDescriptor(AX8_CONFIG);

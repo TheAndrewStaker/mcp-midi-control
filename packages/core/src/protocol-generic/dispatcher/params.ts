@@ -22,7 +22,7 @@ import {
 } from '../types.js';
 
 import { getCachedBlockLayout } from './blockLayoutCache.js';
-import { assertInstanceSupported, openCtx, requireDevice } from './core.js';
+import { assertInstanceSupported, openCtx, requireDevice, withHandleRetry } from './core.js';
 import {
   encodeValue,
   resolveBlockName,
@@ -179,7 +179,11 @@ export async function executeSetParam(args: {
   const channel = resolveChannel(descriptor, canonical_block, args.channel);
   const wire_value = encodeValue(descriptor, canonical_block, canonical_name, args.value);
   const instance = args.instance;
-  if (descriptor.writer.setParam === undefined) {
+  // Captured in a local so TS narrows it through the withHandleRetry closure
+  // below (property narrowing on `descriptor.writer.setParam` doesn't survive
+  // a closure boundary — same pattern as `applyTypeKnobApplicabilityPreflight`).
+  const setParam = descriptor.writer.setParam;
+  if (setParam === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -217,7 +221,13 @@ export async function executeSetParam(args: {
   const tempoLockWarnings = await collectTempoLockStandaloneWarnings(descriptor, ctx, [
     { block: canonical_block, name: canonical_name, value: wire_value, channel, instance },
   ]);
-  const result = await descriptor.writer.setParam(ctx, canonical_block, canonical_name, wire_value, channel, instance);
+  // Phase A.5 (connection-arbiter.md): a HANDLE-level fault on this write (a
+  // thrown send, e.g. a clean Windows USB replug where the acquire-time
+  // canary's own signals all still read healthy) reconnects the endpoint by
+  // connection_label and retries this SAME write once on the fresh handle.
+  // A device-level rejection (no-ACK, a DispatchError) is NOT retried.
+  const result = await withHandleRetry(ctx, (c) =>
+    setParam(c, canonical_block, canonical_name, wire_value, channel, instance));
   const combinedWarnings = [...phantomWarnings, ...routingWarnings, ...tempoLockWarnings];
   const validation_info = combinedWarnings.length > 0 ? combinedWarnings : undefined;
   return {
@@ -254,7 +264,11 @@ export async function executeGetParam(args: {
   const channel = resolveChannel(descriptor, canonical_block, args.channel);
   const instance = args.instance;
   const ctx = openCtx(descriptor);
-  const result = await descriptor.reader.getParam(ctx, canonical_block, canonical_name, channel, instance);
+  // Phase A.5: same handle-fault reconnect-and-retry-once as executeSetParam,
+  // on the read side (the exact "list_samples succeeded, next call threw"
+  // hardware repro applies equally to a bare get_param after a replug).
+  const result = await withHandleRetry(ctx, (c) =>
+    descriptor.reader.getParam(c, canonical_block, canonical_name, channel, instance));
   const description = args.include_description
     ? getParamDescription(args.port, canonical_block, canonical_name)
     : undefined;
@@ -276,7 +290,8 @@ export async function executeSetParams(args: {
   ops: readonly { block: string; name: string; value: number | string; channel?: string | number; instance?: number }[];
 }): Promise<BatchWriteResult & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.writer.setParams === undefined) {
+  const setParams = descriptor.writer.setParams;
+  if (setParams === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -311,7 +326,12 @@ export async function executeSetParams(args: {
     }
   }
   const ctx = openCtx(descriptor);
-  const result = await descriptor.writer.setParams(ctx, validated);
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault. `setParams`
+  // is a batch of independent single-param writes (not a stateful multi-block
+  // transfer session), so restarting the whole batch on a fresh handle is
+  // safe — each write is idempotent (setting the same param to the same
+  // value twice is a no-op the second time).
+  const result = await withHandleRetry(ctx, (c) => setParams(c, validated));
   // Tempo-lock co-write advisory: if this batch set a tempo division AND
   // the absolute time/rate it locks, the absolute write is silently
   // ignored on the hardware. Pure inspection of the resolved writes —
@@ -360,6 +380,9 @@ export async function executeGetParams(args: {
     }
   }
   const ctx = openCtx(descriptor);
-  const result = await descriptor.reader.getParams(ctx, validated);
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault. Same
+  // rationale as executeSetParams — a batch of independent reads restarts
+  // cleanly on a fresh handle.
+  const result = await withHandleRetry(ctx, (c) => descriptor.reader.getParams(c, validated));
   return { ...result, device: descriptor.display_name };
 }

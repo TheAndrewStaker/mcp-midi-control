@@ -1,7 +1,7 @@
 /**
  * Axe-Fx II fn 0x0E QUERY_STATES bypass-bit probe.
  *
- * Live re-confirmation (and byte/bit pinpointing) of the cookbook
+ * Live re-confirmation (and byte/bit pinpointing) of the primitive
  * `ii-fn0e-query-states` tag-byte semantics:
  *
  *   1. Read fn 0x20 GET_GRID for the placed (non-shunt) blockIds.
@@ -228,7 +228,7 @@ async function main(): Promise<void> {
       const hit = diffAB.offsets.every((o) => o.record === expectedRecordIdxInDelivery && o.byteInRecord === 0);
       const bitsOk = diffAB.offsets.length === 1 && diffAB.offsets[0].xorBits === '0x01';
       expectationLine = hit && bitsOk
-        ? `CONFIRMED: exactly one byte moved, record ${expectedRecordIdxInDelivery} (the ${blockName(targetId)} record by address sort-zip), tag byte, bit 0x01 (engaged flag). Matches cookbook ii-fn0e-query-states.`
+        ? `CONFIRMED: exactly one byte moved, record ${expectedRecordIdxInDelivery} (the ${blockName(targetId)} record by address sort-zip), tag byte, bit 0x01 (engaged flag). Matches primitive ii-fn0e-query-states.`
         : `PARTIAL: diff did not land exclusively on the predicted record ${expectedRecordIdxInDelivery} tag bit 0x01; inspect the offsets above (record identification or tag semantics need a second look).`;
     }
     console.log(`\n${expectationLine}`);

@@ -2,7 +2,7 @@
 //
 // Focused follow-up to FindAM4EditPresetParser.java. The first pass
 // confirmed AM4-Edit uses a workflow registry (FUN_1402d83d0, same
-// pattern as the III `iii-async-workflow-fn-registry` cookbook
+// pattern as the III `iii-async-workflow-fn-registry` primitive
 // entry), but fn-bytes 0x77/0x78/0x79 are NOT in the workflow
 // registration table. They're handled by a parallel low-level
 // dispatcher.

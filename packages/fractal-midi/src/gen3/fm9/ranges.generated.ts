@@ -2,7 +2,7 @@
 // Source: FM9-Edit effectDefinitions cache (FM9 firmware 11.0, community capture
 // 2026-06-09), decoded by the strict count-driven walker
 // (scripts/_research/parse-effectdefinitions-cache.ts; grammar:
-// packages/fractal-midi/docs/research/cookbook/editor-cache-section-record-grammar.md).
+// packages/fractal-midi/docs/research/primitives/editor-cache-section-record-grammar.md).
 //
 // Per (block family, paramId): the device's OWN display range.
 //   displayMin/displayMax = cache (min, max) * scale, in front-panel units

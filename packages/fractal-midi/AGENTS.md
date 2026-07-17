@@ -29,9 +29,9 @@ consumer repo.
 
 **For codec / protocol RE work:**
 
-1. **[`docs/research/cookbook/INDEX.md`](docs/research/cookbook/INDEX.md)**:
+1. **[`docs/research/primitives/INDEX.md`](docs/research/primitives/INDEX.md)**:
    the encoding primitive Rosetta stone. Before researching a new
-   wire shape, scan the cookbook. The shape may already be a known
+   wire shape, scan the primitives. The shape may already be a known
    primitive.
 2. **[`docs/research/INDEX.md`](docs/research/INDEX.md)**: the broader
    research entry point: per-device decode status, captured artifacts
@@ -60,7 +60,7 @@ Both repos are OSS-intended. The split between what's committed (and
 publicly publishable) vs. maintainer-private:
 
 **Committed (this repo, public):**
-- All cookbook entries (encoding primitives, methodology)
+- All primitive entries (encoding primitives, methodology)
 - Per-device wire maps (SYSEX-MAP files)
 - Ghidra mining workflow + script READMEs
 - Public captured-artifacts manifest (forum captures, non-sensitive
@@ -103,9 +103,9 @@ exposure.
 
 Before declaring a session complete:
 
-1. **Cookbook updates.** Did you discover, refine, or rule out an
+1. **Primitive updates.** Did you discover, refine, or rule out an
    encoding primitive? Register it the same session in
-   `docs/research/cookbook/<name>.md` (or `_negative/` / `_partial/` /
+   `docs/research/primitives/<name>.md` (or `_negative/` / `_partial/` /
    `_scratch/`). Don't defer to "next session."
 2. **Cross-device transfer reflex.** Scan the other 3 device wire-maps
    for analogous decode gaps. File `[transfer-candidate]` follow-ups
@@ -117,7 +117,7 @@ Before declaring a session complete:
 4. **Artifact registration** (same-session). New Ghidra script →
    `scripts/ghidra/README.md`. New dump or capture-of-interest →
    `docs/research/captured-artifacts.md` (public) or the private
-   manifest. New primitive → cookbook entry.
+   manifest. New primitive → primitive entry.
 
 The discipline rules are codified in the consumer repo's `CLAUDE.md` §
 "Capability application discipline" and § "Same-session artifact
@@ -145,7 +145,7 @@ in the consumer repo.
 
 | Finding | Goes to |
 |---|---|
-| Encoding primitive (universal Fractal envelope shape, septet, hash, struct layout, etc.) | `docs/research/cookbook/<name>.md` |
+| Encoding primitive (universal Fractal envelope shape, septet, hash, struct layout, etc.) | `docs/research/primitives/<name>.md` |
 | Per-binary class/function/RVA finding (anatomy of AxeEdit / AM4-Edit binary) | `docs/research/ghidra/<binary>-anatomy.md` |
 | Per-device wire shape (specific fn-byte payload spec for one device) | `docs/devices/<device>/SYSEX-MAP.md` |
 | MCP-server dispatcher / tool surface pattern | consumer repo's `docs/dispatcher-patterns.md` |

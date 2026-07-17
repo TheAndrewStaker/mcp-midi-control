@@ -36,7 +36,7 @@
  * Provenance for the full rosters: the community FM9 cache set archived
  * 2026-06-09 (D. MacVicar); decode + adversarial validation in
  * `samples/captured/fm9-community-2026-06-09/FINDINGS.md`. Partial points:
- * `docs/_private/FM9-CAPTURE-RECEIVE+SWEEP-2026-06-04.md` and the cookbook entry
+ * `docs/_private/FM9-CAPTURE-RECEIVE+SWEEP-2026-06-04.md` and the primitive entry
  * `gen3-enum-label-septet-stream`.
  */
 import { FM9_AMP_ROSTER, FM9_DRIVE_ROSTER, FM9_REVERB_TYPE_ROSTER } from './rosters.generated.js';

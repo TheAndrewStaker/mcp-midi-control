@@ -24,7 +24,7 @@
  *
  * Device coverage: all three Fractal devices (AM4, II, III). Param
  * names differ across devices:
- *   - AM4 (cacheParams): `min_frequency`, `max_frequency`, `q_resonance`,
+ *   - AM4 (cacheParams): `minimum_frequency`, `maximum_frequency`, `q_resonance`,
  *     `wah_control`.
  *   - II (KNOWN_PARAMS): `freq_min`, `freq_max`, `resonance`, `control`.
  *   - III (PARAMS family=WAH): `WAH_FSTART`, `WAH_FSTOP`, `WAH_Q`,
@@ -43,7 +43,7 @@ export interface WahRecipeSpec {
   /**
    * Per-device display-value param dict. Numbers are display units;
    * strings are display-shape enum values (kept here for parity with
-   * filter recipes — wah recipes ship only numbers today).
+   * filter recipes â€” wah recipes ship only numbers today).
    */
   readonly params_per_device: Readonly<Partial<Record<RecipePort, Readonly<Record<string, number | string>>>>>;
   /** Recipes here are static; no modifier required. Field kept for parity with PitchRecipeSpec. */
@@ -61,8 +61,8 @@ export const WAH_RECIPES: Readonly<Record<string, WahRecipeSpec>> = Object.freez
     applicable_devices: ['am4', 'axe-fx-ii', 'axe-fx-iii'] as const,
     params_per_device: {
       am4: {
-        min_frequency: 300,
-        max_frequency: 1500,
+        minimum_frequency: 300,
+        maximum_frequency: 1500,
         q_resonance: 7,
         wah_control: 2.5,
       },
@@ -89,8 +89,8 @@ export const WAH_RECIPES: Readonly<Record<string, WahRecipeSpec>> = Object.freez
     applicable_devices: ['am4', 'axe-fx-ii', 'axe-fx-iii'] as const,
     params_per_device: {
       am4: {
-        min_frequency: 400,
-        max_frequency: 2000,
+        minimum_frequency: 400,
+        maximum_frequency: 2000,
         q_resonance: 5,
         wah_control: 5,
       },
@@ -117,8 +117,8 @@ export const WAH_RECIPES: Readonly<Record<string, WahRecipeSpec>> = Object.freez
     applicable_devices: ['am4', 'axe-fx-ii', 'axe-fx-iii'] as const,
     params_per_device: {
       am4: {
-        min_frequency: 500,
-        max_frequency: 3500,
+        minimum_frequency: 500,
+        maximum_frequency: 3500,
         q_resonance: 4,
         wah_control: 7.5,
       },

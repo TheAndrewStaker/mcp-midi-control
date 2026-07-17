@@ -1,7 +1,7 @@
 # MCP Dispatcher Patterns
 
 MCP-server discipline patterns that live at the **tool-surface +
-dispatcher layer**, not in the codec. Cookbook is for encoding
+dispatcher layer**, not in the codec. The primitives corpus is for encoding
 primitives (wire-level); this doc is for how the dispatcher validates,
 warns, and shapes responses.
 
@@ -202,5 +202,5 @@ behavior. Adding a new fixture requires updating the device package's
 - Adversary fixtures (slow-response, partial-ack) + `text_contains_any`
   matcher for ambiguous-case detection.
 - 2026-05-22: dispatcher-patterns.md created to host these patterns
-  outside the cookbook (cookbook is codec-domain; dispatcher patterns
+  outside the primitives corpus (the primitives corpus is codec-domain; dispatcher patterns
   are MCP-server-domain).

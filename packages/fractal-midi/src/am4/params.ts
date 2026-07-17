@@ -451,6 +451,35 @@ export const PARAM_ALIASES: Record<string, string> = {
   // NOTE: 'reverb.pre_delay' alias removed — canonical key is now
   // 'reverb.pre_delay' itself (renamed from 'reverb.predelay' for
   // UI-label match, audit row REVERB 19).
+  // 2026-07-15: the old "DynaCab quad" names (removed as a duplicate
+  // registration of pidHigh 0x41-0x44 with a wrongly-ordered guessed
+  // roster - see the removal note near amp.cab_gain_monitor) alias to
+  // the hardware-anchored entries so learned names keep resolving, now
+  // against the CORRECT device-order roster.
+  'amp.dynacab_type_1': 'amp.dynacab_1_cab',
+  'amp.dynacab_type_2': 'amp.dynacab_2_cab',
+  'amp.dynacab_mic_1': 'amp.dynacab_1_mic',
+  'amp.dynacab_mic_2': 'amp.dynacab_2_mic',
+  // 2026-07-15 (BK-106 scan): the cache generator's old names for 15
+  // registers double-registered addresses the UI-label-audit entries
+  // already owned (same class as the DynaCab quad above, caught by
+  // verify-wire-uniqueness). The 11 old names below are honest synonyms
+  // of the same control, so they alias; the 4 old CHORUS names
+  // (lfo_rate / width / lfo_freq / lfo_depth_2) each read as a
+  // DIFFERENT control than the register they addressed and were dropped
+  // WITHOUT aliases — an unknown-param error beats a silent wrong-knob
+  // remap.
+  'compressor.attack': 'compressor.attack_time',
+  'compressor.release': 'compressor.release_time',
+  'amp.compressor_clarity': 'amp.clarity',
+  'amp.compressor_amount': 'amp.amount',
+  'amp.compressor_threshold': 'amp.threshold',
+  'reverb.shift_1': 'reverb.voice_1_shift',
+  'reverb.shift_2': 'reverb.voice_2_shift',
+  'delay.diffusor': 'delay.diffuser',
+  'wah.min_frequency': 'wah.minimum_frequency',
+  'wah.max_frequency': 'wah.maximum_frequency',
+  'filter.freq': 'filter.frequency',
 };
 
 /**
@@ -506,6 +535,83 @@ export const SCENE_MIDI_TYPE_ENUM: Record<number, string> = (() => {
  * describe observed VALUES (screenshots), which remain compatible
  * with the corrected ranges.
  */
+
+/**
+ * AM4 stock DynaCab roster, in DEVICE order (fw 2.00). Wire ordinal is
+ * 0-based; AM4-Edit and the front panel display the 1-based index as an
+ * "NN:" prefix ("41: 4x12 Rumble EV12L" = wire 40). Source of truth:
+ * `samples/captured/hw-133-am4-cab-dropdown-2026-07-15.png` (the full
+ * picker, one screenshot), anchored to wire bytes by the session-41
+ * capture (0x41 float 40.0 ↔ "41: 4x12 Rumble EV12L"). Do NOT re-derive
+ * from the community wiki's alphabetical list - the device order swaps
+ * 24/25 (65 Bassguy before 5153 Stealth) and 33/34 (5153 before 5153
+ * Stealth), exactly the positional-join inversion class the primitives
+ * corpus warns about.
+ */
+export const AM4_DYNACAB_ROSTER: Readonly<Record<number, string>> = {
+  0: '1x8 5F1 Tweed',
+  1: '1x8 Princetone',
+  2: '1x10 BF Princetone',
+  3: '1x10 Metro Blues',
+  4: '1x10 SF Princetone',
+  5: '1x12 AC20',
+  6: '1x12 Black Magick',
+  7: '1x12 Car Ambler',
+  8: '1x12 Deluxe Tweed',
+  9: '1x12 Deluxe Verb',
+  10: '1x12 Div13 CJ11',
+  11: '1x12 G12T-100',
+  12: '1x12 Hot Kitty',
+  13: '1x12 Jr Blues',
+  14: '1x12 Nuclear Tone',
+  15: '1x12 Scholz',
+  16: '1x12 Tweed 20112',
+  17: '1x12 Vibrato Lux',
+  18: '1x15 Heart Key',
+  19: '1x15 Portabass',
+  20: '1x15 Vibroverb',
+  21: '2x10 Heart Key',
+  22: '2x10 Super 6G4',
+  23: '2x12 65 Bassguy',
+  24: '2x12 5153 Stealth',
+  25: '2x12 Chiefman',
+  26: '2x12 Class-A 30W',
+  27: '2x12 Double Verb',
+  28: '2x12 Lead 80',
+  29: '2x12 Texas Star',
+  30: '4x10 Bassguy RI',
+  31: '4x12 1960TV',
+  32: '4x12 5153',
+  33: '4x12 5153 Stealth',
+  34: '4x12 Citrus',
+  35: '4x12 Friedman GB',
+  36: '4x12 Friedman V30',
+  37: '4x12 Lerxst',
+  38: '4x12 Recto Slant',
+  39: '4x12 Recto Straight',
+  40: '4x12 Rumble EV12L',
+  41: '4x12 Rumble EV12S',
+  42: '4x12 Solo 100',
+  43: '4x12 USA Mc90',
+  44: '8x10 SV Bass',
+};
+
+/**
+ * AM4 DynaCab mic roster (fw 2.00). Wire-anchored: Dynamic 1 = 2 and
+ * Dynamic 2 = 3 byte-exact from the session-41 capture; Ribbon = 1 read
+ * live 2026-07-15 (editor showed Ribbon, register read 1); roster size 4
+ * confirmed by the same-day clamp probe (write 4 → readback 3). Condenser
+ * = 0 is BY ELIMINATION, not device-anchored - if a mic ask ever lands on
+ * the wrong capsule, verify index 0 first. Note the wire order differs
+ * from AM4-Edit's alphabetized dropdown.
+ */
+export const AM4_DYNACAB_MICS: Readonly<Record<number, string>> = {
+  0: 'Condenser',
+  1: 'Ribbon',
+  2: 'Dynamic 1',
+  3: 'Dynamic 2',
+};
+
 export const KNOWN_PARAMS = {
   ...CACHE_PARAMS,
   // ====================================================================
@@ -1336,22 +1442,37 @@ export const KNOWN_PARAMS = {
     unit: 'hz', displayMin: 200, displayMax: 20000,
     scaling: 'log10',
   },
-  'amp.cab_master_low_cut': {
-    block: 'amp', name: 'cab_master_low_cut',
+  'amp.proximity_frequency': {
+    block: 'amp', name: 'proximity_frequency',
     displayLabel: 'Proximity Frequency',
     pidLow: 0x003e, pidHigh: 0x0022,
-    // Cabinet.Cab Master EQ.Master Low Cut. Screenshot 33.3 Hz raw.
+    // CABINET_PROXFREQ (catalog id 34; id = pidHigh identity map).
+    // Renamed 2026-07-15 from the misnomer `cab_master_low_cut`: the
+    // session-41 screenshot shows BOTH Master Low Cut and Proximity
+    // Frequency at 33.3 Hz, but the capture floats differ
+    // (0x1f = 33.330002 = CABINET_LOCUT vs 0x22 = 33.299999 = this),
+    // and the displayLabel here was already 'Proximity Frequency'.
+    // The true Cab Master EQ low cut is `amp.master_low_cut` (0x1f).
+    // Range inherited from the old low-cut guess; upper bound
+    // unverified against the device (screenshot anchor is 33.3 Hz).
     unit: 'hz', displayMin: 20, displayMax: 200,
     scaling: 'log10',
   },
-  'amp.cab_master_level': {
-    block: 'amp', name: 'cab_master_level',
+  'amp.air': {
+    block: 'amp', name: 'air',
     displayLabel: 'Air',
     pidLow: 0x003e, pidHigh: 0x002d,
-    // Cabinet.Cab Extras.Cab Master Level. Screenshot 1.1 dB
-    // (wire 0.110 ×10 = 1.10). Stored as knob_0_10 even though the
-    // display suffix is dB.
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    // CABINET_AIR (catalog id 45; id = pidHigh identity map, corroborated
+    // by the adjacent CABINET_AIRFREQ at 0x2e = `amp.air_frequency`).
+    // Renamed 2026-07-15 from the misnomer `cab_master_level` and
+    // rescaled ×10 → ×100: the session-41 screenshot shows Air = 11.0%
+    // AND Cab Master Level = 1.1 dB, both fitting wire 0.110 at
+    // different scales; the id map resolves it to Air (percent).
+    // Supersedes the 2026-04-30 "hardware outranks cache" scale-10 call
+    // (the hardware screenshot was genuinely ambiguous; the cache's
+    // scale-100 was right). Where the actual Cab Master Level knob
+    // lives is still unidentified (not in CABINET ids 10-77).
+    unit: 'percent', displayMin: 0, displayMax: 100,
   },
   'amp.air_frequency': {
     block: 'amp', name: 'air_frequency',
@@ -1433,8 +1554,15 @@ export const KNOWN_PARAMS = {
   // the existing 16 cab_* entries.
   //
   // SKIP rationale (per brief):
-  //   - 33 CABINET_ZOOM, 65-68 DYNACAB_TYPE/MIC1/2 — XML display "—"
-  //     (no UI evidence, no name to verify against).
+  //   - 33 CABINET_ZOOM - XML display "—" (no UI evidence, no name to
+  //     verify against).
+  //   - 65-68 DYNACAB_TYPE/MIC1/2 were skipped HERE, but a later pass
+  //     registered them anyway further down as `amp.dynacab_type_*` /
+  //     `_mic_*` with a GUESSED roster (wrong order at ordinals 23/24).
+  //     2026-07-15: that quad was removed and the registers re-shipped
+  //     as `amp.dynacab_*_cab` / `_mic` (below) with the device-order
+  //     roster from the HW-133 dropdown screenshots; the old names
+  //     alias to the new entries in PARAM_ALIASES.
   //   - 65000+ CABINET_NAME/LABEL/BTN/PICKER/COPY_MENU/ALIGN_GRAPH —
   //     firmware ghost registers (string-name slots, action buttons),
   //     not user-editable knobs.
@@ -1446,7 +1574,7 @@ export const KNOWN_PARAMS = {
   //     existing amp.bass / amp.mid / amp.type at pidLow=0x003a.
   //   - "_2" pair members where the XML label is identical to the
   //     "_1" member's label (BANK2, TYPE2, PAN2, PROXIMITY2, MUTE2,
-  //     LOSLOPE2, HISLOPE2, DYNACAB_R2, DYNACAB_Z2) — would force
+  //     LOSLOPE2, HISLOPE2, DYNACAB_R2, DYNACAB_Z2) - would force
   //     MISLABEL since both can't match the same display string.
   'amp.bank': {
     block: 'amp', name: 'bank',
@@ -1608,7 +1736,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Master Low Slope',
     pidLow: 0x003e, pidHigh: 0x003f,
     // CABINET_PRELOSLOPE (catalog id=63). AM4-Edit "Master Low Slope" —
-    // Cab-Master EQ low-cut slope (sibling to cab_master_low_cut Hz).
+    // Cab-Master EQ low-cut slope (sibling to master_low_cut Hz).
     unit: 'enum', displayMin: 0, displayMax: 3,
     enumValues: { 0: '6 dB/OCT', 1: '12 dB/OCT', 2: '18 dB/OCT', 3: '24 dB/OCT' },
   },
@@ -1621,11 +1749,59 @@ export const KNOWN_PARAMS = {
     unit: 'enum', displayMin: 0, displayMax: 3,
     enumValues: { 0: '6 dB/OCT', 1: '12 dB/OCT', 2: '18 dB/OCT', 3: '24 dB/OCT' },
   },
+  // ── DynaCab cab + mic selectors (BK-104, registered 2026-07-15) ──
+  // CABINET_DYNACAB_TYPE1/2 + MIC1/2 (catalog ids 65-68; id = pidHigh
+  // identity map → 0x41-0x44). Evidence chain:
+  //   • session-41-amp-cabinet-expert capture: 0x41=0x42 wire float 40.0
+  //     with the paired screenshot showing "41: 4x12 Rumble EV12L" on
+  //     both cabs (wire is 0-based; AM4-Edit prefixes the 1-based index),
+  //     0x43=2.0 ("Dynamic 1") and 0x44=3.0 ("Dynamic 2").
+  //   • hw-133-am4-cab-dropdown-2026-07-15.png: the full 45-entry stock
+  //     DynaCab picker, numbered 01-45 (device order - NOT the wiki
+  //     wiki's alphabetical list, which inverts 24/25 and 33/34).
+  //   • hw-133-am4-mic-dropdown-2026-07-15.png + live clamp probe
+  //     (probe-am4-cab-verify-steps.ts --mic-clamp, 2026-07-15): mic
+  //     roster size 4 (writes 0..3 land, 4 clamps to 3). Ribbon=1 read
+  //     live off the founder's unit with the editor showing Ribbon;
+  //     Condenser=0 is by elimination (flagged, not device-anchored).
+  //   • Roster write+readback exercised across indices 0..44 live on
+  //     2026-07-15 (probe-am4-dynacab-roster.ts run; values restored).
+  // Amp→DynaCab linking caveat: selecting a new Amp Type RESETS the cab
+  // section (incl. these selectors) to the amp's linked default - write
+  // these AFTER amp.type in any build sequence.
+  'amp.dynacab_1_cab': {
+    block: 'amp', name: 'dynacab_1_cab',
+    displayLabel: 'Cab',
+    pidLow: 0x003e, pidHigh: 0x0041,
+    unit: 'enum', displayMin: 0, displayMax: 44,
+    enumValues: AM4_DYNACAB_ROSTER,
+  },
+  'amp.dynacab_2_cab': {
+    block: 'amp', name: 'dynacab_2_cab',
+    displayLabel: 'Cab',
+    pidLow: 0x003e, pidHigh: 0x0042,
+    unit: 'enum', displayMin: 0, displayMax: 44,
+    enumValues: AM4_DYNACAB_ROSTER,
+  },
+  'amp.dynacab_1_mic': {
+    block: 'amp', name: 'dynacab_1_mic',
+    displayLabel: 'Mic',
+    pidLow: 0x003e, pidHigh: 0x0043,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: AM4_DYNACAB_MICS,
+  },
+  'amp.dynacab_2_mic': {
+    block: 'amp', name: 'dynacab_2_mic',
+    displayLabel: 'Mic',
+    pidLow: 0x003e, pidHigh: 0x0044,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: AM4_DYNACAB_MICS,
+  },
   'amp.dynacab': {
     block: 'amp', name: 'dynacab',
     displayLabel: 'DynaCab',
     pidLow: 0x003e, pidHigh: 0x0045,
-    // CABINET_DYNACAB_R1 (catalog id=69). AM4-Edit "DynaCab" — Cab 1
+    // CABINET_DYNACAB_R1 (catalog id=69). AM4-Edit "DynaCab" - Cab 1
     // DynaCab radius/rotation. Bipolar knob, -10..+10.
     unit: 'knob_0_10', displayMin: -10, displayMax: 10,
   },
@@ -4519,10 +4695,13 @@ export const KNOWN_PARAMS = {
 
   // Master / cab-level Hz filters (LOCUT = master low cut on the
   // Cab Master EQ page; LOCUT1 = per-cab-1 low cut on the Cab page).
-  // The existing `cab_master_low_cut` at pidHigh=0x22 is actually
-  // wired to CABINET_PROXFREQ (catalog id 34) — a -era
-  // misname that's left as-is for backward compatibility; this new
-  // `master_low_cut` is the true CABINET_LOCUT control.
+  // The old `cab_master_low_cut` misname at pidHigh=0x22 (actually
+  // CABINET_PROXFREQ, catalog id 34) was renamed to
+  // `amp.proximity_frequency` on 2026-07-15; the back-compat hold was
+  // an active agent hazard (a "cab master low cut" ask resolved to the
+  // proximity register). This `master_low_cut` is the true
+  // CABINET_LOCUT control; pair it with `amp.cab_master_high_cut`
+  // (0x20) when applying mix-ready cab cuts.
   'amp.master_low_cut': {
     block: 'amp', name: 'master_low_cut',
     displayLabel: 'Low Cut',
@@ -4582,63 +4761,16 @@ export const KNOWN_PARAMS = {
   'amp.cab_order':        { block: 'amp', name: 'cab_order',        pidLow: 0x003e, pidHigh: 0x002b, unit: 'count', displayMin: 1, displayMax: 12 },
   'amp.cab_gain_monitor': { block: 'amp', name: 'cab_gain_monitor', pidLow: 0x003e, pidHigh: 0x0033, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
 
-  // DynaCab quad (TYPE1/2/MIC1/2). XML has empty `name=""` in regular
-  // layout and "Cab"/"Mic" in expert layout — the audit picks the
-  // first XML hit, so these will MATCH (empty display).
-  'amp.dynacab_type_1': {
-    block: 'amp', name: 'dynacab_type_1',
-    displayLabel: 'Cab',
-    pidLow: 0x003e, pidHigh: 0x0041,
-    unit: 'enum', displayMin: 0, displayMax: 44,
-    enumValues: {
-      0: '1x8 5F1 TWEED', 1: '1x8 PRINCETONE', 2: '1x10 BF PRINCETONE', 3: '1x10 METRO BLUES',
-      4: '1x10 SF PRINCETONE', 5: '1x12 AC20', 6: '1x12 BLACK MAGICK', 7: '1x12 CAR AMBLER',
-      8: '1x12 DELUXE TWEED', 9: '1x12 DELUXE VERB', 10: '1x12 DIV13 CJ11', 11: '1x12 G12T-100',
-      12: '1x12 HOT KITTY', 13: '1x12 JR BLUES', 14: '1x12 NUCLEAR TONE', 15: '1x12 SCHOLZ',
-      16: '1x12 TWEED 20112', 17: '1x12 VIBRATO LUX', 18: '1x15 HEART KEY', 19: '1x15 PORTABASS',
-      20: '1x15 VIBROVERB', 21: '2x10 HEART KEY', 22: '2x10 SUPER 6G4', 23: '2x12 5153 STEALTH',
-      24: '2x12 65 BASSGUY', 25: '2x12 CHIEFMAN', 26: '2x12 CLASS-A 30W', 27: '2x12 DOUBLE VERB',
-      28: '2x12 LEAD 80', 29: '2x12 TEXAS STAR', 30: '4x10 BASSGUY RI', 31: '4x12 1960TV',
-      32: '4x12 5153', 33: '4x12 5153 STEALTH', 34: '4x12 CITRUS', 35: '4x12 FRIEDMAN GB',
-      36: '4x12 FRIEDMAN V30', 37: '4x12 LERXST', 38: '4x12 RECTO SLANT',
-      39: '4x12 RECTO STRAIGHT', 40: '4x12 RUMBLE EV12L', 41: '4x12 RUMBLE EV12S',
-      42: '4x12 SOLO 100', 43: '4x12 USA MC90', 44: '8x10 SV BASS',
-    },
-  },
-  'amp.dynacab_type_2': {
-    block: 'amp', name: 'dynacab_type_2',
-    displayLabel: 'Cab',
-    pidLow: 0x003e, pidHigh: 0x0042,
-    unit: 'enum', displayMin: 0, displayMax: 44,
-    enumValues: {
-      0: '1x8 5F1 TWEED', 1: '1x8 PRINCETONE', 2: '1x10 BF PRINCETONE', 3: '1x10 METRO BLUES',
-      4: '1x10 SF PRINCETONE', 5: '1x12 AC20', 6: '1x12 BLACK MAGICK', 7: '1x12 CAR AMBLER',
-      8: '1x12 DELUXE TWEED', 9: '1x12 DELUXE VERB', 10: '1x12 DIV13 CJ11', 11: '1x12 G12T-100',
-      12: '1x12 HOT KITTY', 13: '1x12 JR BLUES', 14: '1x12 NUCLEAR TONE', 15: '1x12 SCHOLZ',
-      16: '1x12 TWEED 20112', 17: '1x12 VIBRATO LUX', 18: '1x15 HEART KEY', 19: '1x15 PORTABASS',
-      20: '1x15 VIBROVERB', 21: '2x10 HEART KEY', 22: '2x10 SUPER 6G4', 23: '2x12 5153 STEALTH',
-      24: '2x12 65 BASSGUY', 25: '2x12 CHIEFMAN', 26: '2x12 CLASS-A 30W', 27: '2x12 DOUBLE VERB',
-      28: '2x12 LEAD 80', 29: '2x12 TEXAS STAR', 30: '4x10 BASSGUY RI', 31: '4x12 1960TV',
-      32: '4x12 5153', 33: '4x12 5153 STEALTH', 34: '4x12 CITRUS', 35: '4x12 FRIEDMAN GB',
-      36: '4x12 FRIEDMAN V30', 37: '4x12 LERXST', 38: '4x12 RECTO SLANT',
-      39: '4x12 RECTO STRAIGHT', 40: '4x12 RUMBLE EV12L', 41: '4x12 RUMBLE EV12S',
-      42: '4x12 SOLO 100', 43: '4x12 USA MC90', 44: '8x10 SV BASS',
-    },
-  },
-  'amp.dynacab_mic_1': {
-    block: 'amp', name: 'dynacab_mic_1',
-    displayLabel: 'Mic',
-    pidLow: 0x003e, pidHigh: 0x0043,
-    unit: 'enum', displayMin: 0, displayMax: 3,
-    enumValues: { 0: 'Condenser', 1: 'Ribbon', 2: 'Dynamic 1', 3: 'Dynamic 2' },
-  },
-  'amp.dynacab_mic_2': {
-    block: 'amp', name: 'dynacab_mic_2',
-    displayLabel: 'Mic',
-    pidLow: 0x003e, pidHigh: 0x0044,
-    unit: 'enum', displayMin: 0, displayMax: 3,
-    enumValues: { 0: 'Condenser', 1: 'Ribbon', 2: 'Dynamic 1', 3: 'Dynamic 2' },
-  },
+  // REMOVED 2026-07-15 (session review finding): the old "DynaCab quad"
+  // (`amp.dynacab_type_1/_type_2/_mic_1/_mic_2`) that lived here was a
+  // SECOND registration of pidHigh 0x41-0x44 with a GUESSED cab roster
+  // whose order was wrong at ordinals 23/24 (it had 23='2x12 5153
+  // STEALTH' / 24='2x12 65 BASSGUY'; the device picker - hw-133 cab
+  // dropdown screenshot - has them the other way around), so a set-by-
+  // name through it placed the wrong cab. The hardware-anchored entries
+  // are `amp.dynacab_1_cab/_2_cab/_1_mic/_2_mic` (pidHigh order, near
+  // `amp.dynacab`); the old names live on as PARAM_ALIASES so any agent
+  // that learned them resolves to the correct roster.
 
   // ============================================================
   // GLOBAL family (pidLow = 0x0001) — 98 entries.
@@ -5082,7 +5214,7 @@ export const KNOWN_PARAMS = {
   // MEDIUM/MED-SOFT vs the dropdown, detector is fully reordered). The AM4
   // echoes no label over MIDI, so this was captured by set-index + read the
   // device front panel per step (probe-am4-enum-sweep.ts). See
-  // docs/RE-WORKFLOW.md + cookbook _negative/am4-edit-dropdown-order-not-wire-order.
+  // docs/RE-WORKFLOW.md + primitives _negative/am4-edit-dropdown-order-not-wire-order.
   'compressor.knee_type':            { block: 'compressor', name: 'knee_type',            displayLabel: 'Knee Type',         pidLow: 0x002e, pidHigh: 0x000e, unit: 'enum', displayMin: 0, displayMax: 4, enumValues: { 0: 'HARD', 1: 'MED-HARD', 2: 'MEDIUM', 3: 'MED-SOFT', 4: 'SOFT' } },
   'compressor.detector_type':        { block: 'compressor', name: 'detector_type',        displayLabel: 'Detector Type',     pidLow: 0x002e, pidHigh: 0x0010, unit: 'enum', displayMin: 0, displayMax: 3, enumValues: { 0: 'RMS', 1: 'PEAK', 2: 'RMS + PEAK', 3: 'HALF-WAVE' } },
   'compressor.auto_attack_release':  { block: 'compressor', name: 'auto_attack_release',  displayLabel: 'Auto Att/Rel',      pidLow: 0x002e, pidHigh: 0x0016, unit: 'enum',  displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },

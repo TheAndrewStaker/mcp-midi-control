@@ -68,7 +68,17 @@ const isFamily = (c: number[]) => c.length > 5 && PREFIX.every((h, i) => c[i] ==
 const XSUB = TRANSFER_CONSTANTS.SUBCMD;
 const XHDR = TRANSFER_CONSTANTS.HEADER; // [00 20 29 01 64 03] — subcmd at core[XHDR.length]
 const FILE_TYPE_PATCH = 0x04;
-const patchFileId = (slot: number) => [FILE_TYPE_PATCH, (slot >> 7) & 0x7f, slot & 0x7f];
+/**
+ * `[fileType, pack, slot]` — the shared fileId shape (see `ncs/transfer.ts`
+ * `fileId`, `ncs/sampleDirectory.ts` `fileIdFor`). `pack` is the 0-based microSD
+ * pack index (device Pack 1 = 0).
+ *
+ * CORRECTED 2026-07-16: this read `(slot >> 7) & 0x7f`, the septet model that
+ * `docs/design/circuit-pack-addressing.md` refutes by capture. It was invisible
+ * because `slot >> 7` is 0 for every legal slot 0..63, so it emitted a correct
+ * pack-0 byte while pinning every patch read to Pack 1.
+ */
+const patchFileId = (slot: number, pack = 0) => [FILE_TYPE_PATCH, pack & 0x7f, slot & 0x7f];
 const nibblesToInt = (ns: number[]) => ns.reduce((a, n) => a * 16 + (n & 0xf), 0) >>> 0;
 
 export interface StoredPatchResult {

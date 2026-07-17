@@ -20,6 +20,7 @@ import {
   executeExportStoredPreset,
   executeGetPreset,
   executePortPreset,
+  executeReadPackDirectory,
   executeReadSampleDirectory,
   executeRestorePreset,
 } from '../dispatcher.js';
@@ -48,23 +49,25 @@ function backupTimestamp(): string {
     .replace(/:/g, '-');
 }
 
-export function registerPresetTools(server: McpServer): void {
-  const presetShape = buildPresetShape();
+// ── outputSchema reuse (2026-05-22 MCP migration) ────────────────
+//
+// Shared sub-schemas for tool output, declared once at module scope so
+// the wire envelope stays consistent across apply_preset / get_preset
+// AND so verify-response-shape-parity can strict-parse a maximal
+// ApplyResult against the exported shape (the recurrence gate for the
+// 2026-07-16 auto_applied incident, see the field comment below).
+//
+// Per the 2025-11-25 spec these schemas are advisory: the model uses
+// them to plan invocations; clients SHOULD (not MUST) validate at
+// runtime. In practice Claude Desktop DOES validate structuredContent
+// against the advertised schema (additionalProperties:false), so a
+// result field missing from the shape hard-fails the whole tool call
+// client-side. The runtime `asText` helper still emits the JSON in a
+// text content block as the spec's backwards-compat path, so
+// structuredContent + outputSchema is additive; older clients
+// continue to work against the text payload unchanged.
 
-  // ── outputSchema reuse (2026-05-22 MCP migration) ────────────────
-  //
-  // Shared sub-schemas for tool output. We declare them once at
-  // registration time so the wire envelope stays consistent across
-  // apply_preset / get_preset.
-  //
-  // Per the 2025-11-25 spec these schemas are advisory: the model uses
-  // them to plan invocations; clients SHOULD (not MUST) validate at
-  // runtime. The runtime `asText` helper still emits the JSON in a
-  // text content block as the spec's backwards-compat path, so
-  // structuredContent + outputSchema is additive; older clients
-  // continue to work against the text payload unchanged.
-
-  const validationErrorShape = z.object({
+const validationErrorShape = z.object({
     slot_index: z.number().int().optional(),
     scene_index: z.number().int().optional(),
     routing_index: z.number().int().optional(),
@@ -131,7 +134,32 @@ export function registerPresetTools(server: McpServer): void {
     applied_spec: z.unknown().optional(),
     recipe_id: z.string().optional(),
     device: z.string(),
+    // BK-103b: server-injected defaults report. MUST stay in lockstep with
+    // ApplyResult (types.ts): outputSchema-declared tools advertise
+    // additionalProperties:false to clients, so a result field missing here
+    // makes Claude Desktop REJECT the whole response client-side with a
+    // generic "Tool execution failed" AFTER the wire writes landed (the
+    // 2026-07-16 all-day bench mystery). verify-response-shape-parity now
+    // gates this with a strict-parse of a maximal ApplyResult.
+    auto_applied: z.object({
+      params: z.record(z.string(), z.string()),
+      channels: z.array(z.string()).optional(),
+      note: z.string(),
+    }).optional(),
   };
+
+/**
+ * Exported for verify-response-shape-parity's lockstep gate: a maximal
+ * `Required<ApplyResult>`-typed literal must strict-parse against this
+ * shape, so a new ApplyResult field without a matching schema entry
+ * fails the gate instead of failing every apply_preset call in Claude
+ * Desktop at runtime.
+ */
+export const APPLY_PRESET_OUTPUT_SHAPE = applyPresetOutputShape;
+
+export function registerPresetTools(server: McpServer): void {
+  const presetShape = buildPresetShape();
+
   server.registerTool('get_preset', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: 'Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. Use for state-anchoring before a tone edit (read, summarize, propose, then targeted set_param / set_params). Default: active-channel params only. Pass include_channel_state: true for the per-channel nested shape (params_by_channel; II X/Y, AM4 A/B/C/D). Use instance on set_param/set_params to target a specific block (e.g. Amp 2). Scope: active scene only; no scenes 2..N, no routing. GEN-3 (Axe-Fx III / FM3 / FM9): pass `location` (integer preset number) to read a STORED preset and get the FULL decoded patch in `whole_preset` (routing grid, per-channel A/B/C/D block types, all 8 scene names plus per-scene bypass/channel, amp model plus knobs, modifiers, scene controllers; FM9-confirmed). Without location, gen-3 live read: `live_grid` = positioned routing (fn=0x01 sub=0x2E); `slots` = per-block param values; `live_meters.cpu_percent` = the preset\'s DSP/CPU load (answer "how much headroom?"); `active_scene` = current scene index. Performance: II ~2 s; AM4 ~0.3 s; gen-3 location read ~1-2 s. Hydra returns capability_not_supported. DO NOT feed the snapshot back into apply_preset (FRESH-BUILD clears unlisted slots plus scenes); use set_param / set_params for changed knobs. Re-call to verify.',
@@ -149,8 +177,9 @@ export function registerPresetTools(server: McpServer): void {
         .describe(
           'gen-3 only (Axe-Fx III / FM3 / FM9): stored preset number to read instead of the active buffer. Dumps that stored slot (fn=0x03) and returns the full decoded patch in `whole_preset`. Ignored on II/AM4/Hydra (they read the active buffer).',
         ),
+      pack: z.number().int().min(1).max(32).optional().describe('Circuit Tracks: which microSD PACK the location lives in, numbered as the device shows it, so pack:5 is the front panel\'s "Pack 5". NOTE the two bases: `pack` is 1-based; `location` is a 0-based slot. Default pack 1. Each pack is a COMPLETE separate world of 64 projects, so the same slot number in a different pack is a DIFFERENT project. Call list_packs to see the card\'s packs by name. The server cannot detect which pack the device has selected, so pass it explicitly when the user is working in a specific pack. Applies to a numeric project location only: a "patch:N" location reads through the device working buffer, which always follows the pack selected on the front panel. Devices with no packs refuse pack > 1 rather than ignore it.'),
     },
-  }, async ({ port, include_channel_state, location }) => {
+  }, async ({ port, include_channel_state, location, pack }) => {
     try {
       const locNum =
         location === undefined
@@ -161,7 +190,7 @@ export function registerPresetTools(server: McpServer): void {
       if (locNum !== undefined && (!Number.isInteger(locNum) || locNum < 0)) {
         return asError(new Error(`get_preset: location must be a non-negative integer, got ${JSON.stringify(location)}`));
       }
-      const result = await executeGetPreset({ port, include_channel_state, location: locNum });
+      const result = await executeGetPreset({ port, include_channel_state, location: locNum, pack });
       return asText(result);
     } catch (err) {
       return asError(err);
@@ -176,11 +205,12 @@ export function registerPresetTools(server: McpServer): void {
       location: z.union([z.string(), z.number()]).optional().describe(
         'Optional stored preset location to export (integer index, 0-based). When given, exports that stored slot directly from device flash, leaving the working buffer untouched; when omitted, exports the active working-buffer preset. Stored-location export: AM4 (0..103 = A01..Z04, e.g. M03 = 12*4+2 = 50), gen-3 (Axe-Fx III / FM3 / FM9 / VP4), and Circuit Tracks (project slot 0..63). Active-buffer export also works on the Axe-Fx II. Circuit Tracks has no active buffer to export, so always pass a project slot.',
       ),
+      pack: z.number().int().min(1).max(32).optional().describe('Circuit Tracks: which microSD PACK the location lives in, numbered as the device shows it, so pack:5 is the front panel\'s "Pack 5". NOTE the two bases: `pack` is 1-based; `location` is a 0-based slot. Default pack 1. Each pack is a COMPLETE separate world of 64 projects, so the same slot number in a different pack is a DIFFERENT project. Call list_packs to see the card\'s packs by name. The server cannot detect which pack the device has selected, so pass it explicitly when the user is working in a specific pack. Applies to a numeric project location only: a "patch:N" location reads through the device working buffer, which always follows the pack selected on the front panel. Devices with no packs refuse pack > 1 rather than ignore it.'),
       directory: z.string().optional().describe(
         'Destination folder for the backup file (.syx, or .ncs for Circuit Tracks). Optional. Defaults to a `mcp-midi-backups` folder under the user\'s home directory. Point this at a cloud-synced folder (e.g. a OneDrive path) so backups reach the user\'s other devices. Created if it does not exist.',
       ),
     },
-  }, async ({ port, location, directory }) => {
+  }, async ({ port, location, pack, directory }) => {
     try {
       let dump: Awaited<ReturnType<typeof executeExportActivePreset>>;
       if (location !== undefined) {
@@ -188,7 +218,7 @@ export function registerPresetTools(server: McpServer): void {
         if (!Number.isInteger(locNum) || locNum < 0) {
           return asError(new Error(`export_preset: location must be a non-negative integer, got ${JSON.stringify(location)}`));
         }
-        dump = await executeExportStoredPreset({ port, location: locNum });
+        dump = await executeExportStoredPreset({ port, location: locNum, pack });
       } else {
         dump = await executeExportActivePreset({ port });
       }
@@ -231,9 +261,23 @@ export function registerPresetTools(server: McpServer): void {
     }
   });
 
+  server.registerTool('list_packs', {
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    description: "List the storage PACKS a device holds, by name. Circuit Tracks: the microSD card's packs (up to 32), each a COMPLETE separate world of 64 projects, 128 patches, and 64 samples. Read-only, one round trip over MIDI, so it needs a bidirectional connection (close Novation Components so the port is free). CALL THIS BEFORE any pack-addressed write (apply_pattern / upload_project with `pack`): the server CANNOT detect which pack the device currently has selected, and the same slot number exists in every pack, so this is the only way to see which packs exist, what they are called, and which one to aim at. Returns { count, packs:[{pack, name, wire_index}] }, where `pack` is the 1-based number the front panel shows AND exactly the value the `pack` arg takes (pass it straight through; ignore wire_index, which is diagnostic). An empty pack is the safe target for new work. Devices that do not store content in packs (Fractal, Hydrasynth, SPD-SX) return capability_not_supported.",
+    inputSchema: {
+      port: z.string().describe(PORT_DESC),
+    },
+  }, async ({ port }) => {
+    try {
+      return asText(await executeReadPackDirectory({ port }));
+    } catch (err) {
+      return asError(err);
+    }
+  });
+
   server.registerTool('list_samples', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
-    description: "Read a device's named sample pool and return each slot's stored name (the sampler-archetype \"what's in the pool\" read; the names author_kit / the groove packer reference). Circuit Tracks: the active Pack's shared 64-slot drum-sample pool (the 4 drum tracks pick from it), read over MIDI, so it needs a bidirectional connection (close Novation Components so the port is free) and takes a few seconds (probes all 64 slots). SPD-SX (WAVE MGR storage mode): the wave pool read from the mounted drive (can be hundreds of waves). So you can see what each slot holds by name (\"kick\", \"snare\", \"closed hat\") and map sounds semantically. Read-only; sends no write. Returns { occupied, total, slots:[{slot, device_slot, name}] }; name is omitted for empty slots. Devices without a named sample pool (Fractal, Hydrasynth) return capability_not_supported.",
+    description: "Read a device's named sample pool and return each slot's stored name (the sampler-archetype \"what's in the pool\" read; the names author_kit / the groove packer reference). Circuit Tracks: PACK 1's shared 64-slot drum-sample pool (the 4 drum tracks pick from it), read over MIDI, needs a bidirectional connection (close Novation Components so the port is free). Always reads Pack 1 whatever pack the device has selected (samples are not pack-aware yet); each pack has its OWN pool, so a project authored into another pack may not match these names: verify by ear. SPD-SX (WAVE MGR storage mode): the wave pool read from the mounted drive (can be hundreds of waves). So you can see what each slot holds by name (\"kick\", \"snare\", \"closed hat\") and map sounds semantically. Read-only; sends no write. Returns { occupied, total, slots:[{slot, device_slot, name}] }; name is omitted for empty slots. Devices without a named sample pool (Fractal, Hydrasynth) return capability_not_supported.",
     inputSchema: {
       port: z.string().describe(PORT_DESC),
     },

@@ -8,7 +8,7 @@
 // feature signature so the parser slot can be pinned in one mining
 // pass.
 //
-// Per cookbook iii-async-workflow-fn-registry (matched, cross-device
+// Per primitive iii-async-workflow-fn-registry (matched, cross-device
 // 2026-05-28) + iii-workflow-state-machine-executor (matched-singleton
 // on III), the AM4-Edit parser is reached via a workflow-object vtable
 // slot dispatched by workflow state, NOT a fn-byte switch (which
@@ -45,7 +45,7 @@
 //
 // The 22 anchor offsets are derived from samples/captured/
 // am4-warm-pair-diff.json step-5 amp-type-swap exclusive-record list
-// (rec_id * 3 byte offset, septet-packed 14-bit per cookbook
+// (rec_id * 3 byte offset, septet-packed 14-bit per primitive
 // septet-14bit).
 //
 // Output:

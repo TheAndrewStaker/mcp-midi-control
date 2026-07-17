@@ -81,7 +81,7 @@ genuine missing catalog coverage. High-yield audit target.
 
 ## Unmapped Ghidra families (potential AM4 blocks OR multi-product artifacts)
 
-AM4-Edit is a multi-product editor binary (per cookbook
+AM4-Edit is a multi-product editor binary (per primitive
 `[[iii-multiproduct-editor-binary]]`, model-byte dispatch over
 III/FM9/FM3/AM4 was confirmed in the third-hop decode of
 `FUN_1401da990`). Some Ghidra families correspond to features the

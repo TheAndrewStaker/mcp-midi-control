@@ -42,7 +42,7 @@
  *   - ONE VOLATILE u16 @ 0x140E: changes between back-to-back no-op redumps
  *     of an unchanged buffer. Diffing at the decoded layer must ignore it.
  *     (This word — re-Huffman-coded with a churned dynamic code table — is
- *     what made the compressed layer look "non-deterministic"; see cookbook
+ *     what made the compressed layer look "non-deterministic"; see primitive
  *     `_negative/am4-preset-dump-flat-byte-diff.md`.)
  *
  * The rest of the body (block records, routing, remaining params) is the

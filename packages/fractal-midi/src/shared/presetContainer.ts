@@ -13,7 +13,7 @@
  *   - AM4 (0x15): the SAME container verbatim at 4 chunks (8,192 B
  *     raw_patch). Validated over all 104 fw 1.01 factory presets + 14 fw 2.00
  *     hardware exports (CRC, footer XOR, Huffman termination, plaintext name
- *     all hold — 2026-07-02 decode, see cookbook `am4-gen3-preset-container`
+ *     all hold — 2026-07-02 decode, see primitive `am4-gen3-preset-container`
  *     and `src/am4/presetContainer.ts`).
  *
  * Originally lived in `@mcp-midi-control/fractal-gen3/presetHuffman.ts`;

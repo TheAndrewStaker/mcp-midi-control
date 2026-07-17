@@ -9,7 +9,7 @@
 
 The standing finding was that Fractal editors filter class-compliant
 virtual MIDI ports out of their picker (see
-[`_negative/virtual-midi-bridge-interposition.md`](../research/cookbook/_negative/virtual-midi-bridge-interposition.md)).
+[`_negative/virtual-midi-bridge-interposition.md`](../research/primitives/_negative/virtual-midi-bridge-interposition.md)).
 That holds for AxeEdit II / AM4-Edit, but **FM9-Edit accepts a loopMIDI
 port** when the port name carries the `AXE` prefix (e.g. `AXEloopMIDI
 Port`). The port appears in Preferences and the editor connects.
@@ -76,8 +76,8 @@ npx tsx scripts/_research/fractal-editor-emulator.ts \
 Use `--model 10` for III-Edit, `--model 11` for FM3-Edit (each needs its own
 connect+sync capture to seed the verbatim render-gate frames; FM9 is the only
 captured corpus so far). The shape builders are golden-tested offline by
-`scripts/verify-fractal-gen3-sim.ts` (no editor needed). The cookbook entry
-[`gen3-editor-sync-read-surface`](../research/cookbook/gen3-editor-sync-read-surface.md)
+`scripts/verify-fractal-gen3-sim.ts` (no editor needed). The primitive entry
+[`gen3-editor-sync-read-surface`](../research/primitives/gen3-editor-sync-read-surface.md)
 documents the read surface the simulator answers.
 
 ## FM3-Edit (Rig A): routing formula decode, 2026-06-05
@@ -93,8 +93,8 @@ via `scripts/_research/probe-fm3-routing.ts`. Key findings:
   The even-col refusal is 6-row-specific.
 - `b21` follows `floor(srcGp/2)` with `srcGp = (srcCol−1)×4 + (srcRow−1)`.
 
-Full decode: cookbook entry
-[`gen3-fn01-grid-routing`](../research/cookbook/gen3-fn01-grid-routing.md),
+Full decode: primitive entry
+[`gen3-fn01-grid-routing`](../research/primitives/gen3-fn01-grid-routing.md),
 implementation: `packages/fractal-midi/src/gen3/axe-fx-iii/setParam.ts`
 (`buildSetGridRouting`, rows=4 branch).
 

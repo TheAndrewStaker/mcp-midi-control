@@ -1,4 +1,4 @@
-# Cookbook mine: `ghidra-axeedit3-paramtables-v2.txt`
+# Primitives mine: `ghidra-axeedit3-paramtables-v2.txt`
 
 Mining pass against `samples/captured/decoded/ghidra-axeedit3-paramtables-v2.txt`
 (28,317 bytes, 468 lines) produced by `scripts/ghidra/dump-axeedit3-paramtables/DumpAxeEditIIIParamTablesV2.java`.
@@ -19,7 +19,7 @@ Total parameter-ID entries (sum across all tables): 2216
 Param-ID range observed: 0 .. 65530 (426 unique)
 ```
 
-Cookbook crosschecks performed against INDEX.md (35 entries) plus the
+Primitives crosschecks performed against INDEX.md (35 entries) plus the
 five most relevant per-entry reads ([[param-descriptor-16byte]],
 [[vendor-envelope-descriptor-table]], [[iii-multiproduct-editor-binary]],
 [[iii-host-emitter-fn-table]], [[block-record-stride-8]],
@@ -28,7 +28,7 @@ five most relevant per-entry reads ([[param-descriptor-16byte]],
 
 ---
 
-## 1. Instances of existing cookbook primitives
+## 1. Instances of existing primitives
 
 ### 1.1 [[param-descriptor-16byte]], direct confirmation on AxeEdit III
 
@@ -113,12 +113,12 @@ Proposed frontmatter (founder copies, edits, promotes):
 name: per-effect-paramtable-dispatcher
 class: dispatch-context
 status: matched
-discovered: initial III mining; 2026-05-22 (AM4 + III dispatcher cross-confirmed, cookbook entry proposed)
+discovered: initial III mining; 2026-05-22 (AM4 + III dispatcher cross-confirmed, primitive entry proposed)
 verified_on:
   - axe-edit-iii-binary
   - am4-edit-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-per-effect-paramtable-dispatcher
+golden: scripts/primitives-verify.ts#case-per-effect-paramtable-dispatcher
 relates_to: [param-descriptor-16byte, iii-multiproduct-editor-binary, vendor-envelope-descriptor-table]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axeedit3-paramtables-v2.txt (49 cases, 2216 entries, dispatcher FUN_140397a40)
@@ -167,7 +167,7 @@ discrepancy is null-name filtering, not a dispatcher disagreement).
 Note: there is a third potential axis (`axe-edit-ii-binary`) that is
 NOT yet listed. II's catalog mining via `SeekParamTablesII.java`
 recovered 1,113 `(paramId, symbol)` entries per the existing
-[[param-descriptor-16byte]] entry's L65-66, but the cookbook does not
+[[param-descriptor-16byte]] entry's L65-66, but the primitives corpus does not
 yet name whether II uses a per-effect dispatcher of the same shape or
 a single coherent catalog array. Resolving that adds a third axis and
 hardens the primitive further. Filed as a follow-up Ghidra mining
@@ -261,11 +261,11 @@ Proposed frontmatter:
 name: iii-paramid-pseudo-sentinel-ranges
 class: struct-layout
 status: matched-singleton
-discovered: 2026-05-22 (cookbook mine of ghidra-axeedit3-paramtables-v2.txt)
+discovered: 2026-05-22 (primitives mine of ghidra-axeedit3-paramtables-v2.txt)
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-paramid-pseudo-sentinel-ranges
+golden: scripts/primitives-verify.ts#case-iii-paramid-pseudo-sentinel-ranges
 relates_to: [param-descriptor-16byte, per-effect-paramtable-dispatcher]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axeedit3-paramtables-v2.txt
@@ -295,12 +295,12 @@ share tables (per the script source comments):
 Plus a notable empty arm: case `0x3a` resolves to `DAT_1412bd7d0`
 with 0 params (L402-403 of the dump).
 
-**Why this might or might not deserve a cookbook entry:**
+**Why this might or might not deserve a primitive entry:**
 
 This is descriptor-table-shaped data (a 49-row enumeration), so it
 could be a primitive, but more naturally it's the body of the
 `per-effect-paramtable-dispatcher` primitive (§2.1) as its concrete
-fixture. I'd lean against a separate cookbook entry; instead the
+fixture. I'd lean against a separate primitive entry; instead the
 49-case enumeration should be documented inside §2.1's body or
 referenced via `docs/devices/axe-fx-iii/SYSEX-MAP.md` L787-803 which
 already names the family-string-per-case.
@@ -342,12 +342,12 @@ To avoid re-attempting work already covered by this dump:
 
 ## 4. Action checklist for the founder
 
-If this report converts to cookbook changes, three independent
+If this report converts to primitives changes, three independent
 actions (each is reversible; none is automated by the agent):
 
-1. **Promote §2.1** to a new cookbook entry
-   `cookbook/per-effect-paramtable-dispatcher.md` with the frontmatter
-   above. Add a golden case in `scripts/cookbook-verify.ts` that
+1. **Promote §2.1** to a new primitive entry
+   `primitives/per-effect-paramtable-dispatcher.md` with the frontmatter
+   above. Add a golden case in `scripts/primitives-verify.ts` that
    asserts (a) `FUN_140397a40` named in the III dump's L138, (b) 49
    cases reflected in the script's `CASE_TO_DAT` L50-100, (c) the
    parallel AM4 dispatcher claim in `docs/devices/am4/SYSEX-MAP.md`
@@ -355,15 +355,15 @@ actions (each is reversible; none is automated by the agent):
    + line-ref check), like `iii-multiproduct-editor-binary`.
 
 2. **Promote §2.2** as `matched-singleton` to
-   `cookbook/iii-paramid-pseudo-sentinel-ranges.md`. Golden: parse the
+   `primitives/iii-paramid-pseudo-sentinel-ranges.md`. Golden: parse the
    dump, assert ≥3 distinct `0xFFFx` entries appear in non-terminator
    position. Document the AM4 re-mine plan as the
    `path-to-matched` body.
 
 3. **Append `consumed_in:` lines** to:
-   - `cookbook/param-descriptor-16byte.md` (dump + V2 script paths
+   - `primitives/param-descriptor-16byte.md` (dump + V2 script paths
      per §1.1).
-   - `cookbook/_negative/flat-int-stride4-param-table.md` (V2 script
+   - `primitives/_negative/flat-int-stride4-param-table.md` (V2 script
      as third in-the-wild instance per §1.1).
 
 Action 3 is the lowest-cost; do first.
@@ -375,14 +375,14 @@ Action 3 is the lowest-cost; do first.
 Findings tier: 1 large new primitive (§2.1, axes = III + AM4, ready
 for `matched`), 1 medium singleton (§2.2, novel and useful, candidate
 `matched-singleton`), 1 instance match-add (§1.1, two lines into
-existing entry). Total cookbook deltas if all promoted: +2 new
+existing entry). Total primitives deltas if all promoted: +2 new
 primitives, +3 `consumed_in:` lines distributed across 2 existing
-entries. No negative-cookbook deltas.
+entries. No negative-primitives deltas.
 
 Highest payoff if only one is taken: §2.1 promotion. It encodes the
 canonical "given an effect type, give me its param table" mechanism
 that applies to AM4, III, and very likely II, and that all three
 existing per-device decode pipelines already rely on without
-referencing as a cookbook primitive. Future mining sessions and
+referencing as a primitive. Future mining sessions and
 extraction scripts (per the fractal-midi extraction plan) gain a
 shared vocabulary.

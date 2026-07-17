@@ -13,8 +13,8 @@
  * tables at 0x1407ab440 + 0x1407aba40 + ~24 more in misc-descriptors
  * close BK-070's III equivalent without hardware.
  *
- * Cookbook primitive: vendor-envelope-descriptor-table
- * (see fractal-midi/docs/research/cookbook/vendor-envelope-descriptor-table.md)
+ * Primitive: vendor-envelope-descriptor-table
+ * (see fractal-midi/docs/research/primitives/vendor-envelope-descriptor-table.md)
  *
  * Format the parser recognizes (both supported):
  *

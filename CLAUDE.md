@@ -33,7 +33,7 @@ hardware tasks, session log, backlog, decisions log, test plans) lives
 outside the committed tree. Committed `docs/` files cover MCP-server
 architecture and contract (ARCHITECTURE.md, BLOCK-PARAMS.md,
 PROJECT-VISION.md, SAFE-EDIT-WORKFLOW.md, etc.). Protocol RE (per-device
-SYSEX-MAP, capture guides, Ghidra scripts, encoding cookbook) lives in
+SYSEX-MAP, capture guides, Ghidra scripts, encoding-primitive corpus) lives in
 the [`fractal-midi`](https://github.com/TheAndrewStaker/fractal-midi)
 codec package under `packages/fractal-midi/docs/`.
 
@@ -108,7 +108,7 @@ or ships loudly-flagged. Use accurate support-status language
 
 **Cross-package regression discipline:** when changing a codec builder's contract (argument types, encoding format, return shape), grep all callers across all packages. A builder may be called from: (a) the codec's own tests, (b) a device package's writer/reader, (c) the apply executor, (d) golden scripts. The fn=0x02 to fn=0x2e migration broke the apply_preset path because the builder's callers in the executor were not updated to match the new display-value contract. Every contract change requires a caller audit.
 
-Protocol docs (`SYSEX-MAP.md`, opcode tables, capture guides, Ghidra mining scripts, encoding cookbook) live in `packages/fractal-midi/docs/`; see per-device pointers in "External References" below.
+Protocol docs (`SYSEX-MAP.md`, opcode tables, capture guides, Ghidra mining scripts, encoding-primitive corpus) live in `packages/fractal-midi/docs/`; see per-device pointers in "External References" below.
 
 ## Target User
 A working guitarist with a Claude account, not a developer. Every UX, install, and distribution decision prioritizes the non-technical user. The MVP ships as a Windows ZIP that bundles Node + a prebuilt native MIDI binary and runs `setup.cmd` to register the server with Claude Desktop; users never install Node, a C++ toolchain, or edit JSON. See the maintainer's private decisions log for the full reasoning.
@@ -160,20 +160,20 @@ This rule applies to every probe script that relies on the maintainer reading th
 - **Read before write.** Every device tool gates writes behind a fingerprint read. Do not bypass this in new probe scripts unless they are explicitly read-only (`scripts/probe.ts` is read-only forever, by policy).
 - **Septet-encode every 14-bit field, not just `pidLow`.** action codes, effect IDs, preset numbers, tempo BPM, location bytes; all 7-bit-pair encoded. Forgetting once produces wire mismatch.
 - **One capture per hypothesis.** Two simultaneous edits produce ambiguous diff bytes and cost days.
-- **Re-mine before you request.** Before asking anyone for new evidence, re-examine the captures already on disk against every primitive decoded SINCE they were filed; a capture opaque in May is often transparent in July because a sibling device supplied the container/packing/oracle. The 2026-07-02 session produced FOUR decodes this way (AM4=gen-3 container, FM3 grid, VP4 structure blob, II Huffman-claim refuted) from zero new captures. The synthesis cadence (`docs/process/synthesis-prompt.md` → `synthesis-log/`) exists to force this; the cookbook-verify staleness warning means "decodes are sitting on disk unclaimed." Full principle: RE-WORKFLOW.md "Re-mine before you request".
+- **Re-mine before you request.** Before asking anyone for new evidence, re-examine the captures already on disk against every primitive decoded SINCE they were filed; a capture opaque in May is often transparent in July because a sibling device supplied the container/packing/oracle. The 2026-07-02 session produced FOUR decodes this way (AM4=gen-3 container, FM3 grid, VP4 structure blob, II Huffman-claim refuted) from zero new captures. The synthesis cadence (`docs/process/synthesis-prompt.md` → `synthesis-log/`) exists to force this; the primitives-verify staleness warning means "decodes are sitting on disk unclaimed." Full principle: RE-WORKFLOW.md "Re-mine before you request".
 
 ### Methods ruled out, do NOT re-attempt
 
-Each entry has full evidence and scope in the cookbook. Grep before re-attempting:
+Each entry has full evidence and scope in the primitives corpus. Grep before re-attempting:
 
-- **WinDbg trap-after-launch** on editor labels. Use JUCE BinaryData. See `cookbook/_negative/windbg-trap-after-launch.md`.
-- **Positional XML to wire-id binding.** 20 to 40% inversion rate. See `cookbook/_negative/positional-xml-cache-binding.md`.
-- **Virtual MIDI driver bridges** as editor interposers. Fractal editors filter these by driver class. Use USBPcap + Wireshark. See `cookbook/_negative/virtual-midi-bridge-interposition.md`.
-- **Byte-literal 5-byte SysEx envelope search in Ghidra.** Model byte loaded at runtime; search the 4-byte prefix `F0 00 01 74` and inspect the next instruction. See `cookbook/_negative/byte-literal-envelope-ghidra-search.md`.
-- **Param table as flat `-1`-terminated `int` array.** Actual layout is 16-byte `ParamDescriptor`. See `cookbook/_negative/flat-int-stride4-param-table.md` and positive [[param-descriptor-16byte]].
-- **AM4-shaped `0x77` envelope as save attempt on II.** Inert. Note: II uses `0x77/0x78/0x79` for its OWN preset-dump envelope, a different shape. See `cookbook/_negative/am4-77-as-save-on-ii.md`.
-- **Flat-byte-offset diff of II `0x77/0x78/0x79` preset binary, corrected 2026-07-02.** The body is NOT Huffman (that was a gen-3 misattribution): it is a deterministic 64×64-word fixed-layout image with STABLE offsets, but diff it at the DE-FRAMED word layer, not raw framed bytes (checksum/reserved-bit noise). The atomic read primitive for param sync is still **`fn=0x1F` SYSEX_GET_ALL_PARAMS**. See the corrected `cookbook/_negative/ii-preset-binary-flat-byte-diff.md` and positive [[ii-fn1f-atomic-read]].
-- **III block-name string-cascade** does NOT transfer from II. III preset serialization is descriptor-table-driven, not strcmp-cascade. See `cookbook/_negative/iii-block-name-string-cascade.md`.
+- **WinDbg trap-after-launch** on editor labels. Use JUCE BinaryData. See `primitives/_negative/windbg-trap-after-launch.md`.
+- **Positional XML to wire-id binding.** 20 to 40% inversion rate. See `primitives/_negative/positional-xml-cache-binding.md`.
+- **Virtual MIDI driver bridges** as editor interposers. Fractal editors filter these by driver class. Use USBPcap + Wireshark. See `primitives/_negative/virtual-midi-bridge-interposition.md`.
+- **Byte-literal 5-byte SysEx envelope search in Ghidra.** Model byte loaded at runtime; search the 4-byte prefix `F0 00 01 74` and inspect the next instruction. See `primitives/_negative/byte-literal-envelope-ghidra-search.md`.
+- **Param table as flat `-1`-terminated `int` array.** Actual layout is 16-byte `ParamDescriptor`. See `primitives/_negative/flat-int-stride4-param-table.md` and positive [[param-descriptor-16byte]].
+- **AM4-shaped `0x77` envelope as save attempt on II.** Inert. Note: II uses `0x77/0x78/0x79` for its OWN preset-dump envelope, a different shape. See `primitives/_negative/am4-77-as-save-on-ii.md`.
+- **Flat-byte-offset diff of II `0x77/0x78/0x79` preset binary, corrected 2026-07-02.** The body is NOT Huffman (that was a gen-3 misattribution): it is a deterministic 64×64-word fixed-layout image with STABLE offsets, but diff it at the DE-FRAMED word layer, not raw framed bytes (checksum/reserved-bit noise). The atomic read primitive for param sync is still **`fn=0x1F` SYSEX_GET_ALL_PARAMS**. See the corrected `primitives/_negative/ii-preset-binary-flat-byte-diff.md` and positive [[ii-fn1f-atomic-read]].
+- **III block-name string-cascade** does NOT transfer from II. III preset serialization is descriptor-table-driven, not strcmp-cascade. See `primitives/_negative/iii-block-name-string-cascade.md`.
 
 ### Ghidra is viable for II
 
@@ -294,7 +294,7 @@ Estimate wire-round-trip count up front. SysEx is serial: N reads ≈ N × 50 ms
 
 ## Testing and sign-off
 
-- **`npm run preflight`** is the single command to run before every commit. Runs: `build` (all 7 packages in dependency order), `typecheck` (per-package tsconfigs), `test` (fractal-midi + codec + cross-device + per-device + server smoke), `verify-no-internal-refs`, `cookbook-verify`, `tools:inventory-check`.
+- **`npm run preflight`** is the single command to run before every commit. Runs: `build` (all 7 packages in dependency order), `typecheck` (per-package tsconfigs), `test` (fractal-midi + codec + cross-device + per-device + server smoke), `verify-no-internal-refs`, `primitives-verify`, `tools:inventory-check`.
 - `npm test` alone runs the test suites without building or typechecking; handy for iterating on the protocol layer. Requires `dist/` to exist (run `npm run build` first on a fresh clone).
 - **When adding a new pidHigh to `params.ts`, add a matching case to `verify-msg.ts` built from captured bytes.** That is the only mechanical guard against misreading septet-encoded pidHighs as little-endian bytes (that bug class).
 
@@ -367,7 +367,7 @@ The private-tracker rows below describe the maintainer's gitignored operational 
 
 | Doc | Update when... |
 |---|---|
-| The private state doc (and its per-device shards) | Any substantive session. Device-specific writeups go in the matching device shard; cross-device + cookbook + MCP-architecture stays in the main state doc |
+| The private state doc (and its per-device shards) | Any substantive session. Device-specific writeups go in the matching device shard; cross-device + primitives + MCP-architecture stays in the main state doc |
 | The private prompt-coverage doc | A new MCP tool ships, a protocol decode lands, or maintainer testing surfaces a new user prompt pattern |
 | The private per-device hardware-task lists | A hardware task completes (mark ✅) or a new hardware action is identified |
 | The private backlog | A new backlog item is identified, ships, re-scopes, or is superseded |
@@ -375,7 +375,7 @@ The private-tracker rows below describe the maintainer's gitignored operational 
 | The private session log | A session produces a chronological-worthy finding |
 | The private decisions log | A non-obvious architectural or library choice is made |
 | The private tool-archive notes | A registered MCP tool is removed (record the capability + revival path) |
-| **Cookbook** in fractal-midi | An encoding primitive is discovered, refined, or ruled out. Same-session: add the entry + golden case in `scripts/cookbook-verify.ts` |
+| **Primitives corpus** in fractal-midi | An encoding primitive is discovered, refined, or ruled out. Same-session: add the entry + golden case in `scripts/primitives-verify.ts` |
 | **`fractal-midi/scripts/ghidra/README.md`** | A new Ghidra script is added |
 | **`captured-artifacts.md`** | A new decompile dump or capture-of-interest is produced (public in the codec repo, private here) |
 | **Capture guides** in `packages/fractal-midi/docs/capture-guides/` | A community capture comes in and a gap closes (mark ✅ in the relevant `captures-<device>.md`); a capability lands and testing asks become moot (update or remove the ask in `testing-<device>.md`); device status changes (update the table in `README.md`). The per-device split is: `testing-<device>.md` for no-tools verification asks; `captures-<device>.md` for raw protocol capture asks. |

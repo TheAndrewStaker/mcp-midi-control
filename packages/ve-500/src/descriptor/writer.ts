@@ -2,22 +2,25 @@
  * Boss VE-500 DeviceWriter.
  *
  * Write path over Roland SysEx (DT1) to the ACTIVE (temporary) patch, plus
- * patch recall over Program Change. Decoded from the VE-500 Editor's own wire
- * code and HARDWARE-CONFIRMED end-to-end on the maintainer's unit (2026-06-28)
- * for set_param / get_param / set_bypass / user-memory recall. Ordinary
+ * patch recall (user memories over Program Change; factory presets over a
+ * SysEx register write). Decoded from the VE-500 Editor's own wire code and
+ * HARDWARE-CONFIRMED end-to-end on the maintainer's unit (2026-06-28) for
+ * set_param / get_param / set_bypass / user-memory recall. Ordinary
  * patch-address DT1 writes (set_param) are NOT echoed by the device, so
  * get_param (RQ1→DT1) is their confirm.
  *
  * Wired: set_param / set_params (live edit, enum names accepted), set_bypass
  * (a section's on/off switch), switch_preset (recall USER memories U01–U99 via a
- * BARE Program Change — presets P01–P50 are gated, undecoded bank), applyPreset
- * (build a whole patch into the active buffer), and savePreset (persist the
- * active buffer to a user memory). savePreset's store sequence: a bare store
- * command was HARDWARE-REFUTED on 2026-07-08 (did not persist a MIDI-set value);
- * re-derived from the editor's connect handshake (Editor Communication Mode ON
- * before the store, see `save.ts` for the evidence trail) and HARDWARE-CONFIRMED
- * 2026-07-08 on the maintainer's unit (a set + save + flash-reload round-trip
- * persisted, and the device echoes the store).
+ * BARE Program Change, hardware-confirmed; recall PRESETS P01–P50 via a DT1
+ * write to the "Current Patch Number" register, decoded from the editor's own
+ * patch-switch handler (see `patch.ts`); community-beta/hardware-unverified),
+ * applyPreset (build a whole patch into the active buffer), and savePreset
+ * (persist the active buffer to a user memory). savePreset's store sequence: a
+ * bare store command was HARDWARE-REFUTED on 2026-07-08 (did not persist a
+ * MIDI-set value); re-derived from the editor's connect handshake (Editor
+ * Communication Mode ON before the store, see `save.ts` for the evidence
+ * trail) and HARDWARE-CONFIRMED 2026-07-08 on the maintainer's unit (a set +
+ * save + flash-reload round-trip persisted, and the device echoes the store).
  */
 
 import type {
@@ -38,6 +41,7 @@ import {
   buildSavePreset as buildSaveBytes,
   buildSetParam as buildSetBytes,
   buildSetPatchName,
+  buildSwitchPatch,
   findParam,
   saveAckMatcher,
 } from 'roland-midi/ve-500';
@@ -46,7 +50,7 @@ const LABEL = 'Boss VE-500';
 const BETA_NOTE =
   'Ordinary patch-address DT1 writes are not echoed, so get_param (RQ1->DT1) is their confirm. ' +
   '(set_param / get_param / set_bypass / user-memory recall / save_preset are hardware-confirmed; ' +
-  'factory preset P01-P50 recall is not decoded yet.)';
+  'factory preset P01-P50 recall is newly wired via a SysEx write, community-beta / hardware-unverified.)';
 
 /** VE-500 default MIDI receive channel (1, i.e. 0-indexed 0). */
 const RX_CHANNEL = 0;
@@ -73,43 +77,54 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
+/** A resolved VE-500 patch recall target. */
+interface PatchTarget {
+  /** 0-based recall index: 0..98 = user U01..U99; 99..148 = preset P01..P50. */
+  n: number;
+  label: string;
+  kind: 'user' | 'preset';
+}
+
 /**
- * Resolve a location to a 0-based Program Change number + a human label.
+ * Resolve a location to a 0-based recall index (product_setting.js's
+ * minPatchOfUser..maxPatchOfPreset numbering: 0..98 user, 99..148 preset) +
+ * a human label + which bank it is.
  *
- * Hardware finding (2026-06-28): the VE-500 recalls a user memory with a BARE
- * Program Change (U01..U99 -> PC 0..98). Prepending a Bank Select (CC0/CC32)
- * makes the unit IGNORE the recall, so we never send one. Preset (P01-P50)
- * recall lives in a different bank whose select values are not yet decoded —
- * gated here rather than guessed.
+ * User-memory recall (2026-06-28, hardware-confirmed): a BARE Program Change
+ * (U01..U99 -> PC 0..98). Prepending a Bank Select (CC0/CC32) makes the unit
+ * IGNORE the recall, so we never send one; see `switchPreset` below.
+ *
+ * Preset recall (2026-07-09): NOT a Program Change at all. Decoded from the
+ * editor's `preset_patch.js` (see `patch.ts` for the full citation); see
+ * `switchPreset` below for the SysEx write this resolves into.
  */
-function programNumber(location: LocationRef): { pc: number; label: string } {
-  let n: number | undefined;
+function resolvePatchTarget(location: LocationRef): PatchTarget {
   if (typeof location === 'number') {
-    if (location >= 1 && location <= 99) n = location;
+    if (location >= 1 && location <= 99) {
+      return { n: location - 1, label: `U${pad2(location)}`, kind: 'user' };
+    }
   } else {
     const s = location.trim().toUpperCase();
-    if (/^P0*\d{1,2}$/.test(s)) {
-      throw new DispatchError(
-        'capability_not_supported',
-        LABEL,
-        `VE-500 preset (P01–P50) recall over MIDI is not decoded yet (its Bank Select mapping is unconfirmed). ` +
-          `User memories U01–U99 recall fine; recall a preset on the device itself.`,
-      );
+    const p = s.match(/^P0*(\d{1,2})$/);
+    if (p) {
+      const v = Number(p[1]);
+      if (v >= 1 && v <= 50) {
+        return { n: 98 + v, label: `P${pad2(v)}`, kind: 'preset' };
+      }
     }
     const m = s.match(/^U?0*(\d{1,2})$/);
     if (m) {
       const v = Number(m[1]);
-      if (v >= 1 && v <= 99) n = v;
+      if (v >= 1 && v <= 99) {
+        return { n: v - 1, label: `U${pad2(v)}`, kind: 'user' };
+      }
     }
   }
-  if (n === undefined) {
-    throw new DispatchError(
-      'bad_location',
-      LABEL,
-      `Invalid VE-500 memory '${location}'. Use a user memory U01–U99 (or 1–99).`,
-    );
-  }
-  return { pc: n - 1, label: `U${pad2(n)}` };
+  throw new DispatchError(
+    'bad_location',
+    LABEL,
+    `Invalid VE-500 memory '${location}'. Use a user memory U01–U99 (or 1–99) or a preset P01–P50.`,
+  );
 }
 
 export const writer: DeviceWriter = {
@@ -183,18 +198,43 @@ export const writer: DeviceWriter = {
   },
 
   async switchPreset(ctx, location): Promise<WriteResult> {
-    const { pc, label } = programNumber(location);
-    // BARE Program Change — NO Bank Select. Hardware-confirmed (2026-06-28):
-    // the VE-500 ignores the recall if a Bank Select precedes the PC.
-    ctx.conn.send([0xc0 | RX_CHANNEL, pc]);
+    const target = resolvePatchTarget(location);
+
+    if (target.kind === 'user') {
+      // BARE Program Change, NO Bank Select. Hardware-confirmed (2026-06-28):
+      // the VE-500 ignores the recall if a Bank Select precedes the PC.
+      ctx.conn.send([0xc0 | RX_CHANNEL, target.n]);
+      return {
+        op: 'switch_preset',
+        target: target.label,
+        acked: true,
+        info:
+          `Recalled ${target.label} on ${LABEL} (Program Change ${target.n} on MIDI ch ${RX_CHANNEL + 1}; ` +
+          `requires PC IN = ON and RX CH = OMNI/Ch.1 on the device). User-memory recall is hardware-confirmed; ` +
+          `PC is not echoed, so the front panel is ground truth. ${BETA_NOTE}`,
+      };
+    }
+
+    // Factory PRESET recall (P01-P50): NOT a Program Change. Decoded from the
+    // VE-500 Editor's own patch-switch handler (`preset_patch.js`, see
+    // roland-midi/ve-500/patch.ts for the full citation trail): the editor
+    // recalls ANY patch (user or preset) with a single DT1 write to the
+    // "Current Patch Number" register (Setup > SetupCommon, absolute address
+    // 0x00000000), packed INTEGER2x4, value = the same 0-based index Program
+    // Change uses (99..148 for presets). This supersedes the earlier
+    // "undecoded Bank Select" gate: the editor never uses Bank Select/Program
+    // Change for recall at all. Community-beta: this write has not yet been
+    // pressed on the maintainer's unit (only user-memory PC recall is
+    // hardware-confirmed so far).
+    ctx.conn.send(buildSwitchPatch(target.n));
     return {
       op: 'switch_preset',
-      target: label,
+      target: target.label,
       acked: true,
       info:
-        `Recalled ${label} on ${LABEL} (Program Change ${pc} on MIDI ch ${RX_CHANNEL + 1}; ` +
-        `requires PC IN = ON and RX CH = OMNI/Ch.1 on the device). User-memory recall is hardware-confirmed; ` +
-        `PC is not echoed, so the front panel is ground truth. ${BETA_NOTE}`,
+        `Recalled ${target.label} on ${LABEL} via a SysEx write to the "Current Patch Number" register ` +
+        `(decoded from the VE-500 Editor's own patch-switch handler; NOT a Program Change). Not echoed, ` +
+        `so the front panel is ground truth. Community-beta: hardware-unverified. ${BETA_NOTE}`,
     };
   },
 
@@ -307,7 +347,15 @@ export const writer: DeviceWriter = {
    * Preset (P01–P50) targets are rejected (factory, not writable).
    */
   async savePreset(ctx, location, name?): Promise<WriteResult> {
-    const { pc: userIndex, label } = programNumber(location);
+    const target = resolvePatchTarget(location);
+    if (target.kind !== 'user') {
+      throw new DispatchError(
+        'capability_not_supported',
+        LABEL,
+        `Preset ${target.label} is factory/read-only on ${LABEL}; save_preset only writes user memories U01–U99.`,
+      );
+    }
+    const { n: userIndex, label } = target;
     if (name) ctx.conn.send(buildSetPatchName(name));
 
     ctx.conn.send(buildCommMode(true));

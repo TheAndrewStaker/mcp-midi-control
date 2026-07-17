@@ -8,8 +8,7 @@
       "cab_1_low_cut": "This removes bass frequencies at the input for a classic way to tighten an amp.",
       "cab_master_high_cut": "This filter is actually placed between the preamp and the power amp, so it has a more dramatic effect than an EQ that might be placed before preamp distortion.",
       "cathode_follower_compression": "Determines the amount of compression in the virtual cathode follower. This parameter interacts with the other parameters listed below.",
-      "compressor_clarity": "Used in conjunction with the other Output Compression parameters, this adjusts the bass response of the compressor and can be used to add clarity to the low end.",
-      "compressor_threshold": "Sets the threshold of Output Compression. A lower value causes compression to occur for quieter signals.",
+      "clarity": "Used in conjunction with the other Output Compression parameters, this adjusts the bass response of the compressor and can be used to add clarity to the low end.",
       "compressor_type": "Sets the type of Output Compression.",
       "cut_switch": "Reduces the amount of low frequencies coming into the amp simulation. This can be used to \"tighten\" the tone or to reduce low-end \"flub\".",
       "definition": "This control is a basic \"tilt EQ\" which adds highs/cuts lows, or vice versa.",
@@ -52,8 +51,6 @@
       "depth": "Sets the amount of delay modulation, which determines the amount of detune heard from each voice.",
       "drive": "This control allows you to simulate the gentle distortion produced by overdriving an \"analog bucket brigade\" delay chip of the type used in many vintage chorus effects. Set to zero for \"pristine clean.\"",
       "high_cut": "Adjusts the cutoff frequency of a low-pass filter at the output of the processed signal. Decreasing this value creates a darker chorus effect reminiscent of an age when typical effects were unable to reproduce the full frequency spectrum. Lower this to achieve those sounds some might call \"warm.\"",
-      "lfo_depth_2": "Controls stereo width by setting the pan position of the effect from hard-panned (100%) to dead mono (0%) , and beyond, with psychoacoustic effects increasing the apparent width from ,200% to +200%.",
-      "lfo_freq": "Adjusts the cutoff frequency of a high-pass filter at the output of the processed signal. This control removes bass frequencies and can be useful to create chorus effects designed for bass guitar.",
       "lfo_phase_pct": "When the Dual Delay type is selected, this scales the time for the right chorus.",
       "lfo_type": "Sets the \"shape\" of the modulation. Sine and Triangle are the most commonly used waveforms.",
       "low_cut": "Adjusts the cutoff frequency of a high-pass filter at the output of the processed signal. This control removes bass frequencies and can be useful to create chorus effects designed for bass guitar.",
@@ -63,8 +60,7 @@
       "rate": "Controls the speed at which the chorus oscillates. Use low settings with higher depths for slow- moving sounds. Increase the rate and depth for vibrato effects. When shown in parentheses, Rate is being set automatically by the Tempo parameter. Set Rate fully counterclockwise to sync to the LFO1 Controller. (See your Owner's Manual for more on the LFO1 Modifier Source.)",
       "stereo_spread": "Controls stereo width by setting the pan position of the effect from hard-panned (100%) to dead mono (0%) , and beyond, with psychoacoustic effects increasing the apparent width from ,200% to +200%.",
       "tempo": "Sets the Rate in rhythmic relation to the tempo. For example, if Tempo is set to \"1/4\" and the Tempo is 120 BPM, the rate will automatically be set to 2 Hz (BPM/60 = Hz). To ignore tempo, set to \"NONE\".",
-      "type": "Make a selection using the VALUE or NAV buttons with no need to press ENTER. This control instantly sets other parameters for different useful sound settings. Types include: Digital Mono, Digital Stereo, Analog Mono, Analog Stereo, Japan CE-2, Warm Stereo, 80'S Style, Triangle Chorus, 8-Voice Stereo, Vintage Tape, Dimension (1/2/3), 4-Voice Analog, 8-Voice Analog, Stereo Tri-Chorus, and Dual Chorus.",
-      "width": "Widens the sound, creating a difference between left and right delay times by scaling the right time downwards from the value set (see Delay Time, above) toward 1 ms as Width goes from 0,100%."
+      "type": "Make a selection using the VALUE or NAV buttons with no need to press ENTER. This control instantly sets other parameters for different useful sound settings. Types include: Digital Mono, Digital Stereo, Analog Mono, Analog Stereo, Japan CE-2, Warm Stereo, 80'S Style, Triangle Chorus, 8-Voice Stereo, Vintage Tape, Dimension (1/2/3), 4-Voice Analog, 8-Voice Analog, Stereo Tri-Chorus, and Dual Chorus."
     },
     "compressor": {
       "attack_time": "This sets how fast the compressor changes the volume when compression is applied.",
@@ -76,7 +72,6 @@
       "knee_type": "The knee control \"softens\" the threshold, so compression engages gradually as signals approach the threshold. With high ratios, a hard knee may produce abrupt changes. A soft knee produces a more \"transparent\" effect. The effect of the knee can be seen on the graph shown for our Studio compressor types.",
       "look_ahead_time": "Even with the fastest attack times, a compressor can still miss the fastest transients. The Look Ahead control uses a short audio delay on the gain control stage so the detector can in effect simulate seeing into the future: it remains in real time while the audio signal is shifted into the past. Note that this control introduces an actual delay, increasing latency in the overall output signal (wet AND dry). In fact, some have",
       "mix": "Sets the ratio of wet (compressed) and dry (unprocessed) sounds. This would normally be set to 100% but lower settings allow parallel compression, also known as \"New York\" compression.",
-      "release": "Sets how quickly the output returns towards normal once compression is no longer triggered.",
       "release_time": "Sets how quickly the output returns towards normal once compression is no longer triggered.",
       "sidechain_source": "determines which signal is used to feed the compressor's detector. \"BLOCK L+R\" is the normal setting which selects the compressor's input (sum of all rows feeding the block). You can also use the input from a designated row, or any of the physical input jacks. The \"BLOCK L\" and \"BLOCK R\" options are useful when the compressor follows an effect with one side out of phase (delay, chorus, enhancer). Remember that the",
       "threshold": "For downward compressors (most types) this sets the level above which automatic volume reduction will happen. When the input exceeds the threshold, the compressor reduces the output. For upward compressors (Studio 1 and Studio 2) the threshold is the level below which levels will be increase.",
@@ -130,7 +125,6 @@
       "width": "Determines the character of the effect, shaping the degree of separation."
     },
     "filter": {
-      "freq": "Sets the center frequency of the filter.",
       "frequency": "Sets the center frequency of the filter.",
       "gain": "Sets the gain at the center frequency for the shelving and peaking filter types.",
       "order": "Selects different filter slopes. 2nd = 12 dB per octave, 4th = 24 dB per octave. A 4th order filter is steeper and more extreme or \"squelchy\".",
@@ -219,9 +213,7 @@
       "fat": "This is actually a mix control, adding dry signal to the wah for up to 50/50 wet/dry mix.",
       "inductor_bias": "This adjusts the DC offset of the virtual inductor which interacts with the Drive parameter to replicate the subtle (and awesome) sound of some of the most coveted wah pedals.",
       "low_cut_frequency": "Applies a highpass filter, as created by the internal coupling capacitor of a real wah pedal.",
-      "max_frequency": "Sets the frequency of the filter when the frequency control is at its highest value.",
       "maximum_frequency": "Sets the frequency of the filter when the frequency control is at its highest value.",
-      "min_frequency": "Sets the frequency of the filter when the frequency control is at its lowest value. This can be adjusted to match the range of your instrument or preference.",
       "minimum_frequency": "Sets the frequency of the filter when the frequency control is at its lowest value. This can be adjusted to match the range of your instrument or preference.",
       "q_tracking": "Some classic wah pedals become less resonant as you push the pedal down. This control mimics that effect, so that as frequency is increased, the resonance decreases, becoming less \"peaky\" and harsh.",
       "type": "Selects between different wah types based on classic vintage and cutting edge modern designs.",

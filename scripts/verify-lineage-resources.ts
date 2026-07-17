@@ -17,6 +17,8 @@ const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist
 const EXPECTED_AM4_LINEAGE_BLOCKS = [
   'amp', 'drive', 'reverb', 'delay', 'compressor',
   'phaser', 'chorus', 'flanger', 'wah',
+  // 2026-07-15 (BK-104): stock DynaCab corpus.
+  'dynacab',
 ];
 
 async function main(): Promise<void> {

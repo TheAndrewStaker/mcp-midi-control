@@ -121,6 +121,22 @@ export interface DeviceCapabilities {
    * so single-instance devices keep their pre-existing contract unchanged.
    */
   has_block_instances?: boolean;
+  /**
+   * Whether the device's storage is divided into independent PACKS, each a
+   * complete world of stored content addressable by the `pack` arg on
+   * apply_pattern / upload_project / get_preset / export_preset. Novation
+   * Circuit Tracks (microSD, up to 32 packs) sets this true; every other
+   * device omits it.
+   *
+   * The dispatcher GATES on this, for the same reason as
+   * `has_block_instances`: when absent/false, any `pack > 1` request is
+   * refused with `capability_not_supported` rather than silently ignored and
+   * served from the only pack there is. A silently-dropped addressing arg is
+   * the anti-pattern — the caller believes it addressed pack 5 and gets pack 1
+   * back with no indication. `pack` of 1 / undefined is always accepted, so
+   * every packless device keeps its existing contract unchanged.
+   */
+  has_packs?: boolean;
   preset_location_format?: RegExp;
   /**
    * Whether flash persistence is hardware-VERIFIED, which gates AUTOMATIC
@@ -217,6 +233,23 @@ export interface DeviceCapabilities {
    * outward MIDI sequencer tracks.
    */
   external_tracks?: Readonly<Record<string, number>>;
+  /**
+   * For a device that receives external control through a USER-ASSIGNABLE table
+   * (the Boss RC ASSIGN system, not a fixed factory CC map), the legality bounds
+   * an OpenRig cross-device binding must stay within. `describe_rig`'s
+   * compatibility check reads these to REJECT a binding aimed at an illegal
+   * control source (a re-map to CC#40 on an RC-505, whose legal assignable
+   * sources are CTL + CC#64-95) rather than silently declaring it fine. Absent
+   * on devices with a fixed/implicit control map (they receive CC directly, so
+   * any CC is "legal" and there is nothing to bound). This is CAPABILITY (what
+   * the box can source), never CONFIGURATION (which CC the user chose).
+   */
+  control_sources?: {
+    /** CC numbers legal as an assignable control source (RC-505mk2: 64..95). */
+    assignable_cc?: readonly number[];
+    /** Legal control TARGET labels (RC-505: "TRK1 REC/PLY".."TRK5 LEVEL"). */
+    targets?: readonly string[];
+  };
 }
 
 // ── Pattern / sequencer-orchestrator surface ───────────────────────
@@ -540,6 +573,27 @@ export interface DispatchCtx {
    * abstraction".
    */
   storage?: { root: string };
+  /**
+   * 0-based microSD PACK index this dispatch addresses (device "Pack 1" = 0).
+   * Absent / 0 on every device that has no pack concept, which is all of them
+   * except the Novation Circuit Tracks — a card holds up to 32 packs, each a
+   * complete 64-project / 128-patch / 64-sample world, and the pack is a field
+   * in every file-transfer fileId (`docs/design/circuit-pack-addressing.md`).
+   *
+   * It lives on the ctx, NOT on each call's arguments, so that the three legs
+   * of a stored-slot write — the backup read, the overwrite gate's occupancy
+   * read, and the write itself — physically CANNOT address different packs.
+   * They all read this one field. That is a safety property, not a style
+   * choice: threading `pack` into the write while missing the gate would let
+   * the gate clear Pack 1's occupancy while the write lands on Pack 5, so the
+   * gate would green-light the exact clobber it exists to prevent. With one
+   * shared field the worst case degrades to "all three agree on the wrong
+   * pack" — visible and still gated, never a silent overwrite.
+   *
+   * Set by `openCtx(descriptor, { pack })` at the tool boundary, which is also
+   * where the 1-based user-facing `pack: 5` is converted to wire 4.
+   */
+  pack?: number;
   /** The descriptor the dispatcher resolved. */
   descriptor: DeviceDescriptor;
   /**
@@ -869,6 +923,18 @@ export interface ApplyResult {
   }[];
   /** Optional warning carried through to the LLM (e.g. unack count) when ok=true. */
   warning?: string;
+  /**
+   * BK-103b: device-opinionated defaults the executor auto-applied because
+   * the spec left them unspecified (first user: AM4 cab-polish cuts + room
+   * on fresh amp-bearing builds). `note` is relay-ready and carries the
+   * undo phrase; the agent MUST tell the user what was auto-applied.
+   * Absent when nothing was injected.
+   */
+  auto_applied?: {
+    params: Record<string, string>;
+    channels?: readonly string[];
+    note: string;
+  };
   /**
    * For target-location applies: whether the save step ran AND acked.
    * Audition-at-target mode (save:false) sets this to false. For
@@ -1537,6 +1603,33 @@ export interface SampleDirectoryEntry {
  * 64-slot drum-sample directory). Backs the read-only `read_sample_directory`
  * tool. Reading slot names lets a caller map sounds semantically.
  */
+/** One microSD pack, in the numbering the user sees. */
+export interface PackDirectoryEntry {
+  /**
+   * 1-based pack number as the device's front panel shows it, and EXACTLY the
+   * value the `pack` arg on apply_pattern / upload_project / get_preset /
+   * export_preset takes. Same name as that arg on purpose: an agent that reads
+   * `pack: 5` here and passes `pack: 5` there is correct with no arithmetic.
+   */
+  pack: number;
+  /** ASCII pack name, as stored on the card. */
+  name: string;
+  /**
+   * 0-based wire index (`pack - 1`), the byte the fileId actually carries.
+   * Diagnostic only. Deliberately NOT called `index`: a bare 0-based `index`
+   * next to a 1-based field is an invitation to pass the wrong one to `pack`.
+   */
+  wire_index: number;
+}
+
+export interface PackDirectoryDump {
+  /** How many packs the card holds. */
+  count: number;
+  packs: PackDirectoryEntry[];
+  /** Honesty note about evidence tier / what the read cannot tell you. */
+  note?: string;
+}
+
 export interface SampleDirectoryDump {
   /** Number of named (occupied) slots. */
   occupied: number;
@@ -1585,6 +1678,14 @@ export interface DeviceReader {
    * capability_not_supported.
    */
   readSampleDirectory?(ctx: DispatchCtx): Promise<SampleDirectoryDump>;
+  /**
+   * Optional. List the storage packs the device holds, by name (Circuit Tracks:
+   * the microSD card's packs, up to 32). Read-only, bidirectional, one round
+   * trip. Backs `list_packs`, which is how an agent learns which pack numbers
+   * exist and what is in them BEFORE passing `pack` to a destructive write.
+   * Devices with no pack concept omit it (`capability_not_supported`).
+   */
+  readPackDirectory?(ctx: DispatchCtx): Promise<PackDirectoryDump>;
   getParams(ctx: DispatchCtx, queries: readonly ParamQuery[]): Promise<BatchReadResult>;
   /**
    * BK-075 phantom-param pre-flight read. Returns a snapshot of which

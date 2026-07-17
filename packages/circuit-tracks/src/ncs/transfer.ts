@@ -74,9 +74,26 @@ export function blockAddress(block: number): number[] {
   return [0, 0, 0, 0, 0, 0, (block >> 4) & 0x7f, block & 0x0f];
 }
 
-/** 3-byte project file id for a slot 0..63. */
-export function fileId(slot: number): number[] {
-  return [FILE_TYPE_PROJECT, (slot >> 7) & 0x7f, slot & 0x7f];
+/**
+ * 3-byte project file id: `[fileType, pack, slot]`, the shared fileId shape
+ * every file-transfer subcommand uses (`sampleDirectory.ts` `fileIdFor`).
+ *
+ * `pack` is the 0-BASED microSD pack index (device Pack 1 = 0). Default 0 =
+ * the first pack, which is what this path has always addressed.
+ *
+ * CORRECTED 2026-07-16. This previously read `(slot >> 7) & 0x7f`, modelling
+ * the middle byte as the high septet of a 14-bit slot. That model is REFUTED by
+ * capture: `send-pack-to-circuit-tracks-pack-2-*.pcapng` emits `0d 03 01 00`,
+ * `0d 03 01 01`, `0d 03 01 02`, `0d 03 01 03`, which the septet reading decodes
+ * as slots 128..131 — the device has only 64 project slots, so those slots do
+ * not exist. Under the pack reading they are pack 1 (= device Pack 2, matching
+ * the capture's own name), slots 0..3. `…-pack-3-*.pcapng` independently gives
+ * `0d 05 02 <slot>` = pack 2 (= Pack 3). The septet model was invisible because
+ * `slot >> 7` is 0 for every legal slot 0..63, so it emitted a correct pack-0
+ * byte and silently pinned every transfer to Pack 1.
+ */
+export function fileId(slot: number, pack = 0): number[] {
+  return [FILE_TYPE_PROJECT, pack & 0x7f, slot & 0x7f];
 }
 
 /** Integer → `count` hex nibbles, most-significant first. */
@@ -125,16 +142,22 @@ export function isAckFor(msg: readonly number[], addr: readonly number[], fid: r
 
 /**
  * Build the complete ordered frame plan to upload a 160,780-byte project to
- * `slot` (0..63). Pure: returns frames + ACK expectations; sends nothing.
+ * `slot` (0..63) of `pack` (0-based microSD pack index; device Pack 1 = 0).
+ * Pure: returns frames + ACK expectations; sends nothing.
+ *
+ * `pack` defaults to 0, so every existing caller keeps its exact prior bytes.
  */
-export function buildUploadFrames(ncs: Uint8Array, slot: number, filename?: string): UploadFrame[] {
+export function buildUploadFrames(ncs: Uint8Array, slot: number, filename?: string, pack = 0): UploadFrame[] {
   if (ncs.length !== NCS_FILE_SIZE) {
     throw new RangeError(`.ncs must be ${NCS_FILE_SIZE} bytes, got ${ncs.length}`);
   }
   if (!Number.isInteger(slot) || slot < 0 || slot > 63) {
     throw new RangeError(`slot must be 0..63, got ${slot}`);
   }
-  const fid = fileId(slot);
+  if (!Number.isInteger(pack) || pack < 0 || pack > 31) {
+    throw new RangeError(`pack must be 0..31 (0-based; device Pack 1 = 0), got ${pack}`);
+  }
+  const fid = fileId(slot, pack);
   const name = filename ?? `${String(slot).padStart(2, '0')}_SESSION.ncs`;
   const numBlocks = Math.ceil(ncs.length / BLOCK_SIZE);
   const sizeNibbles = intToNibbles(ncs.length, 5);
@@ -144,8 +167,14 @@ export function buildUploadFrames(ncs: Uint8Array, slot: number, filename?: stri
   // Directory handshake (replicates what Components sends; responses drained).
   frames.push({ label: 'dir_control_1', bytes: makeMessage(SUBCMD.DIR_CONTROL, [0x01]) });
   frames.push({ label: 'query_info', bytes: makeMessage(SUBCMD.QUERY_INFO, [0x01, 0x00]) });
+  // dir_control_2 = DIR_CONTROL(fileType 0x02) = the PACK directory listing. We
+  // send it as a handshake step and drop its replies; parsed, it is the pack
+  // list (see packDirectory.ts readPackDirectory).
   frames.push({ label: 'dir_control_2', bytes: makeMessage(SUBCMD.DIR_CONTROL, [0x02]) });
-  frames.push({ label: 'dir_listing', bytes: makeMessage(SUBCMD.DIR_CONTROL, [0x03, 0x00]) });
+  // Scope the session to THIS pack's project directory. Components sends
+  // `0b 03 01` when targeting device Pack 2 (capture: send-pack-…-pack-2-*),
+  // i.e. the second byte is the 0-based pack, not a constant.
+  frames.push({ label: 'dir_listing', bytes: makeMessage(SUBCMD.DIR_CONTROL, [0x03, pack & 0x7f]) });
 
   const initPayload = [...blockAddress(0), ...fid, 0x01, 0x00, 0x00, 0x00, ...sizeNibbles];
   frames.push({ label: 'write_init', bytes: makeMessage(SUBCMD.WRITE_INIT, initPayload), ack: { addr: blockAddress(0), fid } });

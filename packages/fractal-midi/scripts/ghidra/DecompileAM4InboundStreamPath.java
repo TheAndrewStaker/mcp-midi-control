@@ -11,13 +11,13 @@
 // L47 — "treats chunk payloads as opaque blobs"). The outer envelope
 // descriptor tables ARE shared cross-device (AM4 0x1405dcf40 vs III
 // 0x1407ab940, both byte-identical 3072-byte payload shape per
-// cookbook [[vendor-envelope-descriptor-table]]) but the INNER
+// primitive [[vendor-envelope-descriptor-table]]) but the INNER
 // per-param byte positions are novel work for both devices. So no
 // direct lift from III is available; this HOP must derive the layout
 // from AM4-Edit's parser code.
 //
 // Hypothesis A: FUN_1402da830 is the AM4 analog of III's
-//   FUN_1401f4390 workflow state-machine executor (cookbook
+//   FUN_1401f4390 workflow state-machine executor (primitive
 //   [[iii-workflow-state-machine-executor]] matched-singleton, AM4
 //   axis pending). It's reached from FUN_1402ddb80's `cVar5 == 0x01`
 //   branch (the stream-end / fn=0x01 ack handler). If it switches on
@@ -86,7 +86,7 @@ public class DecompileAM4InboundStreamPath extends GhidraScript {
 
     // Same anchor set as HOP 2 — the 22 chunk-1 byte positions from
     // step-5 amp-type-swap exclusive recs (rec_id * 3, septet-packed
-    // 14-bit per cookbook septet-14bit) + 1 chunk-2-exclusive position.
+    // 14-bit per primitive septet-14bit) + 1 chunk-2-exclusive position.
     private static final long[] ANCHOR_CHUNK1 = {
         0x01b0L, 0x0222L, 0x025eL, 0x027fL, 0x0282L, 0x0294L, 0x0297L,
         0x02a9L, 0x02bbL, 0x02beL, 0x02cdL, 0x02d0L, 0x02e2L, 0x02f4L,
@@ -157,7 +157,7 @@ public class DecompileAM4InboundStreamPath extends GhidraScript {
         w("");
         w("Cross-device note: III's own per-param chunk-1 layout is ALSO unsolved");
         w("(packages/fractal-gen3/src/presetDump.ts L47 — 'treats chunk payloads as");
-        w("opaque blobs'). Outer envelope is shared (cookbook vendor-envelope-");
+        w("opaque blobs'). Outer envelope is shared (primitive vendor-envelope-");
         w("descriptor-table — AM4 0x1405dcf40 ≡ III 0x1407ab940 = 3072 bytes), but");
         w("inner per-param layout is novel work for both devices. HOP 3 must derive");
         w("the AM4 layout from parser code; no cross-device shortcut available.");

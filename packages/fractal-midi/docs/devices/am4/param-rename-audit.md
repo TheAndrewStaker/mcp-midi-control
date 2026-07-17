@@ -56,7 +56,7 @@ Renames are driven by:
 3. **Disambiguation.** When the manual uses one term for multiple
    knobs (sag is the canonical case), each gets a prefix.
 
-When adding a new param, check both `_partial/` of cookbook and
+When adding a new param, check both `_partial/` of the primitives corpus and
 this audit before registering; if the manual name shows up here,
 use the registered name from this table to maintain consistency
 with existing params.

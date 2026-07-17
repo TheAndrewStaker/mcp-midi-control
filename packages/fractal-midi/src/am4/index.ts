@@ -11,6 +11,8 @@ export {
   KNOWN_PARAMS,
   PARAM_ALIASES,
   SCENE_MIDI_TYPE_ENUM,
+  AM4_DYNACAB_ROSTER,
+  AM4_DYNACAB_MICS,
   encode,
   decode,
   internalFromDisplay,

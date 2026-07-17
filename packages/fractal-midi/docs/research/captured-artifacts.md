@@ -22,11 +22,11 @@ Before proposing a new capture or Ghidra run, scan the relevant
 section. If an artifact already exists with un-mined material:
 
 1. Open the artifact (or its decode in the private dump corpus).
-2. Apply the relevant cookbook primitive(s) from `cookbook/INDEX.md`
+2. Apply the relevant primitive(s) from `primitives/INDEX.md`
 , most decode work is "apply a known primitive to new bytes."
 3. Write or extend a TS parser script in `scripts/_research/` that
-   extracts the cookbook-relevant payload.
-4. Register your findings: refine cookbook entries (with new
+   extracts the primitive-relevant payload.
+4. Register your findings: refine primitive entries (with new
    fixtures), file new entries if they're genuinely new primitives.
 
 If no existing artifact applies, then propose the new capture. Always
@@ -50,7 +50,7 @@ we don't own.
   fn=0x02 hypothesis)
 - **Captures archived inline** in
   [`docs/devices/axe-fx-iii/set-parameter-captures.md`](../devices/axe-fx-iii/set-parameter-captures.md)
-- **Cookbook**: applies [[../research/cookbook/septet-14bit]] for
+- **Primitives**: applies [[../research/primitives/septet-14bit]] for
   paramId encoding; the sub-action code table was subsequently mined
   (2026-06-09: 57 fn=0x01 action14 codes charted from all 93 callers
   in the III decompile, see the founder-private manifest's
@@ -61,20 +61,49 @@ we don't own.
 - **Source**: Fractal Forum community RE thread #159885
 - **Hypothesis**: III preset binary body uses Huffman codebook compression
 - **Status**: 🟡 not byte-verified against device. Lives in
-  `cookbook/_scratch/iii-preset-huffman-codebook.md` pending hardware
+  `primitives/_scratch/iii-preset-huffman-codebook.md` pending hardware
   verification.
 - **Synthesis pass 2026-05-22 finding**: the III envelope wrapper is
   byte-identical to II (descriptor tables at `0x1407ab440` +
   `0x1407aba40` match II's `0xe04440` + `0xdff900` shape, see
-  [[../research/cookbook/vendor-envelope-descriptor-table]]). The
+  [[../research/primitives/vendor-envelope-descriptor-table]]). The
   Huffman hypothesis is about the BODY content; the envelope is
   decodable from existing dumps without hardware.
+
+### BK-054 outer fn-byte dispatch mine (2026-07-09, Ghidra + registry re-mine)
+- **Source**: new Ghidra script `FindAxeEditIIIIndirectFnByteCallers.java`
+  (run via `run-axeedit3-indirect-fn-callers.cmd` against the existing
+  `ghidra-axe-edit-3` project) plus a full re-grep of the pre-existing
+  `ghidra-axe-edit-iii-inbound-dispatcher.txt` async-workflow registry dump.
+- **Output**: `samples/captured/decoded/ghidra-axe-edit-iii-indirect-fn-callers.txt`
+  (gitignored). Decodes fn=0x00's two un-mined emit sites (fixed `0x7F`
+  trailer, query-shaped); a broader non-`isCall()` reference scan on the
+  fn=0x08/0x43 "no callers" wrappers (negative: only PE `.pdata` unwind-table
+  rows found, no hidden workflow-name registry); a control check reproducing
+  the known fn=0x77 builder's two call sites (PASS, rules out stale-pointer
+  artifacts).
+- **Locks**: `SYSEX_DSP_MESSAGE`'s function byte is UNBOUND, exhaustively,
+  by THREE independent static techniques (string-offset-index fit,
+  code-xref scan across 1.39M instructions, and this session's async-workflow
+  registry name grep, zero DSP/CPU/meter/load-named workflow among ~140
+  registered rows). Static analysis is exhausted; closing it needs a live
+  USBPcap capture.
+- **Decode doc**: [`docs/devices/axe-fx-iii/SYSEX-MAP.md`](../devices/axe-fx-iii/SYSEX-MAP.md)
+  "BK-054: outer fn-byte dispatch mine" section.
+- **Primitives**: updates [[../research/primitives/iii-host-emitter-fn-table]]
+  (refinement history); the exhausted DSP-message binding is a new negative,
+  [[../research/primitives/_negative/iii-sysex-dsp-message-unbound]].
+- **Status**: ✅ outer fn-byte inventory consolidated (28 host-emitted fn
+  bytes, cross-checked); ⛔ `SYSEX_DSP_MESSAGE` fn-byte closed as
+  static-analysis-unrecoverable; the DSP/CPU-usage CAPABILITY itself already
+  ships via a different opcode (`fn=0x01 sub=0x2E` live-meters payload, see
+  the SYSEX-MAP "BK-055" subsection).
 
 ### Independent III MCP cross-reference
 - **Source**: forum thread #219503; independent OSS author building a
   parallel III MCP
 - **Status**: 🟡 monitor for cross-validation; no merged findings yet
-- **Cookbook**: may surface III analogs of II primitives if their
+- **Primitives**: may surface III analogs of II primitives if their
   decode work overlaps
 
 ### VP4 fw 4.03 editor-poll capture (read path)
@@ -89,10 +118,10 @@ we don't own.
 - **Does NOT lock**: any write path (read-only editor poll, no SET/bypass/scene/
   block-move frames). Full GET value calibration + the `0x1f` routing-blob layout
   remain open.
-- UNMINED[2026-06-08]: samples/captured/vp4-edit-preset-sync-poll-fw403-kevin-iudicello-2026-06-08.mmon, full GET value calibration (display↔wire scale for continuous params); the 0x1f routing-blob item closed 2026-07-01 via [[../research/cookbook/vp4-eid206-structure-blob]]
+- UNMINED[2026-06-08]: samples/captured/vp4-edit-preset-sync-poll-fw403-kevin-iudicello-2026-06-08.mmon, full GET value calibration (display↔wire scale for continuous params); the 0x1f routing-blob item closed 2026-07-01 via [[../research/primitives/vp4-eid206-structure-blob]]
 - **Decode doc**: [`docs/devices/vp4/SYSEX-MAP.md`](../devices/vp4/SYSEX-MAP.md).
-- **Cookbook**: applies [[../research/cookbook/xor-7f-envelope-checksum]] +
-  [[../research/cookbook/septet-14bit]].
+- **Primitives**: applies [[../research/primitives/xor-7f-envelope-checksum]] +
+  [[../research/primitives/septet-14bit]].
 - **Status**: ✅ read path locked; ⛔ writes still gated.
 
 ### VP4 fw 4.03 edit-session capture (WRITE path)
@@ -133,14 +162,14 @@ we don't own.
   false-positives). Five isolated one-variable captures would confirm transfer.
 - UNMINED[2026-07-02]: samples/captured/am4-warm-pair-* (5 new one-variable pairs needed), one warm pair each for delay.mix, drive.drive, a cab param, a scene-bypass toggle, and a per-block channel change, to confirm the amp block's pidHigh+7 / 0x130-stride formula transfers to non-amp blocks (unblocks whole_preset VALUES for every block, not just amp)
 - **Decode doc**: [`docs/devices/am4/SYSEX-MAP.md`](../devices/am4/SYSEX-MAP.md)
-  (§10b body block-record chain). Cookbook [[../research/cookbook/am4-gen3-preset-container]].
+  (§10b body block-record chain). Primitive [[../research/primitives/am4-gen3-preset-container]].
 - **Status**: ✅ amp block VALUES surfaced (community-beta); ⛔ non-amp block VALUES pending the 5 captures.
 
 ### General purpose: any Fractal envelope from a third party
-- Apply [[../research/cookbook/xor-7f-envelope-checksum]], universal
+- Apply [[../research/primitives/xor-7f-envelope-checksum]], universal
   Fractal envelope checksum across II, III, AM4.
-- Apply [[../research/cookbook/septet-14bit]] for any 14-bit field.
-- Apply [[../research/cookbook/msb-first-14bit-preset-payload]] for
+- Apply [[../research/primitives/septet-14bit]] for any 14-bit field.
+- Apply [[../research/primitives/msb-first-14bit-preset-payload]] for
   preset-number REPLY payloads (LSB-first vs MSB-first easy to confuse).
 
 ---
@@ -169,8 +198,8 @@ manifest.
   Re-running probe against shipped catalog: 0 mismatches after
   trim-tolerant comparison.
 - **Un-mined**: nothing, fully consumed.
-- **Cookbook**: [[../research/cookbook/fn28-enum-dump]] +
-  [[../research/cookbook/trim-tolerant-display-match]]
+- **Primitives**: [[../research/primitives/fn28-enum-dump]] +
+  [[../research/primitives/trim-tolerant-display-match]]
 
 ---
 
@@ -195,7 +224,7 @@ These sections live in the consumer repo's founder-private manifest
   baselines
 
 OSS contributors won't have access to (a)/(b)/(c). The narrative + the
-cookbook primitives the decompiles supported are public; the raw
+primitives the decompiles supported are public; the raw
 bytes are not. See `AGENTS.md` § "Decompile-derived contributions" for
 the contributor IP rule.
 
@@ -209,5 +238,5 @@ session in this file. Manifest entries link to the doc that interprets
 the artifact, not the other way around, so when a doc is refactored,
 the manifest stays correct.
 
-Cookbook entries that cite an artifact use the relative path from
+Primitive entries that cite an artifact use the relative path from
 this file when possible.

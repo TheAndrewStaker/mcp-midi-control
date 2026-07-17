@@ -132,5 +132,5 @@ for (const [name, , fn] of fields) {
 console.log('\n=== CATALOG ANCHORS ===');
 console.log('amp.effect_type (pid0): select, 259 enum entries (0..258).');
 console.log('amp.bright_cap  (pid10): knob, NO displayMin/displayMax in catalog.');
-console.log('II continuous knob wire range: 0..65534 (per cookbook display-q16-fixedpoint / ii-compressor-calibration-divergence).');
+console.log('II continuous knob wire range: 0..65534 (per primitives display-q16-fixedpoint / ii-compressor-calibration-divergence).');
 console.log('65534 = 0x FFFE; as sept5 8-to-7? as sept3? check group reads above for 258 and 65534.');

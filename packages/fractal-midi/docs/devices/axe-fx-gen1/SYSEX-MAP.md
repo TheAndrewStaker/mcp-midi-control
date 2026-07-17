@@ -212,6 +212,6 @@ no fabricated linear interpolation.
 - **Standard model byte:** the doc covers the Ultra (`0x01`); the Standard is
   presumed to share it but is unconfirmed. Ship Ultra first.
 - **Hardware verification:** nothing is confirmed on a physical gen-1 unit.
-- **Cookbook:** the nibble-split primitive warrants a cookbook entry + golden
+- **Primitives:** the nibble-split primitive warrants a primitive entry + golden
   (follow-up; the gen-1 golden in `test/axe-fx-gen1/setparam.test.ts` already
   locks the encoder).

@@ -1,5 +1,5 @@
 /**
- * Golden: Boss RC `.RC0` codec + RC-505mk2 field dictionary.
+ * Golden: Boss RC `.RC0` codec + RC-505mk2 + RC-600 field dictionaries.
  *
  * Self-contained (no corpus needed): builds a synthetic mk2-shaped memory,
  * proves the codec round-trips byte-exact, then locks the device-confirmed
@@ -9,6 +9,15 @@
  * scene ping-pong decode. The real-file corpus is gitignored, so this synthetic
  * golden is what runs in preflight; the codec's byte-exactness against the real
  * mk2 files is recorded in docs/manuals/other-gear/RC-505mk2-RC0-SCHEMA.md.
+ *
+ * A second section (2026-07-09) locks the RC-600 config added this session:
+ * a synthetic RC-600-shaped memory (envelope + NAME "BasicA" byte-matching the
+ * real `paulelong/RCEditor` corpus file `MEMORY001A.RC0`, see
+ * `packages/boss-rc/src/codec/rc600.ts`'s module docstring), the RC-600's
+ * read-only-ordinal ASSIGN decode (raw `SOURCE#n`/`TARGET#n` tokens, never a
+ * guessed label), the PC-based live memory recall, and the `apply_preset`
+ * gate that REFUSES to author a populated assign slot while still allowing a
+ * rename / whole-table blank.
  *
  * Run via:  npx tsx scripts/verify-bossrc.ts
  */
@@ -21,6 +30,7 @@ import {
   parseRc0,
   serializeRc0,
   getLeaf,
+  setLeaf,
   decodeCharCodes,
 } from '@mcp-midi-control/boss-rc/codec/rc0.js';
 import {
@@ -43,12 +53,17 @@ import {
   type AssignSpec,
 } from '@mcp-midi-control/boss-rc/codec/mk2.js';
 import {
+  readAllAssigns as rc600ReadAllAssigns,
+  clearAssign as rc600ClearAssign,
+  TRACK_COUNT as RC600_TRACK_COUNT,
+} from '@mcp-midi-control/boss-rc/codec/rc600.js';
+import {
   memoryFilename,
   readActiveMemory,
   writeMemory,
 } from '@mcp-midi-control/boss-rc/storage/memoryStore.js';
 import { isRc505Root } from '@mcp-midi-control/boss-rc/storage/discovery.js';
-import { RC_505_MK2_DESCRIPTOR } from '@mcp-midi-control/boss-rc/descriptor.js';
+import { RC_505_MK2_DESCRIPTOR, RC600_CONFIG, RC_600_DESCRIPTOR } from '@mcp-midi-control/boss-rc/descriptor.js';
 import { createNullMidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import type { DispatchCtx, PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { registerDevice, clearRegistry } from '@mcp-midi-control/core/protocol-generic/registry.js';
@@ -348,9 +363,146 @@ await (async (): Promise<void> => {
   delete process.env.MCP_RC505_ROOT;
 })();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// RC-600 config (added 2026-07-09). Structure (envelope, NAME, ASSIGN slot
+// count/shape) is byte-confirmed against the real paulelong/RCEditor corpus
+// (see codec/rc600.ts's module docstring); source/target ordinals are NOT
+// decoded, so the read path must report raw tokens and the write path must
+// refuse a populated assign slot. These goldens lock both halves of that
+// contract, plus the live PC-recall surface and the per-device CTL-channel
+// env separation from the mk2.
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log('');
+console.log('Boss RC-600 config (added 2026-07-09):');
+
+/**
+ * Build a synthetic RC-600-shaped .RC0: one memory, NAME "BasicA" (the EXACT
+ * byte values of the real paulelong/RCEditor corpus file `MEMORY001A.RC0`:
+ * 66,97,115,105,99,65 then six space(32) pads) + ASSIGN1..16 at the real
+ * files' confirmed blank-default pattern, trailing `<count>`. No final
+ * newline (matches the real files' form).
+ */
+function syntheticRc600Memory(): string {
+  const lines: string[] = [];
+  lines.push('<?xml version="1.0" encoding="utf-8"?>');
+  lines.push('<database name="RC-600" revision="0">');
+  lines.push('<mem id="0">');
+  lines.push('\t<NAME>');
+  const nameCodes = encodeName('BasicA');
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'].forEach((L, i) =>
+    lines.push(`\t\t<${L}>${nameCodes[i]}</${L}>`),
+  );
+  lines.push('\t</NAME>');
+  for (let n = 1; n <= 16; n++) {
+    lines.push(`\t<ASSIGN${n}>`);
+    const defaults: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 127, G: 0, H: 0, I: 0, J: 1 };
+    for (const [L, v] of Object.entries(defaults)) lines.push(`\t\t<${L}>${v}</${L}>`);
+    lines.push(`\t</ASSIGN${n}>`);
+  }
+  lines.push('</mem>');
+  lines.push('</database>');
+  lines.push('<count>0001</count>');
+  return lines.join('\n');
+}
+
+// 11. Envelope + NAME byte-match the real corpus file; track-count constant.
+const rc600Src = syntheticRc600Memory();
+const rc600Doc0 = parseRc0(rc600Src);
+eq('RC-600 round-trip byte-exact (unedited)', serializeRc0(rc600Doc0), rc600Src);
+eq('RC-600 NAME decodes to "BasicA" (matches the real MEMORY001A.RC0 corpus file)', decodeCharCodes(rc600Doc0, 'database/mem#0/NAME'), 'BasicA');
+eq('RC-600 track count constant', RC600_TRACK_COUNT, 6);
+
+// 12. Blank ASSIGN read path: all 16 slots disabled, raw '(none)' tokens.
+const rc600Assigns0 = rc600ReadAllAssigns(rc600Doc0, 0);
+eq('RC-600 decodes 16 assign slots', rc600Assigns0.length, 16);
+check('RC-600 all 16 blank slots disabled', rc600Assigns0.every((a) => a.sw === false));
+check('RC-600 all 16 blank slots source=(none)', rc600Assigns0.every((a) => a.source === '(none)'));
+check('RC-600 all 16 blank slots target=(none)', rc600Assigns0.every((a) => a.target === '(none)'));
+
+// 13. Populate one slot's raw bytes directly (neither real corpus file has a
+//     populated assign) and confirm the read path reports a RAW ordinal
+//     token, never a guessed label: the exact evidence-bar behavior
+//     codec/rc600.ts exists to enforce. The SAME raw values (C=87, H=12) would
+//     decode as "CC#81" / "TRK2 PLY/STP" under the mk2's dictionary; the
+//     RC-600 binding must NOT reuse that mapping.
+const rc600Doc1 = parseRc0(rc600Src);
+setLeaf(rc600Doc1, 'database/mem#0/ASSIGN1/A', 1);
+setLeaf(rc600Doc1, 'database/mem#0/ASSIGN1/C', 87);
+setLeaf(rc600Doc1, 'database/mem#0/ASSIGN1/H', 12);
+const rc600Assigns1 = rc600ReadAllAssigns(rc600Doc1, 0);
+eq('RC-600 populated slot 1 SW=true', rc600Assigns1[0].sw, true);
+eq('RC-600 populated slot reports RAW source token (no label guess)', rc600Assigns1[0].source, 'SOURCE#87');
+eq('RC-600 populated slot reports RAW target token (no label guess)', rc600Assigns1[0].target, 'TARGET#12');
+
+// 14. clearAssign restores the real-file-confirmed blank pattern.
+rc600ClearAssign(rc600Doc1, 0, 1);
+eq('RC-600 clearAssign restores blank SW', getLeaf(rc600Doc1, 'database/mem#0/ASSIGN1/A'), '0');
+eq('RC-600 clearAssign restores blank SOURCE', getLeaf(rc600Doc1, 'database/mem#0/ASSIGN1/C'), '0');
+eq('RC-600 clearAssign restores blank TARGET', getLeaf(rc600Doc1, 'database/mem#0/ASSIGN1/H'), '0');
+eq('RC-600 clearAssign restores blank ACT.HI default', getLeaf(rc600Doc1, 'database/mem#0/ASSIGN1/F'), '127');
+
+// 15. Live surface: switch_preset (memory M -> PC M-1), and its OWN CTL-channel
+//     env var (does not collide with the mk2's MCP_RC505_CTL_CHANNEL).
+eq('RC-600 ctl_channel_env is its own variable', RC600_CONFIG.ctl_channel_env, 'MCP_RC600_CTL_CHANNEL');
+eq('RC-600 buildSwitchPreset(9) = [0xC0, 8] (ch1 default)', JSON.stringify(RC_600_DESCRIPTOR.writer.buildSwitchPreset!(9)), JSON.stringify([0xc0, 8]));
+process.env.MCP_RC600_CTL_CHANNEL = '5';
+eq('RC-600 buildSwitchPreset honors MCP_RC600_CTL_CHANNEL override (ch5)', JSON.stringify(RC_600_DESCRIPTOR.writer.buildSwitchPreset!(1)), JSON.stringify([0xc4, 0]));
+eq('RC-505mk2 buildSwitchPreset unaffected by MCP_RC600_CTL_CHANNEL (still ch1 default)', JSON.stringify(RC_505_MK2_DESCRIPTOR.writer.buildSwitchPreset!(1)), JSON.stringify([0xc0, 0]));
+delete process.env.MCP_RC600_CTL_CHANNEL;
+const rc600Sent: number[][] = [];
+const rc600CapConn = { ...createNullMidiConnection('rc600'), send: (b: number[]): void => { rc600Sent.push(b); } };
+const rc600MidiCtx = { conn: rc600CapConn, descriptor: RC_600_DESCRIPTOR } as DispatchCtx;
+const rc600Sw = await RC_600_DESCRIPTOR.writer.switchPreset!(rc600MidiCtx, 5);
+check('RC-600 switch_preset acked + unconfirmed (no readback)', rc600Sw.acked === true && rc600Sw.unconfirmed === true);
+eq('RC-600 switch_preset sent PC 4 on ch1', JSON.stringify(rc600Sent[0]), JSON.stringify([0xc0, 4]));
+
+// 16. Storage reads + the apply_preset rename/refuse contract, driven against a
+//     synthetic mounted tree (RC-600 shares the mk2's generic MEMORY###A/B.RC0
+//     + MCP_RC505_ROOT discovery; both are dialect-agnostic; see descriptor.ts).
+await (async (): Promise<void> => {
+  const root = mkdtempSync(join(tmpdir(), 'rc600-'));
+  mkdirSync(join(root, 'DATA'), { recursive: true });
+  writeFileSync(join(root, 'DATA', memoryFilename(1, 'A')), rc600Src, 'latin1');
+
+  const storageCtx = { conn: createNullMidiConnection('rc600'), storage: { root }, descriptor: RC_600_DESCRIPTOR } as DispatchCtx;
+  const snap = await RC_600_DESCRIPTOR.reader.getPreset!(storageCtx, { location: 1 });
+  eq('RC-600 descriptor.getPreset name = BasicA', snap.name, 'BasicA');
+  check('RC-600 descriptor.getPreset all 16 slots blank (none)', snap.slots.every((s) => s.block_type === 'none'));
+
+  const scan = await RC_600_DESCRIPTOR.reader.scanLocations!(storageCtx, 1, 2);
+  eq('RC-600 scan memory 1 name', scan.scanned[0].name, 'BasicA');
+  eq('RC-600 scan memory 2 (absent) is empty', scan.scanned[1].is_empty, true);
+
+  process.env.MCP_RC505_ROOT = root; // openCtx resolves the hybrid storage surface here
+  registerDevice(RC_600_DESCRIPTOR);
+
+  // 17. apply_preset RENAME-ONLY works (spec.name, empty slots blanks the
+  //     whole table via the confirmed-safe blank pattern; no ordinal risk).
+  const renameSpec: PresetSpec = { name: 'MyLoop', slots: [] };
+  const renamed = await executeApplyPreset({ port: 'rc-600', spec: renameSpec, target_location: 1, save_authorized: true });
+  check('RC-600 apply_preset rename-only ok=true', renamed.ok === true);
+  eq('RC-600 apply_preset rename-only saved=true', renamed.saved, true);
+  const afterRename = readActiveMemory(root, 1);
+  eq('RC-600 memory renamed to MyLoop', readName(afterRename.doc, memoryIdIn(afterRename.doc)!), 'MyLoop');
+
+  // 18. apply_preset REFUSES to author a populated assign slot: the block
+  //     schema's source/target `encode` always throws, so the generic BK-059
+  //     preflight rejects it with validation_errors BEFORE any file write;
+  //     this is the load-bearing "never ship a guessed ordinal" gate.
+  const populatedSpec: PresetSpec = {
+    slots: [{ slot: 1, block_type: 'assign', params: { source: 'CC#81', target: 'TRK2 PLY/STP' } }],
+  };
+  const refused = await executeApplyPreset({ port: 'rc-600', spec: populatedSpec, target_location: 1, save_authorized: true });
+  check('RC-600 apply_preset refuses a populated assign slot (ok=false, validation_errors)', refused.ok === false && (refused.validation_errors?.length ?? 0) > 0);
+
+  clearRegistry();
+  delete process.env.MCP_RC505_ROOT;
+})();
+
 console.log('');
 if (failures > 0) {
   console.log(`verify-bossrc: ${failures} check(s) FAILED`);
   process.exit(1);
 }
-console.log('verify-bossrc: all checks passed (codec byte-exact + RC-505mk2 dictionary + storage/descriptor)');
+console.log('verify-bossrc: all checks passed (codec byte-exact + RC-505mk2 + RC-600 dictionaries + storage/descriptor)');

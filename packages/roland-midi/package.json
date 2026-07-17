@@ -1,6 +1,6 @@
 {
   "name": "roland-midi",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Pure-TypeScript codec and parameter dictionaries for Roland/Boss devices (Boss VE-500; RC-505 / SPD-SX / JD-Xi planned). Roland address-based SysEx (DT1/RQ1). No MIDI transport dependency, bring your own.",
   "license": "Apache-2.0",
   "author": "Stephen Staker <stephenstaker@gmail.com>",
@@ -32,6 +32,9 @@
     "rq1",
     "codec",
     "vocal-effects"
+  ],
+  "files": [
+    "dist"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

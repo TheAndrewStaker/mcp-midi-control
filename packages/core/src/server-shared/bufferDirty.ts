@@ -56,6 +56,7 @@
  */
 
 const dirtyByLabel = new Map<string, boolean>();
+const dirtyMarkedAt = new Map<string, number>();
 
 /**
  * Mark the working buffer for this connection as having unsaved edits.
@@ -64,6 +65,23 @@ const dirtyByLabel = new Map<string, boolean>();
  */
 export function markDirty(label: string): void {
   dirtyByLabel.set(label, true);
+  dirtyMarkedAt.set(label, Date.now());
+}
+
+/**
+ * Milliseconds since `markDirty` last fired for this label, or
+ * `undefined` if it never has (or was reset). Consumers that prefer a
+ * DEVICE-TRUE dirty signal use this to guard the propagation race: a
+ * device-side edited bit can lag OUR own just-sent write by a beat, so
+ * a device read of "clean" within a short window after markDirty is
+ * treated as stale (a human cannot have front-panel-saved milliseconds
+ * after our write landed, which is the only legitimate way the device
+ * bit clears while our flag is still set). See
+ * `packages/am4/src/tools/safeEdit.ts:isActiveBufferDirty`.
+ */
+export function msSinceMarkedDirty(label: string): number | undefined {
+  const at = dirtyMarkedAt.get(label);
+  return at === undefined ? undefined : Date.now() - at;
 }
 
 /**
@@ -91,6 +109,11 @@ export function isDirty(label: string): boolean {
  * is "assume clean" and let the next write set it.
  */
 export function resetDirty(label?: string): void {
-  if (label === undefined) dirtyByLabel.clear();
-  else dirtyByLabel.delete(label);
+  if (label === undefined) {
+    dirtyByLabel.clear();
+    dirtyMarkedAt.clear();
+  } else {
+    dirtyByLabel.delete(label);
+    dirtyMarkedAt.delete(label);
+  }
 }

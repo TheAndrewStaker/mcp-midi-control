@@ -95,8 +95,32 @@ export interface MidiConnection {
    * (a transfer's first ACK). Optional — transports/mocks may omit it.
    */
   isPortOpen?: () => boolean;
+  /**
+   * R2 handle-health stretch goal (docs/design/connection-canary.md): true
+   * when the MOST RECENT `send()` call's wall-clock time exceeded
+   * `SLOW_SEND_THRESHOLD_MS`, logged as a warning at the time it happened.
+   * `@julusian/midi`'s `sendMessage` runs synchronously on the JS thread; a
+   * send that stalls the device queue for a while (but still returns) is
+   * exactly the failure mode `lastSendError` and `isPortOpen()` both miss;
+   * neither is set/changed by a slow-but-completed send. This flag lets
+   * `isHandleHealthy` (server-shared/handleHealth.ts) mark the handle
+   * suspect for the NEXT acquire, without adding any round trip to this one.
+   * HONEST LIMIT: a send that never returns at all (the true queue-stalled
+   * hang) cannot be observed here either; this only catches "slow but
+   * eventually returned," not a hang. Optional; only the real `connect()`-
+   * backed connection tracks it; mocks/null/serial connections omit it
+   * (reads as falsy, no change in behavior).
+   */
+  slowSendSuspect?: boolean;
   close: () => void;
 }
+
+/**
+ * Wall-clock threshold (ms) above which a completed `send()` call is logged
+ * as slow and marks the handle `slowSendSuspect` for the next health check.
+ * See `MidiConnection.slowSendSuspect`.
+ */
+export const SLOW_SEND_THRESHOLD_MS = 250;
 
 /**
  * Build a stateful SysEx reassembler. node-midi's WinMM backend hands
@@ -541,18 +565,38 @@ export function connect(opts: ConnectOptions): MidiConnection {
   // write without TS forward-reference issues; the conn object exposes
   // the cell via a getter so callers see live state.
   const sendErrCell: { value?: Error } = {};
+  // R2 stretch goal: wall-clock the synchronous native send. A slow-but-
+  // completed send sets neither lastSendError nor changes isPortOpen(), so
+  // without this it is invisible to every existing health signal. We can
+  // only OBSERVE it after return (a genuinely blocked send never returns at
+  // all, see MidiConnection.slowSendSuspect): logged once, one-way latch
+  // (cleared only by a fresh reconnect, i.e. a new closure), read by
+  // isHandleHealthy on the NEXT acquire.
+  const slowSendCell: { value: boolean } = { value: false };
   const send = (bytes: number[]): void => {
+    const startedAt = Date.now();
     try {
       output.sendMessage(bytes);
       sendErrCell.value = undefined;
     } catch (err) {
       sendErrCell.value = err instanceof Error ? err : new Error(String(err));
       throw sendErrCell.value;
+    } finally {
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs > SLOW_SEND_THRESHOLD_MS) {
+        slowSendCell.value = true;
+        console.error(
+          `[midi] slow send: ${elapsedMs}ms (threshold ${SLOW_SEND_THRESHOLD_MS}ms); the handle is marked ` +
+          'suspect for the next health check. This does NOT abort the current operation; it only biases the ' +
+          'NEXT ensureConnection acquire toward a precautionary reconnect.',
+        );
+      }
     }
   };
   const conn: MidiConnection = {
     send,
     get lastSendError(): Error | undefined { return sendErrCell.value; },
+    get slowSendSuspect(): boolean { return slowSendCell.value; },
     // The connect() copy of the receivers is the live process-kill
     // exposure the helper's pre-observe catch closes: send() CAN throw
     // synchronously here (output.sendMessage on a dead handle) after a
@@ -590,20 +634,20 @@ export function connect(opts: ConnectOptions): MidiConnection {
  * `ctx.conn` sites in MIDI devices) while still modeling endpoints that aren't
  * MIDI at all.
  */
-export function createNullMidiConnection(deviceName: string): MidiConnection {
+export function createNullMidiConnection(deviceName: string, reason?: string): MidiConnection {
+  const why = reason
+    ?? `${deviceName} is on a storage transport (no MIDI connection in this mode). ` +
+       'This operation tried to use the MIDI wire on a device that talks over a ' +
+       'mounted drive — use the storage path (ctx.storage.root) instead.';
   const fail = (): never => {
-    throw new Error(
-      `${deviceName} is on a storage transport (no MIDI connection in this mode). ` +
-        'This operation tried to use the MIDI wire on a device that talks over a ' +
-        'mounted drive — use the storage path (ctx.storage.root) instead.',
-    );
+    throw new Error(why);
   };
   return {
     send: fail,
     lastSendError: undefined,
-    receiveSysEx: () => Promise.reject(new Error(`${deviceName}: no MIDI input on a storage transport.`)),
-    receiveSysExMatching: () => Promise.reject(new Error(`${deviceName}: no MIDI input on a storage transport.`)),
-    onMessage: () => () => { /* no inbound on a storage transport */ },
+    receiveSysEx: () => Promise.reject(new Error(why)),
+    receiveSysExMatching: () => Promise.reject(new Error(why)),
+    onMessage: () => () => { /* no inbound: this connection has no wire */ },
     hasInput: false,
     isPortOpen: () => false,
     close: () => { /* nothing to close */ },

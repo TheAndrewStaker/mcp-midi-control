@@ -22,7 +22,7 @@
  * a 14-bit LSB-first length tag `40 01` (= 192 raw bytes, the same length-tag
  * convention as the write frame's `04 00`), then 220 packed bytes, cks, F7.
  * The 220 packed bytes unpack 8→7 with the chunked LSB-first-with-carry
- * scheme (cookbook [[iii-byte-stream-septet-pack-8to7]]; the shared
+ * scheme (primitive [[iii-byte-stream-septet-pack-8to7]]; the shared
  * `unpackValueChunked` — carry restarts every 8 wire / 7 raw bytes) into a
  * 192-byte raw record:
  *

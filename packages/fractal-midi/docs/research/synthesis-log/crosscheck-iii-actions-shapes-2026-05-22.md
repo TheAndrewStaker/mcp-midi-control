@@ -1,8 +1,8 @@
-# Cookbook crosscheck: ghidra-axe-edit-iii-actions-and-shapes.txt
+# Primitives crosscheck: ghidra-axe-edit-iii-actions-and-shapes.txt
 
 Date: 2026-05-22
 Dump path: `fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-actions-and-shapes.txt` (988,973 bytes; produced by `MineAxeEditIIIActionsAndShapes.java`)
-Cookbook revision: 18 positive primitives + 8 negatives (per INDEX.md `## The table`).
+Primitives revision: 18 positive primitives + 8 negatives (per INDEX.md `## The table`).
 
 The dump has three sections:
 
@@ -10,15 +10,15 @@ The dump has three sections:
 - **PART A.2** (lines 677-22405): full Ghidra decompile of each of the 93 callers. The body of the fn=0x01 builder itself is reproduced under the (mislabeled) "fn=0x14" header at L22641.
 - **PART B** (lines 22407-end): host-emit wire shapes for seven non-fn=0x01 workflows. Headers are auto-labeled by literal grep and are unreliable (see §3.A), but the listed functions are the right ones.
 
-The mining yield falls into three buckets: instances of existing cookbook primitives now reachable from the III editor (§1), candidate net-new primitives the dump exposes (§2), and one negative finding about how to consume the dump (§3).
+The mining yield falls into three buckets: instances of existing primitives now reachable from the III editor (§1), candidate net-new primitives the dump exposes (§2), and one negative finding about how to consume the dump (§3).
 
 ---
 
-## 1. Instances of existing cookbook primitives
+## 1. Instances of existing primitives
 
 ### 1.A, `[[iii-fn01-set-parameter-envelope]]`, full byte-pinned definition of the fn=0x01 builder
 
-The dump exposes the complete decompile of `FUN_14033ec70`, the AxeEdit III function that composes every fn=0x01 SET_PARAMETER frame. This is the function the cookbook's `iii-fn01-set-parameter-envelope` 2026-05-22 refinement note named ("AxeEdit III editor's `FUN_14033ec70` builder ... packs the payload as a 6-field struct") but cited as an N=1 alternative reading. The dump now contains the function body itself, so the 6-field layout is byte-pinned, not hypothesized.
+The dump exposes the complete decompile of `FUN_14033ec70`, the AxeEdit III function that composes every fn=0x01 SET_PARAMETER frame. This is the function the primitives corpus's `iii-fn01-set-parameter-envelope` 2026-05-22 refinement note named ("AxeEdit III editor's `FUN_14033ec70` builder ... packs the payload as a 6-field struct") but cited as an N=1 alternative reading. The dump now contains the function body itself, so the 6-field layout is byte-pinned, not hypothesized.
 
 Location in dump: L22641-22850. The relevant excerpts (offset bytes are after the F0 00 01 74 <model> 01 prefix):
 
@@ -55,7 +55,7 @@ The buffer length is `iVar2 = (param_3[5] * 8 + 6) / 7 + 0xf` (L22659), so the f
 
 `[action14:2] [effectId14:2] [paramId14:2] [value32:5] [modifier14:2] [tailCount14:2] [tail:N]`
 
-This matches the cookbook's existing 6-field interpretation precisely. The byte-pinned shapes per field also confirm the byte-verified shipped shape in `packages/fractal-gen3/src/setParam.ts` (since the captured corpus uses values in [0..16383], bytes 8-10 of field 3 are zero in every captured frame, and the on-wire bytes agree with the cookbook's `[drag-context:3] [value:3] [reserved:3]` retrospective decomposition).
+This matches the primitives corpus's existing 6-field interpretation precisely. The byte-pinned shapes per field also confirm the byte-verified shipped shape in `packages/fractal-gen3/src/setParam.ts` (since the captured corpus uses values in [0..16383], bytes 8-10 of field 3 are zero in every captured frame, and the on-wire bytes agree with the primitives corpus's `[drag-context:3] [value:3] [reserved:3]` retrospective decomposition).
 
 **Suggested `consumed_in:` addition:**
 
@@ -65,7 +65,7 @@ This matches the cookbook's existing 6-field interpretation precisely. The byte-
 
 ### 1.B, `[[iii-host-emitter-fn-table]]`, eight more host-emitted fn bytes localized to specific functions
 
-The cookbook currently lists ~21 III host-emittable fn bytes inferred from caller-trace mining. This dump localizes eight of them to specific builder functions:
+The primitives corpus currently lists ~21 III host-emittable fn bytes inferred from caller-trace mining. This dump localizes eight of them to specific builder functions:
 
 | fn byte | Caller / builder        | Dump line(s)                        | Payload signature        |
 |---------|-------------------------|-------------------------------------|--------------------------|
@@ -79,7 +79,7 @@ The cookbook currently lists ~21 III host-emittable fn bytes inferred from calle
 | `0x5a`  | `FUN_140328a10`         | L22941, L23039 (also `0x5c`)        | 6-byte fixed payload (see §1.C) |
 | `0x5c`  | `FUN_140336a40`         | L23039, L23081                      | 5-byte packValue32 payload |
 
-`0x08` and `0x47` were already in the cookbook's enumerated list of "11 PDF-omitted host-emittable opcodes". The dump now ties them to specific builder functions (not just "called from somewhere"), which is what the cookbook entry's "Verification path" calls out as the next-tier verifiability gain (V4 → V5).
+`0x08` and `0x47` were already in the primitives corpus's enumerated list of "11 PDF-omitted host-emittable opcodes". The dump now ties them to specific builder functions (not just "called from somewhere"), which is what the primitive entry's "Verification path" calls out as the next-tier verifiability gain (V4 → V5).
 
 **Suggested `consumed_in:` addition:**
 
@@ -103,7 +103,7 @@ pbVar1[4] = (byte)(param_2 >> 0x18) >> 4;
 FUN_1403437d0(param_1, 0x5c, pbVar1, 5, DAT_1412633f8);
 ```
 
-Two independent call sites with the same shift table is N=2 inside one binary. The packing is the 32-bit extension of the cookbook's existing `septet-14bit` 2-septet form (same per-byte mask, more septets). Worth folding into the existing `septet-14bit` entry as a "wider variants" sub-section rather than spinning out a separate primitive: same mechanism, additional fixtures.
+Two independent call sites with the same shift table is N=2 inside one binary. The packing is the 32-bit extension of the primitives corpus's existing `septet-14bit` 2-septet form (same per-byte mask, more septets). Worth folding into the existing `septet-14bit` entry as a "wider variants" sub-section rather than spinning out a separate primitive: same mechanism, additional fixtures.
 
 The dump's evidence pushes `septet-14bit` from "axis points: AM4/II/III" toward "axis points: AM4/II/III + width-variants {14, 21, 32}". The 21-bit form is already a sibling primitive ([[septet-21bit-byte2-mask-preservation]]); the 32-bit form has lived as an implicit extension and now has two N=2 fixtures within the III editor.
 
@@ -115,7 +115,7 @@ The dump's evidence pushes `septet-14bit` from "axis points: AM4/II/III" toward 
 
 ### 1.D, `[[vendor-envelope-descriptor-table]]`, three new III tables walked at runtime
 
-The cookbook entry already lists 26 III descriptor tables extracted statically from `ghidra-axe-edit-iii-misc-descriptors.txt` and `ghidra-axe-edit-iii-dump-descriptors.txt`. This dump shows the runtime walker code, which is itself worth adding as a fixture (it confirms the stride and sentinel without relying on the static-extractor heuristic).
+The primitive entry already lists 26 III descriptor tables extracted statically from `ghidra-axe-edit-iii-misc-descriptors.txt` and `ghidra-axe-edit-iii-dump-descriptors.txt`. This dump shows the runtime walker code, which is itself worth adding as a fixture (it confirms the stride and sentinel without relying on the static-extractor heuristic).
 
 `FUN_14033c6e0` (fn=0x19 builder, L23096-23448) selects one of three descriptor tables by model byte and walks each with the same stride/sentinel pattern:
 
@@ -132,7 +132,7 @@ do {
 
 (L23140-23149, plus parallel branches at L23260-23270 and L23329-23338.)
 
-This confirms three properties of the cookbook primitive at runtime:
+This confirms three properties of the primitive at runtime:
 
 - Record stride is exactly 12 bytes (`pbVar8 * 0xc`).
 - Termination is `tag == -1`, read from offset +0 of the record (`*(int *)(...table_base)`).
@@ -148,7 +148,7 @@ The dispatch rule by model byte (L23138-23339):
 
 L23433-23436 corroborates the III family bucket (`(DAT_1412633f8 == 0x10) || (DAT_1412633f8 == 0x11) || (DAT_1412633f8 == 0x12)`).
 
-`DAT_1407abb00` is not in the current cookbook entry's enumerated list (which names `0x1407ab940`, `0x1407ab440`, `0x1407aba40`, `0x1407ab0a0`, `0x1407ab910`, `0x1407ab8b0`, plus 19 smaller). Worth running the existing `parse-ghidra-decompile.ts` against this dump as a separate cross-extract pass to pull `0x1407abb00`, `0x1407ab590`, `0x1407ab490` byte-by-byte and merge into the JSON.
+`DAT_1407abb00` is not in the current primitive entry's enumerated list (which names `0x1407ab940`, `0x1407ab440`, `0x1407aba40`, `0x1407ab0a0`, `0x1407ab910`, `0x1407ab8b0`, plus 19 smaller). Worth running the existing `parse-ghidra-decompile.ts` against this dump as a separate cross-extract pass to pull `0x1407abb00`, `0x1407ab590`, `0x1407ab490` byte-by-byte and merge into the JSON.
 
 **Suggested `consumed_in:` addition:**
 
@@ -186,11 +186,11 @@ The checksum itself is not visible here (it lives in the central send/recv funct
 name: iii-multiproduct-editor-binary
 class: dispatch-context
 status: matched-singleton
-discovered: 2026-05-22 (cookbook-mine of actions-and-shapes dump)
+discovered: 2026-05-22 (primitives-mine of actions-and-shapes dump)
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-multiproduct-editor-binary
+golden: scripts/primitives-verify.ts#case-iii-multiproduct-editor-binary
 relates_to: [vendor-envelope-descriptor-table, iii-host-emitter-fn-table, iii-fn01-set-parameter-envelope]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-actions-and-shapes.txt
@@ -207,7 +207,7 @@ consumed_in:
 
 **Fixture count:** N=1 (single binary, single editor product line). `matched-singleton` is the right status: the second axis would be a different multi-product editor binary, which does not exist for Fractal currently. Body should explain "axis: multi-product editor binary, only one exists for the III family today; if Fractal ships a successor editor that drops one of the model bytes, that becomes the second axis."
 
-**Why it matters:** every other III primitive in the cookbook implicitly assumes "this is THE binary for the III." That is true today, but the actual semantic is "this is the binary for three devices that share a wire dialect." Treating the model-byte axis as a first-class dispatch dimension matters when the FM3 or FM9 capabilities diverge from the III's. The cookbook should name this once, then each downstream primitive can cite it via `relates_to`.
+**Why it matters:** every other III primitive in the primitives corpus implicitly assumes "this is THE binary for the III." That is true today, but the actual semantic is "this is the binary for three devices that share a wire dialect." Treating the model-byte axis as a first-class dispatch dimension matters when the FM3 or FM9 capabilities diverge from the III's. The primitives corpus should name this once, then each downstream primitive can cite it via `relates_to`.
 
 ### 2.B, `iii-fn01-action-code-per-model-byte`, action-code differs per device
 
@@ -220,11 +220,11 @@ consumed_in:
 name: iii-fn01-action-code-per-model-byte
 class: dispatch-context
 status: matched-singleton
-discovered: 2026-05-22 (cookbook-mine of actions-and-shapes dump)
+discovered: 2026-05-22 (primitives-mine of actions-and-shapes dump)
 verified_on:
   - axe-edit-iii-binary
 firmware_sensitive: false
-golden: scripts/cookbook-verify.ts#case-iii-fn01-action-code-per-model-byte
+golden: scripts/primitives-verify.ts#case-iii-fn01-action-code-per-model-byte
 relates_to: [iii-fn01-set-parameter-envelope, iii-multiproduct-editor-binary]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-actions-and-shapes.txt
@@ -288,7 +288,7 @@ Worth tracking as a sub-claim within `[[vendor-envelope-descriptor-table]]`'s bo
 - Treat `FUN_1403434b0(...,<lit>,...)` as the second authoritative form (different signature; used for inbound-side parsing or alternate dispatch).
 - Ignore the `## fn=0x..` headers when in doubt; cross-check the literal at the `FUN_1403437d0` / `FUN_1403434b0` call site.
 
-This is a dump-consumption note, not a wire-protocol negative. Probably belongs in the dump's own README rather than a `cookbook/_negative/<slug>.md` entry, since it does not rule out a transferable hypothesis. But if the founder considers the multi-session value of "do not trust auto-labeled headers in `Mine*Actions*.java` dumps" worth a formal negative entry, the slug `_negative/ghidra-mineactions-fn-header-auto-label.md` would carry the warning.
+This is a dump-consumption note, not a wire-protocol negative. Probably belongs in the dump's own README rather than a `primitives/_negative/<slug>.md` entry, since it does not rule out a transferable hypothesis. But if the founder considers the multi-session value of "do not trust auto-labeled headers in `Mine*Actions*.java` dumps" worth a formal negative entry, the slug `_negative/ghidra-mineactions-fn-header-auto-label.md` would carry the warning.
 
 ### 3.B, Central send routines are not decompiled in this dump
 

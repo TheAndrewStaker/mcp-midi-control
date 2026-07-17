@@ -30,8 +30,8 @@ export interface CompileOptions {
   repeat?: number;
   /** Realize-time arm flag for record_capture (forwarded to the plan). */
   armed?: boolean;
-  /** ncs_upload only: template project + target slot + optional scale + per-step sample flips + overwrite gate + dry_run (forwarded to the plan). */
-  upload?: { template_path?: string; slot: number; scale?: string; drum_flips?: Record<string, Record<string, number>>; confirm_overwrite?: boolean; dry_run?: boolean };
+  /** ncs_upload only: template project + target slot + optional scale + per-step sample flips + drum-track sample binding + overwrite gate + dry_run (forwarded to the plan). */
+  upload?: { template_path?: string; slot: number; scale?: string; drum_flips?: Record<string, Record<string, number>>; drum_binding?: number[]; confirm_overwrite?: boolean; dry_run?: boolean };
   /**
    * Semitone transpose applied to AUTHORED pitches only (`Step.notes`), so the
    * C-based library recipes play in any key. Drum triggers and un-pitched hits

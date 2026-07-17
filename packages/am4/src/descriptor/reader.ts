@@ -189,7 +189,7 @@ async function readBypassState(
  *   - non-enum: internal = u16 / 65534 (Q16 → [0..1]), then `am4Decode`
  *     applies the per-unit scale (knob_0_10 / percent / log10-ratio / etc.)
  *
- * Wire-encoding rule cited in `[[am4-fn1f-atomic-read]]` cookbook entry.
+ * Wire-encoding rule cited in the `[[am4-fn1f-atomic-read]]` primitive entry.
  */
 function decodeChunkValue(param: Param, wire: number): number | string {
   if (param.unit === 'enum') {
@@ -211,7 +211,7 @@ function decodeChunkValue(param: Param, wire: number): number | string {
  * (`probe-am4-channel-{blocked,orientation,switch-test}.ts`): channel-bearing
  * blocks all have `itemCount % 4 === 0` with DISTINCT quarters, and a
  * reversible A->B->A switch left the quarters invariant (FIXED, not sliding).
- * See `readOps.ts` and cookbook `am4-fn1f-atomic-read`.
+ * See `readOps.ts` and the `am4-fn1f-atomic-read` primitive.
  *
  * Non-channel-blocked chunks (`itemCount % 4 !== 0`, every non-channel
  * register) degrade safely: only channel index 0 reads a value (at `pidHigh`),
@@ -782,7 +782,7 @@ export const reader: DeviceReader = {
     // reads back derived/cached firmware state on the amp and mis-attributed
     // the active tone. The `include_channel_state` option is now a no-op (all
     // channels always returned). Channel-blocked layout confirmed on live AM4
-    // hardware 2026-06-04 (cookbook am4-fn1f-atomic-read).
+    // hardware 2026-06-04 (the am4-fn1f-atomic-read primitive).
     // Server-side timer around the SysEx read loop — surfaced as
     // _meta.read_duration_ms (client-independent; alpha.17 finding).
     const readStartedMs = Date.now();
@@ -839,7 +839,7 @@ export const reader: DeviceReader = {
         // active scene selects is derivable from `active_scene` + a live
         // get_param read (a plain get_param with no channel arg returns the
         // active channel's value). Channel-blocked layout confirmed on live
-        // AM4 hardware 2026-06-04 (cookbook am4-fn1f-atomic-read).
+        // AM4 hardware 2026-06-04 (the am4-fn1f-atomic-read primitive).
         let params: PresetSlotSpec['params'];
         let paramsByChannel: PresetSlotSpec['params_by_channel'];
         let channelStatus: PresetSnapshotSlot['channel_status'];

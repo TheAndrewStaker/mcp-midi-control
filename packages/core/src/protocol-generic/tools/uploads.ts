@@ -121,12 +121,13 @@ export function registerUploadTools(server: McpServer): void {
       port: z.string().describe(PORT_DESC),
       file: z.string().describe('Path to a prepared .ncs project file (160,780 bytes).'),
       slot: z.number().int().min(0).max(63).describe('Destination project slot, 0..63 (device shows "Project slot+1"). OVERWRITES that slot.'),
+      pack: z.number().int().min(1).max(32).optional().describe('Circuit Tracks: which microSD PACK to write to, numbered as the device shows it, so pack:5 is the front panel\'s "Pack 5". NOTE the two bases in one call: `pack` is 1-based; `slot` is 0-based. Default pack 1. A card holds up to 32 packs, each a COMPLETE separate world of 64 projects, so the same slot number exists in every pack and the pack decides which project gets overwritten. Call list_packs first to see the card\'s packs by name. The overwrite gate, the pre-write backup, and the write all target this pack together. IMPORTANT: the server CANNOT detect which pack the device currently has selected (no wire command reports it), so if the user is working in a specific pack, pass it explicitly; otherwise this writes to Pack 1 no matter what the front panel shows.'),
       confirm_overwrite: z.boolean().optional().describe('Overwrite gate. Omitted/false reads the slot first and refuses only if it is occupied. Pass true to overwrite an occupied slot (skips the read), only when the user authorized it.'),
       backup_first: z.boolean().optional().describe('Backup-before-overwrite. Default true: when confirm_overwrite overwrites an occupied slot, save its current project to a .ncs backup (~/mcp-midi-backups) first so the change is reversible. Pass false to skip the pre-write backup read.'),
     },
-  }, async ({ port, file, slot, confirm_overwrite, backup_first }) => {
+  }, async ({ port, file, slot, pack, confirm_overwrite, backup_first }) => {
     try {
-      return asText(await executeUploadProject({ port, file, slot, confirm_overwrite, backup_first }));
+      return asText(await executeUploadProject({ port, file, slot, pack, confirm_overwrite, backup_first }));
     } catch (err) {
       return asError(err);
     }

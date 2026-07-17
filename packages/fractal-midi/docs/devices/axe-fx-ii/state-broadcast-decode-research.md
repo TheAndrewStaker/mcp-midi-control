@@ -6,7 +6,7 @@ The triple is accepted by the device as a HOST-TO-DEVICE write, not just a
 device-emitted broadcast. All 21 block types tested. Constraints: NOT
 channel-aware (writes to monolithic block state); encoding is per-position
 (mixed wire16 / display-int); full value array required. See
-the project's hardware-test log and cookbook entry
+the project's hardware-test log and primitive entry
 `ii-state-broadcast-triple-write` for the full decode.
 
 **Source captures (gitignored):**

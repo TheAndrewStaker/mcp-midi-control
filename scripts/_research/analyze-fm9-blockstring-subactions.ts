@@ -32,7 +32,7 @@ function rawAscii(b: number[]): string {
 function low7Ascii(b: number[]): string {
   return b.map((c) => { const x = c & 0x7f; return x >= 0x20 && x < 0x7f ? String.fromCharCode(x) : '.'; }).join('');
 }
-// streaming MSB-first 8→7 regroup (cookbook iii-byte-stream-septet-pack-8to7), UNPACK 7→8
+// streaming MSB-first 8→7 regroup (primitive iii-byte-stream-septet-pack-8to7), UNPACK 7→8
 function septetUnpack(septets: number[]): number[] {
   let acc = 0, bits = 0; const out: number[] = [];
   for (const s of septets) {

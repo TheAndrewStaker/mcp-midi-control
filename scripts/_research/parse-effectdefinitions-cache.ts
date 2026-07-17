@@ -7,7 +7,7 @@
  * (samples/captured/local-caches-2026-06-09/strict.py).
  *
  * File grammar (solved 2026-06-09, see docs/_private/CACHE-FORMAT-SOLVED-2026-06-09.md
- * and the cookbook entry editor-cache-section-record-grammar.md):
+ * and the primitive entry editor-cache-section-record-grammar.md):
  *
  *   file    := preamble , section+
  *   section := u32 sectionTag , u32 recordCount , record{recordCount}

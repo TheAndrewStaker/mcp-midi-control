@@ -10,7 +10,7 @@
  * reads so it renders the grid, and on Ctrl+C flushes the logs and (optionally)
  * calls `onStop(jsonlPath)` so a caller can decode the just-captured session.
  *
- * Why this exists despite the negative cookbook entry on virtual-MIDI bridges:
+ * Why this exists despite the negative primitive entry on virtual-MIDI bridges:
  * FM-Edit (unlike AxeEdit II / AM4-Edit) accepts an "AXE"-prefixed loopMIDI
  * port and reports "Connected!" with no hardware — see the CLI header.
  */

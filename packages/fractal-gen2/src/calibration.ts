@@ -692,6 +692,39 @@ function classifyUnit(
 }
 
 /**
+ * Decode a select-type param's wire ordinal to its enum label. NEVER
+ * returns a bare number: the display-first contract (CLAUDE.md "Tool
+ * API conventions") requires every enum surface a label, never a wire
+ * int, and `enumValues?.[wire] ?? wire` used to do exactly that on a
+ * roster miss. Confirmed live 2026-07-10 (STATE-AXEFX2.md): a
+ * `get_preset include_channel_state:true` read surfaced
+ * `drive.effect_type: 32767` for a block's Y channel instead of a
+ * label. The ground-truth fixture decode showed the TLV offset math and
+ * the roster entry for THAT preset's actual ordinal (36, BLACKGLASS 7K)
+ * are both correct, so the raw-number leak traces to this fallback
+ * shape being reachable at all, not a wrong offset or a missing roster
+ * row for that specific value. A corpus sweep of the 388-preset factory
+ * bank + hw132 captures shows the same `enumValues?.[wire] ?? wire`
+ * fallthrough fires broadly across select-type params whenever the wire
+ * holds a sentinel-range value (0x7FFF / 0xFFFE-ish) for a channel/field
+ * the device has never explicitly configured; those are NOT real,
+ * nameable enum options, so registering guessed roster entries for them
+ * would violate the "do not guess names" rule. The correct fix at every
+ * call site is this labeled decode-gap placeholder instead of the raw
+ * wire integer, so an agent reading the response sees an honest "this
+ * ordinal isn't decoded" signal rather than mistaking a wire int for a
+ * confident value.
+ */
+export function decodeEnumWire(
+  enumValues: Readonly<Record<number, string>> | undefined,
+  wire: number,
+): string {
+  const ordinal = Math.round(wire);
+  const label = enumValues?.[ordinal];
+  return label ?? `UNKNOWN TYPE (ordinal ${ordinal})`;
+}
+
+/**
  * The Axe-Fx II resolver. Plugged into the cross-device registry by
  * `registerParamKindResolver('axe-fx-ii', resolveAxeFxIIParamKind)` at
  * descriptor module load.
@@ -710,7 +743,7 @@ export const resolveAxeFxIIParamKind: ParamKindResolver = (
       unit: 'enum',
       source: 'codec_catalog',
       encodeDisplay: (value: number | string) => resolveEnumWire(param, value),
-      decodeWire: (wire: number) => param.enumValues?.[Math.round(wire)] ?? wire,
+      decodeWire: (wire: number) => decodeEnumWire(param.enumValues, wire),
     };
   }
   if (param.controlType === 'switch') {

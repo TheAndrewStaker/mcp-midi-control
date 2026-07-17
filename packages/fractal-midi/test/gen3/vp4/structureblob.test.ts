@@ -11,7 +11,7 @@
  *     current scene 3 (the annotated scene 1→3 switch).
  *
  * Failure means the decode drifted from the real device's wire bytes.
- * Cookbook: [[vp4-eid206-structure-blob]] (this file is its golden).
+ * Primitives: [[vp4-eid206-structure-blob]] (this file is its golden).
  */
 import {
   buildVp4GetStructureBlob,

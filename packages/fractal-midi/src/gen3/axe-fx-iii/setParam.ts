@@ -149,7 +149,7 @@ function buildEnvelope(
 
 // ── 0x01 PARAMETER_SETGET ─────────────────────────────────────────
 //
-// Per cookbook entry [[iii-fn01-set-parameter-envelope]], AxeEdit
+// Per primitive entry [[iii-fn01-set-parameter-envelope]], AxeEdit
 // III's editor-side builder FUN_14033ec70 (Ghidra dump
 // `samples/captured/decoded/ghidra-axe-edit-iii-store-preset.txt`
 // L1325-1531, re-confirmed at
@@ -328,7 +328,7 @@ export function parseGen3SetValueEcho(bytes: readonly number[]): {
  * SET PARAMETER (function 0x01, sub-action 0x09 0x00 — typed input).
  *
  * Internal 6-field model (per FUN_14033ec70 in AxeEdit III; see
- * cookbook entry [[iii-fn01-set-parameter-envelope]]):
+ * primitive entry [[iii-fn01-set-parameter-envelope]]):
  *
  *   { action14, blockId14, paramId14, value32, modifier14, tailCount14, tail[] }
  *
@@ -856,8 +856,8 @@ export function assembleGen3BlockBulkRead(
 // The gen-3 editor places a block into a grid cell with fn=0x01
 // sub-action 0x32 (the editor names it `grid_set_position`). Captured
 // byte-exact from FM9-Edit (0x12), AxeEdit III (0x10), and FM3-Edit
-// (0x11) over loopMIDI; see the cookbook [[gen3-fn01-grid-set-position-insert]]
-// and the golden `scripts/cookbook-verify.ts#case-gen3-fn01-grid-set-position-insert`.
+// (0x11) over loopMIDI; see the primitive [[gen3-fn01-grid-set-position-insert]]
+// and the golden `scripts/primitives-verify.ts#case-gen3-fn01-grid-set-position-insert`.
 //
 // This supersedes the earlier fn=0x05 guess (a II-ported opcode the III
 // firmware never confirmed). The editor pairs the insert with a cell-select
@@ -886,7 +886,7 @@ const GRID_INSERT_SUB_ACTION = 0x32;
  * gridPos = (col - 1) * rows + (row - 1), column-major. The row stride is the
  * grid's row count, passed via `opts.rows`. The gen-3 grid is 6 rows on the
  * Axe-Fx III and FM9 (wire-confirmed), 4 rows on the FM3; pass its row count.
- * Default 6. Wire-confirmed across model 0x10/0x11/0x12; see the cookbook
+ * Default 6. Wire-confirmed across model 0x10/0x11/0x12; see the primitive
  * [[gen3-fn01-grid-set-position-insert]] entry.
  */
 export function buildSetGridCell(opts: {
@@ -1068,7 +1068,7 @@ export function buildSetGridRouting(opts: {
 //
 // Cross-evidence: the byte-identical sub=0x30 frame was captured live as
 // the block-insert "cell SELECT companion" (loopMIDI editor emulation,
-// cookbook [[gen3-fn01-grid-set-position-insert]]), with gridPos in the
+// primitive [[gen3-fn01-grid-set-position-insert]]), with gridPos in the
 // same 12-13 position. The mine grounds the semantics: the "Clearing
 // preset..." string anchors sub=0x30 as the cell reset/clear (the insert
 // transaction clears the target cell before inserting into it).
@@ -1237,7 +1237,7 @@ export function buildSetPresetName(
 //
 // Tail encoding: the canonical fn=0x01 builder (FUN_14033ec70) sizes its
 // payload as ceil(tailCount*8/7) + 15 and 8-to-7 septet-packs the tail
-// (cookbook [[iii-byte-stream-septet-pack-8to7]]); a 32-byte name packs
+// (primitive [[iii-byte-stream-septet-pack-8to7]]); a 32-byte name packs
 // to 37 wire bytes, total frame 60 bytes. The packer is byte-identical
 // to `packValueChunked` (same sliding-window-with-carry algorithm,
 // cross-asserted in the golden tests).
@@ -1351,9 +1351,9 @@ export function buildClearAllSceneNames(
 // fn=0x01 sub-action 0x26. This is the editor's own outbound store op,
 // captured byte-exact from FM9-Edit (model 0x12) AND AxeEdit III (model
 // 0x10) driven over loopMIDI (no hardware); the two captures produced
-// the byte-identical frame apart from the model byte. See the cookbook
+// the byte-identical frame apart from the model byte. See the primitive
 // entry [[gen3-fn01-store-preset]] and the golden
-// `scripts/cookbook-verify.ts#case-gen3-fn01-store-preset`.
+// `scripts/primitives-verify.ts#case-gen3-fn01-store-preset`.
 //
 // This supersedes the earlier fn=0x1D guess (a II-ported opcode that was
 // never confirmed for gen-3 and kept gen-3 save in community-beta refusal).
@@ -1377,7 +1377,7 @@ const STORE_SUB_ACTION = 0x26;
 /**
  * STORE_PRESET (fn=0x01 sub=0x26): persist the working buffer to preset
  * location `presetNumber`. Wire-confirmed across model 0x10 and 0x12; see
- * the cookbook [[gen3-fn01-store-preset]] entry.
+ * the primitive [[gen3-fn01-store-preset]] entry.
  */
 export function buildStorePreset(
   presetNumber: number,

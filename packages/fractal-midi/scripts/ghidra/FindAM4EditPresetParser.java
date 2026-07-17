@@ -11,7 +11,7 @@
 // Methodological model: this is the AM4 analog of
 // FindAxeEditIIPresetParser.java (which used magic-immediate scoring
 // to surface the II parser at FUN_0054d0c0 etc.). Same technique,
-// AM4-specific constants. See cookbook entry
+// AM4-specific constants. See primitive entry
 // `_negative/byte-literal-envelope-ghidra-search.md` for why we do NOT
 // search the full 5-byte envelope (the model byte 0x15 is loaded at
 // runtime from a device-handle struct, not embedded in the emitter).

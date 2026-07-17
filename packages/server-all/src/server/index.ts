@@ -77,14 +77,14 @@ import { registerDevice as registerMcpDevice } from '@mcp-midi-control/core/prot
 import { registerDeviceResources } from '@mcp-midi-control/core/protocol-generic/resources.js';
 import { registerUnifiedTools } from '@mcp-midi-control/core/protocol-generic/tools.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
+import { AXEFX2_DESCRIPTOR, AX8_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import { AXEFXGEN1_DESCRIPTOR } from '@mcp-midi-control/fractal-gen1/descriptor.js';
 import { MODERN_FRACTAL_DESCRIPTORS } from '@mcp-midi-control/fractal-gen3/device.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
 import { CIRCUIT_TRACKS_DESCRIPTOR } from '@mcp-midi-control/circuit-tracks/descriptor.js';
 import { SPD_SX_DESCRIPTOR } from '@mcp-midi-control/spd-sx/descriptor.js';
 import { VE500_DESCRIPTOR } from '@mcp-midi-control/ve-500/descriptor.js';
-import { RC_505_MK2_DESCRIPTOR } from '@mcp-midi-control/boss-rc/descriptor.js';
+import { RC_505_MK2_DESCRIPTOR, RC_600_DESCRIPTOR } from '@mcp-midi-control/boss-rc/descriptor.js';
 
 // -- Server setup -----------------------------------------------------------
 
@@ -298,6 +298,16 @@ for (const descriptor of MODERN_FRACTAL_DESCRIPTORS) {
 // "Axe-Fx Ultra" matches the more-specific /axe-?fx.*(ultra|standard)/i
 // pattern instead of the II's broad /axe-?fx/i.
 registerMcpDevice(AXEFXGEN1_DESCRIPTOR);
+// AX8 (BK-094, community-beta: no AX8 hardware on hand, evidence-backed;
+// see packages/fractal-gen2/src/configs/ax8.ts + docs/_private/
+// AX8-RESEARCH-2026-07-09.md) registers BEFORE the II: its port_match
+// /ax8/i is the more-specific pattern (AX8 ports name themselves "AX8"),
+// same discipline as the gen-1-before-II ordering above. /ax8/i cannot
+// match the II's broad /axe-?fx/i (no "axefx"/"axe-fx" substring in "AX8"),
+// so the two patterns don't actually collide either way, but registering
+// the more-specific one first keeps this file's ordering discipline
+// consistent for future readers.
+registerMcpDevice(AX8_DESCRIPTOR);
 registerMcpDevice(AXEFX2_DESCRIPTOR);
 registerMcpDevice(AM4_DESCRIPTOR);
 // Hydrasynth registers after the Fractal devices — its port_match
@@ -316,6 +326,12 @@ registerMcpDevice(VE500_DESCRIPTOR);
 // Boss RC-505mk2 (looper, hybrid live-MIDI + .RC0 storage). port_match /rc-?505/i
 // can't collide with the other devices' patterns, so registration order is free.
 registerMcpDevice(RC_505_MK2_DESCRIPTOR);
+// Boss RC-600 (looper sibling, same .RC0 storage generation + hybrid transport
+// as the mk2; live surface community-beta, storage surface reads-only pending
+// a decoded ASSIGN ordinal map; see packages/boss-rc/src/codec/rc600.ts).
+// port_match /rc-?600/i can't collide with the mk2's /rc-?505/i, so
+// registration order is free.
+registerMcpDevice(RC_600_DESCRIPTOR);
 registerUnifiedTools(server);
 // Expose each device's agent_guidance topics as MCP resources so the
 // agent can pull individual topics on demand instead of always

@@ -3,9 +3,9 @@
 // Seeks vendor-envelope descriptor tables in AM4-Edit.exe (64-bit), the
 // AM4 analog of the II tables at 0xe04440 + 0xdff900 and the III tables
 // at 0x1407ab440 + 0x1407aba40 documented in
-// fractal-midi/docs/research/cookbook/vendor-envelope-descriptor-table.md.
+// fractal-midi/docs/research/primitives/vendor-envelope-descriptor-table.md.
 //
-// The cookbook entry currently lists AM4 as a transfer candidate ("AM4
+// The primitive entry currently lists AM4 as a transfer candidate ("AM4
 // editor binary descriptor tables not yet surveyed"). This script closes
 // that gap by direct-pattern-scan of AM4-Edit.exe's data sections for
 // the documented `(tag, mid, byte_count)` 12-byte-stride shape
@@ -14,7 +14,7 @@
 // Approach: structural scan over initialized non-executable memory
 // blocks. At each 4-byte-aligned address, try to interpret the next
 // bytes as a vendor-envelope descriptor table. Accept only if:
-//   1. The first entry's tag is 0 (per the cookbook's "tag is the
+//   1. The first entry's tag is 0 (per the primitive's "tag is the
 //      per-record key: 0, 1, 2, ...").
 //   2. Subsequent tags are monotonically increasing small ints, with
 //      a one-step bound (each tag follows previous tag + 0 or + 1).
@@ -36,7 +36,7 @@
 // enough that it should also find the known II + III tables when run
 // against those binaries. Cross-binary validation is a good way to
 // sanity-check this script before trusting its AM4 output as the
-// missing AM4 axis for the cookbook's matched primitive.
+// missing AM4 axis for the primitives corpus's matched primitive.
 //
 // Output:
 //   samples/captured/decoded/ghidra-<program>-envelope-descriptors.txt
@@ -44,7 +44,7 @@
 //
 // Once committed, run this script through Ghidra against
 // AM4-Edit.exe and the output becomes input to a third
-// `scripts/cookbook-mine.ts` pass that closes the AM4 transfer
+// `scripts/primitives-mine.ts` pass that closes the AM4 transfer
 // candidate.
 //
 // @category Fractal
@@ -142,12 +142,12 @@ public class SeekVendorEnvelopeDescriptorsAM4 extends GhidraScript {
             } catch (Exception e) {
                 return null;
             }
-            // Sentinel: (-1, -1, -1) terminates the table. Per cookbook
+            // Sentinel: (-1, -1, -1) terminates the table. Per primitive
             // entry: "terminated by a sentinel record (-1, -1, -1)."
             if (tag == -1 && mid == -1 && byteCount == -1) {
                 return t.entries.size() >= MIN_TABLE_ENTRIES ? t : null;
             }
-            // First-entry rule: tag must be 0 per the cookbook ordering.
+            // First-entry rule: tag must be 0 per the primitive ordering.
             if (i == 0 && tag != 0) return null;
             // Tag plausibility.
             if (tag < 0 || tag > MAX_TAG) return null;
@@ -320,7 +320,7 @@ public class SeekVendorEnvelopeDescriptorsAM4 extends GhidraScript {
             w("     0xFFFFFFFF in int32 read, so this is unlikely.");
             w("");
             w("If empty after re-tuning, that IS the AM4 finding: register a");
-            w("_negative/am4-vendor-envelope-descriptor-table.md cookbook entry");
+            w("_negative/am4-vendor-envelope-descriptor-table.md primitive entry");
             w("documenting that AM4-Edit doesn't follow the II/III pattern.");
         }
 

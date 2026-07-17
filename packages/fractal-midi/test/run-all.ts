@@ -22,6 +22,7 @@ import {
 } from './am4/presetcontainer.test.js';
 import { runAxeFxIISetParamTests, AXEFX2_GOLDEN_CASE_COUNT } from './gen2/axe-fx-ii/setparam.test.js';
 import { runAxeFxIIRoutingTests, AXEFX2_ROUTING_CASE_COUNT } from './gen2/axe-fx-ii/routing.test.js';
+import { runAxeFxIIPresetImageTests, AXEFX2_PRESET_IMAGE_CASE_COUNT } from './gen2/axe-fx-ii/presetimage.test.js';
 import { runAxeFxGen1SetParamTests, AXEFXGEN1_GOLDEN_CASE_COUNT } from './gen1/setparam.test.js';
 import { runAxeFxGen1ReadParamTests, AXEFXGEN1_READ_CASE_COUNT } from './gen1/readparam.test.js';
 import { runAxeFxGen1PatchDumpTests, AXEFXGEN1_PATCHDUMP_CASE_COUNT } from './gen1/patchdump.test.js';
@@ -75,6 +76,7 @@ const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
   },
   { name: `axe-fx-ii/setparam (${AXEFX2_GOLDEN_CASE_COUNT} goldens)`, run: runAxeFxIISetParamTests },
   { name: `axe-fx-ii/routing (${AXEFX2_ROUTING_CASE_COUNT} goldens)`, run: runAxeFxIIRoutingTests },
+  { name: `axe-fx-ii/preset-image (${AXEFX2_PRESET_IMAGE_CASE_COUNT} goldens)`, run: runAxeFxIIPresetImageTests },
   { name: `axe-fx-gen1/setparam (${AXEFXGEN1_GOLDEN_CASE_COUNT} goldens)`, run: runAxeFxGen1SetParamTests },
   { name: `axe-fx-gen1/readparam (${AXEFXGEN1_READ_CASE_COUNT} goldens)`, run: runAxeFxGen1ReadParamTests },
   { name: `axe-fx-gen1/patchdump (${AXEFXGEN1_PATCHDUMP_CASE_COUNT} goldens)`, run: runAxeFxGen1PatchDumpTests },

@@ -1,5 +1,132 @@
 # Circuit Tracks sample upload: research + feasibility
 
+## 2026-07-10: prelude reply-desync bug fixed; sample LISTING is now HARDWARE-CONFIRMED
+
+A live bench run on the maintainer's device hit `occupied=0` on a pack that
+genuinely holds 64 samples (`list_samples` / `readSampleDirectory`,
+`packages/circuit-tracks/src/ncs/sampleDirectory.ts`). Root cause: the 4-step
+prelude (`OPEN_SESSION` → `DIR_CONTROL([0x01])` → `QUERY_INFO([0x01,0x00])` →
+`DIR_CONTROL([0x02])`) can leave a late/short `DIR_CONTROL` reply still arriving
+when the listing phase opens — the observed straggler was
+`f0 00 20 29 01 64 03 0b 02 05 f7` (sub=0x0b, but `msg[8]`=0x02, only 11 bytes,
+not a directory-listing header for anything asked). The header matcher in use
+at the time, `(m) => m[7] === SUB.DIR_CONTROL`, accepted ANY sub=0x0b reply
+regardless of fileType/pack, so it consumed the straggler instead of the real
+header; `parseDirListHeader` correctly rejected the malformed 11-byte frame
+(returned `undefined`), so `count` fell back to 0 and the listing came back
+empty even though the real fileType=0x05 header (`... 0b 05 00 40 00 ...`,
+count 0x40=64) and all 64 `DIR_ENTRY` replies were still on their way.
+
+**Fix:** the header matcher is now STRICT — it only accepts a reply that is
+sub=DIR_CONTROL AND answers fileType=SAMPLE AND is the full fixed 13-byte
+header shape, so a stray reply for a different fileType/pack, or a truncated
+frame, can never be mistaken for this call's header. A best-effort drain (one
+short, match-anything receive between the prelude and the listing request) was
+added as defense-in-depth. Neither change touches the confirmed frame
+sequence; both are receive-discipline only. Golden-locked in
+`scripts/verify-circuit-ncs.ts` (a mocked round trip with the exact stale frame
+queued ahead of the real header + 64 entries; reverting the matcher to the old
+loose predicate reproduces `occupied=0` exactly, confirming the golden is
+meaningful).
+
+**The fix also confirms the fileType=0x05 (SAMPLE) listing call itself.** With
+the desync fixed, the SAME bench run returned the pack-0 sample directory with
+`occupied=64` and correct, Components-matching names ("00_PCM.wav",
+"01_stoken_4_02_kick2.wav", ...). The fileType=0x05 LISTING call (previously
+flagged below as "unconfirmed for samples specifically", shipped by shape
+analogy only) is no longer an analogy — it is HARDWARE-CONFIRMED. The
+`capacity_note` in `SampleDirectoryResult` and the module docstring in
+`sampleDirectory.ts` are updated accordingly.
+
+**Still open / proposed follow-ups (not implemented this session):**
+- `readSampleDirectory` always reads pack 0 (the active/written SD pack, itself
+  hardware-confirmed correct). The device supports additional SD packs at
+  higher indices; reading a non-active pack is a proposed future story
+  ("multi-pack SD addressing"), not a bug in the current pack=0 default.
+
+## 2026-07-09: sample-directory READ re-decoded from a genuine Get-Pack capture: `read_sample_directory` / `list_samples` is LIVE again (community-beta)
+
+The 2026-06-27-disabled `readSampleDirectory` (`packages/circuit-tracks/src/ncs/
+sampleDirectory.ts`) is REPLACED with a re-decode from `samples/captured/
+get_pack_from_circuit_tracks.pcapng` (USBPcap, Novation Components' own "Get
+Pack from Circuit Tracks" action (a genuine, non-destructive READ); decoded
+with `scripts/_research/decode-circuit-usbmidi.py`, no tshark needed). This
+re-enables the already-registered `list_samples` MCP tool (it was throwing
+the disabled-guard error on every call; the tool itself needed no changes).
+
+**Confirmed non-destructive LISTING protocol** (byte offsets from `F0` at
+index 0; `msg[7]` is always the subcommand):
+
+- Prelude: `OPEN_SESSION(0x40)` → `DIR_CONTROL([0x01])` → `QUERY_INFO([0x01,0x00])`
+  → `DIR_CONTROL([0x02])`, IDENTICAL to the first 4 steps of the existing,
+  hardware-confirmed project-UPLOAD prelude (`transfer.ts` `buildUploadFrames`).
+- Directory listing: `DIR_CONTROL([fileType, pack])` → device replies with ONE
+  header (`sub=0x0b`: `msg[8]`=fileType, `msg[9]`=pack, `msg[10..11]`=septet-pair
+  entry COUNT) then N × `DIR_ENTRY` (`sub=0x0c`: `msg[8]`=fileType, `msg[9]`=pack,
+  `msg[10]`=slot, `msg[11..-2]`=ASCII name): ONE reply per OCCUPIED slot only,
+  no 64-slot probing. CONFIRMED BYTE-EXACT for fileType=0x03 (project, 52
+  entries) and 0x04 (patch bank, 16 entries) in this capture.
+- Per-file READ REQUEST: same subcommand as `WRITE_INIT` (`sub=0x01`), but a
+  short fixed tail (`blockAddress(0)` + 3-byte fileId + a single `0x02` byte)
+  instead of `WRITE_INIT`'s size-nibble tail; the device replies as the SENDER
+  (a real `WRITE_INIT` + `WRITE_DATA` blocks + `WRITE_FINISH`): i.e. read and
+  write share one opcode, disambiguated by payload shape. CONFIRMED BYTE-EXACT
+  for fileType 0x03 (project), 0x04 (patch bank), AND 0x05 (sample): all three
+  appear directly in the capture's OUT stream, e.g.
+  `f0 00 20 29 01 64 03 01 00 00 00 00 00 00 00 00 05 00 00 02 f7` (sample slot 0).
+
+**fileType=0x05 (sample) caveat — SUPERSEDED 2026-07-10, see the dated section
+at the top of this file.** The per-file READ REQUEST is directly confirmed for
+samples. The DIRECTORY-LISTING call (`DIR_CONTROL([0x05, pack])`) is NOT
+independently observed in THIS capture: Components fetched ~40 sample files
+directly, with no visible `0x0b`/`fileType=5` listing exchange in between; it
+evidently already knew the occupied slots from elsewhere in that session (not
+captured). `readSampleDirectory` shipped this call by direct shape analogy
+(the identical request/reply pair confirmed twice, for project and patch),
+flagged community-beta / hardware-unverified for this specific `(fileType,
+listing)` combination. A 2026-07-10 live bench run has SINCE confirmed the
+call directly on real hardware (occupied=64, correct names) — the analogy is
+no longer the only evidence; see the top of this file for the bug that was
+masking it and the fix.
+
+**What was actually wrong with the 2026-06-27 code.** Its prelude ended in the
+SAME `DIR_CONTROL([FILE_TYPE_SAMPLE, 0x00])` call kept here; that part was
+fine. The destructive step was AFTER it: a 64× `0x0d` (QUERY_CRC) + 64× `0x08`
+(QUERY_NAME) probe loop, then `CLOSE_SESSION`. Per the confirmed UPLOAD decode
+above, `0x0d`/`0x08` are the enumeration primitives Components sends WHILE
+PREPARING A WRITE (immediately before real `WRITE_INIT`/`DATA`/`FINISH` for the
+samples being uploaded), not a read-only query. Reusing them for a pure read,
+then closing having sent zero real write frames, is what committed an empty
+directory. The new code never sends `0x0d`/`0x08`, and never sends
+`WRITE_INIT`/`DATA`/`FINISH`/`SET_FILENAME` at all (golden-locked in
+`scripts/verify-circuit-ncs.ts`, a mocked round trip that asserts the sent
+frame list contains none of those four subcommands).
+
+**Negative finding: this capture is silent on empty-pack directory INIT.**
+Task was also to check what this capture reveals about how Components
+initializes an EMPTY pack's sample directory (the STILL OPEN item below). It
+reveals nothing: the device in this capture has exactly ONE pack ("00_invasion-
+test", per the `DIR_CONTROL([0x02])` pack listing), already populated (~40
+samples, ~52 projects, 16 patch banks), never empty during this capture, and
+there is no second pack or a from-empty sequence anywhere in the file (exactly
+4 `OPEN`/`CLOSE_SESSION` pairs total: a disposable 2-step probe, then ONE
+continuous session covering every file-type read through the final `CLOSE`).
+The empty-pack-directory-INIT question stays open pending a capture that
+actually starts from a genuinely empty pack (as noted below, `send-pack-to-
+circuit-tracks-pack-2-...pcapng` is the closest existing lead for the WRITE
+side of that question).
+
+**Bonus, unwired groundwork**: `buildReadFileRequest`/`fileIdFor` (pure,
+goldened, confirmed byte-exact for all 3 file types) are shipped as reusable
+primitives for a future "download a sample's actual audio back" feature; they
+are NOT called by `readSampleDirectory` (which only needs slot NAMES, not file
+content) and are not wired into any live orchestration.
+
+**Still true, unchanged by this session:** `upload_kit` replace-vs-merge audit
+still open. Do NOT re-enable or modify any directory WRITE/commit path
+(`sampleTransfer.ts`'s `0x0d`/`0x08` enumeration + `WRITE_INIT`/`DATA`/
+`FINISH`/`SET_FILENAME` frames for uploads); this session touched READ only.
+
 ## 2026-07-03 (late): pack-index theory RE-TESTED and RE-FALSIFIED (2nd time); reverted again. Real lead = cold-handle single-upload drop.
 
 A session re-wired `readActivePackIndex` into `uploadSample`/`uploadSampleKit` (reading the

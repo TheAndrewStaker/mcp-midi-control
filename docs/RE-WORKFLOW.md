@@ -29,12 +29,12 @@ class of wasted effort the others do not.
    dumps that do not ship publicly. Always grep `samples/captured/decoded/`
    before proposing a new Ghidra run; there is significant material
    already mined.
-3. **`packages/fractal-midi/docs/research/cookbook/INDEX.md`**, the encoding
+3. **`packages/fractal-midi/docs/research/primitives/INDEX.md`**, the encoding
    primitive Rosetta stone. Before researching any new wire shape,
-   scan the cookbook. The shape may already be a known primitive
-   (septet, XOR-fold, descriptor-table, etc.). Cookbook entries are
+   scan the primitives corpus. The shape may already be a known primitive
+   (septet, XOR-fold, descriptor-table, etc.). Primitive entries are
    the canonical source for "how Fractal encodes X."
-4. **`packages/fractal-midi/docs/research/cookbook/_negative/`** for methods
+4. **`packages/fractal-midi/docs/research/primitives/_negative/`** for methods
    ruled out. Always grep before re-attempting a technique that
    "feels useful." Expect the entry count to grow over time.
 5. **`packages/fractal-midi/docs/research/fractal-protocol-decode-status.md`**,
@@ -84,7 +84,7 @@ This is not theoretical. The single largest decode day in the project
   2026-06-12 and flagged "un-mined" in the artifacts manifest ever since.
 - **VP4 structure blob** (name, scene names, current scene, full chain):
   fully field-decoded from the 2026-06 captures using a packing primitive
-  that was already in the cookbook; the two "not recoverable" negatives fell.
+  that was already in the primitives corpus; the two "not recoverable" negatives fell.
 - **II preset-body "Huffman" claim refuted**: adjudicated entirely from
   dumps on disk; reopened the parked atomic-apply lane.
 
@@ -94,7 +94,7 @@ re-crosses old evidence with new primitives. The periodic synthesis pass
 (`docs/process/synthesis-prompt.md`, committed artifacts in
 `fractal-midi/docs/research/synthesis-log/`) is the mechanism; all four
 2026-07-02 results trace to a single synthesis pass or the review that
-triggered it. `scripts/cookbook-verify.ts` warns when the newest cookbook
+triggered it. `scripts/primitives-verify.ts` warns when the newest primitive
 entry outruns the newest synthesis artifact by 21+ days; treat that warning
 as "decodes are sitting on disk unclaimed," not as noise. When a new
 container/packing/oracle primitive lands, the cross-device transfer reflex
@@ -164,7 +164,7 @@ the few shapes neither covers.
     grammar is now fully decoded (see the cache bullet below): roster ordinals
     matched the wire ordinals at every hardware-checked anchor so far (FM9,
     II, AM4), but ALWAYS verify index 0 plus a mid-table point against
-    hardware ground truth per device. Full writeup: cookbook
+    hardware ground truth per device. Full writeup: primitives corpus
     `_negative/am4-edit-dropdown-order-not-wire-order`.
 - **JUCE BinaryData extraction.** 5-minute label discovery from
   editor binaries via the embedded ZIP. 1,299 AM4-Edit labels and
@@ -175,7 +175,7 @@ the few shapes neither covers.
   definitions at
   `%APPDATA%\Fractal Audio\<editor>\effectDefinitions_<modelByte>_<fw>.cache`
   (`_12_` = FM9, `_15_` = AM4, etc.). The format is FULLY DECODED
-  (cookbook [[editor-cache-section-record-grammar]], 2026-06-09): a
+  (primitive [[editor-cache-section-record-grammar]], 2026-06-09): a
   count-driven section/record stream with a 22-byte record header that walks
   with ZERO resync and carries, per block family, every param's id, typecode,
   display min/max/default/step, and (for enums) the device-true label roster.
@@ -251,7 +251,7 @@ class of mistake; the rule names the class.
   different wire IDs across effect variants (e.g. `DISTORT_TONE` is
   `drive.id=12` in some variants, `drive.id=23` in others). XML alone
   is never sufficient. Combine with a capture or the Ghidra paramId
-  table. See cookbook `_negative/positional-xml-cache-binding.md`.
+  table. See the primitives corpus `_negative/positional-xml-cache-binding.md`.
 - **Septet-encode every 14-bit field, not just `pidLow`.** `action`,
   effect IDs, preset numbers, tempo BPM, location bytes are all
   7-bit-pair encoded. Forgetting once produces a wire mismatch and
@@ -284,7 +284,7 @@ one amp model).
 3. **Bug-fix mapping.** If claiming "this fixes bug X," name the
    code path X lives in (`file:line`). Name the code path being
    changed (`file:line`). If the two are different, the framing is
-   wrong. STOP. Cookbook entries' `Misapplication failure modes`
+   wrong. STOP. Primitive entries' `Misapplication failure modes`
    sections name common bug-X-doesn't-live-here cases (e.g.
    `atomic-preset-dump` does NOT fix the channel-Y write loss bug;
    channel-Y is a write-path bug).
@@ -296,15 +296,15 @@ one amp model).
    primitive "generalizes" (across blocks / across presets / across
    firmwares / across devices), cite ≥ 2 distinct test cases varying
    along the generalization axis. N=1 is not generalization. If only
-   N=1 is verified, ship as `cookbook/_partial/` with `status: partial-N1`;
+   N=1 is verified, ship as `primitives/_partial/` with `status: partial-N1`;
    do NOT ship as `matched`. If a co-resident or cross-variant probe
    is cheap (< 5 min wire time), run it BEFORE shipping.
 
 ### What the build gate enforces
 
-`scripts/cookbook-verify.ts` mechanically enforces **check 5 only**:
+`scripts/primitives-verify.ts` mechanically enforces **check 5 only**:
 `status='matched'` requires `verified_on` to list ≥ 2 axis points
-(see `cookbook-verify.ts:332`). Checks 1, 2, 3, 4 are reviewer and
+(see `primitives-verify.ts:332`). Checks 1, 2, 3, 4 are reviewer and
 agent discipline, not mechanical gates. A `_scratch/` entry whose
 golden unexpectedly passes is a policy violation per `INDEX.md`, not
 a build-gated failure.
@@ -314,7 +314,7 @@ a build-gated failure.
 ## Cross-device transfer reflex (at session close)
 
 When you discover or refine a primitive on one device, scan the
-other three device wire-maps + `fractal-midi/docs/research/cookbook/`
+other three device wire-maps + `fractal-midi/docs/research/primitives/`
 for analogous decode gaps. File same-session `[transfer-candidate]`
 follow-ups in each affected device's private per-device state notes
 (or hardware-task notes), naming the transfer hypothesis plus the
@@ -340,9 +340,9 @@ Axe-Fx II), commit the result to:
 - The relevant `SYSEX-MAP-*.md` entry, or the maintainer's private
   session log (gitignored), with the search terms a future agent would
   use ("AM4 0x77 as save on II, no").
-- **`fractal-midi/docs/research/cookbook/_negative/<name>.md`** when
+- **`fractal-midi/docs/research/primitives/_negative/<name>.md`** when
   it is a primitive-level claim ("this encoding scheme doesn't apply
-  to device X" / "this technique was ruled out"). The cookbook's
+  to device X" / "this technique was ruled out"). The primitives corpus'
   `_negative/` directory is the canonical "methods that don't work"
   home that the next agent greps before re-attempting.
 
@@ -353,17 +353,17 @@ project has paid that cost more than once.
 
 ## Methods ruled out, canonical references
 
-For the full per-method analysis, read the cookbook `_negative/`
+For the full per-method analysis, read the primitives corpus `_negative/`
 entries. One-line digest pointers (kept in `CLAUDE.md`):
 
-- [`windbg-trap-after-launch`](../packages/fractal-midi/docs/research/cookbook/_negative/windbg-trap-after-launch.md)
-- [`positional-xml-cache-binding`](../packages/fractal-midi/docs/research/cookbook/_negative/positional-xml-cache-binding.md)
-- [`virtual-midi-bridge-interposition`](../packages/fractal-midi/docs/research/cookbook/_negative/virtual-midi-bridge-interposition.md)
-- [`byte-literal-envelope-ghidra-search`](../packages/fractal-midi/docs/research/cookbook/_negative/byte-literal-envelope-ghidra-search.md)
-- [`flat-int-stride4-param-table`](../packages/fractal-midi/docs/research/cookbook/_negative/flat-int-stride4-param-table.md)
-- [`am4-77-as-save-on-ii`](../packages/fractal-midi/docs/research/cookbook/_negative/am4-77-as-save-on-ii.md)
-- [`ii-preset-binary-flat-byte-diff`](../packages/fractal-midi/docs/research/cookbook/_negative/ii-preset-binary-flat-byte-diff.md)
-- [`iii-block-name-string-cascade`](../packages/fractal-midi/docs/research/cookbook/_negative/iii-block-name-string-cascade.md)
+- [`windbg-trap-after-launch`](../packages/fractal-midi/docs/research/primitives/_negative/windbg-trap-after-launch.md)
+- [`positional-xml-cache-binding`](../packages/fractal-midi/docs/research/primitives/_negative/positional-xml-cache-binding.md)
+- [`virtual-midi-bridge-interposition`](../packages/fractal-midi/docs/research/primitives/_negative/virtual-midi-bridge-interposition.md)
+- [`byte-literal-envelope-ghidra-search`](../packages/fractal-midi/docs/research/primitives/_negative/byte-literal-envelope-ghidra-search.md)
+- [`flat-int-stride4-param-table`](../packages/fractal-midi/docs/research/primitives/_negative/flat-int-stride4-param-table.md)
+- [`am4-77-as-save-on-ii`](../packages/fractal-midi/docs/research/primitives/_negative/am4-77-as-save-on-ii.md)
+- [`ii-preset-binary-flat-byte-diff`](../packages/fractal-midi/docs/research/primitives/_negative/ii-preset-binary-flat-byte-diff.md)
+- [`iii-block-name-string-cascade`](../packages/fractal-midi/docs/research/primitives/_negative/iii-block-name-string-cascade.md)
 
 ---
 
@@ -379,10 +379,10 @@ SAME SESSION it is produced. Not "I'll add it later."
   the maintainer's private captured-artifacts manifest (gitignored;
   maintainer hardware plus factory dumps)
 - New encoding primitive →
-  `fractal-midi/docs/research/cookbook/<name>.md` with a matching
-  golden case in `scripts/cookbook-verify.ts`
+  `fractal-midi/docs/research/primitives/<name>.md` with a matching
+  golden case in `scripts/primitives-verify.ts`
 - New negative finding →
-  `fractal-midi/docs/research/cookbook/_negative/<name>.md`
+  `fractal-midi/docs/research/primitives/_negative/<name>.md`
 - New synthesis-review output →
   `fractal-midi/docs/research/synthesis-log/<slug>.md` committed the
   same session it is produced. The log is the only evidence the
@@ -414,7 +414,7 @@ table on AM4, see
 
 - `CLAUDE.md` (root): the project's always-loaded context. Points
   at this doc.
-- `packages/fractal-midi/docs/research/cookbook/INDEX.md`: encoding
+- `packages/fractal-midi/docs/research/primitives/INDEX.md`: encoding
   primitives Rosetta stone.
 - The maintainer's private session log (gitignored): chronological
   session log.

@@ -142,6 +142,10 @@ async function main() {
   //   │       ├── axe-fx-gen1/{package.json,dist/}
   //   │       ├── fractal-gen3/{package.json,dist/}
   //   │       ├── hydrasynth/{package.json,dist/}
+  //   │       ├── circuit-tracks/{package.json,dist/}
+  //   │       ├── spd-sx/{package.json,dist/}
+  //   │       ├── ve-500/{package.json,dist/}
+  //   │       ├── boss-rc/{package.json,dist/}
   //   │       └── server-all/{package.json,dist/}
   //   ├── LICENSE, NOTICE
   //   ├── setup.cmd, uninstall.cmd, verify-midi.cmd, update.cmd, instructions.txt
@@ -166,6 +170,8 @@ async function main() {
     'hydrasynth',
     'circuit-tracks',
     'spd-sx',
+    've-500',
+    'boss-rc',
     'server-all',
   ] as const;
 
@@ -181,36 +187,41 @@ async function main() {
   // workspace package now imports the Fractal codec from this published npm
   // package. The bundle must install it at the root so runtime walk-up
   // resolution from `node_modules/@mcp-midi-control/*/dist/*.js` finds it.
-  const leafDeps = ['@modelcontextprotocol/sdk', 'fractal-midi', '@julusian/midi', 'serialport', 'zod'] as const;
+  const leafDeps = ['@modelcontextprotocol/sdk', 'fractal-midi', 'roland-midi', 'openrig', '@julusian/midi', 'serialport', 'zod'] as const;
   const leanDeps: Record<string, string> = {};
   for (const d of leafDeps) {
     const v = devPkg.devDependencies?.[d] ?? devPkg.dependencies?.[d];
     if (!v) throw new Error(`Leaf dep ${d} missing from root package.json`);
     leanDeps[d] = v;
   }
-  // fractal-midi is a workspace package. Pack it into a tarball so the
-  // release bundle is self-contained (no npm registry fetch needed at
-  // install time). npm pack produces a tarball in the package directory;
-  // we move it into staging and rewrite the lean package.json to point
-  // at the local copy.
-  const fractalMidiPkgDir = path.join(PROJECT_ROOT, 'packages', 'fractal-midi');
-  const fractalMidiPkg = JSON.parse(
-    fs.readFileSync(path.join(fractalMidiPkgDir, 'package.json'), 'utf8'),
-  ) as { name: string; version: string };
-  const packResult = execSync('npm pack --json', {
-    cwd: fractalMidiPkgDir,
-    encoding: 'utf8',
-  });
-  const packInfo = JSON.parse(packResult) as { filename: string }[];
-  const tarballName = packInfo[0]?.filename;
-  if (!tarballName) {
-    throw new Error('npm pack for fractal-midi produced no output');
+  // Bare (non-`@mcp-midi-control/*`) workspace packages -pure codec/schema
+  // libraries with zero or few deps, imported directly by name (not the
+  // npm registry: all are `private: true`). Not published, so each is
+  // packed into a tarball and installed via a local `file:` reference,
+  // same as a registry dep would be. Keep this list in sync with any
+  // package under `packages/` that a shipped package imports by its bare
+  // name instead of the `@mcp-midi-control/` namespace -a package missing
+  // here resolves fine in dev (workspace hoisting) but throws
+  // ERR_MODULE_NOT_FOUND in the extracted ZIP (GitHub issue #15: this is
+  // exactly how `openrig` shipped absent, undetected because nothing in
+  // the release pipeline booted the ZIP hermetically until
+  // `verify-release-zip.ts` was wired into CI).
+  const BARE_WORKSPACE_PACKAGES = ['fractal-midi', 'roland-midi', 'openrig'] as const;
+  for (const pkgDirName of BARE_WORKSPACE_PACKAGES) {
+    const pkgDir = path.join(PROJECT_ROOT, 'packages', pkgDirName);
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'),
+    ) as { name: string; version: string };
+    const packResult = execSync('npm pack --json', { cwd: pkgDir, encoding: 'utf8' });
+    const packInfo = JSON.parse(packResult) as { filename: string }[];
+    const tarballName = packInfo[0]?.filename;
+    if (!tarballName) {
+      throw new Error(`npm pack for ${pkgDirName} produced no output`);
+    }
+    fs.renameSync(path.join(pkgDir, tarballName), path.join(STAGING, tarballName));
+    leanDeps[pkg.name] = `file:./${tarballName}`;
+    console.log(`[build] Packed ${pkgDirName} workspace: ${tarballName} (v${pkg.version})`);
   }
-  const tarballSrc = path.join(fractalMidiPkgDir, tarballName);
-  const tarballDst = path.join(STAGING, tarballName);
-  fs.renameSync(tarballSrc, tarballDst);
-  leanDeps['fractal-midi'] = `file:./${tarballName}`;
-  console.log(`[build] Packed fractal-midi workspace: ${tarballName} (v${fractalMidiPkg.version})`);
   const leanPkg = {
     name: 'mcp-midi-control-bundle',
     version: VERSION,
@@ -371,6 +382,24 @@ async function main() {
   //      on the first codec import inside any workspace package.
   //   2. `axe-fx-iii` missing from `WORKSPACE_PACKAGES` → server-all
   //      can't load the III device adapter.
+  //
+  // IMPORTANT CAVEAT (GitHub issue #15, 2026-07-16): this check is NOT
+  // fully hermetic. STAGING lives at PROJECT_ROOT/build/staging, and
+  // Node's ESM resolver walks up parent directories looking for
+  // node_modules -when a package is missing from STAGING's own
+  // node_modules, resolution can silently succeed anyway by walking up
+  // to PROJECT_ROOT/node_modules, which the repo's own `npm ci` has
+  // already populated with every workspace package (hoisted). That is
+  // exactly how `ve-500` and `boss-rc` shipped absent from
+  // `WORKSPACE_PACKAGES` (and `roland-midi` shipped unpacked) across
+  // v0.6.0/v0.6.1: this smoke-boot passed in CI because it ran inside
+  // the monorepo checkout, but real users extract the ZIP standalone
+  // with no such fallback, so `ERR_MODULE_NOT_FOUND` only fired for
+  // them. `npm run verify-release-zip` (see scripts/verify-release-zip.ts)
+  // is the actual hermetic gate -it extracts the built ZIP into an OS
+  // tmpdir with no monorepo ancestor to leak into, and is wired into
+  // release.yml as a required step after this build. Do not treat a
+  // green smoke-boot here as sufficient proof the ZIP is complete.
   // Pipe empty stdin so the JSON-RPC reader settles into wait-mode
   // instead of hanging on no-tty stdin. 5s is plenty for the device-
   // registry to finish; if it hasn't booted by then there's a fatal.

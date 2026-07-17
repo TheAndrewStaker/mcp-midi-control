@@ -8,8 +8,10 @@
  * Change (hardware-confirmed 2026-06-28 — a prepended Bank Select makes
  * the unit IGNORE the recall, so none is sent), and save_preset (store
  * the edit buffer to a user memory, decoded from the editor's own
- * command.write). Preset-bank P01–P50 recall is GATED (Bank Select
- * mapping undecoded).
+ * command.write). Preset-bank P01–P50 recall (2026-07-09) sends a DT1
+ * write to the "Current Patch Number" register instead of a Program
+ * Change; decoded from the editor's own patch-switch handler, not yet
+ * hardware-confirmed (community-beta).
  *
  * These cases prove device DISPATCH (port "ve-500" routes to the Roland
  * descriptor, not any Fractal pattern) and that the agent uses the

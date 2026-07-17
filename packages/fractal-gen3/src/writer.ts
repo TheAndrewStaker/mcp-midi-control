@@ -28,6 +28,7 @@ import { markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 import { resolveEffectId, parseGen3SetValueEcho, ROUTING_OP_CONNECT, ROUTING_OP_DISCONNECT, type ModernFractalCodec } from 'fractal-midi/gen3/axe-fx-iii';
 import { parseLocationCode } from 'fractal-midi/am4';
 import type { ModernCatalog } from './catalog.js';
+import { injectGen3CabPolish } from './cabPolish.js';
 import { makeGuard } from './guard.js';
 
 /**
@@ -608,6 +609,20 @@ export function makeWriter(opts: {
       options?: ApplyPresetOptions,
     ): Promise<ApplyResult> {
       gateWrite('apply_preset');
+      // BK-103c: enforce the mix-ready cab-polish defaults on a fresh
+      // cab-bearing build (cuts + room appended after each written cab
+      // channel window's own params), unless the spec carries any cab
+      // cut/room/slope opinion. Capability-probed per device: it only
+      // fires where the cab cut params are display-calibrated in THIS
+      // device's catalog (FM9 today; III/FM3 skip until their own range
+      // evidence lands). The injected writes ride the same community-beta
+      // set_param path below; the report surfaces as `auto_applied`.
+      const { slots: cabPolishedSlots, cabPolish } = injectGen3CabPolish(
+        spec.slots,
+        catalog.blocks['cab'],
+        shape.channel_names[0] ?? 'A',
+      );
+      spec = { ...spec, slots: cabPolishedSlots };
       const writes: WriteResult[] = [];
       // `anyFailed` = a write was REJECTED (0x64) or errored — a real failure
       // that makes the apply not-ok. `anyUnconfirmed` = a write was sent and not
@@ -966,6 +981,7 @@ export function makeWriter(opts: {
         ok: !anyFailed,
         steps: writes.length,
         duration_ms: Date.now() - applyStartMs,
+        auto_applied: cabPolish,
         failed_step: failedStepIdx >= 0 ? {
           index: failedStepIdx,
           description: writes[failedStepIdx].target ?? writes[failedStepIdx].op ?? 'step',

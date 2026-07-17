@@ -526,9 +526,10 @@
         "displayMax": 50,
         "scaling": "log10"
       },
-      "amp.compressor_clarity": {
+      "amp.clarity": {
         "block": "amp",
-        "name": "compressor_clarity",
+        "name": "clarity",
+        "displayLabel": "Clarity",
         "pidLow": 58,
         "pidHigh": 77,
         "unit": "knob_0_10",
@@ -557,18 +558,20 @@
         "displayMin": 0,
         "displayMax": 10
       },
-      "amp.compressor_amount": {
+      "amp.amount": {
         "block": "amp",
-        "name": "compressor_amount",
+        "name": "amount",
+        "displayLabel": "Amount",
         "pidLow": 58,
         "pidHigh": 82,
         "unit": "knob_0_10",
         "displayMin": 0,
         "displayMax": 10
       },
-      "amp.compressor_threshold": {
+      "amp.threshold": {
         "block": "amp",
-        "name": "compressor_threshold",
+        "name": "threshold",
+        "displayLabel": "Threshold",
         "pidLow": 58,
         "pidHigh": 83,
         "unit": "db",
@@ -1653,18 +1656,20 @@
         "displayMin": 0,
         "displayMax": 100
       },
-      "reverb.shift_1": {
+      "reverb.voice_1_shift": {
         "block": "reverb",
-        "name": "shift_1",
+        "name": "voice_1_shift",
+        "displayLabel": "Voice 1 Shift",
         "pidLow": 66,
         "pidHigh": 56,
         "unit": "semitones",
         "displayMin": -24,
         "displayMax": 24
       },
-      "reverb.shift_2": {
+      "reverb.voice_2_shift": {
         "block": "reverb",
-        "name": "shift_2",
+        "name": "voice_2_shift",
+        "displayLabel": "Voice 2 Shift",
         "pidLow": 66,
         "pidHigh": 57,
         "unit": "semitones",
@@ -2114,9 +2119,10 @@
         "displayMax": 1000,
         "scaling": "log10"
       },
-      "delay.diffusor": {
+      "delay.diffuser": {
         "block": "delay",
-        "name": "diffusor",
+        "name": "diffuser",
+        "displayLabel": "Diffuser",
         "pidLow": 70,
         "pidHigh": 49,
         "unit": "percent",
@@ -2498,9 +2504,10 @@
         "displayMin": 0,
         "displayMax": 100
       },
-      "chorus.lfo_rate": {
+      "chorus.rate_right": {
         "block": "chorus",
-        "name": "lfo_rate",
+        "name": "rate_right",
+        "displayLabel": "Rate Right",
         "pidLow": 78,
         "pidHigh": 22,
         "unit": "hz",
@@ -2508,9 +2515,10 @@
         "displayMax": 10,
         "scaling": "log10"
       },
-      "chorus.width": {
+      "chorus.lfo_2_depth": {
         "block": "chorus",
-        "name": "width",
+        "name": "lfo_2_depth",
+        "displayLabel": "LFO 2 Depth",
         "pidLow": 78,
         "pidHigh": 23,
         "unit": "percent",
@@ -2528,9 +2536,10 @@
         "displayMax": 500,
         "scaling": "log10"
       },
-      "chorus.lfo_freq": {
+      "chorus.low_cut": {
         "block": "chorus",
-        "name": "lfo_freq",
+        "name": "low_cut",
+        "displayLabel": "Low Cut",
         "pidLow": 78,
         "pidHigh": 25,
         "unit": "hz",
@@ -2538,9 +2547,10 @@
         "displayMax": 2000,
         "scaling": "log10"
       },
-      "chorus.lfo_depth_2": {
+      "chorus.stereo_spread": {
         "block": "chorus",
-        "name": "lfo_depth_2",
+        "name": "stereo_spread",
+        "displayLabel": "Stereo Spread",
         "pidLow": 78,
         "pidHigh": 26,
         "unit": "bipolar_percent",
@@ -3009,9 +3019,10 @@
           "8": "Paragon"
         }
       },
-      "wah.min_frequency": {
+      "wah.minimum_frequency": {
         "block": "wah",
-        "name": "min_frequency",
+        "name": "minimum_frequency",
+        "displayLabel": "Minimum Frequency",
         "pidLow": 94,
         "pidHigh": 11,
         "unit": "hz",
@@ -3019,9 +3030,10 @@
         "displayMax": 1000,
         "scaling": "log10"
       },
-      "wah.max_frequency": {
+      "wah.maximum_frequency": {
         "block": "wah",
-        "name": "max_frequency",
+        "name": "maximum_frequency",
+        "displayLabel": "Maximum Frequency",
         "pidLow": 94,
         "pidHigh": 12,
         "unit": "hz",
@@ -3221,9 +3233,10 @@
         "displayMax": 20,
         "scaling": "log10"
       },
-      "compressor.attack": {
+      "compressor.attack_time": {
         "block": "compressor",
-        "name": "attack",
+        "name": "attack_time",
+        "displayLabel": "Attack Time",
         "pidLow": 46,
         "pidHigh": 12,
         "unit": "ms",
@@ -3231,9 +3244,10 @@
         "displayMax": 100,
         "scaling": "log10"
       },
-      "compressor.release": {
+      "compressor.release_time": {
         "block": "compressor",
-        "name": "release",
+        "name": "release_time",
+        "displayLabel": "Release Time",
         "pidLow": 46,
         "pidHigh": 13,
         "unit": "ms",
@@ -3643,9 +3657,10 @@
           "17": "Touch-Wah"
         }
       },
-      "filter.freq": {
+      "filter.frequency": {
         "block": "filter",
-        "name": "freq",
+        "name": "frequency",
+        "displayLabel": "Frequency",
         "pidLow": 114,
         "pidHigh": 11,
         "unit": "hz",
@@ -4938,37 +4953,6 @@
           "1": "ON"
         }
       },
-      "amp.clarity": {
-        "block": "amp",
-        "name": "clarity",
-        "displayLabel": "Clarity",
-        "pidLow": 58,
-        "pidHigh": 77,
-        "unit": "knob_0_10",
-        "displayMin": 0.1,
-        "displayMax": 10,
-        "scaling": "log10"
-      },
-      "amp.amount": {
-        "block": "amp",
-        "name": "amount",
-        "displayLabel": "Amount",
-        "pidLow": 58,
-        "pidHigh": 82,
-        "unit": "knob_0_10",
-        "displayMin": 0,
-        "displayMax": 10
-      },
-      "amp.threshold": {
-        "block": "amp",
-        "name": "threshold",
-        "displayLabel": "Threshold",
-        "pidLow": 58,
-        "pidHigh": 83,
-        "unit": "db",
-        "displayMin": -60,
-        "displayMax": 0
-      },
       "amp.fat": {
         "block": "amp",
         "name": "fat",
@@ -5587,9 +5571,9 @@
         "displayMax": 20000,
         "scaling": "log10"
       },
-      "amp.cab_master_low_cut": {
+      "amp.proximity_frequency": {
         "block": "amp",
-        "name": "cab_master_low_cut",
+        "name": "proximity_frequency",
         "displayLabel": "Proximity Frequency",
         "pidLow": 62,
         "pidHigh": 34,
@@ -5598,15 +5582,15 @@
         "displayMax": 200,
         "scaling": "log10"
       },
-      "amp.cab_master_level": {
+      "amp.air": {
         "block": "amp",
-        "name": "cab_master_level",
+        "name": "air",
         "displayLabel": "Air",
         "pidLow": 62,
         "pidHigh": 45,
-        "unit": "knob_0_10",
+        "unit": "percent",
         "displayMin": 0,
-        "displayMax": 10
+        "displayMax": 100
       },
       "amp.air_frequency": {
         "block": "amp",
@@ -5933,6 +5917,152 @@
           "3": "24 dB/OCT"
         }
       },
+      "amp.dynacab_1_cab": {
+        "block": "amp",
+        "name": "dynacab_1_cab",
+        "displayLabel": "Cab",
+        "pidLow": 62,
+        "pidHigh": 65,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 44,
+        "enumValues": {
+          "0": "1x8 5F1 Tweed",
+          "1": "1x8 Princetone",
+          "2": "1x10 BF Princetone",
+          "3": "1x10 Metro Blues",
+          "4": "1x10 SF Princetone",
+          "5": "1x12 AC20",
+          "6": "1x12 Black Magick",
+          "7": "1x12 Car Ambler",
+          "8": "1x12 Deluxe Tweed",
+          "9": "1x12 Deluxe Verb",
+          "10": "1x12 Div13 CJ11",
+          "11": "1x12 G12T-100",
+          "12": "1x12 Hot Kitty",
+          "13": "1x12 Jr Blues",
+          "14": "1x12 Nuclear Tone",
+          "15": "1x12 Scholz",
+          "16": "1x12 Tweed 20112",
+          "17": "1x12 Vibrato Lux",
+          "18": "1x15 Heart Key",
+          "19": "1x15 Portabass",
+          "20": "1x15 Vibroverb",
+          "21": "2x10 Heart Key",
+          "22": "2x10 Super 6G4",
+          "23": "2x12 65 Bassguy",
+          "24": "2x12 5153 Stealth",
+          "25": "2x12 Chiefman",
+          "26": "2x12 Class-A 30W",
+          "27": "2x12 Double Verb",
+          "28": "2x12 Lead 80",
+          "29": "2x12 Texas Star",
+          "30": "4x10 Bassguy RI",
+          "31": "4x12 1960TV",
+          "32": "4x12 5153",
+          "33": "4x12 5153 Stealth",
+          "34": "4x12 Citrus",
+          "35": "4x12 Friedman GB",
+          "36": "4x12 Friedman V30",
+          "37": "4x12 Lerxst",
+          "38": "4x12 Recto Slant",
+          "39": "4x12 Recto Straight",
+          "40": "4x12 Rumble EV12L",
+          "41": "4x12 Rumble EV12S",
+          "42": "4x12 Solo 100",
+          "43": "4x12 USA Mc90",
+          "44": "8x10 SV Bass"
+        }
+      },
+      "amp.dynacab_2_cab": {
+        "block": "amp",
+        "name": "dynacab_2_cab",
+        "displayLabel": "Cab",
+        "pidLow": 62,
+        "pidHigh": 66,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 44,
+        "enumValues": {
+          "0": "1x8 5F1 Tweed",
+          "1": "1x8 Princetone",
+          "2": "1x10 BF Princetone",
+          "3": "1x10 Metro Blues",
+          "4": "1x10 SF Princetone",
+          "5": "1x12 AC20",
+          "6": "1x12 Black Magick",
+          "7": "1x12 Car Ambler",
+          "8": "1x12 Deluxe Tweed",
+          "9": "1x12 Deluxe Verb",
+          "10": "1x12 Div13 CJ11",
+          "11": "1x12 G12T-100",
+          "12": "1x12 Hot Kitty",
+          "13": "1x12 Jr Blues",
+          "14": "1x12 Nuclear Tone",
+          "15": "1x12 Scholz",
+          "16": "1x12 Tweed 20112",
+          "17": "1x12 Vibrato Lux",
+          "18": "1x15 Heart Key",
+          "19": "1x15 Portabass",
+          "20": "1x15 Vibroverb",
+          "21": "2x10 Heart Key",
+          "22": "2x10 Super 6G4",
+          "23": "2x12 65 Bassguy",
+          "24": "2x12 5153 Stealth",
+          "25": "2x12 Chiefman",
+          "26": "2x12 Class-A 30W",
+          "27": "2x12 Double Verb",
+          "28": "2x12 Lead 80",
+          "29": "2x12 Texas Star",
+          "30": "4x10 Bassguy RI",
+          "31": "4x12 1960TV",
+          "32": "4x12 5153",
+          "33": "4x12 5153 Stealth",
+          "34": "4x12 Citrus",
+          "35": "4x12 Friedman GB",
+          "36": "4x12 Friedman V30",
+          "37": "4x12 Lerxst",
+          "38": "4x12 Recto Slant",
+          "39": "4x12 Recto Straight",
+          "40": "4x12 Rumble EV12L",
+          "41": "4x12 Rumble EV12S",
+          "42": "4x12 Solo 100",
+          "43": "4x12 USA Mc90",
+          "44": "8x10 SV Bass"
+        }
+      },
+      "amp.dynacab_1_mic": {
+        "block": "amp",
+        "name": "dynacab_1_mic",
+        "displayLabel": "Mic",
+        "pidLow": 62,
+        "pidHigh": 67,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 3,
+        "enumValues": {
+          "0": "Condenser",
+          "1": "Ribbon",
+          "2": "Dynamic 1",
+          "3": "Dynamic 2"
+        }
+      },
+      "amp.dynacab_2_mic": {
+        "block": "amp",
+        "name": "dynacab_2_mic",
+        "displayLabel": "Mic",
+        "pidLow": 62,
+        "pidHigh": 68,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 3,
+        "enumValues": {
+          "0": "Condenser",
+          "1": "Ribbon",
+          "2": "Dynamic 1",
+          "3": "Dynamic 2"
+        }
+      },
       "amp.dynacab": {
         "block": "amp",
         "name": "dynacab",
@@ -6203,26 +6333,6 @@
         "displayMin": 0,
         "displayMax": 100
       },
-      "reverb.voice_1_shift": {
-        "block": "reverb",
-        "name": "voice_1_shift",
-        "displayLabel": "Voice 1 Shift",
-        "pidLow": 66,
-        "pidHigh": 56,
-        "unit": "semitones",
-        "displayMin": -24,
-        "displayMax": 24
-      },
-      "reverb.voice_2_shift": {
-        "block": "reverb",
-        "name": "voice_2_shift",
-        "displayLabel": "Voice 2 Shift",
-        "pidLow": 66,
-        "pidHigh": 57,
-        "unit": "semitones",
-        "displayMin": -24,
-        "displayMax": 24
-      },
       "reverb.channel": {
         "block": "reverb",
         "name": "channel",
@@ -6302,16 +6412,6 @@
           "2": "24 dB/OCT",
           "3": "36 dB/OCT"
         }
-      },
-      "delay.diffuser": {
-        "block": "delay",
-        "name": "diffuser",
-        "displayLabel": "Diffuser",
-        "pidLow": 70,
-        "pidHigh": 49,
-        "unit": "percent",
-        "displayMin": 0,
-        "displayMax": 100
       },
       "delay.phase_reverse": {
         "block": "delay",
@@ -6956,48 +7056,6 @@
           "3": "HIGH"
         }
       },
-      "chorus.rate_right": {
-        "block": "chorus",
-        "name": "rate_right",
-        "displayLabel": "Rate Right",
-        "pidLow": 78,
-        "pidHigh": 22,
-        "unit": "hz",
-        "displayMin": 0.1,
-        "displayMax": 10,
-        "scaling": "log10"
-      },
-      "chorus.lfo_2_depth": {
-        "block": "chorus",
-        "name": "lfo_2_depth",
-        "displayLabel": "LFO 2 Depth",
-        "pidLow": 78,
-        "pidHigh": 23,
-        "unit": "percent",
-        "displayMin": 0,
-        "displayMax": 100
-      },
-      "chorus.low_cut": {
-        "block": "chorus",
-        "name": "low_cut",
-        "displayLabel": "Low Cut",
-        "pidLow": 78,
-        "pidHigh": 25,
-        "unit": "hz",
-        "displayMin": 20,
-        "displayMax": 2000,
-        "scaling": "log10"
-      },
-      "chorus.stereo_spread": {
-        "block": "chorus",
-        "name": "stereo_spread",
-        "displayLabel": "Stereo Spread",
-        "pidLow": 78,
-        "pidHigh": 26,
-        "unit": "bipolar_percent",
-        "displayMin": -200,
-        "displayMax": 200
-      },
       "flanger.level": {
         "block": "flanger",
         "name": "level",
@@ -7088,28 +7146,6 @@
           "1": "Mute"
         }
       },
-      "wah.minimum_frequency": {
-        "block": "wah",
-        "name": "minimum_frequency",
-        "displayLabel": "Minimum Frequency",
-        "pidLow": 94,
-        "pidHigh": 11,
-        "unit": "hz",
-        "displayMin": 100,
-        "displayMax": 1000,
-        "scaling": "log10"
-      },
-      "wah.maximum_frequency": {
-        "block": "wah",
-        "name": "maximum_frequency",
-        "displayLabel": "Maximum Frequency",
-        "pidLow": 94,
-        "pidHigh": 12,
-        "unit": "hz",
-        "displayMin": 500,
-        "displayMax": 5000,
-        "scaling": "log10"
-      },
       "wah.control_taper": {
         "block": "wah",
         "name": "control_taper",
@@ -7150,28 +7186,6 @@
         "unit": "db",
         "displayMin": -80,
         "displayMax": 20
-      },
-      "compressor.attack_time": {
-        "block": "compressor",
-        "name": "attack_time",
-        "displayLabel": "Attack Time",
-        "pidLow": 46,
-        "pidHigh": 12,
-        "unit": "ms",
-        "displayMin": 0.1,
-        "displayMax": 100,
-        "scaling": "log10"
-      },
-      "compressor.release_time": {
-        "block": "compressor",
-        "name": "release_time",
-        "displayLabel": "Release Time",
-        "pidLow": 46,
-        "pidHigh": 13,
-        "unit": "ms",
-        "displayMin": 2,
-        "displayMax": 2000,
-        "scaling": "log10"
       },
       "compressor.auto_makeup": {
         "block": "compressor",
@@ -7263,17 +7277,6 @@
         "unit": "db",
         "displayMin": -80,
         "displayMax": 20
-      },
-      "filter.frequency": {
-        "block": "filter",
-        "name": "frequency",
-        "displayLabel": "Frequency",
-        "pidLow": 114,
-        "pidHigh": 11,
-        "unit": "hz",
-        "displayMin": 20,
-        "displayMax": 20000,
-        "scaling": "log10"
       },
       "tremolo.waveform": {
         "block": "tremolo",
@@ -12029,152 +12032,6 @@
         "displayMin": 0,
         "displayMax": 10
       },
-      "amp.dynacab_type_1": {
-        "block": "amp",
-        "name": "dynacab_type_1",
-        "displayLabel": "Cab",
-        "pidLow": 62,
-        "pidHigh": 65,
-        "unit": "enum",
-        "displayMin": 0,
-        "displayMax": 44,
-        "enumValues": {
-          "0": "1x8 5F1 TWEED",
-          "1": "1x8 PRINCETONE",
-          "2": "1x10 BF PRINCETONE",
-          "3": "1x10 METRO BLUES",
-          "4": "1x10 SF PRINCETONE",
-          "5": "1x12 AC20",
-          "6": "1x12 BLACK MAGICK",
-          "7": "1x12 CAR AMBLER",
-          "8": "1x12 DELUXE TWEED",
-          "9": "1x12 DELUXE VERB",
-          "10": "1x12 DIV13 CJ11",
-          "11": "1x12 G12T-100",
-          "12": "1x12 HOT KITTY",
-          "13": "1x12 JR BLUES",
-          "14": "1x12 NUCLEAR TONE",
-          "15": "1x12 SCHOLZ",
-          "16": "1x12 TWEED 20112",
-          "17": "1x12 VIBRATO LUX",
-          "18": "1x15 HEART KEY",
-          "19": "1x15 PORTABASS",
-          "20": "1x15 VIBROVERB",
-          "21": "2x10 HEART KEY",
-          "22": "2x10 SUPER 6G4",
-          "23": "2x12 5153 STEALTH",
-          "24": "2x12 65 BASSGUY",
-          "25": "2x12 CHIEFMAN",
-          "26": "2x12 CLASS-A 30W",
-          "27": "2x12 DOUBLE VERB",
-          "28": "2x12 LEAD 80",
-          "29": "2x12 TEXAS STAR",
-          "30": "4x10 BASSGUY RI",
-          "31": "4x12 1960TV",
-          "32": "4x12 5153",
-          "33": "4x12 5153 STEALTH",
-          "34": "4x12 CITRUS",
-          "35": "4x12 FRIEDMAN GB",
-          "36": "4x12 FRIEDMAN V30",
-          "37": "4x12 LERXST",
-          "38": "4x12 RECTO SLANT",
-          "39": "4x12 RECTO STRAIGHT",
-          "40": "4x12 RUMBLE EV12L",
-          "41": "4x12 RUMBLE EV12S",
-          "42": "4x12 SOLO 100",
-          "43": "4x12 USA MC90",
-          "44": "8x10 SV BASS"
-        }
-      },
-      "amp.dynacab_type_2": {
-        "block": "amp",
-        "name": "dynacab_type_2",
-        "displayLabel": "Cab",
-        "pidLow": 62,
-        "pidHigh": 66,
-        "unit": "enum",
-        "displayMin": 0,
-        "displayMax": 44,
-        "enumValues": {
-          "0": "1x8 5F1 TWEED",
-          "1": "1x8 PRINCETONE",
-          "2": "1x10 BF PRINCETONE",
-          "3": "1x10 METRO BLUES",
-          "4": "1x10 SF PRINCETONE",
-          "5": "1x12 AC20",
-          "6": "1x12 BLACK MAGICK",
-          "7": "1x12 CAR AMBLER",
-          "8": "1x12 DELUXE TWEED",
-          "9": "1x12 DELUXE VERB",
-          "10": "1x12 DIV13 CJ11",
-          "11": "1x12 G12T-100",
-          "12": "1x12 HOT KITTY",
-          "13": "1x12 JR BLUES",
-          "14": "1x12 NUCLEAR TONE",
-          "15": "1x12 SCHOLZ",
-          "16": "1x12 TWEED 20112",
-          "17": "1x12 VIBRATO LUX",
-          "18": "1x15 HEART KEY",
-          "19": "1x15 PORTABASS",
-          "20": "1x15 VIBROVERB",
-          "21": "2x10 HEART KEY",
-          "22": "2x10 SUPER 6G4",
-          "23": "2x12 5153 STEALTH",
-          "24": "2x12 65 BASSGUY",
-          "25": "2x12 CHIEFMAN",
-          "26": "2x12 CLASS-A 30W",
-          "27": "2x12 DOUBLE VERB",
-          "28": "2x12 LEAD 80",
-          "29": "2x12 TEXAS STAR",
-          "30": "4x10 BASSGUY RI",
-          "31": "4x12 1960TV",
-          "32": "4x12 5153",
-          "33": "4x12 5153 STEALTH",
-          "34": "4x12 CITRUS",
-          "35": "4x12 FRIEDMAN GB",
-          "36": "4x12 FRIEDMAN V30",
-          "37": "4x12 LERXST",
-          "38": "4x12 RECTO SLANT",
-          "39": "4x12 RECTO STRAIGHT",
-          "40": "4x12 RUMBLE EV12L",
-          "41": "4x12 RUMBLE EV12S",
-          "42": "4x12 SOLO 100",
-          "43": "4x12 USA MC90",
-          "44": "8x10 SV BASS"
-        }
-      },
-      "amp.dynacab_mic_1": {
-        "block": "amp",
-        "name": "dynacab_mic_1",
-        "displayLabel": "Mic",
-        "pidLow": 62,
-        "pidHigh": 67,
-        "unit": "enum",
-        "displayMin": 0,
-        "displayMax": 3,
-        "enumValues": {
-          "0": "Condenser",
-          "1": "Ribbon",
-          "2": "Dynamic 1",
-          "3": "Dynamic 2"
-        }
-      },
-      "amp.dynacab_mic_2": {
-        "block": "amp",
-        "name": "dynacab_mic_2",
-        "displayLabel": "Mic",
-        "pidLow": 62,
-        "pidHigh": 68,
-        "unit": "enum",
-        "displayMin": 0,
-        "displayMax": 3,
-        "enumValues": {
-          "0": "Condenser",
-          "1": "Ribbon",
-          "2": "Dynamic 1",
-          "3": "Dynamic 2"
-        }
-      },
       "global.tuningref": {
         "block": "global",
         "name": "tuningref",
@@ -14338,7 +14195,22 @@
       "flanger.regen": "flanger.feedback",
       "flanger.regeneration": "flanger.feedback",
       "amp.volume": "amp.gain",
-      "drive.gain": "drive.drive"
+      "drive.gain": "drive.drive",
+      "amp.dynacab_type_1": "amp.dynacab_1_cab",
+      "amp.dynacab_type_2": "amp.dynacab_2_cab",
+      "amp.dynacab_mic_1": "amp.dynacab_1_mic",
+      "amp.dynacab_mic_2": "amp.dynacab_2_mic",
+      "compressor.attack": "compressor.attack_time",
+      "compressor.release": "compressor.release_time",
+      "amp.compressor_clarity": "amp.clarity",
+      "amp.compressor_amount": "amp.amount",
+      "amp.compressor_threshold": "amp.threshold",
+      "reverb.shift_1": "reverb.voice_1_shift",
+      "reverb.shift_2": "reverb.voice_2_shift",
+      "delay.diffusor": "delay.diffuser",
+      "wah.min_frequency": "wah.minimum_frequency",
+      "wah.max_frequency": "wah.maximum_frequency",
+      "filter.freq": "filter.frequency"
     },
     "BLOCK_TYPE_VALUES": {
       "none": 0,

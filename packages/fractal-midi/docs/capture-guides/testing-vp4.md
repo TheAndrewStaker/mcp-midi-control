@@ -47,9 +47,31 @@ Try a write request -- for example: "Set the reverb mix to 50%." The server shou
 
 ---
 
-## T5 -- Probe
+## T5 -- Scene-query probe (P0, ~1 min, no menu clicking)
 
-There is no standalone VP4 probe script yet (unlike the III / FM3 / FM9, which ship one). T1--T4 above cover the same ground through Claude Desktop on any platform, so no extra step is needed here. If a VP4 probe script is added later, it will appear in the install folder and this page will describe it.
+**The single highest-value-per-minute ask for the VP4.** A new read-only script,
+`scripts/probe-vp4-scene-query.ts`, sends exactly the zero-cost scene QUERY
+documented in [captures-vp4.md P0](captures-vp4.md): `F0 00 01 74 14 0C 7F 12 F7`.
+It has **no write side-effect** (the `7F` byte is the documented query sentinel,
+never a scene number) -- it only asks "what scene is active," it never sets one.
+
+From a checkout of the repo, with your VP4 connected over USB and **no Fractal
+editor running**:
+
+```
+npx tsx scripts/probe-vp4-scene-query.ts
+```
+
+It prints the reply (if any) and writes a JSON report you can attach to an
+issue or email back. **If the VP4 answers**, that's the whole ask -- it means
+`switch_scene` can very likely ship on the VP4 WITHOUT the pid13 scene-value
+decode at all (the probe prints the candidate SET frames as guidance text, but
+does not send them; sending those is a separate, later, consented step once
+someone signs up to confirm a scene actually changes on the front panel).
+**If it doesn't answer**, that's still useful -- it means the scene-value
+mapping needs the fuller capture work in [captures-vp4.md](captures-vp4.md).
+
+Please paste (or attach the JSON) either way.
 
 ---
 

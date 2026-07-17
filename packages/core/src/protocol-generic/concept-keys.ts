@@ -295,14 +295,17 @@ export const CONCEPT_KEYS: Readonly<Record<string, ConceptKeyMap>> = Object.free
     am4: 'ratio',
     'axe-fx-iii': 'ratio',
   },
+  // am4 localNames are attack_time/release_time since the 2026-07-15
+  // BK-106 dedupe (the bare attack/release names were the cache
+  // generator's double registration; they live on as PARAM_ALIASES).
   'compressor.attack': {
     'axe-fx-ii': 'attack',
-    am4: 'attack',
+    am4: 'attack_time',
     'axe-fx-iii': 'attack',
   },
   'compressor.release': {
     'axe-fx-ii': 'release',
-    am4: 'release',
+    am4: 'release_time',
     'axe-fx-iii': 'release',
   },
 

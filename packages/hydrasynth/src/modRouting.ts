@@ -13,7 +13,7 @@
  * generator stays pure data and the regex-bearing resolvers stay here.
  *
  * Wire fact (see modRoutingTables.ts header): mod source/target take a
- * 14-bit CATEGORY-PREFIXED VALUE, not a list index. Cookbook primitive:
+ * 14-bit CATEGORY-PREFIXED VALUE, not a list index. Primitive:
  * `hydra-mod-matrix-category-prefixed-value`.
  */
 import {

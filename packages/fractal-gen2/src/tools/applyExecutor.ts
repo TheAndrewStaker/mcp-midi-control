@@ -6,6 +6,18 @@
  * (which wraps both the working-buffer-only path via
  * `buildApplyPresetOps` and the slot-targeted path via
  * `buildApplyPresetAtOps`).
+ *
+ * MODEL-BYTE PARAMETERIZATION (BK-GEN2-FACTORY follow-up, 2026-07-15).
+ * Every gen-2 wire-builder call in this module threads an optional
+ * `modelId` (SysEx model byte): `BuildOptions.modelId` for the pure
+ * op builders, `RunOptions.modelId` for the runtime reads/verifies in
+ * `runApplyPresetAtOps` (grid read, safety mute, channel/scene verify),
+ * including the model-byte-filtered response MATCHERS and PARSERS.
+ * Omitted (every legacy caller), the codec defaults to the XL+'s 0x07,
+ * byte-identical to the pre-parameterization behavior. The family
+ * writer (`descriptor/writer.ts createWriter(config)`) passes
+ * `config.modelByte` so the AX8 (0x08) emits correctly-addressed
+ * frames through apply_preset / apply_setlist.
  */
 
 import type { AxeFxIIBlock } from 'fractal-midi/gen2/axe-fx-ii';
@@ -45,6 +57,8 @@ import { GET_RESPONSE_TIMEOUT_MS, findBlock, findParam } from './shared.js';
 import { KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/gen2/axe-fx-ii';
 import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
 import { resolveParamKind } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
+import { lookupAmpLoudness } from '@mcp-midi-control/core/fractal-shared/loudness.js';
+import { resolveEnumAlias } from '@mcp-midi-control/core/protocol-generic/cross-device-enums.js';
 
 /**
  * Enumerate valid param names on a block by walking `KNOWN_PARAMS`
@@ -112,11 +126,13 @@ function buildParamBytes(
   wireMode: boolean,
   blockName: string,
   groupCode?: string,
+  modelId?: number,
 ): number[] {
   if (pp.isEnum || (groupCode !== undefined && FN02_ONLY_GROUPS.has(groupCode))) {
     return buildSetBlockParameterValueInteger(
       { effectId, paramId: pp.paramId },
       pp.wire,
+      { modelId },
     );
   }
   const displayVal = wireMode
@@ -125,6 +141,7 @@ function buildParamBytes(
   return buildSetBlockParameterValue(
     { effectId, paramId: pp.paramId },
     displayVal,
+    { modelId },
   );
 }
 
@@ -243,7 +260,7 @@ export interface ApplyPresetAtInput {
 }
 
 export interface ApplyPresetAtOp {
-  kind: 'switch_preset' | 'clear_cell' | 'place_block' | 'cable' | 'switch_scene' | 'channel' | 'bypass' | 'param' | 'name' | 'save';
+  kind: 'switch_preset' | 'clear_cell' | 'place_block' | 'cable' | 'switch_scene' | 'channel' | 'bypass' | 'param' | 'scene_level' | 'name' | 'save';
   bytes: number[];
   summary: string;
   awaitResponse?: 'set_grid_cell' | 'set_cell_routing' | 'store_preset' | 'channel_verify' | 'scene_verify';
@@ -260,6 +277,146 @@ export interface ApplyPresetAtOp {
   cellRef?: { row: number; col: number };
 }
 
+// ── Cab-polish defaults (BK-103c, gen-2 extension of the AM4's BK-103b) ──
+//
+// Close-mic'd IRs carry excess lows + highs; the validated mix-ready
+// starting point (cloudkake field report + Fractal's own published
+// practice; see BK-103 in the private backlog) is a low cut ~80 Hz /
+// high cut ~6.5 kHz at 12 dB/oct plus a little cab room. On the AM4 the
+// cab section lives INSIDE the amp block; on the Axe-Fx II family the
+// CAB is its OWN grid block, so injection keys on the spec placing a
+// CAB block (never on the amp, and blocks are never auto-placed).
+//
+// Guidance-only defaults failed the 2026-07-16 AM4 bench test (nothing
+// forces the model to read the guidance topic), so the executor ENFORCES
+// them: every cab channel window a fresh build writes gets these params
+// appended AFTER the spec's own cab params for that window, UNLESS the
+// spec expresses any cab cut/room/slope opinion of its own (any trigger
+// param below, on any channel of any cab block) or bypasses the cab
+// block (the 4CM / real-cab case). Explicit values always win.
+//
+// All four params are registered in fractal-midi/gen2/axe-fx-ii/params.ts
+// with hardware-verified calibration: cab.low_cut (paramId 19, 20..2000 Hz
+// log10), cab.high_cut (paramId 20, 200..20000 Hz log10), cab.filter_slope
+// (paramId 37, enum CAB_FILTER_SLOPE_VALUES: 1 = '12 dB/OCT'), and
+// cab.room_level (paramId 16, 0..100). Values are display-shaped and ride
+// the same fn=0x2e / fn=0x02 builders the spec's own params use.
+const CAB_POLISH_DEFAULTS_GEN2: ReadonlyArray<readonly [name: string, value: number, display: string]> = [
+  ['low_cut', 80, '80 Hz'],
+  ['high_cut', 6500, '6500 Hz'],       // assertive/mix-safe; Fractal's published start is 7500
+  ['filter_slope', 1, '12 dB/OCT'],    // one selector covers both cut slopes on the II
+  ['room_level', 8, '8%'],             // validated band 5-10%
+];
+
+/**
+ * Canonical cab-param names that count as "the caller has cab opinions":
+ * any of them anywhere on any cab block suppresses injection entirely.
+ * Spec spellings are canonicalized through `findParam` (the same fuzzy
+ * resolver `validateParam` uses), so alias spellings count too.
+ */
+const CAB_POLISH_TRIGGERS_GEN2: ReadonlySet<string> = new Set(
+  CAB_POLISH_DEFAULTS_GEN2.map(([n]) => n),
+);
+
+/** What the executor injected, for `auto_applied` response reporting. */
+export interface ApplyPresetCabPolish {
+  /**
+   * Cab channel windows that received the defaults (X/Y letters;
+   * block-name-prefixed when 2 cabs placed). Covers the channels the
+   * slot writes AND any channel a scene's channel map points the cab at
+   * (the 2026-07-16 bench gap: a scene-referenced-but-unwritten channel
+   * would otherwise stay wide open).
+   */
+  channels: string[];
+  /** Display-shaped values injected, keyed by param name. */
+  params: Record<string, string>;
+  /** Relay-ready note incl. the undo phrase. */
+  note: string;
+}
+
+const CAB_POLISH_NOTE_GEN2 =
+  'Mix-ready cab defaults were auto-applied to the cab block (low cut 80 Hz, ' +
+  'high cut 6.5 kHz, 12 dB/OCT filter slope, 8% room) because the spec set no cab ' +
+  'cut/room/slope params. TELL THE USER this was applied and give the undo: on ' +
+  '"wide open" (or similar) set cab.low_cut 20, cab.high_cut 20000, cab.room_level 0. ' +
+  'To build without them, pass any explicit cab cut/room/slope value in the spec, ' +
+  'or bypass the cab block for a 4CM / real-cab rig.';
+
+// ── Scene-level initialization (sibling of the AM4's 2026-07-16 fix) ──
+//
+// output.scene_1_main .. scene_8_main (Output block, effectId 140,
+// paramIds 8..15, display -20..+20 dB) persist in the working buffer
+// across fresh builds: whatever per-scene output trims the previous
+// occupant carried silently shape the NEXT fresh build (the same
+// stale-trim leakage class the AM4 bench caught on preset.scene_N_level).
+// Every fresh display-mode build therefore writes ALL EIGHT params:
+//   - 0.0 dB reset by default (kills the leakage), or
+//   - positive-only STARTING trims toward the loudest DEFINED scene when
+//     the spec defines scenes AND every defined scene's amp channel has
+//     an in-spec amp type whose label translates to a corpus loudness
+//     offset (the same alias-table-then-corpus path the dispatcher's
+//     loudnessOffsetsForEnum uses). Undefined scenes stay 0.0; +12 dB
+//     clamp; 0.1 dB rounding. An untranslatable or corpus-missing label
+//     means NO trims (all zeros), never a guess.
+// Suppression: a spec that expresses ANY output scene main itself (any
+// spelling that canonicalizes to scene_N_main through findParam) gets
+// NO injection at all; explicit values always win.
+//
+// The Output block is not a placed grid block; these writes address it
+// directly via fn=0x2e (effectId 140), the same hardware-proven envelope
+// the runtime safety mute uses for output level_1 (paramId 0).
+
+/** Scene-level initialization report, merged into `auto_applied`. */
+export interface ApplyPresetSceneLevels {
+  /** Display-shaped values written, keyed by param name (scene_1_main..scene_8_main). */
+  values: Record<string, string>;
+  source: 'reset' | 'amp_offsets';
+  /** Relay-ready note. */
+  note: string;
+}
+
+const SCENE_LEVELS_RESET_NOTE_GEN2 =
+  'THE SERVER initialized scene levels 1-8 (output.scene_N_main) to 0 dB as part of ' +
+  'this apply (a fresh build resets stale per-scene output trims left by whatever ' +
+  'preset previously occupied the buffer); any values read back are from THIS build, ' +
+  'not leftovers. To balance scenes: watch the Output block Internal Levels Meter ' +
+  '(the white line) per scene, or measure each with measure_loudness while the ' +
+  'Axe-Fx II feeds the computer audio input, then trim output.scene_N_main. To zero ' +
+  'a trim, set output.scene_N_main to 0.';
+
+/**
+ * The Output block's effectId (140 on the whole gen-2 family), resolved
+ * from the block table rather than hardcoded. The runtime safety mute in
+ * `runApplyPresetAtOps` addresses the same block (paramId 0, level_1).
+ */
+const OUTPUT_BLOCK_EFFECT_ID = findBlock('Output').id;
+
+const SCENE_LEVELS_OFFSETS_NOTE_GEN2 =
+  'THE SERVER seeded scene levels (output.scene_N_main) as part of this apply, with ' +
+  'STARTING trims from the per-amp loudness offset table (loudest defined scene = ' +
+  'reference; scenes the spec did not define stay 0 dB); any values read back are ' +
+  'from THIS build, not leftovers. They are data-driven but UNVERIFIED: confirm per ' +
+  'scene at the Output block Internal Levels Meter (the white line), or with ' +
+  'measure_loudness while the Axe-Fx II feeds the computer audio input, and adjust. ' +
+  'TELL THE USER; to zero them, set output.scene_N_main to 0.';
+
+/**
+ * Merge the executor's injections into the generic `ApplyResult.auto_applied`
+ * shape (AM4 parity: params map + note concatenation). Returns undefined
+ * when nothing was injected.
+ */
+export function mergeAutoApplied(
+  cabPolish: ApplyPresetCabPolish | undefined,
+  sceneLevels: ApplyPresetSceneLevels | undefined,
+): { params: Record<string, string>; channels?: readonly string[]; note: string } | undefined {
+  if (cabPolish === undefined && sceneLevels === undefined) return undefined;
+  return {
+    params: { ...(cabPolish?.params ?? {}), ...(sceneLevels?.values ?? {}) },
+    ...(cabPolish === undefined ? {} : { channels: cabPolish.channels }),
+    note: [cabPolish?.note, sceneLevels?.note].filter((s) => s !== undefined).join(' '),
+  };
+}
+
 /**
  * Pure-builder options. `wire: true` short-circuits the display/wire
  * auto-detect path, every param value is treated as a pre-encoded
@@ -270,6 +427,43 @@ export interface ApplyPresetAtOp {
  */
 export interface BuildOptions {
   wire?: boolean;
+  /**
+   * SysEx model byte stamped on every wire frame the op builder emits
+   * (BK-GEN2-FACTORY). Omitted, the codec defaults to the XL+'s 0x07,
+   * byte-identical to every pre-parameterization caller. The family
+   * writer passes `config.modelByte` (AX8: 0x08).
+   */
+  modelId?: number;
+  /**
+   * Per-config block-availability filter (`AxeFxIIConfig.isBlockAvailable`).
+   * When supplied, a spec that addresses a block instance this model lacks
+   * (e.g. AX8 "Amp 2") is refused at build time with a clear message,
+   * instead of emitting a placement frame the device would reject or
+   * ignore. Undefined (XL+ and every legacy caller) = no filter.
+   */
+  isBlockAvailable?: (block: AxeFxIIBlock) => boolean;
+  /** Device label for refusal messages. Defaults to the XL+ label. */
+  deviceLabel?: string;
+  /**
+   * BK-103c: invoked (at most once, before any op is built) when the
+   * builder injects the cab-polish defaults into a fresh cab-bearing
+   * build. The unified writer captures the report and surfaces it as
+   * `ApplyResult.auto_applied` so the agent relays what was injected
+   * plus the "wide open" undo. Omitted = injection still happens
+   * (enforcement is unconditional on the display path), only the
+   * report is dropped.
+   */
+  onCabPolish?: (report: ApplyPresetCabPolish) => void;
+  /**
+   * Invoked (at most once) when the builder injects the fresh-build
+   * scene-level initialization writes (output.scene_1_main..scene_8_main;
+   * see the ApplyPresetSceneLevels docs above). The unified writer merges
+   * the report with any cab-polish report via `mergeAutoApplied` into
+   * `ApplyResult.auto_applied`. Omitted = injection still happens, only
+   * the report is dropped. Not invoked when the spec expresses an output
+   * scene main itself (suppression) or in wireMode.
+   */
+  onSceneLevels?: (report: ApplyPresetSceneLevels) => void;
 }
 
 /**
@@ -283,7 +477,20 @@ export function buildApplyPresetAtOps(
 ): ApplyPresetAtOp[] {
   const { preset_number, blocks, scene, name, routing } = input;
   const wireMode = opts.wire ?? false;
+  // Model byte threaded into EVERY wire-builder call below. undefined =
+  // codec default (XL+ 0x07), byte-identical to legacy callers.
+  const modelId = opts.modelId;
   const explicitRouting = routing !== undefined && routing.length > 0;
+
+  /** Refuse a block this config's availability filter rejects (e.g. AX8 "Amp 2"). */
+  function checkBlockAvailable(target: AxeFxIIBlock, where: string): void {
+    if (opts.isBlockAvailable !== undefined && !opts.isBlockAvailable(target)) {
+      throw new Error(
+        `${where}: block '${target.name}' is not present on ${opts.deviceLabel ?? 'this device'} ` +
+        `(single-instance-only or absent on this model). Call describe_device to see the blocks this device exposes.`,
+      );
+    }
+  }
 
   // 1. Resolve blocks (catches typos before any op is built).
   // v0.4: each resolved entry now carries its (row, col) and `id` so
@@ -340,6 +547,7 @@ export function buildApplyPresetAtOps(
       shuntCounter++;
     } else {
       target = findBlock(b.block);
+      checkBlockAvailable(target, `blocks[${i}]`);
     }
 
     // Resolve row/col. Explicit-routing mode requires both on every
@@ -427,6 +635,139 @@ export function buildApplyPresetAtOps(
       row,
       col,
     });
+  }
+
+  // ── BK-103c cab-polish injection ─────────────────────────────────
+  //
+  // A fresh cab-bearing build gets the mix-ready cab defaults appended
+  // to every cab channel window the spec writes (or, for a bare cab
+  // placement, a deterministic default-X window), unless the spec
+  // expresses ANY cab cut/room/slope opinion or bypasses a cab block.
+  // Appending to the (cloned) params records preserves insertion order
+  // through pendingParams into the op stream, so the injected writes
+  // land AFTER the spec's own cab params (incl. the `cab` IR selector)
+  // inside the same channel window.
+  //
+  // SCENE-REFERENCED CHANNELS (2026-07-16 bench gap): a scene's channel
+  // map can point the cab at a channel the slot never writes params to
+  // (scene 1 cab X, scene 2 cab Y, params only on X); that channel
+  // would read back wide open on the device. Every cab channel any
+  // scene references therefore ALSO gets a default window: a channel
+  // select plus the default writes, emitted after the slot's own
+  // windows (insertion order in the per-channel map is emission order)
+  // and before the scene walk, whose per-scene channel writes and the
+  // landing sequence then run as usual, so the extra select leaves no
+  // lasting active-channel side effect. A flat-shaped cab slot converts
+  // to the per-channel shape to carry the extra windows (same wire
+  // bytes for its own window; the base window still emits first).
+  //
+  // wireMode is carved out: its param values are pre-encoded wire
+  // integers, so the display-shaped defaults would be misread as raw
+  // wire (80/65534 is near-minimum, not 80 Hz). Every production apply
+  // path (the unified writer) runs displayMode; wireMode survives only
+  // in legacy research/golden scripts.
+  if (!wireMode) {
+    const cabEntries = resolved.filter((r) => r.target.groupCode === 'CAB');
+    const hasCabOpinion = cabEntries.some((r) => {
+      if (r.bypass === true) return true; // 4CM / real-cab intent: cuts inside a bypassed cab are dead writes
+      const names: string[] = [];
+      if (r.params !== undefined) names.push(...Object.keys(r.params));
+      if (r.paramsByChannel !== undefined) {
+        for (const channelParams of Object.values(r.paramsByChannel)) {
+          if (channelParams !== undefined) names.push(...Object.keys(channelParams));
+        }
+      }
+      return names.some((n) => {
+        const p = findParam(r.target, n);
+        return p !== undefined && CAB_POLISH_TRIGGERS_GEN2.has(p.name);
+      });
+    });
+    if (cabEntries.length > 0 && !hasCabOpinion) {
+      const injectedDefaults = Object.fromEntries(
+        CAB_POLISH_DEFAULTS_GEN2.map(([n, v]) => [n, v]),
+      ) as Record<string, number>;
+      const injectedChannels: string[] = [];
+      const channelLabel = (r: ResolvedEntry, ch: string): string =>
+        cabEntries.length > 1 ? `${r.target.name} ${ch}` : ch;
+      // Cab channels referenced by ANY scene's channel map, keyed by the
+      // cab block's effectId. Unresolvable scene block keys are skipped
+      // here; the scene pre-validation below still throws its structured
+      // error before any wire I/O.
+      const sceneCabChannels = new Map<number, Set<AxeFxIIChannel>>();
+      if (input.scenes !== undefined) {
+        for (const s of input.scenes) {
+          for (const [blockKey, channel] of Object.entries(s.channels ?? {})) {
+            if (channel !== 'X' && channel !== 'Y') continue;
+            let sceneTarget: AxeFxIIBlock;
+            try {
+              sceneTarget = findBlock(blockKey);
+            } catch {
+              continue;
+            }
+            if (sceneTarget.groupCode !== 'CAB') continue;
+            const set = sceneCabChannels.get(sceneTarget.id) ?? new Set<AxeFxIIChannel>();
+            set.add(channel);
+            sceneCabChannels.set(sceneTarget.id, set);
+          }
+        }
+      }
+      for (const r of cabEntries) {
+        const sceneChannels = sceneCabChannels.get(r.target.id) ?? new Set<AxeFxIIChannel>();
+        if (r.paramsByChannel !== undefined) {
+          // Per-channel build: append inside EACH written channel window.
+          const merged: Partial<Record<AxeFxIIChannel, Record<string, number>>> = {};
+          for (const [chKey, channelParams] of Object.entries(r.paramsByChannel)) {
+            const ch = chKey as AxeFxIIChannel;
+            if (channelParams === undefined) continue;
+            merged[ch] = { ...channelParams, ...injectedDefaults };
+            injectedChannels.push(channelLabel(r, ch));
+          }
+          // Scene-referenced channels the slot never wrote: default-only
+          // windows, appended after the slot's own (insertion order).
+          for (const ch of sceneChannels) {
+            if (merged[ch] !== undefined) continue;
+            merged[ch] = { ...injectedDefaults };
+            injectedChannels.push(channelLabel(r, ch));
+          }
+          r.paramsByChannel = merged;
+        } else {
+          const baseChannel: AxeFxIIChannel = r.channel ?? 'X';
+          const extraChannels = [...sceneChannels].filter((ch) => ch !== baseChannel);
+          if (extraChannels.length === 0) {
+            // Flat params (append after them) or bare cab placement (the
+            // injected params ARE the block's params, which also makes the
+            // deterministic default-channel-X op fire below, mirroring the
+            // AM4's bare-amp channel-A pin).
+            r.params = { ...(r.params ?? {}), ...injectedDefaults };
+            injectedChannels.push(channelLabel(r, baseChannel));
+          } else {
+            // Scene-referenced channels beyond the flat window: convert to
+            // the per-channel shape so each extra channel gets its own
+            // channel-select + default writes. The base window keeps the
+            // spec params (+ defaults appended) and still emits FIRST;
+            // extra windows follow, all before the scene walk.
+            const merged: Partial<Record<AxeFxIIChannel, Record<string, number>>> = {
+              [baseChannel]: { ...(r.params ?? {}), ...injectedDefaults },
+            };
+            injectedChannels.push(channelLabel(r, baseChannel));
+            for (const ch of extraChannels) {
+              merged[ch] = { ...injectedDefaults };
+              injectedChannels.push(channelLabel(r, ch));
+            }
+            r.params = undefined;
+            r.channel = undefined;
+            r.paramsByChannel = merged;
+          }
+        }
+      }
+      if (injectedChannels.length > 0) {
+        opts.onCabPolish?.({
+          channels: injectedChannels,
+          params: Object.fromEntries(CAB_POLISH_DEFAULTS_GEN2.map(([n, , display]) => [n, display])),
+          note: CAB_POLISH_NOTE_GEN2,
+        });
+      }
+    }
   }
 
   // Set of (row, col) cells the user explicitly placed, used by the
@@ -534,7 +875,7 @@ export function buildApplyPresetAtOps(
 
   ops.push({
     kind: 'switch_preset',
-    bytes: buildSwitchPreset(preset_number),
+    bytes: buildSwitchPreset(preset_number, { modelId }),
     summary: `LOAD_PRESET → ${preset_number} (target slot)`,
   });
 
@@ -558,7 +899,7 @@ export function buildApplyPresetAtOps(
       if (placedCells.has(`${row},${col}`)) continue;
       ops.push({
         kind: 'clear_cell',
-        bytes: buildSetGridCell({ row, col, blockId: 0 }),
+        bytes: buildSetGridCell({ row, col, blockId: 0, modelId }),
         summary: `CLEAR row ${row} col ${col}`,
         awaitResponse: 'set_grid_cell',
         cellRef: { row, col },
@@ -595,14 +936,14 @@ export function buildApplyPresetAtOps(
   for (const r of resolved) {
     ops.push({
       kind: 'place_block',
-      bytes: buildSetGridCell({ row: r.row, col: r.col, blockId: r.target.id }),
+      bytes: buildSetGridCell({ row: r.row, col: r.col, blockId: r.target.id, modelId }),
       summary: `PLACE ${r.target.name} at row ${r.row} col ${r.col}`,
       awaitResponse: 'set_grid_cell',
     });
     if (r.target.canBypass) {
       ops.push({
         kind: 'bypass',
-        bytes: buildSetBlockBypassEnvelope(r.target.id, true),
+        bytes: buildSetBlockBypassEnvelope(r.target.id, true, { modelId }),
         summary: `build-safe BYPASS ${r.target.name} (anti-screech; re-engaged after params)`,
       });
     }
@@ -734,6 +1075,7 @@ export function buildApplyPresetAtOps(
           srcRow: src.row, srcCol: src.col,
           dstRow: dst.row, dstCol: dst.col,
           connect,
+          modelId,
         }),
         summary: `${connect ? 'CABLE' : 'UNCABLE'} ${edge.from} (R${src.row}C${src.col}) → ${edge.to} (R${dst.row}C${dst.col})`,
         awaitResponse: 'set_cell_routing',
@@ -759,7 +1101,7 @@ export function buildApplyPresetAtOps(
         shuntIndex++;
         ops.push({
           kind: 'place_block',
-          bytes: buildSetGridCell({ row: 2, col, blockId: shuntBlockId }),
+          bytes: buildSetGridCell({ row: 2, col, blockId: shuntBlockId, modelId }),
           summary: `PLACE SHUNT (id ${shuntBlockId}) at row 2 col ${col} (OUTPUT tail extension)`,
           awaitResponse: 'set_grid_cell',
         });
@@ -767,7 +1109,7 @@ export function buildApplyPresetAtOps(
       for (let col = tailStartCol + 1; col <= OUTPUT_COL; col++) {
         ops.push({
           kind: 'cable',
-          bytes: buildSetCellRouting({ srcRow: 2, srcCol: col - 1, dstRow: 2, dstCol: col, connect: true }),
+          bytes: buildSetCellRouting({ srcRow: 2, srcCol: col - 1, dstRow: 2, dstCol: col, connect: true, modelId }),
           summary: `CABLE row 2 col ${col - 1} → row 2 col ${col} (OUTPUT tail extension)`,
           awaitResponse: 'set_cell_routing',
         });
@@ -805,7 +1147,7 @@ export function buildApplyPresetAtOps(
       shuntIndex++;
       ops.push({
         kind: 'place_block',
-        bytes: buildSetGridCell({ row: 2, col, blockId: shuntBlockId }),
+        bytes: buildSetGridCell({ row: 2, col, blockId: shuntBlockId, modelId }),
         summary: `PLACE SHUNT ${shuntIndex} (id ${shuntBlockId}) at row 2 col ${col}`,
         awaitResponse: 'set_grid_cell',
       });
@@ -816,7 +1158,7 @@ export function buildApplyPresetAtOps(
     for (let col = 2; col <= 12; col++) {
       ops.push({
         kind: 'cable',
-        bytes: buildSetCellRouting({ srcRow: 2, srcCol: col - 1, dstRow: 2, dstCol: col, connect: true }),
+        bytes: buildSetCellRouting({ srcRow: 2, srcCol: col - 1, dstRow: 2, dstCol: col, connect: true, modelId }),
         summary: `CABLE row 2 col ${col - 1} → row 2 col ${col}`,
         awaitResponse: 'set_cell_routing',
       });
@@ -826,7 +1168,7 @@ export function buildApplyPresetAtOps(
   if (scene !== undefined) {
     ops.push({
       kind: 'switch_scene',
-      bytes: buildSetSceneNumber(scene),
+      bytes: buildSetSceneNumber(scene, { modelId }),
       summary: `SET_SCENE → ${scene} (display: scene ${scene + 1})`,
     });
   }
@@ -852,7 +1194,7 @@ export function buildApplyPresetAtOps(
       for (const ch of channelsInOrder) {
         ops.push({
           kind: 'channel',
-          bytes: buildSetBlockChannel(r.target.id, ch),
+          bytes: buildSetBlockChannel(r.target.id, ch, { modelId }),
           summary: `${r.target.name}: channel=${ch}`,
           awaitResponse: 'channel_verify',
           effectId: r.target.id,
@@ -861,7 +1203,7 @@ export function buildApplyPresetAtOps(
         for (const pp of pendingParams.filter((p) => p.blockIdx === i && p.channel === ch)) {
           ops.push({
             kind: 'param',
-            bytes: buildParamBytes(r.target.id, pp, wireMode, r.target.name, r.target.groupCode),
+            bytes: buildParamBytes(r.target.id, pp, wireMode, r.target.name, r.target.groupCode, modelId),
             summary: `${r.target.name}.${pp.paramName} [${ch}] = ${pp.modeNote}`,
           });
         }
@@ -871,7 +1213,7 @@ export function buildApplyPresetAtOps(
       if (r.channel !== undefined) {
         ops.push({
           kind: 'channel',
-          bytes: buildSetBlockChannel(r.target.id, r.channel),
+          bytes: buildSetBlockChannel(r.target.id, r.channel, { modelId }),
           summary: `${r.target.name}: channel=${r.channel}`,
           awaitResponse: 'channel_verify',
           effectId: r.target.id,
@@ -887,7 +1229,7 @@ export function buildApplyPresetAtOps(
         // the caller doing anything special.
         ops.push({
           kind: 'channel',
-          bytes: buildSetBlockChannel(r.target.id, 'X'),
+          bytes: buildSetBlockChannel(r.target.id, 'X', { modelId }),
           summary: `${r.target.name}: channel=X (default, no explicit channel supplied)`,
           awaitResponse: 'channel_verify',
           effectId: r.target.id,
@@ -897,7 +1239,7 @@ export function buildApplyPresetAtOps(
       for (const pp of blockParams) {
         ops.push({
           kind: 'param',
-          bytes: buildParamBytes(r.target.id, pp, wireMode, r.target.name),
+          bytes: buildParamBytes(r.target.id, pp, wireMode, r.target.name, undefined, modelId),
           summary: `${r.target.name}.${pp.paramName} = ${pp.modeNote}`,
         });
       }
@@ -918,7 +1260,7 @@ export function buildApplyPresetAtOps(
       const finalBypass = r.bypass ?? false;
       ops.push({
         kind: 'bypass',
-        bytes: buildSetBlockBypassEnvelope(r.target.id, finalBypass),
+        bytes: buildSetBlockBypassEnvelope(r.target.id, finalBypass, { modelId }),
         summary: `${r.target.name}: bypass=${finalBypass ? 'BYPASSED' : 'ENGAGED'} (final)`,
       });
     }
@@ -959,14 +1301,16 @@ export function buildApplyPresetAtOps(
     for (const s of input.scenes) {
       for (const blockKey of Object.keys({ ...(s.bypass ?? {}), ...(s.channels ?? {}) })) {
         if (sceneBlockResolutions.has(blockKey)) continue;
-        sceneBlockResolutions.set(blockKey, findBlock(blockKey));
+        const sceneTarget = findBlock(blockKey);
+        checkBlockAvailable(sceneTarget, `scenes[${s.index}] block '${blockKey}'`);
+        sceneBlockResolutions.set(blockKey, sceneTarget);
       }
     }
     for (const s of input.scenes) {
       const wireScene = s.index - 1;
       ops.push({
         kind: 'switch_scene',
-        bytes: buildSetSceneNumber(wireScene),
+        bytes: buildSetSceneNumber(wireScene, { modelId }),
         summary: `SET_SCENE → ${wireScene} (display: scene ${s.index}), per-scene state walk`,
       });
       // Author this scene's COMPLETE bypass state. Every block was build-
@@ -993,7 +1337,7 @@ export function buildApplyPresetAtOps(
         const bypassed = sceneBypassById.get(r.target.id) ?? (r.bypass ?? false);
         ops.push({
           kind: 'bypass',
-          bytes: buildSetBlockBypassEnvelope(r.target.id, bypassed),
+          bytes: buildSetBlockBypassEnvelope(r.target.id, bypassed, { modelId }),
           summary: `[scene ${s.index}] ${r.target.name}: bypass=${bypassed ? 'BYPASSED' : 'ENGAGED'}`,
         });
       }
@@ -1009,7 +1353,7 @@ export function buildApplyPresetAtOps(
         explicitlyMappedChannelIds.add(target.id);
         ops.push({
           kind: 'channel',
-          bytes: buildSetBlockChannel(target.id, channel),
+          bytes: buildSetBlockChannel(target.id, channel, { modelId }),
           summary: `[scene ${s.index}] ${target.name}: channel=${channel}`,
           awaitResponse: 'channel_verify',
           effectId: target.id,
@@ -1026,7 +1370,7 @@ export function buildApplyPresetAtOps(
         if (explicitlyMappedChannelIds.has(r.target.id)) continue;
         ops.push({
           kind: 'channel',
-          bytes: buildSetBlockChannel(r.target.id, 'X'),
+          bytes: buildSetBlockChannel(r.target.id, 'X', { modelId }),
           summary: `[scene ${s.index}] ${r.target.name}: channel=X (default, not explicitly mapped)`,
           awaitResponse: 'channel_verify',
           effectId: r.target.id,
@@ -1049,23 +1393,151 @@ export function buildApplyPresetAtOps(
     // mismatch).
     ops.push({
       kind: 'switch_scene',
-      bytes: buildSetSceneNumber(landing - 1),
+      bytes: buildSetSceneNumber(landing - 1, { modelId }),
       summary: `SET_SCENE → ${landing - 1} (display: scene ${landing}), landing scene`,
       awaitResponse: 'scene_verify',
       expectedScene: landing,
     });
   }
 
+  // ── Scene-level initialization (see ApplyPresetSceneLevels docs) ──
+  //
+  // Emitted BEFORE the name/save tail so STORE_PRESET bakes the
+  // initialized trims into the saved preset. Each write is a per-scene
+  // param (paramIds 8..15 on the Output block), NOT active-scene state,
+  // so ordering relative to the scene walk / landing scene is free.
+  // wireMode is carved out like cab polish (legacy raw-wire scripts).
+  if (!wireMode) {
+    // Suppression: the spec expresses an output scene main itself
+    // (any spelling that canonicalizes through findParam). Explicit
+    // values always win; inject nothing at all.
+    const specExpressesSceneMain = resolved.some((r) => {
+      const names: string[] = [];
+      if (r.params !== undefined) names.push(...Object.keys(r.params));
+      if (r.paramsByChannel !== undefined) {
+        for (const channelParams of Object.values(r.paramsByChannel)) {
+          if (channelParams !== undefined) names.push(...Object.keys(channelParams));
+        }
+      }
+      return names.some((n) => {
+        const p = findParam(r.target, n);
+        return p !== undefined && p.block === 'output' && /^scene_[1-8]_main$/.test(p.name);
+      });
+    });
+    if (!specExpressesSceneMain) {
+      const sceneLevelValues: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
+      let sceneLevelSource: ApplyPresetSceneLevels['source'] = 'reset';
+      // Offset-derived STARTING trims require: scenes defined in the
+      // spec, exactly ONE amp block placed (two amps make the per-scene
+      // loudness attribution ambiguous; never guess), and every DEFINED
+      // scene's amp channel carrying an in-spec amp type that translates
+      // to a corpus loudness offset.
+      const ampEntries = resolved.filter((r) => r.target.groupCode === 'AMP');
+      const definedScenes = input.scenes ?? [];
+      if (ampEntries.length === 1 && definedScenes.length > 0) {
+        const amp = ampEntries[0];
+        // Amp type label per written channel, from the spec's own
+        // effect_type writes (canonical name via findParam; the value is
+        // the enum ordinal, translateSpec already resolved any string).
+        const ampEnumValues = (KNOWN_PARAMS['amp.effect_type'] as AxeFxIIParam & {
+          enumValues?: Record<number, string>;
+        }).enumValues;
+        const ampTypeLabelByChannel: Partial<Record<AxeFxIIChannel, string>> = {};
+        const recordTypeFrom = (paramMap: Record<string, number>, ch: AxeFxIIChannel): void => {
+          for (const [paramName, value] of Object.entries(paramMap)) {
+            const p = findParam(amp.target, paramName);
+            if (p !== undefined && p.name === 'effect_type') {
+              const label = ampEnumValues?.[Math.round(value)];
+              if (label !== undefined) ampTypeLabelByChannel[ch] = label;
+            }
+          }
+        };
+        if (amp.paramsByChannel !== undefined) {
+          for (const [chKey, paramMap] of Object.entries(amp.paramsByChannel)) {
+            if (paramMap !== undefined) recordTypeFrom(paramMap, chKey as AxeFxIIChannel);
+          }
+        } else if (amp.params !== undefined) {
+          recordTypeFrom(amp.params, amp.channel ?? 'X');
+        }
+        const offsetsBySceneIndex = new Map<number, number>();
+        let allDefinedResolved = true;
+        for (const s of definedScenes) {
+          // Which channel does this scene point the amp at? Unmapped
+          // blocks default to X (the per-scene completion pass writes
+          // exactly that). Scene keys were validated by the scene walk
+          // above, so findBlock cannot throw here.
+          let ch: AxeFxIIChannel = 'X';
+          for (const [blockKey, channel] of Object.entries(s.channels ?? {})) {
+            if (findBlock(blockKey).id === amp.target.id) ch = channel;
+          }
+          const label = ampTypeLabelByChannel[ch];
+          if (label === undefined) {
+            // The scene's amp channel type is device state, not in-spec.
+            allDefinedResolved = false;
+            break;
+          }
+          // Translate this device's label to the AM4-canonical corpus
+          // key: alias table first, then the corpus's own case-tolerant
+          // match (the exact path discovery's loudnessOffsetsForEnum
+          // uses). A miss on both means NO trims, never a guess.
+          const am4Label = resolveEnumAlias('am4', 'amp', 'effect_type', label).canonical;
+          const entry = lookupAmpLoudness(am4Label);
+          if (entry === undefined) {
+            allDefinedResolved = false;
+            break;
+          }
+          offsetsBySceneIndex.set(s.index, entry.relative_loudness_dB);
+        }
+        if (allDefinedResolved && offsetsBySceneIndex.size > 0) {
+          const maxOff = Math.max(...offsetsBySceneIndex.values());
+          let anyTrim = false;
+          for (const [sceneIndex, off] of offsetsBySceneIndex) {
+            // Positive-only lift toward the loudest defined scene,
+            // conservatively clamped: a STARTING point, not a landing.
+            const trim = Math.round(Math.min(Math.max(maxOff - off, 0), 12) * 10) / 10;
+            sceneLevelValues[sceneIndex - 1] = trim;
+            if (trim !== 0) anyTrim = true;
+          }
+          if (anyTrim) sceneLevelSource = 'amp_offsets';
+        }
+      }
+      for (let sceneNum = 1; sceneNum <= 8; sceneNum++) {
+        const param = KNOWN_PARAMS[
+          `output.scene_${sceneNum}_main` as keyof typeof KNOWN_PARAMS
+        ] as AxeFxIIParam;
+        const value = sceneLevelValues[sceneNum - 1];
+        ops.push({
+          kind: 'scene_level',
+          bytes: buildSetBlockParameterValue(
+            { effectId: OUTPUT_BLOCK_EFFECT_ID, paramId: param.paramId },
+            value,
+            { modelId },
+          ),
+          summary: `Output.scene_${sceneNum}_main = ${value.toFixed(1)} dB (fresh-build scene-level init)`,
+        });
+      }
+      opts.onSceneLevels?.({
+        values: Object.fromEntries(
+          sceneLevelValues.map((v, i) => [`scene_${i + 1}_main`, `${v.toFixed(1)} dB`]),
+        ),
+        source: sceneLevelSource,
+        note: sceneLevelSource === 'reset'
+          ? SCENE_LEVELS_RESET_NOTE_GEN2
+          : SCENE_LEVELS_OFFSETS_NOTE_GEN2,
+      });
+    }
+  }
+
   if (name !== undefined) {
     ops.push({
       kind: 'name',
-      bytes: buildSetPresetName(name),
+      bytes: buildSetPresetName(name, { modelId }),
       summary: `SET_PRESET_NAME → "${name}"`,
     });
   }
   ops.push({
     kind: 'save',
-    bytes: buildStorePreset(preset_number),
+    bytes: buildStorePreset(preset_number, { modelId }),
     summary: `STORE_PRESET → slot ${preset_number} (display: slot ${preset_number + 1})`,
     awaitResponse: 'store_preset',
   });
@@ -1160,10 +1632,23 @@ export interface RunOpsResult {
 const POST_SWITCH_SETTLE_MS = 150;
 const GRID_LAYOUT_TIMEOUT_MS = 800;
 
+/**
+ * Runtime options for {@link runApplyPresetAtOps}. `modelId` is the SysEx
+ * model byte for the reads/verifies the runtime itself issues (grid read,
+ * safety mute GET/SET, channel/scene verify GETs) AND for the model-byte-
+ * filtered response matchers/parsers. Omitted = XL+ 0x07 (codec default),
+ * byte-identical to every legacy caller.
+ */
+export interface RunOptions {
+  modelId?: number;
+}
+
 export async function runApplyPresetAtOps(
   conn: ApplyConn,
   ops: ApplyPresetAtOp[],
+  runOpts: RunOptions = {},
 ): Promise<RunOpsResult> {
+  const modelId = runOpts.modelId;
   const startMs = Date.now();
   let totalBytes = 0;
   let acks = 0;
@@ -1195,12 +1680,12 @@ export async function runApplyPresetAtOps(
         await new Promise((res) => setTimeout(res, POST_SWITCH_SETTLE_MS));
       }
       const ackP = conn.receiveSysExMatching(
-        isGetGridLayoutResponse,
+        (bytes) => isGetGridLayoutResponse(bytes, modelId),
         GRID_LAYOUT_TIMEOUT_MS,
       );
-      conn.send(buildGetGridLayout());
+      conn.send(buildGetGridLayout({ modelId }));
       const ack = await ackP;
-      const cells = parseGetGridLayoutResponse(ack);
+      const cells = parseGetGridLayoutResponse(ack, modelId);
       for (const c of cells) {
         if (c.blockId === 0) emptyCells.add(`${c.row},${c.col}`);
       }
@@ -1236,14 +1721,14 @@ export async function runApplyPresetAtOps(
   /** GET the Output level (dB). undefined on timeout / unparseable label. */
   async function readOutputLevelDb(): Promise<number | undefined> {
     const p = conn.receiveSysExMatching(
-      (b) => isGetBlockParameterResponse(b, OUTPUT_LEVEL_PARAM),
+      (b) => isGetBlockParameterResponse(b, OUTPUT_LEVEL_PARAM, modelId),
       GET_RESPONSE_TIMEOUT_MS,
     );
     // If the send throws (transport drop), the receive promise would dangle as
     // an unhandled rejection; consume it explicitly.
     p.catch(() => undefined);
     try {
-      conn.send(buildGetBlockParameterValue(OUTPUT_LEVEL_PARAM));
+      conn.send(buildGetBlockParameterValue(OUTPUT_LEVEL_PARAM, { modelId }));
       const parsed = parseFloat(parseGetBlockParameterResponse(await p).label);
       return Number.isFinite(parsed) ? parsed : undefined;
     } catch {
@@ -1261,7 +1746,7 @@ export async function runApplyPresetAtOps(
   const SAFETY_MAX_ATTEMPTS = 2;
   async function setOutputLevelVerified(targetDb: number, what: string): Promise<void> {
     for (let attempt = 1; attempt <= SAFETY_MAX_ATTEMPTS; attempt++) {
-      const bytes = buildSetBlockParameterValue(OUTPUT_LEVEL_PARAM, targetDb);
+      const bytes = buildSetBlockParameterValue(OUTPUT_LEVEL_PARAM, targetDb, { modelId });
       conn.send(bytes);
       totalBytes += bytes.length;
       await new Promise((res) => setTimeout(res, SAFETY_SETTLE_MS));
@@ -1441,14 +1926,14 @@ export async function runApplyPresetAtOps(
         totalBytes += op.bytes.length;
         await new Promise((res) => setTimeout(res, 20));
         const scenePromise = conn.receiveSysExMatching(
-          isSceneNumberResponse,
+          (bytes) => isSceneNumberResponse(bytes, modelId),
           GET_RESPONSE_TIMEOUT_MS,
         );
-        conn.send(buildGetSceneNumber());
+        conn.send(buildGetSceneNumber({ modelId }));
         totalBytes += 11;
         try {
           const ack = await scenePromise;
-          const actual = parseSceneNumberResponse(ack) + 1;
+          const actual = parseSceneNumberResponse(ack, modelId) + 1;
           if (actual === op.expectedScene) {
             acks++;
             summaries.push(`  ${op.summary}  ✓ verified scene ${actual}`);
@@ -1461,14 +1946,14 @@ export async function runApplyPresetAtOps(
             totalBytes += op.bytes.length;
             await new Promise((res) => setTimeout(res, 50));
             const retryPromise = conn.receiveSysExMatching(
-              isSceneNumberResponse,
+              (bytes) => isSceneNumberResponse(bytes, modelId),
               GET_RESPONSE_TIMEOUT_MS,
             );
-            conn.send(buildGetSceneNumber());
+            conn.send(buildGetSceneNumber({ modelId }));
             totalBytes += 11;
             try {
               const retryAck = await retryPromise;
-              const retryActual = parseSceneNumberResponse(retryAck) + 1;
+              const retryActual = parseSceneNumberResponse(retryAck, modelId) + 1;
               if (retryActual === op.expectedScene) {
                 acks++;
                 summaries.push(`    retry ✓ verified scene ${retryActual}`);
@@ -1494,10 +1979,10 @@ export async function runApplyPresetAtOps(
         conn.send(op.bytes);
         totalBytes += op.bytes.length;
         const verifyPromise = conn.receiveSysExMatching(
-          (bytes) => isGetBlockChannelResponse(bytes, op.effectId!),
+          (bytes) => isGetBlockChannelResponse(bytes, op.effectId!, modelId),
           GET_RESPONSE_TIMEOUT_MS,
         );
-        conn.send(buildGetBlockChannel(op.effectId));
+        conn.send(buildGetBlockChannel(op.effectId, { modelId }));
         totalBytes += 11;
         try {
           const ack = await verifyPromise;

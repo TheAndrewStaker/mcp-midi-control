@@ -14,7 +14,13 @@ export const VE500_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
     'fx1–fx4 (each can be one of 20 FX types: distortion, radio, lo-fi, filter, t-wah, ring mod, ' +
     'chorus, flanger, tremolo, phaser, rotary, slicer, isolator, vibrato, pan, roll, freeze, ' +
     'granular delay, delay, reverb), reverb1/reverb2, loop (phrase looper), key, master, ctl, ' +
-    'assign1–assign8. Call list_params({port, block:["fx1"]}) to see a section\'s parameters.',
+    'assign1–assign8. Call list_params({port, block:["fx1"]}) to see a section\'s parameters. ' +
+    'SYSTEM (global, device-wide, not per-patch) settings live under system_-prefixed blocks: ' +
+    'system_midi, system_usb, system_tuner, system_pref, system_input (+ system_input_eq1-4), ' +
+    'system_output (+ system_output_eq1-4), system_common, plus a few sections that mirror a ' +
+    'per-patch section at system scope (system_enhancer, system_reverb1/2, system_key, ' +
+    'system_master_reverb, system_master_bpm, system_ctl, system_*_midi). These use the SAME ' +
+    'set_param/get_param/get_params/list_params calls as per-patch blocks.',
   editing:
     'set_param edits the ACTIVE patch live over SysEx (non-destructive, like an audition). ' +
     'Switching memory (switch_preset) discards unsaved edits. set_bypass turns a section on/off ' +
@@ -35,8 +41,10 @@ export const VE500_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
     'switch_preset recalls a USER memory U01–U99 (or 1–99) by a bare Program Change on MIDI channel 1 ' +
     '(hardware-confirmed). The VE-500 must have PC IN = ON and RX CH = OMNI or Ch.1; a Bank Select is ' +
     'deliberately NOT sent (the unit ignores the recall if one precedes the PC). Preset (P01–P50) recall ' +
-    'over MIDI is NOT available yet: its bank mapping is undecoded, so switch_preset refuses presets; ' +
-    'recall a preset on the device itself.',
+    'is available too (2026-07-09): it sends a DIFFERENT mechanism, a SysEx DT1 write to the "Current ' +
+    'Patch Number" register (decoded from the VE-500 Editor\'s own patch-switch handler, not a Program ' +
+    'Change at all); community-beta, not yet hardware-confirmed. Neither recall path is echoed, so the ' +
+    'front panel is ground truth for both.',
   status:
     'Hardware-confirmed on the maintainer\'s unit (2026-06-28): set_param, get_param (RQ1→DT1), ' +
     'set_bypass, user-memory recall (switch_preset), apply_preset (whole-patch build), and set-by-NAME ' +
@@ -45,7 +53,8 @@ export const VE500_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
     'confirm. save_preset (store to a user memory) is HARDWARE-CONFIRMED 2026-07-08 after a re-decode: a ' +
     'bare store command was refuted (did not persist), so it now sends Editor Communication Mode ON first ' +
     'and waits for the device\'s store-ack echo, and a set + save + reload round-trip persisted on the ' +
-    'unit. Patch NAME can be set as part of save_preset(location, name). Not yet available: factory preset ' +
-    '(P01–P50) recall, whole-patch reads, and the global SYSTEM params (input/mic sens, input EQ), which ' +
-    'are not in the per-patch surface yet.',
+    'unit. Patch NAME can be set as part of save_preset(location, name). NEW 2026-07-09 (community-beta, ' +
+    'hardware-unverified): factory preset (P01–P50) recall via switch_preset, and the global SYSTEM param ' +
+    'region (MIDI, USB, tuner, preference, input/output + their EQs) via set_param/get_param/get_params/ ' +
+    'list_params under system_-prefixed blocks. Still not available: whole-patch get_preset.',
 };

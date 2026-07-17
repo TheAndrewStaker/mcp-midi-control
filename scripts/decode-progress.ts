@@ -1,7 +1,7 @@
 /**
- * Cookbook decode-progress snapshot.
+ * Primitives decode-progress snapshot.
  *
- * Emits a JSON snapshot of the encoding-cookbook state for the current
+ * Emits a JSON snapshot of the encoding-primitives state for the current
  * working tree. Designed to be diffed session-over-session to expose
  * regressions, status demotions, or primitives that quietly stopped
  * being referenced in `consumed_in:` source code.
@@ -38,7 +38,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MCP_ROOT = path.resolve(HERE, '..');
 const REPO_PARENT = path.resolve(MCP_ROOT, '..');
 const FRACTAL_MIDI_ROOT = path.join(REPO_PARENT, 'fractal-midi');
-const COOKBOOK_ROOT = path.join(FRACTAL_MIDI_ROOT, 'docs', 'research', 'cookbook');
+const PRIMITIVES_ROOT = path.join(FRACTAL_MIDI_ROOT, 'docs', 'research', 'primitives');
 
 const SCHEMA_VERSION = 1;
 
@@ -112,7 +112,7 @@ function parseFrontmatter(source: string): Record<string, string | string[]> {
 }
 
 function categoryOf(filePath: string): Entry['category'] {
-  const rel = path.relative(COOKBOOK_ROOT, filePath);
+  const rel = path.relative(PRIMITIVES_ROOT, filePath);
   const parts = rel.split(/[\\/]/);
   if (parts.length === 1) return 'main';
   if (parts[0] === '_scratch') return '_scratch';
@@ -121,13 +121,13 @@ function categoryOf(filePath: string): Entry['category'] {
   return 'main';
 }
 
-function listCookbookFiles(): string[] {
-  if (!existsSync(COOKBOOK_ROOT)) {
-    throw new Error(`cookbook root not found: ${COOKBOOK_ROOT}`);
+function listPrimitiveFiles(): string[] {
+  if (!existsSync(PRIMITIVES_ROOT)) {
+    throw new Error(`primitives root not found: ${PRIMITIVES_ROOT}`);
   }
   const out: string[] = [];
-  for (const name of readdirSync(COOKBOOK_ROOT)) {
-    const full = path.join(COOKBOOK_ROOT, name);
+  for (const name of readdirSync(PRIMITIVES_ROOT)) {
+    const full = path.join(PRIMITIVES_ROOT, name);
     const st = statSync(full);
     if (st.isFile() && name.endsWith('.md') && name !== 'INDEX.md') {
       out.push(full);
@@ -172,7 +172,7 @@ function resolvesAsPath(line: string): boolean {
 }
 
 function buildSnapshot(): Snapshot {
-  const files = listCookbookFiles();
+  const files = listPrimitiveFiles();
   const entries: Entry[] = [];
   for (const f of files) {
     const src = readFileSync(f, 'utf8');
@@ -266,7 +266,7 @@ function diff(prev: Snapshot, curr: Snapshot): { regressions: string[]; promotio
   const currSlugs = new Set(curr.entries.map((e) => e.slug));
   for (const p of prev.entries) {
     if (!currSlugs.has(p.slug)) {
-      regressions.push(`! ${p.slug} REMOVED from cookbook`);
+      regressions.push(`! ${p.slug} REMOVED from the primitives corpus`);
     }
   }
   return { regressions, promotions, resolution_shifts };

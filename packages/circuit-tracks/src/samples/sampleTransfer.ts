@@ -38,14 +38,23 @@ const SUB_DIR_INFO = 0x08;
 export const FILE_TYPE_SAMPLE = 0x05;
 
 /**
- * 3-byte sample file id: `[0x05, PACK, slot]`. The middle byte is the active
- * PACK INDEX (the Circuit can hold several packs on its SD card) — DECODED
- * 2026-06-27 from three captures: the device reports the active pack in its
- * `0b 02` DIR_CONTROL reply, and every sample dir/file frame must carry it, or
- * SET_FILENAME is REJECTED and the slot never registers (the long "0/64" bug).
- * We previously built `[0x05, slot>>7, slot]`, which is `[0x05, 0, slot]` for
- * slots 0..63 — i.e. we hardcoded pack 0 by accident, so uploads only worked when
- * the active pack happened to be 0. Pass the device's active pack index.
+ * 3-byte sample file id: `[0x05, pack, slot]`, the same shape every file-transfer
+ * subcommand uses (`ncs/transfer.ts` `fileId`). `pack` is the 0-based microSD pack
+ * (device "Pack 1" = 0) and is a field the CALLER CHOOSES, not something the
+ * device reports. Full decode + evidence: `docs/design/circuit-pack-addressing.md`.
+ *
+ * Every sample dir/file frame must carry the right pack, or SET_FILENAME is
+ * REJECTED and the slot never registers (the long "0/64" bug). We previously built
+ * `[0x05, slot>>7, slot]`, which is `[0x05, 0, slot]` for slots 0..63 — pack 0 by
+ * accident, which is why uploads only worked on the first pack.
+ *
+ * CORRECTED 2026-07-16: the earlier note here claimed this byte was an "active pack
+ * index" that "the device reports in its `0b 02` DIR_CONTROL reply". That model is
+ * refuted — the `0b 02` byte is the pack COUNT, and no wire command reports which
+ * pack the front panel has selected. The byte is chosen, not discovered.
+ *
+ * NOTE: no sample caller passes `packIndex` yet, so the sample path is still pinned
+ * to Pack 1 while projects + patches are pack-aware. See the design doc §6.
  */
 export function sampleFileId(slot: number, packIndex = 0): number[] {
   return [FILE_TYPE_SAMPLE, packIndex & 0x7f, slot & 0x7f];

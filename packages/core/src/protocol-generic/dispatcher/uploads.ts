@@ -15,7 +15,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 
-import { openCtx, requireDevice } from './core.js';
+import { openCtx, requireDevice, toWirePack } from './core.js';
 import { backupProjectSlot } from './backup.js';
 import {
   DispatchError,
@@ -61,6 +61,11 @@ export interface UploadProjectArgs {
   file: string;
   /** Destination project slot, 0..63 (device shows Project slot+1). */
   slot: number;
+  /**
+   * Destination microSD pack, 1-BASED as the device numbers it ("Pack 5" = 5).
+   * Default 1. Converted to the wire index at `openCtx`; see `DispatchCtx.pack`.
+   */
+  pack?: number;
   /** Overwrite gate: true to overwrite an occupied project slot (see SAFE-EDIT-WORKFLOW.md). */
   confirm_overwrite?: boolean;
   /**
@@ -247,7 +252,9 @@ export async function executeUploadProject(args: UploadProjectArgs): Promise<Pro
     throw new DispatchError('bad_location', descriptor.display_name,
       `Could not read project '${args.file}': ${err instanceof Error ? err.message : String(err)}`);
   }
-  const ctx = openCtx(descriptor);
+  // One ctx carries the pack, so the backup below, the writer's gate, and the
+  // write itself all address the SAME pack (see DispatchCtx.pack).
+  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
 
   // Backup-before-overwrite (default on). The writer's overwrite gate SKIPS its
   // occupancy read when confirm_overwrite is set, so this is the only path where

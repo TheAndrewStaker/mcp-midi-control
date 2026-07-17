@@ -28,7 +28,7 @@
  * 3. Transfer-candidates drift check (FAILS, mirroring catalog:check):
  *    regenerates docs/research/transfer-candidates.generated.md in memory
  *    via scripts/gen-transfer-candidates.ts and fails on mismatch with the
- *    committed file, so cookbook coverage changes force a regen commit.
+ *    committed file, so primitives coverage changes force a regen commit.
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -174,7 +174,7 @@ function checkTransferCandidatesDrift(): void {
   const committed = readFileSync(REPORT_PATH, 'utf8');
   if (committed !== fresh) {
     fails.push(
-      `transfer-candidates: committed report is stale (cookbook coverage changed). ` +
+      `transfer-candidates: committed report is stale (primitives coverage changed). ` +
       `Run 'npx tsx scripts/gen-transfer-candidates.ts' and commit ${path.relative(MCP_ROOT, REPORT_PATH)}.`,
     );
   }

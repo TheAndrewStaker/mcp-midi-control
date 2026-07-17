@@ -29,7 +29,7 @@ device's wire names:
 | Output level | `amp.level` | -80..+20 | dB |
 | Scene level (per scene) | `preset.scene_1_level`..`scene_4_level` | -20..+20 | dB |
 | Whole-preset level | `preset.level` | -80..+20 | dB |
-| Cab output | `amp.cab_master_level` | knob | (per-amp scaling) |
+| Cab output (per cab slot) | `amp.cab_level_1` / `amp.cab_level_2` | -80..+20 | dB |
 | Reverb mix | `reverb.mix` | 0..100 | % |
 | Delay mix | `delay.mix` | 0..100 | % |
 | Chorus/Flanger/Phaser mix | `<block>.mix` | 0..100 | % |

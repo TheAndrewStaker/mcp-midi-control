@@ -192,6 +192,20 @@ storage transport), JD-Xi. The `roland-midi/shared` primitives are the reuse see
 for the rest of the family. See
 [`docs/MULTI-DEVICE-ROADMAP.md`](MULTI-DEVICE-ROADMAP.md) Tier 2 for per-device scope.
 
+**Boss GT-1000 / GT-1000CORE, GX-100, SY-1000: researched, not yet built (2026-07-09).**
+Unlike the VE-500, Roland publishes full SysEx address maps for all three (DT1/RQ1,
+same family as the VE-500's decoded codec): GT-1000 model ID `00 00 00 4F`, GX-100,
+and SY-1000 (by far the largest address space of the three, matching its deeper
+per-part synth-guitar engine). Raw manuals (gitignored, local only, same pattern as
+the SPD-SX / RC-505mk2 / Circuit Tracks manuals below) staged at
+`docs/manuals/other-gear/`: `GT-1000-MIDI-Implementation.{pdf,txt}` (`gt1000.txt`),
+`GX-100_MIDI_Implementation.{pdf,txt}` (`gx100.txt`), `SY-1000_MIDI_Implementation.{pdf,txt}`
+(`sy1000.txt`). Full findings, the proposed one-codec/four-config shape, and the
+adjacent Katana Gen 3 (community BTS-JS-extract oracle, much larger install base)
+and deprioritization notes (Quad Cortex, Elektron) live in
+`docs/_private/BOSS-GT-CODEC-RESEARCH-2026-07-09.md`. Backlog entry: see `BACKLOG.md`
+Theme 3.
+
 ---
 
 ## Community sources (online, not local)
@@ -368,7 +382,7 @@ Working SysEx protocol reference, one file per device (in the codec
 package). Updated after every sniff/probe session. First stop when
 encoding a message to send.
 
-### `packages/fractal-midi/docs/research/cookbook/editor-cache-section-record-grammar.md`
+### `packages/fractal-midi/docs/research/primitives/editor-cache-section-record-grammar.md`
 The fully decoded grammar of the Fractal editors' `effectDefinitions_*.cache`
 files. One device-synced cache file yields the device's complete parameter
 dictionary (ranges, defaults, steps, enum/model rosters) offline; this is the

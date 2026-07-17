@@ -481,7 +481,7 @@ carries the same XOR-7F checksum (`0x41`) and returns the same reply.
 
 **Status and scope.** This is one request and one reply for the whole
 preset-name + 4-scene-name table, fewer round-trips than four per-slot
-fn 0x1F reads (the per-block atomic read documented in the cookbook
+fn 0x1F reads (the per-block atomic read documented in the primitive
 entry `am4-fn1f-atomic-read`). It does NOT carry per-slot block
 parameters and does NOT carry block bypass state (a block-bypass-only
 edit yields the same payload aside from the stamp), so it cannot replace
@@ -1306,10 +1306,66 @@ All in `src/protocol/params.ts`  block under the `amp.cab*` /
 `amp.cab1_distance` / `amp.cab1_high_cut` / `amp.cab2_low_cut` /
 `amp.cab2_high_cut` / `amp.cab_mic_preamp_drive` /
 `amp.cab_mic_preamp_saturation` / `amp.cab_mic_preamp_treble` /
-`amp.cab_master_high_cut` / `amp.cab_master_low_cut` /
-`amp.cab_master_level` / `amp.room_size` / `amp.room_diffusion` /
+`amp.cab_master_high_cut` / `amp.proximity_frequency` /
+`amp.air` / `amp.room_size` / `amp.room_diffusion` /
 `amp.air_frequency` / `amp.mic_spacing` / `amp.align_distance_1` /
 `amp.align_distance_2`.
+
+> **2026-07-15 rename note.** Two of the originally-registered names were
+> misjoins, corrected via the Ghidra CABINET catalog-id = pidHigh identity
+> map: `amp.cab_master_low_cut` (0x22) is actually CABINET_PROXFREQ and is
+> now `amp.proximity_frequency` (the true Cab Master EQ low cut is
+> `amp.master_low_cut` at 0x1f, CABINET_LOCUT); `amp.cab_master_level`
+> (0x2d) is actually CABINET_AIR and is now `amp.air` (percent, scale
+> x100, corroborated by the adjacent CABINET_AIRFREQ = `amp.air_frequency`
+> at 0x2e). The session-41 screenshot could not disambiguate either pair
+> (Master Low Cut and Proximity Frequency both read 33.3 Hz; Cab Master
+> Level 1.1 dB and Air 11.0% both fit wire 0.110); the dispatcher-table
+> id map does. **HARDWARE-CONFIRMED same day** (founder front-panel test,
+> `probe-am4-cab-verify-steps.ts`): a 120 Hz write to 0x1f moved the
+> panel's Master Low Cut from 65.5 to 120.0 Hz while 0x22 held its
+> pre-existing internal 0.77812 (= 120.0 Hz on its 20-200 log range - a
+> coincidental collision with the test value, disambiguated by the saved
+> baselines). Also hardware-observed in that test: **cabinet SETs take
+> DISPLAY-domain floats** (write 0.25766 intending an internal restore
+> clamps to the 20 Hz minimum); READs return Q16 internals.
+
+### DynaCab cab + mic selectors (0x41-0x44) - decoded + rosters (2026-07-15) 🟢
+
+`CABINET_DYNACAB_TYPE1/TYPE2/MIC1/MIC2` (catalog ids 65-68 → pidHigh
+0x41/0x42/0x43/0x44 via the id = pidHigh identity map). Registered as
+`amp.dynacab_1_cab` / `amp.dynacab_2_cab` / `amp.dynacab_1_mic` /
+`amp.dynacab_2_mic`, enum unit (wire float carries the 0-based ordinal;
+AM4-Edit and the panel display a 1-based "NN:" prefix).
+
+- **Value anchor:** `session-41-amp-cabinet-expert` capture: 0x41 = 0x42 =
+  float 40.0 with the paired screenshot reading "41: 4x12 Rumble EV12L"
+  on both cabs; 0x43 = 2.0 ("Dynamic 1"), 0x44 = 3.0 ("Dynamic 2").
+- **Cab roster (45 entries, device order):**
+  `samples/captured/hw-133-am4-cab-dropdown-2026-07-15.png` - full picker
+  in one screenshot; transcribed into `AM4_DYNACAB_ROSTER` (params.ts).
+  Device order ≠ the community wiki's alphabetical list (24/25 and 33/34
+  are swapped) - never positional-join the wiki list.
+- **Mic roster (4 entries):** clamp probe 2026-07-15 (write 4 → readback
+  3) + live read (Ribbon = 1) + capture anchors (Dynamic 1 = 2,
+  Dynamic 2 = 3); Condenser = 0 by elimination. `AM4_DYNACAB_MICS`.
+- **Sweep exercised live:** indices 0..44 written + read back on hardware
+  2026-07-15 (`probe-am4-dynacab-roster.ts`), originals restored.
+- **Negative result:** `CABINET_TYPE1_NAME`/`TYPE2_NAME` (ids 73/74 →
+  0x49/0x4A) do NOT answer short (0x0e) or long (0x0d) reads with a
+  decodable name string (recon frames archived in
+  `samples/captured/decoded/am4-dynacab-roster.json`). The editor's
+  name display is fed some other way; not needed now that the roster is
+  transcribed.
+- **Reset caveat:** selecting a new Amp Type resets the whole cab section
+  (Amp→DynaCab linking) - write these selectors AFTER `amp.type`.
+- **Superseded duplicate (session-review catch, same day):** an earlier
+  pass had ALREADY registered these four registers as
+  `amp.dynacab_type_1/_type_2/_mic_1/_mic_2` with a guessed ALL-CAPS
+  roster whose order was wrong at ordinals 23/24 (5153 Stealth / 65
+  Bassguy swapped vs the device picker) - a set-by-name through those
+  names placed the wrong cab. That quad is removed; the old names are
+  PARAM_ALIASES to the hardware-anchored entries.
 
 ### Deferred decode work
 
@@ -2145,7 +2201,7 @@ Position-mapping probes (hardware-verified for amp block) at:
 `scripts/_research/probe-am4-fn1f-effectid-sweep.ts` in the consumer repo,
 `probe-am4-fn1f-find-amp.ts`, `probe-am4-fn1f-amp-positions.ts`.
 
-Cookbook entry: [[am4-fn1f-atomic-read]] (matched-singleton).
+Primitive entry: [[am4-fn1f-atomic-read]] (matched-singleton).
 
 ---
 
@@ -2189,7 +2245,7 @@ path, which walks per-param fn 0x01 action=0x0D long-descriptor reads.
 The Axe-Fx II fn 0x0E QUERY_STATES whole-preset state read does NOT
 transfer to AM4 at the editor level (zero fn 0x0E frames across all
 non-empty AM4-Edit captures). Whether the AM4 firmware answers a fn
-0x0E request anyway is an open read-only probe. Cookbook negative
+0x0E request anyway is an open read-only probe. Primitive negative
 entry: `_negative/am4-query-states-fn0e-transfer.md`.
 
 ---
@@ -2672,8 +2728,8 @@ Corpus + oracles (all green via `scripts/verify-am4-preset-container.ts`,
 names + scene names), `samples/factory/A01-original.syx`,
 `samples/captured/hw132/am4-{stored-a01,active-1}.syx`, and the 5 warm
 pairs `samples/captured/am4-warm-pair-*-{before,after}.syx` (fw 2.00).
-Goldens: `test/am4/presetcontainer.test.ts`. Cookbook:
-`docs/research/cookbook/am4-gen3-preset-container.md`.
+Goldens: `test/am4/presetcontainer.test.ts`. Primitives:
+`docs/research/primitives/am4-gen3-preset-container.md`.
 
 ### MCP-facing stored `get_preset(location)` 🟢: SHIPPED 2026-07-02
 
@@ -2773,7 +2829,7 @@ not merely superseded:
   compare directly.
 - **"Encoder non-determinism" (§10.10 of
   `preset-binary-format-research.md`, and the
-  `_negative/am4-preset-dump-flat-byte-diff` cookbook entry): explained.**
+  `_negative/am4-preset-dump-flat-byte-diff` primitive entry): explained.**
   The ~20% no-op redump churn is dynamic-Huffman table churn plus ONE
   volatile decoded u16 @ body `0x140E`. A no-op redump pair diffs by
   exactly 2 bytes at the DECODED layer. Flat-byte diffing of the

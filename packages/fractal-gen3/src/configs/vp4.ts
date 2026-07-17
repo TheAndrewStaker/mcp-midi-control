@@ -127,6 +127,20 @@ export const VP4_CONFIG: FractalModernConfig = {
   },
   agent_guidance: {
     ...MODERN_AGENT_GUIDANCE,
+    // Override the shared scene_leveling: the VP4 has NO decoded meter read
+    // (its live read is the structure blob, not the III/FM3/FM9 sub=0x2E
+    // frame), so the measurement half of the shared workflow does not apply.
+    scene_leveling: [
+      'SCENE LEVELING on VP4: per-scene output trims EXIST and are writable',
+      '(block "output", OUTPUT_SCENE1..4 "Scene N Level" - continuous knobs,',
+      'community-beta raw-wire writes, read current value first and nudge).',
+      'But the VP4 has NO decoded meter read (no live_meters here), so',
+      'level MEASUREMENT is audio-domain or by ear: if the VP4 (or an',
+      'interface fed by it) is the computer\'s audio input, measure_loudness',
+      'returns BS.1770 LUFS per scene while the player plays the same',
+      'passage; otherwise have them A/B scenes by ear and direct the trims.',
+      'No auto-save; report trims and let the user save.',
+    ].join('\n'),
     // Override the shared beta_status: on VP4 every device-state write refuses
     // (writes_gated), so the family-default "writes attempt a wire send" is
     // wrong here. Keep it consistent with device_note below.

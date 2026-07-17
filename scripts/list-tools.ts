@@ -93,6 +93,15 @@ const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
   // in the description. Migration to describe_device.agent_guidance is the
   // planned trim path; pending post-announce.
   ['get_preset', 1320],
+  // describe_rig: the whole-rig orchestration entry point. Beyond the roster it
+  // returns the OpenRig manifest surface (MCP_RIG_MANIFEST): the declared rig
+  // (devices + cabling + channels + cross-device bindings) plus THREE verification
+  // checks the description names so an agent knows what each answers, validation
+  // (graph well-formed), compatibility (MIDI binding agreement + capability
+  // legality), audio (does each instrument reach front-of-house), and drift.
+  // Each check earns one clause; detail lives in the response (manifest.*) +
+  // OPENRIG-SCHEMA.md. Cap raised from 1350 for the added compat + audio clauses.
+  ['describe_rig', 1520],
 ]);
 
 interface ToolAnnotations {

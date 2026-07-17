@@ -8,7 +8,7 @@ persistent).
 
 ## Status
 
-AM4-Edit is mature ([[../cookbook/INDEX.md]] shows AM4 at 100% param
+AM4-Edit is mature ([[../primitives/INDEX.md]] shows AM4 at 100% param
 catalog coverage). Most of the binary's interesting structures are
 already mined; this doc captures the open targets the synthesis pass
 2026-05-22 flagged.
@@ -61,7 +61,7 @@ file.
   MCP capability `am4_batch_set_params`.
 - **AM4 envelope-spec descriptor tables** (analog of II `0xe04440` and
   III `0x1407ab440` etc.). The mechanism is universal (per
-  [[../cookbook/vendor-envelope-descriptor-table]]); a misc-descriptors
+  [[../primitives/vendor-envelope-descriptor-table]]); a misc-descriptors
   variant for the AM4 binary would close any remaining "what does
   fn-byte X carry" questions.
 - **AM4 preset binary layout**: `samples/captured/am4-binary-decode-findings-2026-05-21.md`
@@ -76,7 +76,7 @@ file.
 ## Refinement history
 
 - Pre-Session-08: AM4 envelope shape + XOR-7F checksum codified
-  ([[../cookbook/xor-7f-envelope-checksum]]).
+  ([[../primitives/xor-7f-envelope-checksum]]).
 - : `param-descriptor-16byte` confirmed on AM4 binary.
 - 2026-05-22 (synthesis pass): fn=0x30 batch-param-set surfaced as
   highest-leverage AM4 next move. AM4 envelope-spec descriptor table

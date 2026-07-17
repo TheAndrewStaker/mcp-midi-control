@@ -30,7 +30,7 @@ tail), with `paramBase = tlvWord + 2` and channel-Y at
 `+payload_len/2`. Confirmed 388/388 (384 factory presets + 4 live
 hardware dumps); the BK-070 one-variable hardware diffs land at
 exactly the predicted words. See § 6 "De-framed image layout" below;
-decoder `packages/fractal-gen2/src/presetImageTlv.ts`; cookbook
+decoder `packages/fractal-gen2/src/presetImageTlv.ts`; primitive
 `ii-preset-image-tlv-chain`.
 
 **2026-05-20:** Ghidra mining of `Axe-Edit.exe`
@@ -97,6 +97,61 @@ generations using the same model byte values.
 Family wire shape (envelope + checksum) is identical to AM4. See
 [`docs/devices/am4/SYSEX-MAP.md`](../am4/SYSEX-MAP.md) §2 (Envelope Format) and §3 (Checksum Algorithm).
 
+## 1b. AX8 notes (BK-094, 2026-07-09)
+
+The AX8 floor unit is a config on this SAME codec (`createAxeFxIIDescriptor`
+in `packages/fractal-gen2/src/descriptor.ts`, config in
+`packages/fractal-gen2/src/configs/ax8.ts`), not a new wire shape. **No AX8
+hardware is on hand**; every fact below is evidence-backed per two-or-more
+independent sources (per this project's evidence-bar rule) but untested
+end-to-end. Full citations: `docs/_private/AX8-RESEARCH-2026-07-09.md`
+(consumer repo).
+
+- **Model byte `0x08`**, confirmed two ways: (1) the family table above +
+  `setParam.ts`'s `MODEL_IDS.ax8` (both sourced from the cached Fractal Audio
+  Wiki "MIDI_SysEx" page); (2) an independently-surfaced AX8 wire example,
+  `F0 00 01 74 08 14 00 00 19 F7` (a fn=0x14 GET_PRESET_NUMBER response),
+  **self-validating**: XOR-`&0x7F` of `F0 00 01 74 08 14 00 00` computes to
+  `0x19`, matching the frame's own checksum byte exactly under this codec's
+  `fractalChecksum`. Locked as a golden in
+  `scripts/verify-ax8-model-byte.ts` (consumer repo).
+- **Grid: 4 rows x 12 columns, SAME shape as the XL+, not reduced.** Source:
+  AX8 Owner's Manual, "The Grid Concept": *"Virtual gear is selected from the
+  inventory and placed as 'blocks' into the slots of a 12x4 'layout grid.'"*
+  (`fractalaudio.com/downloads/manuals/AX8/AX8-Owners-Manual.pdf`).
+- **Presets: 512 total, 64 banks x 8 presets/bank.** Source: AX8 Owner's
+  Manual, "Saving Changes": *"The AX8 has 512 preset memory locations grouped
+  in 64 numbered banks. Each bank contains 8 presets."* The wire location
+  format is unchanged (1-indexed display slot, 14-bit wire ceiling
+  1..16384), same as the XL+, this config doesn't hard-enforce the model's
+  true physical count, only the wire's ceiling.
+- **Scenes: 8 per preset, same X/Y-plus-bypass model as the XL+.** Source: AX8
+  Owner's Manual, "Selecting Scenes": *"Every preset has eight scenes built in
+  and ready to use,"* controlling per-block on/off and X/Y state.
+- **Block roster: REDUCED vs the XL+**, single-instance-only on several
+  groups (no Amp 2 / Cab 2 / Reverb 2 / Multi Delay 2 / Chorus 2 / Flanger 2 /
+  Rotary 2 / Phaser 2 / Wah 2 / Tremolo-Panner 2 / Gate Expander 2 / Pitch 2 /
+  Synth 2; Mixer, Vocoder, Megatap Delay, Crossover, Multiband Compressor,
+  Quad Chorus, Resonator, and the 3rd/4th GEQ/PEQ/Filter/Volume-Pan instances
+  are absent). Source: this file's own `blockTypes.ts`'s `availableOnAX8`
+  field, itself mined from the same Fractal Audio Wiki Block-IDs table that
+  supplies the block-ID table.
+- **X/Y channels**: same model as the XL+, no codec rework needed (confirms
+  the original BK-094 scoping note). AX8 Owner's Manual: *"Most blocks offer
+  X/Y switching for twice as many sounds from the same number of blocks."*
+
+**Gating.** `apply_preset` / `apply_setlist` refuse on the AX8 config
+(`capability_not_supported`): the shared multi-step build pipeline
+(`packages/fractal-gen2/src/tools/applyExecutor.ts`) calls the wire builders
+WITHOUT a model-byte option (always emits the XL+'s `0x07`), so it would
+silently build a preset a real AX8 never receives, a genuine model-byte
+mismatch, not merely "untested." Every direct single-write op (`set_param`,
+`set_params`, `set_block`, `set_bypass`, `switch_preset`, `switch_scene`,
+`save_preset`, `rename`, plus every read) IS correctly addressed with
+`{ modelId: 0x08 }` and ships community-beta. See
+[`docs/capture-guides/testing-ax8.md`](../../capture-guides/testing-ax8.md)
+for the community verification ask.
+
 ## 2. Source documents and where each fact comes from
 
 | Source | URL / path | Coverage |
@@ -147,7 +202,7 @@ verification status against the founder's XL+ where applicable:
 | 0x02 | GET / SET_BLOCK_PARAMETER_VALUE | both | 🟢 hardware-verified Q8.02, GET is channel-aware (respects fn=0x11). SET is also channel-aware for writes (confirmed 2026-05-26: compressor X/Y independently addressable). SET uses 16-bit wire integer via 3x7-bit septets; required for enum/select params where fn=0x2e no-ops. Bypass (paramId=255) is block-global (same on X/Y). |
 | **0x03** | **SYSEX_PATCH_DUMP** (request) | req | **🟢 hardware-verified Q8.02 (2026-06-10), TWO addressing forms.** (1) `[preset_hi, preset_lo]` MSB-first: dumps that slot's STORED flash contents as the 66-frame 0x77/0x78/0x79 chain, **and RELOADS the stored preset into the edit buffer as a side effect** (live probe: an fn 0x09 buffer rename was lost the moment the request was answered), destructive to unsaved edits. (2) **`0x7F 0x7F` sentinel (AM4-style): dumps the EDIT BUFFER**, confirmed three ways in the same probe session: two sentinel dumps across a live buffer rename differ (tracks the buffer), the rename SURVIVES the request (no reload side effect), and pushing the 66-frame response back to the device restored the dumped buffer state (round-trip verified by name re-read). All three dump responses carry 0x77 header payload `[0x7f, 0x00, 0x00, 0x20]` regardless of addressing. Captures: `samples/captured/hw132/`. Builders: `buildPatchDumpRequest` / `buildEditBufferDumpRequest` in `src/gen2/axe-fx-ii/setParam.ts` (goldens in the consumer repo's `verify-axe-fx-ii-encoding.ts`). |
 | **0x06** | **SET_CELL_ROUTING** (undocumented) | req | **🟢 hardware-decoded on Q8.02 XL+ (2026-05-13)**: 3-byte payload `[src_cell, dst_cell, connect]` adds/removes a cable between adjacent-column cells. Byte-exact golden in `scripts/verify-axe-fx-ii-encoding.ts`. See § 5c. |
-| **0x07** | **GET / SET_MODIFIER_VALUE** | both | **🟢 modifier READ decoded (Ares 2.00 capture).** The field-indexed modifier read channel: device reply = `F0 00 01 74 07 07 [effId:2][slot:2][field:2][value16:3][ASCII label] 00 [cs] F7`. field 0x00=source, 0x01/0x02=min/max, 0x03..0x06=start/mid/end/slope, 0x07=damping, 0x08=target effectId, 0x09=target paramId, 0x0a..0x0e=toggles+scale/offset. Source enum (partial): 0 NONE, 1 LFO 1A, 4 LFO 2B, 5 ADSR 1, 26 SCENE 1, 27 SCENE 2. THIS is how modifiers are read, not fn 0x18. See cookbook [[ii-fn07-modifier-read]] + § 5i. |
+| **0x07** | **GET / SET_MODIFIER_VALUE** | both | **🟢 modifier READ decoded (Ares 2.00 capture).** The field-indexed modifier read channel: device reply = `F0 00 01 74 07 07 [effId:2][slot:2][field:2][value16:3][ASCII label] 00 [cs] F7`. field 0x00=source, 0x01/0x02=min/max, 0x03..0x06=start/mid/end/slope, 0x07=damping, 0x08=target effectId, 0x09=target paramId, 0x0a..0x0e=toggles+scale/offset. Source enum (partial): 0 NONE, 1 LFO 1A, 4 LFO 2B, 5 ADSR 1, 26 SCENE 1, 27 SCENE 2. THIS is how modifiers are read, not fn 0x18. See primitive [[ii-fn07-modifier-read]] + § 5i. |
 | 0x08 | GET_FIRMWARE_VERSION | both | 🟡 wiki |
 | 0x09 | SET_PRESET_NAME | req | 🟡 wiki |
 | **0x0C** | **SYSEX_SET_GRID** (AxeEdit name) | req | **🔴 no captures.** Ghidra-only. Likely a grid-layout write counterpart to fn 0x20 GET_GRID.  probe gated behind `--include-writes`. See [`axeedit-opcode-table.md`](axeedit-opcode-table.md). |
@@ -442,7 +497,7 @@ block-selector request return the same frame shape.
 **Codec:** `buildQueryStates` / `isQueryStatesResponse` /
 `parseQueryStatesResponse` in `src/gen2/axe-fx-ii/setParam.ts` return opaque
 5-byte records (tag + four state septets + a packed 28-bit word) and
-make no ordering or effectId commitment. Cookbook entry:
+make no ordering or effectId commitment. Primitive entry:
 [[ii-fn0e-query-states]].
 
 **Status:** 🟡 structure measured, field semantics pending.
@@ -507,7 +562,7 @@ encoding.
 
 Probe scripts: `scripts/_research/probe-axefx2-state-write*.ts` (6 scripts).
 Full findings recorded in the project's hardware-test log.
-Cookbook entry: `ii-state-broadcast-triple-write.md`.
+Primitive entry: `ii-state-broadcast-triple-write.md`.
 
 ## 5f. fn 0x47 SYSEX_GET_SYSINFO, extended device-info 🟡
 
@@ -617,7 +672,7 @@ table 0, 7, 14, 21, 28). It is **NOT** the AM4 sliding-window
 
 Roles pinned by a Q8.02 sweep of AMP paramIds 0..24 plus a fn 0x02
 current-value cross-check (the earlier "G0 current, G2/G3 max-or-default,
-G4 reserved" reading was corrected). See cookbook
+G4 reserved" reading was corrected). See primitive
 `ii-fn16-get-param-info` for the full sweep.
 
 **Decoded values:**
@@ -657,7 +712,7 @@ standard XOR-7F over `F0`..last payload byte).
   260 FRIEDMAN 2018, 261 PLEXI 2204, 262 FRIEDMAN HBEC45, 263 PORTA-BASS,
   264 SV BASS 2, 265 SKULL CRUSHER (now in `AMP_EFFECT_TYPE_VALUES`).
   The G2 "265" reading was the max ordinal. Cache grammar: see the
-  cookbook entry `editor-cache-section-record-grammar`.
+  primitive entry `editor-cache-section-record-grammar`.
   HARDWARE-CONFIRMED 2026-06-09: the post-reassembly-fix fn 0x28 re-run
   captured all 266 labels in one untruncated frame, 266/266 display-equal
   vs the catalog, 0 mismatches
@@ -668,7 +723,7 @@ non-display-mapped params; for display calibration the wire 0..65534
 endpoints are still obtained separately.
 
 **Status:** 🟢 for the layout (byte-exact verified) with the noted open
-semantic labels. Cookbook entry: [[ii-fn16-get-param-info]].
+semantic labels. Primitive entry: [[ii-fn16-get-param-info]].
 
 **Probe runner:** `scripts/_research/probe-axefx2-new-opcodes.ts`
 (in `mcp-midi-control`). Decoder helper:
@@ -802,7 +857,7 @@ envelope to defaults, so distinct values per field weren't captured).
 
 Modifier-source enum (partial, from field 0x00 across toggles): 0 NONE,
 1 LFO 1A, 4 LFO 2B, 5 ADSR 1, 26 SCENE 1, 27 SCENE 2. Full enumeration = a
-field-0x00 sweep or fn 0x28 on MOD_CTRLID. Cookbook: [[ii-fn07-modifier-read]].
+field-0x00 sweep or fn 0x28 on MOD_CTRLID. Primitive: [[ii-fn07-modifier-read]].
 
 ## 6b. 0x14 GET_PRESET_NUMBER byte-ordering correction 🟢
 
@@ -947,7 +1002,7 @@ table; walk the chain of the dump in hand.
 Decoder: `packages/fractal-gen2/src/presetImageTlv.ts`
 (`deframePresetImage` / `parsePresetImage` / `getParamWord`). Golden +
 corpus sweep: `scripts/verify-ii-preset-image-tlv.ts` (root
-`test:codec`). Cookbook: `ii-preset-image-tlv-chain` (+ corrections in
+`test:codec`). Primitives: `ii-preset-image-tlv-chain` (+ corrections in
 `block-record-stride-8`, `parambase-plus-paramid`). OPEN: modifier
 15-word layout; per-block scene/bypass/X-Y state words inside
 payloads; ids ≥ 200 semantics.
@@ -1048,7 +1103,7 @@ compressor. AM4 calibration entries MUST NOT be copied to II verbatim.
 Log10 formula: `display = min * (max / min) ^ (wire / 65534)`.
 Linear formula: `display = min + (max - min) * (wire / 65534)`.
 
-Cookbook entry: [[ii-compressor-calibration-divergence]].
+Primitive entry: [[ii-compressor-calibration-divergence]].
 
 ## 10. What this leaves blocked
 

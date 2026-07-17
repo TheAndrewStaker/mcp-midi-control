@@ -9,12 +9,12 @@
 
 ---
 
-## 1. Instances of existing cookbook primitives
+## 1. Instances of existing primitives
 
 ### [[vendor-envelope-descriptor-table]], headline match (AM4 axis point)
 
 The entire dump is one large fixture for this primitive. AM4-Edit.exe carries
-the **byte-identical** mechanism that the cookbook entry already documents for
+the **byte-identical** mechanism that the primitive entry already documents for
 II and III:
 
 - Stride-12 records `(int32 tag, int32 mid, int32 byte_count)` (header L4)
@@ -75,7 +75,7 @@ hypothesis to investigate.
 
 A 6-byte payload broken into 6 single-byte fields. The `mid` column is
 strictly monotonic and matches running `byte_count` accumulation,
-confirming the "wire-offset from F0" interpretation in the cookbook
+confirming the "wire-offset from F0" interpretation in the primitive
 entry's Formal definition.
 
 **Consumed-in path to add to the existing entry:**
@@ -97,7 +97,7 @@ in as the third device-family axis. The entry's Refinement-history line
 
 The entry's "Where it does NOT apply" section currently disclaims AM4 with
 "AM4 editor binary descriptor tables not yet surveyed." That paragraph is
-now stale and should be removed (cookbook discipline: same-session refinement).
+now stale and should be removed (primitives discipline: same-session refinement).
 
 ### [[xor-7f-envelope-checksum]], implicit instance, no new evidence
 
@@ -124,7 +124,7 @@ primitive is already `matched` and well-evidenced.
 ### Candidate 2.1, none promoted
 
 This dump is dense (54 tables) but every byte_count value, every record
-shape, and every sentinel matches a structure the cookbook already names.
+shape, and every sentinel matches a structure the primitives corpus already names.
 The dump is best treated as a third-axis-point refinement of
 [[vendor-envelope-descriptor-table]], not as the discovery of a new
 primitive.
@@ -259,13 +259,13 @@ above, that exclusion is now stale and should be removed).
 `SeekVendorEnvelopeDescriptorsAM4.java` (header L1-8) is the AM4 sibling
 of the II / III mining scripts already referenced by
 [[vendor-envelope-descriptor-table]]'s `consumed_in` list. Promoting the
-AM4 finding to the cookbook entry should also add the AM4 mining
+AM4 finding to the primitive entry should also add the AM4 mining
 script's eventual path under `consumed_in:` once it lands in the
 fractal-midi ghidra scripts directory.
 
 The dump is descriptor-tables-only: no caller-function cross-linking
 section. The III misc-descriptors file has both (descriptors AND
-caller-refs), which is how the cookbook entry could bind tables to fn-bytes
+caller-refs), which is how the primitive entry could bind tables to fn-bytes
 for III. Adding caller-ref extraction to the AM4 seeker is the highest-leverage
 follow-up for binding these 54 tables to specific AM4 fn-bytes.
 

@@ -11,15 +11,15 @@ binary is the next mining target when an active Hydra workstream
 opens. Until then this doc is a placeholder + queue.
 
 The Hydrasynth uses a different vendor protocol from Fractal (Manny /
-ASM, not the `F0 00 01 74` envelope), so cookbook primitives like
-[[../../research/cookbook/xor-7f-envelope-checksum]] and
-[[../../research/cookbook/vendor-envelope-descriptor-table]] **do NOT
-apply directly**: Hydra cookbook entries are a separate effort.
+ASM, not the `F0 00 01 74` envelope), so primitives like
+[[../../research/primitives/xor-7f-envelope-checksum]] and
+[[../../research/primitives/vendor-envelope-descriptor-table]] **do NOT
+apply directly**: Hydra primitive entries are a separate effort.
 
 ## Phase A, Foundation (🔜 when Hydra workstream opens)
 
 - **A1** 🔜 Confirm Hydrasynth Editor binary uses JUCE BinaryData
-  ([[../../research/cookbook/juce-binarydata-zip]] transfer candidate).
+  ([[../../research/primitives/juce-binarydata-zip]] transfer candidate).
   If yes: 5-minute label extraction yields the param catalog without
   hardware. Recommended FIRST move, same approach as AM4-Edit
   (1,299 labels) + AxeEdit III (10,250 labels).
@@ -32,7 +32,7 @@ apply directly**: Hydra cookbook entries are a separate effort.
 
 - **B1** ⸀ Identify Hydrasynth SysEx envelope shape (manufacturer ID,
   fn-byte, payload, checksum). The Hydra uses ASM's vendor ID, not
-  Fractal's `00 01 74`. A new cookbook primitive `asm-vendor-envelope-shape`
+  Fractal's `00 01 74`. A new primitive `asm-vendor-envelope-shape`
   is the deliverable.
 - **B2** ⸀ Identify Hydrasynth descriptor-table mechanism (analog of
   Fractal's `(tag, mid, byte_count)` per-fn payload spec). May not

@@ -108,6 +108,31 @@ const cases: { label: string; built: number[]; expected: string }[] = [
     built: buildSetParam('chorus.type', 1),
     expected: 'f000017415014e000a0001000000040000001003783bf7',
   },
+  // DynaCab cab + mic selectors (BK-104, 2026-07-15). Ordinals mirror the
+  // session-41-amp-cabinet-expert capture: 0x41/0x42 float 40.0 ("41: 4x12
+  // Rumble EV12L" on both cabs), 0x43 float 2.0 ("Dynamic 1"), 0x44 float
+  // 3.0 ("Dynamic 2"). Same envelope + packed-float pipeline the audit
+  // decoded those frames with.
+  {
+    label: 'buildSetParam("amp.dynacab_1_cab", 40) - session-41 Cab 1 = 41: 4x12 Rumble EV12L',
+    built: buildSetParam('amp.dynacab_1_cab', 40),
+    expected: 'f000017415013e00410001000000040000000404107bf7',
+  },
+  {
+    label: 'buildSetParam("amp.dynacab_2_cab", 40) - session-41 Cab 2 = 41: 4x12 Rumble EV12L',
+    built: buildSetParam('amp.dynacab_2_cab', 40),
+    expected: 'f000017415013e004200010000000400000004041078f7',
+  },
+  {
+    label: 'buildSetParam("amp.dynacab_1_mic", 2) - session-41 Cab 1 Mic = Dynamic 1',
+    built: buildSetParam('amp.dynacab_1_mic', 2),
+    expected: 'f000017415013e00430001000000040000000004006df7',
+  },
+  {
+    label: 'buildSetParam("amp.dynacab_2_mic", 3) - session-41 Cab 2 Mic = Dynamic 2',
+    built: buildSetParam('amp.dynacab_2_mic', 3),
+    expected: 'f000017415013e004400010000000400000008040062f7',
+  },
   {
     label: 'buildSetParam("flanger.type", 8) — matches session-18 flanger-type',
     built: buildSetParam('flanger.type', 8),
@@ -1722,7 +1747,7 @@ console.log(`${decodeRulePass}/${decodeRuleCases.length} decode-rule cases pass.
 // (get_preset decoded the enum index through the count scale → ~0.00193).
 // Flipped to unit:'enum' and HARDWARE-SWEPT for the wire-index → label map
 // (device front-panel knob order = wire order; AM4-Edit's dropdown re-sorts,
-// so it could NOT be trusted — see cookbook _negative/am4-edit-dropdown-order-not-wire-order).
+// so it could NOT be trusted — see primitives _negative/am4-edit-dropdown-order-not-wire-order).
 // This guards the swept tables against a regen reverting to count / emptying /
 // reordering / mislabeling. The labels are the device-display strings.
 const enumTableCases: { key: string; table: Record<number, string> }[] = [
@@ -2523,6 +2548,22 @@ const lineagesGoldenCases: LineagesGoldenCase[] = [
     label: 'am4_lookup_lineages with 0 asks → empty results, no crash',
     asks: [],
     expects: [],
+  },
+  {
+    label: 'dynacab corpus (BK-104, 2026-07-15): forward + speaker reverse + structured',
+    asks: [
+      // 1) Forward: exact roster name (must match AM4_DYNACAB_ROSTER label).
+      { block_type: 'dynacab', name: '4x12 Rumble EV12L' },
+      // 2) Reverse fuzzy by SPEAKER term - the qualitative entry point.
+      { block_type: 'dynacab', real_gear: 'greenback' },
+      // 3) Structured by manufacturer.
+      { block_type: 'dynacab', manufacturer: 'Fender' },
+    ],
+    expects: [
+      { found: true, expectedShape: 'forward', expectedTopHitContains: 'Rumble EV12L' },
+      { found: true, expectedShape: 'reverse', expectedTopHitContains: '4x12' },
+      { found: true, expectedShape: 'structured', expectedTopHitContains: 'Fender' },
+    ],
   },
 ];
 

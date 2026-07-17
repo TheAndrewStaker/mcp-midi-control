@@ -17,7 +17,14 @@ import {
   type TransportKind,
 } from '../types.js';
 import { listRegisteredDevices } from '../registry.js';
-import { getRigLinks, type RigLinks } from '../rigLinks.js';
+import { resolveRigLinks, rigLinksSource, type RigLinks } from '../rigLinks.js';
+import { loadRigManifest } from '../openrig/manifest.js';
+import { loadRigInventory } from '../openrig/inventory.js';
+import { descriptorCapabilityLookup } from '../openrig/capabilities.js';
+import {
+  validateRig, checkRigCompatibility, checkAudioOutput, validateInventory, crossReferenceInventory,
+  type ValidationIssue, type CompatibilityReport, type AudioOutputReport, type InventoryIssue, type InventoryReport,
+} from 'openrig';
 import { listMidiPorts } from '../../midi/transport.js';
 import {
   lookupAmpLoudness,
@@ -108,18 +115,191 @@ function firstSentence(s: string): string {
 }
 
 /**
+ * The OpenRig rig manifest as `describe_rig` surfaces it (OPENRIG-SCHEMA.md §6):
+ * a summary of the declared rig plus its validation and an HONESTLY-SCOPED drift
+ * report. The server can only confirm registered-device PRESENCE; it cannot see
+ * cables, channels, opaque nodes, or audio, so drift is presence-only and never
+ * claims to "validate topology".
+ */
+export interface RigManifestSummary {
+  /** True when MCP_RIG_MANIFEST is set (even if the file failed to load). */
+  configured: boolean;
+  /** The manifest path, when configured. */
+  source?: string;
+  /** Set when the configured file could not be read / parsed. */
+  error?: string;
+  id?: string;
+  name?: string;
+  node_count?: number;
+  edge_count?: number;
+  binding_count?: number;
+  /** Pure structural + graph validation of the manifest (openrig validateRig). */
+  validation?: { ok: boolean; errors: ValidationIssue[]; warnings: ValidationIssue[] };
+  /**
+   * Cross-device binding COMPATIBILITY (openrig checkRigCompatibility, §4): do
+   * the declared cross-device contracts line up (channels/CC/notes agree at both
+   * ends), and are they legal for the gear (a CC the RC-505 can source, a note
+   * an SPD-SX pad answers)? Distinct from `validation` (graph well-formedness):
+   * this is whether the coordination will actually WORK. Per-binding status +
+   * a flat issue list; capability-legality runs against the registered
+   * descriptors (voice_map / external_tracks / control_sources). Static only:
+   * it never reads a device; live hardware verify is a separate opt-in surface.
+   */
+  compatibility?: CompatibilityReport;
+  /**
+   * The easy "will I actually hear this instrument?" check (openrig
+   * checkAudioOutput): for each sound-producing instrument, does its audio reach
+   * the rig's output stage (a monitor / front-of-house node) following the
+   * patched audio cables? Catches a synth/sampler whose audio out is not plugged
+   * in (no_output) or whose chain dead-ends before front-of-house (dead_end).
+   * Pure topology; audio cables are declared, not server-observable, so this
+   * checks the DECLARED wiring, not the physical patch.
+   */
+  audio?: AudioOutputReport;
+  /** Presence-only declared-vs-connected drift (§6). */
+  drift?: {
+    /** Manifest devices whose descriptor is registered AND connected right now. */
+    declared_present: string[];
+    /** Manifest devices registered but not connected (planned/off/unplugged; FM3 serial reads absent). */
+    declared_absent: string[];
+    /** Manifest server_device_ids with no registered descriptor (renamed/absent → node degrades to opaque). */
+    unresolved_server_device_ids: string[];
+    /** Connected registered devices the manifest does not declare. */
+    connected_not_declared: string[];
+    /** Opaque nodes (no server_device_id): passive/unsupported gear the server can't see. */
+    opaque_node_count: number;
+  };
+}
+
+/**
+ * The OpenRig INVENTORY as `describe_rig` surfaces it (§11): what the user OWNS,
+ * independent of the rig's wiring, plus (when a rig manifest is also loaded) a
+ * cross-reference of which owned gear is IN the active rig vs SPARE. Configured
+ * via `MCP_RIG_INVENTORY`. Inventory is the superset; a rig is one wiring of a
+ * subset of it. The rig PROPOSER (owned gear -> candidate rigs -> scored by the
+ * checks) is deliberately NOT a tool: the agent composes it from these facts.
+ */
+export interface RigInventorySummary {
+  configured: boolean;
+  source?: string;
+  error?: string;
+  id?: string;
+  name?: string;
+  device_count?: number;
+  validation?: { ok: boolean; errors: InventoryIssue[]; warnings: InventoryIssue[] };
+  /** In-rig vs spare cross-reference. Present only when a rig manifest is also loaded. */
+  report?: InventoryReport;
+}
+
+/**
+ * Build the manifest summary for `describe_rig`. Returns undefined when no
+ * manifest is configured (the field is then omitted). `devices` is the already
+ * computed rig roster, so presence checks reuse it without a second scan.
+ */
+function buildRigManifestSummary(devices: readonly RigDevice[]): RigManifestSummary | undefined {
+  const loaded = loadRigManifest();
+  if (loaded.status === 'unconfigured') return undefined;
+  if (loaded.status === 'error') return { configured: true, source: loaded.source, error: loaded.error };
+
+  const rig = loaded.rig;
+  const validation = validateRig(rig);
+  const compatibility = checkRigCompatibility(rig, { capabilities: descriptorCapabilityLookup() });
+  const audio = checkAudioOutput(rig);
+  const connectedIds = new Set(devices.filter((d) => d.connected).map((d) => d.id));
+  const registeredIds = new Set(devices.map((d) => d.id));
+
+  const declared_present: string[] = [];
+  const declared_absent: string[] = [];
+  const unresolved: string[] = [];
+  const declaredDeviceIds = new Set<string>();
+  let opaque = 0;
+  for (const node of rig.nodes) {
+    const sid = node.server_device_id ?? undefined;
+    if (sid === undefined) {
+      opaque++;
+      continue;
+    }
+    // Drift is keyed per DEVICE (server_device_id), not per node: two physical
+    // units of one supported model are two nodes sharing one server_device_id
+    // (validateRig only requires node.id to be unique), so classify each distinct
+    // sid once to avoid an inflated ['am4','am4'] present/absent list.
+    if (declaredDeviceIds.has(sid)) continue;
+    declaredDeviceIds.add(sid);
+    if (!registeredIds.has(sid)) unresolved.push(sid);
+    else if (connectedIds.has(sid)) declared_present.push(sid);
+    else declared_absent.push(sid);
+  }
+  const connected_not_declared = [...connectedIds].filter((id) => !declaredDeviceIds.has(id));
+
+  return {
+    configured: true,
+    source: loaded.source,
+    id: rig.id,
+    name: rig.name,
+    node_count: rig.nodes.length,
+    edge_count: rig.edges.length,
+    binding_count: rig.bindings?.length ?? 0,
+    validation: { ok: validation.ok, errors: validation.errors, warnings: validation.warnings },
+    compatibility,
+    audio,
+    drift: {
+      declared_present,
+      declared_absent,
+      unresolved_server_device_ids: unresolved,
+      connected_not_declared,
+      opaque_node_count: opaque,
+    },
+  };
+}
+
+/**
+ * Build the inventory summary for `describe_rig` (§11). Returns undefined when
+ * `MCP_RIG_INVENTORY` is unset. When a rig manifest is ALSO loaded, includes the
+ * in-rig-vs-spare cross-reference so the agent can see which owned gear is wired
+ * and which is on the shelf (the raw material for an agent-composed proposer).
+ */
+function buildRigInventorySummary(): RigInventorySummary | undefined {
+  const loaded = loadRigInventory();
+  if (loaded.status === 'unconfigured') return undefined;
+  if (loaded.status === 'error') return { configured: true, source: loaded.source, error: loaded.error };
+
+  const inventory = loaded.inventory;
+  const validation = validateInventory(inventory);
+  const manifest = loadRigManifest();
+  const report = manifest.status === 'loaded' ? crossReferenceInventory(inventory, manifest.rig) : undefined;
+  return {
+    configured: true,
+    source: loaded.source,
+    id: inventory.id,
+    name: inventory.name,
+    device_count: inventory.devices.length,
+    validation: { ok: validation.ok, errors: validation.errors, warnings: validation.warnings },
+    report,
+  };
+}
+
+/**
  * Whole-rig overview for `describe_rig`. Pure introspection over the device
  * registry plus a NON-OPENING port scan (`listMidiPorts` opens and immediately
  * releases short-lived enumeration handles) and a mounted-drive check
  * (`transport.resolveRoot`). Opens no device handle, so it never contends with a
  * live connection. The orchestrating agent calls this first to see every device
  * it can drive + which are present, then drives each by `port` (= id / name).
+ *
+ * When an OpenRig rig manifest is configured (MCP_RIG_MANIFEST), the response
+ * also carries `manifest` (the declared rig + validation + presence-only drift)
+ * and `rig_links` is DERIVED from it rather than the MCP_RIG_LINKS env var
+ * (OPENRIG-SCHEMA.md §4).
  */
 export function executeDescribeRig(): {
   total_registered: number;
   connected_count: number;
   devices: readonly RigDevice[];
-  /** Configured external-instrument wiring (host track → device), when set via MCP_RIG_LINKS. */
+  /** The declared OpenRig rig (manifest + validation + drift), when MCP_RIG_MANIFEST is set. */
+  manifest?: RigManifestSummary;
+  /** What the user OWNS (+ in-rig-vs-spare cross-reference), when MCP_RIG_INVENTORY is set. */
+  inventory?: RigInventorySummary;
+  /** External-instrument wiring (host track → device): manifest-derived, else MCP_RIG_LINKS. */
   rig_links?: RigLinks;
   note: string;
 } {
@@ -171,16 +351,87 @@ export function executeDescribeRig(): {
     };
   });
 
-  const rigLinks = getRigLinks();
+  const manifest = buildRigManifestSummary(devices);
+  const inventory = buildRigInventorySummary();
+  const rigLinks = resolveRigLinks();
   const hasLinks = Object.keys(rigLinks).length > 0;
+  const linksSource = rigLinksSource() === 'manifest' ? 'the rig manifest' : 'MCP_RIG_LINKS';
+
+  let manifestNote: string;
+  if (manifest === undefined) {
+    manifestNote =
+      'No rig manifest is configured. Set MCP_RIG_MANIFEST to an OpenRig rig.json (or run `npm run openrig:bootstrap` '
+      + 'to seed one from the connected devices) to declare the cabling, channels, and cross-device bindings the '
+      + 'server cannot see. ';
+  } else if (manifest.error !== undefined) {
+    manifestNote = `A rig manifest is configured but failed to load: ${manifest.error}. `;
+  } else {
+    const v = manifest.validation;
+    const health = v?.ok === false
+      ? `${v.errors.length} error(s)`
+      : (v && v.warnings.length > 0 ? `${v.warnings.length} warning(s)` : 'clean');
+    const c = manifest.compatibility;
+    let compatNote = '';
+    // An ungoverned cable carries no binding, so its legality issues are keyed by
+    // edge (`ref`, no `binding`) and no bindings[] entry counts them. Surface them
+    // alongside, or a binding-less rig reads "clean" while a cable is illegal.
+    const cableIssues = c?.issues.filter((i) => i.binding === undefined && i.severity === 'error').length ?? 0;
+    if (c !== undefined && (c.bindings.length > 0 || cableIssues > 0)) {
+      const parts: string[] = [];
+      if (c.bindings.length > 0) {
+        const mismatched = c.bindings.filter((b) => b.status === 'mismatch').length;
+        parts.push(mismatched > 0
+          ? `${mismatched} of ${c.bindings.length} cross-device binding(s) DO NOT line up`
+          : `all ${c.bindings.length} cross-device binding(s) line up`);
+      }
+      if (cableIssues > 0) parts.push(`${cableIssues} cable(s) carry a mapping the receiving device cannot use`);
+      compatNote =
+        `Compatibility: ${parts.join(', and ')}; see manifest.compatibility (per-binding status + capability-legality against `
+        + `the descriptors). This is whether the coordination will WORK, not just whether the graph is well-formed. `;
+    }
+    const a = manifest.audio;
+    let audioNote = '';
+    if (a !== undefined && a.instruments.length > 0) {
+      if (a.has_output_node === false) {
+        audioNote =
+          'Audio: no front-of-house / output (monitor) node is declared, so instrument audio reachability could not '
+          + 'be judged; add an OUT node to the manifest to check. See manifest.audio. ';
+      } else {
+        const unheard = a.instruments.filter((i) => i.status !== 'reaches_output').length;
+        audioNote = unheard > 0
+          ? `Audio: ${unheard} of ${a.instruments.length} instrument(s) will NOT reach front-of-house (audio unpatched, or the chain dead-ends before the output); see manifest.audio. `
+          : `Audio: all ${a.instruments.length} instrument(s) reach front-of-house; see manifest.audio. `;
+      }
+    }
+    manifestNote =
+      `A rig manifest "${manifest.name}" is loaded (${manifest.node_count} devices, ${manifest.edge_count} connections, `
+      + `${manifest.binding_count} binding(s), validation ${health}); see manifest.validation + manifest.drift. `
+      + compatNote
+      + audioNote
+      + `Drift is presence-only: the server confirms registered-device presence, not cables/channels/opaque gear/audio. `;
+  }
+
+  let inventoryNote = '';
+  if (inventory !== undefined && inventory.error !== undefined) {
+    inventoryNote = `A gear inventory is configured but failed to load: ${inventory.error}. `;
+  } else if (inventory !== undefined && inventory.report !== undefined) {
+    inventoryNote = `Inventory "${inventory.name ?? inventory.id}": you own ${inventory.device_count} device(s); ${inventory.report.in_rig} wired into this rig, ${inventory.report.spare} spare. See inventory.report for owned gear + in-rig-vs-spare (the raw material for proposing rigs from what you own). `;
+  } else if (inventory !== undefined) {
+    inventoryNote = `Inventory "${inventory.name ?? inventory.id}" loaded (${inventory.device_count} owned device(s)); no rig manifest to cross-reference against. `;
+  }
+
   return {
     total_registered: devices.length,
     connected_count: devices.filter((d) => d.connected).length,
     devices,
+    ...(manifest !== undefined ? { manifest } : {}),
+    ...(inventory !== undefined ? { inventory } : {}),
     ...(hasLinks ? { rig_links: rigLinks } : {}),
     note:
-      (hasLinks
-        ? 'rig_links records external-instrument wiring (a host MIDI track → the device it drives); '
+      manifestNote
+      + inventoryNote
+      + (hasLinks
+        ? `rig_links records external-instrument wiring (a host MIDI track → the device it drives), sourced from ${linksSource}; `
           + 'apply_pattern external_targets defaults a target\'s track from it. '
         : '')
       + 'connected is best-effort from a non-opening port scan plus a mounted-drive check; it opens no handles. '

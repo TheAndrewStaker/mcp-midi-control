@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/fractal-gen1",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Fractal Axe-Fx Standard/Ultra (gen-1) device descriptor, writer, reader for the unified MCP surface.",
   "private": true,
   "license": "Apache-2.0",

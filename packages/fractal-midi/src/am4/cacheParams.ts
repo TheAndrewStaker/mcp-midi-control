@@ -19,6 +19,20 @@
  * hardware-anchored by a geometric-mean knob reading on the Axe-Fx II).
  * These corrections supersede the original generator output; mirror
  * them in any future regeneration.
+ *
+ * ⚠ DO NOT blindly re-run `npm run gen-params`. (1) It would overwrite
+ * the 2026-06-09 corrections above (verified 2026-07-15: a trial regen
+ * reverted amp.proximity to 'db', dropped log10-safe display floors,
+ * un-fixed filter/enhancer pans, etc. — diff before committing any
+ * regen). (2) The generator resolves `fractal-midi/am4` to the BUILT
+ * dist, so paramNames.ts edits don't reach it until after a build.
+ *
+ * 2026-07-15 (BK-106): 15 entries renamed to the UI-label-audit names
+ * their hand-authored params.ts twins already carried — the old
+ * generator names double-registered the same (pidLow, pidHigh) under a
+ * second key, invisible to every gate until verify-wire-uniqueness.
+ * paramNames.ts carries the same renames, so a (careful) future regen
+ * reproduces them.
  */
 import type { Param } from './params.js';
 
@@ -183,8 +197,13 @@ export const CACHE_PARAMS = {
     unit: 'ms', displayMin: 0.5, displayMax: 50,
     scaling: 'log10',
   },
-  'amp.compressor_clarity': {
-    block: 'amp', name: 'compressor_clarity',
+  // 2026-07-15 (BK-106): ids 0x4d/0x52/0x53 renamed compressor_* -> the
+  // UI-label-audit names (audit rows DISTORT 77/82/83). The old names
+  // double-registered the same registers the hand-authored params.ts
+  // entries own; old names alias in PARAM_ALIASES. paramNames.ts renamed
+  // in the same session.
+  'amp.clarity': {
+    block: 'amp', name: 'clarity',
     pidLow: 0x003a, pidHigh: 0x004d,
     unit: 'knob_0_10', displayMin: 0.1, displayMax: 10,
     scaling: 'log10',
@@ -200,13 +219,13 @@ export const CACHE_PARAMS = {
     pidLow: 0x003a, pidHigh: 0x0051,
     unit: 'knob_0_10', displayMin: 0, displayMax: 10,
   },
-  'amp.compressor_amount': {
-    block: 'amp', name: 'compressor_amount',
+  'amp.amount': {
+    block: 'amp', name: 'amount',
     pidLow: 0x003a, pidHigh: 0x0052,
     unit: 'knob_0_10', displayMin: 0, displayMax: 10,
   },
-  'amp.compressor_threshold': {
-    block: 'amp', name: 'compressor_threshold',
+  'amp.threshold': {
+    block: 'amp', name: 'threshold',
     pidLow: 0x003a, pidHigh: 0x0053,
     unit: 'db', displayMin: -60, displayMax: 0,
   },
@@ -696,13 +715,16 @@ export const CACHE_PARAMS = {
     pidLow: 0x0042, pidHigh: 0x0037,
     unit: 'percent', displayMin: 0, displayMax: 100,
   },
-  'reverb.shift_1': {
-    block: 'reverb', name: 'shift_1',
+  // 2026-07-15 (BK-106): ids 0x38/0x39 renamed shift_* -> voice_*_shift
+  // (UI-label audit names the hand-authored params.ts entries own); old
+  // names alias in PARAM_ALIASES. paramNames.ts renamed too.
+  'reverb.voice_1_shift': {
+    block: 'reverb', name: 'voice_1_shift',
     pidLow: 0x0042, pidHigh: 0x0038,
     unit: 'semitones', displayMin: -24, displayMax: 24,
   },
-  'reverb.shift_2': {
-    block: 'reverb', name: 'shift_2',
+  'reverb.voice_2_shift': {
+    block: 'reverb', name: 'voice_2_shift',
     pidLow: 0x0042, pidHigh: 0x0039,
     unit: 'semitones', displayMin: -24, displayMax: 24,
   },
@@ -920,8 +942,11 @@ export const CACHE_PARAMS = {
     unit: 'ms', displayMin: 1, displayMax: 1000,
     scaling: 'log10',
   },
-  'delay.diffusor': {
-    block: 'delay', name: 'diffusor',
+  // 2026-07-15 (BK-106): id 0x31 respelled diffusor -> diffuser (matches
+  // the hand-authored params.ts entry); old spelling aliases in
+  // PARAM_ALIASES. paramNames.ts renamed too.
+  'delay.diffuser': {
+    block: 'delay', name: 'diffuser',
     pidLow: 0x0046, pidHigh: 0x0031,
     unit: 'percent', displayMin: 0, displayMax: 100,
   },
@@ -1112,14 +1137,20 @@ export const CACHE_PARAMS = {
     pidLow: 0x004e, pidHigh: 0x0015,
     unit: 'percent', displayMin: 0, displayMax: 100,
   },
-  'chorus.lfo_rate': {
-    block: 'chorus', name: 'lfo_rate',
+  // 2026-07-15 (BK-106): ids 0x16/0x17/0x19/0x1a renamed to the UI-label-
+  // audit names (audit rows CHORUS 22/23/25/26) the hand-authored params.ts
+  // entries own. The old generator names (lfo_rate/width/lfo_freq/
+  // lfo_depth_2) each read as a DIFFERENT control than the register they
+  // addressed, so they are dropped WITHOUT aliases (a silent remap would
+  // put the wrong meaning on the register). paramNames.ts renamed too.
+  'chorus.rate_right': {
+    block: 'chorus', name: 'rate_right',
     pidLow: 0x004e, pidHigh: 0x0016,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
     scaling: 'log10',
   },
-  'chorus.width': {
-    block: 'chorus', name: 'width',
+  'chorus.lfo_2_depth': {
+    block: 'chorus', name: 'lfo_2_depth',
     pidLow: 0x004e, pidHigh: 0x0017,
     unit: 'percent', displayMin: 0, displayMax: 100,
   },
@@ -1129,14 +1160,14 @@ export const CACHE_PARAMS = {
     unit: 'knob_0_10', displayMin: 0.5, displayMax: 500,
     scaling: 'log10',
   },
-  'chorus.lfo_freq': {
-    block: 'chorus', name: 'lfo_freq',
+  'chorus.low_cut': {
+    block: 'chorus', name: 'low_cut',
     pidLow: 0x004e, pidHigh: 0x0019,
     unit: 'hz', displayMin: 20, displayMax: 2000,
     scaling: 'log10',
   },
-  'chorus.lfo_depth_2': {
-    block: 'chorus', name: 'lfo_depth_2',
+  'chorus.stereo_spread': {
+    block: 'chorus', name: 'stereo_spread',
     pidLow: 0x004e, pidHigh: 0x001a,
     unit: 'bipolar_percent', displayMin: -200, displayMax: 200,
   },
@@ -1355,14 +1386,17 @@ export const CACHE_PARAMS = {
     unit: 'enum', displayMin: 0, displayMax: 8,
     enumValues: WAH_TYPES_VALUES,
   },
-  'wah.min_frequency': {
-    block: 'wah', name: 'min_frequency',
+  // 2026-07-15 (BK-106): ids 0x0b/0x0c renamed to the UI-label-audit
+  // names the hand-authored params.ts entries own; old min_frequency/
+  // max_frequency names alias in PARAM_ALIASES. paramNames.ts renamed too.
+  'wah.minimum_frequency': {
+    block: 'wah', name: 'minimum_frequency',
     pidLow: 0x005e, pidHigh: 0x000b,
     unit: 'hz', displayMin: 100, displayMax: 1000,
     scaling: 'log10',
   },
-  'wah.max_frequency': {
-    block: 'wah', name: 'max_frequency',
+  'wah.maximum_frequency': {
+    block: 'wah', name: 'maximum_frequency',
     pidLow: 0x005e, pidHigh: 0x000c,
     unit: 'hz', displayMin: 500, displayMax: 5000,
     scaling: 'log10',
@@ -1466,14 +1500,18 @@ export const CACHE_PARAMS = {
     unit: 'ratio', displayMin: 1, displayMax: 20,
     scaling: 'log10',
   },
-  'compressor.attack': {
-    block: 'compressor', name: 'attack',
+  // 2026-07-15 (BK-106): ids 0x0c/0x0d renamed attack/release ->
+  // attack_time/release_time (UI-label audit names the hand-authored
+  // params.ts entries own); old names alias in PARAM_ALIASES.
+  // paramNames.ts renamed too.
+  'compressor.attack_time': {
+    block: 'compressor', name: 'attack_time',
     pidLow: 0x002e, pidHigh: 0x000c,
     unit: 'ms', displayMin: 0.1, displayMax: 100,
     scaling: 'log10',
   },
-  'compressor.release': {
-    block: 'compressor', name: 'release',
+  'compressor.release_time': {
+    block: 'compressor', name: 'release_time',
     pidLow: 0x002e, pidHigh: 0x000d,
     unit: 'ms', displayMin: 2, displayMax: 2000,
     scaling: 'log10',
@@ -1659,8 +1697,11 @@ export const CACHE_PARAMS = {
     unit: 'enum', displayMin: 0, displayMax: 17,
     enumValues: FILTER_TYPES_VALUES,
   },
-  'filter.freq': {
-    block: 'filter', name: 'freq',
+  // 2026-07-15 (BK-106): id 0x0b renamed freq -> frequency (UI-label
+  // audit name the hand-authored params.ts entry owns); old name aliases
+  // in PARAM_ALIASES. paramNames.ts renamed too.
+  'filter.frequency': {
+    block: 'filter', name: 'frequency',
     pidLow: 0x0072, pidHigh: 0x000b,
     unit: 'hz', displayMin: 20, displayMax: 20000,
     scaling: 'log10',

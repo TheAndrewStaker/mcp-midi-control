@@ -13,6 +13,14 @@
  * in the catalog generator; those become `unit:'enum'` and accept/echo the panel
  * label (case-insensitive) or the raw ordinal. Params with no matching table stay
  * plain numeric `count`.
+ *
+ * SYSTEM (global) params (`VE500_SYSTEM_PARAMS`, address_map.js's System tree:
+ * MIDI/USB/tuner/preference/input/output + their EQs, plus a few sections that
+ * reuse a per-patch struct at system scope) are folded into the SAME block map
+ * under `system_`-prefixed block ids (e.g. `system_input`, `system_enhancer`),
+ * so they ride the identical set_param/get_param/get_params/list_params path;
+ * no new tool, no schema-shape difference. Only the wire base differs (handled
+ * in roland-midi's `setParam.ts` via `Ve500ParamDef.region`).
  */
 
 import type {
@@ -20,7 +28,11 @@ import type {
   ParamSchema,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 
-import { VE500_PARAMS, type Ve500ParamDef } from 'roland-midi/ve-500';
+import {
+  VE500_PARAMS,
+  VE500_SYSTEM_PARAMS,
+  type Ve500ParamDef,
+} from 'roland-midi/ve-500';
 
 /** Numeric INTEGER1xN / INTEGERnx4 sizes start here; smaller = raw/ASCII (skipped). */
 const INTEGER_BASE = 0x10000;
@@ -117,7 +129,10 @@ function titleCase(id: string): string {
 
 export function buildBlocks(): Record<string, BlockSchema> {
   const grouped: Record<string, Record<string, ParamSchema>> = {};
-  for (const def of VE500_PARAMS) {
+  // Per-patch (Temporary) + SYSTEM (global) params share the same schema
+  // shape; SYSTEM block ids are already prefixed 'system_' by the catalog
+  // generator, so there is no collision merging them into one block map.
+  for (const def of [...VE500_PARAMS, ...VE500_SYSTEM_PARAMS]) {
     if (!isSettable(def)) continue;
     const params = (grouped[def.block] ??= {});
     const sw = isSwitch(def);

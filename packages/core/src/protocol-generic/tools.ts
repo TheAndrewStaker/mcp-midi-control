@@ -14,6 +14,7 @@
  *   - `navigation.ts` — switch_preset, save_preset, switch_scene, rename,
  *                       scan_locations
  *   - `preset.ts`    — apply_preset, translate_preset
+ *   - `audio.ts`     -- measure_loudness (OS-audio loudness sensing, no MIDI)
  *   - `shared.ts`    — PORT_DESC + asText/asError + presetShape zod schemas
  *
  * The long AM4-specific behavioral guidance (RELATIVE-CHANGE DISCIPLINE,
@@ -36,6 +37,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 // `void requireDevice;` no-op statement (T-14, 2026-05-21).
 import './registry.js';
 
+import { registerAudioTools } from './tools/audio.js';
 import { registerDiscoveryTools } from './tools/discovery.js';
 import { registerLayoutTools } from './tools/layout.js';
 import { registerNavigationTools } from './tools/navigation.js';
@@ -52,4 +54,5 @@ export function registerUnifiedTools(server: McpServer): void {
   registerPresetTools(server);
   registerPatternTools(server);
   registerUploadTools(server);
+  registerAudioTools(server);
 }

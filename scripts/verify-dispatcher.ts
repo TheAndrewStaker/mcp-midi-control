@@ -23,6 +23,7 @@ import {
   encodeSetParam,
   findCompatibleTypes,
   listParams,
+  openOfflineCtx,
   requireDevice,
   resolveBlockName,
   resolveParamName,
@@ -2527,6 +2528,39 @@ async function testMultiInstanceSceneRef(): Promise<void> {
 }
 
 await testMultiInstanceSceneRef();
+
+// ── Offline dry-run context ───────────────────────────────────────
+// `apply_pattern dry_run` is documented as sending NOTHING (no reads, no
+// gate, no backup, no transfer), so it must not require a live port: its
+// use case is planning a set at a desk with the rig unplugged. It used to
+// call openCtx unconditionally and die with "No MIDI port matching..."
+// (hit twice in a 2026-07-16 planning session).
+//
+// The guarantee is structural, not a promise each writer branch keeps: the
+// offline ctx carries the NULL connection, so any dry-run path that
+// miswires itself to the wire throws instead of silently transmitting.
+// These assert both halves — no port needed, and no send possible.
+{
+  const offline = openOfflineCtx(AM4_DESCRIPTOR);
+  assert('openOfflineCtx: builds a ctx with no port open', offline.descriptor === AM4_DESCRIPTOR);
+  assert('openOfflineCtx: reports the port closed', offline.conn.isPortOpen?.() === false);
+  assert('openOfflineCtx: has no MIDI input', offline.conn.hasInput === false);
+  assert(
+    'openOfflineCtx: send() throws rather than transmitting on a dry run',
+    (() => {
+      try {
+        offline.conn.send([0xf0, 0x7d, 0xf7]);
+        return false;
+      } catch (err) {
+        return err instanceof Error && /dry run/i.test(err.message);
+      }
+    })(),
+  );
+  assert(
+    'openOfflineCtx: exposes no reconnect (nothing to reconnect to)',
+    offline.reconnect === undefined,
+  );
+}
 
 // Reporting ───────────────────────────────────────────────────────
 

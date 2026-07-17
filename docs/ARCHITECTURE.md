@@ -325,6 +325,26 @@ recall via `switch_preset`, pad triggers). A verb that needs the other
 mode returns `capability_not_supported`. The full reasoning is in
 [docs/design/device-archetypes-and-transport.md](design/device-archetypes-and-transport.md).
 
+### 7. Audio sensing layer (`packages/core/src/audio/`)
+
+A third sensing surface next to MIDI and storage: the OS audio layer,
+read-only, never device-gated. `measure_loudness` captures N seconds from
+any OS audio input (a modeler's own USB audio interface, a mic, an
+interface bus) and returns ITU-R BS.1770 loudness (integrated LUFS,
+momentary max, 4x-oversampled true peak). The measurement math
+(`bs1770.ts`) is pure dependency-free TypeScript, golden-checked against
+the spec's published coefficient table and cross-checked against ffmpeg's
+`ebur128` filter. Capture (`capture.ts`) rides `audify` (RtAudio over
+N-API, WASAPI/CoreAudio/ALSA) as an *optional* dependency, lazy-loaded at
+call time: a platform without the prebuild keeps the full MIDI surface and
+reports capture-unavailable only when asked to listen.
+
+This is deliberately a rig capability, not a device feature: the same tool
+levels AM4 scenes (which have no meter read over MIDI), balances looper
+loops against a modeler, or checks a synth against the guitar bus. Writes
+stay in the existing per-device paths behind the existing gates; the audio
+layer only ever listens.
+
 ---
 
 ## Location Naming Convention
@@ -409,7 +429,7 @@ mcp-midi-control/
 ```
 
 Protocol reverse-engineering docs (per-device SYSEX-MAP, opcode tables,
-capture guides, Ghidra mining scripts, and the encoding cookbook) live in
+capture guides, Ghidra mining scripts, and the encoding-primitive corpus) live in
 the `fractal-midi` package under `packages/fractal-midi/docs/`, not in this
 top-level `docs/` tree. Wire-format questions start there.
 

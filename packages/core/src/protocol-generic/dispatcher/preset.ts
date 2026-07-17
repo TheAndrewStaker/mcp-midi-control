@@ -12,6 +12,7 @@ import {
   type ApplyResult,
   type ApplySetlistResult,
   type DeviceDescriptor,
+  type PackDirectoryDump,
   type PresetBinaryDump,
   type PresetSnapshot,
   type PresetSlotSpec,
@@ -25,7 +26,7 @@ import {
 } from '../types.js';
 
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
-import { openCtx, requireDevice } from './core.js';
+import { openCtx, requireDevice, toWirePack, withHandleRetry } from './core.js';
 import { collectApplyPresetPreflight } from './preflight.js';
 import { translatePresetSpec, type TranslatePresetResult } from '../port-preset.js';
 import { gen3WholePresetToSpec } from '../gen3-source.js';
@@ -363,20 +364,26 @@ export async function executeGetPreset(args: {
   port: string;
   include_channel_state?: boolean;
   location?: string | number;
+  /** Circuit Tracks: 1-based microSD pack to read a STORED location from. Default 1. */
+  pack?: number;
 }): Promise<PresetSnapshot> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.reader.getPreset === undefined) {
+  const getPreset = descriptor.reader.getPreset;
+  if (getPreset === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
       `get_preset is not implemented for ${descriptor.display_name}. Fall back to get_param / get_params per block, or call describe_device to see which capabilities the device exposes.`,
     );
   }
-  const ctx = openCtx(descriptor);
-  return descriptor.reader.getPreset(ctx, {
+  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
+  // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
+  // handle-level fault — get_preset is a read, safe to restart whole on a
+  // fresh handle (no stateful multi-block transfer session).
+  return withHandleRetry(ctx, (c) => getPreset(c, {
     include_channel_state: args.include_channel_state,
     location: args.location,
-  });
+  }));
 }
 
 /**
@@ -394,7 +401,8 @@ export async function executeExportActivePreset(args: {
   port: string;
 }): Promise<PresetBinaryDump & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.reader.dumpActivePresetBinary === undefined) {
+  const dumpActivePresetBinary = descriptor.reader.dumpActivePresetBinary;
+  if (dumpActivePresetBinary === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -402,7 +410,9 @@ export async function executeExportActivePreset(args: {
     );
   }
   const ctx = openCtx(descriptor);
-  const dump = await descriptor.reader.dumpActivePresetBinary(ctx);
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault (a single
+  // dump read, not a stateful multi-block transfer session).
+  const dump = await withHandleRetry(ctx, (c) => dumpActivePresetBinary(c));
   return { ...dump, device: descriptor.display_name };
 }
 
@@ -417,30 +427,64 @@ export async function executeExportActivePreset(args: {
 export async function executeExportStoredPreset(args: {
   port: string;
   location: number;
+  /** Circuit Tracks: 1-based microSD pack the location lives in. Default 1. */
+  pack?: number;
 }): Promise<PresetBinaryDump & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.reader.dumpStoredPresetBinary === undefined) {
+  const dumpStoredPresetBinary = descriptor.reader.dumpStoredPresetBinary;
+  if (dumpStoredPresetBinary === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
       `export_preset with a location argument requires stored-preset dump support; ${descriptor.display_name} does not implement it yet. Stored-preset dump (fn=0x03) is available on the AM4 and the gen-3 devices (Axe-Fx III / FM3 / FM9 / VP4). Use export_preset without a location to dump the active preset.`,
     );
   }
+  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault.
+  const dump = await withHandleRetry(ctx, (c) => dumpStoredPresetBinary(args.location, c));
+  return { ...dump, device: descriptor.display_name };
+}
+
+/**
+ * Backs the read-only `list_packs` tool: list a device's storage packs by name
+ * (Circuit Tracks: the microSD card's packs, up to 32). Devices with no pack
+ * concept error with capability_not_supported.
+ *
+ * Read-only and cheap (one round trip), because it is the pre-flight for every
+ * pack-addressed WRITE: nothing on the wire reports which pack the device has
+ * selected, so an agent that is about to overwrite a project needs a way to see
+ * which packs exist and what they are called first.
+ */
+export async function executeReadPackDirectory(args: {
+  port: string;
+}): Promise<PackDirectoryDump & { device: string }> {
+  const descriptor = requireDevice(args.port);
+  const readPackDirectory = descriptor.reader.readPackDirectory;
+  if (readPackDirectory === undefined) {
+    throw new DispatchError(
+      'capability_not_supported',
+      descriptor.display_name,
+      `list_packs lists a device's storage packs; ${descriptor.display_name} does not store its content in packs. It is available on the Novation Circuit Tracks (its microSD card holds up to 32 packs).`,
+    );
+  }
   const ctx = openCtx(descriptor);
-  const dump = await descriptor.reader.dumpStoredPresetBinary(args.location, ctx);
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault, same as the
+  // sibling list_samples read (a cached handle can die between calls).
+  const dump = await withHandleRetry(ctx, (c) => readPackDirectory(c));
   return { ...dump, device: descriptor.display_name };
 }
 
 /**
  * Backs the read-only `read_sample_directory` tool: read a device's named
- * sample pool (Circuit Tracks: the pack's shared 64-slot drum-sample
+ * sample pool (Circuit Tracks: Pack 1's shared 64-slot drum-sample
  * directory). Devices without a named pool error with capability_not_supported.
  */
 export async function executeReadSampleDirectory(args: {
   port: string;
 }): Promise<SampleDirectoryDump & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.reader.readSampleDirectory === undefined) {
+  const readSampleDirectory = descriptor.reader.readSampleDirectory;
+  if (readSampleDirectory === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -448,7 +492,13 @@ export async function executeReadSampleDirectory(args: {
     );
   }
   const ctx = openCtx(descriptor);
-  const dump = await descriptor.reader.readSampleDirectory(ctx);
+  // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
+  // handle-level fault — this is the `list_samples` tool, the exact
+  // 2026-07-10 hardware repro (call 1 succeeded and cached the handle; a
+  // clean USB replug then made call 2 throw "Internal RtMidi error" instead
+  // of self-healing, since Phase A's acquire-time canary saw a
+  // still-healthy-looking cached handle).
+  const dump = await withHandleRetry(ctx, (c) => readSampleDirectory(c));
   return { ...dump, device: descriptor.display_name };
 }
 

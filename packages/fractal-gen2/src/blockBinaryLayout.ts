@@ -55,7 +55,7 @@
  *   snapshots — see the TLV note above.)
  *
  * Sort algorithm — RESOLVED 2026-07-02 (see above; the historical
- * anomaly notes lived here and are preserved in the cookbook entry
+ * anomaly notes lived here and are preserved in the primitive entry
  * `parambase-plus-paramid` refinement history).
  */
 

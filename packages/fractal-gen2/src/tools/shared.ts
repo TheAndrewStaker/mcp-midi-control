@@ -173,6 +173,19 @@ export type DirtyGuardResult = SharedDirtyGuardResult;
  *   proceed=false (with a warning) if the save fails.
  * - Clean buffer: returns proceed=true regardless of mode.
  */
+export interface GuardActiveBufferOptions {
+  /**
+   * SysEx model byte for the wire requests this guard issues (GET_PRESET_
+   * NUMBER / GET_PRESET_NAME / STORE_PRESET). Defaults to the XL+ (0x07) for
+   * back-compat; a non-XL+ config (e.g. AX8, 0x08) must pass its own model
+   * byte or the device will never answer these probes (silently absorbed;
+   * see the per-model-byte filtering documented in `fractal-midi/gen2/axe-fx-ii`).
+   */
+  modelId?: number;
+  /** Device label for warning text. Defaults to the XL+ label for back-compat. */
+  deviceLabel?: string;
+}
+
 export async function guardActiveBufferOrSave(
   mode: OnEditedMode,
   // The dispatcher-supplied connection (parity with AM4 + the modern
@@ -180,7 +193,10 @@ export async function guardActiveBufferOrSave(
   // module-global handle). Falls back gracefully: if the read fails the
   // warning just omits the concrete preset name.
   conn: DispatchCtx['conn'],
+  options?: GuardActiveBufferOptions,
 ): Promise<DirtyGuardResult> {
+  const modelId = options?.modelId;
+  const buildOpts = modelId !== undefined ? { modelId } : {};
   if (!isDirty(AXEFX_DIRTY_LABEL)) {
     return { proceed: true };
   }
@@ -193,17 +209,23 @@ export async function guardActiveBufferOrSave(
   let activeName: string | undefined;
   try {
     const numP = c.receiveSysExMatching(isGetPresetNumberResponse, GET_RESPONSE_TIMEOUT_MS);
-    c.send(buildGetPresetNumber());
+    c.send(buildGetPresetNumber(buildOpts));
     const numResp = await numP;
     activeWire = parseGetPresetNumberResponse(numResp).presetNumber;
   } catch {
     activeWire = undefined;
   }
   try {
-    const nameP = c.receiveSysExMatching(isGetPresetNameResponse, GET_RESPONSE_TIMEOUT_MS);
-    c.send(buildGetPresetName());
+    // Matcher + parser are model-byte-filtered; pass the config's model
+    // byte (undefined falls back to the codec's XL+ default) or a non-XL+
+    // device's response never matches and this read silently times out.
+    const nameP = c.receiveSysExMatching(
+      (b) => isGetPresetNameResponse(b, modelId),
+      GET_RESPONSE_TIMEOUT_MS,
+    );
+    c.send(buildGetPresetName(buildOpts));
     const nameResp = await nameP;
-    activeName = parseGetPresetNameResponse(nameResp).trimEnd() || undefined;
+    activeName = parseGetPresetNameResponse(nameResp, modelId).trimEnd() || undefined;
   } catch {
     activeName = undefined;
   }
@@ -240,7 +262,7 @@ export async function guardActiveBufferOrSave(
   }
   try {
     const storeAck = c.receiveSysExMatching(isStorePresetResponse, GET_RESPONSE_TIMEOUT_MS);
-    c.send(buildStorePreset(activeWire));
+    c.send(buildStorePreset(activeWire, buildOpts));
     const ack = await storeAck;
     const parsed = parseStorePresetResponse(ack);
     if (!parsed.ok) {

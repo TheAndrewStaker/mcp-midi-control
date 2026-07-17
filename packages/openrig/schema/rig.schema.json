@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrig.dev/schema/0.1/rig.json",
+  "title": "OpenRig L1 rig topology",
+  "description": "A musician's rig as a directed multigraph of instruments (nodes) connected by typed audio + MIDI cables (edges), with an optional capability layer and editable cross-device bindings. Reserved $id URL, not live until the spec graduates to a standalone repo. The runtime validator (validateRig) adds referential-integrity and graph checks this structural schema cannot express.",
+  "type": "object",
+  "required": ["openrig_version", "id", "name", "nodes", "edges"],
+  "additionalProperties": true,
+  "properties": {
+    "$schema": { "type": "string" },
+    "openrig_version": { "type": "string", "description": "semver major.minor; a consumer rejects a higher major and ignores unknown fields" },
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+    "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } },
+    "bindings": { "type": "array", "items": { "$ref": "#/$defs/binding" } }
+  },
+  "$defs": {
+    "portKind": {
+      "enum": ["audio_out", "audio_in", "midi_din_in", "midi_din_out", "midi_thru", "usb_midi", "usb_serial", "expression", "footswitch", "cv", "analog_clock"]
+    },
+    "role": {
+      "enum": ["sound_source", "effect", "mixer", "monitor", "audio_interface", "controller", "clock_master", "clock_follower", "midi_router", "host", "looper", "sequencer", "sampler"]
+    },
+    "signalKind": {
+      "enum": ["audio", "midi", "control_voltage", "expression", "footswitch", "analog_clock"]
+    },
+    "midiSignalType": {
+      "enum": ["clock", "transport", "spp", "song_select", "pc", "cc", "nrpn", "note", "sysex", "active_sensing"]
+    },
+    "identity": {
+      "type": "object",
+      "required": ["manufacturer", "family"],
+      "properties": {
+        "manufacturer": { "type": ["string", "null"] },
+        "family": { "type": ["string", "null"] },
+        "catalog_id": { "type": ["string", "null"] }
+      }
+    },
+    "port": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "$ref": "#/$defs/portKind" },
+        "label": { "type": "string" },
+        "audio": { "enum": ["mono", "stereo"] },
+        "group": { "type": "string" },
+        "pair": { "type": "string" },
+        "output_role": { "enum": ["main", "monitor", "sub", "stem", "cue"], "description": "For an audio output port: its role in the rig's output stage (advisory guidance hook)" }
+      }
+    },
+    "routingRule": {
+      "type": "object",
+      "required": ["port"],
+      "properties": {
+        "port": { "type": "string" },
+        "to": { "type": "string" },
+        "kind": { "$ref": "#/$defs/signalKind" },
+        "type": { "$ref": "#/$defs/midiSignalType" },
+        "channel": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "binding": { "type": "string" }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "properties": {
+        "consume": { "type": "array", "items": { "$ref": "#/$defs/routingRule" } },
+        "pass": { "type": "array", "items": { "$ref": "#/$defs/routingRule" } },
+        "originate": { "type": "array", "items": { "$ref": "#/$defs/routingRule" } },
+        "priority": { "type": "string" }
+      }
+    },
+    "capability": {
+      "type": ["object", "null"],
+      "description": "Mirrors MIDI-CI Property Exchange resources; optional + progressive; null = not declared"
+    },
+    "node": {
+      "type": "object",
+      "required": ["id", "name", "identity", "roles", "ports"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "identity": { "$ref": "#/$defs/identity" },
+        "server_device_id": { "type": ["string", "null"] },
+        "roles": { "type": "array", "items": { "$ref": "#/$defs/role" } },
+        "extra_roles": { "type": "array", "items": { "type": "string" } },
+        "ports": { "type": "array", "items": { "$ref": "#/$defs/port" } },
+        "routing": { "$ref": "#/$defs/routing" },
+        "capabilities": { "$ref": "#/$defs/capability" },
+        "note": { "type": "string", "description": "Advisory human note (e.g. a [planned]/[trialing] tag); never keys diff/compare" }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "required": ["node", "port"],
+      "properties": {
+        "node": { "type": "string" },
+        "port": { "type": "string" }
+      }
+    },
+    "midiSignal": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "$ref": "#/$defs/midiSignalType" },
+        "channel": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "cc_numbers": { "type": "array", "items": { "type": "integer" } },
+        "values": { "type": "array", "items": { "type": "integer" } },
+        "notes": { "type": "array", "items": { "type": "integer" } },
+        "note_map": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": { "type": "string" } },
+            { "const": "GM" }
+          ]
+        },
+        "binding": { "type": "string" }
+      }
+    },
+    "edgeSignal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "channels"],
+          "properties": {
+            "kind": { "const": "audio" },
+            "channels": { "type": "array", "items": { "enum": ["L", "R", "M"] } }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "signals"],
+          "properties": {
+            "kind": { "const": "midi" },
+            "signals": { "type": "array", "items": { "$ref": "#/$defs/midiSignal" } }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["control_voltage", "expression", "footswitch", "analog_clock"] },
+            "label": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "from", "to", "directed", "signal"],
+      "properties": {
+        "id": { "type": "string" },
+        "from": { "$ref": "#/$defs/endpoint" },
+        "to": { "$ref": "#/$defs/endpoint" },
+        "physical_link_id": { "type": "string" },
+        "directed": { "type": "boolean" },
+        "signal": { "$ref": "#/$defs/edgeSignal" },
+        "enabled": { "type": "boolean" },
+        "binding": { "type": "string" },
+        "note": { "type": "string", "description": "Advisory human note (e.g. a [planned] cable not yet patched); never keys diff" }
+      }
+    },
+    "bindingEnd": {
+      "type": "object",
+      "required": ["node", "type"],
+      "properties": {
+        "node": { "type": "string" },
+        "type": { "$ref": "#/$defs/midiSignalType" },
+        "channel": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "cc": { "type": "integer" },
+        "note_map": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": { "type": "string" } },
+            { "const": "GM" }
+          ]
+        },
+        "target": { "type": "string" },
+        "values": { "type": "array", "items": { "type": "integer" } }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "required": ["id", "from", "to"],
+      "properties": {
+        "id": { "type": "string" },
+        "from": {
+          "type": "object",
+          "required": ["node", "emits"],
+          "properties": { "node": { "type": "string" }, "emits": { "$ref": "#/$defs/bindingEnd" } }
+        },
+        "to": {
+          "type": "object",
+          "required": ["node", "expects"],
+          "properties": { "node": { "type": "string" }, "expects": { "$ref": "#/$defs/bindingEnd" } }
+        },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

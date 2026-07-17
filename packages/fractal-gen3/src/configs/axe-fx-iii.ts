@@ -66,6 +66,22 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
     'set-by-name, save_preset, set_block, and the live grid read stay community-',
     'beta on the III; confirm those writes on the device front panel.',
   ].join('\n'),
+  cab_polish: [
+    'CAB POLISH DEFAULTS (mix-ready cuts + room). Close-mic\'d IRs carry more',
+    'lows and highs than any real rig in a room; the validated starting point',
+    'is a low cut ~80 Hz / high cut ~6.5 kHz plus a little cab room, and the',
+    'server auto-applies it on fresh cab-bearing builds on the AM4, Axe-Fx II,',
+    'and FM9 (reported in `auto_applied`).',
+    '',
+    'NOT AUTO-APPLIED ON THE AXE-FX III YET: the III\'s cab cut/room params',
+    '(cab locut / hicut / roommix) are registered but carry NO calibrated',
+    'display range in the III catalog, so a Hz value like 80 cannot be',
+    'expressed on the wire without guessing (set_param on them takes a raw',
+    '0..65534 wire integer, NOT Hz). Do NOT write display-shaped values to',
+    'them, and do not claim cuts were applied. Until III range evidence lands,',
+    'advise the user to set the cab low/high cut (80 Hz / 6.5-7.5 kHz,',
+    '12 dB/oct) on the front panel or in Axe-Edit for direct/FRFR presets.',
+  ].join('\n'),
 };
 
 // ── Example spec ───────────────────────────────────────────────────

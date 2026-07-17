@@ -34,6 +34,10 @@ export const CIRCUIT_TRACKS_DESCRIPTOR: DeviceDescriptor = {
   capabilities: {
     slot_model: 'linear',
     slot_count: 64, // 64 synth Flash patches per part
+    // microSD holds up to 32 PACKS, each a complete world of 64 projects / 128
+    // patches / 64 samples, addressable by the `pack` arg (pack addressing
+    // decoded + hardware-confirmed 2026-07-16, docs/design/circuit-pack-addressing.md).
+    has_packs: true,
     support_tier: 'community-beta',
     verification:
       'Wire framing + param map transcribed byte-for-byte from the v3 Programmer\'s Reference Guide and ' +

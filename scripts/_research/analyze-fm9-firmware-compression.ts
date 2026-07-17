@@ -4,7 +4,7 @@
  * The {raw-enum-id to name} table that closes the BK-093 WRITE leg is
  * device-resident (the `msg_getBlockString` strings live in firmware). Prior
  * mining used the WRONG septet algorithm (Roland group-of-8); the correct
- * Fractal scheme is the 8-to-7 packer in cookbook
+ * Fractal scheme is the 8-to-7 packer in primitive
  * `iii-byte-stream-septet-pack-8to7`. Re-decoding with the correct inverse
  * gives entropy ~6.5 bits/byte, so the DSP image is COMPRESSED, not encrypted,
  * and the strings are recoverable IF the compression is identified.
@@ -14,7 +14,7 @@
  *   1. Concat the septet payloads (frame[8:-2]) from every frame (the image is
  *      entirely fn=0x7d/0x7e/0x7f frames).
  *   2. Unpack 7-to-8 as a big-endian bitstream concat (the correct inverse of
- *      the cookbook LSB-first-with-carry 8-to-7 packer; verified byte-exact
+ *      the primitive LSB-first-with-carry 8-to-7 packer; verified byte-exact
  *      against its golden: [0x7f,0x40] decodes to [0xFF]).
  *   3. Report: size, overall + windowed Shannon entropy, byte histogram skew.
  *   4. Scan for known compression container magic bytes (zlib/gzip/xz/lzma/
@@ -54,7 +54,7 @@ const fnHist = new Map<number, number>();
 for (const f of frames) fnHist.set(f[5], (fnHist.get(f[5]) ?? 0) + 1);
 
 // ── 2. Septet payload extract + 7→8 unpack ─────────────────────────
-// Big-endian bitstream concat (the correct inverse of the cookbook
+// Big-endian bitstream concat (the correct inverse of the primitive
 // LSB-first-with-carry packer): concat each septet's low 7 bits into a
 // bitstream, read 8 bits per output byte. (Self-test below.)
 function unpackSeptetStream(septets: number[]): Uint8Array {
@@ -67,7 +67,7 @@ function unpackSeptetStream(septets: number[]): Uint8Array {
   }
   return Uint8Array.from(out);
 }
-// Self-test against the cookbook golden ([0xFF] packs to [0x7f,0x40]).
+// Self-test against the primitive golden ([0xFF] packs to [0x7f,0x40]).
 const selfTest = unpackSeptetStream([0x7f, 0x40]);
 const unpackOk = selfTest.length >= 1 && selfTest[0] === 0xff;
 

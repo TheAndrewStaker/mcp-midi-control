@@ -679,7 +679,7 @@ export function buildRequestStoredPresetDump(locationIndex: number): number[] {
  * `size` is septet-14-bit `itemCount` (the number of 16-bit ushorts in
  * the chunk payload); each ushort decodes via the same 3-byte packed-
  * septet shape as Axe-Fx II (`decode16Packed`). See
- * `docs/devices/am4/SYSEX-MAP.md` §6oa and cookbook
+ * `docs/devices/am4/SYSEX-MAP.md` §6oa and primitive
  * `am4-fn1f-atomic-read` for the full contract.
  *
  * effectId 0 NACKs with multipurpose-response result_code 0x06 — the

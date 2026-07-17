@@ -53,6 +53,9 @@ jobs:
       - name: Build release bundle
         run: npm run build:installer
 
+      - name: Verify release ZIP (hermetic - extracts to a clean tmpdir)
+        run: npm run verify-release-zip
+
       - name: Stage release assets (versioned + stable names)
         id: assets
         shell: pwsh
