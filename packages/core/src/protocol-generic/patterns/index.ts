@@ -9,7 +9,15 @@
  */
 
 export type { NeutralPattern, Voice, Step, VoiceName } from './types.js';
-export { PatternError } from './types.js';
+export {
+  PatternError,
+  GATE_SIXTHS_PER_STEP,
+  MIN_GATE_SIXTHS,
+  MAX_GATE_SIXTHS,
+  DEFAULT_GATE_SIXTHS,
+  gateSixthsFromSteps,
+  type GateFromSteps,
+} from './types.js';
 
 export {
   charGridToSteps,
@@ -27,6 +35,14 @@ export { euclid, euclidToString } from './euclid.js';
 export { parseDrumTab, type ParsedDrumTab } from './drumTab.js';
 
 export { applyRoundRobin, type RoundRobinSpec, type RoundRobinResult } from './roundRobin.js';
+
+export {
+  applyLegato,
+  findPitchTargetGaps,
+  type LegatoOptions,
+  type LegatoReport,
+  type LegatoResult,
+} from './legato.js';
 
 export {
   quantizeDrumEvents,
@@ -56,6 +72,7 @@ export {
   type MidiDrumImport,
   type MidiMelodicImportOptions,
   type MidiMelodicImport,
+  type MidiDurationReport,
   type MidiChannelInfo,
 } from './midiFile.js';
 
@@ -70,14 +87,27 @@ export { rollVelocity } from './rollDynamics.js';
 export {
   flattenSongsterrDrums,
   importSongsterrDrums,
+  flattenSongsterrMelodic,
+  importSongsterrMelodic,
+  isMelodicPart,
+  pitchToken,
   tempoAtBeat,
   unmappedSummary,
   SONGSTERR_DRUM_EXTENSIONS,
+  SONGSTERR_DYNAMIC_VELOCITY,
+  type SongsterrPart,
+  /** Back-compat alias of `SongsterrPart`; the shape was never drum-only. */
   type DrumPart,
   type SongsterrFlat,
   type SongsterrImportOptions,
   type SongsterrDrumImport,
   type FlattenOptions,
+  type MelodicNote,
+  type MelodicCell,
+  type SongsterrMelodicFlat,
+  type SongsterrMelodicImport,
+  type MelodicFlattenOptions,
+  type MelodicImportOptions,
   type MeasureInfo,
   type TempoMark,
   type SectionInfo,
@@ -86,13 +116,19 @@ export {
 export {
   parseSongRef,
   drumTrackChoices,
+  trackChoices,
   selectDrumTrack,
   searchSongsterr,
+  fetchSongsterrTracks,
+  fetchSongsterrPart,
+  /** Deprecated alias of `fetchSongsterrPart`; the fetch was never drum-only. */
   fetchSongsterrDrums,
   type MetaTrack,
   type SongMeta,
   type DrumTrackChoice,
+  type TrackChoice,
   type SearchHit,
+  type SongsterrTrackList,
   type SongsterrFetched,
 } from './songsterrFetch.js';
 
@@ -105,8 +141,10 @@ export {
   type ProjectPlanEntry,
   coalescePatterns,
   gridDistance,
+  layerDistance,
   planArrangement,
   type DecomposeOptions,
+  type DecomposeLayer,
   type SongDecomposition,
   type SongWindow,
   type CoalesceOptions,
@@ -138,6 +176,15 @@ export {
   describeFold,
   type FoldDecision,
 } from './drumFold.js';
+
+export {
+  condenseToKit,
+  describeCondense,
+  DEFAULT_CONDENSE_KIT,
+  type CondenseResult,
+  type CondenseRouting,
+  type CondenseCollision,
+} from './drumCondense.js';
 
 export {
   pieceCompression,

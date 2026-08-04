@@ -206,4 +206,57 @@ export const FM9_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 240,
     },
   },
+
+  // ── Recipe pickup: a FLOOR test for discovery-surface burial ──────
+  //
+  // Added 2026-08-02 to test a PREDICTION rather than a known defect.
+  //
+  // `scripts/verify-describe-device-budget.ts` measures where each device's
+  // `recipes[]` starts in its describe_device payload. The AM4's sits at ~71%
+  // and its recipe pickup measurably broke (five passes at 2-3 calls, then
+  // three failures at 17/9/13 with the prompt byte-identical). The FM9's sits
+  // at 78% and the FM3's at 76% — DEEPER than the device where retrieval
+  // broke — and no gen-3 case tested recipe pickup at all, so nobody would
+  // notice. This case closes that blind spot.
+  //
+  // WHY THE PROMPT IS A NEAR-LITERAL NAME MATCH, deliberately. An adversarial
+  // review pointed out that the II's recipe case is close to tautological:
+  // prompt "classic rock Plexi" against recipe `classic_rock_plexi`. That is a
+  // fair criticism of a case meant to test SEMANTIC retrieval. It is the right
+  // design for a case testing BURIAL: if the agent cannot find a recipe whose
+  // name is sitting in the prompt, position is the only remaining explanation.
+  // A red here is unambiguous; a green does not prove subtle matching works.
+  {
+    id: 'fm9-recipe-platform-pickup',
+    device: 'fm9',
+    description:
+      'FM9 block_stack recipe pickup, as a floor test for describe_device burial. The FM9 exposes '
+      + 'gen3_clean_platform / gen3_crunch_platform / gen3_high_gain_platform, and its recipes[] '
+      + 'starts ~78% into the payload — past the position at which AM4 recipe pickup regressed. '
+      + 'Near-literal prompt match on purpose: this isolates POSITION from semantic difficulty.',
+    prompt:
+      "On my FM9, give me a high-gain platform tone in the working buffer. Don't save it.",
+    expectations: {
+      must_call: ['describe_device', 'apply_preset'],
+      max_repeats: { apply_preset: 2 },
+      tool_call_validators: [{
+        tool: 'apply_preset',
+        call_index: 0,
+        check: (args) => {
+          const id = (args as { recipe_id?: unknown }).recipe_id;
+          if (id !== 'gen3_high_gain_platform') {
+            return `Expected apply_preset({recipe_id: 'gen3_high_gain_platform'}); got recipe_id=${JSON.stringify(id)}. `
+              + 'The recipe is named almost verbatim in the prompt, so a miss here points at describe_device '
+              + 'burial (recipes[] starts ~78% in) rather than at retrieval difficulty. Check '
+              + 'scripts/verify-describe-device-budget.ts.';
+          }
+          return true;
+        },
+      }],
+      // No max_tools: this asserts the DESTINATION. A count here would just
+      // re-litigate the am4-h1-sunday-morning lesson (see cases-am4.ts).
+      text_not_contains: ['I saved', 'I stored'],
+      max_wall_seconds: 240,
+    },
+  },
 ];

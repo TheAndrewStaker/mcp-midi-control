@@ -13,14 +13,38 @@
  * now carries an ACK expectation, so a rejection (the device replies 0x05 00…, not
  * 0x04) returns ok:false instead of the old acked-but-silent success. That, plus
  * disabling the destructive read_sample_directory, are the proven wins. The
- * PACK-INDEX theory (write the 0b 02 reply byte into frames) was REVERTED: the repo's
- * own _web/_our capture pair shows working Components writing pack byte 0 while its
- * 0b 02 reply reads 01, so the device does NOT copy that byte — the real
- * differentiator is empty-vs-occupied directory (still open; an empty non-default
- * pack still needs Components to initialize). The pack-2/pack-3 SD-card captures that
- * suggested the pack-index rule are confounded; needs a clean handshake on a 2+-pack
- * device with a known active index. Pack byte stays 0 (Components-proven). The
  * group-0x08 commit-wait theory stays REFUTED. See docs/design/circuit-sample-upload.md.
+ *
+ * PACK ADDRESSING (2026-07-17): the fileId middle byte is the 0-based pack, a byte
+ * the caller CHOOSES — hardware-confirmed 2026-07-16 for projects/patches
+ * (`docs/design/circuit-pack-addressing.md`), and the sample write uses the identical
+ * fileId shape. `packIndex` is now threaded from ctx.pack so a sample upload lands on
+ * the SAME pack the project targets (closing the cross-pack name-mismatch trap). This
+ * supersedes the reverted 2026-06-28 "active-pack-index the device REPORTS" theory:
+ * that was about the device reporting a pack (the `0b 02` byte, which is a COUNT); the
+ * decode shows the byte is chosen. Pack 0 works, and the NONZERO-pack sample
+ * write is HARDWARE-CONFIRMED as of 2026-07-27 (below).
+ *
+ * NONZERO-PACK WRITE CONFIRMED 2026-07-27 (`scripts/circuit-clone-pack-samples.ts`,
+ * maintainer's 2-pack device). Pack 1's 64 slots were read off the DEVICE, each
+ * download gated by the device's own CRC32, and 63 of them written to Pack 2
+ * (the 64th was already byte-identical). Index alignment was PROVEN, not
+ * assumed: wire slot 0 was written alone, then wire slot 63 written SECOND and
+ * out of order, and it landed at 63 rather than at the next free index, so the
+ * slot byte is ADDRESSED, not append-ordered. Eight slots spread across the pool
+ * were then downloaded back off Pack 2 md5-identical to the Pack 1 originals,
+ * and a full 64-slot name diff came back identical. Not separately re-checked
+ * across a power-cycle: the evidence is a device read-back, not a reboot.
+ *
+ * THE READ-BACK RACES THE FLASH COMMIT. The device flushes a pack's sample
+ * manifest ~6-8 s AFTER the session CLOSES. A pool read 1.2 s later reported 8
+ * slots empty that a later read showed present; nothing had been lost, the check
+ * was simply too fast. Verify by POLLING (reconnect, ~9 s, then 5 s retries),
+ * never off one immediate read. This does NOT revive the refuted commit-wait
+ * theory noted below: that was about waiting IN-session on a group-0x08 frame as
+ * a commit signal (still refuted, that frame is a generic "ready"). This is
+ * about when a verification read becomes admissible, with the session already
+ * closed. On a device with no erase, a false "the write failed" is expensive.
  */
 
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
@@ -57,19 +81,24 @@ export interface SampleUploadResult {
  * Requires a bidirectional connection (the transfer is ACK-gated).
  */
 export async function uploadSample(
-  conn: MidiConnection, wavBytes: Uint8Array, slot: number, filename: string, opts: TransferOptions = {},
+  conn: MidiConnection, wavBytes: Uint8Array, slot: number, filename: string,
+  opts: TransferOptions & { packIndex?: number } = {},
 ): Promise<SampleUploadResult> {
   if (!Number.isInteger(slot) || slot < 0 || slot > 63) {
     throw new RangeError(`sample slot must be 0..63 (device 1..64), got ${slot}`);
   }
+  const packIndex = opts.packIndex ?? 0;
   const norm = normalizeToDevice(wavBytes);
   const blocks = sampleBlockCount(norm.wav.length);
-  // Pack byte = 0 (Components-proven): the working Components capture writes 0x05 00
-  // even when the 0b 02 reply reads 01, so the active-pack-index theory (write
-  // reply[8]) is CONTRADICTED and was reverted (2026-06-28 review). The real
-  // differentiator is empty-vs-occupied directory (still open). frame builder keeps
-  // an opt-in packIndex param for the eventual proven path.
-  const frames = buildSampleUploadFrames(norm.wav, slot, filename);
+  // The fileId middle byte is the 0-based PACK, a byte the caller CHOOSES
+  // (`docs/design/circuit-pack-addressing.md`, hardware-confirmed 2026-07-16 for
+  // projects/patches; the sample write uses the identical fileId shape). Threaded
+  // from ctx.pack so an upload lands on the SAME pack the project targets, instead
+  // of always Pack 1. The earlier "active-pack-index the device reports" theory —
+  // reverted 2026-06-28 — was about the device REPORTING a pack; the decode shows
+  // the byte is chosen, not reported. Pack 0 works, and a nonzero pack is
+  // hardware-confirmed too (2026-07-27 clone onto Pack 2; module docstring).
+  const frames = buildSampleUploadFrames(norm.wav, slot, filename, { packIndex });
   // Components-faithful: open cold, send CLOSE exactly once (see TransferOptions.singleClose).
   const r = await runUploadFramePlan(conn, frames, { singleClose: true, ...opts });
   return {
@@ -97,15 +126,17 @@ export interface KitUploadResult {
 export async function uploadSampleKit(
   conn: MidiConnection,
   items: readonly { wav: Uint8Array; slot: number; filename: string }[],
-  opts: TransferOptions = {},
+  opts: TransferOptions & { packIndex?: number } = {},
 ): Promise<KitUploadResult> {
   if (items.length === 0) return { ok: false, uploaded: [], error: 'no samples to upload' };
+  const packIndex = opts.packIndex ?? 0;
   const norm = items.map((it) => {
     const n = normalizeToDevice(it.wav);
     return { wav: n.wav, slot: it.slot, filename: it.filename, converted: n.converted, blocks: sampleBlockCount(n.wav.length) };
   });
-  // Pack byte 0 (Components-proven); active-pack-index derivation reverted, see uploadSample above.
-  const frames = buildKitUploadFrames(norm.map((n) => ({ wav: n.wav, slot: n.slot, filename: n.filename })));
+  // Pack threaded from ctx.pack (see uploadSample above): all samples in the kit
+  // land on the chosen pack, the same one the project targets.
+  const frames = buildKitUploadFrames(norm.map((n) => ({ wav: n.wav, slot: n.slot, filename: n.filename })), { packIndex });
   const r = await runUploadFramePlan(conn, frames, { singleClose: true, ...opts });
   return {
     ok: r.ok,

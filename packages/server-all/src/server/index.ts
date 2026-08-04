@@ -84,6 +84,10 @@ import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.j
 import { CIRCUIT_TRACKS_DESCRIPTOR } from '@mcp-midi-control/circuit-tracks/descriptor.js';
 import { SPD_SX_DESCRIPTOR } from '@mcp-midi-control/spd-sx/descriptor.js';
 import { VE500_DESCRIPTOR } from '@mcp-midi-control/ve-500/descriptor.js';
+import {
+  MICROFREAK_DESCRIPTOR,
+  MINIFREAK_DESCRIPTOR,
+} from '@mcp-midi-control/arturia/descriptor.js';
 import { RC_505_MK2_DESCRIPTOR, RC_600_DESCRIPTOR } from '@mcp-midi-control/boss-rc/descriptor.js';
 
 // -- Server setup -----------------------------------------------------------
@@ -93,64 +97,67 @@ import { RC_505_MK2_DESCRIPTOR, RC_600_DESCRIPTOR } from '@mcp-midi-control/boss
  * handshake, ahead of any tool call. Cross-cutting agent contracts
  * that apply to the entire MIDI tool surface live here instead of
  * being copy-pasted into every tool description.
+ *
+ * ── WHAT BELONGS HERE, AND WHAT DOES NOT (2026-08-02) ────────────────
+ *
+ * This block is paid on EVERY session before the first tool call, so the
+ * test for a line is: does it change what the model DOES? Behavioural
+ * contracts (call the tools; the save vocabulary; describe for ears;
+ * session-start describe_device) earn their place and are unchanged below.
+ *
+ * CAPTURE DATES AND FIRMWARE PROVENANCE DO NOT. Roughly half of this block
+ * used to be sentences like "a 2026-06-19 Windows verify probe saw the
+ * placed block in the device's fn=0x13 status dump" — real, valuable, and
+ * changing nothing about how the model should behave. Every one of those
+ * facts is ALREADY carried, in fuller form, on each descriptor's
+ * `capabilities.verification`, which `describe_device(port)` returns, and in
+ * `docs/contributing/devices/<id>.md`. An agent that needs the evidence for
+ * ONE device gets it there, when it is working on that device, instead of
+ * every session paying for all sixteen.
+ *
+ * So the device roster below states only what changes behaviour: which
+ * devices exist, that community-beta ones are FULLY DRIVABLE, and which
+ * verbs each one answers. Do not re-add provenance here; add it to the
+ * descriptor's `verification` string, which is where it is read on demand.
  */
 const SERVER_INSTRUCTIONS = [
   'mcp-midi-control is a USB MIDI control server for Fractal and ASM gear',
   'plus any generic MIDI device the OS exposes. First-class devices:',
   'Fractal AM4, Fractal Axe-Fx II XL+, ASM Hydrasynth Explorer.',
-  'Community beta (fully drivable: drive the tools normally and ask the',
-  'user to confirm results by ear / front panel, do NOT withhold tool',
-  'calls): the modern Fractal family Axe-Fx III / FM3 / FM9 (full build /',
-  'edit / save / scene / preset surface). Of these the FM3 is the most',
-  'hardware-verified: a 2026-06-12 field test confirmed its USB-serial',
-  'transport, reads, continuous param writes, bypass, scene, and preset',
-  'switching end-to-end through this server\'s own code, and a 2026-06-10',
-  'community session confirmed set-by-name discrete param writes via',
-  'frames byte-identical to this server\'s encoder. set_block placement is',
-  'now hardware-confirmed on the FM9 (2026-06-19 Windows verify probe: a',
-  'placed block appeared in the device fn=0x13 status dump); FM3 shares',
-  'that codec; save_preset still needs on-device confirmation.',
-  'The FM9 is now also community-confirmed for reads + continuous writes:',
-  'a 2026-06-17 owner test (fw 11.0 / macOS) round-tripped get_param +',
-  'continuous set_param on hardware through this server, with channel-',
-  'specific reads and alias resolution confirmed; set_block placement +',
-  'switch_scene are FM9-hardware-confirmed (2026-06-19) and reading a',
-  'block\'s current type/model by NAME is wire-confirmed. Discrete',
-  'set-by-name, save_preset, and the live grid read stay beta. The III is',
-  'now hardware-confirmed too: the same 2026-06-17 owner test ran set_param',
-  '(amp gain, channel A) with a device echo and a get_param read-back matching',
-  'the front panel, the first on-device confirmation of the III, the gen-3',
-  'byte-identity anchor (same beta carve-outs as the FM9). Also',
-  'community beta: Fractal VP4 (reads + continuous-knob set_param /',
-  'set_bypass / save_preset writes), and the original Axe-Fx',
-  'Standard/Ultra (parameter WRITES via set_param / set_params plus',
-  'parameter reads; no whole-preset ops).',
-  'Non-Fractal community-beta devices (also fully drivable; call the',
-  'tools, ask the user to confirm by ear):',
+  '',
+  'COMMUNITY BETA MEANS FULLY DRIVABLE. Drive those tools normally and ask',
+  'the user to confirm by ear / front panel; do NOT withhold tool calls or',
+  'substitute a written spec. For a device\'s exact evidence and which of',
+  'its verbs are still gated, call describe_device(port) and read',
+  'capabilities.verification. Community-beta devices:',
+  '- Fractal Axe-Fx III / FM3 / FM9: full build / edit / save / scene /',
+  '  preset surface, same tools as the first-class Fractals.',
+  '- Fractal VP4: reads, continuous-knob set_param, set_bypass, save_preset.',
+  '  Enum/TYPE set refuses; set_block / switch_scene are gated.',
+  '- Axe-Fx Standard/Ultra (gen-1): set_param / set_params / get_param /',
+  '  get_params, and get_preset. No save, scene, or channel ops.',
   '- Novation Circuit Tracks: a groovebox sequencer. apply_pattern authors',
   '  drum + melodic note-track patterns (live-streamed over MIDI clock or',
   '  written into a .ncs project uploaded to a slot); upload_sample /',
   '  upload_project transfer WAVs + projects; external_targets routes a',
-  '  pattern out to outboard gear (e.g. the SPD-SX). Sample upload and',
-  '  note-track MIDI output are hardware-confirmed.',
+  '  pattern out to outboard gear (e.g. the SPD-SX).',
   '- Roland SPD-SX: a sample pad on a HYBRID transport. In WAVE MGR mode it',
   '  is a mounted USB drive: scan_locations lists kits, get_preset reads a',
   '  kit, list_samples reads the wave pool, export_preset backs up a kit,',
   '  upload_sample appends a wave, author_kit writes the pad→wave map. In',
   '  AUDIO/MIDI mode switch_preset recalls a kit and apply_pattern triggers',
   '  pads. A verb in the wrong USB mode returns a clear capability error.',
-  '  The storage codec is hardware-confirmed; the server write path is beta.',
   '- Boss VE-500: a vocal processor (harmony / pitch correct / FX / reverb).',
   '  set_param / set_params / get_param / set_bypass / switch_preset (user',
-  '  memories), whole-patch apply_preset, and save_preset are hardware-verified',
-  '  (decoded byte-exact from the maker\'s editor source); factory-preset recall',
-  '  and whole-patch reads are not yet available.',
-  '- Boss RC-505mk2: a loop station on a HYBRID transport. Live MIDI:',
-  '  switch_preset recalls a memory (Program Change on the RX CTL channel),',
-  '  looper/track functions ride CC through the memory\'s ASSIGN table. Storage:',
-  '  scan_locations / get_preset read a memory\'s .RC0, apply_preset authors its',
-  '  name + ASSIGN table. The CC-driven coordination is hardware-confirmed; the',
-  '  unit never echoes state, so confirm by ear.',
+  '  memories), apply_preset, save_preset. Factory-preset recall and',
+  '  whole-patch reads are not available.',
+  '- Boss RC-505mk2 / RC-600: loop stations on a HYBRID transport. Live',
+  '  MIDI: switch_preset recalls a memory; looper/track functions ride CC',
+  '  through the memory\'s ASSIGN table. Storage: scan_locations /',
+  '  get_preset read a memory\'s .RC0, apply_preset authors its name +',
+  '  ASSIGN table. The unit never echoes state, so confirm by ear.',
+  '- Arturia MicroFreak: SysEx preset-name + dump reads, system globals',
+  '  read/write, CC + Program Change. MiniFreak is CC/PC only (no SysEx).',
   'Pick tools by intent, not by name length.',
   '',
   'DEFAULT BEHAVIOR: call the tools, do not write specs.',
@@ -323,6 +330,12 @@ registerMcpDevice(SPD_SX_DESCRIPTOR);
 // Boss VE-500 (vocal multi-FX). port_match /VE-?500/i can't collide with the
 // Fractal / Hydra / Circuit / SPD-SX patterns, so registration order is free.
 registerMcpDevice(VE500_DESCRIPTOR);
+registerMcpDevice(MICROFREAK_DESCRIPTOR);
+// Registration order is the port-match tiebreaker, so the model-specific
+// matchers matter: MicroFreak is /micro\s*freak/i and MiniFreak /mini\s*freak/i.
+// Neither uses a broad /arturia/i, which would capture the other model and drive
+// it with CC numbers that address different parameters on it.
+registerMcpDevice(MINIFREAK_DESCRIPTOR);
 // Boss RC-505mk2 (looper, hybrid live-MIDI + .RC0 storage). port_match /rc-?505/i
 // can't collide with the other devices' patterns, so registration order is free.
 registerMcpDevice(RC_505_MK2_DESCRIPTOR);
@@ -334,8 +347,11 @@ registerMcpDevice(RC_505_MK2_DESCRIPTOR);
 registerMcpDevice(RC_600_DESCRIPTOR);
 registerUnifiedTools(server);
 // Expose each device's agent_guidance topics as MCP resources so the
-// agent can pull individual topics on demand instead of always
-// receiving the full agent_guidance bag via describe_device.
+// agent can pull individual topics on demand rather than receiving the
+// whole bag via describe_device. (Hosts do not auto-read resources, so
+// this is not the primary path: the tool-surface equivalent is
+// `describe_device({port, guidance:[...topics]})`, which is what the
+// withheld-topic notice points at.)
 registerDeviceResources(server);
 
 // -- Start ------------------------------------------------------------------

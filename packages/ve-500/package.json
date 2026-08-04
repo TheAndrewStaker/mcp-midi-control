@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/ve-500",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Boss VE-500 Vocal Performer device descriptor, writer, reader for the unified MCP surface.",
   "private": true,
   "license": "Apache-2.0",

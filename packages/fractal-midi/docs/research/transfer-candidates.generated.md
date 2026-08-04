@@ -13,7 +13,7 @@
 > against the entry body before spending a session on it.
 
 Family groups: gen-3 = {III, FM3, FM9, VP4}; Fractal-wide = {AM4, II, gen-3, gen-1}.
-Positive entries scanned: 57.
+Positive entries scanned: 58.
 
 ## Cross-family gaps (status: matched)
 
@@ -41,6 +41,7 @@ Positive entries scanned: 57.
 - **gen3-fn01-sub1f-current-type-name**: verified FM9 / FM3; untested on III / VP4 / AM4 / II / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **vp4-fn01-swapped-septet-float32**: verified VP4; untested on III / FM3 / FM9 / AM4 / II / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **vp4-eid206-structure-blob**: verified VP4; untested on III / FM3 / FM9 / AM4 / II / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
+- **gen3-signed-int16-semitone-register**: verified FM9 / III; untested on FM3 / VP4 / AM4 / II / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 
 ## Singletons (status: matched-singleton; the entry body may already rule out a second axis)
 

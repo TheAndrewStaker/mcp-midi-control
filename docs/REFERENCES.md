@@ -389,7 +389,7 @@ dictionary (ranges, defaults, steps, enum/model rosters) offline; this is the
 first evidence source to reach for before any wire capture. Decoder:
 `scripts/_research/parse-effectdefinitions-cache.ts`.
 
-### `packages/fractal-midi/docs/capture-guides/harvest-script.md`
+### `docs/contributing/tools/harvest-script.md`
 Community guide for `scripts/harvest-device-metadata.ts`, the one-command
 read-only device self-describe sweep (one JSON output file). The second
 community ask after the editor cache file, ahead of any targeted wire capture.

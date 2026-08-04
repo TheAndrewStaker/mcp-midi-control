@@ -46,6 +46,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type {
+  SupportTier,
   ApplyPresetOptions,
   ApplyResult,
   BlockSchema,
@@ -147,6 +148,18 @@ export interface BossRcConfig {
   example_spec?: PresetSpec;
   /** Human `verification` string for capabilities. */
   verification: string;
+  /**
+   * Support tier for THIS device, not for the family.
+   *
+   * It lives on the config rather than the factory because the two Boss loopers
+   * genuinely differ in evidence: the RC-505mk2's file surface is
+   * hardware-confirmed through this server on the maintainer's own unit, while
+   * the RC-600 carries no hardware confirmation at all. A tier hardcoded on the
+   * shared factory could not express that, so both sat at the weaker label and
+   * the mk2 was understated. Same shape as `fractal-gen2` / `fractal-gen3` /
+   * `arturia`, which all put the tier on the per-device config.
+   */
+  support_tier: SupportTier;
 }
 
 /** Resolve the RX CTL channel: env override (1..16) wins, else the config default. */
@@ -432,7 +445,7 @@ export function createBossRcDescriptor(config: BossRcConfig): DeviceDescriptor {
       // a memory (1..99, via preset_location_format).
       slot_model: 'linear',
       slot_count: 16,
-      support_tier: 'generic-only',
+      support_tier: config.support_tier,
       verification: config.verification,
       has_scenes: false,
       has_channels: false,
@@ -696,6 +709,11 @@ export const RC505MK2_CONFIG: BossRcConfig = {
   track_count: 5,
   assign: MK2_ASSIGN_BINDING,
   assign_authoring_supported: true,
+  // HYBRID device. Set from the PRIMARY authoring surface, which is the FILE
+  // surface: hardware-confirmed through this server's own packaged path on the
+  // maintainer's own unit. The live MIDI surface stays documented-only, and the
+  // verification string below leads with that split.
+  support_tier: 'verified',
   verification:
     'Live surface: documented (Parameter Guide) memory recall via Program Change (memory M -> PC M-1, ' +
     'device-confirmed) + looper/track control via CC routed through the memory\'s user-configured ASSIGN table; ' +
@@ -746,6 +764,10 @@ export const RC600_CONFIG: BossRcConfig = {
     'confirmed convention (same generation, same PC OUT / RX CTL CH menu shape) and Roland/Boss\'s universal 0-indexed ' +
     'PC convention, but is NOT independently hardware-tested on an RC-600 unit; confirm with one switch_preset call.',
   example_spec: { name: 'MyLoop', slots: [] },
+  // NOT owned by the maintainer and carries no hardware confirmation of any
+  // kind. This is the case the per-config tier exists to express: it must stay
+  // weaker than its mk2 sibling rather than inherit the sibling's evidence.
+  support_tier: 'generic-only',
   verification:
     'Live surface: documented (RC-600 Parameter Guide) memory recall via Program Change + looper/track control via ' +
     'CC routed through the memory\'s user-configured ASSIGN table + MIDI clock; the exact PC-to-memory offset ' +

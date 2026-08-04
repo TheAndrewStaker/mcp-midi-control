@@ -6,8 +6,28 @@
  * v0.3 removed several device-namespaced tools (hydra_switch_patch,
  * hydra_set_engine_param/s, hydra_param_catalog, hydra_list_enum_values);
  * the LLM no longer sees those guidance blocks through tool descriptions.
- * They surface instead via `describe_device({ port: 'hydrasynth' }).
- * agent_guidance`.
+ * They surface instead via `describe_device({ port: 'hydrasynth' })`.
+ *
+ * SIZE HISTORY, and why every topic below is inline again. Until 2026-08-02
+ * this device's discovery payload was 49,814 chars, 93% of it `recipes[]`,
+ * and `describeDevice` had to withhold ALL 13 of these topics to stay under
+ * the host's 50,000-char tool-result delivery ceiling — `device_precondition`
+ * included, which is the warning that NRPN writes are inert unless Param
+ * TX/RX is set. The cost was silent: an agent that never read it debugs a
+ * dead write instead of naming the switch.
+ *
+ * The fix was NOT the params (those have materialized server-side from
+ * `recipe_id` since the family landed). It was the prose: `source_notes`,
+ * the citation provenance, ran 687 chars per archetype = 24.7 KB = half the
+ * whole response, to answer a question nobody can ask until AFTER they have
+ * chosen a recipe. It now ships on `describe_device({port, recipe:"<id>"})`
+ * instead of 36 times inline, and the payload is ~41.6 KB with every topic
+ * here delivered.
+ *
+ * So there is ~8 KB of headroom, and it is not spare capacity: it is the
+ * margin that keeps 13 topics inline. Adding a 37th archetype costs ~700
+ * chars of it; adding prose HERE costs it directly. Check
+ * `npx tsx scripts/verify-describe-device-budget.ts` before growing either.
  */
 
 export const HYDRASYNTH_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
@@ -23,6 +43,12 @@ export const HYDRASYNTH_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
     'NRPN (the base patch lands over SysEx regardless). recipes[] lists only',
     'hardware-confirmed recipes; the founder may name an unverified id to',
     'audition; apply_patch resolves any valid recipe_id.',
+    'recipes[] is sized for MATCHING and omits each recipe\'s knob map and its',
+    'source citations. If the user asks where a tone\'s settings come from, or',
+    'you want to read every knob before committing, call',
+    'describe_device({port:"hydrasynth", recipe:"<id>"}), which returns',
+    'source_notes plus full_params / mod_routes / macro_routes. Read-only:',
+    'apply by id, never by re-sending those params.',
   ].join(' '),
 
   device_precondition: [

@@ -1383,6 +1383,116 @@ console.log('\nC12: 5-septet float32 codec vs independent captured vectors (Forg
   check('decode5SeptetFloat32(00 10 27 2b 04) → 3740.5', decode5SeptetFloat32(0x00, 0x10, 0x27, 0x2b, 0x04) === 3740.5, String(decode5SeptetFloat32(0x00, 0x10, 0x27, 0x2b, 0x04)));
 }
 
+console.log('\nC13: signed-raw-semitone decode (PITCH/PLEX/SYNTH/REVERB shift, issue #6):');
+{
+  // Byte-exact against a real SET->GET hardware roundtrip (FM9 fw 11.0 + III
+  // fw 25.04, 2026-06-18): sentWire 0/16384/32767/49151/65534 (the standard
+  // normalized-continuous sweep across displayMin=-24..displayMax=24) read
+  // back as raw wire 65512/65525/0/12/24. int16(65512) = -24, matching the
+  // SENT value exactly — the device's register is a native signed int16, not
+  // a renormalized 0..65534 field, so the standard linear decode gets the
+  // SIGN wrong at every non-zero wire value. See catalog.ts
+  // SIGNED_RAW_SEMITONE_PARAMS / makeSignedRawSemitoneDecode.
+  const roundtripPairs: ReadonlyArray<readonly [wire: number, display: number]> = [
+    [65512, -24], [65525, -11], [0, 0], [12, 12], [24, 24],
+  ];
+  for (const { desc, block, key } of [
+    { desc: FM9_DESCRIPTOR, block: 'pitch', key: 'shift1' },
+    { desc: FM9_DESCRIPTOR, block: 'plex_delay', key: 'shift1' },
+    { desc: FM9_DESCRIPTOR, block: 'synth', key: 'shift1' },
+    { desc: FM9_DESCRIPTOR, block: 'reverb', key: 'shift1' },
+    { desc: AXEFX3_DESCRIPTOR, block: 'pitch', key: 'shift1' },
+    { desc: AXEFX3_DESCRIPTOR, block: 'plex_delay', key: 'shift1' },
+    { desc: AXEFX3_DESCRIPTOR, block: 'synth', key: 'shift1' },
+    { desc: AXEFX3_DESCRIPTOR, block: 'reverb', key: 'shift1' },
+  ]) {
+    const schema = desc.blocks[block]?.params[key];
+    const id = `${desc.id} ${block}.${key}`;
+    if (!schema) { check(`${id} exists`, false, 'block/param not found'); continue; }
+    for (const [wire, display] of roundtripPairs) {
+      check(`${id} decode(${wire}) = ${display} (captured hardware wire)`, schema.decode(wire) === display, `got ${schema.decode(wire)}`);
+    }
+    // SET direction is UNCHANGED: the standard normalized-continuous encode
+    // (the roundtrip's sentWire values were themselves the standard sweep).
+    check(`${id} encode(-24) = 0`, schema.encode(-24) === 0, `got ${schema.encode(-24)}`);
+    check(`${id} encode(24) = 65534`, schema.encode(24) === 65534, `got ${schema.encode(24)}`);
+  }
+  // FM3 shares the same firmware symbols (family-wide overlay list); no FM3
+  // hardware roundtrip exists yet, but the wiring must still be live.
+  const fm3Schema = FM3_DESCRIPTOR.blocks['pitch']?.params['shift1'];
+  check('fm3 pitch.shift1 decode(65512) = -24 (family-wide, community-beta)', fm3Schema?.decode(65512) === -24, `got ${fm3Schema?.decode(65512)}`);
+}
+
+// ── Every advertised slug resolves through the WRITE path ──────────
+//
+// The defect this gate exists for: `writer.ts` resolved a placement by
+// handing the descriptor SLUG to `resolveEffectId`, which matches display
+// names ("Graphic EQ") and 3-letter group codes ("GEQ"), never slugs. Blocks
+// whose slug happens to equal their display name worked; the other 15 per
+// device did not, among them `graphic_eq`, `gate_expander`, `volume_pan`,
+// `multitap_delay` and `parametric_eq`. Every one is advertised by
+// describe_device and list_params, so an agent doing exactly what it was told
+// got "Unknown Axe-Fx III block" naming a block the device really has, and on
+// an FM9 it got the III's name in the bargain.
+//
+// The read paths were always correct (`resolveBlockOrThrow`), which is why
+// this survived: reads and writes disagreed about what a block was called.
+// So the assertion is a CROSS-CHECK, not a list: every slug the descriptor
+// advertises must resolve the same way on the write path as on the read path,
+// or refuse with a structured reason. A hardcoded roster would go stale; this
+// cannot, because it is derived from what the device advertises.
+{
+  console.log('\nEvery advertised block slug resolves through the WRITE path:');
+  for (const d of MODERN_FRACTAL_DESCRIPTORS) {
+    const slugs = Object.keys(d.blocks);
+    const broken: string[] = [];
+    const refusedWithReason: string[] = [];
+    for (const slug of slugs) {
+      try {
+        const conn = mockConnect({ responder: () => [], ackLatencyMs: 0 });
+        await d.writer.setBypass!({ conn, descriptor: d } as never, slug, true);
+      } catch (err) {
+        const code = err instanceof DispatchError ? err.code : '(plain Error)';
+        // `unknown_block` on a slug the descriptor itself advertises is the
+        // bug. `capability_not_supported` is the honest answer for a block
+        // with no addressable effect id (NAM, Global Block, Shunt, the
+        // FC-only ones), and a plain Error is a defect in its own right
+        // because it loses the code the dispatcher routes on.
+        if (code === 'unknown_block' || code === '(plain Error)') broken.push(`${slug} [${code}]`);
+        else if (code === 'capability_not_supported') refusedWithReason.push(slug);
+      }
+    }
+    check(
+      `${d.id}: all ${slugs.length} advertised slugs resolve or refuse with a reason (${refusedWithReason.length} not addressable)`,
+      broken.length === 0,
+      broken.length > 0 ? `unresolvable: ${broken.join(', ')}` : undefined,
+    );
+    // Self-coverage: if the roster ever came back empty this leg would pass
+    // having checked nothing, which is precisely how the original defect hid.
+    check(`${d.id}: the slug roster is non-empty (this leg measured something)`, slugs.length >= 20, `got ${slugs.length}`);
+  }
+
+  // A shunt is NOT a cleared cell: the grid word carries block type 0x08 plus
+  // a sequential index (gridLayout.ts). set_block used to advertise "shunt" as
+  // a synonym for "none" in its own error text and then refuse it. It must now
+  // refuse with a reason that says why, and must never quietly send blockId 0.
+  let shuntCode = '(no throw)';
+  let shuntMsg = '';
+  try {
+    const conn = mockConnect({ responder: () => [], ackLatencyMs: 0 });
+    await AXEFX3_DESCRIPTOR.writer.setBlock!(
+      { conn, descriptor: AXEFX3_DESCRIPTOR } as never,
+      { row: 1, col: 2 } as never,
+      { block_type: 'shunt' } as never,
+    );
+  } catch (err) {
+    shuntCode = err instanceof DispatchError ? err.code : '(plain Error)';
+    shuntMsg = err instanceof Error ? err.message : '';
+  }
+  check('set_block refuses "shunt" rather than clearing the cell', shuntCode === 'capability_not_supported', `got ${shuntCode}`);
+  check('the shunt refusal explains it is not an empty cell', /not an empty cell/i.test(shuntMsg), shuntMsg.slice(0, 90));
+}
+
 console.log('');
 if (failures > 0) {
   console.error(`FAIL — ${failures} check(s) failed.`);

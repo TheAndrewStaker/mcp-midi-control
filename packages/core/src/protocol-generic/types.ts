@@ -69,8 +69,25 @@ export interface CanonicalTermMap {
  *                      hardware (Axe-Fx III, FM3, FM9). Authoring works;
  *                      every write is a hypothesis pending owner
  *                      confirmation by ear / front panel.
- *   - 'generic-only'   Only generic-MIDI primitives are safe (PC / CC /
- *                      NRPN / tempo); no verified preset-authoring codec.
+ *   - 'generic-only'   Only generic primitives are safe (PC / CC / NRPN /
+ *                      tempo); no verified preset-authoring codec on ANY
+ *                      transport.
+ *
+ * **The tier is transport-agnostic.** It describes how well evidenced this
+ * device's authoring codec is, NOT which wire it travels over. An earlier
+ * wording tied `generic-only` to "no preset-authoring codec over MIDI", which
+ * silently mislabeled every device that authors over the STORAGE transport: the
+ * SPD-SX and RC-505mk2 both carry byte-exact, hardware-confirmed kit and file
+ * codecs, and both sat at `generic-only` purely because their authoring does not
+ * ride MIDI. That understated two of the deepest surfaces in the tree. A
+ * storage-transport codec confirmed on hardware is `verified`, exactly as a
+ * MIDI one would be.
+ *
+ * On a HYBRID device the single tier is necessarily coarse (the SPD-SX's
+ * storage surface is confirmed while its MIDI surface is documented-only).
+ * Set the tier from the device's PRIMARY authoring surface and make
+ * `verification` lead with the per-surface split, so the nuance is one string
+ * away rather than lost.
  *
  * Optional for back-compat: a missing tier reads as 'verified' (the
  * pre-existing implicit contract for AM4 / II / Hydrasynth).
@@ -154,6 +171,29 @@ export interface DeviceCapabilities {
    */
   save_note?: string;
   supports_lineage: boolean;
+  /**
+   * True when `scan_locations` reads names by NAVIGATING the device to each
+   * location in turn, which destroys unsaved working-buffer edits.
+   *
+   * The AM4 reads a stored slot's name directly (`readPresetName(conn, index)`)
+   * and never moves, so a scan there is genuinely non-destructive. The Axe-Fx II
+   * has no decoded read-name-at-location, so its scan sends a switch per slot
+   * with a 150 ms settle and restores the ORIGINAL PRESET NUMBER at the end.
+   * Restoring the number is not restoring the buffer: the reload comes from
+   * flash, so anything unsaved is gone.
+   *
+   * MEASURED CONSEQUENCE, 2026-08-03, from a real Claude Desktop session. An
+   * agent asked to find a preset by name on the II ran three scans, the widest
+   * taking 16.3 s and walking ~64 presets. It then carefully warned the user
+   * that the NEXT call, a single `switch_preset`, would discard their edits,
+   * having already discarded them three calls earlier without a word. The
+   * buffer-dirty gate fired on the small navigation and not on the large one,
+   * because only `switch_preset` consulted it.
+   *
+   * When this is true the dispatcher runs the same `guardActiveBufferOrSave`
+   * that `switch_preset` runs, honouring `on_active_preset_edited`.
+   */
+  scan_navigates?: boolean;
   has_macros?: boolean;
   /**
    * Whether the device exposes an atomic-read primitive that lets
@@ -234,6 +274,21 @@ export interface DeviceCapabilities {
    */
   external_tracks?: Readonly<Record<string, number>>;
   /**
+   * The drum ROLE each of the device's own internal drum tracks plays by
+   * default, in track order (Circuit Tracks Drum 1..4 =
+   * `['kick','snare','closed_hat','ride']`). This is the fixed roster a full
+   * kit gets CONDENSED onto when a groove is authored elsewhere (e.g. routed to
+   * an external multi-pad sampler through `external_tracks`) and the device's
+   * own drum tracks would otherwise sit empty. See
+   * `apply_pattern condense_drums` and `patterns/drumCondense.ts`.
+   *
+   * Roles, not sample slots: which physical sample a track plays is project
+   * state the DEVICE layer owns (Circuit `drum_binding`), so it never appears
+   * here. Absent ⇒ the device has no fixed internal drum-track roster and
+   * cannot host a condensed kit.
+   */
+  drum_track_roles?: readonly string[];
+  /**
    * For a device that receives external control through a USER-ASSIGNABLE table
    * (the Boss RC ASSIGN system, not a fixed factory CC map), the legality bounds
    * an OpenRig cross-device binding must stay within. `describe_rig`'s
@@ -250,6 +305,59 @@ export interface DeviceCapabilities {
     /** Legal control TARGET labels (RC-505: "TRK1 REC/PLY".."TRK5 LEVEL"). */
     targets?: readonly string[];
   };
+  /**
+   * What a BACKUP means on this device: the natural unit, its addressable
+   * range, and roughly what one costs. Read by `backup_device` to size a
+   * sweep, quote a duration to the user before it starts, and name the unit
+   * in the words the front panel uses.
+   *
+   * Every field is optional; `resolveBackupPolicy` (dispatcher/backupIndex.ts)
+   * derives conservative defaults from signals the descriptor already carries
+   * (`reader.dumpStoredPresetBinary` presence, `has_packs`, `transport.kind`),
+   * so a device that declares nothing still gets a correct-but-cautious
+   * policy. Declaring it explicitly is what unlocks a whole-device sweep with
+   * no `from`/`to` from the caller.
+   */
+  backup?: BackupPolicy;
+}
+
+/**
+ * Per-device backup shape. See `DeviceCapabilities.backup`.
+ *
+ * The UNIT is the point of this type. "Back up my rig" means different
+ * physical things per device (a Fractal preset, a Circuit project, an SPD-SX
+ * kit, a Boss memory), and that difference belongs in the descriptor, not in
+ * a switch inside the backup tool.
+ */
+export interface BackupPolicy {
+  /**
+   * What one backup IS, in the device's own vocabulary and singular:
+   * `'preset'` (Fractal), `'project'` (Circuit Tracks), `'kit'` (SPD-SX),
+   * `'memory'` (Boss RC). Surfaced verbatim in receipts and refusals, so it
+   * must match what the front panel calls the thing.
+   */
+  unit_label?: string;
+  /** Lowest addressable stored location, in DEVICE numbering (AM4 0, Circuit 1). */
+  first_location?: number;
+  /** Highest addressable stored location, in DEVICE numbering (AM4 103, Circuit 64). */
+  last_location?: number;
+  /**
+   * Rough wall-clock seconds ONE unit costs to read. Used only to quote the
+   * user a duration before a sweep starts (see the performance budget in
+   * CLAUDE.md); never used as a timeout. Prefer over-estimating: a sweep that
+   * finishes early is a pleasant surprise, one that runs 3x its quote is a
+   * broken promise.
+   */
+  seconds_per_unit?: number;
+  /**
+   * The tool that puts one of these files BACK on the device, by name
+   * (`'import_preset'`, `'upload_project'`). Absent ⇒ this device has no
+   * restore path through this server and the receipt says so plainly rather
+   * than implying one exists.
+   */
+  restore_tool?: string;
+  /** One-line caveat about restoring on this device, folded into receipts. */
+  restore_note?: string;
 }
 
 // ── Pattern / sequencer-orchestrator surface ───────────────────────
@@ -304,12 +412,45 @@ export interface RealizeNoteEvent {
    * (2026-07-02): the Circuit MIDI-OUT transmits the delay as real timing.
    */
   micro?: number;
+  /**
+   * Note LENGTH in SIXTHS of a step (6 = one step, 96 = sixteen), carried
+   * through from `Step.gate_sixths`. Absent = the compiler's default one-step
+   * gate. `duration_ms` above is the SAME length expressed in milliseconds for
+   * the live realizers; this field exists because a stored sequencer's gate is
+   * a step-relative magnitude, and re-deriving it from ms would need the BPM
+   * and would not round-trip the caller's exact value.
+   */
+  gate_sixths?: number;
+  /**
+   * TIE-FORWARD: hold into the next onset rather than re-triggering. Carried
+   * through from `Step.tie`; only a target that stores a per-step tie flag can
+   * honor it (the live realizers express the same intent through the longer
+   * `duration_ms`). Absent = untied.
+   */
+  tie?: boolean;
 }
 
 /** One named section of a song arrangement: a compiled plan + its name. */
 export interface ArrangementSectionPlan {
   name: string;
   plan: RealizePlan;
+}
+
+/**
+ * STORED per-track mixer levels for an authored project (raw 0..127, the same
+ * scale as the mixer CCs). PARTIAL on purpose: name only the tracks to set.
+ * An omitted SYNTH key stores level 0 (the stored-silent default, maintainer's
+ * 2026-07-29 instruction: external gear carries the synth voices, so the
+ * internal engines stay silent unless a fader is raised live); an omitted
+ * DRUM key means "leave the template's byte" (condensation stores its own 0).
+ */
+export interface StoredMixerLevels {
+  synth1?: number;
+  synth2?: number;
+  drum1?: number;
+  drum2?: number;
+  drum3?: number;
+  drum4?: number;
 }
 
 /**
@@ -356,13 +497,92 @@ export interface RealizePlan {
    * Defaults to the canonical stoken role layout [0,1,2,3] = kick / snare /
    * closed_hat / ride when drum tracks are authored. See
    * docs/design/groove-instrument-mapping.md.
+   *
+   * `drum_flip_roles` is the SAME per-step flip surface expressed in device-
+   * neutral drum ROLES ("crash", "tom") instead of sample slots, which is what
+   * the condenser emits (`patterns/drumCondense.ts` deliberately never names a
+   * device slot). The device layer resolves role → its own pool slot, so a
+   * non-Circuit target can reuse the condenser unchanged. Merged with
+   * `drum_flips`, which wins on a conflict because it is already the caller's
+   * explicit slot number.
+   *
+   * `drum_levels` sets each internal drum track's STORED mixer level (0..127,
+   * one per track in track order). A condensed kit is authored at level 0 so it
+   * lies silently under the external kit and the player dials it up from the
+   * mixer; the level has to be the stored byte because a project change
+   * overwrites the live value.
+   *
+   * `preserve_template_gates` (default TRUE) keeps the note LENGTHS and
+   * TIE-FORWARD flags the template project already holds, instead of resetting
+   * every re-authored note to a one-step gate. Authoring has only ever emitted
+   * a one-step gate, so any other length in a stored project was dialled in by
+   * hand at the device: a 274-file corpus census found twelve distinct hand-set
+   * gate values plus 1,048 tie flags across the maintainer's own songs, every
+   * one of them a held pad or drone. Set it false only to deliberately flatten
+   * them; the destructive direction is the one you have to ask for.
    */
   upload?: {
     template_path?: string;
     slot: number;
     scale?: string;
+    preserve_template_gates?: boolean;
     drum_flips?: Record<string, Record<string, number>>;
+    drum_flip_roles?: Record<string, Record<string, string>>;
+    drum_levels?: number[];
     drum_binding?: number[];
+    /**
+     * The project's STORED tempo in BPM (40..240, whole numbers only), the value
+     * the device adopts when the project is loaded.
+     *
+     * Absent means "leave whatever the template carried", which is how this used
+     * to behave unconditionally — and why a pack of authored projects all played
+     * at the template's 120 instead of the song's own tempo. The realizer says so
+     * in its receipt when it leaves the template's value standing, so an inherited
+     * tempo can never again be silent.
+     */
+    tempo?: number;
+    /**
+     * The project's STORED pad COLOUR — what the device lights that project's
+     * pad with in its Projects View. A palette index or a palette name, resolved
+     * by the target device (the palette is the device's, not this layer's).
+     *
+     * Same contract as `tempo`, and for the same reason. Absent means "leave
+     * whatever the template carried", which is how authoring behaved before this
+     * existed, so an existing caller's file is byte-identical. Present means the
+     * project is born the right colour instead of needing a second surgical
+     * write per project afterwards. The realizer says which happened, because a
+     * whole pack of projects that all inherited one template colour is exactly
+     * the "which project is this song?" problem colour exists to solve.
+     *
+     * Out of range / unknown name REFUSES rather than falling back: a pad lit
+     * the wrong colour with nothing in the receipt to say so is worse than an
+     * error the caller has to answer.
+     */
+    colour?: number | string;
+    /**
+     * The project's STORED NAME, the fixed 32-character, space-padded ASCII
+     * field the device's editor and pack directory show for the project.
+     *
+     * Same contract as `tempo` and `colour`, for the same reason: absent leaves
+     * the template's name byte-identical (how authoring always behaved, so an
+     * existing caller's file does not move), present stamps the name as the
+     * project is born, and the realizer's receipt says which happened. Longer
+     * than 32 characters or non-ASCII REFUSES rather than truncating: a
+     * silently shortened name is how two different songs end up reading the
+     * same on the card.
+     */
+    project_name?: string;
+    /**
+     * STORED per-track mixer levels (see {@link StoredMixerLevels}), written
+     * into the project file so they survive a project load (a runtime CC
+     * cannot, because loading a project overwrites the live value. Only the
+     * named tracks are written; every other track keeps the template's byte,
+     * and the realizer's receipt lists both sides. A drum key here overrides
+     * the condensed kit's stored 0 for that track (the caller's explicit
+     * number is the more specific instruction). Out of range REFUSES rather
+     * than clamping.
+     */
+    mixer_levels?: StoredMixerLevels;
     /**
      * Safe-edit overwrite gate (cf. `docs/SAFE-EDIT-WORKFLOW.md`): authored
      * `ncs_upload` writes a stored project slot, so it honors the same gate as
@@ -377,6 +597,20 @@ export interface RealizePlan {
      * compression / layout before committing.
      */
     dry_run?: boolean;
+    /**
+     * Arrangement only: an EXPLICIT scene grouping, already resolved from the
+     * caller's section names to section indices by the dispatcher. Each inner
+     * list is one scene's sections in play order; the play `order` handed to
+     * the realizer is the plan's concatenation. Present forces the scene-chain
+     * layout with exactly this grouping (the automatic layout greedily merges
+     * consecutive sections into the fewest scenes, which cannot express a
+     * chosen 1+3+2+2 split). The same section index may recur across scenes
+     * (scenes are pointers at pattern ranges, so repetition costs no slots);
+     * within one scene each section appears once, consecutively. The device
+     * writer owns the per-scene validation and its confirmed-scene-count
+     * ceiling. Absent = the automatic chain/scene layout, unchanged.
+     */
+    scene_plan?: readonly (readonly number[])[];
   };
 }
 
@@ -516,12 +750,42 @@ export interface ParamSchema {
    * model is silently ignored).
    *
    * Format: free-form prose describing the constraint, since the
-   * shape of "which types" varies per device. E.g. "applies only
-   * when amp.type ∈ [Plexi100W, 1959SLP]" or "applies to any type
-   * (special-cased on Twin Verb: shows as 'Vibrato Speed')". When
-   * absent, treat as "always applies."
+   * shape of "which types" varies per device. E.g. "applies on 9 of 248
+   * amp types: Friedman BE | Friedman HBE | ...". When absent, treat as
+   * "always applies."
+   *
+   * This is the MATCH-TIME form: on a knob gated to a large fraction of a
+   * big roster it states the count and names the tool that returns the exact
+   * list, rather than inlining 200 model names into a survey of every param
+   * in the block. See `applies_only_when_full` for the lossless form.
    */
   applies_only_when?: string;
+
+  /**
+   * The lossless applicability rendering: every type named, no matter how
+   * many. Served only by the param-scoped `list_params({block, name})` call,
+   * because on the AM4 this field reaches 1,415 characters for ONE param
+   * (`amp.master`) and inlining it across a whole block is what put
+   * `list_params({block:["amp"]})` at 67,731 chars, past the host's 50,000
+   * delivery cliff.
+   *
+   * Omit when it would be identical to `applies_only_when` (the common case:
+   * a short roster fits in the match-time form already).
+   */
+  applies_only_when_full?: string;
+
+  /**
+   * A caveat about how good the evidence for THIS param's wire address is,
+   * surfaced verbatim in `list_params`. Use it only when the address itself is
+   * weakly evidenced (transcribed from a third party, inferred, unvalidated),
+   * NOT for the ordinary "sent but unacknowledged" case, which every
+   * fire-and-forget param shares and which belongs in the write result.
+   *
+   * The distinction is load-bearing: a param that no-ops is a visible failure,
+   * whereas a param addressed by a WRONG number silently moves something else.
+   * Absent means the address is vendor-documented or confirmed.
+   */
+  evidence_note?: string;
 }
 
 export interface BlockSchema {
@@ -662,6 +926,29 @@ export interface OverwriteTargetInfo {
   /** True when the target IS the currently-active/edited location — saving
    *  there is a refresh, not a clobber, so the gate stays silent. */
   is_active_location: boolean;
+  /**
+   * True when this device can tell which location is ACTIVE but cannot read
+   * whether an ARBITRARY target is occupied, so `occupant_name === undefined`
+   * means "unknown", NOT "empty".
+   *
+   * The distinction is the whole point. Without it the gate reads an
+   * unknown-occupancy device as an empty target and saves, which is what the
+   * Axe-Fx II did: the store landed `acked: true` and a note rode the RECEIPT
+   * saying the target had not been scanned. A warning after a flash write is
+   * not a gate, and it contradicts two absolute rules in CLAUDE.md ("never
+   * write to a preset location without reading it first"; "before overwriting
+   * a non-empty location, surface what's there and ask") on a `verified`-tier
+   * device.
+   *
+   * When set, the dispatcher REFUSES a non-active target unless the caller
+   * passes `confirm_overwrite: true`, and says plainly that no occupancy check
+   * was possible on this device rather than implying one happened. The
+   * Axe-Fx II is the first device to set it: `buildGetPresetNumber` answers
+   * "which preset is active" but `buildGetPresetName` takes no location
+   * argument, so there is no decoded read for an arbitrary slot. Reading one
+   * by NAVIGATING there would clobber the very buffer being saved.
+   */
+  occupancy_unknown?: boolean;
 }
 
 export interface WriteResult {
@@ -1173,6 +1460,26 @@ export interface PresetSnapshot {
    */
   read_warnings?: readonly string[];
   /**
+   * Multi-pattern sequencer (Circuit Tracks) only: which of the per-track
+   * patterns hold ANY content. `slots` decode only the PLAYED pattern
+   * (`decoded`, 1-based), so on its own a project whose pattern 1 is
+   * intentionally silent reads IDENTICALLY to a failed write. This lets the
+   * caller tell "the write landed, pattern 1 is just empty" (`occupied`
+   * non-empty) from "nothing was stored" (`occupied` empty) — the
+   * verification counterpart to project_plan's `starts_silent`. Absent on
+   * single-pattern devices.
+   */
+  pattern_occupancy?: {
+    /** Patterns per track (Circuit: 8). */
+    total: number;
+    /** 1-based pattern the `slots` above were decoded from (Circuit: 1). */
+    decoded: number;
+    /** 1-based pattern numbers holding content in ANY track; empty = truly empty project. */
+    occupied: readonly number[];
+    /** Per-track occupied patterns (1-based), for verifying a multi-pattern chain landed. Only tracks with content appear. */
+    by_track: Readonly<Record<string, readonly number[]>>;
+  };
+  /**
    * gen-3 only: the full decoded patch when `get_preset` read a whole dump
    * (stored-by-location, or the active buffer when its dump validated). Carries
    * the routing grid, per-channel block types, scene names + per-scene bypass/
@@ -1560,6 +1867,22 @@ export interface PresetBinaryDump {
    */
   empty?: boolean;
   /**
+   * Did the DECODED bytes pass the format's own structural checks (magic,
+   * self-declared length, container shape)? Distinct from "the transfer was
+   * verified", and set only by devices whose transfer carries a checksum that
+   * does NOT cover the decoded file.
+   *
+   * The Circuit Tracks is the case that forced this field (2026-07-29): its
+   * WRITE_FINISH CRC32 covers the ENCODED STREAM, so a de-framing failure
+   * arrives CRC-clean and the resulting `.ncs` was recorded in a backup manifest
+   * as verified while being unusable. A caller must be able to tell
+   * "transfer failed" (retry) from "transfer succeeded and delivered a
+   * non-project" (do not retry, do not restore from it), and one boolean
+   * covering both cannot say that. `undefined` means the device declares no
+   * decode-side structural check, NOT that the bytes are good.
+   */
+  structurally_valid?: boolean;
+  /**
    * Surfaced caveat the caller MUST relay to the user (e.g. the Axe-Fx II
    * has no edit-buffer dump request, so its "active" export is the stored
    * flash copy of the active slot). Absent when the dump is unambiguous.
@@ -1643,6 +1966,13 @@ export interface SampleDirectoryDump {
    * "% full" — there is room to append. Unset/false (Circuit) = a real ceiling.
    */
   unbounded?: boolean;
+  /**
+   * The 1-based pack this pool was read from (Circuit Tracks: `pack: 5` = the
+   * front panel's "Pack 5"). Present when the device is pack-addressed, so the
+   * caller can see WHICH pack's names it got — a project bound by these names
+   * must be written to this same pack. Absent on packless devices (SPD-SX).
+   */
+  pack?: number;
   /** Optional human note about capacity (e.g. "append-only, room to add more"). */
   capacity_note?: string;
 }
@@ -1686,6 +2016,27 @@ export interface DeviceReader {
    * Devices with no pack concept omit it (`capability_not_supported`).
    */
   readPackDirectory?(ctx: DispatchCtx): Promise<PackDirectoryDump>;
+  /**
+   * Optional, READ-ONLY. Report occupancy for specific stored project slots
+   * (device numbering) using TWO independent oracles: the device's per-file
+   * existence query and the pack's directory listing. See `ProjectSlotProbe`.
+   *
+   * This exists because `delete_project` needs an occupancy answer that does NOT
+   * come from the directory table, since the directory is what a delete
+   * modifies, and it needs it both BEFORE (to report what would be lost, and to
+   * gate) and AFTER (to verify, non-circularly). It is deliberately not a
+   * whole-pack scan: `scanLocations` already answers "what is on this pack", and
+   * this answers "is THIS slot occupied, according to two things that can
+   * disagree".
+   *
+   * `slots` is a list of NAMED slots and implementations walk exactly that list.
+   * There is deliberately no range form anywhere in this feature; see
+   * `dispatcher/deleteProject.ts`.
+   *
+   * Devices without a per-file existence query omit it; the dispatcher then
+   * answers capability_not_supported for anything that depends on it.
+   */
+  probeProjectSlots?(ctx: DispatchCtx, slots: readonly number[]): Promise<ProjectSlotProbeReport>;
   getParams(ctx: DispatchCtx, queries: readonly ParamQuery[]): Promise<BatchReadResult>;
   /**
    * BK-075 phantom-param pre-flight read. Returns a snapshot of which
@@ -1837,6 +2188,111 @@ export interface ProjectUploadOutcome {
   warning?: string;
 }
 
+// ── Stored-project deletion (delete_project) ────────────────────────
+//
+// The inverse of `upload_project`, and the only operation in this server that
+// makes stored content stop existing rather than be replaced. First (and today
+// only) device: the Novation Circuit Tracks, whose file-transport exposes a
+// per-slot delete opcode. Full safety contract: `docs/SAFE-EDIT-WORKFLOW.md`.
+//
+// The shapes below deliberately keep the TWO occupancy oracles apart instead of
+// collapsing them into one `occupied` boolean. A delete is verified by asking
+// both, and the directory is the very thing the delete modifies, so a check that
+// consulted only the directory would be circular. Two fields also make their
+// DISAGREEMENT expressible, which is exactly the state in which nothing should
+// be deleted.
+
+/**
+ * One stored slot as both oracles see it. `slot` is DEVICE numbering (what the
+ * front panel shows), matching every other project-addressed method here.
+ */
+export interface ProjectSlotProbe {
+  slot: number;
+  /**
+   * The device's per-file existence query says a file is stored here. On the
+   * Circuit this is computed from the file itself (the device returns its CRC),
+   * so it is independent of the directory table below.
+   */
+  exists: boolean;
+  /** The pack's directory listing named this slot. The second, independent oracle. */
+  in_directory: boolean;
+  /** Stored name, from the directory listing. The existence query carries no name. */
+  name?: string;
+  /** The device's own CRC32 of the stored file, when the existence query returned one. */
+  crc32?: number;
+  /**
+   * The raw existence-query reply, so a caller can compare a slot's answer
+   * byte-for-byte against a known-free control slot's instead of against a
+   * hardcoded idea of what "free" looks like. Diagnostic wire data, same role as
+   * `ReadResult.raw_response`; it never reaches a tool surface.
+   */
+  reply?: readonly number[];
+  /**
+   * Set when occupancy could NOT be established, or when the two oracles
+   * DISAGREE. Callers must refuse on this, never fall back to "probably empty"
+   * or "probably occupied".
+   */
+  unreadable?: string;
+}
+
+/** What `probeProjectSlots` returns: the requested slots, plus a free reference. */
+export interface ProjectSlotProbeReport {
+  slots: readonly ProjectSlotProbe[];
+  /**
+   * A slot the device reports as free, read the same way in the same session, to
+   * serve as a live reference for what "free" looks like RIGHT NOW.
+   *
+   * Verifying an erase against this rather than against an absolute expectation
+   * is not fussiness. On 2026-07-29 a verification whose matcher accepted only
+   * the occupied reply shape scored a real, successful hardware delete as
+   * "still there", because the device's free-slot answer is a DIFFERENT
+   * subcommand and fell through unmatched. Only a read of a never-occupied
+   * control slot settled it. Comparing to a control makes that class of mistake
+   * impossible: the erased slot either answers exactly as a free slot does, or
+   * it does not.
+   *
+   * Absent when the device offers no free slot to compare against (a full pack).
+   * Callers then fall back to the two ordinary oracles and report that the
+   * control comparison was unavailable rather than claiming it passed.
+   */
+  free_control?: { slot: number; reply: readonly number[] };
+}
+
+/** What happened to one slot in a delete call. `slot` is DEVICE numbering. */
+export interface ProjectDeleteResult {
+  slot: number;
+  /** True only when the device ACKed AND both post-delete oracles agree it is gone. */
+  ok: boolean;
+  /** Name of what was destroyed, as it was read before the delete. */
+  name?: string;
+  /** Absolute path of the pre-delete backup. Always set on a successful delete. */
+  backup_path?: string;
+  /** Post-delete existence query: the file is gone. */
+  gone_by_query?: boolean;
+  /** Post-delete directory read (a FRESH session, after the manifest flush window): the slot is unlisted. */
+  gone_by_directory?: boolean;
+  /**
+   * The post-delete existence reply is byte-identical to a known-free control
+   * slot's. `undefined` = no free slot was available to compare against, which is
+   * reported as unavailable rather than counted as a pass.
+   */
+  matches_free_control?: boolean;
+  /** Set when this slot was not deleted, or was deleted but could not be confirmed gone. */
+  error?: string;
+}
+
+/** Result of a `delete_project` call. */
+export interface ProjectDeleteOutcome {
+  ok: boolean;
+  /** 1-based pack the whole operation addressed, as the device numbers it. */
+  pack: number;
+  /** Per-slot outcome, in the order requested. */
+  deleted: readonly ProjectDeleteResult[];
+  /** Human receipt: what was destroyed, where the backups are, and how to undo. */
+  info: string;
+  warning?: string;
+}
+
 // ── Sampler kit authoring (author_kit) ──────────────────────────────
 //
 // The sampler-archetype whole-preset write. A kit IS the preset, addressed by
@@ -1895,6 +2351,19 @@ export interface KitAuthorResult {
   dry_run: boolean;
   /** Prior kit backed up before an overwrite (absolute path), when applicable. */
   backed_up?: string;
+  /**
+   * Set when this MERGED over a kit already at the location instead of building
+   * fresh: what it carried over rather than resetting to a default. Fields the
+   * caller named are not listed (those were applied as asked).
+   */
+  merged?: {
+    /** Per-pad level kept from the existing kit: pad (1-based) → level 0..127. */
+    levels: { pad: number; level: number }[];
+    /** Pads (1-based) whose WAVE changed while the level was inherited — a different sample may need a different level. */
+    wave_changed: number[];
+    /** True when the existing kit's Level/Tempo/FX header was carried over. */
+    header: boolean;
+  };
   info: string;
   warning?: string;
 }
@@ -2034,10 +2503,11 @@ export interface DeviceWriter {
   authorKit?(ctx: DispatchCtx, location: LocationRef, name: string, pads: readonly KitPadAssignment[], opts?: KitAuthorOptions): Promise<KitAuthorResult>;
 
   /**
-   * OPTIONAL. Non-destructively set per-pad MIDI trigger notes on an EXISTING
-   * kit WITHOUT rebuilding it: only the note fields change, so waves, levels, and
-   * FX are preserved exactly (unlike authorKit, which rebuilds and resets levels/
-   * FX to defaults — the loudness-drop trap). `notes` maps the device-facing pad
+   * OPTIONAL. Surgically set per-pad MIDI trigger notes on an EXISTING kit
+   * WITHOUT rebuilding it: only the note fields change, every other byte is
+   * untouched, and it needs no pad list. (`authorKit` also preserves fields the
+   * caller does not name, so this is no longer the only safe path — just the
+   * narrowest.) `notes` maps the device-facing pad
    * number (1-based) to a MIDI note 0..127. Sampler-family; full kits only — an
    * implementation refuses a kit that stores no per-pad notes (e.g. an SPD-SX
    * minimal kit), since adding one would force the level-changing full format.
@@ -2062,6 +2532,24 @@ export interface DeviceWriter {
    * memory omit this; the dispatcher then errors with capability_not_supported.
    */
   uploadProject?(ctx: DispatchCtx, project: Uint8Array, slot: number, opts?: SlotWriteOptions): Promise<ProjectUploadOutcome>;
+
+  /**
+   * OPTIONAL, DESTRUCTIVE AND IRREVERSIBLE. Erase stored projects from their
+   * slots (device numbering). The inverse of `uploadProject`: `upload` replaces
+   * content, this makes it stop existing, on hardware with no undo and no trash.
+   *
+   * The implementation's ONLY job is the wire: for each slot, read occupancy
+   * immediately before the destructive frame, refuse that slot unless it reads
+   * OCCUPIED, send the delete, require the device's ack for that exact slot, and
+   * re-read. It must NOT take the backup, check authorization, or enforce the
+   * per-call ceiling: those are dispatcher gates (`dispatcher/deleteProject.ts`),
+   * so they are enforced once, for every device, and are testable offline.
+   *
+   * A device that cannot erase a stored location omits this and the dispatcher
+   * answers capability_not_supported. That is the correct answer for most gear:
+   * a Fractal preset location has no erase at all, you overwrite it.
+   */
+  deleteProjects?(ctx: DispatchCtx, slots: readonly number[]): Promise<readonly ProjectDeleteResult[]>;
 
   /**
    * Cross-device safe-edit gate (see `docs/SAFE-EDIT-WORKFLOW.md`).
@@ -2379,7 +2867,10 @@ export type ErrorCode =
   | 'device_not_mounted'          // storage-transport device is not mounted as a drive (e.g. SPD-SX not in WAVE MGR mode)
   | 'save_authorization_required' // gate refusal: apply-at-slot called without save_authorized=true
   | 'buffer_dirty'                // gate refusal: nav/save-at-slot while active buffer has unsaved edits
-  | 'overwrite_confirmation_required'; // gate refusal: destructive slot transfer to an occupied/unverifiable slot without confirm_overwrite=true
+  | 'overwrite_confirmation_required' // gate refusal: destructive slot transfer to an occupied/unverifiable slot without confirm_overwrite=true
+  | 'delete_confirmation_required'    // gate refusal: an ERASE (not a replace) without confirm_delete=true; carries the pre-flight report of what would be lost
+  | 'delete_ceiling_exceeded'         // gate refusal: more slots in one erase call than the per-call ceiling allows. Refused whole, never truncated to fit
+  | 'duration_acknowledgement_required'; // gate refusal: a job long enough that the user must be quoted the wait first (backup_device sweep)
 
 export interface DispatchErrorDetails {
   /** Single best near-match — printed inline ("did you mean X?"). */

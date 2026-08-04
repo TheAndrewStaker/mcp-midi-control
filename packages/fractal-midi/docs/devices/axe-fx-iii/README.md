@@ -26,7 +26,7 @@ Code lives in [`src/gen3/axe-fx-iii/`](../../../src/gen3/axe-fx-iii/) (codec) an
 
 ## See also
 
-- The community capture guides ([`../../capture-guides/testing-axe-fx-iii.md`](../../capture-guides/testing-axe-fx-iii.md)):
+- The contribution page `docs/contributing/devices/axe-fx-iii.md` (in the mcp-midi-control repo):
   workflow for III owners testing the beta surface.
 - [`../../research/fractal-protocol-decode-status.md`](../../research/fractal-protocol-decode-status.md):
   current decode coverage across all Fractal devices.

@@ -70,6 +70,59 @@ we don't own.
   Huffman hypothesis is about the BODY content; the envelope is
   decodable from existing dumps without hardware.
 
+### Axe-Fx III / FM3 effectDefinitions cache mine (gen-3 read-roster cross-validation, 2026-07-21)
+- **Source**: two community-attached `effectDefinitions_<modelByte>_<fw>.cache`
+  files, device-synced (not empty stubs — both walked CLEANLY: declared==walked
+  at every section, zero resync errors). GitHub issue #13 (Axe-Fx III, model
+  `0x10`, fw 32.06) and issue #8 (FM3, model `0x11`, fw 12.0).
+- **Artifact**: `samples/captured/axefx3-community-2026-07-02/effectDefinitions_10_32p6.cache`
+  and `samples/captured/fm3-community-2026-06-27/effectDefinitions_11_12p0.cache`
+  (both gitignored). Walked with `scripts/_research/parse-effectdefinitions-cache.ts`
+  to sibling `.walk.json` files (thousands of records each).
+- **Purpose**: first INDEPENDENT, device-native confirmation of the "III/FM3/FM9
+  share one model-selector ordinal space" claim `GEN3_READ_ROSTERS` is built on
+  (previously sourced only from an FM9 fw 11.0 cache + Drew Mercurio's
+  factory-preset-correlated tables; see the header comment in
+  `src/gen3/axe-fx-iii/gen3ReadRosters.ts`).
+- **Locks (merged into `GEN3_READ_ROSTERS` via `scripts/_research/gen3-roster-generate.ts`,
+  `AXEIII_TYPE_ROSTER_GAPS`/`FM3_TYPE_ROSTER_GAPS`)**: FUZZ_TYPE (+1: 86 "Swedish
+  Metal", III only), CHORUS_TYPE (+10: 17-26, III; FM3 corroborates 17), FLANGER_TYPE
+  (+10: III and FM3 byte-identical), PHASER_TYPE (+3, byte-identical), TREMOLO_TYPE
+  (+1, byte-identical), FILTER_TYPE (+8, byte-identical). COMP_TYPE/WAH_TYPE were
+  already dense (19/9 entries); both caches reconfirm every ordinal with nothing new.
+  All additions: zero conflicts against the existing table AND, where both caches
+  cover an ordinal, against each other.
+- **Does NOT lock / deliberately NOT merged** (real, explained conflicts —
+  refuse-on-conflict, not prefer-one-source):
+  - **DISTORT_TYPE**: III fw 32.06 ordinal 283 = "Deluxe Tweed Bright" vs the
+    committed (FM9 fw 11.0-derived) "Deluxe Tweed"; FM3 fw 12.0 agrees with the
+    committed name. Reads as a fw-32.06-only rename (III also adds a new sibling
+    "Deluxe Tweed Normal" at ordinal 331, alongside 4 more new amp names at
+    332-335). Withheld family-wide (not just ordinal 283) per the family-level
+    refuse-on-conflict rule.
+  - **REVERB_TYPE**: the III cache prefixes every name with its front-panel
+    category, e.g. `"Room: Small Room"`, `"Hall: Medium Hall"` (79/79 entries,
+    same count as committed); FM3's cache does not (plain names, 79/79 exact
+    match). After stripping the "Category: " prefix, III still disagrees with
+    both the committed table and FM3 at 3 ordinals: 36 "Asylum" vs "Asylum Hall",
+    68/78 "Vibra-King..." vs "Vibrato-King...". No new ordinals from either cache.
+  - **DELAY_TYPE**: FM3 alone is clean and would add 3 gap ordinals (9 "Sweep
+    Delay", 21 "Worn Tape", 23 "Stereo Trem Delay"). III's cache shows a 2-item
+    mid-list insertion ("Diffused Delay", "Zephyr") starting at ordinal 21 on
+    fw 32.06, shifting the committed/FM3 ordinals 21..26 up to III's 23..28 —
+    so FM3's fills at 21/23 are apparently fw-12.0-stale for fw >= 32.06. Only
+    ordinal 9 "Sweep Delay" is shift-free and agreed by both caches; the family
+    as a whole was not merged.
+- UNMINED[2026-07-21]: samples/captured/axefx3-community-2026-07-02/effectDefinitions_10_32p6.cache and samples/captured/fm3-community-2026-06-27/effectDefinitions_11_12p0.cache — DISTORT_TYPE[283] rename + 5 new III-only amp ordinals (331-335), REVERB_TYPE's III-only category-prefix format + 3 stripped-name mismatches (36/68/78), and DELAY_TYPE's fw-32.06 2-item mid-list insertion (ordinals 21+ shift) all need a firmware-aware resolution (which name is current for which firmware floor) before merging; the section/id map for future re-mines: DISTORT_TYPE section 10 (III id 0, FM3 id 6), FUZZ_TYPE/REVERB_TYPE/CHORUS_TYPE/COMP_TYPE/FLANGER_TYPE/PHASER_TYPE/TREMOLO_TYPE/WAH_TYPE/FILTER_TYPE section 25/12/16/7/17/19/22/20/24 respectively, all id 0 except COMP_TYPE id 12; DELAY_TYPE section 13 (III id 0, FM3 id 6)
+- **Primitives**: applies the existing cache-walk grammar
+  [[../research/primitives/editor-cache-section-record-grammar]]; no new
+  primitive, a new cross-validation data point for the existing "gen-3 shares
+  one ordinal space" claim.
+- **Status**: ✅ 6 families merged (FUZZ/CHORUS/FLANGER/PHASER/TREMOLO/FILTER
+  TYPE), community-beta (device-native, cache-derived, hardware-unverified);
+  ⛔ 3 families (DISTORT/REVERB/DELAY TYPE) deliberately withheld, conflict
+  documented above, not blocking anything currently shipped.
+
 ### BK-054 outer fn-byte dispatch mine (2026-07-09, Ghidra + registry re-mine)
 - **Source**: new Ghidra script `FindAxeEditIIIIndirectFnByteCallers.java`
   (run via `run-axeedit3-indirect-fn-callers.cmd` against the existing

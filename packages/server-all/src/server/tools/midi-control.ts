@@ -24,6 +24,7 @@ import { invalidateChannelCache } from '@mcp-midi-control/am4/shared/channels.js
 
 export function registerMidiControlTools(server: McpServer): void {
     server.registerTool('list_midi_ports', {
+        title: 'List MIDI Ports',
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         description: [
             'List every MIDI input + output port the OS exposes. Safe any time; opens no connection.',
@@ -110,6 +111,7 @@ export function registerMidiControlTools(server: McpServer): void {
     });
 
     server.registerTool('reconnect_midi', {
+        title: 'Reconnect MIDI',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         description: `You almost never need this. The server opens or refreshes the MIDI handle on EVERY tool call, binds to whatever device is present, and auto-reconnects after ${STALE_HANDLE_TIMEOUT_THRESHOLD} consecutive ack-less writes. After plugging in or switching a device, do NOT call this first; just call the tool you want (get_preset, apply_preset, etc.) and it connects. Use it ONLY to recover a handle that genuinely died mid-session (physical USB replug or power-cycle the auto-reconnect missed). It is not a warm-up step and does not fix cold-start ack drops; for those, just retry the call once. - Without \`port\`: reconnects every registered device currently visible on the bus; if none are visible, returns registered devices + visible ports to diagnose. - With \`port\`: case-insensitive needle to target one device (e.g. "am4", "hydra", "axe-fx").`,
         inputSchema: {

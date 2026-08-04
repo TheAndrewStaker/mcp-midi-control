@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Own one of these devices? Here is how to help
+    url: https://github.com/TheAndrewStaker/mcp-midi-control/blob/main/docs/contributing/README.md
+    about: One page per registered device, with its asks ranked. Most take five minutes and need no code.
   - name: Safety question (what the AI can/can't do to my presets)
     url: https://github.com/TheAndrewStaker/mcp-midi-control/blob/main/docs/SAFETY-FOR-MUSICIANS.md
     about: Read this first if you're worried about losing presets to the AI.

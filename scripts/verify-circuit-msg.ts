@@ -272,7 +272,12 @@ const blocks = buildBlocks();
 {
   type SaveCtx = Parameters<NonNullable<typeof writer.savePreset>>[0];
   const ram = initPatchBody();
-  ram[17] = 0x01; // dirty edit-buffer marker — savePatch must clean it to 0x00 before flashing
+  // body[17] is `Patch_Genre` (0..9), NOT the "dirty edit-buffer marker" the
+  // 2026-07-03 review called it (refuted 2026-07-29; see patchTransfer.savePatch).
+  // 7 is deliberate: it is a value no boolean flag could hold, so this golden pins
+  // the KNOWN, deliberate data loss rather than re-asserting the refuted reading.
+  ram[17] = 0x07;
+  ram[16] = 0x0a; // Patch_Category "Poly" — the header-region CONTROL for the check below
   const sent: number[][] = [];
   let handler: ((b: number[]) => void) | undefined;
   const commit08 = [0xf0, 0x00, 0x20, 0x29, 0x01, 0x64, 0x08, 0x00, 0xf7]; // device post-CLOSE 0x08 ack
@@ -292,7 +297,11 @@ const blocks = buildBlocks();
   check('savePreset dumps Synth 1 (loc 0) then emits a Replace-Patch (cmd 01) frame', !!flash);
   check('savePreset targets Flash slot 5 (slot at body-offset 3, m[9])', !!flash && flash[9] === 5);
   check('savePreset wrote the new name into the body name region', !!flash && decodePatchName(flash.slice(11, 11 + 16)) === 'My Bass');
-  check('savePreset CLEANED the dirty-edit marker (body[17] = frame[28] → 0x00; ram had 0x01)', !!flash && flash[28] === 0x00, flash ? `frame[28]=${flash[28]}` : 'no frame');
+  check('savePreset zeroes body[17]=Patch_Genre (frame[28] → 0x00; ram had genre 7). KNOWN LOSS, open: HW-CIRCUIT-008', !!flash && flash[28] === 0x00, flash ? `frame[28]=${flash[28]}` : 'no frame');
+  // Companion: byte 16 `Patch_Category` is NOT zeroed. This is what proves the
+  // header region is passed through in general and that byte 17 alone is the
+  // casualty, so a future fix has a same-file control to compare against.
+  check('savePreset PRESERVES body[16]=Patch_Category (ram had 10 → frame[27] = 10)', !!flash && flash[27] === 0x0a, flash ? `frame[27]=${flash[27]}` : 'no frame');
   check('savePreset result acked, target "patch slot 5"', res.acked && res.target === 'patch slot 5', JSON.stringify({ acked: res.acked, target: res.target }));
 
   let threw = false;

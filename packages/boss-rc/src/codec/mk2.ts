@@ -76,19 +76,23 @@ export function trackTargetOrdinal(track: TrackNumber, fn: TrackFn): number {
 }
 
 /** ASSIGN SOURCE: an onboard CTL footswitch, or an incoming MIDI CC. */
-export type AssignSource = { kind: 'ctl'; n: 1 | 2 } | { kind: 'cc'; cc: number };
+export type AssignSource = { kind: 'ctl'; n: 1 | 2 | 3 } | { kind: 'cc'; cc: number };
 
 /**
- * SOURCE ordinal (`C`). CTL1=33, CTL2=34 (confirmed). MIDI CC in 64..95 maps as
- * `C = cc + 6` (confirmed at CC#80/81/82). The CC#01-31 base is UNSAMPLED, so a
- * CC in that range is refused rather than guessed.
+ * SOURCE ordinal (`C`). CTL footswitches are sequential from 33:
+ * CTL1=33, CTL2=34 (device-confirmed 2026-07-07) and CTL3=35 (device-confirmed
+ * 2026-07-19: an assign authored at ordinal 35 drove the owner's right-hand
+ * pedal on its target track). CTL4 is very likely 36 by the same stride but is
+ * UNSAMPLED, so it is refused rather than guessed.
+ * MIDI CC in 64..95 maps as `C = cc + 6` (confirmed at CC#80/81/82). The
+ * CC#01-31 base is UNSAMPLED, so a CC in that range is refused too.
  */
 export function sourceOrdinal(src: AssignSource): number {
-  if (src.kind === 'ctl') return src.n === 1 ? 33 : 34;
+  if (src.kind === 'ctl') return 32 + src.n;
   const { cc } = src;
   if (cc >= 64 && cc <= 95) return cc + 6;
   throw new Error(
-    `RC-505mk2 ASSIGN SOURCE for CC#${cc} is not decoded. Confirmed: CTL1/CTL2 and MIDI CC#64-95 (ordinal = CC# + 6). ` +
+    `RC-505mk2 ASSIGN SOURCE for CC#${cc} is not decoded. Confirmed: CTL1-3 and MIDI CC#64-95 (ordinal = CC# + 6). ` +
       `The CC#01-31 range uses a different, unsampled base; author it only after a device check.`,
   );
 }
@@ -306,8 +310,7 @@ const TRACK_FN_BY_OFFSET: TrackFn[] = [
 /** Inverse of `sourceOrdinal`. Blank (`0`) reads as `(none)`; un-decoded ordinals as `SOURCE#n`. */
 export function decodeSource(c: number): string {
   if (c === 0) return '(none)';
-  if (c === 33) return 'CTL1';
-  if (c === 34) return 'CTL2';
+  if (c >= 33 && c <= 35) return `CTL${c - 32}`; // CTL1=33, CTL2=34, CTL3=35 (device-confirmed)
   if (c >= 70 && c <= 101) return `CC#${c - 6}`; // MIDI CC#64..95
   return `SOURCE#${c}`;
 }

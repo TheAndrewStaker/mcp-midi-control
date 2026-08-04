@@ -1,7 +1,7 @@
 /**
  * Golden: BK-061 + BK-062 recipe-table integrity check.
  *
- * For every recipe (pitch / wah / filter):
+ * For every single-block recipe:
  *   1. `resolveXxxRecipe(name, port)` returns a non-empty params dict
  *      for each port listed in `applicable_devices`.
  *   2. `resolveXxxRecipe(name, port)` THROWS for every port NOT listed
@@ -11,6 +11,18 @@
  *      `KNOWN_PARAMS` for II, `CACHE_PARAMS` for AM4, `PARAM_BY_KEY`
  *      for III). Catches typos + drift between recipe authoring and
  *      the device's actual param dictionary.
+ *   4. Every param VALUE encodes through the real descriptor + the real
+ *      dispatcher resolver (`[encodability]` below).
+ *
+ * EVERY FAMILY IS WALKED. `walkRecipes()` must enumerate all NINE recipe
+ * families exported from `recipes/index.ts`. It did not until 2026-08-02:
+ * it covered pitch / wah / filter / amp / reverb and silently omitted
+ * `AUTO_WAH_RECIPES` and `SCENE_LEVELING_RECIPES`, so 9 shipped recipes
+ * had never been validated by anything. That is how `auto_wah_funk` shipped
+ * AM4 `filter.sensitivity = 65` against a param declared [0.1..40]: the
+ * refusal reproduced 19 times across `scripts/agent-regression/traces/`
+ * without ever failing a build. `FAMILY_ID_FLOOR` below pins the id count
+ * per family so a NEW family cannot be added without being walked.
  *
  * No hardware, no MIDI. Pure-data sanity check over the recipe library
  * + fractal-midi param catalogs.
@@ -36,6 +48,11 @@ import {
   resolveAmpRecipe,
   REVERB_RECIPES,
   resolveReverbRecipe,
+  AUTO_WAH_RECIPES,
+  resolveAutoWahRecipe,
+  SCENE_LEVELING_RECIPES,
+  resolveSceneLevelingRecipe,
+  lookupSceneRoleOffset,
   summarizeRecipesForPort,
   BLOCK_STACK_RECIPES,
   materializeBlockStackRecipe,
@@ -46,11 +63,15 @@ import {
   type RecipePort,
 } from '../packages/core/src/protocol-generic/recipes/index.js';
 import { findPatchOffset } from '@mcp-midi-control/hydrasynth/patchEncoder.js';
+import { findHydraNrpn } from '@mcp-midi-control/hydrasynth/nrpn.js';
+import { resolveNrpnValue } from '@mcp-midi-control/hydrasynth/encoding.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import { MODERN_FRACTAL_DESCRIPTORS } from '@mcp-midi-control/fractal-gen3/device.js';
 import { collectApplyPresetErrors } from '@mcp-midi-control/core/protocol-generic/dispatcher/preflight.js';
+import { resolveBlockName, resolveParamName } from '@mcp-midi-control/core/protocol-generic/dispatcher/resolvers.js';
+import { applyTypeKnobApplicabilityPreflight } from '@mcp-midi-control/core/protocol-generic/dispatcher/preset.js';
 import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 // Descriptors for EVERY recipe port, so each recipe can be materialized and
@@ -154,9 +175,32 @@ function check(label: string, ok: boolean, detail?: string): void {
   }
 }
 
+// Recipe families, as exported from recipes/index.ts. EVERY family must
+// appear here and be reachable from `walkRecipes()` (single-block +
+// scene-leveling) or its own dedicated section (block_stack,
+// patch_archetype). The id floor per family is asserted below so a
+// family cannot be dropped from the walk without failing the build.
+const FAMILY_ID_FLOOR: Readonly<Record<string, number>> = {
+  amp: 5,
+  autoWah: 4,
+  filter: 3,
+  pitch: 10,
+  reverb: 3,
+  sceneLeveling: 5,
+  wah: 3,
+  blockStack: 17,
+  patchArchetype: 36,
+};
+
 // Block name per recipe category, per port. AM4 + II share lowercase
 // `pitch`/`wah`/`filter`; III uses uppercase family symbols PITCH/WAH/
 // FILTER.
+//
+// `auto_wah` is NOT in this table: it is the one family whose target
+// block differs by port (FILTER on AM4's built-in env-follower types,
+// WAH on II/III where the follower has to be a modifier). It carries its
+// own `target_block_per_device` and each entry supplies the block via
+// `RecipeEntry.blockFor`.
 const BLOCK_NAME: Readonly<Record<string, Readonly<Record<RecipePort, string>>>> = {
   pitch:  { am4: 'pitch',  'axe-fx-ii': 'pitch',  'axe-fx-iii': 'PITCH',   fm3: 'PITCH',   fm9: 'PITCH'   },
   wah:    { am4: 'wah',    'axe-fx-ii': 'wah',    'axe-fx-iii': 'WAH',     fm3: 'WAH',     fm9: 'WAH'     },
@@ -171,8 +215,23 @@ const BLOCK_NAME: Readonly<Record<string, Readonly<Record<RecipePort, string>>>>
   reverb: { am4: 'reverb', 'axe-fx-ii': 'reverb', 'axe-fx-iii': 'REVERB',  fm3: 'REVERB',  fm9: 'REVERB'  },
 };
 
+// Descriptor-side block key per recipe family per port. NOTE this is
+// deliberately NOT `BLOCK_NAME` above: that table carries the codec
+// catalog's family symbols (III `PITCH` / `DISTORT`), while the
+// dispatcher resolves against the descriptor's own lowercase block keys.
+// Conflating the two is how the gen-3 columns went unchecked.
+const DESCRIPTOR_BLOCK: Readonly<Record<string, Readonly<Record<RecipePort, string>>>> = {
+  pitch:  { am4: 'pitch',  'axe-fx-ii': 'pitch',  'axe-fx-iii': 'pitch',  fm3: 'pitch',  fm9: 'pitch'  },
+  wah:    { am4: 'wah',    'axe-fx-ii': 'wah',    'axe-fx-iii': 'wah',    fm3: 'wah',    fm9: 'wah'    },
+  filter: { am4: 'filter', 'axe-fx-ii': 'filter', 'axe-fx-iii': 'filter', fm3: 'filter', fm9: 'filter' },
+  amp:    { am4: 'amp',    'axe-fx-ii': 'amp',    'axe-fx-iii': 'amp',    fm3: 'amp',    fm9: 'amp'    },
+  reverb: { am4: 'reverb', 'axe-fx-ii': 'reverb', 'axe-fx-iii': 'reverb', fm3: 'reverb', fm9: 'reverb' },
+};
+
+type SingleBlockCategory = 'pitch' | 'wah' | 'filter' | 'amp' | 'reverb' | 'auto_wah';
+
 interface RecipeEntry {
-  readonly category: 'pitch' | 'wah' | 'filter' | 'amp' | 'reverb';
+  readonly category: SingleBlockCategory;
   readonly name: string;
   readonly applicable_devices: readonly RecipePort[];
   readonly params_per_device: Readonly<Partial<Record<RecipePort, Readonly<Record<string, number | string>>>>>;
@@ -180,10 +239,27 @@ interface RecipeEntry {
     params: Readonly<Record<string, number | string>>;
     modifier_needed: boolean;
   };
+  /** Codec-catalog block/family symbol for this recipe on this port. */
+  readonly catalogBlockFor: (port: RecipePort) => string;
+  /** Descriptor block key the dispatcher resolves against, on this port. */
+  readonly descriptorBlockFor: (port: RecipePort) => string;
 }
 
+/**
+ * Enumerate every single-block recipe family.
+ *
+ * ALL SIX single-block families belong here. `scene_leveling` is walked
+ * separately (its payload is role-keyed dB offsets, not block params);
+ * `block_stack` and `patch_archetype` have their own sections below.
+ * Between the three, every family in `FAMILY_ID_FLOOR` is covered — the
+ * floor assertions prove it.
+ */
 function walkRecipes(): RecipeEntry[] {
   const entries: RecipeEntry[] = [];
+  const fixedBlock = (category: Exclude<SingleBlockCategory, 'auto_wah'>) => ({
+    catalogBlockFor: (port: RecipePort) => BLOCK_NAME[category][port],
+    descriptorBlockFor: (port: RecipePort) => DESCRIPTOR_BLOCK[category][port],
+  });
   for (const [name, spec] of Object.entries(PITCH_RECIPES)) {
     entries.push({
       category: 'pitch',
@@ -191,6 +267,7 @@ function walkRecipes(): RecipeEntry[] {
       applicable_devices: spec.applicable_devices,
       params_per_device: spec.params_per_device,
       resolve: resolvePitchRecipe,
+      ...fixedBlock('pitch'),
     });
   }
   for (const [name, spec] of Object.entries(WAH_RECIPES)) {
@@ -200,6 +277,7 @@ function walkRecipes(): RecipeEntry[] {
       applicable_devices: spec.applicable_devices,
       params_per_device: spec.params_per_device,
       resolve: resolveWahRecipe,
+      ...fixedBlock('wah'),
     });
   }
   for (const [name, spec] of Object.entries(FILTER_RECIPES)) {
@@ -209,6 +287,7 @@ function walkRecipes(): RecipeEntry[] {
       applicable_devices: spec.applicable_devices,
       params_per_device: spec.params_per_device,
       resolve: resolveFilterRecipe,
+      ...fixedBlock('filter'),
     });
   }
   for (const [name, spec] of Object.entries(AMP_RECIPES)) {
@@ -223,6 +302,7 @@ function walkRecipes(): RecipeEntry[] {
         ...resolveAmpRecipe(recipeName, port),
         modifier_needed: false,
       }),
+      ...fixedBlock('amp'),
     });
   }
   for (const [name, spec] of Object.entries(REVERB_RECIPES)) {
@@ -237,6 +317,31 @@ function walkRecipes(): RecipeEntry[] {
         ...resolveReverbRecipe(recipeName, port),
         modifier_needed: false,
       }),
+      ...fixedBlock('reverb'),
+    });
+  }
+  // auto_wah: per-PORT target block (FILTER on AM4, WAH on II/III), so
+  // the block comes off the recipe itself rather than a category table.
+  // The codec catalogs key gen-3 families in SCREAMING_SNAKE; the
+  // descriptor keys blocks lowercase.
+  for (const [name, spec] of Object.entries(AUTO_WAH_RECIPES)) {
+    const target = (port: RecipePort): string => {
+      const block = spec.target_block_per_device[port];
+      if (block === undefined) {
+        throw new Error(
+          `verify-recipe-tables: auto_wah recipe '${name}' lists port '${port}' as applicable but has no target_block_per_device entry.`,
+        );
+      }
+      return block;
+    };
+    entries.push({
+      category: 'auto_wah',
+      name,
+      applicable_devices: spec.applicable_devices,
+      params_per_device: spec.params_per_device,
+      resolve: resolveAutoWahRecipe,
+      catalogBlockFor: (port) => (port === 'am4' || port === 'axe-fx-ii' ? target(port) : target(port).toUpperCase()),
+      descriptorBlockFor: (port) => target(port).toLowerCase(),
     });
   }
   return entries;
@@ -244,27 +349,92 @@ function walkRecipes(): RecipeEntry[] {
 
 const entries = walkRecipes();
 
-console.log(`\nVerifying ${entries.length} recipe(s) across ${ALL_PORTS.length} ports.\n`);
+// ── Family census ───────────────────────────────────────────────────
+//
+// Every family exported from recipes/index.ts, its id count, and where
+// this gate walks it. The census is printed BEFORE any per-recipe check
+// so a reader can see at a glance that nothing is unwalked — the exact
+// thing that was invisible while auto_wah and scene_leveling were
+// missing from `walkRecipes()`.
+const FAMILY_TABLES: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
+  amp: AMP_RECIPES,
+  autoWah: AUTO_WAH_RECIPES,
+  filter: FILTER_RECIPES,
+  pitch: PITCH_RECIPES,
+  reverb: REVERB_RECIPES,
+  sceneLeveling: SCENE_LEVELING_RECIPES,
+  wah: WAH_RECIPES,
+  blockStack: BLOCK_STACK_RECIPES,
+  patchArchetype: HYDRA_PATCH_RECIPES,
+};
+const FAMILY_WALKED_BY: Readonly<Record<string, string>> = {
+  amp: 'walkRecipes',
+  autoWah: 'walkRecipes',
+  filter: 'walkRecipes',
+  pitch: 'walkRecipes',
+  reverb: 'walkRecipes',
+  sceneLeveling: '[scene_leveling] section',
+  wah: 'walkRecipes',
+  blockStack: '[block_stack] section',
+  patchArchetype: '[patch_archetype] section',
+};
 
-const pitchCount = Object.keys(PITCH_RECIPES).length;
-const wahCount = Object.keys(WAH_RECIPES).length;
-const filterCount = Object.keys(FILTER_RECIPES).length;
-const ampCount = Object.keys(AMP_RECIPES).length;
-const reverbCount = Object.keys(REVERB_RECIPES).length;
-console.log(`  pitch  : ${pitchCount} recipe(s)`);
-console.log(`  wah    : ${wahCount} recipe(s)`);
-console.log(`  filter : ${filterCount} recipe(s)`);
-console.log(`  amp    : ${ampCount} recipe(s)`);
-console.log(`  reverb : ${reverbCount} recipe(s)\n`);
+const familyCounts: Record<string, number> = {};
+let totalRecipeIds = 0;
+for (const [family, table] of Object.entries(FAMILY_TABLES)) {
+  const n = Object.keys(table).length;
+  familyCounts[family] = n;
+  totalRecipeIds += n;
+}
 
-// Coverage assertions: the BK-061/BK-062 task statement lists 7 pitch
-// + 6 wah/filter recipes. Catch silent regressions if a recipe is
+console.log(`\nVerifying ${totalRecipeIds} recipe id(s) across ${Object.keys(FAMILY_TABLES).length} families / ${ALL_PORTS.length} ports.\n`);
+for (const family of Object.keys(FAMILY_TABLES)) {
+  console.log(
+    `  ${family.padEnd(15)}: ${String(familyCounts[family]).padStart(3)} recipe(s)   walked by ${FAMILY_WALKED_BY[family]}`,
+  );
+}
+console.log(`  ${'TOTAL'.padEnd(15)}: ${String(totalRecipeIds).padStart(3)} recipe id(s)\n`);
+
+// Every family in FAMILY_ID_FLOOR must have a table, and vice versa.
+// A new family added to recipes/index.ts without a floor row (or a floor
+// row without a table) fails here rather than going silently unwalked.
+check(
+  'FAMILY_ID_FLOOR covers exactly the families in FAMILY_TABLES',
+  Object.keys(FAMILY_ID_FLOOR).sort().join(',') === Object.keys(FAMILY_TABLES).sort().join(','),
+  `floor=[${Object.keys(FAMILY_ID_FLOOR).sort().join(',')}] tables=[${Object.keys(FAMILY_TABLES).sort().join(',')}]`,
+);
+check(
+  'every family declares where it is walked',
+  Object.keys(FAMILY_TABLES).every((f) => FAMILY_WALKED_BY[f] !== undefined),
+);
+
+// Coverage floors, per family. Catch silent regressions if a recipe is
 // later removed without an explicit scope change.
-check('pitch category ships >= 7 recipes', pitchCount >= 7, `got ${pitchCount}`);
-check('wah category ships >= 3 recipes', wahCount >= 3, `got ${wahCount}`);
-check('filter category ships >= 3 recipes', filterCount >= 3, `got ${filterCount}`);
-check('amp category ships >= 3 recipes (gen-3)', ampCount >= 3, `got ${ampCount}`);
-check('reverb category ships >= 3 recipes (gen-3)', reverbCount >= 3, `got ${reverbCount}`);
+for (const [family, floor] of Object.entries(FAMILY_ID_FLOOR)) {
+  check(
+    `${family} family ships >= ${floor} recipe(s)`,
+    (familyCounts[family] ?? 0) >= floor,
+    `got ${familyCounts[family] ?? 0}`,
+  );
+}
+
+// walkRecipes() must produce one entry per id across every single-block
+// family — the direct assertion that no family was left out of the walk.
+const SINGLE_BLOCK_FAMILIES = ['amp', 'autoWah', 'filter', 'pitch', 'reverb', 'wah'] as const;
+const expectedWalked = SINGLE_BLOCK_FAMILIES.reduce((sum, f) => sum + (familyCounts[f] ?? 0), 0);
+check(
+  `walkRecipes() enumerates all ${expectedWalked} single-block recipe(s) (${SINGLE_BLOCK_FAMILIES.join(' + ')})`,
+  entries.length === expectedWalked,
+  `walked ${entries.length}`,
+);
+
+const pitchCount = familyCounts.pitch;
+const wahCount = familyCounts.wah;
+const filterCount = familyCounts.filter;
+const ampCount = familyCounts.amp;
+const reverbCount = familyCounts.reverb;
+const autoWahCount = familyCounts.autoWah;
+const sceneLevelingCount = familyCounts.sceneLeveling;
 
 // Gen-3 recipe surfacing: summarizeRecipesForPort must return the amp +
 // reverb recipes for III / FM3 / FM9 (guards the port allow-list that
@@ -288,6 +458,32 @@ for (const port of ['am4', 'axe-fx-ii'] as const) {
   check(`summarizeRecipesForPort('${port}') surfaces no amp recipes (gen-3 only)`, ampOnPort.length === 0, `got ${ampOnPort.length}`);
   const reverbOnPort = summarizeRecipesForPort(port).filter((r) => r.family === 'reverb');
   check(`summarizeRecipesForPort('${port}') surfaces no reverb recipes (gen-3 only)`, reverbOnPort.length === 0, `got ${reverbOnPort.length}`);
+}
+
+// auto_wah + scene_leveling surfacing. Both families are am4 / II / III
+// only; neither should appear on FM3 / FM9. These two are the families
+// walkRecipes() used to omit, so pin their discovery surface too — an
+// agent that cannot see a recipe cannot pick it, and a recipe nothing
+// validates is how `filter.sensitivity = 65` shipped.
+for (const port of ['am4', 'axe-fx-ii', 'axe-fx-iii'] as const) {
+  const autoWahOnPort = summarizeRecipesForPort(port).filter((r) => r.family === 'auto_wah');
+  check(
+    `summarizeRecipesForPort('${port}') surfaces all ${autoWahCount} auto_wah recipes`,
+    autoWahOnPort.length === autoWahCount,
+    `got ${autoWahOnPort.length}`,
+  );
+  const levelingOnPort = summarizeRecipesForPort(port).filter((r) => r.family === 'scene_leveling');
+  check(
+    `summarizeRecipesForPort('${port}') surfaces all ${sceneLevelingCount} scene_leveling recipes`,
+    levelingOnPort.length === sceneLevelingCount,
+    `got ${levelingOnPort.length}`,
+  );
+}
+for (const port of ['fm3', 'fm9'] as const) {
+  const autoWahOnPort = summarizeRecipesForPort(port).filter((r) => r.family === 'auto_wah');
+  check(`summarizeRecipesForPort('${port}') surfaces no auto_wah recipes`, autoWahOnPort.length === 0, `got ${autoWahOnPort.length}`);
+  const levelingOnPort = summarizeRecipesForPort(port).filter((r) => r.family === 'scene_leveling');
+  check(`summarizeRecipesForPort('${port}') surfaces no scene_leveling recipes`, levelingOnPort.length === 0, `got ${levelingOnPort.length}`);
 }
 
 for (const entry of entries) {
@@ -320,7 +516,7 @@ for (const entry of entries) {
     );
 
     // 3. Every param name in the dict maps to a real catalog entry.
-    const block = BLOCK_NAME[entry.category][port];
+    const block = entry.catalogBlockFor(port);
     const missing: string[] = [];
     for (const paramName of Object.keys(resolved.params)) {
       if (!paramExists(port, block, paramName)) missing.push(paramName);
@@ -351,9 +547,20 @@ for (const entry of entries) {
   }
 }
 
-// 5. Unknown recipe names throw with a list of known recipes.
+// 5. Unknown recipe names throw with a list of known recipes. EVERY
+// single-block resolver plus the scene-leveling resolver — the two that
+// were missing (auto-wah, scene-leveling) are exactly the two families
+// that went unwalked.
 console.log('\n[unknown-recipe] negative cases');
-for (const resolve of [resolvePitchRecipe, resolveWahRecipe, resolveFilterRecipe]) {
+for (const resolve of [
+  resolvePitchRecipe,
+  resolveWahRecipe,
+  resolveFilterRecipe,
+  resolveAmpRecipe,
+  resolveReverbRecipe,
+  resolveAutoWahRecipe,
+  resolveSceneLevelingRecipe,
+]) {
   let threw = false;
   let errMsg = '';
   try {
@@ -366,6 +573,214 @@ for (const resolve of [resolvePitchRecipe, resolveWahRecipe, resolveFilterRecipe
     `${resolve.name}('this_recipe_does_not_exist', 'axe-fx-ii') throws with 'unknown ... recipe'`,
     threw && /unknown .* recipe/i.test(errMsg),
     threw ? errMsg.slice(0, 80) : 'no error thrown',
+  );
+}
+
+// ── 5b. scene_leveling family ───────────────────────────────────────
+//
+// Shape differs from every other family: the payload is a role-keyed dB
+// OFFSET table, not a block param dict. There is no target block and no
+// param name to look up, so the catalog / encodability checks above do
+// not apply — but the resolver contract, the port gating, and the value
+// sanity DO, and until 2026-08-02 nothing checked any of them.
+//
+// The dB window: these are offsets added to a device's main level knob
+// (AM4 `volpan.volume`, II/III `output.level`). Anything beyond ±20 dB is
+// not a mix decision, it is a typo — a scene at +30 dB is a blown PA and
+// a scene at -30 dB is silence.
+console.log('\n[scene_leveling] role-keyed dB offset integrity');
+const SCENE_ROLES = new Set([
+  'intro', 'clean', 'ambient_clean', 'rhythm', 'build', 'solo', 'breakdown',
+]);
+const SCENE_DB_LIMIT = 20;
+for (const [name, recipe] of Object.entries(SCENE_LEVELING_RECIPES)) {
+  console.log(`\n[scene_leveling] ${name}`);
+  check('name matches table key', recipe.name === name, `name='${recipe.name}'`);
+  check('description non-empty', recipe.description.length > 0);
+  check('applicable_devices non-empty', recipe.applicable_devices.length > 0);
+
+  for (const port of recipe.applicable_devices) {
+    let offsets: Readonly<Partial<Record<string, number>>> | null = null;
+    try {
+      offsets = resolveSceneLevelingRecipe(name, port);
+    } catch (err) {
+      check(`resolve(${name}, ${port}) does not throw`, false, (err as Error).message.slice(0, 80));
+      continue;
+    }
+    const roles = Object.keys(offsets);
+    check(`resolve(${name}, ${port}) returns non-empty offsets`, roles.length > 0, `got ${roles.length}`);
+
+    const badRoles = roles.filter((r) => !SCENE_ROLES.has(r));
+    check(
+      `every role in ${name}[${port}] is a declared SceneRole`,
+      badRoles.length === 0,
+      badRoles.length > 0 ? `unknown roles: ${badRoles.join(', ')}` : undefined,
+    );
+
+    const badValues: string[] = [];
+    for (const [role, db] of Object.entries(offsets)) {
+      if (typeof db !== 'number' || !Number.isFinite(db) || Math.abs(db) > SCENE_DB_LIMIT) {
+        badValues.push(`${role}=${JSON.stringify(db)}`);
+      }
+    }
+    check(
+      `every offset in ${name}[${port}] is a finite dB within ±${SCENE_DB_LIMIT}`,
+      badValues.length === 0,
+      badValues.length > 0 ? `out of range: ${badValues.join(', ')}` : undefined,
+    );
+
+    // lookupSceneRoleOffset must agree with the table, and must return
+    // undefined (not 0) for a role this recipe does not define — the
+    // agent branches on that to decide "skip this scene" vs "write 0 dB".
+    for (const role of roles) {
+      const looked = lookupSceneRoleOffset(name, port, role as never);
+      check(
+        `lookupSceneRoleOffset(${name}, ${port}, '${role}') === ${JSON.stringify(offsets[role])}`,
+        looked === offsets[role],
+        `got ${JSON.stringify(looked)}`,
+      );
+    }
+    const undefinedRole = [...SCENE_ROLES].find((r) => !roles.includes(r));
+    if (undefinedRole !== undefined) {
+      check(
+        `lookupSceneRoleOffset(${name}, ${port}, '${undefinedRole}') === undefined (role not in recipe)`,
+        lookupSceneRoleOffset(name, port, undefinedRole as never) === undefined,
+      );
+    }
+  }
+
+  // Non-applicable port rejection.
+  for (const port of ALL_PORTS) {
+    if (recipe.applicable_devices.includes(port)) continue;
+    let threw = false;
+    let errMsg = '';
+    try {
+      resolveSceneLevelingRecipe(name, port);
+    } catch (err) {
+      threw = true;
+      errMsg = (err as Error).message;
+    }
+    check(
+      `resolve(${name}, ${port}) throws (port not applicable)`,
+      threw && /not applicable/i.test(errMsg),
+      threw ? errMsg.slice(0, 80) : 'no error thrown',
+    );
+  }
+}
+
+// ── 6. Single-block recipe VALUE encodability (BK-PITCH-II) ─────────
+//
+// Check (3) above proves a recipe's param NAMES exist. It never encodes
+// a VALUE, and it looks names up in the CODEC catalog
+// (`PARAM_BY_KEY['PITCH.PITCH_SHIFT1']`, `FM3_PARAMS_BY_FAMILY`) rather
+// than in the DESCRIPTOR the dispatcher actually resolves against
+// (`descriptor.blocks['pitch'].params['shift1']` + its alias table).
+// Both gaps are why `PITCH_RECIPES.octave_down` shipped for months with
+// `voice_1_shift: -12` against an Axe-Fx II param declared [0..48]: the
+// name resolved, the value could only ever throw, and nothing ran the
+// encoder. Block-stack recipes already get this via
+// `collectApplyPresetErrors`; single-block recipes had no equivalent.
+//
+// So: resolve every recipe param through the REAL dispatcher resolver
+// against the REAL descriptor, then call the schema's own `encode`.
+// A recipe value that its target device's encoder refuses is a product
+// defect — the agent picks the recipe and apply_preset NACKs.
+//
+// This asserts only what can be asserted without hardware (the value is
+// ACCEPTED), never musical correctness, which needs a device.
+console.log('\n[encodability] every recipe value encodes on every device it claims');
+
+// Frozen debt: (recipe/port : block.param) triples that do NOT encode
+// today and were NOT in the scope that added this gate. Each entry is a
+// real shipping defect, not a test artifact. The allowlist exists so the
+// gate can go green and FREEZE the debt — a NEW unencodable value fails
+// the build — not to bless these.
+//
+// wah_cocked_* : `wah.control` is uncalibrated on both the Axe-Fx II and
+// gen-3, so there is no display value for a cocked-pedal position. The
+// II boundary demands an integer 0..65534 (2.5 / 7.5 are refused), and
+// gen-3 demands a RAW 0..65534 wire int, where 5 means ~0% of the sweep
+// rather than a half-open pedal. Fixing it needs a display calibration
+// on `wah.control` (the AM4's hardware-verified `wah.wah_control` is a
+// 0..10 knob and is the obvious `am4-shared` donor), not a recipe edit.
+const ENCODABILITY_DEBT = new Set<string>([
+  'wah/wah_cocked_low/axe-fx-ii:wah.control',
+  'wah/wah_cocked_low/axe-fx-iii:wah.control',
+  'wah/wah_cocked_high/axe-fx-ii:wah.control',
+  'wah/wah_cocked_high/axe-fx-iii:wah.control',
+]);
+const debtSeen = new Set<string>();
+
+for (const entry of entries) {
+  for (const port of entry.applicable_devices) {
+    const descriptor = RECIPE_PREFLIGHT_DESCRIPTORS[port];
+    if (descriptor === undefined) continue;
+    let resolved: { params: Readonly<Record<string, number | string>> };
+    try {
+      resolved = entry.resolve(entry.name, port);
+    } catch {
+      continue; // already reported by the resolve check above
+    }
+    let block: string;
+    try {
+      block = resolveBlockName(descriptor, entry.descriptorBlockFor(port));
+    } catch (err) {
+      check(
+        `${entry.category}/${entry.name}[${port}] block resolves on the descriptor`,
+        false,
+        (err as Error).message.slice(0, 100),
+      );
+      continue;
+    }
+    for (const [paramName, value] of Object.entries(resolved.params)) {
+      const key = `${entry.category}/${entry.name}/${port}:${block}.${paramName}`;
+      let canonical: string;
+      try {
+        canonical = resolveParamName(descriptor, block, paramName).name;
+      } catch (err) {
+        check(
+          `${key} resolves through the dispatcher's own param resolver`,
+          false,
+          (err as Error).message.slice(0, 110),
+        );
+        continue;
+      }
+      const schema = descriptor.blocks[block]?.params[canonical];
+      if (schema === undefined) {
+        check(`${key} has a ParamSchema after resolution`, false, `canonical='${canonical}'`);
+        continue;
+      }
+      let threw: string | undefined;
+      try {
+        schema.encode(value);
+      } catch (err) {
+        threw = err instanceof Error ? err.message : String(err);
+      }
+      const debtKey = `${entry.category}/${entry.name}/${port}:${block}.${canonical}`;
+      if (ENCODABILITY_DEBT.has(debtKey)) {
+        debtSeen.add(debtKey);
+        // Inverted assertion: a frozen-debt entry that starts encoding
+        // means someone fixed it — delete the allowlist row.
+        check(
+          `${debtKey} is STILL unencodable (frozen debt; delete the allowlist row once fixed)`,
+          threw !== undefined,
+          'now encodes — remove it from ENCODABILITY_DEBT',
+        );
+        continue;
+      }
+      check(
+        `${entry.category}/${entry.name}[${port}] ${block}.${canonical} = ${JSON.stringify(value)} encodes`,
+        threw === undefined,
+        threw?.slice(0, 130),
+      );
+    }
+  }
+}
+for (const stale of ENCODABILITY_DEBT) {
+  check(
+    `ENCODABILITY_DEBT entry '${stale}' still refers to a live recipe param`,
+    debtSeen.has(stale),
+    'not reached — the recipe/port/param no longer exists; delete the row',
   );
 }
 
@@ -586,6 +1001,158 @@ for (const port of ['axe-fx-iii', 'fm3', 'fm9'] as const) {
   }
 }
 
+// ── block_stack TYPE-GATE: no recipe ships a knob its own type hides ──
+//
+// BUG-5 (Desktop QA, 2026-07-04): `edge_dotted_eighth_lead` shipped
+// `compressor.type = "JFET Pedal Compressor"` together with `ratio` and
+// `threshold`, which that compressor model does not expose on the AM4.
+// A type-gated knob is the project's flagship "wire-ack-not-audible"
+// failure: the write is accepted and then dropped, so the recipe reads
+// as applied while the tone is wrong.
+//
+// `applyTypeKnobApplicabilityPreflight` is the runtime guard that drops
+// + warns on exactly this. Running it over every materialized recipe
+// turns a runtime warning into a build-time gate: a recipe must
+// materialize with ZERO dropped knobs.
+console.log('\n[block_stack] type-gate (no knob suppressed by its own slot type)');
+
+// Frozen debt, same contract as ENCODABILITY_DEBT above: knobs that the
+// chosen block type genuinely does not expose, in recipes outside the
+// scope that added this gate. These are real (a Fractal "Deluxe Verb"
+// has no MID and no MASTER, a non-master-volume Plexi has no MASTER, a
+// Peaking filter has no Q/GAIN on the AM4), the runtime preflight
+// already drops them with a warning, and each needs a musical decision
+// (pick a different model, or drop the knob) rather than a mechanical
+// edit. The allowlist freezes the count so no NEW type-gated knob lands.
+const TYPE_GATE_DEBT = new Set<string>([
+  'eighties_clean_shimmer/am4:amp.mid',
+  'eighties_clean_shimmer/am4:amp.master',
+  'eighties_clean_shimmer/am4:chorus.rate',
+  'eighties_clean_shimmer/am4:chorus.depth',
+  'texas_blues_crunch/am4:amp.mid',
+  'texas_blues_crunch/am4:amp.master',
+  'glassy_clean/am4:amp.mid',
+  'glassy_clean/am4:amp.master',
+  'gilmour_phaser_clean/am4:phaser.rate',
+  'gilmour_phaser_clean/am4:phaser.depth',
+  'progressive_clean/am4:chorus.rate',
+  'progressive_clean/am4:chorus.depth',
+  'classic_rock_plexi/am4:amp.master',
+  'modern_metal_recto/am4:filter.q',
+  'modern_metal_recto/am4:filter.gain',
+]);
+const typeGateSeen = new Set<string>();
+
+for (const [name, recipe] of Object.entries(BLOCK_STACK_RECIPES)) {
+  for (const port of recipe.applicable_devices) {
+    const descriptor = RECIPE_PREFLIGHT_DESCRIPTORS[port];
+    if (descriptor === undefined) continue;
+    // Devices without applicability data return no warnings at all.
+    if (descriptor.findCompatibleTypes === undefined) continue;
+    let warnings: { path: string; dropped_param?: string; reason?: string }[] = [];
+    try {
+      const materialized = materializeBlockStackRecipe(name, port, undefined);
+      warnings = applyTypeKnobApplicabilityPreflight(materialized, descriptor).warnings;
+    } catch {
+      continue; // materialize failures are reported by the section above
+    }
+    const unexpected: string[] = [];
+    for (const w of warnings) {
+      const slotIdx = Number(/^slots\[(\d+)\]/.exec(w.path)?.[1] ?? -1);
+      const blockType = recipe.slots_per_device[port]?.[slotIdx]?.block_type ?? 'unknown';
+      const debtKey = `${name}/${port}:${blockType}.${w.dropped_param ?? '?'}`;
+      if (TYPE_GATE_DEBT.has(debtKey)) {
+        typeGateSeen.add(debtKey);
+        continue;
+      }
+      unexpected.push(`${debtKey} (${w.reason ?? w.path})`);
+    }
+    check(
+      `${name}[${port}] materializes with no type-gated knob drops`,
+      unexpected.length === 0,
+      unexpected.join(' | '),
+    );
+  }
+}
+for (const stale of TYPE_GATE_DEBT) {
+  check(
+    `TYPE_GATE_DEBT entry '${stale}' is still dropped (delete the row once the recipe is fixed)`,
+    typeGateSeen.has(stale),
+    'no longer dropped — remove it from TYPE_GATE_DEBT',
+  );
+}
+
+// ── [single_block] type-gate ────────────────────────────────────────
+//
+// THE SAME CHECK AS THE BLOCK_STACK GATE ABOVE, AND ITS ABSENCE SHIPPED A
+// BUG FOR MONTHS. The block_stack family got a type-gate on 2026-08-02
+// (commit c94d7ae, BUG-5's class). Single-block recipes did not, and they
+// are the family where the whole recipe IS one block plus its type.
+//
+// What slipped through: `auto_wah_funk` / `_cantrell` / `_hendrix` shipped
+// `filter.type: 'Auto-Wah'` on the AM4. That is a real roster member at
+// index 16 and every value was in range, so the name gate, the range gate
+// and the encodability gate all passed it. But "Auto-Wah" on this device is
+// the LFO-SWEPT wah (the Fractal wiki: "replaces the detector with an LFO"),
+// and it exposes NONE of `sensitivity` / `attack_time` / `release_time`.
+// FOUR of the eight params were refused at runtime on real hardware, and the
+// recipe named for envelope-following selected a model deaf to the pick.
+// All four also sent `filter.q`, whose gates are [1,2,3,7], so it applied to
+// no wah type at all.
+//
+// Every one of those is exactly what `applyTypeKnobApplicabilityPreflight`
+// reports. Nothing was checking.
+console.log('\n[single_block] type-gate (no knob the recipe type suppresses)');
+
+const SINGLE_BLOCK_TYPE_GATE_DEBT = new Set<string>([]);
+const singleGateSeen = new Set<string>();
+
+for (const entry of walkRecipes()) {
+  for (const port of entry.applicable_devices) {
+    const descriptor = RECIPE_PREFLIGHT_DESCRIPTORS[port];
+    if (descriptor === undefined || descriptor.findCompatibleTypes === undefined) continue;
+    const params = entry.params_per_device[port];
+    if (params === undefined) continue;
+    const block = entry.descriptorBlockFor(port);
+    if (block === undefined) continue;
+    // A recipe that does not choose a type cannot be type-gate-checked:
+    // applicability is relative to the ACTIVE type, which is whatever the
+    // user already had. Skip rather than assume a default and invent a
+    // failure. (The gen-3 entries deliberately set no type; see autoWah.ts.)
+    const typeValue = (params as Record<string, unknown>)['type']
+      ?? (params as Record<string, unknown>)['effect_type'];
+    if (typeof typeValue !== 'string') continue;
+
+    let warnings: { path: string; dropped_param?: string; reason?: string }[] = [];
+    try {
+      warnings = applyTypeKnobApplicabilityPreflight(
+        { slots: [{ slot: 1, block_type: block, params: params as Record<string, number | string> }] } as never,
+        descriptor,
+      ).warnings;
+    } catch {
+      continue; // encodability is the section above's problem, not this one
+    }
+    const unexpected: string[] = [];
+    for (const w of warnings) {
+      const debtKey = `${entry.name}/${port}:${block}.${w.dropped_param ?? '?'}`;
+      if (SINGLE_BLOCK_TYPE_GATE_DEBT.has(debtKey)) { singleGateSeen.add(debtKey); continue; }
+      unexpected.push(`${debtKey} on type '${typeValue}' (${w.reason ?? w.path})`);
+    }
+    check(
+      `${entry.name}[${port}] has no knob its own type suppresses`,
+      unexpected.length === 0,
+      unexpected.join(' | '),
+    );
+  }
+}
+for (const stale of SINGLE_BLOCK_TYPE_GATE_DEBT) {
+  check(
+    `SINGLE_BLOCK_TYPE_GATE_DEBT entry '${stale}' is still dropped (delete the row once fixed)`,
+    singleGateSeen.has(stale),
+    'no longer dropped, remove it from SINGLE_BLOCK_TYPE_GATE_DEBT',
+  );
+}
+
 // ── Materializer edge cases ─────────────────────────────────────────
 //
 // (i)  Verbatim equivalence: materialize(recipe, port, undefined).slots
@@ -751,6 +1318,36 @@ for (const [id, recipe] of Object.entries(HYDRA_PATCH_RECIPES)) {
       'not buildable atomically — fall back to set_param or extend PATCH_OFFSETS');
   }
 
+  // ...and every params VALUE must survive the Hydra's own value
+  // resolver. The check above proves only that the NAME maps to a byte
+  // offset; it says nothing about whether the value fits. That is the
+  // same name-checked-but-never-encoded gap that let the Fractal
+  // families ship `filter.sensitivity = 65` against a [0.1..40] param,
+  // so it gets closed here too rather than left as the last unguarded
+  // value surface in the library.
+  //
+  // `resolveNrpnValue` is what `apply_patch` calls for a plain param
+  // (tools/patch.ts). FX SUB-params (`prefxparam1` &c) route through
+  // `resolveFxAwareValue` there instead, because their scaling depends
+  // on the selected fx type; no recipe currently authors one, and if a
+  // recipe ever does, this check still catches an out-of-range value
+  // under the generic encoding.
+  for (const [key, value] of Object.entries(recipe.params)) {
+    const nrpn = findHydraNrpn(key);
+    if (nrpn === undefined) continue; // reported by the PATCH_OFFSETS check
+    let threw: string | undefined;
+    try {
+      resolveNrpnValue(nrpn, value);
+    } catch (err) {
+      threw = err instanceof Error ? err.message : String(err);
+    }
+    check(
+      `${id}: params['${key}'] = ${JSON.stringify(value)} resolves on the Hydrasynth`,
+      threw === undefined,
+      threw?.slice(0, 130),
+    );
+  }
+
   // signature_params ⊆ params, with equal values (slim summary can't lie).
   for (const [k, v] of Object.entries(recipe.signature_params)) {
     const inParams = Object.prototype.hasOwnProperty.call(recipe.params, k);
@@ -809,9 +1406,23 @@ console.log('\n[patch_archetype] override + unknown-id');
     threw ? `code='${code}', known=${known?.length ?? 0}` : 'no error');
 }
 
+// Final coverage reconciliation: the three walks (single-block,
+// scene_leveling, block_stack, patch_archetype) must add up to the full
+// census. If they don't, a family is being counted but not verified.
+console.log('');
+const verifiedTotal = entries.length + sceneLevelingCount + blockStackCount + hydraCount;
+check(
+  `all ${totalRecipeIds} recipe id(s) across ${Object.keys(FAMILY_TABLES).length} families are verified by this gate`,
+  verifiedTotal === totalRecipeIds,
+  `verified ${verifiedTotal} (single-block ${entries.length} + scene_leveling ${sceneLevelingCount} + block_stack ${blockStackCount} + patch_archetype ${hydraCount})`,
+);
+
 console.log('');
 if (failed > 0) {
   console.error(`x ${failed} check(s) FAILED.`);
   process.exit(1);
 }
-console.log(`OK verify-recipe-tables: ${entries.length} single-block + ${blockStackCount} block_stack + ${hydraCount} patch_archetype recipe(s) verified.`);
+console.log(
+  `OK verify-recipe-tables: ${totalRecipeIds} recipe id(s) across ${Object.keys(FAMILY_TABLES).length} families verified ` +
+    `(${entries.length} single-block + ${sceneLevelingCount} scene_leveling + ${blockStackCount} block_stack + ${hydraCount} patch_archetype).`,
+);

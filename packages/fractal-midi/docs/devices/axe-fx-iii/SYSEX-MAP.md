@@ -730,6 +730,45 @@ against an UNPLACED Reverb block (wire-acked working-buffer state, not an
 audible change); the SET/read-back byte evidence stands, but audibility on a
 placed block awaits the re-run.
 
+## FM3 Linux field test: set_block, grid routing (ForgeFX, fw 12.0, 2026-06-27) 🟢
+
+Closes the `set_block` placement gap left open by the 2026-06-12 test above.
+**Source:** [ForgeFX](https://github.com/sKuhLight/ForgeFX), an independent
+HTTP-API app built directly on this codec (`fractal-midi`), tested against a
+real **FM3 (fw 12.0)** over **Linux** USB-serial
+(`/dev/serial/by-id/...FM3-if03`). Every frame is this codec's own builder
+output byte-for-byte, so this stands on the same footing as the 2026-06-10
+collaborator session above (issue #9).
+
+- **`set_block` placement CONFIRMED, and the FM3-specific mechanism named**:
+  a bare `buildSetGridCell` (fn=0x01 sub=0x32) insert lands at the DEFAULT
+  (top-left) cell on the FM3, not the requested one. Preceding it with
+  `buildSelectCell` (fn=0x01 sub=0x30, cell-select-only — see the
+  CLEAR/RESET GRID CELL section above) moves the edit cursor to the target
+  cell first; the insert then lands correctly. Add-block and remove
+  confirmed across the full 4×12 grid. This server's own `set_block` write
+  path already sends select→insert for 4-row (FM3) grids and skips it for
+  6-row (III/FM9) grids, which place correctly from the insert alone
+  (`packages/fractal-gen3/src/writer.ts`); no wire builder changed, this
+  test confirms the sequencing already shipped.
+- **Grid routing (`buildSetGridRouting`, fn=0x01 sub=0x35) CONFIRMED**:
+  connect + disconnect land on real hardware; same-column block moves keep
+  their cables, cross-column moves drop them, matching the device's own
+  behavior (previously only loopMIDI-editor-byte-confirmed, not
+  hardware-confirmed).
+- **Linux leg of the USB-CDC serial transport CONFIRMED**: auto-discovery by
+  Fractal vendor id (`by-id/Fractal_Audio_Systems_FM3-if03`), F0..F7 framing,
+  and read+write both work on Linux (`packages/core/src/midi/serialTransport.ts`,
+  which already discovers by vendor id — no Linux-specific code needed; this
+  test is the confirming run). The 2026-06-12 field test above was macOS
+  only, so Linux was previously untested.
+- **Re-confirms on a new platform**: continuous `set_param` (sub 0x52
+  float32), `set_bypass` (0x0A), channel (0x0B), SysEx preset switch (sub
+  0x27), and the preset-dump read path — all previously macOS-only, now also
+  Linux-confirmed.
+- **Not yet**: `save_preset`, and the live `sub=0x2E` grid-read response
+  shape (FM3 offset still uncalibrated).
+
 ## FM9 hardware verify (fw 11.0, Windows, gen3-verify probe, 2026-06-19) 🟢
 
 A community FM9 owner on **Windows** ran the read + write-verify probes
@@ -1760,6 +1799,6 @@ Given the function-byte map + Appendix 1 effect IDs:
 
 - **Project README and CLAUDE.md**: point at `docs/REFERENCES.md` for any "where do I find X" question. The III spec is row 30 there.
 - **III package source**: `src/gen3/axe-fx-iii/setParam.ts` carries an inline pointer to this doc at the top of the file (after edits land).
-- **Community beta-testing workflow**: the community capture guides ([`../../capture-guides/testing-axe-fx-iii.md`](../../capture-guides/testing-axe-fx-iii.md)). III owners run a small list of tool calls and report whether the front panel matches the response.
+- **Community beta-testing workflow**: the contribution page `docs/contributing/devices/axe-fx-iii.md` (in the mcp-midi-control repo). III owners run a small list of tool calls and report whether the front panel matches the response.
 - **Design notes** (some predate the bug discovery here): [`design-notes.md`](design-notes.md).
 - **Forum reverse-engineering** of preset save format, Fractal Forum thread #159885 ("Axe-Fx III and deconstructing / parsing a .syx / sysex preset file"). Three-function envelope: `0x77` (header, contains destination), 16× `0x78` (body chunks), `0x79` (footer).

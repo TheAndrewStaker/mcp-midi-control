@@ -173,10 +173,29 @@ and a mid-send death on a file transfer can reboot the device.
   "what Phase A explicitly did NOT touch").
 
 **Non-goals**
-- The **Windows WinMM poisoned-handle wedge** (a handle that died mid-send is
+- ~~The **Windows WinMM poisoned-handle wedge** (a handle that died mid-send is
   not released by the driver even after `closePort()`; STATE.md 2026-06-10).
   This is driver-level and cannot be fully fixed in-process; surface clear
-  "restart the host app" guidance, don't pretend to recover.
+  "restart the host app" guidance, don't pretend to recover.~~
+  **CORRECTED 2026-07-27: most of this was OURS, not the driver's, and it is
+  fixed.** `close()` ran `input.closePort()` before `output.closePort()`.
+  `MidiInWinMM::closePort()` can raise `DRIVER_ERROR` when
+  `midiInUnprepareHeader` fails on a handle poisoned mid-SysEx, and
+  `NodeMidiInput::ClosePort` has no try/catch, so a throwing input close
+  aborted the whole close and **the OUTPUT port stayed open for the life of
+  the process**. The next `connect()` then failed its own `isPortOpen()`
+  assertion against our own leaked handle. THAT is why `reconnect_midi` could
+  never recover a wedged handle and only a full restart cleared it. Output now
+  closes first (its WinMM close has no error path), each step is isolated, and
+  a throwing input close is not retried (RtMidi frees its sysex buffers before
+  the error return without clearing the vector, so a second attempt
+  double-frees). See `releaseNativeHandles` in
+  `packages/core/src/midi/transport.ts`, guarded by
+  `scripts/verify-midi-handle-release.ts` in preflight. **What survives of the
+  original claim:** a poisoned INPUT handle is still not released until process
+  exit, so `isPortOpen()` still lies for that half. What does NOT survive is
+  "the wedge is driver-level and unrecoverable in-process": the recoverable
+  half now always recovers.
 - Decoding the directory listing for slot-occupancy (separate hardening; needs
   a capture). Tracked as a TODO in `uploadProject.ts`.
 
@@ -273,6 +292,12 @@ When the canary or pre-flight forces a reconnect that then fails (port truly
 gone / WinMM wedge), surface the existing "powered? cable seated? restart the
 host app?" guidance; do not retry-loop into the device.
 
+**2026-07-27:** the most common reason this path used to fail is gone. A
+reconnect that failed against our OWN leaked output handle (the close-ordering
+bug above) is fixed, so "restart the host app" is now the LAST resort rather
+than the usual answer. Keep the guidance, but do not lead with it: a reconnect
+after a mid-send fault is expected to succeed now.
+
 ## 4. Test plan (all offline, mock connection): DONE 2026-07-09
 
 - Canary: cached handle whose `lastSendError` is set → `ensureConnection`
@@ -309,9 +334,13 @@ host app?" guidance; do not retry-loop into the device.
   stop the Circuit's `.ncs` reads from stranding a dead handle (Layer B).
 - **Does NOT**: guarantee the device never reboots. If a handle dies *exactly*
   between the pre-flight check and the first block, a partial send can still
-  occur (smaller window, not zero). And the WinMM poisoned-handle wedge is
-  driver-level. So: this makes device-driving **much** safer, not provably safe;
-  the honest posture stays "resume device transfers cautiously."
+  occur (smaller window, not zero). ~~And the WinMM poisoned-handle wedge is
+  driver-level.~~ (**2026-07-27:** the unrecoverable half of that wedge was our
+  own close-ordering bug and is fixed; see the corrected non-goal above. A
+  poisoned input handle still is not released until process exit, but it no
+  longer strands the output port, so a reconnect recovers.) So: this makes
+  device-driving **much** safer, not provably safe; the honest posture stays
+  "resume device transfers cautiously."
 
 ## 6. Open questions for review
 

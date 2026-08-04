@@ -205,10 +205,36 @@ export async function savePatch(
     // CLOSE, then wait for the device's post-CLOSE 0x08 ack.
     conn.send(makeMessage(XSUB.CLOSE_SESSION));
     const ack = await take(is08, wait);
-    // CLEAN the body: byte 17 (patch-file offset 17 / frame offset 28) is the
-    // device's "dirty edit-buffer" marker. Every PERSISTED Components save carries
-    // body[17]=0x00; a dump of the LIVE buffer carries 0x01, and the device refuses
-    // to commit a dirty body (7-agent capture review, 2026-07-03, byte-cited on 4/4).
+    // ZERO body[17] (frame offset 28). KNOWN DATA LOSS, KEPT DELIBERATELY. Read this
+    // before touching the line, both halves of it.
+    //
+    // 1. It is NOT a "dirty edit-buffer" marker. That was the 2026-07-03 reading and
+    //    it is REFUTED. Byte 17 is `Patch_Genre` (v3 Programmer's Reference p.15,
+    //    range 0..9), and the device's OWN live-buffer dumps carry all ten values:
+    //    a census of the 128 factory dumps in samples/circuit-tracks/pack0/patches/
+    //    (each a 350-byte cmd=0x00 Replace-Current frame from the device, body at
+    //    offset 9) reads body[17] as 39x1, 33x6, 16x3, 14x8, 12x2, 6x5, 4x9, 2x4,
+    //    1x7, 1x0. A boolean flag cannot hold 9. The old "a live dump carries 0x01"
+    //    claim held on 39/128 by coincidence: 0x01 is simply the commonest genre.
+    //    So this line DESTROYS user metadata on every save, and does so measurably
+    //    (the card backup's .cpb copies of "Saw Pad" / "Random Decay" read genre 0
+    //    where the factory originals read 1).
+    //
+    // 2. It stays anyway, because whether the Replace-Patch FRAME requires 0 is a
+    //    SEPARATE question and it is still open. Both Components captures we hold
+    //    are uninformative on it: every Replace-Patch Novation Components sends in
+    //    samples/captured/components-patch-save.pcapng (1 frame, "Jackson Bass (mo"
+    //    -> slot 3) and components-patch-change.pcapng (3 frames, slots 0/1/2)
+    //    carries body[17]=0x00, but so did every source body it read, so the capture
+    //    cannot distinguish "Components forces 0" from "Components passes through".
+    //    The one nonzero Replace-Patch on disk is our own failing 2026-07-03 probe
+    //    (probe-circuit-patch-save-1.pcapng, body[17]=0x01), and it is confounded:
+    //    the same capture shows the in-band verify read after the write that is the
+    //    hardware-confirmed cause of that failure. Two variables, one capture.
+    //
+    // HW-CIRCUIT-008 settles it with one A/B on a scratch slot (nonzero byte 17 vs
+    // 0x00, nothing else varied, power-cycle between). Until then, preserving the
+    // byte would be a guess on a flash-write path, which is the worse error.
     const clean = Array.from(body);
     clean[17] = 0x00;
     // FIRE-AND-FORGET: the Replace-Patch is the LAST thing on the wire. Components

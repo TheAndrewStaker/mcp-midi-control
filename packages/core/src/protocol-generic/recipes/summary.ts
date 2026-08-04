@@ -16,18 +16,63 @@
  *     scene_leveling) ship INLINE: `params` is the full knob dict
  *     ready to paste into `apply_preset.spec.slots[].params` or
  *     `set_block`. Cheap and direct.
- *   - Block-stack recipes ship SLIM: `slot_count` + `target_blocks` +
- *     `signature_params` only. The full slots[] payload (10-30 KB per
- *     recipe across both devices) is no longer inline. The agent
- *     applies via `apply_preset({recipe_id})` — server-side resolution
- *     materializes the slots without a second discovery round-trip.
- *     The apply_preset response carries `applied_spec` echoing what
- *     the writer consumed (recipe + overrides merge resolved).
+ *   - Block-stack recipes ship SLIM: `slot_count` + `signature_params`
+ *     only. The full slots[] payload (10-30 KB per recipe across both
+ *     devices) is no longer inline. The agent applies via
+ *     `apply_preset({recipe_id})` — server-side resolution materializes
+ *     the slots without a second discovery round-trip. The apply_preset
+ *     response carries `applied_spec` echoing what the writer consumed
+ *     (recipe + overrides merge resolved).
+ *   - Patch archetypes (Hydrasynth) ship SLIM TOO, and the slim part is
+ *     the PROSE, not the params. See the `hydrasynth` branch below.
  *
  * `params` (single-block) and `signature_params` (block_stack) are
  * pre-filtered to the requested port. `applicable_devices` is
  * collapsed (a recipe absent on this port is not listed at all), so
  * the agent sees exactly what's safe to apply.
+ *
+ * WHAT A SUMMARY ENTRY IS FOR. Everything here is read at MATCH time —
+ * the agent is deciding WHICH recipe answers the request. A field earns
+ * its bytes only if it helps make that choice (description, category,
+ * cultural_reference, tags, signature_params) or is needed to act on it
+ * (id, requires_nrpn). Anything an agent would only want AFTER choosing
+ * belongs on the detail path (`describeRecipeForPort`), not here: the
+ * whole surface is charged against a hard host delivery ceiling, and
+ * post-choice reference material spent inline is paid for by every
+ * recipe on every device question.
+ *
+ * THE FRACTAL BLOCK-STACK TRIAGE (2026-08-02), the same pass the
+ * Hydrasynth got, run per FIELD over the 14 `block_stack` entries the
+ * Axe-Fx II ships (its whole recipes[] is 16,885 chars of a 47,921-char
+ * response with only 3,279 to spare under the host cliff):
+ *
+ *   description       2,475   26%   MATCH  — the primary match signal
+ *   target_blocks     2,499   26%   after  — see below
+ *   source_notes      1,982   21%   after  — "where did these come from?"
+ *   signature_params  1,499   16%   MATCH  — disambiguates siblings
+ *   params              182    2%   never  — `{}` on every entry
+ *
+ * `target_blocks` looked like match-time data and is not. It answers
+ * "which blocks does this place, and at which slot refs", and BOTH
+ * halves are already covered:
+ *
+ *   - The block roster is in `description`, in English, on 14 of 14 II
+ *     recipes ("noise gate + T808 OD sub-cut + 5150 III Red + parametric
+ *     EQ + short room"). It was a machine-readable restatement of prose
+ *     the agent is already reading.
+ *   - The slot REFS are the post-choice half. They exist to key
+ *     `apply_preset.overrides.slots[]`, which is something you write
+ *     only after choosing a recipe, and the detail path's `slots` is a
+ *     strict superset of them.
+ *
+ * Capacity ("does this fit in the AM4's 4 slots?") is `slot_count`,
+ * which stays. On a grid device each slot ref serializes as
+ * `{"row":2,"col":1}`, which is why the II paid 178 chars/entry for
+ * this and the linear AM4 paid 119.
+ *
+ * READ THIS BEFORE PUTTING A FIELD BACK. Anything you add here is paid
+ * on every device question by every recipe, and the II has ~4 KB of
+ * total margin. Run `npx tsx scripts/verify-describe-device-budget.ts`.
  */
 
 import { AMP_RECIPES } from './amp.js';
@@ -66,35 +111,29 @@ export interface RecipeSummaryEntry {
    * value shape (numbers in display units, strings for enum values),
    * ready to paste into `apply_preset({ port, spec: { slots: [...] } })`.
    *
-   * For `scene_leveling` recipes the params are role-keyed dB offsets,
-   * not slot params; the agent uses them when authoring per-scene
-   * `output.level` writes. Documented in the recipe family's source
-   * (`recipes/sceneLeveling.ts`).
+   * SINGLE-BLOCK FAMILIES ONLY (auto_wah, pitch, wah, filter, amp,
+   * reverb, scene_leveling). For `scene_leveling` the params are
+   * role-keyed dB offsets, not slot params; the agent uses them when
+   * authoring per-scene `output.level` writes. Documented in the recipe
+   * family's source (`recipes/sceneLeveling.ts`).
    *
-   * For `block_stack` recipes this is an empty object; the agent
-   * applies via `apply_preset({recipe_id})` and the full slots[] are
-   * materialized server-side. The apply_preset response carries
-   * `applied_spec` echoing the merge result.
+   * OMITTED on `block_stack` and `patch_archetype`, where it was `{}`
+   * on every entry (182 chars on the II, 432 on the Hydrasynth) and
+   * read as "this recipe sets no params". Those apply via
+   * `apply_preset({recipe_id})` / `apply_patch({recipe_id})` and are
+   * materialized server-side; the apply response carries `applied_spec`
+   * echoing the merge result, and the detail path
+   * (`describe_device({port, recipe})`) carries the authored knobs.
    */
-  readonly params: Readonly<Record<string, number | string>>;
+  readonly params?: Readonly<Record<string, number | string>>;
   /**
    * `block_stack` family only — number of slots the recipe places when
    * applied. Lets the agent budget chain real estate (AM4: 4 max;
-   * II/III: row capacity).
+   * II/III: row capacity). This is the match-time capacity question and
+   * is why `target_blocks` could leave: "does it fit" is a count, not a
+   * roster.
    */
   readonly slot_count?: number;
-  /**
-   * `block_stack` family only — ordered list of `{slot, block_type}`
-   * pairs the recipe places. Slot refs are device-shaped (bare int on
-   * AM4 linear, `{row,col}` on II/III grid). The slot ref is what
-   * `apply_preset` overrides target — keying overrides by `slot`
-   * (e.g. `overrides:{slots:[{slot:2, block_type:'amp', params:{type:'Recto2 Red Modern'}}]}`)
-   * does a deep merge against the matching recipe slot.
-   */
-  readonly target_blocks?: readonly {
-    readonly slot: number | { readonly row: number; readonly col: number };
-    readonly block_type: string;
-  }[];
   /**
    * `block_stack` family only — hand-authored distinctive picks that
    * disambiguate this recipe from siblings. Dot-paths to display-shape
@@ -104,9 +143,17 @@ export interface RecipeSummaryEntry {
    */
   readonly signature_params?: Readonly<Record<string, number | string>>;
   /**
-   * `block_stack` family only — public-source citation for the recipe's
-   * knob values. Surfaced so the agent can answer "where do these
-   * settings come from?" without guessing.
+   * Public-source citation for the recipe's knob values, so the agent
+   * can answer "where do these settings come from?" without guessing.
+   *
+   * NEVER EMITTED IN THE SUMMARY — on any family, as of 2026-08-02.
+   * Provenance is a question about a recipe the agent has ALREADY
+   * chosen, and it is expensive: 687 chars x 36 on the Hydrasynth
+   * (24.7 KB, 53% of that device's whole recipes[] surface), 141 x 14
+   * on the Axe-Fx II. It is still authored on every recipe and served
+   * in full by `describeRecipeForPort` / `describe_device({port,
+   * recipe})`. The field stays declared here because `RecipeDetailEntry`
+   * extends this interface and that is where it lands.
    */
   readonly source_notes?: string;
   /**
@@ -155,6 +202,37 @@ export function summarizeRecipesForPort(port: string): readonly RecipeSummaryEnt
   // Fractal families — applied via apply_patch({recipe_id}), not
   // apply_preset. Every registered recipe surfaces here; inclusion is a
   // curation decision made before a recipe lands, not a runtime tier.
+  //
+  // `params` was `{}` here from the day the family landed until
+  // 2026-08-02, when it stopped being emitted at all — apply_patch
+  // materializes the sparse override map server-side from `recipe_id`,
+  // exactly as apply_preset does for block_stack, so an empty dict was
+  // 432 chars saying "no params" about a recipe that is all params. What
+  // was NOT slimmed, and what actually made this the largest discovery
+  // payload in the rig, is the PROSE. Measured across the 36 archetypes:
+  //
+  //   source_notes        24,737   687/entry   53% of recipes[]
+  //   description          6,754   188/entry
+  //   cultural_reference   5,015   139/entry
+  //   signature_params     3,734   104/entry
+  //   tags                 2,536    70/entry
+  //   params                 432    12/entry   (all `{}`)
+  //
+  // So `source_notes` alone was 50% of the device's entire response, and
+  // it is the one field on the list that answers a question the agent
+  // cannot be asked until AFTER it has picked a recipe ("where did these
+  // settings come from?"). Dropping it from the SUMMARY took the payload
+  // from 49,814 chars (1,386 under the host delivery cliff, with all 13
+  // guidance topics withheld to stay there) to ~41.6 KB with every topic
+  // inline — including `device_precondition`, the warning that NRPN
+  // writes are inert unless Param TX/RX is set, which a user hits on
+  // their first engine-param write.
+  //
+  // The citations are NOT deleted: `PatchRecipeSpec.source_notes` still
+  // carries every one, and `describe_device({port:"hydrasynth",
+  // recipe:"<id>"})` returns the full authored record on demand. Keep it
+  // that way — the reason this field is affordable at all is that nobody
+  // pays for it until somebody asks.
   if (normalized === 'hydrasynth') {
     const entries: RecipeSummaryEntry[] = [];
     for (const recipe of Object.values(HYDRA_PATCH_RECIPES)) {
@@ -162,9 +240,7 @@ export function summarizeRecipesForPort(port: string): readonly RecipeSummaryEnt
         id: recipe.name,
         family: 'patch_archetype',
         description: recipe.description,
-        params: {},
         signature_params: recipe.signature_params,
-        source_notes: recipe.source_notes,
         category: recipe.category,
         cultural_reference: recipe.cultural_reference,
         requires_nrpn: recipe.requires_nrpn === true ? true : undefined,
@@ -272,23 +348,23 @@ export function summarizeRecipesForPort(port: string): readonly RecipeSummaryEnt
     if (!recipe.applicable_devices.includes(portKey)) continue;
     const slots = recipe.slots_per_device[portKey];
     if (slots === undefined || slots.length === 0) continue;
-    // Slim shape (2026-05-22 MCP migration): block_stack summaries
-    // surface signature_params + target_blocks + slot_count, NOT the
-    // full slots[]. The agent applies via apply_preset({recipe_id,
-    // overrides?}) which resolves the recipe server-side; the
-    // committed apply's `applied_spec` field echoes the merged spec
-    // so the agent never needs a write-to-inspect round-trip.
+    // Slim shape (2026-05-22 MCP migration, narrowed to match-time-only
+    // 2026-08-02): block_stack summaries surface description +
+    // signature_params + slot_count, and NOTHING an agent reads after it
+    // has already chosen. The full slots[], the per-slot refs that were
+    // `target_blocks`, and `source_notes` all live on
+    // describe_device({port, recipe:id}); `slots` there is a strict
+    // superset of `target_blocks`. The agent applies via
+    // apply_preset({recipe_id, overrides?}), which resolves the recipe
+    // server-side, and the committed apply's `applied_spec` echoes the
+    // merged spec so the agent never needs a write-to-inspect round-trip.
     const signatureParams = recipe.signature_params_per_device[portKey] ?? {};
-    const targetBlocks = slots.map((s) => ({ slot: s.slot, block_type: s.block_type }));
     entries.push({
       id: recipe.name,
       family: 'block_stack',
       description: recipe.description,
-      params: {},
       slot_count: slots.length,
-      target_blocks: targetBlocks,
       signature_params: signatureParams,
-      source_notes: recipe.source_notes,
     });
   }
 
@@ -313,4 +389,84 @@ export function summarizeRecipesForPort(port: string): readonly RecipeSummaryEnt
   }
 
   return entries;
+}
+
+/**
+ * ONE recipe, in full — the detail path behind `describe_device({port,
+ * recipe})`.
+ *
+ * The summary above is deliberately match-time-only, because every byte
+ * in it is charged against a hard host tool-result ceiling on every
+ * device question. This is where the rest lives, and nobody pays for it
+ * until they ask:
+ *
+ *   - `source_notes`, which the summary now omits on EVERY family. This
+ *     is the answer to "where do these settings come from?", which is a
+ *     question about a recipe the agent has ALREADY chosen.
+ *   - the full authored knobs: `params` + `mod_routes` / `macro_routes`
+ *     for a Hydrasynth archetype, `slots` for a block stack. Both apply
+ *     server-side from the id alone, so this is for INSPECTION — reading
+ *     what a recipe will do before committing to it, or explaining what
+ *     it just did. It is not a payload to paste back; passing the id is
+ *     always the correct way to apply.
+ *   - the block stack's per-slot REFS, which used to ride the summary as
+ *     `target_blocks`. `slots` is a strict superset (ref + block_type +
+ *     the authored params), and it is the field to read before writing
+ *     `apply_preset.overrides.slots[]`: overrides match a recipe slot by
+ *     ref equality, and a ref that matches nothing is APPENDED rather
+ *     than merged, so a guessed ref silently adds a block instead of
+ *     changing one.
+ *
+ * Single-block families already ship everything they have inline, so
+ * their detail is the summary entry unchanged.
+ *
+ * Returns `undefined` when the id is not a recipe on this port. The
+ * caller is responsible for turning that into an error that lists what
+ * IS available (a bare "not found" on a recipe id is how an agent ends
+ * up hand-authoring the tone instead).
+ */
+export interface RecipeDetailEntry extends RecipeSummaryEntry {
+  /** Full authored knob map (Hydrasynth archetypes; display values). */
+  readonly full_params?: Readonly<Record<string, number | string>>;
+  /** Mod-matrix routes the recipe wires after the patch dump (needs NRPN). */
+  readonly mod_routes?: readonly { source: string; target: string; depth: number }[];
+  /** Macro-page assignments the recipe wires after the patch dump (needs NRPN). */
+  readonly macro_routes?: readonly { macro: number; target: string; depth: number }[];
+  /** Full per-device slot list for a `block_stack` recipe on this port. */
+  readonly slots?: readonly unknown[];
+}
+
+export function describeRecipeForPort(
+  port: string,
+  recipeId: string,
+): RecipeDetailEntry | undefined {
+  const normalized = port.trim().toLowerCase();
+  const entry = summarizeRecipesForPort(port).find((r) => r.id === recipeId);
+  if (entry === undefined) return undefined;
+
+  if (normalized === 'hydrasynth') {
+    const recipe = HYDRA_PATCH_RECIPES[recipeId];
+    if (recipe === undefined) return entry;
+    return {
+      ...entry,
+      full_params: recipe.params,
+      ...(recipe.mod_routes !== undefined ? { mod_routes: recipe.mod_routes } : {}),
+      ...(recipe.macro_routes !== undefined ? { macro_routes: recipe.macro_routes } : {}),
+      source_notes: recipe.source_notes,
+    };
+  }
+
+  if (entry.family === 'block_stack') {
+    const recipe = BLOCK_STACK_RECIPES[recipeId];
+    if (recipe !== undefined) {
+      const slots = recipe.slots_per_device[normalized as RecipePort];
+      return {
+        ...entry,
+        source_notes: recipe.source_notes,
+        ...(slots !== undefined ? { slots } : {}),
+      };
+    }
+  }
+
+  return entry;
 }

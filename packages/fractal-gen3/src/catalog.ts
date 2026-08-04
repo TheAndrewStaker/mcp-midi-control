@@ -382,6 +382,44 @@ function makeCalibratedDecode(cal: CalibrationOpts): ParamSchema['decode'] {
   return (wire: number): number => roundDisplay(wireToDisplay(wire, cal));
 }
 
+/**
+ * Params whose wire REGISTER is a raw signed int16 (a native semitone count),
+ * not the standard normalized-0..65534-across-range field every other
+ * calibrated continuous param uses. SET already works via the standard
+ * normalized-continuous wire form (`makeCalibratedEncode`) — the device's own
+ * param-set microcode rescales the normalized value onto its native register
+ * — only READ needs a different decode.
+ *
+ * Evidence: a real hardware SET->GET roundtrip across the full FM9 (fw 11.0)
+ * and Axe-Fx III (fw 25.04) catalogs (issue #6, 2026-06-18). Sending the
+ * normalized-continuous wire endpoints 0 / 65534 (i.e. displayMin/displayMax
+ * = -24/+24 semitones) read back as raw wire 65512 / 24 — int16(65512) =
+ * -24, matching the SENT value exactly, so this is a read-side decode
+ * mismatch, not a wire/write bug: 65512 self-evidently ISN'T "-24 renormalized
+ * to 0..65534" (that would decode to +24, the wrong sign), it's -24 as a
+ * raw two's-complement int16. Every intermediate wire step in the sweep
+ * (16384->-11, 49151->12) round-trips the same way. Golden:
+ * `scripts/verify-fractal-gen3-family.ts#C13`. Family-wide list (same
+ * firmware symbols on FM3/FM9/III, sharing one gen-3 effect codec).
+ */
+export const SIGNED_RAW_SEMITONE_PARAMS: ReadonlySet<string> = new Set([
+  'PITCH_SHIFT1', 'PITCH_SHIFT2', 'PITCH_SHIFT3', 'PITCH_SHIFT4',
+  'PITCH_STEP1', 'PITCH_STEP2', 'PITCH_STEP3', 'PITCH_STEP4', 'PITCH_STEP5', 'PITCH_STEP6',
+  'PITCH_STEP7', 'PITCH_STEP8', 'PITCH_STEP9', 'PITCH_STEP10', 'PITCH_STEP11', 'PITCH_STEP12',
+  'PITCH_STEP13', 'PITCH_STEP14', 'PITCH_STEP15', 'PITCH_STEP16',
+  'PLEX_SHIFT1', 'PLEX_SHIFT2', 'PLEX_SHIFT3', 'PLEX_SHIFT4',
+  'PLEX_SHIFT5', 'PLEX_SHIFT6', 'PLEX_SHIFT7', 'PLEX_SHIFT8',
+  'SYNTH_SHIFT1', 'SYNTH_SHIFT2', 'SYNTH_SHIFT3',
+  'REVERB_SHIFT1', 'REVERB_SHIFT2',
+]);
+
+function makeSignedRawSemitoneDecode(cal: CalibrationOpts): ParamSchema['decode'] {
+  return (wire: number): number => {
+    const signed = wire > 32767 ? wire - 65536 : wire;
+    return roundDisplay(Math.min(cal.displayMax, Math.max(cal.displayMin, signed)));
+  };
+}
+
 function buildParamSchema(
   family: string,
   param: AxeFxIIIParam,
@@ -495,7 +533,9 @@ function buildParamSchema(
     decode = (wire: number): number => wire;
   } else if (cal !== undefined) {
     encode = makeCalibratedEncode(family, key, cal);
-    decode = makeCalibratedDecode(cal);
+    decode = SIGNED_RAW_SEMITONE_PARAMS.has(param.name)
+      ? makeSignedRawSemitoneDecode(cal)
+      : makeCalibratedDecode(cal);
   } else {
     encode = makePassthroughEncode(family, key);
     decode = (wire: number): number => wire;

@@ -28,6 +28,7 @@ import { decodeRawPatch } from '../packages/fractal-gen3/dist/presetHuffman.js';
 import {
   decodeGen3Body,
   decodeGen3PresetDump,
+  typeName,
 } from '../packages/fractal-gen3/dist/presetBody.js';
 import { gen3WholePresetToSpec } from '../packages/core/dist/protocol-generic/gen3-source.js';
 import { translatePresetSpec } from '../packages/core/dist/protocol-generic/port-preset.js';
@@ -98,6 +99,23 @@ check('decodeGen3Body on an all-zero body yields no blocks/grid noise', (() => {
   const r = decodeGen3Body(new Uint8Array(0x2000), 0x10);
   return (r.blocks === undefined || r.blocks.length === 0) && (r.grid === undefined || r.grid.length === 0);
 })());
+
+// Issue #16 regression: TYPE_BINARY_IDS (the whole-preset decode table) is
+// missing amp ordinal 132 "FAS Modern II" — confirmed against a live FM9
+// front panel. typeName() must fall back to GEN3_READ_ROSTERS.DISTORT_TYPE
+// for exactly this gap, without disturbing an ordinal TYPE_BINARY_IDS
+// already covers (a fallback that shadowed real entries would silently
+// rename other amps).
+check(
+  'typeName("Amp", 132) falls back to the live-read roster ("FAS Modern II")',
+  typeName('Amp', 132) === 'FAS Modern II',
+  `got=${JSON.stringify(typeName('Amp', 132))}`,
+);
+check(
+  'typeName("Amp", 0) still resolves via TYPE_BINARY_IDS (fallback does not shadow covered ordinals)',
+  typeof typeName('Amp', 0) === 'string' && typeName('Amp', 0)!.length > 0,
+  `got=${JSON.stringify(typeName('Amp', 0))}`,
+);
 
 // ── 2. Reference cross-check (when samples + Python present) ──────────
 function findPython(): string | undefined {

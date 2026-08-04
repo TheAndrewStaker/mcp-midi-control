@@ -40,11 +40,17 @@ export const VE500_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
   recall:
     'switch_preset recalls a USER memory U01–U99 (or 1–99) by a bare Program Change on MIDI channel 1 ' +
     '(hardware-confirmed). The VE-500 must have PC IN = ON and RX CH = OMNI or Ch.1; a Bank Select is ' +
-    'deliberately NOT sent (the unit ignores the recall if one precedes the PC). Preset (P01–P50) recall ' +
-    'is available too (2026-07-09): it sends a DIFFERENT mechanism, a SysEx DT1 write to the "Current ' +
-    'Patch Number" register (decoded from the VE-500 Editor\'s own patch-switch handler, not a Program ' +
-    'Change at all); community-beta, not yet hardware-confirmed. Neither recall path is echoed, so the ' +
-    'front panel is ground truth for both.',
+    'deliberately NOT sent (the unit ignores the recall if one precedes the PC). User-memory recall now ' +
+    'PRE-FLIGHT READS system_midi.midi_program_change_in and REFUSES when it is 0, because the unit ' +
+    'would ignore the Program Change and never say so. If you hit that refusal, do NOT "fix" it by ' +
+    'setting midi_program_change_in to 1 on the user\'s behalf: turning it on re-exposes the unit to ' +
+    'any stray Program Change on the bus recalling a patch mid-song, which is normally why it is off. ' +
+    'Offer the front panel as the first option and the setting change as an explicit trade the user ' +
+    'chooses. Preset (P01–P50) recall is available too (2026-07-09): it sends a DIFFERENT mechanism, a ' +
+    'SysEx DT1 write to the "Current Patch Number" register (decoded from the VE-500 Editor\'s own ' +
+    'patch-switch handler, not a Program Change at all); community-beta, not yet hardware-confirmed. ' +
+    'It does NOT depend on PC IN and is not gated. Neither recall path is echoed, so the front panel ' +
+    'is ground truth for both.',
   status:
     'Hardware-confirmed on the maintainer\'s unit (2026-06-28): set_param, get_param (RQ1→DT1), ' +
     'set_bypass, user-memory recall (switch_preset), apply_preset (whole-patch build), and set-by-NAME ' +

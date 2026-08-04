@@ -4,7 +4,9 @@
  * The SPD-SX exposes two mutually-exclusive surfaces, selected by its USB MODE:
  *
  *   - AUDIO/MIDI mode → the MIDI surface. Kit recall via Program Change
- *     (switch_preset; kit 1..100 → PC kit−1, ch10, needs PC TX/RX SW = ON) and
+ *     (switch_preset; kit 1..100 → PC kit−1, on the unit's GLOBAL CH — device
+ *     default ch10, override via MCP_SPDSX_GLOBAL_CHANNEL if the unit is set
+ *     differently, needs PC TX/RX SW = ON) and
  *     pad triggering via Note On (default pad notes follow the General MIDI drum
  *     map — kick 36, snare 38, hat 42, …). No live
  *     parameter editing over MIDI (no NRPN, no address-mapped SysEx).
@@ -58,7 +60,26 @@ import { addWaves } from './storage/waveStore.js';
 import { authorKit as authorKitFile, editPadNotes as editPadNotesFile, type PadInput } from './storage/authorKit.js';
 
 const DEVICE_LABEL = 'Roland SPD-SX';
-const GLOBAL_CHANNEL = 10;
+/**
+ * Default GLOBAL CH (1..16) for kit-recall Program Change. The device default
+ * is 10; the actual channel is user-set per unit (SETUP > MIDI > GLOBAL CH,
+ * not readable over MIDI), so it is overridable at runtime via
+ * MCP_SPDSX_GLOBAL_CHANNEL — same pattern as boss-rc's ctl_channel_env, since
+ * this is the same class of problem (a device-set channel our descriptor
+ * can't read back).
+ */
+const GLOBAL_CHANNEL_DEFAULT = 10;
+const GLOBAL_CHANNEL_ENV = 'MCP_SPDSX_GLOBAL_CHANNEL';
+
+/** Resolve the GLOBAL CH: env override (1..16) wins, else the device default. */
+function resolveGlobalChannel(): number {
+  const raw = process.env[GLOBAL_CHANNEL_ENV];
+  if (raw && raw.trim() !== '') {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isInteger(n) && n >= 1 && n <= 16) return n;
+  }
+  return GLOBAL_CHANNEL_DEFAULT;
+}
 
 // Role → MIDI note: the GENERAL MIDI percussion map (the universal drum-note
 // standard; adopted 2026-06-30, replacing the old contiguous C4 = 60..68). This is
@@ -67,13 +88,15 @@ const GLOBAL_CHANNEL = 10;
 // a kit authored in SPDSX_PAD_ROLES (= pad) order lines up turnkey with grooves the
 // Circuit's MIDI 1/2 track sequences onto this device. Set the device pads to match
 // (MENU → KIT → MIDI → NOTE#). GM drums conventionally sit on channel 10
-// (= GLOBAL_CHANNEL); a rig may receive them on any channel it sets.
+// (= GLOBAL_CHANNEL_DEFAULT); a rig may receive them on any channel it sets
+// (MCP_SPDSX_GLOBAL_CHANNEL). Resolved once at module load: env vars are
+// fixed for the server's process lifetime, so this static map stays correct.
 const SPDSX_PAD_ROLES = ['kick', 'snare', 'hat', 'openhat', 'clap', 'tom', 'ride', 'crash', 'perc'] as const;
 const SPDSX_GM_NOTE: Record<(typeof SPDSX_PAD_ROLES)[number], number> = {
   kick: 36, snare: 38, hat: 42, openhat: 46, clap: 39, tom: 45, ride: 51, crash: 49, perc: 56,
 };
 const SPDSX_VOICE_MAP = Object.fromEntries(
-  SPDSX_PAD_ROLES.map((role) => [role, { channel: GLOBAL_CHANNEL, note: SPDSX_GM_NOTE[role] }]),
+  SPDSX_PAD_ROLES.map((role) => [role, { channel: resolveGlobalChannel(), note: SPDSX_GM_NOTE[role] }]),
 );
 // Default <NoteNum> for a full-kit pad at position i: the GM note for the role at
 // that pad position; pads past the 9 named roles fall back to the codec's 60 + i.
@@ -139,7 +162,8 @@ function waveNameIndex(root: string): Map<string, number[]> {
 const SPDSX_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.freeze({
   capability_summary:
     'The SPD-SX has TWO surfaces, one at a time, selected by USB MODE. AUDIO/MIDI mode = the MIDI surface: ' +
-    'recall a kit (switch_preset, kit 1..100 → PC kit−1 on ch10) and trigger pads (General MIDI drum notes: kick 36, snare 38, hat 42, …); there ' +
+    `recall a kit (switch_preset, kit 1..100 → PC kit−1 on the unit's GLOBAL CH, default ch${GLOBAL_CHANNEL_DEFAULT}; ` +
+    `set ${GLOBAL_CHANNEL_ENV} if the unit differs) and trigger pads (General MIDI drum notes: kick 36, snare 38, hat 42, …); there ` +
     'is NO live parameter control over MIDI. WAVE MGR mode = the STORAGE surface (the unit mounts as a drive): ' +
     'build and inspect kits + the wave pool as files. The two modes are mutually exclusive; a verb invoked in ' +
     'the wrong mode returns capability_not_supported naming the mode to switch to.',
@@ -149,7 +173,10 @@ const SPDSX_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.freeze({
     'landed at); (2) map waves to pads with author_kit(location=kit, name, pads=[…]) where each pad entry is a ' +
     'wave index or wave name (resolve names with list_samples), or -1/"empty". Pads 1-9 are the main pads, 10-15 ' +
     'the external trigger inputs. author_kit refuses to overwrite an occupied kit unless confirm_overwrite=true ' +
-    '(which backs the prior kit up first). POWER-CYCLE the unit after writing for it to load the new files.',
+    '(which backs the prior kit up first). RE-AUTHORING an existing kit MERGES: any per-pad field you do not name ' +
+    '(level, note, mute group, dynamics, voice) keeps its current value, so a one-wave swap will not flatten a ' +
+    'balanced kit\'s levels; the result reports what it kept. To change ONLY notes, use set_notes (touches nothing ' +
+    'else). POWER-CYCLE the unit after writing for it to load the new files.',
   inspecting:
     'In WAVE MGR mode: scan_locations(from,to as kit numbers) lists kit names + which are empty; ' +
     'get_preset(location=kit) returns one kit\'s full pad→wave map; list_samples reads the wave pool (can be ' +
@@ -210,7 +237,14 @@ export const SPD_SX_DESCRIPTOR: DeviceDescriptor = {
   capabilities: {
     slot_model: 'linear',
     slot_count: 100, // 100 kits
-    support_tier: 'generic-only',
+    // HYBRID device, so the single tier is coarse by construction. Set from the
+    // PRIMARY authoring surface, which here is STORAGE: the kit + wave codec is
+    // byte-exact and has been confirmed on hardware repeatedly through this
+    // server's own packaged path. It sat at 'generic-only' only because the old
+    // tier wording tied that label to "no authoring codec over MIDI", which is a
+    // transport assumption, not an evidence judgement. The verification string
+    // below leads with the per-surface split so the MIDI half is not overstated.
+    support_tier: 'verified',
     verification:
       'MIDI surface: documented (Owner\'s Manual) kit recall via PC + pad triggering via notes; no live param ' +
       'control over MIDI. Storage surface: HARDWARE-CONFIRMED end-to-end through this server (2026-06-27): ' +
@@ -377,20 +411,23 @@ export const SPD_SX_DESCRIPTOR: DeviceDescriptor = {
         'SPD-SX has no MIDI-addressable parameters; only kit recall (switch_preset) and pad triggers.');
     },
     buildSwitchPreset(location): number[] {
-      return [0xc0 | ((GLOBAL_CHANNEL - 1) & 0x0f), (parseKitNumber(location) - 1) & 0x7f];
+      const ch = resolveGlobalChannel();
+      return [0xc0 | ((ch - 1) & 0x0f), (parseKitNumber(location) - 1) & 0x7f];
     },
     // MIDI surface (AUDIO/MIDI mode).
     async switchPreset(ctx, location: LocationRef): Promise<WriteResult> {
       requireMidi(ctx);
       const kit = parseKitNumber(location);
-      ctx.conn.send([0xc0 | ((GLOBAL_CHANNEL - 1) & 0x0f), (kit - 1) & 0x7f]);
+      const ch = resolveGlobalChannel();
+      ctx.conn.send([0xc0 | ((ch - 1) & 0x0f), (kit - 1) & 0x7f]);
       return {
         op: 'switch_preset',
         target: `kit ${kit}`,
         acked: true,
         info:
-          `Recalled kit ${kit} via Program Change ${kit - 1} on ch${GLOBAL_CHANNEL}. ` +
-          'Requires PC TX/RX SW = ON. No readback, confirm on the device.',
+          `Recalled kit ${kit} via Program Change ${kit - 1} on ch${ch}. ` +
+          `Requires PC TX/RX SW = ON and the unit's GLOBAL CH to match (set ${GLOBAL_CHANNEL_ENV} ` +
+          `if it is not ${GLOBAL_CHANNEL_DEFAULT}). No readback, confirm on the device.`,
       };
     },
     // Storage surface (WAVE MGR mode).
@@ -441,13 +478,16 @@ export const SPD_SX_DESCRIPTOR: DeviceDescriptor = {
       };
       // Build pad inputs: a bare wave (number/name) stays minimal; an object pad
       // (per-pad note / voice / mute group / dynamics) switches to the full kit.
-      const padInputs: PadInput[] = pads.map((p, i) => {
+      const padInputs: PadInput[] = pads.map((p) => {
         if (typeof p === 'number') return p;
         if (typeof p === 'string') return resolveWave(p);
         const spec = p as KitPadSpec;
         return {
           wv: resolveWave(spec.wave),
-          note: spec.note ?? spdsxDefaultPadNote(i),
+          // The GM default is passed as a FALLBACK (opts.defaultNote), not baked
+          // in here: collapsing it would make every re-author overwrite whatever
+          // notes the kit already carries.
+          ...(spec.note !== undefined ? { note: spec.note } : {}),
           ...(spec.voice !== undefined ? { voice: spec.voice } : {}),
           ...(spec.loop !== undefined ? { loop: spec.loop } : {}),
           ...(spec.mute_group !== undefined ? { muteGroup: spec.mute_group } : {}),
@@ -459,7 +499,11 @@ export const SPD_SX_DESCRIPTOR: DeviceDescriptor = {
 
       let res;
       try {
-        res = authorKitFile(root, kitNumber, name, padInputs, { force: opts?.confirmOverwrite, dryRun: opts?.dryRun });
+        res = authorKitFile(root, kitNumber, name, padInputs, {
+          force: opts?.confirmOverwrite,
+          dryRun: opts?.dryRun,
+          defaultNote: spdsxDefaultPadNote,
+        });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         // The storage layer refuses to clobber an occupied kit without force.
@@ -471,6 +515,33 @@ export const SPD_SX_DESCRIPTOR: DeviceDescriptor = {
         throw new DispatchError('bad_location', DEVICE_LABEL, `author_kit failed: ${msg}`);
       }
 
+      // Merging is silent-by-default territory: say what was KEPT, and flag the
+      // one case the merge cannot judge (a pad whose wave changed under an
+      // inherited level).
+      const m = res.merged;
+      const mergeNote = m
+        ? ` Merged over the existing kit — anything you did not name was KEPT, not reset` +
+          (m.levels.length
+            ? `: levels ${m.levels.map((l) => `pad ${l.pad}=${l.level}`).join(', ')}`
+            : '') +
+          `${m.levels.length ? ', plus' : ':'} per-pad notes / mute groups / dynamics${m.header ? ' and the Level/Tempo/FX header' : ''}.`
+        : '';
+      const warnings = [
+        m && m.waveChanged.length
+          ? `Pad(s) ${m.waveChanged.join(', ')} got a NEW wave but kept the previous pad level ` +
+            `(${m.waveChanged.map((p) => `pad ${p}=${m.levels.find((l) => l.pad === p)?.level}`).join(', ')}). ` +
+            'That level was measured for the OLD sample; a different sample can sit at a different loudness. ' +
+            'Check by ear, and re-level with measure_loudness if it stands out.'
+          : undefined,
+        res.fullKit
+          ? 'Per-pad MIDI/voice properties use the SPD-SX full-kit format (byte-shaped like the device\'s own kits). ' +
+            'HARDWARE-CONFIRMED 2026-07-07: 20 server-authored full kits loaded and their loop pads play correctly on the device. ' +
+            'Pads default to one-shot SHOT unless loop:true is set (loop = the device\'s own loop-pad signature ' +
+            'PlayMode=2/Loop=1/TrigType=1/MONO, hardware-confirmed looping). The POLY/MONO choke direction is still ' +
+            'correlation-inferred, so confirm choke behavior by ear if it matters.'
+          : undefined,
+      ].filter((w): w is string => w !== undefined);
+
       return {
         ok: true,
         location: res.kit,
@@ -479,18 +550,15 @@ export const SPD_SX_DESCRIPTOR: DeviceDescriptor = {
         bytes: res.bytes,
         dry_run: !res.written,
         backed_up: res.backedUp,
+        merged: m ? { levels: m.levels, wave_changed: m.waveChanged, header: m.header } : undefined,
         info: res.written
           ? `Wrote ${res.fullKit ? 'full' : 'minimal'} kit ${res.kit} '${res.name}' (${res.assigned}/15 pads) to ${res.path}.` +
             (res.backedUp ? ` Prior kit backed up to ${basename(res.backedUp)}.` : '') +
+            mergeNote +
             ' Eject the drive cleanly and POWER-CYCLE the SPD-SX to load it.'
-          : `Dry run: ${res.fullKit ? 'full' : 'minimal'} kit ${res.kit} '${res.name}' (${res.assigned}/15 pads, ${res.bytes} bytes) validated, not written.`,
-        warning: res.fullKit
-          ? 'Per-pad MIDI/voice properties use the SPD-SX full-kit format (byte-shaped like the device\'s own kits, FX off). ' +
-            'HARDWARE-CONFIRMED 2026-07-07: 20 server-authored full kits loaded and their loop pads play correctly on the device. ' +
-            'Pads default to one-shot SHOT unless loop:true is set (loop = the device\'s own loop-pad signature ' +
-            'PlayMode=2/Loop=1/TrigType=1/MONO, hardware-confirmed looping). The POLY/MONO choke direction is still ' +
-            'correlation-inferred, so confirm choke behavior by ear if it matters.'
-          : undefined,
+          : `Dry run: ${res.fullKit ? 'full' : 'minimal'} kit ${res.kit} '${res.name}' (${res.assigned}/15 pads, ${res.bytes} bytes) validated, not written.` +
+            mergeNote,
+        warning: warnings.length ? warnings.join(' ') : undefined,
       };
     },
     async editPadNotes(ctx, location: LocationRef, notes, opts?: KitAuthorOptions): Promise<KitAuthorResult> {

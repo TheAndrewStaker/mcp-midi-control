@@ -16,9 +16,21 @@ body:
       description: Which device is the bug on?
       options:
         - Fractal AM4
-        - Fractal Axe-Fx II XL+ (Q8.02)
-        - Fractal Axe-Fx III (community beta; please confirm front-panel behavior)
-        - ASM Hydrasynth Explorer (1.5.x)
+        - Fractal AX8
+        - Fractal Axe-Fx Standard / Ultra
+        - Fractal Axe-Fx II XL+
+        - Fractal Axe-Fx III
+        - Fractal FM3
+        - Fractal FM9
+        - Fractal VP4
+        - ASM Hydrasynth
+        - Arturia MicroFreak
+        - Arturia MiniFreak
+        - Novation Circuit Tracks
+        - Roland SPD-SX
+        - Boss VE-500
+        - Boss RC-505mk2
+        - Boss RC-600
         - Generic MIDI (send_cc / send_sysex / etc.)
         - Other / multiple
     validations:
@@ -29,7 +41,18 @@ body:
     attributes:
       label: mcp-midi-control version
       description: From package.json or the release ZIP filename.
-      placeholder: v0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: vendor_app
+    attributes:
+      label: Was the vendor editor or manager app open at the same time?
+      description: |
+        This server holds the device's port exclusively. A vendor app
+        holding it is the most common cause of a tool call that reaches
+        nothing. See docs/contributing/SAFETY.md.
+      placeholder: "No, quit it first"
     validations:
       required: true
 

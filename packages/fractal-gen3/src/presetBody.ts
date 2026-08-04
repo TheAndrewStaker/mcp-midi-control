@@ -29,6 +29,7 @@
 import { TYPE_BINARY_IDS } from './gen3BodyTables.js';
 import { decodeRawPatch } from './presetHuffman.js';
 import { parsePresetDump } from './presetDump.js';
+import { GEN3_READ_ROSTERS } from 'fractal-midi/gen3/axe-fx-iii';
 
 // ── Device model ids (raw_patch / SysEx model byte) ───────────────────
 export const MODEL_AXE_FX_III = 0x10;
@@ -271,8 +272,33 @@ function u16(data: Uint8Array, off: number): number {
 function scale10(raw: number): number {
   return Math.round((raw / 65535) * 1000) / 100;
 }
-function typeName(block: string, id: number): string | undefined {
-  return TYPE_BINARY_IDS[block]?.[id];
+// TYPE_BINARY_IDS (BoodieTraps-sourced) has real gaps — e.g. Amp is missing
+// ordinal 132 "FAS Modern II", confirmed against a live FM9 front panel
+// (issue #16). GEN3_READ_ROSTERS is the live read/set roster: for these same
+// families it is a UNION of the BoodieTraps table with our own device-true
+// FM9-Edit cache rosters (amp/drive/reverb) or wiki gap-fill (comp/wah),
+// verified byte-identical to TYPE_BINARY_IDS on every ordinal both carry — so
+// falling back to it only ever FILLS a gap, never overrides an existing name.
+const TYPE_BINARY_FALLBACK_ROSTER: Readonly<Record<string, keyof typeof GEN3_READ_ROSTERS>> = {
+  Amp: 'DISTORT_TYPE',
+  Chorus: 'CHORUS_TYPE',
+  Comp: 'COMP_TYPE',
+  Delay: 'DELAY_TYPE',
+  Drive: 'FUZZ_TYPE',
+  Filter: 'FILTER_TYPE',
+  Flanger: 'FLANGER_TYPE',
+  Phaser: 'PHASER_TYPE',
+  Reverb: 'REVERB_TYPE',
+  Tremolo: 'TREMOLO_TYPE',
+  Wah: 'WAH_TYPE',
+};
+
+/** Exported for the issue #16 regression golden (verify-gen3-preset-body.ts) — otherwise internal to decodeGen3Body. */
+export function typeName(block: string, id: number): string | undefined {
+  const name = TYPE_BINARY_IDS[block]?.[id];
+  if (name) return name;
+  const fallbackKey = TYPE_BINARY_FALLBACK_ROSTER[block];
+  return fallbackKey ? GEN3_READ_ROSTERS[fallbackKey]?.[id] : undefined;
 }
 
 // ── public output shapes ──────────────────────────────────────────────

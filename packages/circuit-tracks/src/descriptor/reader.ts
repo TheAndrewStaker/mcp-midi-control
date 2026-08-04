@@ -41,7 +41,9 @@ import type {
   PresetSnapshotSlot,
   ReadResult,
   PackDirectoryDump,
+  ProjectSlotProbeReport,
   SampleDirectoryDump,
+  ScannedLocation,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 
@@ -49,12 +51,13 @@ import { decodeParamWire, findParam } from '../params.js';
 import { readCurrentPatch, readStoredPatch, readStoredPatchViaLoad, instanceToSynthLoc } from '../codec/patchTransfer.js';
 import { isPatchDumpParam, OFFSET_BY_PARAM } from '../codec/patchLayout.js';
 import { downloadProject } from '../ncs/uploadProject.js';
-import { readSampleDirectory } from '../ncs/sampleDirectory.js';
+import { readSampleDirectory, readProjectDirectory } from '../ncs/sampleDirectory.js';
+import { probeSlots, FILE_TYPE, SLOTS_PER_PACK } from '../ncs/fileDelete.js';
 import { readPackDirectory } from '../ncs/packDirectory.js';
 import { TRANSFER_CONSTANTS } from '../ncs/transfer.js';
-import { decodeNotePattern, DEFAULT_GATE, type NoteStep } from '../ncs/notePattern.js';
+import { decodeNotePattern, describeGate, DEFAULT_GATE, type NoteStep } from '../ncs/notePattern.js';
 import { decodeDrumPattern, drumPatternToString, DEFAULT_DRUM_CHOICE } from '../ncs/drumPattern.js';
-import { NOTE_TRACKS, NUM_DRUM_TRACKS } from '../ncs/format.js';
+import { NOTE_TRACKS, NUM_DRUM_TRACKS, PATTERNS_PER_TRACK, checkNcsStructure, ncsStructureNote, type NoteTrack } from '../ncs/format.js';
 
 const DEVICE_LABEL = 'Novation Circuit Tracks';
 
@@ -72,13 +75,51 @@ function decodeProjectName(buf: Uint8Array): string {
   return s.replace(/[^\x20-\x7e]/g, '').trimEnd();
 }
 
-/** Render a note track's active steps as a readable "step N: <notes>" list (gate annotated when non-default). */
-function renderNoteTrack(steps: readonly NoteStep[]): { active_steps: number; content: string } {
+/**
+ * Which of the 8 patterns hold ANY content, across all tracks. All in-memory
+ * (the whole project is already downloaded), so scanning every pattern costs no
+ * extra wire round-trips. Without this, a project whose PLAYED pattern (1) is
+ * intentionally silent reads identically to a failed write — the summary is what
+ * makes "the write landed, pattern 1 is just empty" distinguishable from "nothing
+ * stored" (and the read-side check for project_plan's `starts_silent`).
+ */
+export function scanPatternOccupancy(buf: Uint8Array): {
+  total: number;
+  occupied: number[];
+  by_track: Record<string, number[]>;
+} {
+  const by_track: Record<string, number[]> = {};
+  const occupiedSet = new Set<number>();
+  const note = (pat: number) => (track: NoteTrack) => decodeNotePattern(buf, track, pat).some((s) => s.active);
+  const drum = (pat: number) => (t: number) => decodeDrumPattern(buf, t, pat).some((s) => s.active);
+  for (let pat = 0; pat < PATTERNS_PER_TRACK; pat++) {
+    for (const track of NOTE_TRACKS) {
+      if (note(pat)(track)) { (by_track[track] ??= []).push(pat + 1); occupiedSet.add(pat + 1); }
+    }
+    for (let t = 0; t < NUM_DRUM_TRACKS; t++) {
+      if (drum(pat)(t)) { (by_track[`drum${t + 1}`] ??= []).push(pat + 1); occupiedSet.add(pat + 1); }
+    }
+  }
+  return { total: PATTERNS_PER_TRACK, occupied: [...occupiedSet].sort((a, b) => a - b), by_track };
+}
+
+/**
+ * Render a note track's active steps as a readable "step N: <notes>" list.
+ *
+ * A note is annotated whenever it differs from the default one-step, untied
+ * gate, which includes a note that is merely TIED at the default length. The
+ * annotation is display-first (`describeGate` prints steps, not the raw
+ * magnitude in sixths) and names the tie in words. A tied note and an untied
+ * one of the same length used to print identically here, so every hand-made
+ * drone in the maintainer's projects was invisible in `get_preset` and
+ * `describe_device`.
+ */
+export function renderNoteTrack(steps: readonly NoteStep[]): { active_steps: number; content: string } {
   const parts: string[] = [];
   steps.forEach((s, i) => {
     if (!s.active) return;
     const notes = s.notes
-      .map((n) => noteName(n.note) + (n.gate !== DEFAULT_GATE ? `(gate ${n.gate})` : ''))
+      .map((n) => noteName(n.note) + (n.gate !== DEFAULT_GATE || n.tie ? `(${describeGate(n.gate, n.tie)})` : ''))
       .join('+');
     parts.push(`step ${i + 1}: ${notes}`);
   });
@@ -169,7 +210,10 @@ export const reader: DeviceReader = {
   async getParam(ctx: DispatchCtx, block: string, name: string, _channel?: string | number, instance?: number): Promise<ReadResult> {
     const cp = findParam(block, name);
     if (!cp) {
-      throw new DispatchError('unknown_param', DEVICE_LABEL, `Unknown param '${block}.${name}'. Call list_params({port:"circuit"}).`);
+      // The recovery call MUST carry `block`. Without it list_params returns
+      // a per-block census with no param rows at all, so an agent following
+      // this instruction to find a param name would find nothing.
+      throw new DispatchError('unknown_param', DEVICE_LABEL, `Unknown param '${block}.${name}'. Call list_params({port:"circuit", block:["${block}"]}) for that block's params.`);
     }
     if (!isPatchDumpParam(block, name)) {
       throw new DispatchError(
@@ -261,7 +305,8 @@ export const reader: DeviceReader = {
   },
 
   /**
-   * Byte-exact backup of a STORED project slot (0..63) as the device's native
+   * Byte-exact backup of a STORED Project (1..64, numbered as the device shows
+   * it) as the device's native
    * `.ncs` file. Backs `export_preset(location)` and the backup-before-overwrite
    * helper. Reuses the hardware-confirmed, always-close `downloadProject`
    * (byte-exact 2026-06-18) — the read half of the upload we own.
@@ -278,9 +323,11 @@ export const reader: DeviceReader = {
    * overwritten, which is worse than no backup at all.
    */
   async dumpStoredPresetBinary(location: number, ctx: DispatchCtx): Promise<PresetBinaryDump> {
-    if (!Number.isInteger(location) || location < 0 || location > 63) {
-      throw new DispatchError('bad_location', DEVICE_LABEL, `Project slot must be 0..63, got ${location}.`);
+    // Device numbering in (Project 1..64), wire numbering out (0..63).
+    if (!Number.isInteger(location) || location < 1 || location > 64) {
+      throw new DispatchError('bad_location', DEVICE_LABEL, `Project must be 1..64, numbered as the device shows it, got ${location}.`);
     }
+    const wireSlot = location - 1;
     if (!ctx.conn.hasInput) {
       throw new DispatchError(
         'no_ack', DEVICE_LABEL,
@@ -291,7 +338,7 @@ export const reader: DeviceReader = {
     // same multi-frame session as a write; refresh a possibly idle-suspended
     // handle first so it self-heals instead of aborting mid-handshake.
     const conn = ctx.reconnect ? ctx.reconnect() : ctx.conn;
-    const dl = await downloadProject(conn, location, { pack: ctx.pack, reconnect: ctx.reconnect });
+    const dl = await downloadProject(conn, wireSlot, { pack: ctx.pack, reconnect: ctx.reconnect });
     const packDesc = `Pack ${(ctx.pack ?? 0) + 1}`;
     if (dl.empty) {
       return {
@@ -301,11 +348,11 @@ export const reader: DeviceReader = {
         format: 'circuit-ncs-project',
         file_extension: 'ncs',
         empty: true,
-        source: `stored project slot ${location} on ${packDesc} (empty, nothing to export)`,
+        source: `stored Project ${location} on ${packDesc} (empty, nothing to export)`,
       };
     }
     if (!dl.ok || !dl.bytes) {
-      throw new DispatchError('no_ack', DEVICE_LABEL, `Could not read project slot ${location} on ${packDesc}: ${dl.error ?? 'no data returned'}.`);
+      throw new DispatchError('no_ack', DEVICE_LABEL, `Could not read Project ${location} on ${packDesc}: ${dl.error ?? 'no data returned'}.`);
     }
     if (!dl.crcOk) {
       throw new DispatchError(
@@ -316,6 +363,15 @@ export const reader: DeviceReader = {
     }
     const bytes = dl.bytes;
     const name = decodeProjectName(bytes);
+    // STRUCTURE, reported and NOT thrown. The CRC above says the transfer was
+    // faithful; it does not say the thing transferred is a project, because the
+    // device's CRC32 covers the ENCODED stream (2026-07-29). Deliberately not a
+    // hard failure on THIS path: the bytes are what the slot actually holds, and
+    // saving them is still the right move (a backup of a bad slot is evidence,
+    // and refusing would also block backing up before replacing the bad slot).
+    // What must never happen is handing them back looking clean, which is how a
+    // corrupt project ended up in a manifest marked verified.
+    const structure = checkNcsStructure(bytes);
     return {
       bytes,
       byte_length: bytes.length,
@@ -325,21 +381,34 @@ export const reader: DeviceReader = {
       format: 'circuit-ncs-project',
       file_extension: 'ncs',
       name: name || `Project ${location + 1}`,
-      source: `stored project slot ${location} on ${packDesc} (device shows "Project ${location + 1}"; CRC-verified)`,
+      structurally_valid: structure.ok,
+      source: structure.ok
+        ? `stored Project ${location} on ${packDesc} (device shows "Project ${location + 1}"; CRC-verified and structurally valid)`
+        : `stored Project ${location} on ${packDesc} (device shows "Project ${location + 1}"; CRC-verified transfer of a STRUCTURALLY INVALID file)`,
+      warning: structure.ok
+        ? undefined
+        : `Project ${location} on ${packDesc}: ${ncsStructureNote(structure.faults, { crcVerified: true })} ` +
+          `The bytes were saved anyway because they are what the slot holds, but do NOT restore this file to any slot.`,
     };
   },
 
   /**
-   * Read Pack 1's shared 64-slot drum-sample pool and return each slot's
-   * stored name. Read-only; needs a bidirectional connection. Naming a pool
+   * Read a pack's shared 64-slot drum-sample pool and return each slot's stored
+   * name. Read-only; needs a bidirectional connection. Naming a pool
    * semantically ("kick", "snare", "hat") lets the groove packer target slots
    * by meaning instead of a fixed layout.
    *
-   * NOT pack-aware: the underlying dir read hardcodes pack 0 (see
-   * `ncs/sampleDirectory.ts`), so this always reports PACK 1's pool no matter
-   * what `ctx.pack` says. Projects + patches are pack-aware; samples are the
-   * remaining half (design doc §6). Callers must not read this as "the selected
-   * pack's pool".
+   * Pack-aware via `ctx.pack` — the SAME chosen byte projects + patches address,
+   * so `list_samples pack:5` reads the SAME pool a project written to Pack 5
+   * binds its drums against (closing the cross-pack name-mismatch trap: read one
+   * pack's names, write the project to another, wrong samples play). Pack 1 is
+   * hardware-confirmed; a nonzero pack is the identical listing call and is
+   * owner-confirmed too (the read 2026-07-17, the matching WRITE 2026-07-27).
+   * The returned `pack` says which pool these names came from.
+   *
+   * Do NOT use this as an immediate write verifier: the device flushes a pack's
+   * sample manifest ~6-8 s after a transfer session closes, so a listing taken
+   * sooner reports just-written slots empty (`ncs/sampleDirectory.ts`).
    */
   async readSampleDirectory(ctx: DispatchCtx): Promise<SampleDirectoryDump> {
     if (!ctx.conn.hasInput) {
@@ -348,7 +417,109 @@ export const reader: DeviceReader = {
         'read_sample_directory needs a bidirectional MIDI connection (input + output) to read the pool names back; the Circuit input port was not available.',
       );
     }
-    return readSampleDirectory(ctx.conn);
+    const dir = await readSampleDirectory(ctx.conn, ctx.pack ?? 0);
+    return { ...dir, pack: (ctx.pack ?? 0) + 1 };
+  },
+
+  /**
+   * Occupancy for specific PROJECT slots, from BOTH oracles, in one round trip.
+   * Backs the read-before-delete gate and the after-delete verification of
+   * `delete_project`.
+   *
+   * The two oracles are genuinely independent. `exists` comes from the device's
+   * per-file existence query, which answers with the stored file's own CRC32, so
+   * it is computed from the file. `in_directory` comes from the pack's directory
+   * listing, which is the table a delete edits. Verifying a delete with the
+   * directory ALONE would be circular; verifying with the existence query alone
+   * would miss a stale directory entry. So both are reported, unmerged, and a
+   * DISAGREEMENT is surfaced as `unreadable` rather than resolved by picking a
+   * favourite: two oracles contradicting each other is precisely the moment not
+   * to erase anything.
+   *
+   * It also returns a `free_control`: a slot the pack directory does not list,
+   * read the same way in the same session. That is the reference a caller
+   * compares an erased slot's answer against, instead of against a hardcoded
+   * idea of what "free" looks like. See `ProjectSlotProbeReport.free_control`
+   * for the mis-scoring that made it necessary.
+   *
+   * `slots` are Projects 1..64 as the device shows them; the wire index is one
+   * lower and never surfaces. NAMED slots only, never a range. Read-only: this
+   * sends no delete and no write.
+   */
+  async probeProjectSlots(ctx: DispatchCtx, slots: readonly number[]): Promise<ProjectSlotProbeReport> {
+    if (!ctx.conn.hasInput) {
+      throw new DispatchError(
+        'no_ack', DEVICE_LABEL,
+        'Checking whether a project slot is occupied needs a bidirectional MIDI connection (input + output); the Circuit input port was not available. Close Novation Components so the port is free, then retry.',
+      );
+    }
+    for (const s of slots) {
+      if (!Number.isInteger(s) || s < 1 || s > SLOTS_PER_PACK) {
+        throw new DispatchError('bad_location', DEVICE_LABEL,
+          `project must be 1..${SLOTS_PER_PACK}, numbered exactly as the device shows it (Project 1..${SLOTS_PER_PACK}), got ${s}.`);
+      }
+    }
+    const raw = await probeSlots(ctx.conn, FILE_TYPE.PROJECT, slots.map((s) => s - 1), { pack: ctx.pack ?? 0 });
+    return {
+      slots: raw.slots.map((r) => {
+        const disagree = r.unreadable === undefined && r.exists !== r.in_directory;
+        return {
+          slot: r.slot + 1,
+          exists: r.exists,
+          in_directory: r.in_directory,
+          name: r.name,
+          crc32: r.crc32,
+          reply: r.reply,
+          unreadable: r.unreadable ?? (disagree
+            ? `the two occupancy oracles disagree (the device's file query says ${r.exists ? 'occupied' : 'empty'}, the pack directory says ${r.in_directory ? 'occupied' : 'empty'}), so occupancy is not established`
+            : undefined),
+        };
+      }),
+      free_control: raw.free_control === undefined
+        ? undefined
+        : { slot: raw.free_control.slot + 1, reply: raw.free_control.reply },
+    };
+  },
+
+  /**
+   * scan_locations for the Circuit: list a pack's occupied PROJECT slots by name
+   * in ONE round trip (DIR_CONTROL fileType=0x03), instead of a get_preset per
+   * slot (~6 s × 64). Non-destructive listing (module docstring, byte-confirmed
+   * against a 52-project pack). Reads `ctx.pack` (the same chosen byte every
+   * project op addresses), so scanning Pack 5 lists Pack 5's projects.
+   *
+   * `from`/`to` are Projects 1..64, numbered as the device shows them (the
+   * wire index is one lower, and is never surfaced); the listing is
+   * whole-pack, so this filters it to the requested range. A slot the directory
+   * did not name is empty.
+   */
+  async scanLocations(ctx: DispatchCtx, from: string | number, to: string | number): Promise<{ scanned: readonly ScannedLocation[] }> {
+    if (!ctx.conn.hasInput) {
+      throw new DispatchError(
+        'no_ack', DEVICE_LABEL,
+        'scan_locations needs a bidirectional MIDI connection (input + output) to read the project directory back; the Circuit input port was not available. Close Novation Components so the port is free, then retry.',
+      );
+    }
+    // Device numbering in, wire numbering out. `scan_locations` exists to be
+    // narrated to a musician, so its `location` field must read as the number on
+    // the front panel, never the wire index.
+    const parseSlot = (v: string | number, label: string): number => {
+      const n = typeof v === 'number' ? v : Number.parseInt(String(v), 10);
+      if (!Number.isInteger(n) || n < 1 || n > 64) {
+        throw new DispatchError('bad_location', DEVICE_LABEL, `scan_locations ${label} must be a project 1..64, numbered as the device shows it, got '${v}'.`);
+      }
+      return n - 1;
+    };
+    const lo = parseSlot(from, 'from');
+    const hi = parseSlot(to, 'to');
+    const dir = await readProjectDirectory(ctx.conn, ctx.pack ?? 0);
+    const nameBySlot = new Map(dir.slots.filter((s) => s.name !== undefined).map((s) => [s.slot, s.name!]));
+    const scanned: ScannedLocation[] = [];
+    for (let slot = Math.min(lo, hi); slot <= Math.max(lo, hi); slot++) {
+      const name = nameBySlot.get(slot);
+      scanned.push({ location: String(slot + 1), name: name ?? '', is_empty: name === undefined });
+    }
+    return { scanned };
   },
 
   /**
@@ -383,8 +554,9 @@ export const reader: DeviceReader = {
 
   /**
    * Read a STORED project from a Flash slot and decode its sequencer content.
-   * `options.location` is the slot (0..63). The live working buffer is not a
-   * slot — unsaved edits must be saved on the device first.
+   * `options.location` is the Project, 1..64, numbered as the device shows it.
+   * The live working buffer is not a Project — unsaved edits must be saved on
+   * the device first.
    */
   async getPreset(ctx: DispatchCtx, options?: GetPresetOptions): Promise<PresetSnapshot> {
     const loc = options?.location;
@@ -392,9 +564,10 @@ export const reader: DeviceReader = {
       throw new DispatchError(
         'capability_not_supported',
         DEVICE_LABEL,
-        'Circuit Tracks get_preset reads a STORED slot. Pass location as a number (0..63) for a PROJECT ' +
-        '(sequencer content), or "patch:N" (N = 0..63) for a stored synth PATCH (name + decoded params). The live ' +
-        'working buffer has no MIDI readback, so SAVE your edits to a slot on the device first, then read that slot.',
+        'Circuit Tracks get_preset reads STORED content. Pass location as a number 1..64 for a PROJECT ' +
+        '(sequencer content), numbered as the device shows it, or "patch:N" (N = 0..63) for a stored synth PATCH ' +
+        '(name + decoded params). The live working buffer has no MIDI readback, so SAVE your edits on the device ' +
+        'first, then read that Project.',
       );
     }
     // "patch:N" → read a stored synth PATCH via the file-transfer READ (fileType
@@ -416,10 +589,11 @@ export const reader: DeviceReader = {
       }
       return readStoredPatchSnapshot(ctx, loc);
     }
-    const slot = typeof loc === 'number' ? loc : Number.parseInt(String(loc), 10);
-    if (!Number.isInteger(slot) || slot < 0 || slot > 63) {
-      throw new DispatchError('bad_location', DEVICE_LABEL, `Project slot must be 0..63, got ${JSON.stringify(loc)}.`);
+    const shownProject = typeof loc === 'number' ? loc : Number.parseInt(String(loc), 10);
+    if (!Number.isInteger(shownProject) || shownProject < 1 || shownProject > 64) {
+      throw new DispatchError('bad_location', DEVICE_LABEL, `Project must be 1..64, numbered as the device shows it, got ${JSON.stringify(loc)}.`);
     }
+    const slot = shownProject - 1;   // wire
     if (!ctx.conn.hasInput) {
       throw new DispatchError(
         'no_ack',
@@ -515,16 +689,36 @@ export const reader: DeviceReader = {
       });
     }
 
+    // Scan ALL 8 patterns (in-memory, no extra round-trips) so a silent PLAYED
+    // pattern is never mistaken for a failed write. `slots` above are pattern 1;
+    // the summary reports where content actually lives.
+    const occ = scanPatternOccupancy(buf);
+    const otherPatterns = occ.occupied.filter((p) => p !== 1);
     if (slots.length === 0) {
-      read_warnings.push(`Slot ${slot} ("${name || 'unnamed'}") pattern 1 has no synth, MIDI, or drum content.`);
+      if (otherPatterns.length > 0) {
+        // The DANGEROUS case: pattern 1 empty, but the project is NOT — the write
+        // landed, its content just starts on a later pattern (an intro, or a
+        // project_plan `starts_silent` layout). Say so loudly so this reads as
+        // success, not "nothing landed".
+        read_warnings.push(
+          `Slot ${slot} ("${name || 'unnamed'}") pattern 1 is empty, but the project HOLDS content in pattern(s) ` +
+          `${otherPatterns.join(', ')} (of 8) — the project is NOT empty; get_preset decodes pattern 1 only. ` +
+          `This is the expected shape for a project that starts silent.`);
+      } else {
+        read_warnings.push(`Slot ${slot} ("${name || 'unnamed'}") has no content in ANY of its 8 patterns — the project is empty.`);
+      }
+    } else if (otherPatterns.length > 0) {
+      read_warnings.push(`Additional content in pattern(s) ${otherPatterns.join(', ')} (of 8) is not shown; get_preset decodes pattern 1.`);
+    } else {
+      read_warnings.push('Decoded pattern 1 of 8 per track (the default played pattern); no other pattern holds content.');
     }
-    read_warnings.push('Decoded pattern 1 of 8 per track (the default played pattern); other patterns are not shown.');
     if (!dl.crcOk) read_warnings.push('Device CRC did not match the received bytes; the read may be partial.');
 
     return {
       name: name || `Project ${slot + 1}`,
       slots,
       read_warnings,
+      pattern_occupancy: { total: occ.total, decoded: 1, occupied: occ.occupied, by_track: occ.by_track },
       _meta: {
         device: DEVICE_LABEL,
         read_at_ms: Date.now(),

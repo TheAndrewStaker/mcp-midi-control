@@ -21,11 +21,17 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     'macros (block "macros", names macro_1..macro_8 = the 8 knob positions); the 12-slot mod matrix ' +
     '(blocks "mod1".."mod12", each with source1/source2/depth/destination, sources+destinations by ' +
     'name); drums (blocks "drum1".."drum4": patch/level/pitch/decay/distortion/eq/pan); and the project ' +
-    'mixer (block "track_mixer": synth1_level/synth2_level/synth1_pan/synth2_pan) + reverb/delay/' +
-    'master_filter. The reverb and delay blocks carry both the effect character (reverb type/decay/' +
+    'mixer (block "track_mixer": synth1/synth2/audio1/audio2 _level and _pan) + reverb/delay/' +
+    'master_filter. audio1/audio2 are the two rear-panel audio INPUTS, which share the MIDI 1/2 track ' +
+    'lanes, so external gear plugged into Input 1/2 is mixed and effected exactly like an internal track. ' +
+    'The reverb and delay blocks carry both the effect character (reverb type/decay/' +
     'damping, delay time/feedback/width/...) AND the per-track SEND levels (synth1_send/synth2_send/' +
-    'drum1_send..drum4_send); raise a send to route that track into the effect (sends default to 0/dry, ' +
-    'so the character params do nothing until a send is up). Sidechain ducking is two blocks ' +
+    'drum1_send..drum4_send/audio1_send/audio2_send); raise a send to route that track into the effect ' +
+    '(sends default to 0/dry, so the character params do nothing until a send is up). There is ONE reverb ' +
+    'and ONE delay engine shared by all eight tracks: the character is global, only the sends are ' +
+    'per-track, so "reverb on just the Microfreak" means every OTHER send at 0. To toggle an effect for ' +
+    'one track, move that send to/from 0; never use fx.bypass, which is global and kills both engines ' +
+    'for every track. Sidechain ducking is two blocks ' +
     '"sidechain1"/"sidechain2" (one per synth engine; source/attack/hold/decay/depth on ch16, distinct ' +
     'addresses, so instance:2 does NOT reach sidechain2). Per-macro A-D routing is blocks "macro1".."macro8" ' +
     '(slots a-d, each {destination/start/end/depth}); the live knob POSITIONS stay in block "macros" (macro_1..macro_8). ' +
@@ -36,9 +42,13 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     'Synth 1, 2 = Synth 2): they request a live Patch Dump and decode the body, so you can verify a synth ' +
     'write by reading it back. NOT readable this way: drum, project, macro, and mod-matrix state; those ' +
     'have no single-param readback, so get_param refuses them honestly (confirm by ear / front panel, never ' +
-    'assume a value). For stored content, get_preset({port:"circuit", location: <slot 0..63>}) downloads a ' +
-    'STORED project off a Flash slot and decodes its sequencer content (four note + four drum tracks, ' +
-    'pattern 1); get_preset({location:"patch:N"}) reads a stored synth PATCH slot, returning the patch name ' +
+    'assume a value). For stored content, get_preset({port:"circuit", location: <Project 1..64>, pack}) downloads ' +
+    'a STORED project off a Flash slot and decodes its sequencer content (four note + four drum tracks) for ' +
+    'pattern 1, PLUS pattern_occupancy: which of the 8 patterns hold content in any track. Read that before ' +
+    'concluding a project is empty: a project whose pattern 1 is silent by design (an intro) still reports its ' +
+    'real patterns, so "starts silent" is not "nothing landed". To survey a whole pack, scan_locations({from, ' +
+    'to, pack}) lists its occupied projects by name in one round trip. get_preset({location:"patch:N"}) reads a ' +
+    'stored synth PATCH slot, returning the patch name ' +
     'AND decoded patch-dump params (osc/filter/env/lfo/mixer/fx/eq), and reflects freshly-saved patches. ' +
     'These read SAVED slots only; the live working buffer is not a slot, so the user must Save ' +
     'edits to a slot first. This is the read half of read-modify-write (read slot, edit, ncs_upload).',
@@ -49,7 +59,7 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     '(2) apply_pattern mode:ncs_upload, author the pattern INTO a real .ncs project and push it to a ' +
     'stored project slot over SysEx. This is the way to PREP a project for a gig and the ONLY way to put a ' +
     'DRUM pattern onto the device programmatically. It needs ncs_template (a path to an exported .ncs to ' +
-    'template-modify; the device cannot author one from scratch) and ncs_slot (the 0..63 project slot to ' +
+    'template-modify; the device cannot author one from scratch) and ncs_slot (the Project 1..64 to ' +
     'write); it writes drums AND the note tracks (see melodic_sequencing). HARDWARE STATUS: the drum codec, ' +
     'the note-track (melodic) authoring leg, and the SysEx transfer are all hardware-confirmed (a bassline ' +
     'on Synth 1 + a kick on Drum 1 uploaded to a slot, loaded, and played back on the device). NOTE: ' +
@@ -73,7 +83,26 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     'default to ch1); target synth1/synth2 explicitly to keep parts on separate tracks. Melodic authoring ' +
     'lands on the device via mode:ncs_upload (hardware-confirmed); live_stream auditions it without storing. ' +
     'IMPORTANT: see the scales guidance; the device re-quantizes notes to the project scale, so absolute ' +
-    'pitches only play literally under Chromatic (which ncs_upload sets by default).',
+    'pitches only play literally under Chromatic (which ncs_upload sets by default). ' +
+    'See note_length for how to make a pad actually HOLD.',
+
+  note_length:
+    'THE PATTERN OWNS DURATION, not the instrument. Every authored note used to get a one-step gate, so a ' +
+    '"pad" was really a short trigger whose sustained quality came from the receiving synth\'s amp envelope; ' +
+    'swap the synth (a MicroFreak took over MIDI 1 from a Hydrasynth and two built songs silently changed ' +
+    'instrument) and the pad becomes a blip. So SET THE LENGTH IN THE PATTERN: suffix a hit token with ":" ' +
+    'and a length in STEPS. "c3:4" holds four steps, "c3:16" holds a whole 16-step pattern, "c3:0.5" and ' +
+    '"c3:1/6" are staccato. The range is 1/6 to 16 steps in sixths (the device\'s own Gate View unit); a ' +
+    'length that is not a whole sixth is refused rather than rounded. Suffix "_" to TIE the note forward ' +
+    'into the next onset, which is how the device makes drones: "c3:16_" states the length, bare "c3_" ' +
+    'computes the length that reaches the next onset exactly. A tie that cannot reach is dropped and ' +
+    'reported, because on the device it would be a silent no-op. Char grids ("x...x...") have nowhere to ' +
+    'put a length, so use mini-notation when notes need to hold. Rule of thumb: pads, drones and sustained ' +
+    'chords always state a length; plucks, basslines and drum triggers usually do not. ' +
+    'RE-AUTHORING AN EXISTING PROJECT: preserve_template_gates defaults to true and keeps whatever note ' +
+    'lengths and ties the ncs_template already holds, because those were dialled in BY HAND on the device ' +
+    'and flattening them turns held pads into blips with nothing in the diff to show it. Do not pass false ' +
+    'unless the user explicitly asks for the template\'s lengths to be discarded.',
 
   scales:
     'The Circuit constrains every note a synth/MIDI track plays to the PROJECT SCALE (a Scale type + Root, ' +
@@ -120,11 +149,17 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     'the 64-slot ceiling, and writes the whole kit as ONE atomic sample-directory session (all-or-nothing). ' +
     'HARDWARE STATUS: durable, hardware-confirmed (2026-06-23): samples survive a device restart. The fix was ' +
     'the session prelude (sample-dir 0x05 listing + the 64x 0x0d scan that commits the pack manifest); confirm ' +
-    'by ear since the device\'s final CRC verdict isn\'t read back. Needs a bidirectional connection (ACK-gated).',
+    'by ear since the device\'s final CRC verdict isn\'t read back. Writing to a NONZERO pack is hardware-confirmed ' +
+    'too (2026-07-27): 63 slots cloned onto Pack 2 and read back byte-identical, with an out-of-order write landing ' +
+    'at its own index, so the slot number is addressed rather than append-ordered. DO NOT VERIFY IMMEDIATELY: the ' +
+    'device flushes a pack\'s manifest ~6-8 s AFTER the transfer session closes, so a list_samples taken sooner ' +
+    'reports just-written slots as empty (it reported 8 false empties on 2026-07-27). Wait ~10 s and re-read before ' +
+    'you conclude a write failed; this device has no erase, so a needless re-send is not free. ' +
+    'Needs a bidirectional connection (ACK-gated).',
 
   project_upload:
-    'Load a prepared whole-project .ncs onto the device with upload_project(file, slot 0..63), sent verbatim ' +
-    'over the same hardware-confirmed transport (device shows it as "Project slot+1"). Use this for a ready- ' +
+    'Load a prepared whole-project .ncs onto the device with upload_project(file, slot 1..64 as the device numbers it), sent verbatim ' +
+    'over the same hardware-confirmed transport (the same number the device shows). Use this for a ready- ' +
     'made project such as a swappable groove set; to AUTHOR a pattern from scratch into a template instead, ' +
     'use apply_pattern mode:ncs_upload. OVERWRITE GATE: without confirm_overwrite the tool reads the target slot ' +
     'first: an EMPTY slot writes through, an OCCUPIED slot refuses and names the project it would replace; pass ' +
@@ -154,4 +189,17 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     'read-modify-write. CONSTRAINT: one sample per STEP, so two pieces that must sound on the SAME step still ' +
     'need two tracks; pieces that never collide on a step pack onto one track losslessly. Encoding: ' +
     'drum_choice = absolute sample slot 0..63, 0xFF = no flip (hardware-confirmed both directions 2026-06-22).',
+
+  condensed_internal_drums:
+    'When the real drums are routed OFF the Circuit (external_targets to an SPD-SX on MIDI 2), the four ' +
+    'internal drum tracks sit empty and that capacity is wasted. apply_pattern condense_drums:true fills them ' +
+    'with the SAME groove squeezed onto Drum 1..4 (kick / snare / closed hat / ride): pieces with no track of ' +
+    'their own fold to the nearest one and keep their identity through per-step sample flips, and two ' +
+    'same-family pieces landing on one step are resolved by fold distance then velocity (the loser is reported, ' +
+    'never rehomed onto an unrelated track). It is stored at mixer LEVEL 0, so nothing is audible until the ' +
+    'user raises a drum track on the mixer, which is the point: it costs nothing and gives them internal drums ' +
+    'to blend under the external kit live. The level must be stored rather than sent as a CC, because loading ' +
+    'the next project overwrites the live value. Two caveats worth saying out loud: a Save done ON the device ' +
+    'recaptures the physical fader positions and reverts the stored level, and condense_drums refuses alongside ' +
+    'drum_binding or external_targets.also_internal because both claim the same four tracks.',
 });

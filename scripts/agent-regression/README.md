@@ -158,12 +158,17 @@ cascade; the ceiling is specific to large unscoped runs starting dirty.
    `id`, `device`, `tier`, `description`, `prompt`, `expectations`.
 2. Pick the assertions:
    - `must_call`: bare tool names that MUST appear (optional; omit when
-     the case accepts multiple valid paths).
+     the case accepts multiple valid paths). **Satisfied only by a call
+     that did NOT return `is_error`** — it means "the agent got this
+     done", and a failed call did not. A case whose tool errored on
+     every attempt fails with "called N× but EVERY call returned
+     is_error", which reads differently from "never called".
    - `must_call_any`: OR-of-AND alternation: `[[a], [b, c]]`
      accepts "called a" OR "called both b and c". Use when the agent
      has multiple equivalent end-state paths (e.g. `apply_preset` vs
      primitive `set_block + set_params`). Pair with `optional: true`
-     on any tool_call_validators that only apply to one path.
+     on any tool_call_validators that only apply to one path. Same
+     success requirement as `must_call`.
    - `min_tools`: floor on total tool calls. Default 1; set to 0 when
      an upfront refusal is an acceptable agent path.
    - `max_tools`: efficiency ceiling.
@@ -189,6 +194,33 @@ cascade; the ceiling is specific to large unscoped runs starting dirty.
      from every sweep): a requiresHardware case is live, just gated to the
      bench. Mock-friendly fire-and-forget / storage / introspection cases
      leave it unset.
+
+### Two failures that fire on EVERY case, with no opt-out
+
+Both were added on 2026-08-02, after measuring that the harness had been
+scoring a live outage green.
+
+- **Undelivered tool result.** A payload over a host limit never reaches the
+  model: the host substitutes `<persisted-output>` + a sidecar path (50,000-char
+  cap) or a bare "exceeds maximum allowed tokens" error
+  (`MAX_MCP_OUTPUT_TOKENS`), and an MCP-only agent has no filesystem tool to
+  open either. 26 of 707 archived traces carry one of these and **9 of those
+  runs were scored PASS** — correct tool, correct arguments, inside the call
+  budget, answering from a stub. There is no per-case opt-out, because an
+  undelivered result means the run measured something other than what the case
+  claims to measure. When this fires, fix the TOOL's response size (give it a
+  budget, like `describe_device` and `list_params` have), not the case.
+- **Device unreachable.** This scan used to run only under `--real-hardware`,
+  which is backwards: on the MOCK sweep a device-not-found result means the case
+  has no transport behind it and is only asserting that the agent typed the
+  right argument names.
+
+There is deliberately **no `allow_tool_errors` flag**. An agent that hits a
+refusal, reads it, and retries correctly has done the right thing, and several
+cases exist to test exactly that; requiring a SUCCESSFUL call (see `must_call`
+above) separates "recovered" from "never got there" without an opt-out list to
+maintain. `scripts/verify-agent-harness.ts` gates all of this, including an
+explicit `error-then-recover still PASSES` assertion.
 
 ## Archetype coverage + how non-MIDI devices run under mock
 

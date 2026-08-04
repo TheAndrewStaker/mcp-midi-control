@@ -126,6 +126,62 @@ against Components byte-for-byte) plus follow-up probes closed both gaps:
 `get_pack_from_circuit_tracks` → **proj + PATCH + sample** (the full pack read, the patch-file
 corpus). The ~120 `session-*`/`fm9-*` captures are Fractal (guitar) traffic, 0 Circuit messages.
 
+## CORRECTION 2026-07-27: Program Change does NOT select a bank patch
+
+The 2026-07-03 read-back claim above ("a Program Change on the synth channel loads an OCCUPIED
+bank slot into the working buffer") is **REFUTED**. Measured by
+`scripts/circuit-survey-pack-patches.ts --diagnose` on the maintainer's device:
+
+| Step | Synth 1 | Synth 2 |
+|---|---|---|
+| baseline dump | `Random Decay` | `Saw Pad` |
+| Replace-Current sentinel, 800 ms, **no PC** | `~~NOSLOT~~` | `~~NOSLOT~~` |
+| sentinel then **PC 0** | `Random Decay` | `Saw Pad` |
+| sentinel then **PC 40** | `Random Decay` | `Saw Pad` |
+| sentinel then **PC 63** | `Random Decay` | `Saw Pad` |
+
+The sentinel survives 800 ms untouched, so Replace-Current lands and the buffer does not
+self-revert. Three *different* PC numbers then all return the *same* patch. PC therefore
+**reverts the live edit to the currently-loaded patch** and ignores its program number, which is
+what `probe-circuit-pc-select.ts` originally found. The 2026-07-03 test could not see this: it
+PC'd to slots 62/63 immediately after saving `PROBE85` *from the working buffer*, so the buffer
+already held `PROBE85` and a revert is indistinguishable from a load.
+
+**Consequence:** `readStoredPatchViaLoad` (and `get_preset("patch:N")` through it) returns the
+CURRENTLY LOADED patch for every `N`, not slot `N`. There is at present **no read path of any
+kind for a synth patch bank slot**, on any pack. A distinguishing test must push a sentinel
+between reads; a bare PC→dump loop cannot tell a load from a revert.
+
+## DECODED 2026-07-27: a `.ncs` project EMBEDS both synth patch bodies
+
+| Offset | What |
+|---|---|
+| `0x26d14` | Synth 1's **340-byte patch body**, byte-identical to the SysEx Dump-Request body |
+| `0x26e68` | Synth 2's, same encoding (`0x26e68 - 0x26d14 = 340 = PATCH_BODY_LEN`) |
+
+Oracle (`--verify-embed`): the device's own dump of the loaded project's working buffer diffed
+against the file's regions came back **340/340 identical on BOTH parts**, including the
+dirty-marker byte 17. A wrong offset, length, or encoding cannot match 340 bytes by accident.
+Corroborated across 75 local `.ncs` files: every one is exactly `NCS_FILE_SIZE`, and both
+regions hold a printable 16-char name in all 150 cases, 0 anomalies.
+
+**This is the answer to "does an incomplete pack clone break my songs".** A project does NOT
+reference the destination pack's patch bank; it CARRIES its sounds. Eight authored projects read
+live off Pack 2 (CRC-OK) each embed `Random Decay` / `Saw Pad`, the template's sounds, not init
+patches. It also means a project's synth sound is settable by the same byte-surgical template
+edit already used for the rename and mixer levels — a pack-addressed project write
+(hardware-confirmed 2026-07-27), not a Flash patch write.
+
+## Pack scope: the bank write is NOT pack-addressable
+
+Replace-Patch (`buildReplaceFlashPatch`) is `F0 00 20 29 01 64 01 00 <slotHi> <slotLo> 00 <340> F7`
+— **no pack byte**. It writes whichever pack the front panel has selected, and per
+`circuit-pack-addressing.md` §2 nothing on the wire selects or reports the active pack. The
+pack-addressed patch FILE store (fileType `0x04`, `NN_PATCHBANK.cpb`) is read-decoded but has **no
+write builder anywhere in the tree** and was shown on 2026-07-03 not to back the bank. So
+"clone Pack 1's patch bank onto Pack N" has neither a read half nor a write half. Measured
+2026-07-27: Pack 1 holds 3 `.cpb` files (slots 0, 6, 7); Packs 2-5 hold none.
+
 ## Reframe: SETTLED
 
 The bank Replace-Patch DOES persist a synth patch on its own (power-cycle confirmed), so "save my

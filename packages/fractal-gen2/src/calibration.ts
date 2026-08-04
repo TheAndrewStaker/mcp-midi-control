@@ -125,6 +125,57 @@ export interface CalibrationEntry {
 }
 
 /**
+ * OFFSET-ORDINAL PARAMS: the wire value IS a small ordinal, and the panel
+ * reading is that ordinal minus a fixed offset. Not a scaled range.
+ *
+ * Every other calibrated param on this device maps a display range across the
+ * FULL 14-bit wire span (`displayToWire` / `wireToDisplay` assume 0..65534).
+ * A handful of pitch params do not: their wire is 0..48 and the panel shows
+ * `wire - 24`, so the shared linear machinery decodes them to nonsense. Wire
+ * 24 (unison) came back as `0.02`.
+ *
+ * HARDWARE-MEASURED 2026-08-02 on an Axe-Fx II XL+ over USB, five points per
+ * param, both voices identical, via `scripts/probe-ii-pitch-domain.ts --sweep`
+ * (the device renders its own label into the GET frame, so it adjudicates):
+ *
+ *   sent 0  -> wire 24 -> device "0"      sent 7  -> wire 31 -> device "7"
+ *   sent 1  -> wire 25 -> device "1"      sent 12 -> wire 36 -> device "12"
+ *   sent 3  -> wire 27 -> device "3"
+ *
+ * So display = wire - 24, unison at wire 24, and the WRITE round-trips
+ * (fn=0x2e carries the display float and the device converts), which is what
+ * commit cbc0453 predicted. What was wrong was only the DECLARED DOMAIN: the
+ * catalog carries `displayMin: 0, displayMax: 48` copied from the Fractal
+ * wiki's MIDI_SysEx min/max column, and that column is the WIRE domain. An
+ * unsigned 0..48 is why `octave_down` (-12 semitones) was refused at the tool
+ * boundary and why no downward interval was expressible on this device.
+ *
+ * DELIBERATELY NARROW. Only the two params actually measured are listed.
+ *   - `voice_N_harmony` is NOT here and must not be added on today's data:
+ *     this session measured display = wire - 25 over five points, while the
+ *     2026-05-17 XL+ release-test log records wire - 23. Two clean captures,
+ *     two offsets, so a third variable is loose (most likely the block's
+ *     key/scale, since a harmony is a scale DEGREE). Its write does not
+ *     round-trip the way shift's does either (send 12 -> wire 12 -> "-13"),
+ *     so it does not even share this write path.
+ *   - `stage_N_shift` and `multidelay.shift_N` carry the same suspect 0..48
+ *     declaration but were NOT measured. Measure before adding.
+ */
+export interface OrdinalOffsetEntry {
+  /** display = wire - offset. */
+  readonly offset: number;
+  readonly displayMin: number;
+  readonly displayMax: number;
+  readonly unit: ResolvedParamKind['unit'];
+  readonly provenance: CalibrationProvenance;
+}
+
+const ORDINAL_OFFSET: Readonly<Record<string, OrdinalOffsetEntry>> = {
+  'pitch.voice_1_shift': { offset: 24, displayMin: -24, displayMax: 24, unit: 'semitones', provenance: 'hardware-swept' },
+  'pitch.voice_2_shift': { offset: 24, displayMin: -24, displayMax: 24, unit: 'semitones', provenance: 'hardware-swept' },
+};
+
+/**
  * AM4-shared entries — `(block, name)` join against the AM4 cache
  * catalog. Each entry's display range is hardware-verified on the AM4
  * (the AM4 wire encoding is byte-frozen against the device per HW-079
@@ -752,6 +803,33 @@ export const resolveAxeFxIIParamKind: ParamKindResolver = (
       source: 'codec_catalog',
       encodeDisplay: (value: number | string) => coerceSwitchWire(value),
       decodeWire: (wire: number) => (wire ? 'on' : 'off'),
+    };
+  }
+
+  // Offset-ordinal params come FIRST, ahead of the catalog, because the
+  // catalog's declared range for them is the wire domain rather than the
+  // panel's and the generic path below would spread it across 0..65534.
+  // See ORDINAL_OFFSET for the hardware measurement.
+  const ordinal = ORDINAL_OFFSET[`${param.block}.${param.name}`];
+  if (ordinal !== undefined) {
+    return {
+      unit: ordinal.unit,
+      displayMin: ordinal.displayMin,
+      displayMax: ordinal.displayMax,
+      source: 'overlay',
+      encodeDisplay: (value: number | string) => {
+        const num = typeof value === 'number' ? value : Number(value);
+        if (!Number.isFinite(num)) {
+          throw new Error(`Expected a number for ${block}.${name}, got "${value}"`);
+        }
+        if (num < ordinal.displayMin || num > ordinal.displayMax) {
+          throw new Error(
+            `${block}.${name} out of range [${ordinal.displayMin}..${ordinal.displayMax}]: ${num}`,
+          );
+        }
+        return Math.round(num) + ordinal.offset;
+      },
+      decodeWire: (wire: number) => Math.round(wire) - ordinal.offset,
     };
   }
 

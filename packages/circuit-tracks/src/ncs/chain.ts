@@ -156,6 +156,46 @@ export function setNoteChain(
 }
 
 /**
+ * CLEAR a note track's chain slot back to the fresh-project default `[0, 0]`
+ * (unchained: plays pattern 1 only). Touches only that track's 2 slot bytes.
+ *
+ * Exists because of a bug heard on hardware (2026-07-23, The Offering): after a
+ * project is converted to a SCENE chain, a stale plain-chain range left in this
+ * table is still partly followed by the device, so scenes sound duplicated. A
+ * scene-chained project must have its authored tracks' plain chains cleared;
+ * the fix was byte-verified against a genuinely fresh project's default.
+ */
+export function clearNoteChain(buf: Uint8Array, track: NoteTrack): readonly number[] {
+  assertBuf(buf);
+  const idx = NOTE_TRACK_CHAIN_INDEX[track];
+  if (idx === undefined) {
+    throw new RangeError(`note track must be one of synth1/synth2/midi1/midi2, got ${track}`);
+  }
+  const off = chainSlotOffset(idx);
+  buf[off] = 0;
+  buf[off + 1] = 0;
+  return [off, off + 1];
+}
+
+/**
+ * CLEAR all four drum tracks' chain slots to the fresh default `[0, 0]`. Same
+ * purpose as {@link clearNoteChain}. Deliberately does NOT touch the suspect
+ * tail byte 0x26fc7 (see the note above `CHAIN_TAIL_OFFSET`): clearing must
+ * only restore defaults, never introduce a session/UI byte.
+ */
+export function clearDrumChains(buf: Uint8Array): readonly number[] {
+  assertBuf(buf);
+  const changed: number[] = [];
+  for (let track = 0; track < NUM_DRUM_TRACKS; track++) {
+    const off = chainSlotOffset(DRUM_CHAIN_INDEX_BASE + track);
+    buf[off] = 0;
+    buf[off + 1] = 0;
+    changed.push(off, off + 1);
+  }
+  return changed;
+}
+
+/**
  * Read a note track's chain `[start, end]` (0-based, inclusive), or `undefined`
  * if the track is unchained (a `[0, 0]` slot = plays pattern 1 only).
  */

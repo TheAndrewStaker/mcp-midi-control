@@ -39,8 +39,9 @@
 //     either way; the derived row/col fields assume column-major (the later
 //     Fractal-family convention) and are marked provisional.
 //
-// One community capture closes the param block + the bank-C OR-value — see
-// docs/capture-guides/captures-axe-fx-gen1.md (C1).
+// One community capture closes the param block + the bank-C OR-value; see
+// docs/contributing/devices/axe-fx-gen1.md (asks DONATE-1 and CAPTURE-1) in
+// the mcp-midi-control repo.
 
 import { nibbleJoin } from './nibble.js';
 import { AXE_FX_GEN1_MODEL_ID } from './setParam.js';
@@ -100,7 +101,7 @@ export function buildGetPatchDump(preset?: number, model: number = AXE_FX_GEN1_M
         `got ${preset}. The spec flags the request's low-nibble byte as "or'd with unknown value" for ` +
         `bank-C presets (≥ 256) — e.g. its C383 example sends 0x7F where the plain low nibble is 0x0F — ` +
         `so bank-C requests need one community capture to pin the OR-value ` +
-        `(docs/capture-guides/captures-axe-fx-gen1.md, C1).`,
+        `(docs/contributing/devices/axe-fx-gen1.md, ask CAPTURE-1).`,
     );
   }
   // Stored form: ls = preset & 0x0f, ms = preset >> 4 (NOT the fn 0x02

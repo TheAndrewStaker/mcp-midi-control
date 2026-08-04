@@ -26,11 +26,53 @@ import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js
 import { ensureConnection } from '@mcp-midi-control/core/server-shared/connections.js';
 import { resolveDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
 
+// ── Declared output shapes ──────────────────────────────────────────
+//
+// Hoisted to module scope (they were inline on the registrations until
+// 2026-08-02) so `scripts/verify-apply-output-schema.ts` can gate them
+// alongside apply_preset's and delete_project's.
+//
+// z.looseObject, NOT z.object. Full reasoning is in the block comment in
+// `packages/core/src/protocol-generic/tools/preset.ts` above
+// `validationErrorShape`. The short version: the SDK renders a plain
+// `z.object` as `"additionalProperties": false`, the MCP client compiles that
+// into an Ajv validator, and a response carrying a key the schema does not
+// name makes `callTool` THROW. These two tools have already sent their CC by
+// the time that would fire, so the agent would be told a write failed that
+// the synth has already acted on.
+//
+// These two do not get the lockstep half of the gate that apply_preset and
+// delete_project get: they build their `structuredContent` as an inline
+// literal in the handler below rather than returning a named result type, so
+// there is no type to hold the shape against. Keep the literal and the shape
+// adjacent, which is why they sit in this file rather than in a schema module.
+const setSystemParamOutputShape = {
+  id: z.string(),
+  cc: z.number().int(),
+  value: z.number().int(),
+  module: z.string(),
+  parameter: z.string(),
+};
+
+const setMacroOutputShape = {
+  macro: z.number().int(),
+  cc: z.number().int(),
+  value: z.number().int(),
+  port: z.string(),
+};
+
+/** The schema set_system_param actually declares. Loose, never strict. */
+export const SET_SYSTEM_PARAM_OUTPUT_SCHEMA = z.looseObject(setSystemParamOutputShape);
+
+/** The schema set_macro actually declares. Loose, never strict. */
+export const SET_MACRO_OUTPUT_SCHEMA = z.looseObject(setMacroOutputShape);
+
 export function registerHydrasynthParamTools(server: McpServer): void {
 
 // set_system_param (renamed from hydra_set_param) -------------------------
 
 server.registerTool('set_system_param', {
+  title: 'Set System Setting',
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: [
     'Set a device-level system CC (master volume, sustain pedal, expression, mod wheel, all-notes-off). These bypass engine-param gating and are always active regardless of the device\'s Param TX/RX setting.',
@@ -45,13 +87,7 @@ server.registerTool('set_system_param', {
       'Raw MIDI CC value 0..127.',
     ),
   },
-  outputSchema: {
-    id: z.string(),
-    cc: z.number().int(),
-    value: z.number().int(),
-    module: z.string(),
-    parameter: z.string(),
-  },
+  outputSchema: SET_SYSTEM_PARAM_OUTPUT_SCHEMA,
 }, async ({ id, value }) => {
   const param = HYDRASYNTH_PARAMS_BY_ID.get(id);
   if (!param) {
@@ -98,6 +134,7 @@ server.registerTool('set_system_param', {
 // set_macro (renamed from hydra_set_macro) --------------------------------
 
 server.registerTool('set_macro', {
+  title: 'Set Macro',
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: [
     'Set a Macro control (CCs 16-23 on the Hydrasynth; CC range varies by device). Each patch wires its macros to different synthesis params via the mod matrix, so the audible effect is per-patch. Excellent first lever for tone tweaks because they\'re curated by the patch designer.',
@@ -111,12 +148,7 @@ server.registerTool('set_macro', {
       'Optional port. Defaults to "hydrasynth". Pass to target a different device that exposes macros on the same CC range.',
     ),
   },
-  outputSchema: {
-    macro: z.number().int(),
-    cc: z.number().int(),
-    value: z.number().int(),
-    port: z.string(),
-  },
+  outputSchema: SET_MACRO_OUTPUT_SCHEMA,
 }, async ({ macro, value, port }) => {
   const cc = 15 + macro; // Macro 1 = CC 16, Macro 8 = CC 23
   const targetPort = port ?? 'hydrasynth';

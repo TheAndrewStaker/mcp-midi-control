@@ -22,12 +22,14 @@ import {
   executeGetParams,
   executeSetParam,
   executeSetParams,
+  GET_PARAMS_MAX_QUERIES,
 } from '../dispatcher.js';
 
 import { PORT_DESC, asError, asText } from './shared.js';
 
 export function registerParamTools(server: McpServer): void {
   server.registerTool('get_param', {
+    title: 'Read Parameter',
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name).',
@@ -62,8 +64,9 @@ export function registerParamTools(server: McpServer): void {
   });
 
   server.registerTool('set_param', {
+    title: 'Set Parameter',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    description: 'Write one parameter by (block, name) in display units (knob 0..10, dB, ms, %, enum name or wire index). Call describe_device({port}) first; its agent_guidance covers relative-change, tempo sync, applicability gates, enum conventions. `channel` targets a specific A/B/C/D or X/Y (server switches first, then writes); `instance` targets duplicate blocks on grid devices (instance=2 = Amp 2 on Axe-Fx II, default 1). Aliases + enum matching auto-correct (drive.volume<->drive.level on AM4; case, whitespace, concept-keys like "USA IIC+"<->"USA MK IIC+"); the response echoes the canonical name, quote that back. Wire-ack is NOT audible confirmation: unplaced blocks and type-gated knobs (amp.master on non-master Marshalls) ack silently then no-op; call find_compatible_types before writing a type plus a specific knob. Tempo lock (AM4/II): a delay.time/rate write is silently ignored while tempo is synced; clear tempo to NONE first.',
+    description: 'Write one parameter by (block, name) in display units (knob 0..10, dB, ms, %, enum name or wire index). Call describe_device({port}) first; its agent_guidance, inline plus any topics it lists as withheld, covers relative-change, tempo sync, applicability gates, enum conventions. `channel` targets a specific A/B/C/D or X/Y (server switches first, then writes); `instance` targets duplicate blocks on grid devices (instance=2 = Amp 2 on Axe-Fx II, default 1). Aliases + enum matching auto-correct (drive.volume<->drive.level on AM4; case, whitespace, concept-keys like "USA IIC+"<->"USA MK IIC+"); the response echoes the canonical name, quote that back. Wire-ack is NOT audible confirmation: unplaced blocks and type-gated knobs (amp.master on non-master Marshalls) ack silently then no-op; call find_compatible_types before writing a type plus a specific knob. Tempo lock (AM4/II): a delay.time/rate write is silently ignored while tempo is synced; clear tempo to NONE first.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       block: z.string().describe('Block name (e.g. "amp", "drive", "reverb", "delay").'),
@@ -88,6 +91,7 @@ export function registerParamTools(server: McpServer): void {
   });
 
   server.registerTool('set_params', {
+    title: 'Set Parameters',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Batch-write parameters on a device. Prefer this over many set_param calls when applying a scene, preset, or any grouped change.',
@@ -116,6 +120,7 @@ export function registerParamTools(server: McpServer): void {
   });
 
   server.registerTool('get_params', {
+    title: 'Read Parameters',
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Batch-read parameters from a device. Useful for state-anchoring before a tone-edit (read amp gain + master + bass + mid + treble, then propose changes).',
@@ -130,7 +135,16 @@ export function registerParamTools(server: McpServer): void {
         name: z.string(),
         channel: z.union([z.string(), z.number()]).optional(),
         instance: z.number().int().min(1).optional(),
-      })).describe('List of (block, name, channel?, instance?) queries to read.'),
+      // NOT `.max(GET_PARAMS_MAX_QUERIES)`. A zod ceiling here rejects at the
+      // MCP boundary with "Too big: expected array to have <=100 items", which
+      // names the constraint and nothing else: not that zero reads happened,
+      // not how to split the call, not that list_params answers the same
+      // question with no device I/O. The dispatcher refuses with all of that,
+      // and it cannot be reached if zod refuses first. Same reasoning as the
+      // `overrides` fix (2026-08-02): a bare zod rejection names the key but
+      // not the shape the caller should have used. The cap is still ADVERTISED
+      // here, because a client that reads the description can avoid the call.
+      })).describe(`List of (block, name, channel?, instance?) queries to read. Max ${GET_PARAMS_MAX_QUERIES}: one round-trip each.`),
     },
   }, async ({ port, queries }) => {
     try {

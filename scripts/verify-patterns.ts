@@ -5,10 +5,39 @@
  * grid→plan compiler, voice_map resolution, the realizer capability gate,
  * and named-library integrity.
  *
+ * The last block reaches into the Circuit Tracks authoring layer on purpose.
+ * Drum CONDENSATION is a contract split across two layers (the neutral
+ * condenser emits device-blind ROLES; the device layer resolves a role to its
+ * own sample slot), so exercising either half alone proves nothing about the
+ * join. The Circuit authoring functions it calls are pure buffer mutation with
+ * no MIDI I/O, so the suite stays hardware-free.
+ *
  * Run via:  npx tsx scripts/verify-patterns.ts
  */
 
-import type { DeviceCapabilities } from '../packages/core/src/protocol-generic/types.js';
+import type { DeviceCapabilities, RealizePlan, VoiceTarget } from '../packages/core/src/protocol-generic/types.js';
+import { DispatchError } from '../packages/core/src/protocol-generic/types.js';
+import { buildCondensedDrums } from '../packages/core/src/protocol-generic/dispatcher/condenseDrums.js';
+import { executeApplyPattern } from '../packages/core/src/protocol-generic/dispatcher/patterns.js';
+import { registerDevice } from '../packages/core/src/protocol-generic/registry.js';
+import { CIRCUIT_TRACKS_DESCRIPTOR } from '../packages/circuit-tracks/src/descriptor.js';
+import { authorArrangementIntoProject, authorPlanIntoProject, writer as circuitWriter } from '../packages/circuit-tracks/src/descriptor/writer.js';
+import {
+  MIXER_SYNTH1_LEVEL, MIXER_SYNTH2_LEVEL, NCS_FILE_SIZE, NCS_MAGIC, NCS_TOTAL_SESSION_SIZE_OFFSET, PROJECT_COLOUR_DEFAULT,
+  applyProjectColour, applyProjectName, checkNcsStructure, getDrumLevel, getProjectColour, getProjectName,
+  getSynthLevel, projectColourName, setDrumLevels, setProjectColour, setProjectName, setSynthLevel,
+} from '../packages/circuit-tracks/src/ncs/format.js';
+import { SPD_SX_DESCRIPTOR } from '../packages/spd-sx/src/descriptor.js';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { decodeDrumPattern, DEFAULT_DRUM_CHOICE } from '../packages/circuit-tracks/src/ncs/drumPattern.js';
+import { decodeNotePattern } from '../packages/circuit-tracks/src/ncs/notePattern.js';
+import { CIRCUIT_VOICE_SLOT, circuitSlotForVoice, getDrumSampleBinding, slotForFlipRole } from '../packages/circuit-tracks/src/ncs/drumBinding.js';
+import { getNoteChain } from '../packages/circuit-tracks/src/ncs/chain.js';
+import { getSceneChainEnd, getSceneDrumChain, getSceneNoteChain } from '../packages/circuit-tracks/src/ncs/sceneChain.js';
+import type { NoteTrack } from '../packages/circuit-tracks/src/ncs/format.js';
 import {
   PATTERN_RECIPES,
   PatternError,
@@ -16,6 +45,7 @@ import {
   compileToPlan,
   euclid,
   euclidToString,
+  gateSixthsFromSteps,
   parseDrumTab,
   applyRoundRobin,
   resolveDrumMapPreset,
@@ -23,11 +53,13 @@ import {
   gmDrumToVoice,
   GM_DRUM_TO_VOICE,
   canonicalRole,
+  condenseToKit,
   DRUM_ROLES,
   parseMidiFile,
   importMidiDrums,
   importMidiMelodic,
   midiChannelSummary,
+  planProjects,
   type DrumEvent,
   keyToSemitones,
   resolveTranspose,
@@ -45,6 +77,7 @@ import {
   selectRealizer,
   tryParsePitchChord,
   type NeutralPattern,
+  type Step as NeutralStep,
 } from '../packages/core/src/protocol-generic/patterns/index.js';
 
 let failed = 0;
@@ -150,6 +183,82 @@ function threwPattern(fn: () => unknown): boolean {
   check('un-pitched "x . x ." has no notes (drum semantics)', parseVoiceLine('x . x .', 4)[0].notes === undefined);
 }
 
+// ── NOTE LENGTH + TIE notation (":len" / "_") ──────────────────────
+// The pattern owns duration. A "pad" whose sustain comes from the receiving
+// synth's amp envelope becomes a blip the moment the synth is swapped, which is
+// exactly what happened when a MicroFreak took over the Circuit's MIDI 1 track.
+{
+  // `:len` is in STEPS (the unit the device's Gate View shows); the neutral
+  // field is SIXTHS of a step, converted exactly once, here.
+  const g = (src: string, steps: number, cell = 0): NeutralStep => parseVoiceLine(src, steps)[cell];
+  check('gate ":4" on a pitch = 24 sixths (four steps)', g('c3:4 ~ ~ ~', 4).gate_sixths === 24, String(g('c3:4 ~ ~ ~', 4).gate_sixths));
+  check('gate ":1" = 6 sixths (one step, the default made explicit)', g('c3:1', 1).gate_sixths === 6);
+  check('gate ":16" = 96 sixths (the ceiling, a whole 16-step pattern)', g('c3:16', 1).gate_sixths === 96);
+  check('gate ":0.5" = 3 sixths (a decimal, staccato)', g('c3:0.5 c3:0.5', 2).gate_sixths === 3);
+  check('gate ":1/6" = 1 sixth (a fraction, the shortest the device holds)', g('c3:1/6', 1).gate_sixths === 1);
+  check('gate ":1/3" = 2 sixths (rational, not a float rounding)', g('c3:1/3', 1).gate_sixths === 2);
+  check('gate ":1.5" = 9 sixths (a fractional gate the corpus really uses)', g('c3:1.5', 1).gate_sixths === 9);
+  check('gate on a DRUM word works too ("bd:2")', g('bd:2 ~', 2).gate_sixths === 12);
+  check('gate on an un-pitched hit works too ("x:2")', g('x:2 ~', 2).gate_sixths === 12);
+  check('gate applies to a whole CHORD token ("c3+eb3+g3:8")',
+    JSON.stringify(g('c3+eb3+g3:8', 1).notes) === '[48,51,55]' && g('c3+eb3+g3:8', 1).gate_sixths === 48);
+  check('gate combines with repeat, gate first ("c3:2*4")',
+    parseVoiceLine('c3:2*4', 4).every((s) => s.on && s.gate_sixths === 12));
+
+  // A length the field cannot hold is REFUSED, never rounded: a silently
+  // shortened note is the failure this whole surface exists to stop.
+  check('gate ":0.4" throws (2.4 sixths is not a whole sixth)', threwPattern(() => parseVoiceLine('c3:0.4', 1)));
+  check('gate ":17" throws (past the 16-step ceiling)', threwPattern(() => parseVoiceLine('c3:17', 1)));
+  check('gate ":0" throws (the device never writes a zero gate)', threwPattern(() => parseVoiceLine('c3:0', 1)));
+  check('gate ":" with no length throws', threwPattern(() => parseVoiceLine('c3:', 1)));
+  check('gate on a REST throws (a rest has no length)', threwPattern(() => parseVoiceLine('~:4 c3', 2)));
+  check('gate written AFTER the repeat ("c3*4:2") throws with the order named',
+    threwPattern(() => parseVoiceLine('c3*4:2', 4)));
+
+  // TIE-FORWARD. Bare `_` COMPUTES the gate that reaches the next onset, so a
+  // caller cannot author the device's silent no-op (a tie too short to reach).
+  const tied = parseVoiceLine('c3_ ~ ~ ~ c3 ~ ~ ~', 8);
+  check('tie "_" sets tie=true', tied[0].tie === true);
+  check('tie "_" computes the gate to reach the next onset exactly (4 steps = 24)',
+    tied[0].gate_sixths === 24, String(tied[0].gate_sixths));
+  check('tie "_" leaves the onset it ties INTO untied and default-length',
+    tied[4].tie === undefined && tied[4].gate_sixths === undefined);
+  const wrap = parseVoiceLine('c3_ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~', 16);
+  check('tie "_" on the ONLY onset wraps to its own next repeat (16 steps = 96), the manual\'s worked example',
+    wrap[0].gate_sixths === 96 && wrap[0].tie === true, String(wrap[0].gate_sixths));
+  check('tie "_" that would need more than 16 steps to reach throws',
+    threwPattern(() => parseVoiceLine('c3_' + ' ~'.repeat(31), 32)));
+  const both = parseVoiceLine('c3:16_ ~ ~ ~', 4);
+  check('explicit length + tie ("c3:16_") keeps the stated length', both[0].gate_sixths === 96 && both[0].tie === true);
+  check('a bare "_" token throws (it is a suffix, not a token)', threwPattern(() => parseVoiceLine('c3 _ ~ ~', 4)));
+
+  // Nothing that parsed before changes meaning, and a lone gated token is
+  // detected as mini-notation rather than falling through to the char grid.
+  check('parseVoice auto-detects a lone "c3:4" as mini-notation', parseVoice('c3:4', 1)[0].gate_sixths === 24);
+  check('parseVoice still reads a plain char grid unchanged',
+    JSON.stringify(hits(parseVoice('x...x...'))) === '[0,4]');
+  check('an ungated pattern carries NO gate/tie fields at all (identity for everything already authored)',
+    parseVoiceLine('c3 ~ c3 ~', 4).every((s) => s.gate_sixths === undefined && s.tie === undefined));
+  check('comma-stack voice naming strips the gate suffix ("bd:2*4" is still the kick voice)',
+    Object.keys(parseMiniNotation('bd:2*4, hh*8', 8)).join(',') === 'kick,hat',
+    Object.keys(parseMiniNotation('bd:2*4, hh*8', 8)).join(','));
+
+  // The IMPORTER-side conversion, the other half of the same unit. An importer
+  // (a .mid file, a Songsterr tab) produces arbitrary real durations, so it
+  // rounds and caps and REPORTS, where hand-authored notation throws.
+  check('gateSixthsFromSteps(4) = 24 exactly, nothing reported',
+    (() => { const r = gateSixthsFromSteps(4); return r.gate_sixths === 24 && !r.rounded && !r.clamped; })());
+  check('gateSixthsFromSteps(1/3) = 2 sixths exactly (a triplet that DOES land on a sixth)',
+    (() => { const r = gateSixthsFromSteps(1 / 3); return r.gate_sixths === 2 && !r.rounded; })());
+  check('gateSixthsFromSteps(0.4) rounds to 2 and SAYS it rounded',
+    (() => { const r = gateSixthsFromSteps(0.4); return r.gate_sixths === 2 && r.rounded && !r.clamped; })());
+  check('gateSixthsFromSteps(32) caps at the 16-step ceiling and SAYS it clamped',
+    (() => { const r = gateSixthsFromSteps(32); return r.gate_sixths === 96 && r.clamped; })());
+  check('gateSixthsFromSteps(0) floors at one sixth rather than emitting an illegal 0',
+    (() => { const r = gateSixthsFromSteps(0); return r.gate_sixths === 1 && r.clamped; })());
+}
+
+
 // ── Euclid (Bjorklund) ─────────────────────────────────────────────
 {
   check('euclid(3,8) = x..x..x.', euclidToString(euclid(3, 8)) === 'x..x..x.', euclidToString(euclid(3, 8)));
@@ -210,6 +319,125 @@ const DRUM_MAP = { kick: { channel: 10, note: 60 }, snare: { channel: 10, note: 
     JSON.stringify(microTimes.sort((a, b) => a[0] - b[0])) === '[[0,0],[125,3]]', JSON.stringify(microTimes));
   check('compile on-grid event leaves micro absent (identity)',
     mp.events.find((e) => e.time_ms === 0)?.micro === undefined);
+}
+
+// ── Compile carries the note length + tie through to the plan ──────
+{
+  const bassCaps = caps(['ncs_upload'], { bass: { channel: 3, note: 36 } });
+  const one = (src: string, steps: number) => compileToPlan(
+    { name: 'gate', steps, bars: 1, voices: { bass: { steps: parseVoiceLine(src, steps) } } },
+    bassCaps, { bpm: 120, mode: 'ncs_upload' },
+  ).events;
+
+  // 16 steps @120 bpm ⇒ stepMs 125; 4 steps @120 ⇒ stepMs 500.
+  const plain = one('c3 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~', 16);
+  check('compile: a step with NO stated length keeps the historical 0.9-step gate and emits no gate_sixths',
+    plain[0].duration_ms === Math.round(125 * 0.9) && plain[0].gate_sixths === undefined && plain[0].tie === undefined,
+    `${plain[0].duration_ms} ms`);
+  const four = one('c3:4 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~', 16);
+  check('compile: ":4" carries gate_sixths 24 onto the event', four[0].gate_sixths === 24, String(four[0].gate_sixths));
+  check('compile: ":4" is EXACTLY four steps of ms (500), with no 10% shave; mid-hold a shave is an audible stutter',
+    four[0].duration_ms === 500, `${four[0].duration_ms} ms`);
+  const sixth = one('c3:1/6 ~ ~ ~', 4);
+  check('compile: a sub-step gate is honored down to the 20 ms audibility floor',
+    sixth[0].duration_ms === Math.max(20, Math.round(500 / 6)), `${sixth[0].duration_ms} ms`);
+  const tie = one('c3:16_ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~', 16);
+  check('compile: a tie rides through to the event as tie:true alongside its length',
+    tie[0].tie === true && tie[0].gate_sixths === 96);
+  // A chord emits one event per note; every one carries the step's length,
+  // because the device's tie is a per-STEP control.
+  const chord = compileToPlan(
+    { name: 'c', steps: 4, bars: 1, voices: { chord: { steps: parseVoiceLine('c3+eb3+g3:8_ ~ ~ ~', 4) } } },
+    caps(['ncs_upload'], { chord: { channel: 1, note: 60 } }), { bpm: 120, mode: 'ncs_upload' },
+  ).events;
+  check('compile: every note of a chord carries the same length and tie',
+    chord.length === 3 && chord.every((e) => e.gate_sixths === 48 && e.tie === true));
+
+  // Programmatic callers bypass the notation, so the compiler bounds the field
+  // itself rather than trusting whatever reached it.
+  const bad = (gate: number): NeutralPattern =>
+    ({ name: 'bad', steps: 4, bars: 1, voices: { bass: { steps: [{ on: true, gate_sixths: gate }, { on: false }, { on: false }, { on: false }] } } });
+  check('compile: gate_sixths 0 throws', threwPattern(() => compileToPlan(bad(0), bassCaps, { bpm: 120, mode: 'ncs_upload' })));
+  check('compile: gate_sixths 97 throws', threwPattern(() => compileToPlan(bad(97), bassCaps, { bpm: 120, mode: 'ncs_upload' })));
+  check('compile: a fractional gate_sixths throws (the field holds whole sixths)',
+    threwPattern(() => compileToPlan(bad(4.5), bassCaps, { bpm: 120, mode: 'ncs_upload' })));
+}
+
+// ── VELOCITY suffix: "@vel" ────────────────────────────────────────
+//
+// The grammar's only dynamic was the char-grid `X` accent, which is one bit, and
+// one bit cannot carry a source's five-level dynamic ladder, a per-note accent, or
+// a palm-mute velocity trim. Those all resolved correctly upstream, reached
+// `Step.velocity`, and then died at the notation boundary, which is the boundary
+// the documented workflow actually pastes through.
+{
+  const v = (src: string, steps: number) => parseVoiceLine(src, steps).find((s) => s.on)!;
+  check('velocity "@110" on a pitch reaches Step.velocity', v('c3@110 ~ ~ ~', 4).velocity === 110, String(v('c3@110 ~ ~ ~', 4).velocity));
+  check('velocity on a DRUM word works too ("bd@70")', v('bd@70 ~', 2).velocity === 70);
+  check('velocity on an un-pitched hit works too ("x@70")', v('x@70 ~', 2).velocity === 70);
+  check('velocity 1 and 127 are both legal (1 is the quietest AUDIBLE hit)',
+    v('c3@1', 1).velocity === 1 && v('c3@127', 1).velocity === 127);
+  check('velocity + gate together ("c3:4@110")',
+    v('c3:4@110 ~ ~ ~', 4).velocity === 110 && v('c3:4@110 ~ ~ ~', 4).gate_sixths === 24,
+    JSON.stringify(v('c3:4@110 ~ ~ ~', 4)));
+  // Order-independent on purpose: an emitter that writes them the other way round
+  // should not produce a string its own parser rejects.
+  check('the suffixes read in EITHER order ("c3@110:4" == "c3:4@110")',
+    JSON.stringify(v('c3@110:4 ~ ~ ~', 4)) === JSON.stringify(v('c3:4@110 ~ ~ ~', 4)),
+    `${JSON.stringify(v('c3@110:4 ~ ~ ~', 4))} vs ${JSON.stringify(v('c3:4@110 ~ ~ ~', 4))}`);
+  check('velocity + gate + TIE together ("c3:16@110_")',
+    v('c3:16@110_ ~ ~ ~', 4).velocity === 110 && v('c3:16@110_ ~ ~ ~', 4).gate_sixths === 96 && v('c3:16@110_ ~ ~ ~', 4).tie === true,
+    JSON.stringify(v('c3:16@110_ ~ ~ ~', 4)));
+  check('velocity survives a fractional gate ("c3:1/2@68", the palm-mute shape)',
+    v('c3:1/2@68', 1).velocity === 68 && v('c3:1/2@68', 1).gate_sixths === 3, JSON.stringify(v('c3:1/2@68', 1)));
+  check('velocity applies to a whole CHORD token, as one set of suffixes',
+    JSON.stringify(v('c3+eb3+g3:8@95', 1)) === JSON.stringify({ on: true, notes: [48, 51, 55], gate_sixths: 48, velocity: 95 }),
+    JSON.stringify(v('c3+eb3+g3:8@95', 1)));
+  check('velocity combines with repeat ("c3@95*4"), the suffix going BEFORE the star',
+    parseVoiceLine('c3@95*4', 4).every((s) => s.on && s.velocity === 95));
+  // Velocity 0 is a note-OFF on the wire, so accepting it would author silence
+  // that reads as a quiet note. Out of range REFUSES rather than clamping.
+  check('velocity 0 is REFUSED (0 is a note-off, not a quiet note)', threwPattern(() => parseVoiceLine('c3@0', 1)));
+  check('velocity 128 is REFUSED rather than clamped', threwPattern(() => parseVoiceLine('c3@128', 1)));
+  check('a bare "@" with no number is REFUSED', threwPattern(() => parseVoiceLine('c3@', 1)));
+  check('a velocity with no note before it is REFUSED', threwPattern(() => parseVoiceLine('@95', 1)));
+  check('a velocity on a REST is REFUSED (a rest has no loudness)', threwPattern(() => parseVoiceLine('c3 ~@95', 2)));
+  check('parseVoice auto-detects a lone "c3@110" as mini-notation', parseVoice('c3@110', 1)[0].velocity === 110);
+  check('an unmarked pattern still carries NO velocity (identity for everything already authored)',
+    parseVoiceLine('c3 ~ c3 ~', 4).every((s) => s.velocity === undefined));
+  check('comma-stack voice naming strips the velocity suffix too ("bd@70*4" is still the kick voice)',
+    Object.keys(parseMiniNotation('bd@70*4, hh*8', 8)).join(',') === 'kick,hat',
+    Object.keys(parseMiniNotation('bd@70*4, hh*8', 8)).join(','));
+  // And it has to reach the wire, not just the Step.
+  const compiled = compileToPlan(
+    { name: 'v', steps: 4, bars: 1, voices: { bass: { steps: parseVoiceLine('c3@110 ~ c3@40 ~', 4) } } },
+    caps(['ncs_upload'], { bass: { channel: 3, note: 36 } }), { bpm: 120, mode: 'ncs_upload' },
+  );
+  check('compile: an @vel step carries that velocity onto the realize event',
+    compiled.events.filter((e) => e.velocity === 110).length === 1 && compiled.events.filter((e) => e.velocity === 40).length === 1,
+    JSON.stringify(compiled.events.map((e) => e.velocity)));
+}
+
+// ── Even time-division at 12 / 24 / 48 tokens ──────────────────────
+//
+// `walk` builds each leaf's position as `index * (1/n)`, which is NOT the same
+// double as `index / n`. At 12, 24 and 48 tokens that puts specific indices a hair
+// LOW, so a bare floor lands them on the PREVIOUS cell and the line dies with
+// "places more hits than N steps can hold". A 24-step row is a 6/8 or 12/8 bar at
+// a 16th grid, i.e. every measure of a song like Schism, so this is not an exotic
+// case; importing one threw until the conversion gained an epsilon.
+{
+  for (const n of [6, 12, 16, 24, 32, 48]) {
+    const line = Array.from({ length: n }, (_, i) => `c${(i % 8) + 1}`).join(' ');
+    const parsed = parseVoiceLine(line, n);
+    check(`even division: ${n} tokens over ${n} steps fill every cell, one hit each, no phantom collision`,
+      parsed.length === n && parsed.every((s) => s.on), `${parsed.filter((s) => s.on).length}/${n}`);
+  }
+  // The exact indices the float error hit, pinned so a refactor cannot reintroduce it.
+  const at24 = parseVoiceLine(Array.from({ length: 24 }, (_, i) => (i === 7 || i === 14 ? 'c4' : '~')).join(' '), 24);
+  check('even division: at 24 steps, tokens 7 and 14 land on cells 7 and 14 (they used to land on 6 and 13)',
+    at24[7].on && at24[14].on && !at24[6].on && !at24[13].on,
+    JSON.stringify(at24.map((s, i) => (s.on ? i : -1)).filter((i) => i >= 0)));
 }
 
 // ── Compile overrides: external-instrument routing (apply_pattern external_targets) ──
@@ -734,6 +962,1110 @@ check('mini "x 0 x 0" → 0 is a rest, hits 0,2', JSON.stringify(hits(parseVoice
   check('round-robin: unknown source voice throws', (() => { try { applyRoundRobin(mk('x.x.'), { ride: ['drum3', 'drum4'] }); return false; } catch (e) { return e instanceof PatternError; } })());
 }
 
+// ---------------------------------------------------------------------------
+// Drum CONDENSATION: squeeze a full kit onto the sequencer's four drum tracks.
+// ---------------------------------------------------------------------------
+{
+  const steps = (s: string) => ({ steps: charGridToSteps(s) });
+  const hitsOf = (v?: { steps: readonly { on: boolean }[] }) =>
+    (v?.steps ?? []).map((s, i) => (s.on ? i : -1)).filter((i) => i >= 0);
+
+  // The routing case that motivated adding `ride` to the Circuit voice_map:
+  // a crash must land on the RIDE track (Drum 4's real sample), not the hat.
+  const c = condenseToKit({
+    name: 'c', steps: 8, bars: 1,
+    voices: { kick: steps('x...x...'), crash: steps('x.......'), tom: steps('....x...') },
+  });
+  check('condense: emits exactly one voice per kit track',
+    Object.keys(c.pattern.voices).length === 4
+    && ['kick', 'snare', 'closed_hat', 'ride'].every((k) => c.pattern.voices[k] !== undefined));
+  check('condense: crash routes to the RIDE track, not the hat',
+    JSON.stringify(hitsOf(c.pattern.voices.ride)) === '[0]'
+    && hitsOf(c.pattern.voices.closed_hat).length === 0);
+  check('condense: tom folds onto the snare track', JSON.stringify(hitsOf(c.pattern.voices.snare)) === '[4]');
+  check('condense: kick passes through untouched', JSON.stringify(hitsOf(c.pattern.voices.kick)) === '[0,4]');
+
+  // Identity: a folded voice carries a per-step flip back to its own sample; a
+  // voice that IS the track's role carries none (nothing to restore).
+  check('condense: folded voices get a per-step sample flip',
+    c.flips.get(3)?.get(0) === 'crash' && c.flips.get(1)?.get(4) === 'tom');
+  check('condense: exact-role voices get NO flip', c.flips.get(0) === undefined);
+  check('condense: routing report marks exact vs folded',
+    c.routings.find((r) => r.voice === 'kick')?.exact === true
+    && c.routings.find((r) => r.voice === 'crash')?.exact === false);
+
+  // Same-family contention: two voices, one step, one track. Louder wins at
+  // equal fold distance, and the loser is REPORTED rather than silently eaten.
+  const col = condenseToKit({
+    name: 'col', steps: 4, bars: 1,
+    voices: {
+      tom: { steps: [{ on: true, velocity: 40 }, { on: false }, { on: false }, { on: false }] },
+      clap: { steps: [{ on: true, velocity: 120 }, { on: false }, { on: false }, { on: false }] },
+    },
+  });
+  check('condense: same-family collision keeps the louder hit',
+    col.pattern.voices.snare?.steps[0]?.velocity === 120);
+  check('condense: collision is reported with winner and loser',
+    col.collisions.length === 1 && col.collisions[0]!.winner === 'clap' && col.collisions[0]!.loser === 'tom');
+  check('condense: dropped count lands on the losing voice',
+    col.routings.find((r) => r.voice === 'tom')?.dropped === 1);
+
+  // Feel must survive: accent / micro placement / roll are the groove, and
+  // re-deriving them instead of carrying them would quietly flatten it.
+  const feel = condenseToKit({
+    name: 'f', steps: 2, bars: 1,
+    voices: { open_hat: { steps: [{ on: true, accent: true, micro: [0, 3], roll: 3 }, { on: false }] } },
+  });
+  const fs = feel.pattern.voices.closed_hat?.steps[0];
+  check('condense: accent / micro / roll carried verbatim',
+    fs?.accent === true && JSON.stringify(fs?.micro) === '[0,3]' && fs?.roll === 3);
+
+  // Chained folds resolve (ride_bell -> ride), and melodic voices are left
+  // alone rather than being mangled onto a drum track.
+  const mixed = condenseToKit({
+    name: 'm', steps: 4, bars: 1,
+    voices: { ride_bell: steps('x...'), bass: steps('..x.') },
+  });
+  check('condense: chained fold ride_bell -> ride resolves',
+    JSON.stringify(hitsOf(mixed.pattern.voices.ride)) === '[0]');
+  check('condense: melodic voices are ignored, not condensed',
+    mixed.ignored.includes('bass') && mixed.pattern.voices.bass === undefined);
+}
+
+// ---------------------------------------------------------------------------
+// Drum condensation WIRING: the whole path, not just the pure condenser.
+//
+// The contract is deliberately split across two layers (the core condenser
+// reports flips as device-blind ROLES, and the device layer resolves a role to
+// its own pool slot), so checking either half alone proves nothing about the
+// join. These checks run a Sugar-shaped call end to end: a full kit routed to
+// an SPD-SX on the Circuit's MIDI 2, condensed onto the Circuit's own four drum
+// tracks, and authored into a real .ncs buffer. The Circuit authoring functions
+// are pure buffer mutation (no MIDI I/O), so this stays a hardware-free golden.
+// ---------------------------------------------------------------------------
+{
+  const steps = (s: string) => ({ steps: charGridToSteps(s) });
+  const caps = CIRCUIT_TRACKS_DESCRIPTOR.capabilities;
+  const midi2 = caps.external_tracks!.midi2;
+
+  // The kit as authored: five pieces, two of which have no track of their own
+  // on a 4-voice kit (crash folds to the ride track, tom to the snare track).
+  const kit: NeutralPattern = {
+    name: 'kit', steps: 8, bars: 1,
+    voices: {
+      kick: steps('x...x...'),
+      snare: steps('....x...'),
+      hat: steps('x.x.x.x.'),
+      crash: steps('x.......'),
+      tom: steps('......x.'),
+    },
+  };
+  // What external_targets [{device:'spd-sx', track:'midi2', note_offset:12}]
+  // resolves to: the SPD-SX pad notes (raw GM) plus the Circuit's octave-low
+  // compensation, on the MIDI 2 track's channel.
+  const external: Record<string, VoiceTarget[]> = {
+    kick: [{ channel: midi2, note: 48 }],
+    snare: [{ channel: midi2, note: 50 }],
+    hat: [{ channel: midi2, note: 54 }],
+    crash: [{ channel: midi2, note: 61 }],
+    tom: [{ channel: midi2, note: 57 }],
+  };
+
+  const cd = buildCondensedDrums(kit, caps, external)!;
+  check('condense wiring: one synthetic voice per internal drum track',
+    cd !== undefined && Object.keys(cd.voices).length === 4
+    && [1, 2, 3, 4].every((n) => cd.voices[`condense:drum${n}`] !== undefined),
+    JSON.stringify(Object.keys(cd.voices)));
+  check('condense wiring: synthetic tracks pin to the Circuit drum pads 60/62/64/65',
+    JSON.stringify([1, 2, 3, 4].map((n) => cd.overrides[`condense:drum${n}`]?.[0]?.note)) === '[60,62,64,65]',
+    JSON.stringify([1, 2, 3, 4].map((n) => cd.overrides[`condense:drum${n}`]?.[0])));
+  check('condense wiring: source drum voices keep ONLY their external destination',
+    JSON.stringify(cd.overrides.crash) === JSON.stringify(external.crash)
+    && JSON.stringify(cd.overrides.hat) === JSON.stringify(external.hat));
+  check('condense wiring: flips are reported as ROLES on 1-based steps',
+    cd.flip_roles.drum4?.['1'] === 'crash' && cd.flip_roles.drum2?.['7'] === 'tom',
+    JSON.stringify(cd.flip_roles));
+  check('condense wiring: every drum level is 0 (stored silent)',
+    cd.levels.length === 4 && cd.levels.every((l) => l === 0), JSON.stringify(cd.levels));
+  check('condense wiring: a drumless pattern condenses nothing rather than erroring',
+    buildCondensedDrums({ name: 'm', steps: 4, bars: 1, voices: { bass: steps('x...') } }, caps) === undefined);
+  check('condense wiring: a device with no internal drum tracks refuses',
+    threwPattern(() => buildCondensedDrums(kit, { ...caps, drum_track_roles: undefined })));
+
+  // Compile the augmented pattern exactly as the dispatcher does, then author it.
+  const plan = compileToPlan(
+    { ...kit, voices: { ...kit.voices, ...cd.voices } },
+    caps,
+    {
+      bpm: 120, mode: 'ncs_upload', repeat: 1,
+      overrides: { ...external, ...cd.overrides },
+      upload: { slot: 0, drum_flip_roles: cd.flip_roles, drum_levels: cd.levels },
+    },
+  );
+  const onCh = (ch: number) => plan.events.filter((e) => e.channel === ch);
+  // 9 condensed hits (kick 2 + snare 1 + tom 1 + hat 4 + crash 1). Double that
+  // would mean the source voices ALSO authored an un-condensed internal copy.
+  check('condense wiring: the internal drum route carries the condensed copy ONLY',
+    onCh(10).length === 9 && onCh(10).every((e) => [60, 62, 64, 65].includes(e.note)),
+    `${onCh(10).length} ch10 events`);
+  check('condense wiring: the external MIDI-2 copy is untouched',
+    onCh(midi2).length === 9 && onCh(midi2).some((e) => e.note === 61),
+    `${onCh(midi2).length} ch${midi2} events`);
+
+  const buf = new Uint8Array(NCS_FILE_SIZE);
+  const authored = authorPlanIntoProject(buf, plan);
+  const d = (track: number) => decodeDrumPattern(buf, track, 0);
+  check('condense wiring: all four Circuit drum tracks are authored',
+    JSON.stringify(authored.drum_tracks.sort((a, b) => a - b)) === '[0,1,2,3]',
+    JSON.stringify(authored.drum_tracks));
+  check('condense wiring: kick lands on Drum 1 at steps 1 and 5',
+    d(0)[0].active && d(0)[4].active && d(0).filter((s) => s.active).length === 2);
+  check('condense wiring: the crash lands on Drum 4 flipped to the CRASH sample slot',
+    d(3)[0].active && d(3)[0].drumChoice === CIRCUIT_VOICE_SLOT.crash,
+    `drumChoice=${d(3)[0].drumChoice}, expected ${CIRCUIT_VOICE_SLOT.crash}`);
+  check('condense wiring: the tom lands on Drum 2 flipped to the TOM sample slot',
+    d(1)[6].active && d(1)[6].drumChoice === CIRCUIT_VOICE_SLOT.tom,
+    `drumChoice=${d(1)[6].drumChoice}, expected ${CIRCUIT_VOICE_SLOT.tom}`);
+  check('condense wiring: a piece on its OWN track keeps the track default sample',
+    d(1)[4].active && d(1)[4].drumChoice === DEFAULT_DRUM_CHOICE
+    && d(2).filter((s) => s.active).every((s) => s.drumChoice === DEFAULT_DRUM_CHOICE));
+  check('condense wiring: role flips reached the buffer (2 flips applied, none warned)',
+    authored.flips_applied === 2 && authored.flip_warnings === undefined,
+    `${authored.flips_applied} applied, warnings ${JSON.stringify(authored.flip_warnings)}`);
+  check('condense wiring: all four stored drum levels are 0',
+    [0, 1, 2, 3].every((t) => getDrumLevel(buf, t) === 0),
+    JSON.stringify([0, 1, 2, 3].map((t) => getDrumLevel(buf, t))));
+  check('condense wiring: the external kit still authored onto the MIDI 2 note track',
+    authored.note_tracks.includes('midi2')
+    && decodeNotePattern(buf, 'midi2', 0)[0].notes.some((s) => s.note === 61));
+
+  // A caller's own explicit slot flip is the more specific instruction, so it
+  // must win over the condenser's role-resolved one on the same step.
+  const buf2 = new Uint8Array(NCS_FILE_SIZE);
+  authorPlanIntoProject(buf2, {
+    ...plan,
+    upload: { slot: 0, drum_flip_roles: cd.flip_roles, drum_flips: { drum4: { 1: 11 } }, drum_levels: cd.levels },
+  });
+  check('condense wiring: an explicit drum_flips slot overrides the role-resolved flip',
+    decodeDrumPattern(buf2, 3, 0)[0].drumChoice === 11,
+    `drumChoice=${decodeDrumPattern(buf2, 3, 0)[0].drumChoice}`);
+
+  // ARRANGEMENT leg: condensation is per SECTION, so each section's flips ride
+  // on that section's OWN plan (authorArrangementIntoProject authors each plan
+  // independently into its own pattern slot), while the drum LEVELS are
+  // project-global and are written once. A section-scoped flip landing in the
+  // wrong pattern slot is the failure this pins.
+  const secPlan = (name: string, voices: NeutralPattern['voices']) => {
+    const p: NeutralPattern = { name, steps: 8, bars: 1, voices };
+    const w = buildCondensedDrums(p, caps)!;
+    return compileToPlan({ ...p, voices: { ...p.voices, ...w.voices } }, caps, {
+      bpm: 120, mode: 'ncs_upload', repeat: 1,
+      overrides: w.overrides,
+      upload: { slot: 0, drum_flip_roles: w.flip_roles },
+    });
+  };
+  const arrBuf = new Uint8Array(NCS_FILE_SIZE);
+  authorArrangementIntoProject(
+    arrBuf,
+    [
+      { name: 'verse', plan: secPlan('verse', { kick: steps('x...x...'), tom: steps('..x.....') }) },
+      { name: 'chorus', plan: secPlan('chorus', { kick: steps('x...x...'), crash: steps('....x...') }) },
+    ],
+    [0, 1], undefined, undefined, [0, 0, 0, 0],
+  );
+  check('condense wiring (arrangement): the verse tom flip is in pattern 1 only',
+    decodeDrumPattern(arrBuf, 1, 0)[2].drumChoice === CIRCUIT_VOICE_SLOT.tom
+    && decodeDrumPattern(arrBuf, 1, 1).every((s) => s.drumChoice !== CIRCUIT_VOICE_SLOT.tom));
+  check('condense wiring (arrangement): the chorus crash flip is in pattern 2 only',
+    decodeDrumPattern(arrBuf, 3, 1)[4].drumChoice === CIRCUIT_VOICE_SLOT.crash
+    && decodeDrumPattern(arrBuf, 3, 0).every((s) => s.drumChoice !== CIRCUIT_VOICE_SLOT.crash));
+  check('condense wiring (arrangement): drum levels are written once, project-global',
+    [0, 1, 2, 3].every((t) => getDrumLevel(arrBuf, t) === 0));
+}
+
+// ── .mid NOTE LENGTHS: note-off → gate_sixths (+ tie) ──────────────────────
+//
+// A `.mid` is the only import source that states an exact note length, so the
+// note-off is the best duration evidence this project has. These fixtures are
+// hand-built SMF bytes (no hardware, no network): division 480 at 4 steps per
+// beat means one STEP is 120 ticks and one SIXTH of a step is 20 ticks, so
+// every expected gate below is checkable by hand from the tick numbers.
+{
+  const DIV = 480;                       // ticks per beat
+  const STEP = DIV / 4;                  // 120 ticks per 16th-note step
+  const vlq = (n: number): number[] => {
+    const out = [n & 0x7f];
+    for (let v = n >>> 7; v > 0; v >>>= 7) out.unshift((v & 0x7f) | 0x80);
+    return out;
+  };
+  interface RawEv { tick: number; bytes: number[] }
+  const isOff = (e: RawEv): number => ((e.bytes[0] & 0xf0) === 0x80 ? 0 : 1);
+  /** One-track SMF from absolute-tick events; note-offs sort ahead of note-ons at the same tick. */
+  const smfOf = (evs: RawEv[]): Uint8Array => {
+    const ord = [...evs].sort((a, b) => a.tick - b.tick || isOff(a) - isOff(b));
+    const body: number[] = [];
+    let last = 0;
+    for (const e of ord) { body.push(...vlq(e.tick - last), ...e.bytes); last = e.tick; }
+    body.push(0x00, 0xff, 0x2f, 0x00);
+    const n = body.length;
+    return Uint8Array.from([
+      0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, (DIV >> 8) & 0xff, DIV & 0xff,
+      0x4d, 0x54, 0x72, 0x6b, (n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff,
+      ...body,
+    ]);
+  };
+  // ch1 (wire 0). `held` = a note-on with its matching note-off; `hanging` = an
+  // on the file never closes.
+  const hanging = (tick: number, note: number, vel = 90): RawEv[] => [{ tick, bytes: [0x90, note, vel] }];
+  const held = (tick: number, note: number, lenTicks: number, vel = 90): RawEv[] =>
+    [{ tick, bytes: [0x90, note, vel] }, { tick: tick + lenTicks, bytes: [0x80, note, 0x40] }];
+  const gates = (r: { steps: NeutralStep[] }): (number | undefined)[] =>
+    r.steps.flatMap((s) => (s.on ? [s.gate_sixths] : []));
+
+  // ── Fixture A: the length ladder ──────────────────────────────────
+  // step 0  C3  60 ticks  = half a step      → 3 sixths
+  // step 4  D3  120 ticks = exactly one step → 6 sixths
+  // step 8  E3  480 ticks = four steps       → 24 sixths
+  // step 12 F3  55 ticks  = 2.75 sixths      → 3, ROUNDED (off a whole sixth)
+  // step 14 G3  3 ticks   = 0.15 of a sixth  → 1, CAPPED at the floor
+  const ladder = smfOf([
+    ...held(0, 48, 60), ...held(4 * STEP, 50, STEP), ...held(8 * STEP, 52, 4 * STEP),
+    ...held(12 * STEP, 53, 55), ...held(14 * STEP, 55, 3),
+  ]);
+  const lad = importMidiMelodic(ladder, { channel: 1, beats: 4, stepsPerBeat: 4 });
+  check('.mid lengths: half-step / one-step / four-step / off-sixth / sub-sixth → 3,6,24,3,1',
+    JSON.stringify(gates(lad)) === '[3,6,24,3,1]', JSON.stringify(gates(lad)));
+  check('.mid lengths: report counts 5 imported, 2 rounded, 1 capped at the floor',
+    lad.duration_report.imported === 5 && lad.duration_report.rounded === 2
+    && lad.duration_report.capped_short === 1 && lad.duration_report.capped_long === 0,
+    JSON.stringify(lad.duration_report));
+  check('.mid lengths: the rounding is WARNED, not silent',
+    lad.warnings.some((w) => /did not land on a whole sixth/.test(w))
+    && lad.warnings.some((w) => /shorter than one sixth/.test(w)),
+    JSON.stringify(lad.warnings));
+  check('.mid lengths: no tie inferred from a plain detached line', lad.duration_report.tied === 0);
+
+  // Opt-out restores the pre-duration behaviour exactly: no gate, no tie, no
+  // length warnings, which is what a caller with hand-set template gates wants.
+  const plain = importMidiMelodic(ladder, { channel: 1, beats: 4, stepsPerBeat: 4, noteLengths: false });
+  check('.mid lengths: noteLengths=false leaves every step on the default gate',
+    gates(plain).every((g) => g === undefined) && plain.duration_report.imported === 0
+    && !plain.warnings.some((w) => /note length|sixth/.test(w)),
+    JSON.stringify({ gates: gates(plain), warnings: plain.warnings }));
+
+  // ── Fixture B: tie, overlap, ceiling, unclosed ────────────────────
+  // step 0  A3 720 ticks: still sounding 2 steps past the SAME pitch at step 4 → TIE, gate = the 4-step reach
+  // step 4  A3 one step
+  // step 8  B3 two steps, ending exactly on step 10's onset (abutting ≠ overlap)
+  // step 10 C4 2.5 steps, running 0.5 of a step past step 12's D4 → OVERLAP (different pitch, so no tie)
+  // step 12 D4 never closed → no length, counted
+  // step 14 E4 20 steps → past the 16-step ceiling → capped at 96
+  const mixed = smfOf([
+    ...held(0, 57, 6 * STEP), ...held(4 * STEP, 57, STEP), ...held(8 * STEP, 59, 2 * STEP),
+    ...held(10 * STEP, 60, 2.5 * STEP), ...hanging(12 * STEP, 62), ...held(14 * STEP, 64, 20 * STEP),
+  ]);
+  const mix = importMidiMelodic(mixed, { channel: 1, beats: 4, stepsPerBeat: 4 });
+  check('.mid tie: a note held a full step past the next SAME-pitch onset ties, gate = the exact reach (24)',
+    mix.steps[0].tie === true && mix.steps[0].gate_sixths === 24,
+    JSON.stringify(mix.steps[0]));
+  check('.mid tie: only that one step is tied', mix.steps.filter((s) => s.tie).length === 1);
+  check('.mid lengths: an unclosed note-on takes no gate and is counted',
+    mix.steps[12].on === true && mix.steps[12].gate_sixths === undefined && mix.duration_report.unclosed === 1,
+    JSON.stringify({ step12: mix.steps[12], unclosed: mix.duration_report.unclosed }));
+  check('.mid lengths: 20 steps is capped at the 16-step ceiling (96 sixths) and reported',
+    mix.steps[14].gate_sixths === 96 && mix.duration_report.capped_long === 1
+    && mix.warnings.some((w) => /capped/.test(w)),
+    JSON.stringify({ gate: mix.steps[14].gate_sixths, r: mix.duration_report.capped_long }));
+  check('.mid overlap: a note running past the next onset keeps its full length and is reported once',
+    mix.steps[10].gate_sixths === 15 && mix.steps[10].tie === undefined
+    && mix.duration_report.overlapping === 1
+    && mix.warnings.some((w) => /still sounding when this voice's next note starts/.test(w)),
+    JSON.stringify({ step10: mix.steps[10], overlapping: mix.duration_report.overlapping }));
+  check('.mid overlap: abutting (step 8 ends exactly on step 10) is NOT an overlap',
+    mix.steps[8].gate_sixths === 12 && mix.steps[8].tie === undefined);
+
+  // ── Fixture C: the tie tolerance, from both sides ─────────────────
+  // Same pitch, note ending EXACTLY on the next onset: the source re-strikes it,
+  // so this is a 4-step note, not a tie. Inferring one here would melt every
+  // repeated-root bassline into a drone.
+  const abut = importMidiMelodic(
+    smfOf([...held(0, 57, 4 * STEP), ...held(4 * STEP, 57, STEP)]),
+    { channel: 1, beats: 4, stepsPerBeat: 4 },
+  );
+  check('.mid tie: a same-pitch note ending exactly ON the next onset is a long note, not a tie',
+    abut.steps[0].tie === undefined && abut.steps[0].gate_sixths === 24 && abut.duration_report.tied === 0,
+    JSON.stringify(abut.steps[0]));
+  // Half a step of overlap is legato slop, under the one-step bar: still no tie,
+  // but the overlap itself IS reported.
+  const slop = importMidiMelodic(
+    smfOf([...held(0, 57, 4.5 * STEP), ...held(4 * STEP, 57, STEP)]),
+    { channel: 1, beats: 4, stepsPerBeat: 4 },
+  );
+  check('.mid tie: half a step of same-pitch overlap is legato, not a tie (reported as an overlap)',
+    slop.steps[0].tie === undefined && slop.steps[0].gate_sixths === 27
+    && slop.duration_report.tied === 0 && slop.duration_report.overlapping === 1,
+    JSON.stringify({ step0: slop.steps[0], report: slop.duration_report }));
+  // Held through the next onset, but that onset is a DIFFERENT pitch: nothing to
+  // hold, so no tie (the device drops a tie whose target lacks the note anyway).
+  const otherPitch = importMidiMelodic(
+    smfOf([...held(0, 57, 6 * STEP), ...held(4 * STEP, 59, STEP)]),
+    { channel: 1, beats: 4, stepsPerBeat: 4 },
+  );
+  check('.mid tie: sustaining into a DIFFERENT pitch is an overlap, never a tie',
+    otherPitch.steps[0].tie === undefined && otherPitch.steps[0].gate_sixths === 36
+    && otherPitch.duration_report.tied === 0 && otherPitch.duration_report.overlapping === 1,
+    JSON.stringify(otherPitch.steps[0]));
+
+  // ── Fixture D: a chord whose notes have different lengths ─────────
+  // One step states ONE length, so the step takes the LONGEST: stretching a
+  // short note is a smaller lie than truncating a held one.
+  const chordMixed = importMidiMelodic(
+    smfOf([...held(0, 48, 8 * STEP, 70), ...held(0, 52, STEP, 100), ...held(0, 55, 8 * STEP, 80)]),
+    { channel: 1, beats: 4, stepsPerBeat: 4 },
+  );
+  check('.mid lengths: an uneven chord takes its longest note (48 sixths), velocity still the loudest',
+    JSON.stringify(chordMixed.steps[0].notes) === '[48,52,55]' && chordMixed.steps[0].gate_sixths === 48
+    && chordMixed.steps[0].velocity === 100 && chordMixed.duration_report.uneven_chords === 1
+    && chordMixed.warnings.some((w) => /different lengths/.test(w)),
+    JSON.stringify(chordMixed.steps[0]));
+
+  // A file with no note-offs at all (the shape the older melodic goldens use)
+  // must still import: lengths absent, everything else untouched.
+  const noOffs = importMidiMelodic(
+    smfOf([...hanging(0, 48), ...hanging(4 * STEP, 50)]),
+    { channel: 1, beats: 4, stepsPerBeat: 4 },
+  );
+  check('.mid lengths: a file with no note-offs imports unchanged (no gate, counted as unclosed)',
+    gates(noOffs).every((g) => g === undefined) && noOffs.duration_report.unclosed === 2
+    && noOffs.steps[0].notes === 48 && noOffs.steps[4].notes === 50,
+    JSON.stringify(noOffs.duration_report));
+
+  // The parser pairs offs per (channel, note) FIFO, so a duration survives on
+  // the note-on itself for any other consumer.
+  const pairing = parseMidiFile(smfOf([...held(0, 48, 240), ...held(240, 48, 120)]));
+  check('parseMidiFile: note-offs pair FIFO onto the note-on as durationTicks',
+    JSON.stringify(pairing.notes.map((n) => n.durationTicks)) === '[240,120]',
+    JSON.stringify(pairing.notes));
+  // A note-on with velocity 0 IS a note-off (the running-status idiom).
+  const velZero = parseMidiFile(smfOf([
+    { tick: 0, bytes: [0x90, 48, 90] }, { tick: 300, bytes: [0x90, 48, 0] },
+  ]));
+  check('parseMidiFile: note-on velocity 0 closes the note (300 ticks), and is not itself a note',
+    velZero.notes.length === 1 && velZero.notes[0].durationTicks === 300,
+    JSON.stringify(velZero.notes));
+}
+
+// ── PROJECT PAD COLOUR: apply_pattern `colour` → the authored project ──────
+//
+// The colour BYTE is decoded, corpus-checked and golden-locked in
+// verify-circuit-ncs. What is proven here is the PRODUCT PATH on top of it:
+// `RealizePlan.upload.colour` reaching the Circuit realizer, the receipt saying
+// which of the two outcomes happened, the refusal shape, and above all the
+// backward-compatibility contract — a caller that passes no colour still
+// produces a byte-identical project, because the whole feature is an opt-in
+// stamp on a file that was already correct without it.
+//
+// It lives with the other Circuit wiring in this file (see the header note)
+// rather than in verify-circuit-ncs, because that script imports the Circuit
+// package by its subpath export, which resolves to the BUILT dist. These
+// imports are source-relative, so the wiring is exercised as written.
+await (async () => {
+  // A structurally valid template that reads Blue, like every real project.
+  const template = (() => {
+    const b = new Uint8Array(NCS_FILE_SIZE);
+    for (let i = 0; i < NCS_MAGIC.length; i++) b[i] = NCS_MAGIC.charCodeAt(i);
+    new DataView(b.buffer).setUint32(NCS_TOTAL_SESSION_SIZE_OFFSET, NCS_FILE_SIZE, true);
+    setProjectColour(b, PROJECT_COLOUR_DEFAULT);
+    return b;
+  })();
+  const mkPlan = (upload: NonNullable<RealizePlan['upload']>): RealizePlan => ({
+    pattern_name: 'coloured', bpm: 120, steps: 16, bars: 1, repeat: 1, mode: 'ncs_upload', cycle_ms: 2000,
+    events: [
+      { channel: 10, note: 60, velocity: 110, time_ms: 0, duration_ms: 100 },
+      { channel: 1, note: 48, velocity: 100, time_ms: 500, duration_ms: 100 },
+    ],
+    upload,
+  });
+
+  // BACKWARD COMPATIBILITY. The realizer runs applyProjectColour on the
+  // template before authoring; with no colour asked for, the file it hands the
+  // transport must be the same file it would have handed over before the line
+  // existed. Reproduces the realizer's own order (colour stamp, then author).
+  const before = template.slice();
+  authorPlanIntoProject(before, mkPlan({ slot: 0 }));
+  const after = template.slice();
+  applyProjectColour(after, undefined);
+  authorPlanIntoProject(after, mkPlan({ slot: 0 }));
+  let moved = 0;
+  for (let i = 0; i < NCS_FILE_SIZE; i++) if (before[i] !== after[i]) moved++;
+  check('colour wiring: an authored project with NO colour is byte-identical to one authored without the colour step',
+    moved === 0, `${moved} byte(s) differ`);
+
+  // The stamped project: the colour a caller asked for is readable in the file
+  // that gets uploaded, and stamping it leaves a valid project.
+  const stamped = template.slice();
+  applyProjectColour(stamped, 'green');
+  const authoredStamp = authorPlanIntoProject(stamped, mkPlan({ slot: 0 }));
+  const structure = checkNcsStructure(stamped);
+  check('colour wiring: an authored project stamped "green" reads back Green and stays structurally valid',
+    getProjectColour(stamped) === 8 && projectColourName(getProjectColour(stamped)) === 'Green' && structure.ok,
+    `${projectColourName(getProjectColour(stamped))} / ${structure.faults.join('; ')}`);
+  check('colour wiring: the stamp does not disturb what was authored onto the tracks',
+    authoredStamp.drum_tracks.length === 1 && authoredStamp.note_tracks.length === 1 && authoredStamp.unrouted === 0,
+    JSON.stringify(authoredStamp.drum_tracks) + JSON.stringify(authoredStamp.note_tracks));
+
+  // ── Through the realizer itself (dry run: authors, sends nothing) ────────
+  const forbidden = () => { throw new Error('dry_run touched the device'); };
+  const stubCtx = {
+    conn: { hasInput: false, send: forbidden, request: forbidden },
+    reconnect: () => { throw new Error('dry_run reconnected'); },
+  } as unknown as Parameters<NonNullable<typeof circuitWriter.realizePattern>>[0];
+  const tpl = join(tmpdir(), `verify-patterns-colour-${process.pid}.ncs`);
+  writeFileSync(tpl, template);
+  try {
+    const inherited = await circuitWriter.realizePattern!(stubCtx, mkPlan({ template_path: tpl, slot: 0, dry_run: true }));
+    check('colour wiring: omitting colour is NEVER silent, the receipt names the colour inherited from the template',
+      /COLOUR: not set by this call/.test(inherited.info ?? '') && /Blue/.test(inherited.info ?? ''), inherited.info);
+
+    const asked = await circuitWriter.realizePattern!(stubCtx, mkPlan({ template_path: tpl, slot: 0, dry_run: true, colour: 'Cyan' }));
+    check('colour wiring: an asked-for colour is stamped by the realizer and the receipt names it and what it displaced',
+      /Pad colour stored as Cyan \(template held Blue\)/.test(asked.info ?? ''), asked.info);
+
+    const arr = await circuitWriter.realizeArrangement!(
+      stubCtx,
+      [
+        { name: 'verse', plan: mkPlan({ template_path: tpl, slot: 0, dry_run: true }) },
+        { name: 'chorus', plan: mkPlan({ template_path: tpl, slot: 0, dry_run: true }) },
+      ],
+      [0, 1],
+      { template_path: tpl, slot: 0, dry_run: true, colour: 12 },
+    );
+    check('colour wiring: an arrangement takes one project-global colour, by index, and reports it',
+      /Pad colour stored as Purple \(template held Blue\)/.test(arr.info ?? ''), arr.info);
+
+    // REFUSAL. A colour nobody can render is refused with a structured error,
+    // before the authoring, the overwrite gate and the transfer — never
+    // substituted, because a pad lit the wrong colour says nothing is wrong.
+    const refusal = async (colour: number | string): Promise<DispatchError | undefined> => {
+      try {
+        await circuitWriter.realizePattern!(stubCtx, mkPlan({ template_path: tpl, slot: 0, dry_run: true, colour }));
+        return undefined;
+      } catch (e) { return e instanceof DispatchError ? e : undefined; }
+    };
+    const badName = await refusal('Beige');
+    check('colour wiring: an unknown colour NAME is refused as unknown_enum_value, and the error names the whole palette',
+      badName?.code === 'unknown_enum_value' && /Red/.test(badName.message) && /Pink/.test(badName.message)
+      && /Nothing was written/.test(badName.message),
+      `${badName?.code}: ${badName?.message}`);
+    const badIndex = await refusal(14);
+    check('colour wiring: an off-palette INDEX is refused as value_out_of_range rather than clamped to 13',
+      badIndex?.code === 'value_out_of_range' && /Nothing was written/.test(badIndex.message),
+      `${badIndex?.code}: ${badIndex?.message}`);
+  } finally {
+    rmSync(tpl, { force: true });
+  }
+
+  // Plumbing: compileToPlan must carry a caller's colour through to the plan
+  // untouched (the same identity passthrough drum_binding needed).
+  const pattern: NeutralPattern = {
+    name: 'plumbing', steps: 4, bars: 1,
+    voices: { kick: { steps: charGridToSteps('x...') } },
+  };
+  const carried = compileToPlan(pattern, CIRCUIT_TRACKS_DESCRIPTOR.capabilities, {
+    bpm: 120, mode: 'ncs_upload', upload: { slot: 0, colour: 'Red' },
+  });
+  const omitted = compileToPlan(pattern, CIRCUIT_TRACKS_DESCRIPTOR.capabilities, {
+    bpm: 120, mode: 'ncs_upload', upload: { slot: 0 },
+  });
+  check('colour wiring: compileToPlan forwards upload.colour unchanged, and leaves it undefined when unset',
+    carried.upload?.colour === 'Red' && omitted.upload?.colour === undefined,
+    JSON.stringify({ carried: carried.upload?.colour, omitted: omitted.upload?.colour }));
+})();
+
+// ── Arrangement scene_plan: explicit scene grouping + stale-chain clear ─────
+//
+// GAP closed 2026-07-29: the arrangement scene mode could only GREEDILY merge
+// consecutive sections into the fewest scenes, so a chosen 1+3+2+2 grouping
+// (The Offering's Chorus) needed a bespoke script. `scene_plan` states the
+// grouping; omitted keeps the automatic layout BYTE-IDENTICAL (goldens below
+// were captured from the pre-change code). Scene mode now also clears the
+// authored tracks' stale plain-chain slots (the bug the bespoke script found:
+// the device partly follows the stale flat range and scenes sound duplicated).
+{
+  const caps = CIRCUIT_TRACKS_DESCRIPTOR.capabilities;
+  const sec = (name: string, kick: string, bass?: string): { name: string; plan: RealizePlan } => {
+    const voices: Record<string, { steps: NeutralStep[] }> = { kick: { steps: charGridToSteps(kick) } };
+    if (bass) voices.bass = { steps: charGridToSteps(bass).map((s, i) => (s.on ? { ...s, note: 48 + (i % 5) } : s)) };
+    const p: NeutralPattern = { name, steps: kick.length, bars: 1, voices };
+    return { name, plan: compileToPlan(p, caps, { bpm: 120, mode: 'ncs_upload', repeat: 1, upload: { slot: 0 } }) };
+  };
+  const sha = (b: Uint8Array): string => createHash('sha256').update(b).digest('hex');
+  const threwMatching = (fn: () => unknown, re: RegExp): boolean => {
+    try { fn(); return false; } catch (e) { return e instanceof DispatchError && re.test(e.message); }
+  };
+
+  // BYTE IDENTITY, no plan. Both goldens were captured from the pre-change
+  // authorArrangementIntoProject on this exact input (2026-07-29), so a hash
+  // match IS the backward-compatibility proof, not a re-derivation.
+  {
+    const buf = new Uint8Array(NCS_FILE_SIZE);
+    authorArrangementIntoProject(buf, [
+      sec('verse', 'x...x...', 'x.x.x.x.'), sec('chorus', 'xx..xx..', '.x...x..'), sec('bridge', 'x.x.x.x.'),
+    ], [0, 1, 2, 1]);
+    check('scene_plan compat: no-plan CHAIN arrangement is byte-identical to the pre-change code (golden hash)',
+      sha(buf) === 'ef566459390eb3c5131d58fe159277da847ca41c5a61d9ff6f9a672165e99081', sha(buf));
+  }
+  const greedySections = (): { name: string; plan: RealizePlan }[] =>
+    ['s1', 's2', 's3', 's4', 's5'].map((n, i) => sec(n, ('x...'.repeat(2)).slice(0, 8 - i) + '.'.repeat(i), i % 2 ? 'x...x...' : undefined));
+  {
+    const buf = new Uint8Array(NCS_FILE_SIZE);
+    const res = authorArrangementIntoProject(buf, greedySections(), [0, 1, 2, 3, 4, 0, 1, 2, 3, 4]);
+    check('scene_plan compat: no-plan GREEDY-SCENES arrangement (clean template) is byte-identical to the pre-change code',
+      sha(buf) === '9a6e06ef568b2baf8433d0dc7e05afd097891c01873aa0dd09cde99a184a608c', sha(buf));
+    check('scene_plan compat: the greedy grouping itself is unchanged (2 runs over 5 slots)',
+      res.layout.kind === 'scenes' && JSON.stringify(res.layout.scenes) === '[{"start":0,"end":4},{"start":0,"end":4}]',
+      JSON.stringify(res.layout));
+  }
+
+  // THE ONE DELIBERATE BYTE-LEVEL CHANGE, pinned exactly: a template carrying a
+  // STALE plain chain now has the authored (union) tracks' chain slots cleared
+  // in scene mode. Diffed against a clean-template authoring, the only surviving
+  // difference must be the NON-union track's chain byte, which is deliberately
+  // kept (tracks outside the union keep their template content).
+  {
+    const staleSections = (): { name: string; plan: RealizePlan }[] =>
+      ['s1', 's2', 's3', 's4', 's5'].map((n, i) => sec(n, ('x...'.repeat(2)).slice(0, 8 - i) + '.'.repeat(i), 'x...x...'));
+    const stale = new Uint8Array(NCS_FILE_SIZE);
+    stale[0x2c4] = 0; stale[0x2c5] = 7;   // synth1 (union: bass routes there) chained [0,7]
+    stale[0x2d0] = 0; stale[0x2d1] = 7;   // midi2 (NOT in the union) chained [0,7]
+    for (let t = 0; t < 4; t++) { stale[0x2d4 + t * 4] = 0; stale[0x2d4 + t * 4 + 1] = 7; } // drums chained
+    authorArrangementIntoProject(stale, staleSections(), [0, 1, 2, 3, 4, 0, 1, 2, 3, 4]);
+    const clean = new Uint8Array(NCS_FILE_SIZE);
+    authorArrangementIntoProject(clean, staleSections(), [0, 1, 2, 3, 4, 0, 1, 2, 3, 4]);
+    const diffs: number[] = [];
+    for (let i = 0; i < NCS_FILE_SIZE; i++) if (stale[i] !== clean[i]) diffs.push(i);
+    check('scene mode clears the stale plain chain on authored tracks: synth1 + all drums back to the fresh [0,0]',
+      getNoteChain(stale, 'synth1') === undefined && stale[0x2c5] === 0
+      && [0, 1, 2, 3].every((t) => stale[0x2d4 + t * 4] === 0 && stale[0x2d4 + t * 4 + 1] === 0),
+      JSON.stringify({ synth1: [stale[0x2c4], stale[0x2c5]], drum1: [stale[0x2d4], stale[0x2d5]] }));
+    check('scene mode keeps a NON-union track\'s template chain: midi2 still [0,7], the only byte differing from a clean-template authoring',
+      stale[0x2d1] === 7 && JSON.stringify(diffs) === JSON.stringify([0x2d1]), JSON.stringify(diffs.map((d) => `0x${d.toString(16)}`)));
+    check('scene mode clear does not invent the drum-chain tail byte (0x26fc7 stays 0)', stale[0x26fc7] === 0, String(stale[0x26fc7]));
+  }
+
+  // THE OFFERING'S 1+3+2+2, through the tool path. 8 sections, the plan groups
+  // them exactly as the song doc records; assert against the sceneChain READER
+  // (the same decode the bespoke fix was byte-verified with).
+  {
+    const sections = ['fill', 'a', 'b', 'c', 'd', 'e', 'f', 'g'].map((n, i) => sec(n, 'x...x...', i % 2 ? 'x.......' : '..x.....'));
+    const buf = new Uint8Array(NCS_FILE_SIZE);
+    buf[0x2c4] = 0; buf[0x2c5] = 7; // stale synth1 plain chain, as an exported plain-chain project would carry
+    const res = authorArrangementIntoProject(
+      buf, sections, [0, 1, 2, 3, 4, 5, 6, 7], undefined, undefined, undefined, true,
+      [[0], [1, 2, 3], [4, 5], [6, 7]],
+    );
+    const expect = [[0, 0], [1, 3], [4, 5], [6, 7]];
+    check('scene_plan 1+3+2+2: layout is scenes with exactly the asked ranges',
+      res.layout.kind === 'scenes' && JSON.stringify(res.layout.scenes) === JSON.stringify(expect.map(([s, e]) => ({ start: s, end: e }))),
+      JSON.stringify(res.layout.scenes));
+    check('scene_plan 1+3+2+2: the scene-chain END byte reads back 4', getSceneChainEnd(buf) === 4, String(getSceneChainEnd(buf)));
+    const noteRanges = expect.map((_, sc) => getSceneNoteChain(buf, sc, 'synth1'));
+    const drumRanges = expect.map((_, sc) => getSceneDrumChain(buf, sc, 0));
+    check('scene_plan 1+3+2+2: per-scene NOTE ranges land in the scene tables exactly',
+      JSON.stringify(noteRanges) === JSON.stringify(expect.map(([s, e]) => ({ start: s, end: e }))), JSON.stringify(noteRanges));
+    check('scene_plan 1+3+2+2: per-scene DRUM ranges land in the scene tables exactly',
+      JSON.stringify(drumRanges) === JSON.stringify(expect.map(([s, e]) => ({ start: s, end: e }))), JSON.stringify(drumRanges));
+    check('scene_plan 1+3+2+2: the stale plain-chain byte is CLEARED (the 2026-07-23 bug cannot recur through the tool path)',
+      getNoteChain(buf, 'synth1') === undefined && buf[0x2c5] === 0, `synth1=[${buf[0x2c4]},${buf[0x2c5]}]`);
+  }
+
+  // A scene may reference the SAME pattern range more than once (The Offering's
+  // Buildup: three scenes point at one ostinato pattern). Also proves the plan
+  // FORCES scene layout where 4 plays would otherwise ride the plain chain.
+  {
+    const sections = [sec('ostinato', 'x.x.x.x.'), sec('m140fill', 'xxxxxxxx')];
+    const buf = new Uint8Array(NCS_FILE_SIZE);
+    const res = authorArrangementIntoProject(
+      buf, sections, [0, 0, 0, 1], undefined, undefined, undefined, true,
+      [[0], [0], [0], [1]],
+    );
+    check('scene_plan repetition: three scenes reference pattern 1, the fill fires once in scene 4',
+      res.layout.kind === 'scenes'
+      && JSON.stringify(res.layout.scenes) === '[{"start":0,"end":0},{"start":0,"end":0},{"start":0,"end":0},{"start":1,"end":1}]'
+      && getSceneChainEnd(buf) === 4,
+      JSON.stringify(res.layout.scenes));
+  }
+
+  // REFUSALS (writer layer): the capability boundary is visible, never silent.
+  {
+    const five = ['s1', 's2', 's3', 's4', 's5'].map((n) => sec(n, 'x...x...'));
+    check('scene_plan refusal: >4 scenes names the capture that unlocks it (HW-CIRCUIT-009)',
+      threwMatching(
+        () => authorArrangementIntoProject(new Uint8Array(NCS_FILE_SIZE), five, [0, 1, 2, 3, 4], undefined, undefined, undefined, true, [[0], [1], [2], [3], [4]]),
+        /HW-CIRCUIT-009/,
+      ));
+    const three = ['s1', 's2', 's3'].map((n) => sec(n, 'x...x...'));
+    check('scene_plan refusal: non-adjacent sections in one scene refuse (a scene is one contiguous range)',
+      threwMatching(
+        () => authorArrangementIntoProject(new Uint8Array(NCS_FILE_SIZE), three, [0, 2, 1], undefined, undefined, undefined, true, [[0, 2], [1]]),
+        /not\s+adjacent in `sections`/,
+      ));
+    check('scene_plan refusal: a single-scene plan refuses (that is just the pattern chain)',
+      threwMatching(
+        () => authorArrangementIntoProject(new Uint8Array(NCS_FILE_SIZE), three, [0, 1, 2], undefined, undefined, undefined, true, [[0, 1, 2]]),
+        /one scene/,
+      ));
+  }
+}
+
+// ── Arrangement scene_plan: dispatcher-level name resolution + refusals ─────
+//
+// The display-first boundary: the caller speaks section NAMES, and every
+// name-level fault refuses with the fault named. Exercised through
+// executeApplyPattern, the same function the MCP tool handler calls; all of
+// these throw during resolution, before any port or template is touched.
+await (async () => {
+  registerDevice(CIRCUIT_TRACKS_DESCRIPTOR);
+  const call = (arrangement: NonNullable<Parameters<typeof executeApplyPattern>[0]['arrangement']>): Promise<unknown> =>
+    executeApplyPattern({
+      port: 'circuit-tracks', mode: 'ncs_upload', ncs_slot: 1, ncs_template: 'unused-by-these-refusals.ncs',
+      arrangement,
+    });
+  const refused = async (arrangement: NonNullable<Parameters<typeof executeApplyPattern>[0]['arrangement']>, re: RegExp): Promise<boolean> => {
+    try { await call(arrangement); return false; } catch (e) { return e instanceof PatternError && re.test(e.message); }
+  };
+  const sections = [
+    { name: 'Fill', voices: { kick: 'x...x...' } },
+    { name: 'Verse', voices: { kick: 'x.x.x.x.' } },
+    { name: 'Chorus', voices: { kick: 'xx..xx..' } },
+  ];
+  check('scene_plan dispatcher refusal: an unknown section name is named, with the roster',
+    await refused({ sections, scene_plan: [['Fill'], ['Verse', 'Bridge'], ['Chorus']] }, /unknown section "Bridge".*Fill, Verse, Chorus/));
+  check('scene_plan dispatcher refusal: the same section twice IN ONE SCENE refuses and points at cross-scene repetition',
+    await refused({ sections, scene_plan: [['Fill'], ['Verse', 'Verse'], ['Chorus']] }, /lists "Verse" twice.*ANOTHER scene/));
+  check('scene_plan dispatcher refusal: an unplaced section is named (it would author but never play)',
+    await refused({ sections, scene_plan: [['Fill'], ['Verse']] }, /"Chorus" in no scene/));
+  check('scene_plan dispatcher refusal: scene_plan and order together refuse (the plan IS the play order)',
+    await refused({ sections, order: ['Fill', 'Verse'], scene_plan: [['Fill'], ['Verse'], ['Chorus']] }, /mutually exclusive/));
+})();
+
+// ── planProjects: content-driven, scene-chain-aware DEFAULT ────────────────
+//
+// The 2026-07-29 default change: the old `maxPlays: 8` default budgeted by PLAY
+// COUNT (16 bars/project) and chopped songs into 2-8x more projects than their
+// content needs. The default boundary is now distinct-content (8 slots) plus
+// scene realizability (<=4 contiguous scene steps); explicit maxPlays keeps its
+// old meaning exactly.
+{
+  const secs = (labels: string[], silent: string[] = []) =>
+    labels.map((n) => ({ name: n, voices: silent.includes(n) ? { kick: '.'.repeat(32) } : { kick: 'x'.repeat(32) } }));
+  const span8 = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
+  // Explicit maxPlays is byte-for-byte the old behaviour.
+  {
+    const p = planProjects(secs(['A']), Array(9).fill('A'), { maxPlays: 8 });
+    check('planProjects explicit maxPlays: A x9 still cuts 8 + 1 (the historical play budget)',
+      p.projects.map((x) => x.order.length).join(',') === '8,1', JSON.stringify(p.projects.map((x) => x.summary)));
+    const q = planProjects(secs(['A', 'B', 'C', 'D', 'E']), [0, 1, 2, 3, 4, 0, 1, 2, 3, 4].map((i) => 'ABCDE'[i]), { maxPlays: 8 });
+    check('planProjects explicit maxPlays: a 10-play order still splits at 8 plays',
+      q.projects.length === 2 && q.projects[0].order.length === 8, JSON.stringify(q.projects.map((x) => x.summary)));
+  }
+  // The SAME 10-play order fits ONE project by default now: 5 distinct cells,
+  // 2 scene steps. This is the Sugar-shape fix in miniature.
+  {
+    const p = planProjects(secs(['A', 'B', 'C', 'D', 'E']), [0, 1, 2, 3, 4, 0, 1, 2, 3, 4].map((i) => 'ABCDE'[i]));
+    check('planProjects default: 2 passes over 5 cells = ONE project, advanced by scenes',
+      p.projects.length === 1 && p.projects[0].advance === 'scenes' && p.projects[0].patterns.length === 5,
+      JSON.stringify(p.projects.map((x) => `${x.summary} (${x.advance})`)));
+    check('planProjects default: the note explains the scene-aware fit', /scene chain/.test(p.note), p.note);
+  }
+  // Content ceiling: 4 passes over 8 distinct cells = 32 plays in 4 scene steps
+  // = one project (the full 64-bar span); the 5th pass starts project 2.
+  {
+    const four = [...span8, ...span8, ...span8, ...span8];
+    const p = planProjects(secs(span8), four);
+    check('planProjects default: 4 passes over 8 cells (32 plays) = ONE project', p.projects.length === 1 && p.projects[0].order.length === 32,
+      JSON.stringify(p.projects.map((x) => x.order.length)));
+    const p5 = planProjects(secs(span8), [...four, ...span8]);
+    check('planProjects default: the 5th pass would need a 5th scene step, so it starts project 2',
+      p5.projects.length === 2 && p5.projects[0].order.length === 32 && p5.projects[1].order.length === 8,
+      JSON.stringify(p5.projects.map((x) => x.order.length)));
+  }
+  // Still content-bound: a 9th DISTINCT cell closes the project (8-slot ceiling),
+  // and an unhelpable vamp (A x9: 9 scene steps) still cuts at the chain limit.
+  {
+    const nine = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+    const p = planProjects(secs(nine), nine);
+    check('planProjects default: a 9th distinct cell still closes the project at 8 slots',
+      p.projects.length === 2 && p.projects[0].patterns.length === 8, JSON.stringify(p.projects.map((x) => x.summary)));
+    const vamp = planProjects(secs(['A']), Array(9).fill('A'));
+    check('planProjects default: A x9 still cuts 8 + 1 (every repeat is its own scene step, so scenes cannot help a vamp)',
+      vamp.projects.map((x) => x.order.length).join(',') === '8,1', JSON.stringify(vamp.projects.map((x) => x.summary)));
+  }
+  // Alternation is the adversarial case for scenes (every play is a new run):
+  // it must still chop on the chain budget, not overpromise.
+  {
+    const p = planProjects(secs(['A', 'B']), ['A', 'B', 'A', 'B', 'A', 'B', 'A', 'B', 'A', 'B']);
+    check('planProjects default: ABAB x5 (10 runs) chops at the 8-play chain budget',
+      p.projects.length === 2 && p.projects[0].order.length === 8 && p.projects.every((x) => x.advance === 'chain'),
+      JSON.stringify(p.projects.map((x) => `${x.summary} (${x.advance})`)));
+  }
+  // maxScenes is honoured as an override on the new default.
+  {
+    const four = [...span8, ...span8, ...span8, ...span8];
+    const p = planProjects(secs(span8), four, { maxScenes: 2 });
+    check('planProjects maxScenes override: 2 scene steps halve the span (16 + 16)',
+      p.projects.map((x) => x.order.length).join(',') === '16,16', JSON.stringify(p.projects.map((x) => x.order.length)));
+  }
+  // The phrase back-off survives the new predicate (same cut, same carry).
+  {
+    const order = ['A', 'A', 'B', 'B', 'B', 'B', 'B', 'B', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'D', 'D'];
+    const p = planProjects(secs(['A', 'B', 'C', 'D']), order);
+    const flat = p.projects.flatMap((x) => x.order);
+    check('planProjects default: order is preserved across the new, larger chunks',
+      flat.join(',') === order.join(','), flat.join(','));
+    check('planProjects default: every emitted project is realizable (chain <=8 plays, or <=8 slots in <=4 scene steps)',
+      p.projects.every((x) => {
+        const runs = (() => { const slot = new Map<string, number>(); let r = 0, last = -2; for (const l of x.order) { let s = slot.get(l); if (s === undefined) { s = slot.size; slot.set(l, s); } if (s !== last + 1) r++; last = s; } return r; })();
+        return x.order.length <= 8 || (x.patterns.length <= 8 && runs <= 4);
+      }), JSON.stringify(p.projects.map((x) => x.summary)));
+  }
+}
+
+// ── planProjects: the measured songs from the card backup (fixtures) ───────
+//
+// The condensation study (2026-07-29) measured every built song from the card
+// backup and found the old chop 2-8x over the content floor. Reconstruct each
+// song's as-built play order from the backup (each project's chain / scene
+// ranges over its pattern slots, cells deduped globally per song by content
+// hash) and let the NEW default replan it. Skipped when the gitignored backup
+// is not on disk (CI); the numbers print for comparison against the study.
+{
+  const BACKUP = join('samples', 'circuit-ncs', 'card-backup-2026-07-27T16-49Z');
+  if (!existsSync(BACKUP)) {
+    console.log('  SKIP  planProjects fixtures: card backup not on disk (samples/ is local-only)');
+  } else {
+    const NOTE_TRACKS: NoteTrack[] = ['synth1', 'synth2', 'midi1', 'midi2'];
+    const seq = (pack: string, from: number, to: number): string[] => {
+      const files: string[] = [];
+      for (let n = from; n <= to; n++) {
+        files.push(join(pack, `proj${String(n).padStart(2, '0')}__${String(n - 1).padStart(2, '0')}_SESSION.ncs`));
+      }
+      return files;
+    };
+    const SONGS: { name: string; built: number; files: string[] }[] = [
+      { name: 'After Dark', built: 8, files: seq('pack2', 1, 8) },
+      { name: 'Amber', built: 5, files: seq('pack5', 8, 12) },
+      { name: 'Clint Eastwood', built: 8, files: seq('pack5', 27, 34) },
+      { name: 'Stranglehold', built: 6, files: seq('pack5', 1, 6) },
+      {
+        name: 'Like That', built: 5, files: [
+          'pack1/proj04__03_LT_Intro.ncs', 'pack1/proj05__04_LT_Verse_1_A.ncs', 'pack1/proj06__05_LT_Verse_1_B.ncs',
+          'pack1/proj07__06_LT_Chorus.ncs', 'pack1/proj08__07_LT_Chorus.ncs',
+        ],
+      },
+      { name: 'Breakdown', built: 5, files: seq('pack5', 35, 39) },
+      { name: 'Sugar', built: 10, files: seq('pack5', 46, 55) },
+      { name: 'I Believe', built: 7, files: seq('pack5', 19, 25) },
+      { name: 'The Offering', built: 7, files: seq('pack5', 57, 63) },
+    ];
+    const cellSig = (buf: Uint8Array, slot: number): { sig: string; silent: boolean } => {
+      const content: unknown[] = [];
+      let silent = true;
+      for (const t of NOTE_TRACKS) {
+        const steps = decodeNotePattern(buf, t, slot);
+        const row = steps.map((s) => s.notes.map((n) => `${n.note}@${n.velocity}`).join('+'));
+        if (row.some((r) => r !== '')) silent = false;
+        content.push(row);
+      }
+      for (let d = 0; d < 4; d++) {
+        const steps = decodeDrumPattern(buf, d, slot);
+        const row = steps.map((s) => (s.active ? `${s.velocity}/${s.drumChoice}` : ''));
+        if (row.some((r) => r !== '')) silent = false;
+        content.push(row);
+      }
+      return { sig: createHash('sha256').update(JSON.stringify(content)).digest('hex'), silent };
+    };
+    // The content-bearing note track: scene / chain ranges are read from IT, so
+    // a scene table written only for midi2 (The Offering) is not shadowed by a
+    // sibling track's [0,0] slot in the same scene block.
+    const busiestTrack = (buf: Uint8Array): NoteTrack => {
+      let best: NoteTrack = 'midi2';
+      let bestN = -1;
+      for (const t of NOTE_TRACKS) {
+        let n = 0;
+        for (let p = 0; p < 8; p++) if (decodeNotePattern(buf, t, p).some((s) => s.notes.length > 0)) n++;
+        if (n > bestN) { bestN = n; best = t; }
+      }
+      return best;
+    };
+    const playSlots = (buf: Uint8Array): number[] => {
+      const track = busiestTrack(buf);
+      const sceneEnd = getSceneChainEnd(buf);
+      if (sceneEnd !== undefined) {
+        const slots: number[] = [];
+        for (let sc = 0; sc < sceneEnd; sc++) {
+          const r = getSceneNoteChain(buf, sc, track);
+          if (r) for (let s = r.start; s <= r.end; s++) slots.push(s);
+        }
+        if (slots.length > 0) return slots;
+      }
+      const end = Math.max(0, ...NOTE_TRACKS.map((t) => getNoteChain(buf, t)?.end ?? 0));
+      return Array.from({ length: end + 1 }, (_, i) => i);
+    };
+    const rows: string[] = [];
+    for (const song of SONGS) {
+      const label = new Map<string, string>();
+      const silentLabels = new Set<string>();
+      const order: string[] = [];
+      for (const f of song.files) {
+        const buf = new Uint8Array(readFileSync(join(BACKUP, f)));
+        for (const slot of playSlots(buf)) {
+          const { sig, silent } = cellSig(buf, slot);
+          let l = label.get(sig);
+          if (l === undefined) { l = `P${label.size + 1}`; label.set(sig, l); if (silent) silentLabels.add(l); }
+          order.push(l);
+        }
+      }
+      const sections = [...label.values()].map((n) => ({ name: n, voices: { c: silentLabels.has(n) ? '.'.repeat(4) : 'x'.repeat(4) } }));
+      const plan = planProjects(sections, order);
+      const flat = plan.projects.flatMap((x) => x.order);
+      // flat must be order with only SILENT plays deleted (a dropped silent-only
+      // project); every content play survives in sequence.
+      let fi = 0;
+      let orderKept = true;
+      for (const l of order) {
+        if (fi < flat.length && flat[fi] === l) { fi++; continue; }
+        if (!silentLabels.has(l)) { orderKept = false; break; }
+      }
+      orderKept = orderKept && fi === flat.length;
+      check(`fixtures ${song.name}: replan preserves the as-built play order (minus dropped silent-only projects)`,
+        orderKept, `${flat.length} of ${order.length} plays`);
+      check(`fixtures ${song.name}: every replanned project is realizable as one apply_pattern arrangement`,
+        plan.projects.every((x) => {
+          const runs = (() => { const slot = new Map<string, number>(); let r = 0, last = -2; for (const l of x.order) { let s = slot.get(l); if (s === undefined) { s = slot.size; slot.set(l, s); } if (s !== last + 1) r++; last = s; } return r; })();
+          return x.order.length <= 8 || (x.patterns.length <= 8 && runs <= 4);
+        }), JSON.stringify(plan.projects.map((x) => x.summary)));
+      check(`fixtures ${song.name}: the new default never needs MORE projects than the built chop (${plan.projects.length} vs ${song.built})`,
+        plan.projects.length <= song.built, `${plan.projects.length} > ${song.built}`);
+      rows.push(`${song.name}: built ${song.built} -> new default ${plan.projects.length} (cells ${label.size}, plays ${order.length}, advance ${plan.projects.map((x) => x.advance).join('/')})`);
+    }
+    console.log('  planProjects on the measured songs (new default vs as-built):');
+    for (const r of rows) console.log(`    ${r}`);
+  }
+}
+
+// ── GAP 1: condense_drums × drum_binding COMPOSE (bind first, condense on it) ──
+//
+// The pair used to refuse each other, but the real repertoire needs both
+// (After Dark's working build: binding [1,2,5,11] AND condensed internal
+// drums). The shipped rule: the binding declares where each track's OWN role
+// sample lives in the pool; condensation lays the groove onto those bound
+// tracks; and per-step sample flips resolve against the BOUND slots, never the
+// canonical stoken layout, because a custom binding is the caller declaring
+// that layout no longer describes their pool. A flip to a piece OUTSIDE the
+// four bound roles is skipped with a warning (unlocatable), never guessed.
+{
+  const bound = [1, 2, 5, 11]; // After Dark: kick2 / snare / hatC / ride in the stoken_4 pool
+  check('bind×condense: slotForFlipRole with NO binding is the canonical map for every role (byte-identity of the old path)',
+    Object.keys(CIRCUIT_VOICE_SLOT).every((r) => slotForFlipRole(r) === circuitSlotForVoice(r)));
+  check('bind×condense: a track role resolves to its BOUND slot (ride→11, kick→1, hat dialect→5)',
+    slotForFlipRole('ride', bound) === 11 && slotForFlipRole('kick', bound) === 1 && slotForFlipRole('hat', bound) === 5,
+    JSON.stringify([slotForFlipRole('ride', bound), slotForFlipRole('kick', bound), slotForFlipRole('hat', bound)]));
+  check('bind×condense: an off-kit role is UNLOCATABLE under a custom binding (crash), never guessed from the canonical layout',
+    slotForFlipRole('crash', bound) === undefined && slotForFlipRole('crash') === CIRCUIT_VOICE_SLOT.crash);
+
+  const plan: RealizePlan = {
+    pattern_name: 'bound', bpm: 120, steps: 8, bars: 1, repeat: 1, mode: 'ncs_upload', cycle_ms: 4000,
+    events: [
+      { channel: 10, note: 64, velocity: 100, time_ms: 0, duration_ms: 100 },   // Drum 3 (hat track), step 1
+      { channel: 10, note: 65, velocity: 100, time_ms: 0, duration_ms: 100 },   // Drum 4 (ride track), step 1
+    ],
+    upload: {
+      slot: 0, drum_binding: [...bound], drum_levels: [0, 0, 0, 0],
+      drum_flip_roles: { drum3: { 1: 'ride' }, drum4: { 1: 'crash' } },
+    },
+  };
+  const buf = new Uint8Array(NCS_FILE_SIZE);
+  const authored = authorPlanIntoProject(buf, plan);
+  check('bind×condense: a flip to a bound track role plays the BOUND slot (drum3 step1 → 11, not canonical 3)',
+    decodeDrumPattern(buf, 2, 0)[0].drumChoice === 11, `drumChoice=${decodeDrumPattern(buf, 2, 0)[0].drumChoice}`);
+  check('bind×condense: the unlocatable flip is SKIPPED (hit keeps the bound sound) and the warning names drum_binding + the drum_flips remedy',
+    decodeDrumPattern(buf, 3, 0)[0].drumChoice === DEFAULT_DRUM_CHOICE
+    && (authored.flip_warnings ?? []).some((w) => /custom drum_binding does not say where "crash" lives/.test(w) && /drum_flips/.test(w)),
+    JSON.stringify(authored.flip_warnings));
+  check('bind×condense: the binding bytes land as asked',
+    JSON.stringify(getDrumSampleBinding(buf)) === JSON.stringify(bound), JSON.stringify(getDrumSampleBinding(buf)));
+  check('bind×condense: flips_applied counts only the landed flip', authored.flips_applied === 1, String(authored.flips_applied));
+}
+
+// ── GAPs 1-3 end-to-end: executeApplyPattern with the new authoring args ────
+//
+// The same function the MCP tool handler calls, dry-run (authors against the
+// local template, opens no port). Proves: the composition no longer refuses
+// and reaches the author with the binding; project_name and mixer_levels stamp
+// with honest receipts and refuse bad input in display shape; omission is
+// byte-identical; and a combined call using every new arg at once authors a
+// structurally valid file.
+await (async () => {
+  registerDevice(CIRCUIT_TRACKS_DESCRIPTOR);
+  registerDevice(SPD_SX_DESCRIPTOR);
+  const template = (() => {
+    const b = new Uint8Array(NCS_FILE_SIZE);
+    for (let i = 0; i < NCS_MAGIC.length; i++) b[i] = NCS_MAGIC.charCodeAt(i);
+    new DataView(b.buffer).setUint32(NCS_TOTAL_SESSION_SIZE_OFFSET, NCS_FILE_SIZE, true);
+    setProjectColour(b, PROJECT_COLOUR_DEFAULT);
+    setProjectName(b, 'Template 42');
+    setSynthLevel(b, 1, 100); setSynthLevel(b, 2, 100);
+    setDrumLevels(b, [100, 100, 100, 100]);
+    return b;
+  })();
+  const tpl = join(tmpdir(), `verify-patterns-authoring-${process.pid}.ncs`);
+  writeFileSync(tpl, template);
+  const base = { port: 'circuit-tracks', mode: 'ncs_upload' as const, ncs_slot: 1, ncs_template: tpl, dry_run: true, bpm: 140 };
+  const kitVoices = { kick: 'x...x...', hat: 'x.x.x.x.', crash: 'x.......' };
+  type Args = Parameters<typeof executeApplyPattern>[0];
+  const refused = async (args: Args, re: RegExp): Promise<boolean> => {
+    try { await executeApplyPattern(args); return false; } catch (e) {
+      return (e instanceof PatternError || e instanceof DispatchError) && re.test(e.message);
+    }
+  };
+  try {
+    // GAP 1: the pair composes end to end; the binding reaches the flip join.
+    const composed = await executeApplyPattern({ ...base, voices: kitVoices, drum_binding: [1, 2, 5, 11], condense_drums: true });
+    check('composition: condense_drums + drum_binding no longer refuse, and the condensation runs',
+      composed.status === 'dry_run' && /Condensed the drum part/.test(composed.info ?? ''), composed.info);
+    check('composition: the condenser\'s crash flip is reported unlocatable under the custom binding (resolved against BOUND slots, not canon)',
+      /custom drum_binding does not say where "crash" lives/.test(composed.info ?? ''), composed.info);
+    // The binding must ride each SECTION's flips in an arrangement too (the
+    // per-section uploads are separate plans, so this pins the dispatcher wiring).
+    const arrComposed = await executeApplyPattern({
+      ...base,
+      arrangement: { sections: [{ name: 'Verse', voices: kitVoices }, { name: 'Chorus', voices: { kick: 'x...x...' } }] },
+      drum_binding: [1, 2, 5, 11], condense_drums: true,
+    });
+    check('composition (arrangement): the binding reaches each section\'s flip join (crash reported unlocatable, not canon-guessed)',
+      arrComposed.status === 'dry_run' && /custom drum_binding does not say where "crash" lives/.test(arrComposed.info ?? ''),
+      arrComposed.info);
+    // The one genuinely contradictory case KEPT: also_internal vs the condensed copy.
+    check('composition: condense_drums + external_targets.also_internal still refuses, naming both claimants',
+      await refused(
+        { ...base, voices: kitVoices, condense_drums: true, external_targets: [{ device: 'spd-sx', track: 'midi2', also_internal: true }] },
+        /also_internal both claim the host's internal drum tracks/,
+      ));
+
+    // GAP 2: project_name. Inherited is never silent; stamped names both names;
+    // over-long and non-ASCII refuse in display shape (no silent truncation).
+    const inh = await executeApplyPattern({ ...base, voices: { kick: 'x...x...' } });
+    check('project_name: omitting it is NEVER silent, the receipt names the template\'s name kept',
+      /NAME: not set by this call, so the project keeps the template's "Template 42"/.test(inh.info ?? ''), inh.info);
+    // Stored-silent synth default (maintainer's 2026-07-29 instruction): with
+    // mixer_levels omitted, BOTH synths store 0 and the receipt states it.
+    check('mixer_levels omitted: both synths store 0 by default and the receipt states the stored-silent default',
+      /MIXER: Synth 1=0, Synth 2=0 \(stored-silent default; pass mixer_levels to override\)/.test(inh.info ?? '')
+      && /left as the template held: Drum 1=100, Drum 2=100, Drum 3=100, Drum 4=100/.test(inh.info ?? ''), inh.info);
+    const named = await executeApplyPattern({ ...base, voices: { kick: 'x...x...' }, project_name: 'AfterDark Verse' });
+    check('project_name: a stamped name is reported with what it displaced',
+      /Project name stored as "AfterDark Verse" \(template held "Template 42"\)/.test(named.info ?? ''), named.info);
+    check('project_name: a 33-character name refuses naming the 32-char field (never truncated)',
+      await refused({ ...base, voices: { kick: 'x...x...' }, project_name: 'A'.repeat(33) }, /33 characters.*at most 32/));
+    check('project_name: a non-ASCII name refuses naming the charset',
+      await refused({ ...base, voices: { kick: 'x...x...' }, project_name: 'Größe' }, /not printable ASCII/));
+
+    // GAP 3: mixer_levels. Partial stamp with both sides reported; refusals in
+    // display shape BEFORE any compile; empty object is not a silent no-op.
+    const mixed = await executeApplyPattern({ ...base, voices: { kick: 'x...x...' }, mixer_levels: { synth1: 0, synth2: 0 } });
+    check('mixer_levels: the receipt states the levels set (silent flagged) AND the tracks left at the template\'s values',
+      /MIXER: stored Synth 1=0 \(silent\), Synth 2=0 \(silent\)/.test(mixed.info ?? '')
+      && /left as the template held: Drum 1=100, Drum 2=100, Drum 3=100, Drum 4=100/.test(mixed.info ?? ''), mixed.info);
+    check('mixer_levels: out of range refuses in display shape, naming the key and the 0..127 fader scale',
+      await refused({ ...base, voices: { kick: 'x...x...' }, mixer_levels: { drum2: 400 } }, /mixer_levels\.drum2.*0\.\.127.*got 400/));
+    check('mixer_levels: a non-integer refuses rather than rounding',
+      await refused({ ...base, voices: { kick: 'x...x...' }, mixer_levels: { synth1: 63.5 } }, /mixer_levels\.synth1.*integer/));
+    check('mixer_levels: an empty object refuses (it can only be a mistake, not a silent no-op)',
+      await refused({ ...base, voices: { kick: 'x...x...' }, mixer_levels: {} }, /names no track/));
+
+    // COMBINED: every new arg at once (name + colour + mixer + binding +
+    // condense), one call, one receipt carrying every stamp.
+    const combined = await executeApplyPattern({
+      ...base, voices: kitVoices,
+      project_name: 'AfterDark Verse', colour: 'Red', mixer_levels: { synth1: 0, synth2: 0 },
+      drum_binding: [1, 2, 5, 11], condense_drums: true,
+    });
+    const ci = combined.info ?? '';
+    check('combined: one call takes name + colour + mixer + binding + condense and the receipt carries every stamp',
+      combined.status === 'dry_run'
+      && /Project name stored as "AfterDark Verse"/.test(ci)
+      && /Pad colour stored as Red/.test(ci)
+      && /MIXER: stored Synth 1=0 \(silent\), Synth 2=0 \(silent\)/.test(ci)
+      && /Drum-track levels stored at 0\/0\/0\/0/.test(ci)
+      && /Condensed the drum part/.test(ci),
+      ci);
+    check('combined: the mixer receipt does not mislabel the condensed drum levels as the template\'s',
+      !/left as the template held: Drum/.test(ci), ci);
+  } finally {
+    rmSync(tpl, { force: true });
+  }
+
+  // BYTE IDENTITY when all three new args are omitted, EXCEPT the two synth
+  // level bytes: the maintainer's explicit 2026-07-29 instruction ("the synth
+  // one and I also believe synth 2 are not level zero just like everything. I
+  // want it to default that way") makes stored-silent synths the authoring
+  // default, deliberately replacing template inheritance for EXACTLY
+  // 0x2701c..0x2701d. Everything else keeps the byte-identity contract.
+  const mkPlan = (): RealizePlan => ({
+    pattern_name: 'identity', bpm: 120, steps: 16, bars: 1, repeat: 1, mode: 'ncs_upload', cycle_ms: 2000,
+    events: [
+      { channel: 10, note: 60, velocity: 110, time_ms: 0, duration_ms: 100 },
+      { channel: 1, note: 48, velocity: 100, time_ms: 500, duration_ms: 100 },
+    ],
+    upload: { slot: 0 },
+  });
+  const before = template.slice();
+  authorPlanIntoProject(before, mkPlan());
+  const after = template.slice();
+  applyProjectColour(after, undefined);
+  applyProjectName(after, undefined);                     // name omitted = no-op stamp
+  authorPlanIntoProject(after, mkPlan());
+  setSynthLevel(after, 1, 0); setSynthLevel(after, 2, 0); // mixer omitted = the stored-silent synth default
+  const movedAt: number[] = [];
+  for (let i = 0; i < NCS_FILE_SIZE; i++) if (before[i] !== after[i]) movedAt.push(i);
+  check('byte identity: with colour + name + mixer omitted, ONLY the two synth level bytes differ from the pre-change author (stored-silent default, maintainer 2026-07-29)',
+    movedAt.length === 2 && movedAt[0] === MIXER_SYNTH1_LEVEL && movedAt[1] === MIXER_SYNTH2_LEVEL
+    && getSynthLevel(after, 1) === 0 && getSynthLevel(after, 2) === 0,
+    `bytes moved at ${movedAt.slice(0, 8).map((o) => `0x${o.toString(16)}`).join(',')}`);
+
+  // THE COMBINED FILE ITSELF: reproduce the writer's order with every stamp on
+  // a template copy (name, colour, author with binding + role flips + level 0,
+  // then the explicit mixer) and prove the result is structurally valid with
+  // every stamp readable at its own accessor.
+  const steps = (s: string) => ({ steps: charGridToSteps(s) });
+  const kit: NeutralPattern = { name: 'combined', steps: 8, bars: 1, voices: { kick: steps('x...x...'), hat: steps('x.x.x.x.'), crash: steps('x.......') } };
+  const cd = buildCondensedDrums(kit, CIRCUIT_TRACKS_DESCRIPTOR.capabilities)!;
+  const plan = compileToPlan(
+    { ...kit, voices: { ...kit.voices, ...cd.voices } },
+    CIRCUIT_TRACKS_DESCRIPTOR.capabilities,
+    {
+      bpm: 140, mode: 'ncs_upload', repeat: 1, overrides: cd.overrides,
+      upload: { slot: 0, drum_binding: [1, 2, 5, 11], drum_flip_roles: cd.flip_roles, drum_levels: cd.levels },
+    },
+  );
+  const file = template.slice();
+  applyProjectName(file, 'AfterDark Verse');
+  applyProjectColour(file, 'Red');
+  authorPlanIntoProject(file, plan);
+  setSynthLevel(file, 1, 0); setSynthLevel(file, 2, 0);   // what applyMixerLevels writes for {synth1:0, synth2:0}
+  const structure = checkNcsStructure(file);
+  check('combined file: structurally valid with every stamp readable (name, colour, binding, drum levels 0, synths 0)',
+    structure.ok
+    && getProjectName(file) === 'AfterDark Verse'
+    && getProjectColour(file) === 0
+    && JSON.stringify(getDrumSampleBinding(file)) === '[1,2,5,11]'
+    && [0, 1, 2, 3].every((t) => getDrumLevel(file, t) === 0)
+    && getSynthLevel(file, 1) === 0 && getSynthLevel(file, 2) === 0,
+    structure.faults.join('; ') || `name=${getProjectName(file)} colour=${getProjectColour(file)} binding=${JSON.stringify(getDrumSampleBinding(file))}`);
+})();
+
 console.log('');
 if (failed > 0) { console.error(`x ${failed} pattern check(s) FAILED.`); process.exit(1); }
-console.log(`OK verify-patterns: ${Object.keys(PATTERN_RECIPES).length} recipe(s) + parser/euclid/compile/gate/round-robin verified.`);
+console.log(`OK verify-patterns: ${Object.keys(PATTERN_RECIPES).length} recipe(s) + parser/euclid/compile/gate/round-robin/condense (core + Circuit wiring) verified.`);

@@ -84,6 +84,10 @@ export function appendResultRow(
     tool_count: result.tool_calls.length,
     wall_seconds: Number(result.wall_seconds.toFixed(3)),
     mock_fixture: opts.mockFixture,
+    // Tool results the host never delivered to the model. Recorded so the
+    // corpus answers "was this run reading real payloads?" without re-grepping
+    // traces. Omitted when zero so existing rows and clean rows read the same.
+    undelivered_results: result.undelivered_results,
     // Environmental (OS spawn-refusal) non-runs are tagged so pass-rate math can
     // exclude them — they measure the machine, not the case.
     environmental: result.environmental === true ? true : undefined,
@@ -120,6 +124,8 @@ export interface LoggedRow {
   mock_fixture?: string;
   /** OS spawn-refusal non-run (excluded from pass/fail accounting). */
   environmental?: boolean;
+  /** Tool results the host refused to deliver to the model. Absent = zero. */
+  undelivered_results?: number;
   failures?: string[];
 }
 
@@ -179,19 +185,53 @@ export function isEnvironmentalRow(r: LoggedRow): boolean {
   return isEnvironmentalSignature(r);
 }
 
-export function caseHistoryLine(rows: readonly LoggedRow[], caseId: string): string {
+/**
+ * Below this many scored runs the line prints a FRACTION, not a percentage.
+ * `1/1 = 100%` is noise wearing the authority of a statistic. Mirrored as
+ * `MIN_RUNS_FOR_PCT` in stats.ts so the inline footer and the table cannot
+ * disagree about when a number is quotable.
+ */
+const MIN_RUNS_FOR_PCT = 3;
+
+function rate(n: number, d: number): string {
+  return d < MIN_RUNS_FOR_PCT ? `${n}/${d}` : `${Math.round((n / d) * 100)}%`;
+}
+
+/**
+ * @param model When given, the rate is computed over THIS model's rows only,
+ *   and rows from other models are reported as a separate excluded count. A
+ *   model bump resets the baseline: every rate measured before 2026-08-01 was
+ *   against Sonnet 4-6, and blending it into a Sonnet 5 run's footer produces a
+ *   number describing no configuration that ever existed. Omit to blend, which
+ *   the line then says out loud.
+ */
+export function caseHistoryLine(
+  rows: readonly LoggedRow[],
+  caseId: string,
+  model?: string,
+): string {
   const all = rows.filter((r) => r.case_id === caseId);
   if (all.length === 0) return '';
   const envCount = all.filter(isEnvironmentalRow).length;
-  const hist = all.filter((r) => !isEnvironmentalRow(r));
-  if (hist.length === 0) return `history: ${all.length} run(s), all environmental (OS spawn refusal) — no scored runs`;
+  const scored = all.filter((r) => !isEnvironmentalRow(r));
+  if (scored.length === 0) return `history: ${all.length} run(s), all environmental (OS spawn refusal) — no scored runs`;
+
+  const hist = model !== undefined ? scored.filter((r) => r.model === model) : scored;
+  const otherModels = scored.length - hist.length;
+  if (hist.length === 0) {
+    return `history: ${scored.length} scored run(s) but NONE on ${model} — no comparable baseline (a model bump resets it)`;
+  }
   const passes = hist.filter((r) => r.passed).length;
   const flakes = hist.filter((r) => r.passed && r.flaked).length;
   const walls = hist.map((r) => r.wall_seconds).sort((a, b) => a - b);
   const p50 = percentile(walls, 50).toFixed(0);
   const recent = hist.slice(-8).map((r) => (r.passed ? (r.flaked ? '⚠' : '✓') : '✗')).join('');
-  const passPct = Math.round((passes / hist.length) * 100);
-  const flakeNote = flakes > 0 ? `, ${Math.round((flakes / hist.length) * 100)}% flake` : '';
+  const flakeNote = flakes > 0 ? `, ${rate(flakes, hist.length)} flake` : '';
   const envNote = envCount > 0 ? `, ${envCount} env-excluded` : '';
-  return `history: ${hist.length} run(s), ${passPct}% pass${flakeNote}${envNote}, p50 ${p50}s — recent ${recent}`;
+  const modelNote = model !== undefined
+    ? (otherModels > 0 ? `, ${otherModels} on other model(s) excluded` : '')
+    : (new Set(scored.map((r) => r.model)).size > 1 ? ', BLENDED across models' : '');
+  const undelivered = hist.reduce((a, r) => a + (r.undelivered_results ?? 0), 0);
+  const undeliveredNote = undelivered > 0 ? `, ⚠ ${undelivered} undelivered result(s)` : '';
+  return `history: ${hist.length} run(s), ${rate(passes, hist.length)} pass${flakeNote}${envNote}${modelNote}${undeliveredNote}, p50 ${p50}s — recent ${recent}`;
 }

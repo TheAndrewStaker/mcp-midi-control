@@ -1,8 +1,8 @@
 /**
  * VP4 scene-query probe (P0 ask, read-only, zero capture tooling).
  *
- * See packages/fractal-midi/docs/capture-guides/captures-vp4.md "P0: fn=0x0C
- * scene-query probe": the zero-cost, highest-value-per-minute ask for the
+ * See docs/contributing/devices/vp4.md ask PROBE-1: the zero-cost,
+ * highest-value-per-minute ask for the
  * VP4. The gen-3 family documents a read-only SCENE query:
  *
  *   F0 00 01 74 14 0C 7F 12 F7   (cs = XOR(F0..7F) & 0x7F = 0x12)

@@ -765,9 +765,44 @@ with the in-rig-vs-spare cross-reference (`validateInventory` +
 `crossReferenceInventory` in the openrig package; folded into `describe_rig`
 rather than a separate `describe_inventory` tool, to keep the surface low). The
 maintainer's `docs/_private/rig/inventory.json` reports 7 devices wired / 1 spare
-(the Commander). The rig PROPOSER (owned gear -> candidate rigs -> scored by the
-checks) is deliberately NOT a server tool: per the agent-as-UX boundary
-(OPENRIG-UI-RESEARCH.md), the agent composes it from these facts + `edit_rig`.
+(the Commander).
+
+~~The rig PROPOSER (owned gear -> candidate rigs -> scored by the checks) is
+deliberately NOT a server tool: per the agent-as-UX boundary
+(OPENRIG-UI-RESEARCH.md), the agent composes it from these facts + `edit_rig`.~~
+
+**OVERTURNED 2026-07-25, by evidence.** The "agent composes it" position was
+tested in practice and failed. Adding a MicroFreak to the maintainer's rig, the
+agent recommended daisy-chaining it through another synth while the sequencer's
+second DIN output sat free **and was already labelled `"MIDI Out (unused)"` in
+the manifest it had read**. The facts were present and correct; the inference
+over them was wrong. That is the specific failure mode a deterministic function
+does not have.
+
+The boundary itself is not being abandoned, it is being read correctly. The
+agent-as-UX rule bars bespoke **workflow** verbs (a tool that walks a user
+through integrating a device). It does not bar **fact-producers**: a pure
+function over the manifest is the same category as `checkAudioOutput` and
+`checkRigCapacity`, both of which already ship as server-side checks and neither
+of which anyone calls a workflow. Ranking is a computation, not a UX.
+
+Shipped in consequence (both pure, both in the zero-dep package):
+- **`checkRigCapacity`** (`capacity.ts`): free vs used vs reserved for every
+  port, plus a `free_by_kind` lookup so "is there a spare `midi_din_out`" is a
+  lookup rather than a graph walk. Surfaced on `describe_rig` as `capacity`.
+- **`rankAttachments`** (`attach.ts`): given a new device and the signal it must
+  receive, enumerate every feasible attachment point and rank them. Hard
+  constraints ELIMINATE; survivors are ranked **lexicographically** (fewest
+  relay dependencies, then most spare capacity left, then stable id order),
+  deliberately NOT by a weighted score, because "one more hop" and "one more box
+  that must be powered on" share no unit and any exchange rate between them
+  would be invented. Every answer carries the reason it won.
+
+The **whole-rig proposer** (owned gear -> candidate wirings) remains unbuilt and
+is now sequenced to reuse `rankAttachments`'s cost model rather than invent a
+second one. Song/repertoire (L2) requirements do not feed the ranking yet: the
+tiers above decide the motivating case with zero song data, and L2 is expected to
+refine tier ordering later, not replace it.
 
 ---
 

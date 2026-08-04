@@ -133,6 +133,12 @@ export const HYDRASYNTH_DESCRIPTOR: DeviceDescriptor = {
   capabilities: {
     slot_model: 'linear',
     slot_count: 1024, // 8 banks × 128 patches (Explorer)
+    // Declared explicitly rather than inheriting the dispatcher's `?? 'verified'`
+    // default: the default lands on the right answer here by luck, and a future
+    // change to it would move this device's advertised status silently. The
+    // contribution-guide gate requires an explicit declaration on every
+    // registered descriptor.
+    support_tier: 'verified',
     has_scenes: false,
     has_channels: false,
     has_macros: true,

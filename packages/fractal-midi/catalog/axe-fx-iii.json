@@ -7919,56 +7919,72 @@
         "paramId": 2,
         "name": "PLEX_SHIFT1",
         "displayLabel": "Shift 1",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 3,
         "name": "PLEX_SHIFT2",
         "displayLabel": "Shift 2",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 4,
         "name": "PLEX_SHIFT3",
         "displayLabel": "Shift 3",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 5,
         "name": "PLEX_SHIFT4",
         "displayLabel": "Shift 4",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 6,
         "name": "PLEX_SHIFT5",
         "displayLabel": "Shift 5",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 7,
         "name": "PLEX_SHIFT6",
         "displayLabel": "Shift 6",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 8,
         "name": "PLEX_SHIFT7",
         "displayLabel": "Shift 7",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 9,
         "name": "PLEX_SHIFT8",
         "displayLabel": "Shift 8",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
@@ -10301,28 +10317,36 @@
         "paramId": 15,
         "name": "PITCH_SHIFT1",
         "displayLabel": "Shift 1",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 16,
         "name": "PITCH_SHIFT2",
         "displayLabel": "Shift 2",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 17,
         "name": "PITCH_SHIFT3",
         "displayLabel": "Shift 3",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 18,
         "name": "PITCH_SHIFT4",
         "displayLabel": "Shift 4",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
@@ -10747,112 +10771,144 @@
         "paramId": 77,
         "name": "PITCH_STEP1",
         "displayLabel": "Step 1 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 78,
         "name": "PITCH_STEP2",
         "displayLabel": "Step 2 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 79,
         "name": "PITCH_STEP3",
         "displayLabel": "Step 3 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 80,
         "name": "PITCH_STEP4",
         "displayLabel": "Step 4 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 81,
         "name": "PITCH_STEP5",
         "displayLabel": "Step 5 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 82,
         "name": "PITCH_STEP6",
         "displayLabel": "Step 6 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 83,
         "name": "PITCH_STEP7",
         "displayLabel": "Step 7 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 84,
         "name": "PITCH_STEP8",
         "displayLabel": "Step 8 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 85,
         "name": "PITCH_STEP9",
         "displayLabel": "Step 9 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 86,
         "name": "PITCH_STEP10",
         "displayLabel": "Step 10 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 87,
         "name": "PITCH_STEP11",
         "displayLabel": "Step 11 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 88,
         "name": "PITCH_STEP12",
         "displayLabel": "Step 12 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 89,
         "name": "PITCH_STEP13",
         "displayLabel": "Step 13 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 90,
         "name": "PITCH_STEP14",
         "displayLabel": "Step 14 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 91,
         "name": "PITCH_STEP15",
         "displayLabel": "Step 15 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 92,
         "name": "PITCH_STEP16",
         "displayLabel": "Step 16 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
@@ -11944,7 +12000,9 @@
         "paramId": 3,
         "name": "SYNTH_SHIFT1",
         "displayLabel": "Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "SYNTH",
@@ -12023,7 +12081,9 @@
         "paramId": 14,
         "name": "SYNTH_SHIFT2",
         "displayLabel": "Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "SYNTH",
@@ -12155,7 +12215,9 @@
         "paramId": 32,
         "name": "SYNTH_SHIFT3",
         "displayLabel": "Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "SYNTH",
@@ -16785,7 +16847,8 @@
         "82": "PI Fuzz - Bass",
         "83": "NoAmp Bass DI",
         "84": "NoAmp Bass Pre",
-        "85": "Royal Bass DI"
+        "85": "Royal Bass DI",
+        "86": "Swedish Metal"
       },
       "REVERB_TYPE": {
         "0": "Small Room",
@@ -16911,7 +16974,17 @@
         "13": "4-Voice Analog",
         "14": "8-Voice Analog",
         "15": "Stereo Tri-Chorus",
-        "16": "Dual Chorus"
+        "16": "Dual Chorus",
+        "17": "Tape Flanger",
+        "18": "Japan CE-1 Chorus",
+        "19": "Japan CE-1 Vibrato",
+        "20": "Japan CH-1",
+        "21": "MX234",
+        "22": "Small Copy",
+        "23": "Japan CE-2 Bass",
+        "24": "Vibrato",
+        "25": "Rockguy",
+        "26": "MX134 Stereo"
       },
       "COMP_TYPE": {
         "0": "Modern VCA Compressor",
@@ -16942,20 +17015,30 @@
         "4": "Thru-Zero",
         "5": "Stereo Jet",
         "6": "Zero Flanger",
+        "7": "Pop Flanger",
         "8": "MXF-117",
         "9": "BBF-2",
         "10": "Electric Mystery",
         "11": "Deluxe Mystery",
+        "12": "D/AD 185",
         "13": "Manual Thru-Zero Flanger",
         "14": "Step Flanger",
         "15": "FAS Flanger",
+        "16": "Binary Flange",
         "17": "Cancel Flange",
         "18": "Count of Flanging",
+        "19": "Cuda Flange",
         "20": "Harmonoflange",
+        "21": "Hemisflange",
         "22": "Lofty Flange",
+        "23": "Melodic Flange",
         "24": "80's Rack Flanger",
+        "25": "Scion Stereo Flange",
+        "26": "Spirit Flange",
         "27": "Starship Flanger",
-        "28": "Trippy Flanger"
+        "28": "Trippy Flanger",
+        "29": "Tubular",
+        "30": "Vowel Flanger"
       },
       "PHASER_TYPE": {
         "0": "Digital Mono",
@@ -16965,10 +17048,13 @@
         "4": "Block 90",
         "5": "Classic Vibe",
         "6": "Stereo 8-Stage",
+        "7": "Barber Pole",
         "8": "Stripe 90",
+        "9": "Naughty Rock",
         "10": "FAS Vibe",
         "11": "Treadle Phaser",
         "12": "Virtuoso Phaser",
+        "13": "Borg Phaser",
         "14": "Ultra-Super-Mega Phaser",
         "15": "Mutated Twin-Phaser",
         "16": "Modern Vibe"
@@ -16979,6 +17065,7 @@
         "2": "Bias Trem",
         "3": "Harmonic Trem",
         "4": "Optical Trem 1",
+        "5": "Optical Trem 2",
         "6": "Neon Trem"
       },
       "WAH_TYPE": {
@@ -16997,8 +17084,16 @@
         "1": "Low-Pass",
         "2": "Band-Pass",
         "3": "High-Pass",
+        "4": "Low-Shelf",
+        "5": "High-Shelf",
         "6": "Peaking",
+        "7": "Notch",
         "8": "Tilt EQ",
+        "9": "Low-Shelf 2",
+        "10": "High-Shelf 2",
+        "11": "Peaking 2",
+        "12": "Feedforward Comb",
+        "13": "Feedback Comb",
         "14": "All-Pass",
         "15": "Envelope Filter",
         "16": "Auto-Wah",

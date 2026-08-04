@@ -16,9 +16,13 @@
  * instance:2 (ch2) for every ch1 param. Registered surfaces: voice/osc/mixer/
  * filter/env/lfo/fx/eq, drums, project FX (reverb/delay incl. per-track sends,
  * master filter, bypass), mixer, mod matrix, macros (positions + A-D routing),
- * and sidechain. Still unregistered: the LFO toggle bus (NRPN 0:122/0:123 —
- * needs a shared-NRPN enum-bus addr kind, a small codec touch) and the
- * audio-input table (channel unconfirmed in v3, blocked on a hardware check).
+ * and sidechain. The audio-input table (Audio In 1/2 = the two rear-panel
+ * Inputs, which share the MIDI 1/2 track lanes in Mixer + FX View) is now
+ * registered too: the v3 guide prints its CCs but never states the channel, and
+ * ch16 was HARDWARE-CONFIRMED 2026-07-25 (CC 13/15 dimmed the MIDI-track Macro
+ * LEDs in Mixer View; CC 31 put audible reverb on a synth patched into Input 1).
+ * Still unregistered: the LFO toggle bus (NRPN 0:122/0:123 — needs a
+ * shared-NRPN enum-bus addr kind, a small codec touch).
  */
 
 import type { ParamSchema } from '@mcp-midi-control/core/protocol-generic/types.js';
@@ -207,7 +211,10 @@ export const CIRCUIT_PARAMS: readonly CircuitParam[] = [
   projNrpn('reverb', 'type', 1, 18, 'Reverb Type', 'enum', 2, { enum: REVERB_TYPE }),
   projNrpn('reverb', 'decay', 1, 19, 'Reverb Decay', 'count', 64, { min: 0, max: 127 }),
   projNrpn('reverb', 'damping', 1, 20, 'Reverb Damping', 'count', 64, { min: 0, max: 127 }),
-  ...fxSends('reverb', 'Reverb', { synth1: 88, synth2: 89, drum1: 90, drum2: 106, drum3: 109, drum4: 110 }),
+  ...fxSends('reverb', 'Reverb', {
+    synth1: 88, synth2: 89, drum1: 90, drum2: 106, drum3: 109, drum4: 110,
+    audio1: 31, audio2: 32,
+  }),
   // Delay: character params (NRPN) + per-track SEND levels (CC, handoff §8).
   projNrpn('delay', 'time', 1, 6, 'Delay Time', 'count', 64, { min: 0, max: 127 }),
   projNrpn('delay', 'time_sync', 1, 7, 'Delay Time Sync', 'count', 20, { min: 0, max: 35 }),
@@ -215,7 +222,10 @@ export const CIRCUIT_PARAMS: readonly CircuitParam[] = [
   projNrpn('delay', 'width', 1, 9, 'Delay Width', 'count', 127, { min: 0, max: 127 }),
   projNrpn('delay', 'lr_ratio', 1, 10, 'Delay L-R Ratio', 'enum', 4, { enum: DELAY_LR_RATIO }),
   projNrpn('delay', 'slew', 1, 11, 'Delay Slew Rate', 'count', 5, { min: 0, max: 127 }),
-  ...fxSends('delay', 'Delay', { synth1: 111, synth2: 112, drum1: 113, drum2: 114, drum3: 115, drum4: 116 }),
+  ...fxSends('delay', 'Delay', {
+    synth1: 111, synth2: 112, drum1: 113, drum2: 114, drum3: 115, drum4: 116,
+    audio1: 33, audio2: 34,
+  }),
   projCc('master_filter', 'frequency', 74, 'Master Filter Frequency', 'bipolar', 64, { signed: BIPOLAR, notes: '0-63 LP, 64 OFF, 65-127 HP' }),
   projCc('master_filter', 'resonance', 71, 'Master Filter Resonance', 'count', 30, { min: 0, max: 127 }),
   projNrpn('fx', 'bypass', 1, 21, 'FX Bypass', 'enum', 0, { enum: FX_BYPASS }),
@@ -250,25 +260,42 @@ export const CIRCUIT_PARAMS: readonly CircuitParam[] = [
   ...modSlot(11, 2, 5, 6, 8, 9),
   ...modSlot(12, 2, 10, 11, 12, 13),
 
-  // Project track mixer (ch16): synth levels + pans. Drum levels are the
-  // per-drum 'level' CCs on ch10; reverb/delay sends are the *_send params in
-  // the reverb/delay blocks above.
+  // Project track mixer (ch16): synth + audio-input levels and pans. Drum
+  // levels are the per-drum 'level' CCs on ch10; reverb/delay sends are the
+  // *_send params in the reverb/delay blocks above. audio1/audio2 are the two
+  // rear-panel Inputs; they occupy the MIDI 1/2 track lanes (Macros 3/4) in
+  // Mixer + FX View, so a MIDI track's level knob IS its audio input's level.
   projCc('track_mixer', 'synth1_level', 12, 'Synth 1 Level', 'count', 100, { min: 0, max: 127 }),
+  projCc('track_mixer', 'audio1_level', 13, 'Audio In 1 Level', 'count', 100, { min: 0, max: 127 }),
   projCc('track_mixer', 'synth2_level', 14, 'Synth 2 Level', 'count', 100, { min: 0, max: 127 }),
+  projCc('track_mixer', 'audio2_level', 15, 'Audio In 2 Level', 'count', 100, { min: 0, max: 127 }),
   projCc('track_mixer', 'synth1_pan', 117, 'Synth 1 Pan', 'bipolar', 64, { signed: BIPOLAR }),
   projCc('track_mixer', 'synth2_pan', 118, 'Synth 2 Pan', 'bipolar', 64, { signed: BIPOLAR }),
+  // Every track defaults to stereo-centre (User Guide, Mixer View), so the
+  // audio-input pans take the same centre-64 bipolar window as the synth pans.
+  projCc('track_mixer', 'audio1_pan', 35, 'Audio In 1 Pan', 'bipolar', 64, { signed: BIPOLAR }),
+  projCc('track_mixer', 'audio2_pan', 36, 'Audio In 2 Pan', 'bipolar', 64, { signed: BIPOLAR }),
 ];
 
 /**
  * Per-track effect SEND levels for a project FX block (reverb / delay).
- * Six sends per effect — Synth 1/2 and Drum 1-4 — each a 0..127 CC on the
- * project channel (ch16). The track is identified by the CC number, not the
- * channel (all sends share ch16); the handoff §8 CC map is the source. Default
- * 0 (dry): a freshly-routed send adds no effect until raised.
+ * Eight sends per effect — Synth 1/2, Drum 1-4, and the two rear-panel audio
+ * Inputs — each a 0..127 CC on the project channel (ch16). The track is
+ * identified by the CC number, not the channel (all sends share ch16); the
+ * handoff §8 CC map is the source. Default 0 (dry): a freshly-routed send adds
+ * no effect until raised.
+ *
+ * The send is also the per-track FX on/off switch: there is ONE reverb and ONE
+ * delay engine shared by every track, so muting a track's effect means taking
+ * its send to 0, never touching fx.bypass (which is global and kills both
+ * engines for every track at once).
  */
 function fxSends(
   block: string, label: string,
-  cc: { synth1: number; synth2: number; drum1: number; drum2: number; drum3: number; drum4: number },
+  cc: {
+    synth1: number; synth2: number; drum1: number; drum2: number; drum3: number; drum4: number;
+    audio1: number; audio2: number;
+  },
 ): CircuitParam[] {
   const send = (track: string, who: string, n: number) =>
     projCc(block, `${track}_send`, n, `${who} ${label} Send`, 'count', 0, { min: 0, max: 127 });
@@ -279,6 +306,8 @@ function fxSends(
     send('drum2', 'Drum 2', cc.drum2),
     send('drum3', 'Drum 3', cc.drum3),
     send('drum4', 'Drum 4', cc.drum4),
+    send('audio1', 'Audio In 1', cc.audio1),
+    send('audio2', 'Audio In 2', cc.audio2),
   ];
 }
 

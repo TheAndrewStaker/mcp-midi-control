@@ -7,9 +7,12 @@ body:
     attributes:
       value: |
         Use this when you've decoded an envelope, action byte, parameter
-        ID, or other protocol detail that isn't in `docs/SYSEX-MAP*.md`
-        yet. Even partial decodes are welcome — flag them with what's
-        confirmed vs. assumed.
+        ID, or other protocol detail that isn't in the relevant per-device
+        `SYSEX-MAP.md` yet. Even partial decodes are welcome: flag them
+        with what's confirmed versus assumed.
+
+        If you have raw evidence rather than a decode (a capture, a probe
+        output, a file), use the **Hardware evidence** template instead.
 
   - type: dropdown
     id: device
@@ -17,8 +20,21 @@ body:
       label: Device
       options:
         - Fractal AM4
+        - Fractal AX8
+        - Fractal Axe-Fx Standard / Ultra
         - Fractal Axe-Fx II XL+
-        - ASM Hydrasynth Explorer
+        - Fractal Axe-Fx III
+        - Fractal FM3
+        - Fractal FM9
+        - Fractal VP4
+        - ASM Hydrasynth
+        - Arturia MicroFreak
+        - Arturia MiniFreak
+        - Novation Circuit Tracks
+        - Roland SPD-SX
+        - Boss VE-500
+        - Boss RC-505mk2
+        - Boss RC-600
         - Other
     validations:
       required: true
@@ -58,10 +74,14 @@ body:
   - type: dropdown
     id: confidence
     attributes:
-      label: Confidence
+      label: Evidence strength
+      description: |
+        This project ships STRONG-evidence decodes labelled untested, and
+        keeps WEAK ones out or flags them distinctly. Being honest here is
+        what keeps that line meaningful. See docs/contributing/EVIDENCE.md.
       options:
-        - "Byte-exact / multiple captures agree"
-        - "Plausible / one capture supports it"
-        - "Hypothesis / wants more confirmation"
+        - "STRONG: byte-exact against a real capture, self-validating against the device's own checksum, a byte-identical round-trip, or read byte for byte from a published spec"
+        - "STRONG-ish: one capture supports it and nothing contradicts it, but there is no independent oracle"
+        - "WEAK: a hypothesis with no way to catch a wrong answer"
     validations:
       required: true

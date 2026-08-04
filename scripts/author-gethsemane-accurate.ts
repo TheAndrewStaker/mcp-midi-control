@@ -12,7 +12,7 @@
  * Deliberately runs the PRODUCTION pipeline end-to-end (not a hand-built
  * grid) so the song is a test of the shipped code path:
  *
- *   fetchSongsterrDrums → importSongsterrDrums (quantizer now PLACES off-grid
+ *   fetchSongsterrPart → importSongsterrDrums (quantizer now PLACES off-grid
  *   onsets as Step.micro) → compileToPlan (per-onset events with .micro) →
  *   authorPlanIntoProject (note-slot delay bytes) → .ncs
  *
@@ -29,7 +29,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import {
-  fetchSongsterrDrums,
+  fetchSongsterrPart,
   importSongsterrDrums,
   compileToPlan,
   type NeutralPattern,
@@ -62,7 +62,7 @@ function setProjectName(buf: Uint8Array, name: string): void {
 
 async function main(): Promise<void> {
   console.log('fetching Songsterr 1467797 track "Programmed"…');
-  const fetched = await fetchSongsterrDrums('1467797', { trackName: 'Programmed' });
+  const fetched = await fetchSongsterrPart('1467797', { trackName: 'Programmed' });
   const imp = importSongsterrDrums(fetched.part, { fromMeasure: 129, toMeasure: 130, stepsPerBeat: 4 });
   console.log(`  window: measures 129-130, ${imp.window.beats} beats @ ${imp.bpm} bpm → ${imp.steps} steps`);
   for (const w of imp.warnings) console.log(`  note: ${w}`);

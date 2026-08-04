@@ -65,10 +65,37 @@ export const VE500_DESCRIPTOR: DeviceDescriptor = {
       'device\'s store-ack echo; a set + save + recall round-trip persisted correctly on the maintainer\'s ' +
       'unit. NEWLY WIRED 2026-07-09 (community-beta, hardware-unverified): switch_preset for factory presets ' +
       'P01–P50, via a DT1 write to the "Current Patch Number" register (Setup > SetupCommon, decoded from ' +
-      'the editor\'s own patch-switch handler, NOT a Program Change). Also new: the SYSTEM/global param ' +
-      'region (MIDI, USB, tuner, preference, input/output + their EQs, and a few patch-shaped sections ' +
-      'reused at system scope) via set_param/get_param/get_params/list_params under system_* blocks. Still ' +
-      'NOT wired: whole-patch get_preset.',
+      'the editor\'s own patch-switch handler, NOT a Program Change). The SYSTEM/global param region ' +
+      '(MIDI, USB, tuner, preference, input/output + their EQs, and a few patch-shaped sections reused at ' +
+      'system scope), reachable via set_param/get_param/get_params/list_params under system_* blocks, is ' +
+      'HARDWARE-CONFIRMED 2026-07-26: three system params were written and read back on the maintainer\'s ' +
+      'unit, corroborated by audible device behaviour rather than by read-back alone (enabling MIDI-note ' +
+      'pitch correction end to end). The absolute-addressing mechanism (region:\'system\', no patch base) ' +
+      'is shared by all 248. STRENGTHENED 2026-07-28: the MIDI-note pitch-correct path (M>PCR) is now ' +
+      'hardware-confirmed DRIVEN FROM A SEQUENCER, over DIN, through an intermediate synth, retuning a ' +
+      'LIVE SUNG VOICE for a whole song. Confirmed by ear on the maintainer\'s rig, with pitch_correct ' +
+      'switch=ON, type=ELECTRIC, speed=10, stability=+5, shift=0 and pitch_correct_midi.midi_to_pcr set ' +
+      'to the channel the sequencer\'s target track transmits on, with system_pref.preference_m2pcr=0 so ' +
+      'the PATCH copy is live. That is a different test from the 2026-07-26 one, which was a keyboard ' +
+      'played by hand. Scope note, stated narrowly on purpose: what is confirmed is the M>PCR path over ' +
+      'DIN with those settings on that rig; whether M>PCR treats the incoming note as an absolute target ' +
+      'or as a pitch class is STILL UNDECODED and the manual does not say. A DIAGNOSTIC WORTH KNOWING, ' +
+      'found the same day: system_midi.midi_usb_out_thru echoes whatever arrives at the unit\'s DIN MIDI ' +
+      'In back out over USB, so one reversible write answers "what is actually reaching this device" ' +
+      'instead of inferring it from what the upstream gear claims to send. It is what found the real ' +
+      'fault in that chain, which was neither device. ALSO CONFIRMED 2026-07-26: a STORED user memory answers a read on every one ' +
+      'of the 874 patch params at its own base address (buildGetParam with patchBase = userPatchAddr(n)), ' +
+      '874/874 first try, without recalling it and without disturbing the edit buffer. Still NOT wired: ' +
+      'whole-patch get_preset (a speed problem now, not an evidence one: 874 serial round-trips is ~40s, ' +
+      'so the decoded chunked section read is the right build). NOTE for recall: user-memory recall is a ' +
+      'bare Program Change, so it is dead whenever the unit\'s PC IN is off; factory P01-P50 recall is a ' +
+      'SysEx register write and is unaffected. switch_preset now PRE-FLIGHT READS ' +
+      'system_midi.midi_program_change_in before a user-memory recall and REFUSES when it is 0, because a ' +
+      'Program Change is never echoed and the previous behaviour was to report success while the patch had ' +
+      'not changed. The refusal names both ways out (front panel, or set the param to 1 and accept that a ' +
+      'stray Program Change on the bus can then recall a patch mid-song) and the server does not flip it. ' +
+      'If the pre-flight read gets no answer the recall is still sent, flagged unverified: a read timeout ' +
+      'is not evidence the setting is off. Factory recall is deliberately NOT gated.',
     has_scenes: false,
     has_channels: false,
     supports_save: true,

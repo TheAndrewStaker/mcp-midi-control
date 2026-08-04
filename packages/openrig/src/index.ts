@@ -11,6 +11,8 @@ export * from './routing.js';
 export * from './validate.js';
 export * from './compat.js';
 export * from './audio.js';
+export * from './capacity.js';
+export * from './attach.js';
 export * from './edit.js';
 export * from './inventory.js';
 export * from './bootstrap.js';

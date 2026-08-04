@@ -41,6 +41,7 @@ import type {
   BlockLayoutSnapshot,
   DeviceReader,
   DispatchCtx,
+  OverwriteTargetInfo,
   PresetBinaryDump,
   PresetSlotSpec,
   PresetSnapshot,
@@ -528,6 +529,42 @@ export function createReader(config: AxeFxIIConfig): DeviceReader {
         failed_indices,
         errors: failed_indices.length > 0 ? errors : undefined,
       };
+    },
+
+    /**
+     * Overwrite pre-check, the honest half.
+     *
+     * The Axe-Fx II can answer "which preset is ACTIVE" (`buildGetPresetNumber`)
+     * but has NO decoded read for the name stored at an ARBITRARY location:
+     * `buildGetPresetName` takes no location argument, and `scanLocations` here
+     * works by NAVIGATING to each slot, which would discard the very working
+     * buffer the caller is trying to save. So occupancy is genuinely unknown.
+     *
+     * Before this, the II implemented nothing here and the shared gate silently
+     * skipped: the store landed `acked: true` and a note rode the RECEIPT
+     * saying the target had not been scanned. That is a warning after a flash
+     * write, not a gate, and the AM4 refuses the identical call. Reporting
+     * `occupancy_unknown` lets the dispatcher refuse a NON-ACTIVE target unless
+     * the caller confirms, while a save back to the location being edited (a
+     * refresh, the common case) stays friction-free.
+     *
+     * Returning `undefined` when the active-preset read fails is deliberate and
+     * matches the AM4: the dispatcher degrades to "could not pre-check" rather
+     * than refusing a save the user asked for on the strength of a failed read.
+     */
+    async checkOverwriteTarget(ctx: DispatchCtx, location): Promise<OverwriteTargetInfo | undefined> {
+      const n = parseAxeFxIILocation(location, DEVICE_LABEL);
+      const target_display = String(n + 1); // display slot is 1-based (BK-084)
+      let activeWire: number | undefined;
+      try {
+        const numPromise = ctx.conn.receiveSysExMatching(isGetPresetNumberResponse, GET_RESPONSE_TIMEOUT_MS);
+        ctx.conn.send(buildGetPresetNumber(modelOpts));
+        activeWire = parseGetPresetNumberResponse(await numPromise).presetNumber;
+      } catch {
+        return undefined; // let the dispatcher degrade, same as the AM4
+      }
+      if (activeWire === n) return { target_display, is_active_location: true };
+      return { target_display, is_active_location: false, occupancy_unknown: true };
     },
 
     async dumpActivePresetBinary(ctx: DispatchCtx): Promise<PresetBinaryDump> {
@@ -1067,7 +1104,12 @@ export function createReader(config: AxeFxIIConfig): DeviceReader {
         throw new DispatchError(
           'value_out_of_range',
           DEVICE_LABEL,
-          `Scan range ${fromN}..${toN} is ${span} presets; exceeds the ${MAX_SCAN_RANGE}-preset cap (each entry round-trips ~80ms, so a 64-slot scan takes ~5s). Narrow the range and try again.`,
+          // The old text said "~80ms per entry, 64-slot scan ~5s". That was
+          // impossible on its face: SCAN_PRESET_SETTLE_MS alone is 150. A real
+          // Claude Desktop session on 2026-08-03 measured a 64-slot scan at
+          // 16.3 s, matching ~250 ms per entry (settle + name round-trip). An
+          // agent budgeting turns on the old figure under-reserved by 3x.
+          `Scan range ${fromN}..${toN} is ${span} presets; exceeds the ${MAX_SCAN_RANGE}-preset cap (each entry costs a preset SWITCH plus a ${SCAN_PRESET_SETTLE_MS}ms settle, ~250ms total, so a 64-slot scan takes ~16s and discards unsaved edits). Narrow the range and try again.`,
         );
       }
 

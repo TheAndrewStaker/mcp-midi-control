@@ -177,7 +177,7 @@ The minimal oracle is a real fn=0x04 dump plus known ground truth:
    values + firmware version.
 
 Either also confirms or denies the 2060-byte total. The community ask lives in
-`docs/capture-guides/captures-axe-fx-gen1.md` (C1).
+`docs/contributing/devices/axe-fx-gen1.md` (ask CAPTURE-1) in the mcp-midi-control repo.
 
 ## Still not wired (capability boundary)
 

@@ -476,11 +476,14 @@ export async function executeReadPackDirectory(args: {
 
 /**
  * Backs the read-only `read_sample_directory` tool: read a device's named
- * sample pool (Circuit Tracks: Pack 1's shared 64-slot drum-sample
- * directory). Devices without a named pool error with capability_not_supported.
+ * sample pool (Circuit Tracks: a pack's shared 64-slot drum-sample directory).
+ * `pack` (1-based; Circuit only) picks which pack's pool to read, so it can be
+ * pointed at the SAME pack a project targets. Devices without a named pool
+ * error with capability_not_supported.
  */
 export async function executeReadSampleDirectory(args: {
   port: string;
+  pack?: number;
 }): Promise<SampleDirectoryDump & { device: string }> {
   const descriptor = requireDevice(args.port);
   const readSampleDirectory = descriptor.reader.readSampleDirectory;
@@ -491,7 +494,7 @@ export async function executeReadSampleDirectory(args: {
       `read_sample_directory reads a named sample pool; ${descriptor.display_name} has none. It is available on the Novation Circuit Tracks (the pack's 64-slot drum-sample pool).`,
     );
   }
-  const ctx = openCtx(descriptor);
+  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
   // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
   // handle-level fault — this is the `list_samples` tool, the exact
   // 2026-07-10 hardware repro (call 1 succeeded and cached the handle; a
@@ -559,6 +562,66 @@ export async function executeRestorePreset(args: {
  * Working-buffer-only mode (no `target_location`) doesn't navigate
  * and doesn't save, so neither gate applies.
  */
+/**
+ * The complete top-level key set of a `PresetSpec`. `overrides` is a partial
+ * of the same shape, so one list governs both.
+ */
+const PRESET_SPEC_KEYS: readonly string[] = [
+  'slots', 'scenes', 'name', 'landingScene', 'routing',
+];
+
+/**
+ * Refuse an `overrides` / `spec` object carrying a key this server does not
+ * apply, BEFORE any wire op.
+ *
+ * The defect this closes: the tool-layer zod shape used to be `z.object`,
+ * which on an input SILENTLY STRIPS unrecognised keys. Measured across the
+ * trace corpus, 3 of the 23 `apply_preset` calls that passed `overrides` used
+ * a flat `{"amp.type": "Brit Brown", "reverb.type": "Hall, Large"}` shape
+ * instead of `slots[]`. Every key was dropped, the call answered `ok: true`,
+ * and in all three the agent told the user the value had been applied and
+ * asked them to confirm it on the device. It was never sent — the only
+ * measured defect where the agent confidently told the user something false
+ * about the hardware.
+ *
+ * Refusing is the whole point: a silently-ignored key is indistinguishable
+ * from a successful write, and no downstream check can recover the intent.
+ * `value_out_of_range` matches the sibling agent-correctable refusals in this
+ * function (recipe+spec conflict, neither supplied) and surfaces as
+ * `isError: true`, which an agent cannot read as success.
+ */
+function rejectUnknownSpecKeys(
+  descriptor: DeviceDescriptor,
+  field: 'spec' | 'overrides',
+  value: unknown,
+): void {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return;
+  const unknown = Object.keys(value as Record<string, unknown>)
+    .filter((k) => !PRESET_SPEC_KEYS.includes(k));
+  if (unknown.length === 0) return;
+
+  // The observed mistake has a signature: dotted `block.param` keys. Name it
+  // directly rather than making the agent infer it from a key list.
+  const dotted = unknown.filter((k) => /^[a-z0-9_]+\.[a-z0-9_]+$/i.test(k));
+  const diagnosis = dotted.length > 0
+    ? ` Keys like ${dotted.slice(0, 2).map((k) => `"${k}"`).join(' and ')} are \`block.param\` pairs, which belong INSIDE a slot entry, not at the top level of \`${field}\`.`
+    : '';
+  const example = field === 'overrides'
+    ? ` Correct shape: overrides:{slots:[{slot:<a slot ref copied from describe_device({port,recipe:id}).slots>, params:{type:"Brit Brown"}}]}.`
+    : ` Correct shape: spec:{slots:[{slot:1, block_type:"amp", params:{type:"Brit Brown"}}]}.`;
+
+  throw new DispatchError(
+    'value_out_of_range',
+    descriptor.display_name,
+    `apply_preset: \`${field}\` carries ${unknown.length} key(s) this server does not apply: `
+    + `${unknown.map((k) => `"${k}"`).join(', ')}.${diagnosis}`
+    + ` Top-level \`${field}\` keys are: ${PRESET_SPEC_KEYS.join(', ')}.${example}`
+    + ` NOTHING was sent to the device — an unrecognised key is refused rather than dropped,`
+    + ` so a value you never see applied is never reported as applied.`,
+    { valid_options: PRESET_SPEC_KEYS },
+  );
+}
+
 export async function executeApplyPreset(args: {
   port: string;
   /**
@@ -611,6 +674,9 @@ export async function executeApplyPreset(args: {
       `apply_preset(target_location=...) requires a device whose preset-store envelope is wired; ${descriptor.display_name} has no writer.savePreset.`,
     );
   }
+
+  rejectUnknownSpecKeys(descriptor, 'overrides', args.overrides);
+  rejectUnknownSpecKeys(descriptor, 'spec', args.spec);
 
   // Recipe materialization (Step 2/3 of the 2026-05-22 MCP migration).
   // Resolves `recipe_id` + `overrides` into a full PresetSpec, then

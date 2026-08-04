@@ -37,9 +37,115 @@
  *     filter so each note articulates its peak. Attack 30-50 ms,
  *     release 250-400 ms.
  *   - **subtle** — narrow band, low sensitivity. Used as a tonal
- *     shaper rather than overt wah motion. Sensitivity ~25 %.
+ *     shaper rather than overt wah motion. Lowest sensitivity of the
+ *     four, roughly a quarter of the way up the knob.
  *   - **hendrix** — medium attack, full sweep. Slower than funk for
  *     vocal-style articulation rather than percussive bounce.
+ *
+ * AM4 type: TOUCH-WAH, not "Auto-Wah". Corrected 2026-08-02.
+ *   Three of these recipes shipped `type: 'Auto-Wah'` (FILTER_TYPES index
+ *   16), which sounds like the obvious choice for a recipe family called
+ *   auto_wah and is the wrong block. On the AM4, "Auto-Wah" is the
+ *   LFO-SWEPT wah: the Fractal wiki's Filter block page says it "is based
+ *   on the same circuit as the Envelope Filter but REPLACES THE DETECTOR
+ *   WITH AN LFO", and the device's own applicability data agrees exactly:
+ *   type 16 exposes `rate` and `lfo_duty` and NO detector params, while
+ *   types 15 (Envelope Filter) and 17 (Touch-Wah) expose
+ *   `sensitivity` / `attack_time` / `release_time` and no LFO params.
+ *
+ *   So a user who trusted the recipe verbatim got a filter wobbling
+ *   continuously between its start and stop frequency at the block's
+ *   default rate, completely deaf to the pick, with FOUR of its eight
+ *   params refused. Confirmed on hardware 2026-08-02: two real-device
+ *   agent runs both hit "Skipped (does not apply): filter.sensitivity is
+ *   not exposed on filter.type wire 16", diagnosed it themselves, and
+ *   switched to Touch-Wah before finishing. Nothing was silently wrong;
+ *   the applicability gate refused every inapplicable write loudly. The
+ *   recipe was simply asking for the wrong model.
+ *
+ *   NOT SETTLED, and an ear question: 15 vs 17. Both follow the envelope.
+ *   The wiki distinguishes them only as "a different type of detector and
+ *   voltage-to-frequency converter", calling 17 "touch-sensitive".
+ *   `auto_wah_subtle` has always used 15; the other three now use 17,
+ *   which is where both hardware runs independently landed. If 15 sounds
+ *   better for these three, change them; there is no evidence either way.
+ *
+ * `filter.q` applies to NO wah type. Use `filter.resonance`.
+ *   All four recipes sent `q`, whose FILTER_TYPE gates are [1,2,3,7]
+ *   (Low-Pass, Band-Pass, High-Pass, Notch), so it was dropped on every
+ *   wah type including the one they were already using. The resonance
+ *   knob these recipes meant is a DIFFERENT register: `filter.q` is
+ *   pidHigh 0x000c, `unit: 'count'`, 0.1..10; `filter.resonance` is
+ *   pidHigh 0x001e, `unit: 'knob_0_10'`, 0..10, and it gates on [15,17]
+ *   AND [16]. This file's own header used to write "filter.q (resonance)",
+ *   which is the conflation that produced the bug.
+ *
+ *   The numeric values were carried across unchanged (6/5/5/3). That is a
+ *   judgement, not a measurement: the two params have different units and
+ *   tapers, so "q 6" and "resonance 6" are not known to be the same
+ *   sound. Both are 0..10-shaped and the ordering between recipes is
+ *   preserved, which is the property the recipes exist to express, but if
+ *   the resonance reads wrong by ear this is the number to move.
+ *
+ * `filter.sensitivity` is a COUNT on a log taper, not a percent.
+ *   The four recipes originally shipped sensitivity as a 0..100 percent
+ *   (funk 65, hendrix 60, cantrell 55, subtle 25). The AM4 has no percent
+ *   sensitivity: `filter.sensitivity` is `unit: 'count'`, display range
+ *   **0.1 .. 40**, `scaling: 'log10'` (params.ts / cacheParams.ts, taken
+ *   from the AM4-Edit cache's own a=0.1 b=40 c=10 typecode=80 row). Three
+ *   of the four values were therefore refused outright by the display-value
+ *   boundary — `filter.sensitivity out of range [0.1..40]: 65` reproduces
+ *   19 times across `scripts/agent-regression/traces/`, after which the
+ *   agent invents a replacement. `subtle` (25) only escaped the range check
+ *   by accident and was musically wrong in the other direction: on a log
+ *   0.1..40 taper, 25 sits at ~92 % of knob travel, i.e. nearly MAXIMUM
+ *   sensitivity on the recipe that is documented as the least sensitive.
+ *
+ *   This is NOT a cross-device scale mismatch. Only the AM4 declares this
+ *   param at all: the II / III entries target the WAH block, which has no
+ *   envelope follower and no sensitivity knob (there is no
+ *   `filter.sensitivity` in the II's `KNOWN_PARAMS`, and the gen-3
+ *   `FILTER.FILTER_SENS` carries no display range). So there is nothing to
+ *   split per-device — the fix is to express the authored intent on the
+ *   one scale that exists.
+ *
+ *   Values below are the authored percent read as **percent of knob
+ *   travel** and pushed through the param's own taper, rather than clamped
+ *   to the 40 ceiling (a clamp would put funk, hendrix and cantrell within
+ *   a few percent of each other at the top of the knob and erase the
+ *   relative ordering the recipes exist to express):
+ *
+ *       sensitivity = 0.1 x (40 / 0.1) ^ (percent / 100)
+ *
+ *       funk      65 % -> 4.9    (most aggressive, most pick-responsive)
+ *       hendrix   60 % -> 3.6
+ *       cantrell  55 % -> 2.7
+ *       subtle    25 % -> 0.45   (well below the 2.0 taper midpoint)
+ *
+ *   Ordering funk > hendrix > cantrell > subtle is preserved, the spacing
+ *   stays even in the perceptual (log) domain the knob is tapered in, and
+ *   every value now lands inside [0.1 .. 40]. Absolute sensitivities remain
+ *   hardware-unverified — this fixes a refused write and a documented
+ *   intent inversion, it does not claim an ear-checked setting.
+ *
+ * `wah.effect_type` on the Axe-Fx II is a MODEL, not an instance.
+ *   All four recipes originally shipped `effect_type: 'WAH 1'` on the II.
+ *   No such value exists: `WAH_EFFECT_TYPE_VALUES` is an 8-entry roster of
+ *   wah MODELS (FAS STANDARD / CLYDE / CRY BABE / VX846 / COLOR-TONE /
+ *   FUNK / MORTAL / VX845). "Wah 1" is the II's name for the first WAH
+ *   BLOCK INSTANCE on the grid — a block address, not a voicing — so every
+ *   one of these recipes would have been refused by the enum boundary on
+ *   the II, the same way `sensitivity` was on the AM4. Both defects
+ *   survived because nothing walked this family. Replacements are picked
+ *   off the real roster by the association each recipe already claims:
+ *
+ *       funk      -> FUNK          (the roster's funk-voiced wah)
+ *       cantrell  -> CRY BABE      (Cantrell plays a signature Cry Baby)
+ *       hendrix   -> VX846         (the Vox V846 of that era)
+ *       subtle    -> FAS STANDARD  (Fractal's neutral voicing)
+ *
+ *   The III entries deliberately set NO type: gen-3 enum set-by-name is
+ *   gated, so a model string there would be refused by design.
  *
  * Cross-device device parameter alignment:
  *   - AM4 (FILTER block, type=Auto-Wah):
@@ -93,17 +199,20 @@ export const AUTO_WAH_RECIPES: Readonly<Record<string, AutoWahRecipeSpec>> = Obj
     },
     params_per_device: {
       am4: {
-        type: 'Auto-Wah',
+        type: 'Touch-Wah',
         start_frequency: 300,
         stop_frequency: 2200,
-        sensitivity: 65,
+        // 65 % of knob travel on the 0.1..40 log taper. See the header.
+        sensitivity: 4.9,
         attack_time: 10,
         release_time: 120,
-        q: 6,
+        resonance: 6,
         mix: 100,
       },
       'axe-fx-ii': {
-        effect_type: 'WAH 1',
+        // FUNK: the roster's funk-voiced wah. See the header note on
+        // wah.effect_type.
+        effect_type: 'FUNK',
         freq_min: 300,
         freq_max: 2200,
         resonance: 6,
@@ -135,17 +244,20 @@ export const AUTO_WAH_RECIPES: Readonly<Record<string, AutoWahRecipeSpec>> = Obj
     },
     params_per_device: {
       am4: {
-        type: 'Auto-Wah',
+        type: 'Touch-Wah',
         start_frequency: 700,
         stop_frequency: 2400,
-        sensitivity: 55,
+        // 55 % of knob travel on the 0.1..40 log taper. See the header.
+        sensitivity: 2.7,
         attack_time: 40,
         release_time: 320,
-        q: 5,
+        resonance: 5,
         mix: 100,
       },
       'axe-fx-ii': {
-        effect_type: 'WAH 1',
+        // CRY BABE: the roster's Cry Baby model. Cantrell plays a
+        // signature Dunlop Cry Baby. See the header note.
+        effect_type: 'CRY BABE',
         freq_min: 700,
         freq_max: 2400,
         resonance: 5,
@@ -177,17 +289,20 @@ export const AUTO_WAH_RECIPES: Readonly<Record<string, AutoWahRecipeSpec>> = Obj
     },
     params_per_device: {
       am4: {
-        type: 'Auto-Wah',
+        type: 'Touch-Wah',
         start_frequency: 400,
         stop_frequency: 2800,
-        sensitivity: 60,
+        // 60 % of knob travel on the 0.1..40 log taper. See the header.
+        sensitivity: 3.6,
         attack_time: 25,
         release_time: 200,
-        q: 5,
+        resonance: 5,
         mix: 100,
       },
       'axe-fx-ii': {
-        effect_type: 'WAH 1',
+        // VX846: the roster's Vox V846, the wah of the Hendrix era.
+        // See the header note.
+        effect_type: 'VX846',
         freq_min: 400,
         freq_max: 2800,
         resonance: 5,
@@ -222,14 +337,20 @@ export const AUTO_WAH_RECIPES: Readonly<Record<string, AutoWahRecipeSpec>> = Obj
         type: 'Envelope Filter',
         start_frequency: 500,
         stop_frequency: 1800,
-        sensitivity: 25,
+        // 25 % of knob travel on the 0.1..40 log taper. The old literal
+        // 25 was IN range but sat at ~92 % of travel — the opposite of
+        // this recipe's "low sensitivity" intent. See the header.
+        sensitivity: 0.45,
         attack_time: 30,
         release_time: 250,
-        q: 3,
+        resonance: 3,
         mix: 70,
       },
       'axe-fx-ii': {
-        effect_type: 'WAH 1',
+        // FAS STANDARD: Fractal's own neutral voicing, the least
+        // characterful of the eight — right for a tone shaper that is
+        // not supposed to announce itself. See the header note.
+        effect_type: 'FAS STANDARD',
         freq_min: 500,
         freq_max: 1800,
         resonance: 3,

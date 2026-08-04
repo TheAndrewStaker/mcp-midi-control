@@ -10,7 +10,7 @@
  * Reference impl: scripts/agent-regression/runner.ts
  */
 
-export type Device = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'fm3' | 'fm9' | 'vp4' | 'axe-fx-gen1' | 'hydrasynth' | 'circuit' | 'spd-sx' | 've-500';
+export type Device = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'fm3' | 'fm9' | 'vp4' | 'axe-fx-gen1' | 'hydrasynth' | 'circuit' | 'spd-sx' | 've-500' | 'microfreak' | 'minifreak';
 
 /**
  * Mock-transport fixture profile, selected per case to exercise alternate
@@ -101,8 +101,21 @@ export interface Expectations {
   must_call_any?: readonly (readonly string[])[];
   /** Tools that MUST NOT be called. Bare names. */
   must_not_call?: readonly string[];
-  /** Ceiling on total tool calls. Efficiency check. */
-  max_tools: number;
+  /**
+   * Ceiling on total tool calls. Efficiency check.
+   *
+   * OPTIONAL since 2026-08-02, and the default should stay "set one". A count
+   * is exactly right for the majority of cases, which assert one specific
+   * efficient path.
+   *
+   * Omit it ONLY when a case's prompt is deliberately open-ended, so the ROUTE
+   * varies legitimately and only the DESTINATION is asserted. There, a count is
+   * a proxy for "is the agent flailing" that fails on correct answers and has
+   * to be re-tuned for every new model. `max_wall_seconds` measures the same
+   * thing directly and is model-agnostic — make sure the case sets one.
+   * See `am4-h1-sunday-morning` for the worked example.
+   */
+  max_tools?: number;
   /** Floor on total tool calls. Defaults to 1 (catches "agent refused / hedged"). */
   min_tools?: number;
   /** Per-tool retry ceiling. Catches enum-ambiguity / type-mismatch round trips. */
@@ -133,6 +146,22 @@ export interface Expectations {
   /** Wall-clock ceiling for the full conversation, in seconds. Default 120. */
   max_wall_seconds?: number;
 }
+
+/**
+ * NOTE ON TOOL ERRORS (no per-case flag, deliberately).
+ *
+ * `must_call` / `must_call_any` are satisfied only by a call that did NOT
+ * return `is_error` — they assert the agent got something DONE, and a failed
+ * call did not. `must_not_call`, `max_repeats` and `tool_call_validators`
+ * still see every call, error or not, because a forbidden call is a violation
+ * however it ended and several validators inspect the error result itself.
+ *
+ * There is no `allow_tool_errors` opt-out because none is needed: a case that
+ * provokes an error deliberately and then RECOVERS still has a successful
+ * call, so it still passes. Adding a blanket "any error fails" rule would fail
+ * those recovery cases for doing the right thing — the same mistake
+ * `max_tools` made when it punished an agent for reading back its own write.
+ */
 
 export interface AgentRegressionCase {
   id: string;
@@ -214,6 +243,13 @@ export interface CaseResult {
   attempts: number;
   /** True when the case passed only after a retry, a visible signal of flakiness. */
   flaked: boolean;
+  /**
+   * Tool results the HOST refused to deliver to the model (size cap or token
+   * cap). Persisted to results.jsonl so the corpus can be queried for the
+   * outage directly instead of re-grepping traces: this is the class that ran
+   * silent for two weeks while 9 runs carrying it were scored PASS.
+   */
+  undelivered_results?: number;
   /**
    * True when the case did not actually run on its merits because the OS refused
    * to spawn the `claude -p` child (Windows 0xC0000142 / STATUS_DLL_INIT_FAILED,

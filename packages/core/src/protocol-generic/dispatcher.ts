@@ -45,11 +45,17 @@ export {
 } from './dispatcher/resolvers.js';
 export {
   describeDevice,
+  describeDeviceGuidance,
+  describeDeviceRecipe,
   executeDescribeRig,
   executeLookupLineage,
   findCompatibleTypes,
   listParams,
   type ListParamsEntry,
+  type ListParamsBlockSummary,
+  type ListParamsResult,
+  type LookupLineageEntry,
+  type LookupLineageForwardResult,
   type RigDevice,
   type RigManifestSummary,
 } from './dispatcher/discovery.js';
@@ -84,8 +90,14 @@ export {
   executeGetParams,
   executeSetParam,
   executeSetParams,
+  GET_PARAMS_MAX_QUERIES,
 } from './dispatcher/params.js';
 export { executeSetBlock, executeSetBypass } from './dispatcher/layout.js';
+export {
+  executeDeleteProject,
+  MAX_DELETES_PER_CALL,
+  type DeleteProjectArgs,
+} from './dispatcher/deleteProject.js';
 export {
   executeRename,
   executeSavePreset,

@@ -39,6 +39,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
+import {
+  externalDepVersions,
+  packWorkspaceTarball,
+  resolveBundlePackages,
+} from './_lib/bundle-packages.js';
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -135,18 +140,14 @@ async function main() {
   //   │   ├── @modelcontextprotocol/sdk/  (npm install populates)
   //   │   ├── @julusian/midi/             (npm install populates, N-API prebuild)
   //   │   ├── zod/                        (npm install populates)
+  //   │   ├── fractal-midi/, roland-midi/, openrig/   (bare workspace pkgs,
+  //   │   │                                   installed from local tarballs)
   //   │   └── @mcp-midi-control/
-  //   │       ├── core/{package.json,dist/}        (copied from packages/core)
-  //   │       ├── am4/{package.json,dist/}         (copied from packages/am4)
-  //   │       ├── axe-fx-ii/{package.json,dist/}
-  //   │       ├── axe-fx-gen1/{package.json,dist/}
-  //   │       ├── fractal-gen3/{package.json,dist/}
-  //   │       ├── hydrasynth/{package.json,dist/}
-  //   │       ├── circuit-tracks/{package.json,dist/}
-  //   │       ├── spd-sx/{package.json,dist/}
-  //   │       ├── ve-500/{package.json,dist/}
-  //   │       ├── boss-rc/{package.json,dist/}
-  //   │       └── server-all/{package.json,dist/}
+  //   │       └── <one dir per scoped workspace package>/{package.json,dist/}
+  //   │           DERIVED from server-all's dependency closure; deliberately
+  //   │           NOT enumerated here, because an enumeration goes stale (this
+  //   │           very comment still listed the pre-0.4.0 `axe-fx-ii` /
+  //   │           `axe-fx-gen1` dir names and had never heard of `arturia`).
   //   ├── LICENSE, NOTICE
   //   ├── setup.cmd, uninstall.cmd, verify-midi.cmd, update.cmd, instructions.txt
   //   └── install/{merge,unmerge}-mcp-config.ps1, check-for-update.ps1
@@ -156,71 +157,39 @@ async function main() {
   // walk-up -each package is a real directory under
   // node_modules/@mcp-midi-control/, no symlinks needed.
   console.log('[build] Staging artifacts');
-  // Keep in sync with `workspaces` in root package.json. Adding a new
-  // workspace package and forgetting it here ships a bundle that boots
-  // partially -server-all imports the missing package via dynamic
-  // device-registry registration and dies with ERR_MODULE_NOT_FOUND on
-  // first launch.
-  const WORKSPACE_PACKAGES = [
-    'core',
-    'am4',
-    'fractal-gen1',
-    'fractal-gen2',
-    'fractal-gen3',
-    'hydrasynth',
-    'circuit-tracks',
-    'spd-sx',
-    've-500',
-    'boss-rc',
-    'server-all',
-  ] as const;
+  // DERIVED, NOT DECLARED. The set of workspace packages this bundle needs is
+  // computed from `packages/server-all/package.json`'s transitive workspace
+  // dependency closure (scripts/_lib/bundle-packages.ts). It used to be a
+  // hardcoded list here, and it drifted: `arturia` was absent for the whole
+  // window between commit 7088741 (2026-07-26, when server-all began importing
+  // it statically) and the next ZIP build, which would have died at boot with
+  // ERR_MODULE_NOT_FOUND. Adding a package to `packages/` and declaring it as a
+  // dependency is now the entire job; this builder picks it up automatically.
+  const bundle = resolveBundlePackages(PROJECT_ROOT);
+  console.log(
+    `[build] Bundle closure: ${bundle.scoped.length} scoped + ${bundle.bare.length} bare `
+    + `workspace package(s), ${bundle.externalDeps.length} registry leaf dep(s)`,
+  );
 
   // 4a. Lean root package.json -NO workspaces, NO @mcp-midi-control/*
-  //     deps. npm install only fetches the three leaf node-only deps.
-  //     We pull leaf-dep versions from the project's devDependencies
-  //     (Phase B moved them there since each workspace package now
-  //     declares its own runtime deps).
-  const devPkg = JSON.parse(
-    fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'),
-  ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
-  // `fractal-midi` was added in the Phase B extraction (2026-05-18) -each
-  // workspace package now imports the Fractal codec from this published npm
-  // package. The bundle must install it at the root so runtime walk-up
-  // resolution from `node_modules/@mcp-midi-control/*/dist/*.js` finds it.
-  const leafDeps = ['@modelcontextprotocol/sdk', 'fractal-midi', 'roland-midi', 'openrig', '@julusian/midi', 'serialport', 'zod'] as const;
-  const leanDeps: Record<string, string> = {};
-  for (const d of leafDeps) {
-    const v = devPkg.devDependencies?.[d] ?? devPkg.dependencies?.[d];
-    if (!v) throw new Error(`Leaf dep ${d} missing from root package.json`);
-    leanDeps[d] = v;
-  }
+  //     deps. npm install only fetches the non-workspace leaf deps, whose
+  //     versions come from the project's devDependencies (Phase B moved them
+  //     there since each workspace package now declares its own runtime deps).
+  const leanDeps: Record<string, string> = externalDepVersions(bundle.externalDeps, PROJECT_ROOT);
   // Bare (non-`@mcp-midi-control/*`) workspace packages -pure codec/schema
-  // libraries with zero or few deps, imported directly by name (not the
-  // npm registry: all are `private: true`). Not published, so each is
-  // packed into a tarball and installed via a local `file:` reference,
-  // same as a registry dep would be. Keep this list in sync with any
-  // package under `packages/` that a shipped package imports by its bare
-  // name instead of the `@mcp-midi-control/` namespace -a package missing
-  // here resolves fine in dev (workspace hoisting) but throws
-  // ERR_MODULE_NOT_FOUND in the extracted ZIP (GitHub issue #15: this is
-  // exactly how `openrig` shipped absent, undetected because nothing in
-  // the release pipeline booted the ZIP hermetically until
+  // libraries imported directly by name (`fractal-midi`, `roland-midi`,
+  // `openrig`). Two of the three are `private: true`, so `npm install` cannot
+  // fetch them from the registry at all: each is packed into a tarball and
+  // installed via a local `file:` reference, same as a registry dep would be.
+  // A bare package missing from this path resolves fine in dev (workspace
+  // hoisting) but throws ERR_MODULE_NOT_FOUND in the extracted ZIP (GitHub
+  // issue #15: exactly how `openrig` shipped absent, undetected because nothing
+  // in the release pipeline booted the ZIP hermetically until
   // `verify-release-zip.ts` was wired into CI).
-  const BARE_WORKSPACE_PACKAGES = ['fractal-midi', 'roland-midi', 'openrig'] as const;
-  for (const pkgDirName of BARE_WORKSPACE_PACKAGES) {
-    const pkgDir = path.join(PROJECT_ROOT, 'packages', pkgDirName);
-    const pkg = JSON.parse(
-      fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'),
-    ) as { name: string; version: string };
-    const packResult = execSync('npm pack --json', { cwd: pkgDir, encoding: 'utf8' });
-    const packInfo = JSON.parse(packResult) as { filename: string }[];
-    const tarballName = packInfo[0]?.filename;
-    if (!tarballName) {
-      throw new Error(`npm pack for ${pkgDirName} produced no output`);
-    }
-    fs.renameSync(path.join(pkgDir, tarballName), path.join(STAGING, tarballName));
-    leanDeps[pkg.name] = `file:./${tarballName}`;
-    console.log(`[build] Packed ${pkgDirName} workspace: ${tarballName} (v${pkg.version})`);
+  for (const barePkg of bundle.bare) {
+    const { filename, spec } = packWorkspaceTarball(barePkg, STAGING);
+    leanDeps[barePkg.name] = spec;
+    console.log(`[build] Packed ${barePkg.dir} workspace: ${filename} (v${barePkg.version})`);
   }
   const leanPkg = {
     name: 'mcp-midi-control-bundle',
@@ -286,9 +255,9 @@ async function main() {
   console.log('[build] Copying workspace packages into node_modules');
   const mcpNs = path.join(STAGING, 'node_modules', '@mcp-midi-control');
   fs.mkdirSync(mcpNs, { recursive: true });
-  for (const pkg of WORKSPACE_PACKAGES) {
-    const srcPkg = path.join(PROJECT_ROOT, 'packages', pkg);
-    const dstPkg = path.join(mcpNs, pkg);
+  for (const pkg of bundle.scoped) {
+    const srcPkg = pkg.path;
+    const dstPkg = path.join(mcpNs, pkg.dir);
     fs.mkdirSync(dstPkg, { recursive: true });
 
     // Strip workspace-internal deps (`@mcp-midi-control/*: "*"`) from
@@ -378,10 +347,13 @@ async function main() {
   // copied workspace dirs, and missing deps there only surface at bundle
   // boot. Two real regressions caught here on the Phase-B release path
   // (2026-05-18):
-  //   1. `fractal-midi` missing from `leafDeps` → ERR_MODULE_NOT_FOUND
+  //   1. `fractal-midi` missing from the leaf deps → ERR_MODULE_NOT_FOUND
   //      on the first codec import inside any workspace package.
-  //   2. `axe-fx-iii` missing from `WORKSPACE_PACKAGES` → server-all
-  //      can't load the III device adapter.
+  //   2. `axe-fx-iii` missing from the staged workspace packages →
+  //      server-all can't load the III device adapter.
+  // Both were hand-maintained lists at the time; both are now derived from
+  // server-all's dependency closure, so that failure mode is structural
+  // rather than a matter of remembering.
   //
   // IMPORTANT CAVEAT (GitHub issue #15, 2026-07-16): this check is NOT
   // fully hermetic. STAGING lives at PROJECT_ROOT/build/staging, and
@@ -390,9 +362,9 @@ async function main() {
   // node_modules, resolution can silently succeed anyway by walking up
   // to PROJECT_ROOT/node_modules, which the repo's own `npm ci` has
   // already populated with every workspace package (hoisted). That is
-  // exactly how `ve-500` and `boss-rc` shipped absent from
-  // `WORKSPACE_PACKAGES` (and `roland-midi` shipped unpacked) across
-  // v0.6.0/v0.6.1: this smoke-boot passed in CI because it ran inside
+  // exactly how `ve-500` and `boss-rc` shipped absent from the
+  // then-hardcoded package list (and `roland-midi` shipped unpacked)
+  // across v0.6.0/v0.6.1: this smoke-boot passed in CI because it ran inside
   // the monorepo checkout, but real users extract the ZIP standalone
   // with no such fallback, so `ERR_MODULE_NOT_FOUND` only fired for
   // them. `npm run verify-release-zip` (see scripts/verify-release-zip.ts)

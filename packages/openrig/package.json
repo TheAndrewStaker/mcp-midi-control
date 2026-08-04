@@ -1,6 +1,6 @@
 {
   "name": "openrig",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "A portable JSON schema for a musician's rig: typed audio + MIDI topology, per-device capabilities, and editable cross-device bindings. Pure TypeScript, zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Stephen Staker <stephenstaker@gmail.com>",

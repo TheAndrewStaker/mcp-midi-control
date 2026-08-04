@@ -126,10 +126,15 @@ serious AI sessions; that's your full-flash recovery file.
 
 ## What the AI cannot do
 
-- **Cannot read your saved presets without permission.** Scan
-  operations (`am4_scan_locations`) are read-only and slow enough that
-  you'd notice; they're for "what's in bank G?" not background
-  spying.
+- **Cannot read your saved presets without permission.** Scanning
+  (`scan_locations`) is for "what's in bank G?", not background spying,
+  and it is slow enough that you would notice. On the AM4 it is purely a
+  read: the device never moves. **On the Axe-Fx II it is not**, because
+  that device has no way to read a name without loading the preset, so a
+  scan steps through each slot in turn and lands you back where you
+  started. Anything you had edited and not saved is gone. The AI is
+  refused if you have unsaved edits, and has to be told explicitly to
+  discard them or save them first.
 - **Cannot send arbitrary SysEx without you explicitly asking for it.**
   The `send_sysex` primitive exists for developers; it's not a path the
   AI takes during normal "build me a tone" conversations.

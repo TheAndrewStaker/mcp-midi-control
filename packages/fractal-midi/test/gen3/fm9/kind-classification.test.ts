@@ -64,16 +64,18 @@ cases.push(() =>
 cases.push(() => assert(FM9_ROUNDTRIP_DISCRETE['REVERB_BASETYPE'] === 8, `FM9 REVERB_BASETYPE overlay ordinal = ${FM9_ROUNDTRIP_DISCRETE['REVERB_BASETYPE']} (want 8)`));
 cases.push(() => assert(FM9_ROUNDTRIP_DISCRETE['MEGATAP_NUMTAPS'] === 64, `FM9 MEGATAP_NUMTAPS overlay ordinal = ${FM9_ROUNDTRIP_DISCRETE['MEGATAP_NUMTAPS']} (want 64)`));
 // Editor-cache enum anchors (asserted at generation time, re-pinned here):
-// the amp MODEL selector is a 331-way enum, FUZZ_TYPE 86, REVERB_TYPE 79.
+// the amp MODEL selector is a 336-way enum, FUZZ_TYPE 87, REVERB_TYPE 79
+// (ranges.generated.ts regenerated from the fw 12.0 cache, issue #19; grew
+// from 331/86 on fw 11.0 as firmware appended new amp/drive models).
 // These are the headline class of the 2026-06-18 bug: TYPE selectors that MUST
 // route discrete.
 cases.push(() => {
   const row = cacheRow('DISTORT_TYPE');
-  assert(row?.kind === 'enum' && row.enumCount === 331, `FM9 DISTORT_TYPE (amp model) cache row ${JSON.stringify(row)} (want enum/331)`);
+  assert(row?.kind === 'enum' && row.enumCount === 336, `FM9 DISTORT_TYPE (amp model) cache row ${JSON.stringify(row)} (want enum/336)`);
 });
 cases.push(() => {
   const row = cacheRow('FUZZ_TYPE');
-  assert(row?.kind === 'enum' && row.enumCount === 86, `FM9 FUZZ_TYPE cache row ${JSON.stringify(row)} (want enum/86)`);
+  assert(row?.kind === 'enum' && row.enumCount === 87, `FM9 FUZZ_TYPE cache row ${JSON.stringify(row)} (want enum/87)`);
 });
 cases.push(() => {
   const row = cacheRow('REVERB_TYPE');

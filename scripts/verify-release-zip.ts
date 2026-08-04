@@ -40,6 +40,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { registeredDevicePorts } from './_lib/mcp-bundle-harness.js';
 
 const ROOT = process.cwd();
 const version = (JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
@@ -146,21 +147,26 @@ async function main(): Promise<void> {
     );
 
     // ── 3. describe_device on every registered port ─────────────────
-    // Every device package that server-all's index.ts statically imports
-    // must appear here -this loop is what actually exercises the ZIP's
-    // bundled node_modules for each device (see GitHub issue #15: ve-500
-    // and boss-rc shipped absent from the bundle for two releases because
-    // nothing in the release pipeline ever booted their code paths).
-    for (const port of [
-      'am4', 'axe-fx-ii', 'ax8', 'axe-fx-iii', 'fm3', 'fm9', 'vp4', 'axe-fx-gen1',
-      'hydrasynth', 'circuit-tracks', 'spd-sx', 've-500', 'rc-505mk2', 'rc-600',
-    ]) {
+    // This loop is what actually exercises the ZIP's bundled node_modules for
+    // each device (GitHub issue #15: ve-500 and boss-rc shipped absent from the
+    // bundle for two releases because nothing in the release pipeline ever
+    // booted their code paths).
+    //
+    // DERIVED, NOT HARDCODED. The issue-#15 fix was a hand-written port list,
+    // and that list then went stale exactly the same way: it never gained
+    // `microfreak` / `minifreak`, so this gate did not exercise the `arturia`
+    // package at all and could not have caught it missing from the bundle
+    // (which it was, until 2026-08-03). The roster now comes from
+    // `docs/contributing/devices/*.md`, which `verify-contribution-guides.ts`
+    // already holds 1:1 against the registered descriptors, so a new device
+    // joins this sweep by existing rather than by being remembered.
+    for (const port of registeredDevicePorts(ROOT)) {
       const r = await c.callTool({ name: 'describe_device', arguments: { port } });
       const text = ext(r);
       check(`describe_device(${port})`, !isError(r) && text.length > 1000, text.slice(0, 120));
       if (port === 'axe-fx-gen1') {
         check('gen-1 guidance: parameter-WRITES framing', /parameter WRITE surface|set_param \/ set_params \(full parameter/i.test(text));
-        check('gen-1 guidance: C2 capture-unlock pointer', /captures-axe-fx-gen1\.md/.test(text));
+        check('gen-1 guidance: capture-unlock pointer', /contributing\/devices\/axe-fx-gen1\.md/.test(text));
         check('gen-1 guidance: send_program_change workflow', /send_program_change/.test(text));
       }
       if (port === 'fm9') {
@@ -189,7 +195,10 @@ async function main(): Promise<void> {
       },
     });
     const applyText = ext(apply);
-    check('apply ok', !isError(apply) && applyText.includes('"ok": true'), applyText.slice(0, 250));
+    // Whitespace-tolerant: tool results stopped being pretty-printed in 8a2647d
+    // ("Stop pretty-printing tool results"), so `"ok": true` with a space no
+    // longer appears. Match either spacing so this cannot silently rot again.
+    check('apply ok', !isError(apply) && /"ok":\s*true/.test(applyText), applyText.slice(0, 250));
     check('verify_chain ran by default (routing[] present)', /chain_integrity/.test(applyText));
 
     const snap = await c.callTool({ name: 'get_preset', arguments: { port: 'axe-fx-ii' } });
@@ -218,10 +227,10 @@ async function main(): Promise<void> {
       },
     });
     const trText = ext(tr);
-    check('translate ok', !isError(tr) && /"ok": true/.test(trText), trText.slice(0, 200));
+    check('translate ok', !isError(tr) && /"ok":\s*true/.test(trText), trText.slice(0, 200));
     check('translate: tempo division stripped with warning', /dropped tempo division/.test(trText));
     check('translate: unmapped-model aggregate warning', /without a cross-roster mapping/i.test(trText));
-    check('translate: gain alias landed (drive)', /"drive": 3.5/.test(trText));
+    check('translate: gain alias landed (drive)', /"drive":\s*3\.5/.test(trText));
     check('translate: scene name carried', /"Verse"/.test(trText));
   } finally {
     await c.close();

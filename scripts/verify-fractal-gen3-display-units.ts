@@ -30,6 +30,7 @@ import {
   FM3_DESCRIPTOR,
   FM9_DESCRIPTOR,
 } from '@mcp-midi-control/fractal-gen3/device.js';
+import { SIGNED_RAW_SEMITONE_PARAMS } from '@mcp-midi-control/fractal-gen3/catalog.js';
 import type { DeviceDescriptor, ParamSchema } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 let failures = 0;
@@ -76,6 +77,27 @@ function verifyDevice(descriptor: DeviceDescriptor): DeviceResult {
       const id = `${label} ${slug}.${key}`;
       const lo = schema.display_min as number;
       const hi = schema.display_max as number;
+
+      // Signed-raw-semitone params (issue #6): decode is INTENTIONALLY not the
+      // inverse of encode. encode stays the standard normalized-continuous SET
+      // form (the device's own microcode rescales it onto its native register);
+      // decode reads the register back as a raw signed int16, because that is
+      // what the device's own bulk-read/broadcast actually returns (hardware
+      // roundtrip evidence, 2026-06-18 — see catalog.ts). The generic endpoint/
+      // round-trip invariants below do not apply to these; they get their own
+      // dedicated check instead.
+      if (schema.parameter_name !== undefined && SIGNED_RAW_SEMITONE_PARAMS.has(schema.parameter_name)) {
+        // encode must still be the standard normalized-linear SET form.
+        check(`${id}: signed-raw semitone encode(lo)=0`, schema.encode(lo) === 0, `got ${schema.encode(lo)}`);
+        check(`${id}: signed-raw semitone encode(hi)=65534`, schema.encode(hi) === 65534, `got ${schema.encode(hi)}`);
+        check(`${id}: signed-raw semitone encode(0)=32767 (midpoint)`, schema.encode(0) === 32767, `got ${schema.encode(0)}`);
+        // decode reads the wire as a raw signed int16 (the captured hardware
+        // pattern: wire 65512 -> -24, wire 24 -> +24, wire 0 -> 0).
+        check(`${id}: signed-raw semitone decode(65512)=-24`, schema.decode(65512) === -24, `got ${schema.decode(65512)}`);
+        check(`${id}: signed-raw semitone decode(24)=24`, schema.decode(24) === 24, `got ${schema.decode(24)}`);
+        check(`${id}: signed-raw semitone decode(0)=0`, schema.decode(0) === 0, `got ${schema.decode(0)}`);
+        continue;
+      }
 
       // 1. Endpoints already confirmed by isCalibrated; assert decoded endpoints.
       const decLo = schema.decode(0);

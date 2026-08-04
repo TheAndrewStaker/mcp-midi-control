@@ -29,8 +29,31 @@ import {
 const SUB = TRANSFER_CONSTANTS.SUBCMD;
 const { BLOCK_SIZE } = TRANSFER_CONSTANTS;
 
-/** Directory enumeration sub-commands (host→device READs Components issues before
- * writing samples): 0x0d = per-slot occupancy/CRC, 0x08 = per-slot name/info. */
+/**
+ * Two per-slot sub-commands Components issues before writing samples.
+ *
+ * `0x0d` is QUERY_EXISTS: read-only, returns the stored file's CRC32 when the
+ * slot is occupied and an empty-slot record when it is free.
+ *
+ * `0x08` is NOT the "per-slot name/info" read it was recorded as here until
+ * 2026-07-29. It is DELETE. Re-mined from the captures already on disk: across
+ * seven of them the `0x08` set is a subset of the slots the `0x0d` scan calls
+ * OCCUPIED, and in two of them most of those slots are cleared and never
+ * rewritten (62 in `send-pack-…-sleep-token-and-roland-samples-06-27-2026`,
+ * 11 in `send-to-circuit-tracks-sleep-token-samples`). A frame that removes a
+ * file and is followed by no write is not an info read. Full decode, evidence
+ * and the safety contract: `../ncs/fileDelete.ts`.
+ *
+ * That also explains the 2026-06-27 incident, which was written up for months
+ * as "committed an empty directory": the disabled code looped `0x0d` + `0x08`
+ * over all 64 sample slots, so it deleted the pool one frame at a time and the
+ * device acknowledged every one.
+ *
+ * The single `0x08` this file still emits below is Components-faithful and
+ * benign: it targets the slot the very next frames overwrite anyway, which is
+ * delete-then-write, the order every capture shows. Do NOT generalise it to a
+ * loop over the pool.
+ */
 const SUB_DIR_ENUM = 0x0d;
 const SUB_DIR_INFO = 0x08;
 
@@ -152,8 +175,11 @@ export function buildKitUploadFrames(items: readonly KitSampleItem[], opts: { en
   // the 0x0d scan is what made the device ack-but-store-nothing on the 2026-06-22
   // attempt; this scan is what commits writes to the pack sample manifest (so the
   // sample survives a pack reload / device restart). cap2 then issues exactly ONE
-  // targeted 0x08 info read; we match that. dirType/enumerate stay overridable for
-  // RE A/B only (the persistence-correct values are the defaults).
+  // targeted 0x08 for the slot it is about to write, which is a DELETE of that
+  // slot (see SUB_DIR_INFO above, corrected 2026-07-29) and therefore
+  // delete-then-write; we match that, for that one slot only. dirType/enumerate
+  // stay overridable for RE A/B only (the persistence-correct values are the
+  // defaults).
   const dirType = opts.dirType ?? FILE_TYPE_SAMPLE; // 0x05
   const enumerate = opts.enumerate ?? true;
   frames.push({ label: 'dir_listing', bytes: makeMessage(SUB.DIR_CONTROL, [dirType, pack]) });
@@ -161,7 +187,10 @@ export function buildKitUploadFrames(items: readonly KitSampleItem[], opts: { en
     for (let slot = 0; slot < 64; slot++) {
       frames.push({ label: `enum0d ${slot}`, bytes: makeMessage(SUB_DIR_ENUM, [dirType, pack, slot]) });
     }
-    frames.push({ label: 'enum08', bytes: makeMessage(SUB_DIR_INFO, [dirType, pack, items[0].slot]) });
+    // DELETE of the first item's slot, immediately before that slot is written.
+    // Deliberately singular and target-scoped: this is the one frame in the
+    // sample path that removes a file.
+    frames.push({ label: 'delete08', bytes: makeMessage(SUB_DIR_INFO, [dirType, pack, items[0].slot]) });
   }
   for (const it of items) frames.push(...sampleWriteFrames(it.wav, it.slot, it.filename, pack));
   frames.push({ label: 'close_session', bytes: makeMessage(SUB.CLOSE_SESSION) });

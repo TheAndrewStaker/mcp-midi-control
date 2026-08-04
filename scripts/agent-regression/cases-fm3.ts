@@ -147,4 +147,105 @@ export const FM3_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 120,
     },
   },
+
+  // §4 Recipe pickup — the FM3 half of the gen-3 floor pair ─────────────────
+  //
+  // Added 2026-08-02 as the twin of `fm9-recipe-platform-pickup` (cases-fm9.ts).
+  //
+  // WHY A FLOOR TEST, AND WHY THE PROMPT IS A NEAR-LITERAL NAME MATCH.
+  // The defect this senses is silent: `describe_device` crossed the 50,000-char
+  // host delivery cliff on the AM4, the entire payload was replaced by a
+  // stub, and the agent never saw `recipes[]` at all. Nothing errored.
+  // Recipe pickup went from five passes at 2-3 calls to 17 / 9 / 13 with the
+  // prompt byte-identical. Against THAT failure mode, a near-literal prompt is
+  // the correct instrument and a semantically hard one is the wrong instrument:
+  // "a clean platform tone" against `gen3_clean_platform` isolates DELIVERY and
+  // POSITION from matching difficulty, so a red leaves exactly one explanation.
+  // A green here does NOT prove subtle matching works — that is what the II's
+  // `axefx2-recipe-genre-subtext` is for. Two instruments, two questions.
+  //
+  // WHY THE FM3 NEEDS ITS OWN CASE. Its payload is a comfortable 23,980 chars
+  // with `recipes[]` at ~0% (`scripts/verify-describe-device-budget.ts`), so on
+  // the position axis it looks fine — which is exactly what was true of the FM9
+  // when its case first went RED. The FM9 failure was not burial: the agent
+  // found the recipe, said so, and then hand-authored anyway, because the
+  // recipe DESCRIPTIONS ended "...pick a high-gain amp model separately" and it
+  // read that as permission to abandon the recipe (fixed in blockStack.ts). That
+  // defect class lives per-recipe-string and per-device-catalog, not per payload
+  // size, so the static budget gate cannot see it. This is the behavioural half.
+  //
+  // WHY gen3_clean_platform AND NOT THE FM9'S gen3_high_gain_platform.
+  // The three gen-3 platform recipes carry three SEPARATE description strings,
+  // and the wording defect above lived in that text. Pairing both devices on one
+  // recipe would test one string twice; splitting them covers two, and puts the
+  // maximum lexical distance between the two prompts so the pair is not probing
+  // one narrow neighbourhood of the catalog. `gen3_clean_platform` is also the
+  // only one of the three whose stack is three blocks (compressor + amp +
+  // reverb) — a hand-authored "clean tone" essentially never opens with a
+  // compressor, so a miss is legible in the trace and not merely a failed
+  // assertion. The prompt frame is otherwise word-for-word the FM9's, so the
+  // pair is a clean A/B: device and recipe are the only variables.
+  {
+    id: 'fm3-recipe-platform-pickup',
+    device: 'fm3',
+    description:
+      'FM3 block_stack recipe pickup, the twin of fm9-recipe-platform-pickup and a floor test for '
+      + 'the describe_device discovery surface. The FM3 exposes gen3_clean_platform / '
+      + 'gen3_crunch_platform / gen3_high_gain_platform and currently measures 23,980 chars with '
+      + 'recipes[] at ~0%, so it should pass — the point is that when it stops passing, somebody '
+      + 'finds out. Near-literal prompt match on purpose: it isolates delivery/position from '
+      + 'semantic difficulty. Deliberately a different recipe from the FM9 twin so the pair covers '
+      + 'two of the three platform description strings.',
+    prompt:
+      "On my FM3, give me a clean platform tone in the working buffer. Don't save it.",
+    expectations: {
+      must_call: ['describe_device', 'apply_preset'],
+      // max_tools IS set here, unlike the FM9 twin. types.ts says a count is
+      // right for the majority of cases and should be omitted only when the
+      // prompt is deliberately open-ended so the ROUTE legitimately varies
+      // (am4-h1-sunday-morning). This prompt is the opposite of open-ended: it
+      // names the recipe. The count buys the one signal a destination-only
+      // assertion misses: an agent that reaches the right recipe_id only after
+      // flailing. Call-count explosion was the AM4 regression's first symptom.
+      //
+      // 8, NOT the AM4 twin's 6, and the difference is structural rather than
+      // empirical. `texas_blues_crunch` pins its amp model, so the AM4's honest
+      // route is describe_device -> apply_preset. Every gen-3 platform recipe
+      // deliberately leaves the amp MODEL unset (any clean amp can carry the
+      // voicing; the description says to name it in `overrides`), so a roster
+      // lookup is PART of the honest route here, not a detour. Budget:
+      // describe_device + 1-2 list_params / find_compatible_types + apply_preset
+      // + an optional read-back = 5-6 legitimately. The first green run walked
+      // exactly that at 5 (describe_device, list_params x2, apply_preset,
+      // get_params). 8 keeps margin over the honest ceiling while still
+      // catching the signature that matters — AM4 at 9/11/13/17, FM9 at 11.
+      max_tools: 8,
+      max_repeats: { apply_preset: 2 },
+      tool_call_validators: [{
+        tool: 'apply_preset',
+        call_index: 0,
+        check: (args) => {
+          const id = (args as { recipe_id?: unknown }).recipe_id;
+          if (id !== 'gen3_clean_platform') {
+            return `Expected apply_preset({recipe_id: 'gen3_clean_platform'}); got recipe_id=${JSON.stringify(id)}. `
+              + 'The recipe is named almost verbatim in the prompt, so a miss points at the discovery '
+              + 'surface (describe_device delivery / recipes[] position) or at the recipe description '
+              + 'reading as permission to hand-author — not at retrieval difficulty. Check '
+              + 'scripts/verify-describe-device-budget.ts and the gen3_* descriptions in '
+              + 'packages/core/src/protocol-generic/recipes/blockStack.ts.';
+          }
+          // Secondary: FM3 dispatch, the reason this device gets its own sweep
+          // entry at all (see the file header). Checked after the recipe id so
+          // the primary signal is never masked by a port mismatch.
+          const port = typeof args.port === 'string' ? args.port.toLowerCase() : '';
+          if (!port.includes('fm3') && !port.includes('fm-3') && !port.includes('fm 3')) {
+            return `apply_preset port should target the FM3, got ${String(args.port)}`;
+          }
+          return true;
+        },
+      }],
+      text_not_contains: ['I saved', 'I stored'],
+      max_wall_seconds: 240,
+    },
+  },
 ];

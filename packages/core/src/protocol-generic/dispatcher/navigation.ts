@@ -13,7 +13,7 @@ import {
 } from '../types.js';
 
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
-import { assertInstanceSupported, openCtx, requireDevice, withHandleRetry } from './core.js';
+import { assertInstanceSupported, openCtx, requireDevice, toWirePack, withHandleRetry } from './core.js';
 import { resetModRouteState } from './modRouteState.js';
 
 /**
@@ -131,6 +131,28 @@ export async function executeSavePreset(args: {
           `and it is not the location you are editing. Saving here would replace that preset. ` +
           `Confirm with the user, then call save_preset again with confirm_overwrite: true to proceed, ` +
           `or pick an empty location.`,
+        device: descriptor.display_name,
+      };
+    } else if (target.occupancy_unknown === true && !target.is_active_location) {
+      // The device knows which location is ACTIVE but cannot read whether an
+      // arbitrary target is occupied, so `occupant_name === undefined` means
+      // UNKNOWN, not empty. Refuse rather than save-then-warn: the previous
+      // behaviour put the caution on the receipt of a flash write that had
+      // already happened, which is not a gate.
+      //
+      // The message must not imply a check happened. An agent told "the target
+      // appears free" would relay that to the user as fact; what is true is
+      // that nothing was read.
+      return {
+        op: 'save_preset',
+        target: target.target_display,
+        acked: false,
+        warning:
+          `REFUSING TO SAVE to ${target.target_display}: it is not the location you are editing, and ` +
+          `${descriptor.display_name} has NO decoded way to read what is stored there, so this server cannot ` +
+          `tell you whether that location is empty or holds a preset you would destroy. Nothing was sent. ` +
+          `Ask the user to check ${target.target_display} on the front panel, then call save_preset again with ` +
+          `confirm_overwrite: true. Saving back to the location you are currently editing needs no confirmation.`,
         device: descriptor.display_name,
       };
     }
@@ -284,7 +306,15 @@ export async function executeScanLocations(args: {
   port: string;
   from: string | number;
   to: string | number;
-}): Promise<{ device: string; scanned: readonly ScannedLocation[]; failed_at?: string; failed_reason?: string }> {
+  pack?: number;
+  on_active_preset_edited?: 'warn' | 'discard' | 'save_active_first';
+}): Promise<{
+  device: string;
+  scanned: readonly ScannedLocation[];
+  failed_at?: string;
+  failed_reason?: string;
+  warning?: string;
+}> {
   const descriptor = requireDevice(args.port);
   const scanLocations = descriptor.reader.scanLocations;
   if (scanLocations === undefined) {
@@ -294,10 +324,49 @@ export async function executeScanLocations(args: {
       `scan_locations is not implemented for ${descriptor.display_name}.`,
     );
   }
-  const ctx = openCtx(descriptor);
+  // `pack` (Circuit Tracks) rides on ctx like every other pack-addressed op, so a
+  // scan lists the requested pack's directory. assertPackSupported (in openCtx)
+  // refuses pack>1 on packless devices.
+  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
+
+  // ── Buffer-dirty gate, for devices whose scan NAVIGATES ────────────
+  //
+  // On such a device (the Axe-Fx II) a scan sends a switch per slot, so it
+  // discards unsaved working-buffer edits exactly as `switch_preset` would,
+  // only ~64 times over. `switch_preset` has always consulted this guard and
+  // `scan_locations` never did, which produced the 2026-08-03 sequence where
+  // an agent warned the user about the destructive effect of its NEXT call
+  // while having silently caused it three calls earlier. The device-level
+  // restore at the end of the scan puts the preset NUMBER back, which reads
+  // like a rollback and is not one: the reload comes from flash.
+  //
+  // Devices that read a stored name without moving (the AM4) skip this
+  // entirely, so the common non-destructive case gains no friction.
+  if (descriptor.capabilities.scan_navigates === true && descriptor.writer.guardActiveBufferOrSave) {
+    const mode = args.on_active_preset_edited ?? 'warn';
+    const guard = await descriptor.writer.guardActiveBufferOrSave(ctx, mode);
+    if (!guard.proceed) {
+      throw new DispatchError(
+        'buffer_dirty',
+        descriptor.display_name,
+        `${guard.warningText ?? 'The working buffer has unsaved edits.'} `
+        + `scan_locations on ${descriptor.display_name} reads each name by SWITCHING to that preset, so it would `
+        + `discard those edits before you saw the list, and the preset number it restores afterwards reloads from `
+        + `flash rather than bringing them back. Re-call with on_active_preset_edited:'discard' to scan anyway, `
+        + `or 'save_active_first' to keep the edits.`,
+      );
+    }
+  }
+
   // Phase A.5: reconnect-and-retry-once on a handle-level fault. A scan is a
   // bounded batch of independent per-location reads (not a stateful transfer
   // session), so restarting it whole on a fresh handle is safe.
   const result = await withHandleRetry(ctx, (c) => scanLocations(c, args.from, args.to));
-  return { ...result, device: descriptor.display_name };
+  return {
+    ...result,
+    device: descriptor.display_name,
+    ...(descriptor.capabilities.scan_navigates === true
+      ? { warning: `${descriptor.display_name} scans by switching to each location, so the working buffer now holds ${String(args.from)}'s stored contents, not whatever was in it before. The active location was restored.` }
+      : {}),
+  };
 }

@@ -401,7 +401,22 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
   }
 
   try {
-    const start = await readActivePreset();
+    // Cold-start resend: this is the FIRST wire transaction of the whole probe
+    // run, and a freshly-opened USB-MIDI handle frequently drops the very
+    // first outbound transaction during driver warm-up (same class as the
+    // AM4 cold-start resend in am4/src/shared/wireOps.ts sendAndAwaitAck).
+    // Direct evidence is the issue #18 report's own contrast, same session/
+    // rig: this probe sent 0x0D ALONE as message #1 and got nothing, while
+    // gen3-readback-probe's job0 sent an (always-unanswered) identity request
+    // FIRST and 0x0D as message #2, which landed. An independent 2026-06-19
+    // capture shows the same message-POSITION pattern (0x0D as message #2
+    // succeeding), consistent with but not separate proof of cold-start on
+    // its own — the identity request going unanswered doesn't by itself rule
+    // out "the FM9 just never answers identity requests," so the message-1-
+    // vs-message-2 contrast in the #18 report is what's load-bearing here.
+    // Retry once, same open handle, before giving up.
+    let start = await readActivePreset();
+    if (start === undefined) start = await readActivePreset();
     if (start === undefined) {
       log('\nCould not read the active preset number; a safe restore point cannot be established.');
       log('Skipping all WRITE tests (read-only run). Close the editor, connect the device, re-run.');

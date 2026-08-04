@@ -17,6 +17,7 @@
 
 import {
   describeDevice,
+  describeDeviceGuidance,
   collectApplyPresetPreflight,
 } from '@mcp-midi-control/core/protocol-generic/dispatcher.js';
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
@@ -99,14 +100,33 @@ for (const c of cases) {
   }
 
   // Tempo-first guidance parity: every device carries a
-  // `tempo_time_discipline` topic in agent_guidance (surfaced via the
-  // describe_device tool response, the channel agents actually read).
-  // Checked before the example_spec `continue` so Hydrasynth is covered.
+  // `tempo_time_discipline` topic in agent_guidance, and it must be REACHABLE
+  // from the tool surface — either inline in describe_device, or named in
+  // `agent_guidance_withheld` and served by describe_device({port,
+  // guidance:true}). Checked before the example_spec `continue` so Hydrasynth
+  // is covered.
+  //
+  // The two-path form is not a loosening. `describeDevice` now holds guidance
+  // topics back when a response would otherwise cross the host's tool-result
+  // delivery cliff (50,000 chars, above which the model receives a
+  // stub and NOTHING else). Asserting only the inline path would have this
+  // check pass on a device whose whole payload is being thrown away and fail
+  // on one that is being delivered correctly, which is backwards. So: assert
+  // the topic is reachable, and assert the pointer is honest when it is not
+  // inline.
+  const inlineTopic = response.agent_guidance?.tempo_time_discipline;
+  const withheldTopics = response.agent_guidance_withheld?.topics ?? [];
+  const fetched = describeDeviceGuidance(c.port).agent_guidance?.tempo_time_discipline;
   check(
     `${c.port} agent_guidance carries tempo_time_discipline`,
-    typeof response.agent_guidance?.tempo_time_discipline === 'string'
-      && response.agent_guidance.tempo_time_discipline.length > 0,
-    `agent_guidance keys: ${Object.keys(response.agent_guidance ?? {}).join(', ')}`,
+    typeof fetched === 'string' && fetched.length > 0,
+    `describe_device({port:"${c.port}", guidance:true}) keys: ${Object.keys(describeDeviceGuidance(c.port).agent_guidance ?? {}).join(', ')}`,
+  );
+  check(
+    `${c.port} tempo_time_discipline is inline, or named in agent_guidance_withheld`,
+    (typeof inlineTopic === 'string' && inlineTopic.length > 0)
+      || withheldTopics.includes('tempo_time_discipline'),
+    `not inline and not listed as withheld. withheld: [${withheldTopics.join(', ')}]`,
   );
 
   if (response.example_spec === undefined) continue;

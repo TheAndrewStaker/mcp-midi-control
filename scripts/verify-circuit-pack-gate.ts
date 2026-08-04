@@ -33,7 +33,7 @@
 import {
   blockAddress, fileId, makeMessage, TRANSFER_CONSTANTS,
 } from '@mcp-midi-control/circuit-tracks/ncs/transfer.js';
-import { NCS_FILE_SIZE } from '@mcp-midi-control/circuit-tracks/ncs/format.js';
+import { NCS_FILE_SIZE, NCS_MAGIC, NCS_TOTAL_SESSION_SIZE_OFFSET } from '@mcp-midi-control/circuit-tracks/ncs/format.js';
 import { writer } from '@mcp-midi-control/circuit-tracks/descriptor/writer.js';
 import { reader } from '@mcp-midi-control/circuit-tracks/descriptor/reader.js';
 import { CIRCUIT_TRACKS_DESCRIPTOR } from '@mcp-midi-control/circuit-tracks/descriptor.js';
@@ -50,6 +50,12 @@ function check(label: string, ok: boolean, detail?: string): void {
 
 const SUB = TRANSFER_CONSTANTS.SUBCMD;
 const FILE_TYPE_PROJECT = TRANSFER_CONSTANTS.FILE_TYPE_PROJECT;
+const FILE_TYPE_SAMPLE = 0x05;
+// SET_FILENAME's payload is the fid ALONE (no 8-byte address), so its pack byte
+// sits one after the subcommand, not at FID_AT. SUB_DIR_ENUM/INFO (0x0d/0x08)
+// likewise carry [fileType, pack, slot] right after the subcommand.
+const SUB_DIR_ENUM = 0x0d;
+const SUB_DIR_INFO = 0x08;
 // F0 + HEADER(6) + subcmd → payload starts at 8; addr(8) then fid(3) at 16..18.
 const SUBCMD_AT = 7;
 const FID_AT = 16;
@@ -63,16 +69,23 @@ const FID_AT = 16;
 function packsReferenced(frame: readonly number[]): number[] {
   const out: number[] = [];
   const sub = frame[SUBCMD_AT];
-  // fileId-bearing frames: [fileType, pack, slot] right after the 8-byte address.
+  // fileId-bearing WRITE frames: [fileType, pack, slot] after the 8-byte address.
   if (
     (sub === SUB.WRITE_INIT || sub === SUB.WRITE_DATA || sub === SUB.WRITE_FINISH)
     && frame.length >= FID_AT + 3
-    && frame[FID_AT] === FILE_TYPE_PROJECT
+    && (frame[FID_AT] === FILE_TYPE_PROJECT || frame[FID_AT] === FILE_TYPE_SAMPLE)
   ) {
     out.push(frame[FID_AT + 1]);
   }
-  // Pack-scoped project dir listing: DIR_CONTROL [0x03, pack].
-  if (sub === SUB.DIR_CONTROL && frame[8] === 0x03 && frame.length > 9) {
+  // SET_FILENAME: fid with NO address, so [fileType, pack, slot] at frame[8..10].
+  if (sub === SUB.SET_FILENAME && frame.length > 9 && (frame[8] === FILE_TYPE_PROJECT || frame[8] === FILE_TYPE_SAMPLE)) {
+    out.push(frame[9]);
+  }
+  // Pack-scoped dir listing / per-slot enum: DIR_CONTROL/0x0d/0x08 [fileType, pack, ...].
+  if (
+    (sub === SUB.DIR_CONTROL || sub === SUB_DIR_ENUM || sub === SUB_DIR_INFO)
+    && (frame[8] === 0x03 || frame[8] === FILE_TYPE_SAMPLE) && frame.length > 9
+  ) {
     out.push(frame[9]);
   }
   return out;
@@ -108,7 +121,14 @@ const ctxWithPack = (conn: MidiConnection, pack: number | undefined): DispatchCt
   ({ conn, descriptor: CIRCUIT_TRACKS_DESCRIPTOR, pack, reconnect: () => conn }) as unknown as DispatchCtx;
 
 async function main(): Promise<void> {
+  // Structurally VALID, not merely the right length: `uploadProject` gained a
+  // structural pre-flight (2026-07-29) and refuses a right-length non-project
+  // before any frame is sent, which an all-zero buffer is. This suite is about
+  // PACK ADDRESSING, so its fixture must clear unrelated gates or every check
+  // below would be asserting against the argument-refusal path instead.
   const NCS = new Uint8Array(NCS_FILE_SIZE);
+  for (let i = 0; i < NCS_MAGIC.length; i++) NCS[i] = NCS_MAGIC.charCodeAt(i);
+  new DataView(NCS.buffer).setUint32(NCS_TOTAL_SESSION_SIZE_OFFSET, NCS_FILE_SIZE, true);
 
   // ── The divergence test ────────────────────────────────────────────
   // Wire pack 4 = the device's "Pack 5". One operation, gate read + write.

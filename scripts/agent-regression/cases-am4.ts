@@ -155,7 +155,37 @@ export const AM4_CASES: AgentRegressionCase[] = [
     prompt: "On the AM4, build a clean tone in the working buffer with a long, lush reverb tail. Pick a reverb type that actually lets you dial in a long decay time. Don't save it.",
     expectations: {
       must_call: ['apply_preset'],
-      max_tools: 6,
+      // ⚠ THE HALL VALIDATOR BELOW IS THIS CASE'S WHOLE REASON TO EXIST. If you
+      // meet a flake here, DO NOT weaken it — that is the tempting and wrong
+      // move. This case is the SOLE owner of the Hall silent-no-op check
+      // (am4-s2-discovery-find-compatible-reverb is disabled, retired into it),
+      // so a weakened assertion leaves the trap uncovered everywhere.
+      //
+      // NO max_tools ON THIS CASE, DELIBERATELY (2026-08-02). The wall-clock
+      // ceiling below is the runaway guard instead.
+      //
+      // Why: a call-count ceiling is a PROXY for "is the agent flailing", and
+      // this case kept failing on the proxy while passing on the thing it
+      // exists to check. Two real-hardware Sonnet 5 runs, both with a correct
+      // final answer, both red on arithmetic alone:
+      //   7 calls: ... -> apply_preset -> get_preset
+      //            (the last call was reading back to confirm the write landed)
+      //   8 calls: ... -> apply_preset -> find_compatible_types -> apply_preset
+      //            (the agent caught its own mistake and corrected it)
+      // Verifying your work and self-correcting are behaviours we WANT. A
+      // budget that punishes them is measuring the wrong thing, and each new
+      // model invalidates whatever number we pick — 6 was raised to 7 and blown
+      // the very next run.
+      //
+      // max_wall_seconds measures flailing DIRECTLY and is model-agnostic. It
+      // still catches a real excursion: the 17-call sibling case that ran the
+      // same day took 92s, comfortably inside the 150s ceiling's reach.
+      //
+      // This is NOT a licence to drop max_tools elsewhere. Budgets are how the
+      // suite catches runaway exploration, and most cases assert a specific
+      // efficient path where a count is exactly right. This case is different:
+      // its prompt is deliberately open-ended (see above) so the route varies
+      // legitimately, and only the DESTINATION is asserted.
       max_repeats: { apply_preset: 2 },
       tool_call_validators: [{
         tool: 'apply_preset',
@@ -295,7 +325,13 @@ export const AM4_CASES: AgentRegressionCase[] = [
             try {
               parsed = JSON.parse(result) as Record<string, unknown>;
             } catch {
-              return true;
+              // NOT `return true`. A payload that fails to parse is usually a
+              // TRUNCATED one, and passing on it converts this content check
+              // into a vacuous pass — the exact shape that let the
+              // undelivered-result outage run green for two weeks. The runner
+              // now fails the whole case on a host substitution, so anything
+              // reaching here is a genuinely malformed response.
+              return `get_preset result did not parse as JSON (truncated or malformed): ${result.slice(0, 200)}`;
             }
             const slots = parsed.slots as Array<Record<string, unknown>> | undefined;
             if (!Array.isArray(slots)) return true;
@@ -379,10 +415,16 @@ export const AM4_CASES: AgentRegressionCase[] = [
           const includesType = names.includes('type');
           if (includesAmp && includesType) return true;
           // Acceptable fallback: list_params({block:["amp"]}) plus a
-          // second call with name. Catches only the maximally-wasteful
-          // "list_params()" with no filter (returns every param on
-          // every block).
+          // second call with name.
           if (includesAmp) return true;
+          // A no-filter call is ALSO acceptable now, and the comment that used
+          // to sit here ("catches the maximally-wasteful list_params() with no
+          // filter, which returns every param on every block") describes
+          // behaviour removed on 2026-08-02. It no longer returns every param;
+          // it returns a per-block census, which is a reasonable first step and
+          // is the ONLY thing that changed about this route. Judge the calls
+          // that name a block.
+          if (args.block === undefined) return true;
           return `list_params should target block:["amp"] (and ideally name:["type"]) to get the amp enum table; got block=${JSON.stringify(args.block)} name=${JSON.stringify(args.name)}.`;
         },
       }],
@@ -1346,7 +1388,53 @@ export const AM4_CASES: AgentRegressionCase[] = [
           return true;
         },
       }],
-      must_not_call: ['lookup_lineage'],
+      // `must_not_call: ['lookup_lineage']` REMOVED 2026-08-01: what we care
+      // about is that apply_preset carried the recipe_id (asserted above), not
+      // that a legitimate tool went unused. Consulting lineage AND using the
+      // recipe is fine.
+      //
+      // ⚠ THIS CASE IS RED, AND IT IS REPORTING A REAL REGRESSION. Do not
+      // "fix" it by loosening the recipe_id assertion.
+      //
+      // A first diagnosis (2026-08-01) blamed the prompt: "SRV-style" names an
+      // artist, lookup_lineage is the artist lookup, so of course the agent
+      // researches. THAT DIAGNOSIS WAS WRONG, and the record refutes it:
+      //
+      //   2026-05-27  PASS n=2      \
+      //   2026-05-27  PASS n=2       |  IDENTICAL prompt, and
+      //   2026-06-06  PASS n=2       |  must_not_call was PRESENT
+      //   2026-06-10  PASS n=2       |  for all of these
+      //   2026-06-28  PASS n=3      /
+      //   2026-08-01  FAIL n=17, then 9, then 13
+      //
+      // It also fails to explain `am4-recipe-auto-wah`, whose prompt names NO
+      // artist and which still costs 7-16 calls on AM4 against 2 on the II.
+      // The AM4 recipe family as a whole is expensive to retrieve; the artist
+      // cue is not the variable.
+      //
+      // TWO things changed between the last pass and the failures, and the
+      // second is the one with measurable evidence:
+      //   1. The agent moved sonnet-4-6 -> sonnet-5 (recorded per row in
+      //      results.jsonl).
+      //   2. `describe_device`'s AM4 payload GREW. `cab_polish` was added to
+      //      agentGuidance.ts on 2026-07-17 (0.7.0) at POSITION 5, pushing
+      //      `recipe_usage` down to key #23 of 24. The response is now ~51 KB
+      //      (~14k tokens), 71% of it agent_guidance, with `recipes[]` starting
+      //      about 78% of the way in. The II's is ~47 KB, guidance 54%,
+      //      recipe_usage at #15 — and the II still passes at n=2.
+      //
+      // The trace shows the mechanism plainly: the agent's first turn says it
+      // will check "since there may be a curated recipe close to this", calls
+      // describe_device, and then never mentions recipes again. It read the
+      // payload and the recipe surface fell off the end.
+      //
+      // So the fix is NOT in this file. It is a discovery-surface budget
+      // problem: `describe_device` is mandatory for any device question and has
+      // no size gate, while the 36 tool descriptions are gated at 600/1000
+      // chars by scripts/list-tools.ts. The repo already solved this shape once
+      // for patterns (`list_pattern_recipes`, protocol-generic/tools/patterns.ts).
+      // A `list_recipes` lister plus a describe_device size budget is the
+      // durable answer.
       text_not_contains: ['I saved', 'I stored'],
       max_wall_seconds: 240,
     },

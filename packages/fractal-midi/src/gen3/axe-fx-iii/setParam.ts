@@ -864,7 +864,9 @@ export function assembleGen3BlockBulkRead(
 // companion (sub=0x30, gridPos only) emitted first; the select is a cursor
 // move that does not change grid state (the codec-backed device simulator
 // models it as a no-op), so the insert alone is the state-changing write and
-// this builder emits just the insert.
+// this builder emits just the insert. TRUE ON III/FM9 ONLY: the FM3 ignores
+// the insert's target cell unless the select precedes it — see
+// `buildSelectCell` below, hardware-confirmed 2026-06-27 (issue #9).
 //
 // Wire envelope (23 bytes):
 //

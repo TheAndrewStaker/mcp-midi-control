@@ -15,6 +15,64 @@
  * surfaces that both compile DOWN to `Step[]` (see `miniNotation.ts`).
  */
 
+/**
+ * Sixths of a step: the resolution a note LENGTH is expressed in. The Circuit
+ * Tracks gate lane is a fractional field counting these (manual: "any value
+ * between one-sixth and 16, in increments of one-sixth of a Step, giving a
+ * total of 96 possible values"), and a 44,898-note corpus census agrees
+ * exactly. Sixths are the neutral unit because they are the FINEST any target
+ * stores; step counts and milliseconds both derive from them, never the
+ * reverse.
+ */
+export const GATE_SIXTHS_PER_STEP = 6;
+/** Shortest expressible note: one sixth of a step (real staccato, 1,033 in the corpus). */
+export const MIN_GATE_SIXTHS = 1;
+/**
+ * Longest expressible note: 96 sixths = 16 steps. This is where the one target
+ * that STORES gates (Circuit Tracks) tops out; a future target with a wider
+ * field relaxes the ceiling at its own boundary rather than here, so the
+ * neutral model never promises a length no device can hold.
+ */
+export const MAX_GATE_SIXTHS = 96;
+/** Default note length when a step states none: one full step. */
+export const DEFAULT_GATE_SIXTHS = GATE_SIXTHS_PER_STEP;
+
+/** What `gateSixthsFromSteps` had to do to fit a requested length into the field. */
+export interface GateFromSteps {
+  /** The length to put on `Step.gate_sixths`. Always in range. */
+  gate_sixths: number;
+  /** The requested length was longer (or shorter) than the field holds and was capped. */
+  clamped: boolean;
+  /** The requested length did not land on a whole sixth and went to the nearest one. */
+  rounded: boolean;
+}
+
+/**
+ * Convert a note length measured in STEPS into `Step.gate_sixths`, reporting
+ * what it had to do rather than doing it quietly.
+ *
+ * For IMPORTERS (a `.mid` file, a Songsterr tab), which produce arbitrary real
+ * durations that no step grid can hold exactly: a whole note under a 16th grid
+ * is 16 steps of gate, a source tie can run longer than the 16-step ceiling,
+ * and a triplet lands between sixths. Refusing any of those would fail the
+ * import over a note length, so this rounds and caps, and hands back
+ * `rounded` / `clamped` so the caller can say so in its warnings.
+ *
+ * Hand-authored notation does the opposite and THROWS (see the `":len"` suffix
+ * in `miniNotation.ts`): a human who wrote a length meant that length, so
+ * silently changing it is the bug. Two callers, two right answers, one unit.
+ */
+export function gateSixthsFromSteps(steps: number): GateFromSteps {
+  const raw = steps * GATE_SIXTHS_PER_STEP;
+  const nearest = Math.round(raw);
+  const bounded = Math.min(MAX_GATE_SIXTHS, Math.max(MIN_GATE_SIXTHS, nearest));
+  return {
+    gate_sixths: bounded,
+    clamped: bounded !== nearest,
+    rounded: Math.abs(raw - nearest) > 1e-9,
+  };
+}
+
 /** One grid cell of one voice. */
 export interface Step {
   /** True = a hit fires on this step; false = rest. */
@@ -61,6 +119,39 @@ export interface Step {
    * bassline/lead/chord voice is one speakable string per voice row.
    */
   notes?: number | readonly number[];
+  /**
+   * Note LENGTH in SIXTHS of a step, `MIN_GATE_SIXTHS`..`MAX_GATE_SIXTHS`
+   * (6 = one step, 96 = sixteen steps, 3 = a half-step staccato). Absent ⇒
+   * `DEFAULT_GATE_SIXTHS`, one step, which is what every pattern authored
+   * before this field existed gets, so nothing already written moves.
+   *
+   * The pattern owns duration, not the instrument. A "pad" whose sustain comes
+   * from the receiving synth's amp envelope becomes a blip the moment the synth
+   * is swapped (which is exactly what happened when a MicroFreak took over the
+   * Circuit's MIDI 1 track from a Hydrasynth), so a pattern that means "hold
+   * this" has to say so itself.
+   *
+   * SIXTHS, not steps, and deliberately not milliseconds: a step count maps a
+   * 96-value field onto 16 values and makes real sub-step gates unexpressible,
+   * and milliseconds need a BPM the stored-project format has no concept of.
+   * Authored as a step count at the notation surface (`"c3:4"`), which is the
+   * unit the device's own Gate View shows; the conversion happens once, there.
+   */
+  gate_sixths?: number;
+  /**
+   * TIE-FORWARD: hold this step's note(s) into the next onset instead of
+   * re-triggering, the device's "Tied / Drone Notes" control. Absent = false.
+   *
+   * Per STEP, never per note: the device applies it to every note on the step
+   * (Circuit manual, and 380 of 380 corpus chord steps carry it uniformly with
+   * none mixed), which is why it lives here and not on an individual pitch.
+   *
+   * A tie only does anything if `gate_sixths` reaches the next onset, so the
+   * notation's bare `_` form COMPUTES the gate rather than letting a caller
+   * state the two inconsistently; a hand-set pair that no longer reaches is
+   * dropped loudly at the device boundary, never silently kept.
+   */
+  tie?: boolean;
 }
 
 /**

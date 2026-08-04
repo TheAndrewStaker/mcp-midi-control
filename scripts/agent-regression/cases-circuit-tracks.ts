@@ -172,4 +172,51 @@ export const CIRCUIT_TRACKS_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 150,
     },
   },
+
+  // ── import_songsterr is NOT drum-only (description regression) ─────────────
+  // The failure this locks down is a READING failure, not a wire failure: the
+  // old description said "Fetch a song's DRUM tab", the result surfaced only
+  // `drum_tracks`, and the core fetcher was called `fetchSongsterrDrums`. A
+  // session read all three as a constraint and concluded the path could not
+  // reach a bass part, when selecting any part has always worked. Only an agent
+  // run can catch that; a golden cannot read a description.
+  //
+  // NETWORK: import_songsterr is device-free and needs no mock transport, but it
+  // DOES hit Songsterr's public endpoints. A Songsterr outage fails this case.
+  {
+    id: 'circuit-songsterr-imports-any-part-not-just-drums',
+    device: 'circuit',
+    description:
+      'import_songsterr part selection: asked for the BASS part of a song, the agent must actually go and fetch it (list_tracks to see the roster, and/or track / track_name), NOT refuse on the belief that the tool is drum-only. It must also not author anything: this is a read-only inspection request. Catches a tool description that reads as drum-only.',
+    prompt:
+      'Using the Songsterr tab https://www.songsterr.com/a/wsa/sleep-token-gethsemane-drum-tab-s1467797, tell me what parts that song has, and then '
+      + 'fetch the BASS part specifically. Do not send anything to any device, and do not save anything.',
+    expectations: {
+      must_call: ['import_songsterr'],
+      // A read-only inspection must not touch the device or a stored slot.
+      must_not_call: ['apply_pattern', 'upload_project'],
+      max_tools: 6,
+      min_tools: 1,
+      // The agent must not report the capability as absent. These are the exact
+      // phrasings the drum-only misreading produces.
+      text_not_contains: ['only supports drum', 'only drum tracks', 'drums only', 'cannot fetch the bass', 'drum-only'],
+      tool_call_validators: [
+        {
+          tool: 'import_songsterr',
+          call_index: 'last',
+          check: (args) => {
+            const selector = args.list_tracks === true
+              || args.track !== undefined
+              || typeof args.track_name === 'string';
+            if (!selector) {
+              return 'the last import_songsterr call named no part: pass list_tracks:true to see the roster, or track / track_name to select the bass part.';
+            }
+            if (args.whole_song === true) return 'whole_song was not asked for; this is an inspection request.';
+            return true;
+          },
+        },
+      ],
+      max_wall_seconds: 150,
+    },
+  },
 ];

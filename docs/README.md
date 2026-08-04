@@ -91,10 +91,16 @@ and capture guides:
   checklist.
 - [`SAFETY-FOR-MUSICIANS.md`](./SAFETY-FOR-MUSICIANS.md): plain-language
   trust model for non-developer users.
-- [`captures/`](./captures/README.md): community capture & probe guides for
-  gen-3 Fractal devices (FM9 / Axe-Fx III / FM3): per-device pages with a
-  one-command probe, a report-from-a-chat menu, and the captures still needed,
-  plus a shared [`SETUP.md`](./captures/SETUP.md) for Wireshark/USBPcap and Mac.
+- [`contributing/`](./contributing/README.md): the contribution funnel. One
+  page per registered device (`contributing/devices/<descriptor-id>.md`) with
+  its asks ranked by value and tagged REPORT / DONATE / PROBE / SESSION /
+  CAPTURE, plus [`TIERS.md`](./contributing/TIERS.md),
+  [`SAFETY.md`](./contributing/SAFETY.md) (the canonical port-exclusivity
+  rule), [`EVIDENCE.md`](./contributing/EVIDENCE.md) and
+  [`SUBMITTING.md`](./contributing/SUBMITTING.md). Capture-tool setup lives in
+  [`contributing/tools/`](./contributing/tools/capture-setup.md). Coverage and
+  page-vs-descriptor agreement are gated by
+  `scripts/verify-contribution-guides.ts`.
 
 ## Vendor manuals
 

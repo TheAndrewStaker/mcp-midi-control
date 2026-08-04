@@ -13,11 +13,55 @@ import * as z from 'zod/v4';
 import { DispatchError } from '../types.js';
 import { listRegisteredDevices } from '../registry.js';
 
+/**
+ * `port` is on THIRTY tools, so every character here is paid thirty times in
+ * `tools/list` — 8,100 chars at its old length, the largest single duplication
+ * on the surface and 4.7% of everything the model reads before it can call
+ * anything.
+ *
+ * Kept: the three accepted forms, with one example each, because that is what
+ * the agent needs to fill the argument in. Dropped: "call describe_device(port)
+ * to confirm capabilities", which is not about this argument at all — it is a
+ * session-start instruction, already stated (more forcefully) in the server
+ * `instructions` block and again in describe_device's own description. It was
+ * being re-sent on twenty-nine tools that are not describe_device.
+ */
 export const PORT_DESC =
-  'Device port. Accepts the device id (e.g. "am4", "axe-fx-ii"), display ' +
-  'name ("Fractal AM4"), or any MIDI port-name substring matching a ' +
-  'registered device (e.g. "AM4 MIDI 1"). Call list_midi_ports to see ' +
-  'connected ports; call describe_device(port) to confirm capabilities.';
+  'Which device to address: its id ("am4", "axe-fx-ii"), display name ' +
+  '("Fractal AM4"), or a MIDI port-name substring ("AM4 MIDI 1"). ' +
+  'list_midi_ports shows what is connected.';
+
+/**
+ * THE `pack` ARGUMENT, stated once for the seven tools that take one.
+ *
+ * Seven copies of this concept measured ~5,000 chars of `tools/list` between
+ * them, restating the same four facts in seven different orders, and every
+ * session paid for all seven before the first tool call. What stays here is
+ * only what the agent needs to CHOOSE the argument: how the number maps to the
+ * front panel, the default, that packs do not share slots, and that the server
+ * cannot read the selection off the device.
+ *
+ * What was REMOVED is not lost — it was already stated where it is actually
+ * needed, and was duplicated here:
+ *   - the ~6-8 s manifest-flush read-back window lives in the Circuit's
+ *     `agentGuidance.ts`, in `descriptor.ts`, AND in the `list_samples` result
+ *     text itself, which is where an agent hits it;
+ *   - the drum-binding/pool alignment rule lives in the `drum_binding`
+ *     argument, which is the argument it constrains.
+ * Per-tool clauses below add only what is genuinely tool-specific.
+ *
+ * The consolidation also CORRECTED two of the seven copies. `scan_locations`
+ * and `list_samples` both claimed `pack` is "ignored on packless devices"; it
+ * is not. `openCtx` calls `assertPackSupported` on every pack-addressed op, so
+ * a packless device REFUSES pack > 1 with `capability_not_supported`. Seven
+ * hand-written copies of one behaviour is how two of them end up describing
+ * behaviour the server does not have.
+ */
+export const PACK_DESC =
+  'Circuit Tracks microSD pack, numbered as the front panel shows it (pack:5 = "Pack 5"). ' +
+  'Default 1. Packs are separate worlds: the same slot number in another pack is a ' +
+  'different project. The server cannot see which pack the device has selected, so pass it ' +
+  'explicitly; list_packs names them. Packless devices refuse pack > 1.';
 
 /**
  * Shared snippet for tools whose description references the curated top-N
@@ -41,6 +85,41 @@ export const BLOCK_PARAMS_SUMMARY_HINT =
  *     object directly instead of having to re-parse a JSON string.
  *
  * String payloads (already textual, no structure) skip structuredContent.
+ *
+ * BOTH COPIES STAY. The MCP spec asks a server returning structuredContent to
+ * also return functionally-equivalent unstructured content for hosts that do
+ * not read the structured field. Dropping the text block would save local
+ * stdio bytes and nothing else, at the cost of breaking every such host.
+ *
+ * THE TEXT COPY IS COMPACT, NOT PRETTY-PRINTED (2026-08-02). It carried a
+ * 2-space indent until this change. Measured consequences of removing it:
+ *
+ *   - Model-facing: NONE. Claude Code discards this text block whenever
+ *     `structuredContent` is present and hands the model
+ *     `JSON.stringify(structuredContent)` instead. Measured over the 661-trace
+ *     corpus in `scripts/agent-regression/traces/`: 1,783 of 1,783 results
+ *     carrying structuredContent had host content byte-identical to the
+ *     COMPACT serialization, and not one of the 1,760 JSON results the model
+ *     actually received was indented. The indent has never reached a model.
+ *   - Size accounting: NONE, in the same host. Both size limits Claude Code
+ *     enforces quote the compact length back at us — the 13 token-limit
+ *     errors in the corpus state a character count that matches
+ *     compact(structuredContent) exactly, 13 for 13, and never the indented
+ *     length (which runs 20-24% higher on those payloads).
+ *
+ * SO WHY CHANGE IT. Because "the host counts the structured copy" was an
+ * assumption the whole `describe_device` budget rested on, and it is only
+ * verified for ONE host. Indented, this text block ran 2.2-24% larger than the
+ * number `verify-describe-device-budget.ts` gates on — and axe-fx-ii, the
+ * largest device, sat at 47,921 compact but 59,165 indented, i.e. comfortably
+ * under the 50,000-char delivery cliff on one metric and well over it
+ * on the other. Any host that counts or forwards the TEXT copy instead would
+ * have blacked out the II with the budget gate still reporting green.
+ *
+ * Emitting the text copy compact collapses that divergence to zero: both
+ * copies are now the same length, so the gate's number is correct no matter
+ * which field a host measures. That is the reason for this change. The ~15%
+ * saving on the local stdio pipe is real but worth nothing on its own.
  */
 export function asText(payload: unknown): {
   content: { type: 'text'; text: string }[];
@@ -49,7 +128,7 @@ export function asText(payload: unknown): {
   if (typeof payload === 'string') {
     return { content: [{ type: 'text', text: payload }] };
   }
-  const text = JSON.stringify(payload, null, 2);
+  const text = JSON.stringify(payload);
   // structuredContent must be a JSON object (record). Arrays and
   // primitives don't qualify per the spec, only emit the field when
   // the payload is a plain object.
@@ -448,7 +527,15 @@ export const routingEdgeShape = z.object({
  * the embedded slot shape can be constructed at registration time.
  */
 export function buildPresetShape(): z.ZodObject {
-  return z.object({
+  // `looseObject`, not `object`, for the SAME reason apply_preset's
+  // `overrides` is loose: on an INPUT schema `z.object` silently STRIPS an
+  // unrecognised key rather than rejecting it, so a misnamed top-level field
+  // vanishes before the handler can say anything about it. Loose lets it
+  // through to `rejectUnknownSpecKeys` (dispatcher/preset.ts), which names it.
+  // Measured clean first: 0 unknown top-level keys across 351 corpus
+  // apply_preset calls carrying a `spec`, so this closes the class without
+  // turning any observed agent behaviour red.
+  return z.looseObject({
     slots: z.array(buildPresetSlotShape()).min(1),
     scenes: z.array(presetSceneShape).optional(),
     name: z.string().max(32).optional(),

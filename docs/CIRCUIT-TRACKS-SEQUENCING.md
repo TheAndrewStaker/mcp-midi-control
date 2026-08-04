@@ -99,10 +99,27 @@ offset. Per step:
   bytes. This was the one subtlety that bit the first decode.
 - **probability** 0–7 (7 = 100%, default); present even on empty steps
   (`00 07 00 00`).
-- note slot order is **note, gate, delay, velocity** (gate = micro-ticks, 6 per
-  step, >6 ties across steps; delay = micro-step nudge 0–5; velocity 0–127).
+- note slot order is **note, gate, delay, velocity** (delay = micro-step nudge
+  0–5, forward-only; velocity 0–127).
   Empty slot = `00 00 00 60` (velocity 0x60 = device default, no note). Byte
   order cross-checked against the MIT `namirsab/circuit-tracks-tools` reference.
+- **the gate byte is TWO fields, `tie << 7 | gate_sixths`** (corrected
+  2026-07-26, hardware-confirmed 2026-07-27). ~~gate = micro-ticks, 6 per step,
+  >6 ties across steps~~ was wrong: a magnitude over one step is just a longer
+  note, not a tie. The magnitude is a note LENGTH in **sixths of a step, 1..96**
+  (6 = one step, 96 = sixteen, the device's own Gate View unit) and **bit 7 is
+  the documented per-step tie-forward flag**. It is NOT a plain 0..127 value and
+  the ceiling is NOT 96 as a byte: 224 (`0x80 | 96`) is legal and common.
+  Census: 274 files / 44,898 note slots; 43,850 with bit 7 clear top out at
+  exactly 96 with nothing in 97..127, and all 1,048 with bit 7 set are exactly
+  224. The two fields are **independent**, hardware-confirmed on 2026-07-27: a
+  tie authored at magnitude 48 (raw byte 176) was loaded and SAVED on the unit
+  and read back as 176, while the synth-1 mixer byte moved on its own, proving
+  the device re-serialised from its own state rather than echoing our upload.
+  Nothing is clamped or masked: the old 0..127 validator would have thrown on
+  1,048 real notes, and masking the flag away would have deleted hand-set note
+  lengths. Full decode: `docs/CIRCUIT-TRACKS-CONTROL-MAP.md` "Note length and
+  tie".
 
 Drum steps are a DIFFERENT (structure-of-arrays) format, see `ncs/drumPattern.ts`
 and `ncs/format.ts`. Pattern playback settings (length/speed/direction) live in a
@@ -278,6 +295,10 @@ lives in the file after all. That controlled diff is the way to settle it.
    used a pre-fix codec (gate/velocity byte order was swapped, since corrected
    and byte-exact-validated); a quick re-test that authored gate/velocity behave
    as expected would promote it from "byte-correct" to "audibly confirmed."
+   **Partly closed 2026-07-27**: the gate lane's ENCODING is hardware-confirmed
+   (a tie at magnitude 48 survived a load-and-save on the unit, byte 176 in and
+   176 out). What is still hardware-unverified is the audible half: a project
+   authored WITH lengths, loaded, and HEARD holding.
 
 ## Where the code lives
 

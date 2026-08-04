@@ -336,7 +336,11 @@ function findRecipeMatches(call: ToolCall): readonly RecipeMatch[] {
     const candidates = recipesByBlock.get(blockType) ?? [];
     for (const r of candidates) {
       if (r.family === 'block_stack' || r.family === 'scene_leveling') continue;
-      if (paramsContainAll(slotParams as Record<string, unknown>, r.params)) {
+      // `params` is optional on the summary entry (omitted entirely on
+      // block_stack / patch_archetype since 2026-08-02). Only the
+      // single-block families reached here carry it, but default so a
+      // future family without one reads as "no match" rather than throwing.
+      if (paramsContainAll(slotParams as Record<string, unknown>, r.params ?? {})) {
         matches.push({ recipe_id: r.id, family: r.family, port });
       }
     }

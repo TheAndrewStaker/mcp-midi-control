@@ -267,7 +267,7 @@ the 16-byte SAVE ack above. Do NOT use `get_param` for confirmation (telemetry-m
 - **Block placement value→slot math** (`eid206 pid10–16` routing writes): register
   identities pinned (pid10 delete, pid15/16 move pair), values open. The one capability
   that stays gated. The structure blob's chain table is the read-side diff oracle for
-  cracking it (minimal-pair single moves, see `captures-vp4.md`).
+  cracking it (minimal-pair single moves, see `docs/contributing/devices/vp4.md` ask CAPTURE-1 in the mcp-midi-control repo).
 - **Scene write value↔index** (`pid13` gesture value math; the READ side is solved via
   the structure blob) and the **bypass "bypassed" value** (enable=0.0 is solid).
   Zero-cost alternative: probe whether the VP4 answers the family-documented read-only

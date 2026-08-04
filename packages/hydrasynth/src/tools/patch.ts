@@ -61,6 +61,7 @@ export function registerHydrasynthPatchTools(server: McpServer): void {
 // init_patch (renamed from hydra_apply_init) ------------------------------
 
 server.registerTool('init_patch', {
+  title: 'Initialise Patch',
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: [
     'Reset the active patch to factory INIT state. Loads a blank INIT patch into scratch slot H128 via SysEx, then navigates to it. Use when the device has gone silent or wedged; equivalent to pressing INIT on the front panel.',
@@ -214,6 +215,7 @@ server.registerTool('init_patch', {
 // 'voice'`.
 
 server.registerTool('apply_patch', {
+  title: 'Build Patch',
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   description: `Build a Hydrasynth patch atomically: apply a sparse override map (or recipe_id) on top of the factory INIT buffer and dump via SysEx to the named slot. Covers the full surface (oscillators, filters, envelopes, mixer, mutators, pre/post-FX, delay, reverb, name) in ONE call; no follow-up NRPN batch needed.
 VALUES ARE DISPLAY UNITS (same pipeline as set_param); never pass raw wire numbers. Percent params (delaywet, reverbwet, prefxwet, postfxwet, mutator*wet/feedback) take 0..100. ENV/LFO TIME params take panel time as a number in ms (250) or string ("2.5s"/"250ms"): covers env*{attack,decay,release,hold,delay}syncoff + lfo*delaysyncoff (env*sustain is a 0..128 LEVEL, not a time). LFO free-run rate (lfo*ratesyncoff) takes Hz (4.44 or "4.44 Hz", 0.02..150); reverbtime takes seconds (2.6/"2.6s"/"250ms" or "Freeze"). The codec inverts each non-linear table internally: pass the panel reading, never a raw index.
@@ -425,7 +427,7 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
             path: `params[name="${name}"]`,
             error: `unknown param "${name}"`,
             valid_options: closeMatches,
-            retry_action: 'Pass a name from valid_options, or call list_params({port:"hydrasynth"}) for the full catalog.',
+            retry_action: 'Pass a name from valid_options, or call list_params({port:"hydrasynth"}) for the block roster and then list_params({port:"hydrasynth", block:["<block>"]}) for that block\'s params.',
           });
           continue;
         }

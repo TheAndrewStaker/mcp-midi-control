@@ -29,8 +29,9 @@ synth param on Synth 2.
 | **Sidechain** (per synth: source/attack/hold/decay/depth) | `set_param` blocks `sidechain1` `sidechain2` | ch16 | registered (synth2 depth addr flagged VERIFY) |
 | **Drum 1-4** params | `set_param` blocks `drum1`..`drum4` (patch/level/pitch/decay/distortion/eq/pan) | ch10 | registered, kick hw-confirmed |
 | **Drum 1-4** triggers | `send_note` notes 60/62/64/65, or `apply_pattern` | ch10 | hw-confirmed (kick) |
-| **Mixer** (synth levels + pans) | `set_param` block `track_mixer` | ch16 | registered |
-| **FX**: Reverb / Delay params + per-track sends, FX bypass | `set_param` blocks `reverb` `delay` `fx` (sends `synth1_send`..`drum4_send` in `reverb`/`delay`) | ch16 | registered |
+| **Mixer** (synth + audio-input levels and pans) | `set_param` block `track_mixer` | ch16 | registered, audio-in hw-confirmed |
+| **FX**: Reverb / Delay params + per-track sends, FX bypass | `set_param` blocks `reverb` `delay` `fx` (sends `synth1_send`..`drum4_send`, `audio1_send`, `audio2_send` in `reverb`/`delay`) | ch16 | registered, audio-in sends hw-confirmed |
+| **Audio In 1/2** (rear-panel Inputs: level, pan, reverb + delay send) | `set_param` blocks `track_mixer` (`audio1_level`/`audio1_pan`) + `reverb`/`delay` (`audio1_send`) | ch16 | registered, hw-confirmed 2026-07-25 |
 | **Master Filter** (freq/res) | `set_param` block `master_filter` | ch16 | registered |
 | **Preset / Project** select | `switch_preset` (project 0-63) | ch16 PGM | registered |
 | Synth **patch** select | `send_program_change` | ch1/ch2 PGM | generic primitive |
@@ -40,14 +41,14 @@ synth param on Synth 2.
 ## Deferred (addressable, data-only follow-on, not yet registered)
 
 - **LFO toggle bus** (NRPN 0:122 packed flags + 0:123 fade mode): lfo1/lfo2 one-shot / key-sync / common-sync / delay-trigger / fade-mode. Needs a shared-NRPN enum-bus addr kind (8 toggles emit disjoint value windows into one NRPN), so it is a small codec touch, not pure data.
-- **Audio-input** table (Audio 1/2 level/reverb/delay/pan, CC 13/15/31-36): channel unconfirmed in v3 and the CCs collide with synth assignments, flagged VERIFY, blocked on a hardware check, not on effort.
+_(The audio-input table moved out of this section on 2026-07-25: its channel is ch16, hardware-confirmed, and it is registered. See the table above.)_
 
 ## Physical-only: no MIDI path (cannot be driven remotely)
 
 These are device-resident sequencer/navigation functions with no documented
 MIDI binding. Confirmed dead-ends, not gaps:
 
-- **Note / Velocity / Gate / Probability** step editors (pattern step data).
+- **Note / Velocity / Gate / Probability** step editors (pattern step data). No LIVE MIDI path: nothing can nudge a step's gate on the device from here. The same data IS authorable OFFLINE through the `.ncs` project route (`apply_pattern mode:ncs_upload`), including note length and tie-forward, see "Note length and tie" below.
 - **Pattern** select and **Scene** select WITHIN a project (only whole-project select exists, via `switch_preset` / PGM ch16; 64-127 = queued).
 - **Clear / Duplicate**, **Grid / Setup / Shift / View Lock** navigation. PROJECT Save is a device/Components action (no MIDI path), but a synth PATCH now DOES have a MIDI save path via `save_preset` (Replace Patch to a Flash slot; see "Patch save + read" above).
 - **Play / Record** as buttons (transport is reachable via MIDI clock; the buttons themselves are physical).
@@ -57,6 +58,30 @@ MIDI binding. Confirmed dead-ends, not gaps:
 - **Drum tracks do NOT record external MIDI** (manual p.38 + on-device test 2026-06-18): external drum notes trigger the pad sound but the drum sequencer captures only physical pad taps / step entry. So a drum beat can be **auditioned** live (`apply_pattern mode:live_stream`) but not landed on the device over MIDI.
 - **Synth tracks DO record external MIDI** ("Recording from an external controller", ch1/ch2) `,` the basis for the `record_capture` realizer (synth-track scope).
 - The only programmatic way to put a **drum** pattern onto the device is **NCS offline project authoring + upload** (`apply_pattern mode:ncs_upload`), which is built and hardware-confirmed (drum codec + note-track authoring + SysEx transfer all verified on-device 2026-06-18/19).
+
+## Note length and tie (the `.ncs` gate lane)
+
+A note step's gate byte is **two fields**: `tie << 7 | gate_sixths`. The magnitude
+is a note LENGTH in **sixths of a step**, 1..96 (6 = one step, 96 = sixteen), which
+is the device's own Gate View unit; bit 7 is the documented per-STEP **tie-forward**
+flag that holds the note into the next onset. Both are **hardware-confirmed**
+(2026-07-27: a tie written at a magnitude of 48, raw byte 176, survived a load and
+Save on the unit, which also proves the two fields are independent).
+
+- **Author a length** with the `":len"` suffix in mini-notation: `"c3:4"` holds four
+  steps, `"c3:1/6"` is staccato. `"_"` ties forward: `"c3:16_"`, or bare `"c3_"` to
+  have the reaching length computed. A length that is not a whole sixth is refused,
+  not rounded. Char grids have nowhere to put a length.
+- **Why it matters:** without a stated length every authored note is a one-step
+  trigger, so a "pad" gets its sustain from the receiving synth's amp envelope and
+  becomes a blip the moment that synth is swapped. The pattern owns duration.
+- **Re-authoring an existing project preserves what is already there.**
+  `preserve_template_gates` defaults to true and carries the template's hand-set
+  gate and tie through per (step, note); an inherited tie the new arrangement no
+  longer reaches is dropped and reported rather than left as a device no-op. Pass
+  false only to deliberately flatten.
+- A micro-step **roll** ignores a stated length and reports it: a roll is deliberate
+  retriggers, so lengthening or tying its bounces would smear them.
 
 ## Patch save + read (synth patches): community-beta
 

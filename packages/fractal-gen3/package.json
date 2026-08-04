@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/fractal-gen3",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Modern Fractal family (Axe-Fx III / FM3 / FM9) device descriptors, writer, reader, and MCP tools. One gen-3 codec factory, per-device configs.",
   "private": true,
   "license": "Apache-2.0",

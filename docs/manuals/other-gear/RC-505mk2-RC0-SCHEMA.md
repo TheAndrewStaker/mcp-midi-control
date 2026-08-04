@@ -104,13 +104,16 @@ the model, resolve from a real dump):
 | F | StopMode | Immediate/Fade/RecStop/RecFade |
 | G | OverdubMode (DUB) | Normal/Replace/Substract |
 | I | PlayMode | Multi/Single |
-| J | MeasureCount | int |
-| L | LoopSyncSw | 0/1 |
-| M | TempoSyncSw | 0/1 |
+| J | **derived/index field — DEVICE-CONFIRMED 2026-07-19, formula pinned but semantics open** | `J = S + 7` whenever `R=2` (fixed count) — confirmed on TWO independent tracks (Track1 S=8->J=15, Track2 S=4->J=11, same offset both times). Baseline (both FREE, R=1) had J=1 on every track, which does NOT fit the same formula, so `J` likely indexes into an internal enum where AUTO/FREE/etc occupy slots 0-6 and fixed counts start at slot 7. Not yet confirmed whether the device reads `J` directly or recomputes it on load — **author path must write `R`, `S`, and `J` together** until that's known. |
+| R | **MeasureMode — DEVICE-CONFIRMED 2026-07-19** | `1`=FREE (baseline), `2`=FIXED (a number, paired with `S`). `0` presumed AUTO, not yet sampled (not needed for the target recipe). |
+| S | **MeasureCount (fixed mode) — DEVICE-CONFIRMED 2026-07-19** | Plain integer measure count when `R=2`. Isolated diff, two tracks: Track1 `S=8`, Track2 `S=4`, both exactly matching what was set on the front panel. |
+| L | **LoopSyncSw — DEVICE-CONFIRMED 2026-07-19** | `0`=OFF, `1`=ON. Isolated single-leaf diff on the owner's real Memory 01: toggling Track 1's LOOP SYNC OFF changed ONLY `TRACK1/L` (`1`->`0`) + the trailing `<count>` write-arbitration bump. No RC-600-derived guessing needed anymore for this one. |
+| M | **TempoSyncSw — DEVICE-CONFIRMED 2026-07-19** | `0`=OFF, `1`=ON. Isolated diff: TRACK1/M `1`->`0`. **Side effect (unexplained, flagged not blocking):** the SAME write also changed `MASTER/A` (`810`->`999`) and `MASTER/B` (`130556`->`105856`) — untouched-by-us memory-level leaves, likely a cached total-length/timing value the device recomputes when a track's tempo-sync relationship changes. NOT yet decoded; the eventual author path must not assume `M` is safely isolated — needs its own diff pass. |
 | N | TempoSyncMode | Pitch/Xfade |
 | O | TempoSyncSpeed | Half/Normal/Double |
-| Q,R,S,T | InputRouting | 4 tags `[mk2 differs: MIC/INST vs RC-600 4 inputs]` |
-| U | Tempo (TRACK1 only) | BPM x10, e.g. 1200 = 120.0 |
+| Q,R,S,T | ~~InputRouting~~ **WRONG GUESS, CORRECTED 2026-07-19** — `R`/`S` are actually the measure-mode/measure-count fields (see `J`/`R`/`S` above), not input routing. |
+| Q | **InputEnableMask — DEVICE-CONFIRMED 2026-07-19 (2 of 7 bits)** | Per-track bitmask, one bit per input jack, matching the manual's own INPUT-screen order (MIC1, MIC2, INST1 L, INST1 R, INST2 L, INST2 R, RHYTHM): bit0=1 MIC1, bit1=2 MIC2, **bit2=4 INST1 L (hardware-confirmed: TRACK1/Q `94`->`90`, isolated diff)**, bit3=8 INST1 R, **bit4=16 INST2 L (hardware-confirmed: TRACK5/Q `127`->`111`, isolated diff)**, bit5=32 INST2 R, bit6=64 RHYTHM. Two independently confirmed bits landing exactly where the manual's list order predicts, zero deviation — high confidence in the framework, though bits 0/1/3/5/6 aren't individually toggle-confirmed. Baseline Memory01: Track1 Q=94 (0b1011110: MIC2+INST1L+INST1R+INST2L+RHYTHM, no MIC1/INST2R), Track2-4 Q=95 (same +MIC1), Track5 Q=127 (all 7 on). |
+| U | Tempo — **NOT Track-1-only, confirmed present on ALL 5 tracks** (owner's real Memory 01 capture, 2026-07-19: every TRACK1-5 block carries its own `U`, all reading `1200` = 120.0 BPM) | BPM x10, e.g. 1200 = 120.0 |
 | V | Wav length | samples @44.1k, e.g. 88200 |
 | Y | LoopSyncMode | Immediate/Measure/LoopLength |
 
@@ -166,19 +169,43 @@ synthesis doc's mixer/output TARGET list.
 
 Root `<database name=... revision=...>` wrapping a single `<sys>` with sections
 `SETUP, COLOR, USB, MIDI, ICTL*, ECTL, PREF, INPUT, OUTPUT, ROUTING, MIXER, EQ`.
-The MIDI section maps directly to synthesis doc section 4:
+### MIDI section letter map — DEVICE-CONFIRMED 2026-07-19 (CORRECTS the RC-600-derived table)
 
-| Tag | Field | Values |
-|---|---|---|
-| A | RxChCtl | 1..16 |
-| B | RxChRhythm | 1..16 (mk1 default 10) |
-| C | RxChVoice | 1..16 |
-| D | TxCh | 1..16 (or RxCtl) |
-| E | SyncClock | 0 AUTO / 1 INTERNAL / 2 MIDI / 3 USB |
-| F | ClockOut | 0/1 |
-| G | StartSync | 0 OFF / 1 ALL / 2 RHYTHM |
-| H | PcOut | 0/1 |
-| I | Thru | 0 OFF / 1 MIDI OUT / 2 USB OUT / 3 USB&MIDI |
+This **supersedes** the RC-600-derived map previously published here. Two
+corrections, both proven on a real mk2:
+
+1. **The mk2 carries no `B` leaf.** Every field from `RxChRhythm` onward sits one
+   letter EARLIER than the RC-600 layout.
+2. **All channel leaves are 0-indexed** (stored value = channel - 1).
+
+The old table's `E` = SyncClock was impossible: `E` reads `16`, outside a 0..3
+enum. `E` is actually `TxCh`, where `16` is the "RX CTL" option past channels
+1-16. That anomaly is what exposed the shift.
+
+| Tag | Field | Values | Evidence |
+|---|---|---|---|
+| A | RxChCtl | 0-indexed | `4` = ch5, cross-checked vs the owner's Assign CCs arriving on ch5 |
+| — | *(no `B` on the mk2)* | — | absent from every real mk2 `SYSTEM*.RC0` |
+| C | RxChRhythm | 0-indexed | change-and-diff `9`->`10` when the panel went ch10 -> ch11 |
+| D | RxChVoice | 0-indexed | change-and-diff `0`->`11` when the panel went ch1 -> ch12 |
+| E | TxCh | 0-indexed; `16` = "RX CTL" | panel displayed "RX CTL" while the leaf held `16` |
+| F | SyncClock | 0 AUTO / 1 INTERNAL / 2 MIDI / 3 USB | change-and-diff `1`->`0` when the panel went INTERNAL -> AUTO |
+| G | ClockOut (SYNC OUT) | 0/1 | change-and-diff `1`->`0` when the panel went ON -> OFF |
+| H | StartSync | 0 OFF / 1 ALL / 2 RHYTHM | change-and-diff `0`->`2` when the panel went OFF -> RHYTHM |
+| I | PcOut | 0/1 | bracketed: the only documented param remaining, between confirmed `H` and `J` |
+| J | Thru | 0 OFF / 1 MIDI OUT / 2 USB OUT / 3 USB&MIDI | change-and-diff `1`->`3` when the panel went MIDI OUT -> USB&MIDI. `3` is a value no neighbouring leaf can hold, so this anchors the tail and forces `I` |
+| K | `[unknown]` | reads `0` | a 10th leaf with no counterpart in the documented MIDI menu |
+
+**Test design note.** The tail was pinned deliberately: with `F` and `H` already
+confirmed, changing THRU to the *unique* value `3` bracketed `G` and `I` in a
+single panel edit. Prefer a distinctive-value change over same-value toggles
+(e.g. two fields both going `1`->`0` cannot discriminate a one-letter shift).
+
+`SYSTEM1.RC0` / `SYSTEM2.RC0` are an A/B double buffer exactly like the memory
+pairs: the device reads the higher trailing `<count>` and a save writes the OTHER
+file at count+1. Author path (dry-run by default, backs the overwritten slot up
+to `<file>.bak`):
+[`scripts/_research/probe-rc505-system-midi-author.ts`](../../../scripts/_research/probe-rc505-system-midi-author.ts).
 
 USB section: `A`=Storage, `B`=AudioMode, `C`=Routing, `D`=InputLevel, `E`=OutputLevel.
 
@@ -321,7 +348,12 @@ below is CONFIRMED against the device unless marked inferred.
 | `J` | TARGET MAX | `1`=ON (on/off targets) |
 
 **SOURCE ordinals (`C`) - partial, confirmed:**
-- `CTL1`=`33`, `CTL2`=`34` (rear CTL/EXP-jack footswitches, e.g. an FS-5U).
+- CTL footswitches are **sequential from 33**: `CTL1`=`33`, `CTL2`=`34`
+  (confirmed 2026-07-07), `CTL3`=`35` (**confirmed 2026-07-19**: an assign
+  authored at ordinal 35 drove the owner's right-hand FS-5U on its target track,
+  turning the earlier extrapolation into a device-verified mapping). `CTL4` is
+  very likely `36` by the same stride but is UNSAMPLED; the codec refuses it
+  rather than guessing. These are the rear CTL/EXP-jack footswitches, e.g. an FS-5U.
 - **MIDI CC in the 64-95 range: `C = CC# + 6`** - device-confirmed at CC#80->`86`,
   CC#81->`87`, CC#82->`88`. So CC#83->`89` ... CC#95->`101`, CC#64->`70`
   (extrapolated WITHIN the confirmed 64-95 range only).

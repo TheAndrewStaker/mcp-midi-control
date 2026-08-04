@@ -41,6 +41,36 @@ export interface DecomposeOptions {
    * empty windows instead of being dropped). Default: the last event's beat.
    */
   totalBeats?: number;
+  /**
+   * The OTHER sounding layers of the build, keyed into every window's identity.
+   *
+   * Without this, two windows with identical drums but DIFFERENT melodic/synth
+   * content dedupe as "the same section" — the drum grid was the whole identity.
+   * Amber (2026-07-29) survived that only because its pad happened to alternate
+   * in lockstep with the drums; a build whose layers do not move in lockstep
+   * loses scene compression or collapses genuinely different sections silently.
+   * A layer contributes IDENTITY, not bank content: the bank patterns stay drum
+   * grids, a layer only decides whether two windows may share one.
+   *
+   * Omitted or empty = the historical drum-only keying, byte-identical.
+   */
+  layers?: readonly DecomposeLayer[];
+}
+
+/**
+ * One extra sounding layer of a multi-part build (a synth, a pad, a second
+ * drum part), reduced to the onsets that define its identity per window.
+ *
+ * `token` is the canonical content of one onset: `pitch:gateSteps` for a
+ * melodic note (gate included, so two windows differing only in held length do
+ * not merge), or the voice name for a percussion hit. Several onsets landing on
+ * one step are sorted and joined, so identity is order-independent per step.
+ */
+export interface DecomposeLayer {
+  /** Display label for receipts ("Lead 5 (charang) \"Synthesizer I\""). */
+  label: string;
+  /** Every onset, in quarter-note beats from the track start. */
+  onsets: { beat: number; token: string }[];
 }
 
 /** One window of the song, quantized, plus which unique pattern it resolved to. */
@@ -64,6 +94,14 @@ export interface SongDecomposition {
   /** Quarter-note beats spanned by one window. */
   beatsPerPattern: number;
   warnings: string[];
+  /**
+   * Per-layer window cells when `layers` keyed this decomposition: `cells[w]`
+   * is the layer's per-step token row for window w. Carried so
+   * `coalescePatterns` can hold the fuzz threshold on EVERY layer (never the
+   * drums alone) and so receipts can name what was compared. Absent on a
+   * drum-only decomposition.
+   */
+  layers?: { label: string; cells: string[][] }[];
 }
 
 /** Canonical, order-independent key for a quantized window (voice → grid chars). */
@@ -74,6 +112,13 @@ function patternKey(q: QuantizedDrums): string {
     .sort();
   return rows.length ? rows.join('|') : `__silent_${q.steps}`;
 }
+
+/**
+ * Separator between the drum-grid key and each layer's cells in a composite
+ * window identity. U+0001 cannot appear in a voice name, a pitch token or a
+ * grid char, so the composite cannot collide with a differently-split one.
+ */
+const LAYER_KEY_SEP = String.fromCharCode(1);
 
 /** A grid cell → its char (mirrors quantizedToGrids so dedup matches display). */
 function cellChar(s: Step): string {
@@ -109,6 +154,22 @@ export function decomposeToPatterns(events: readonly DrumEvent[], opts: Decompos
     buckets[w].push({ ...e, beat: e.beat - w * beatsPerPattern });
   }
 
+  // Bucket each extra layer the same way, into per-window per-step token rows.
+  // A step holding several tokens (a chord) sorts and joins them, so a layer
+  // cell is order-independent within its step.
+  const layersIn = opts.layers ?? [];
+  const layerCells: string[][][] = layersIn.map((layer) => {
+    const acc: string[][][] = Array.from({ length: windowCount }, () =>
+      Array.from({ length: stepsPerPattern }, () => []));
+    for (const o of layer.onsets) {
+      const w = Math.floor((o.beat + 1e-9) / beatsPerPattern);
+      if (w < 0 || w >= windowCount) continue;
+      const step = Math.min(stepsPerPattern - 1, Math.max(0, Math.round((o.beat - w * beatsPerPattern) * stepsPerBeat)));
+      acc[w][step].push(o.token);
+    }
+    return acc.map((row) => row.map((cell) => cell.sort().join('+')));
+  });
+
   const patterns: QuantizedDrums[] = [];
   const keyToIndex = new Map<string, number>();
   const order: number[] = [];
@@ -117,7 +178,11 @@ export function decomposeToPatterns(events: readonly DrumEvent[], opts: Decompos
 
   for (let i = 0; i < windowCount; i++) {
     const q = quantizeDrumEvents(buckets[i], { beats: beatsPerPattern, stepsPerBeat });
-    const key = patternKey(q);
+    // The window's IDENTITY: the drum grid PLUS every layer's cells. With no
+    // layers this is exactly the historical drum-only key, byte for byte.
+    const key = layersIn.length === 0
+      ? patternKey(q)
+      : [patternKey(q), ...layerCells.map((c) => c[i].join(','))].join(LAYER_KEY_SEP);
     let patternIndex = keyToIndex.get(key);
     if (patternIndex === undefined) {
       patternIndex = patterns.length;
@@ -146,6 +211,9 @@ export function decomposeToPatterns(events: readonly DrumEvent[], opts: Decompos
     patterns, order, windows,
     windowCount, uniquePatternCount: patterns.length,
     stepsPerPattern, beatsPerPattern, warnings,
+    ...(layersIn.length > 0
+      ? { layers: layersIn.map((l, li) => ({ label: l.label, cells: layerCells[li] })) }
+      : {}),
   };
 }
 
@@ -178,14 +246,26 @@ export function patternLabel(n: number): string {
 // ── Project plan ──────────────────────────────────────────────────────
 //
 // A real song does not fit one Circuit project: the device caps a project at 8
-// pattern slots AND its chain at 8 plays, while an ordinary track decomposes to
-// 25 patterns over 33 plays (Blindside "Caught a Glimpse", 2026-07-16). So a song
-// import always ends in the same manual chore: chunk the play order into projects
+// pattern slots per track, while an ordinary track decomposes to 25 patterns
+// over 33 plays (Blindside "Caught a Glimpse", 2026-07-16). So a song import
+// always ends in the same manual chore: chunk the play order into projects
 // that fit, keep them in song order, and hand each one to apply_pattern.
 //
 // Doing that by hand is the friction this closes. It is a PURE decomposition, not
 // a workflow tool: it returns a plan and writes nothing, so the agent still drives
 // the per-project apply_pattern calls and the overwrite gate still applies.
+//
+// What "fits" means changed on 2026-07-29. The old default budgeted by PLAY
+// COUNT (`maxPlays: 8` = 16 bars per project), which assumed the pattern chain
+// was the only advance mechanism and chopped songs into 2-8x more projects than
+// their content needs (a 148-bar song at 16 bars/project = 10 projects from 17
+// unique cells). The scene chain lifts that: a project holds up to 8 DISTINCT
+// patterns, and its play order can be any sequence that compresses into <= 4
+// scene steps of contiguous ascending slot ranges (up to 4 scenes x 8 plays =
+// 64 bars per project), exactly the shapes apply_pattern's arrangement realizer
+// accepts. So the default boundary is now CONTENT (distinct cells and the
+// 8-slot ceiling) plus scene realizability, and `maxPlays` survives only as an
+// explicit override with its old play-budget meaning.
 //
 // Section names are NOT used, deliberately. They are the obvious way to split a
 // song, but Songsterr tabs frequently ship with `sections: []` (the Blindside tab
@@ -214,6 +294,13 @@ export interface ProjectPlanEntry {
    * project is dropped before it is emitted, so the field was always false.)
    */
   starts_silent: boolean;
+  /**
+   * How this project's order advances on the device: 'chain' when the plays fit
+   * a plain pattern chain (one slot per play), 'scenes' when they exceed it and
+   * the order relies on a scene chain (<= 4 contiguous scene steps over the
+   * deduped slots); the realizer picks the same layout from the same shape.
+   */
+  advance: 'chain' | 'scenes';
 }
 
 export interface ProjectPlan {
@@ -233,10 +320,24 @@ export interface ProjectPlan {
 /**
  * Chunk a decomposed song's play order into projects that FIT the device.
  *
- * Greedy and order-preserving: fill a project until the next play would exceed
- * either limit (`maxPlays` chained plays or `maxPatterns` distinct slots), then
- * start the next. Order is never reordered — a project boundary is a foot-switch
- * point, so the song must still play front-to-back across them.
+ * Greedy and order-preserving: fill a project until the next play would not
+ * fit, then start the next. Order is never reordered; a project boundary is a
+ * foot-switch point, so the song must still play front-to-back across them.
+ *
+ * "Fits", by DEFAULT, is content-driven and scene-chain-aware: a project holds
+ * at most `maxPatterns` (8) DISTINCT patterns, and its play order must be
+ * realizable, either as a plain pattern chain (one slot per play, so <= 8
+ * plays) or as a scene chain of <= `maxScenes` (4, the device-confirmed range)
+ * steps, each a contiguous ascending run over the deduped slots in first-use
+ * order. That is the same layout test apply_pattern's arrangement realizer
+ * applies, so every emitted project is authorable as-is. Up to 4 scenes x 8
+ * plays = 64 bars can land in one project when the order allows it; the old
+ * default (`maxPlays: 8` = 16 bars) chopped by play count and produced 2-8x
+ * more projects than the content needed.
+ *
+ * Passing `maxPlays` EXPLICITLY restores the pure play-budget behaviour with
+ * exactly its old meaning (close at `maxPlays` plays or `maxPatterns` distinct
+ * slots, scene realizability not consulted).
  *
  * Silent patterns (no hits at all — a count-in bar, or a tab's empty measures)
  * are kept when they share a project with real content, but a project that would
@@ -248,10 +349,10 @@ export interface ProjectPlan {
 export function planProjects(
   sections: readonly { name: string; voices: Record<string, string> }[],
   order: readonly string[],
-  opts: { maxPlays?: number; maxPatterns?: number; maxBackoff?: number } = {},
+  opts: { maxPlays?: number; maxPatterns?: number; maxBackoff?: number; maxScenes?: number } = {},
 ): ProjectPlan {
-  const maxPlays = opts.maxPlays ?? 8;
   const maxPatterns = opts.maxPatterns ?? 8;
+  const maxScenes = opts.maxScenes ?? 4;
   // How many plays we will give up to avoid cutting through a repeated run.
   // Small on purpose: a project slot is scarce, so protect the phrase without
   // wasting half a project on it.
@@ -260,20 +361,43 @@ export function planProjects(
     Object.values(v).some((line) => /[^\s.\-~]/.test(line));
   const silentLabels = new Set(sections.filter((s) => !hasHits(s.voices)).map((s) => s.name));
 
-  // Greedy, order-preserving: close a chunk only when the NEXT play would break a
-  // device limit. But "fits the device" is not the only objective — a project
-  // boundary is a FOOT-SWITCH point, so cutting through the middle of a repeated
-  // run hands the player a stomp in the middle of one continuous idea. When a
+  const patternsIn = (c: readonly string[]): number => new Set(c).size;
+  // Scene steps a chunk needs: assign slots in first-use order (how the
+  // realizer lays sections into pattern slots), then count the maximal runs of
+  // consecutive-ascending slots (how the realizer compresses the order into
+  // scenes). Greedy maximal runs are the minimum, so this is exact.
+  const sceneRuns = (c: readonly string[]): number => {
+    const slotOf = new Map<string, number>();
+    let runs = 0;
+    let lastSlot = -2;
+    for (const label of c) {
+      let slot = slotOf.get(label);
+      if (slot === undefined) { slot = slotOf.size; slotOf.set(label, slot); }
+      if (slot !== lastSlot + 1) runs++;
+      lastSlot = slot;
+    }
+    return runs;
+  };
+  // The fit predicate. Explicit maxPlays = the historical play budget,
+  // unchanged; default = chain OR scene realizability (content-driven).
+  const fits = opts.maxPlays !== undefined
+    ? (c: readonly string[]): boolean => c.length <= opts.maxPlays! && patternsIn(c) <= maxPatterns
+    : (c: readonly string[]): boolean =>
+        c.length <= maxPatterns
+        || (patternsIn(c) <= maxPatterns && sceneRuns(c) <= maxScenes);
+
+  // Greedy, order-preserving: close a chunk only when the NEXT play would not
+  // fit. But "fits the device" is not the only objective: a project boundary
+  // is a FOOT-SWITCH point, so cutting through the middle of a repeated run
+  // hands the player a stomp in the middle of one continuous idea. When a
   // close is forced mid-run, back off to the last pattern CHANGE so the run stays
   // whole in the next project, as long as the back-off is cheap (a couple of
-  // plays). A long vamp that simply exceeds maxPlays (A x9) cannot be helped and
-  // is cut at the limit.
+  // plays). A long vamp that simply exceeds the budget (A x9) cannot be helped
+  // and is cut at the limit.
   const chunks: string[][] = [];
   let cur: string[] = [];
-  const patternsIn = (c: readonly string[]): number => new Set(c).size;
   for (const label of order) {
-    const wouldPatterns = cur.includes(label) ? patternsIn(cur) : patternsIn(cur) + 1;
-    if (cur.length > 0 && (cur.length + 1 > maxPlays || wouldPatterns > maxPatterns)) {
+    if (cur.length > 0 && !fits([...cur, label])) {
       let carry: string[] = [];
       // Only back off when the cut would land INSIDE a run (the next play repeats
       // the last one). If the next play is already a change, this cut is at a
@@ -307,12 +431,17 @@ export function planProjects(
       order: [...chunk],
       summary: runLength(chunk),
       starts_silent: silentLabels.has(chunk[0]),
+      advance: chunk.length <= maxPatterns ? 'chain' : 'scenes',
     });
   }
 
+  const fitDesc = opts.maxPlays !== undefined
+    ? `each fits the device (<=${maxPatterns} patterns, <=${opts.maxPlays} chained plays)`
+    : `each fits the device (<=${maxPatterns} distinct patterns; <=${maxPatterns} plays ride the pattern chain, ` +
+      `longer spans a scene chain of <=${maxScenes} steps, see each entry's \`advance\`)`;
   const note = projects.length === 0
     ? 'The song produced no authorable project (every pattern is silent).'
-    : `${projects.length} project(s), in song order; each fits the device (<=${maxPatterns} patterns, <=${maxPlays} chained plays). ` +
+    : `${projects.length} project(s), in song order; ${fitDesc}. ` +
       'Foot-switch between them in this order to play the song front-to-back.' +
       (dropped.length > 0
         ? ` Dropped ${dropped.length} silent-only project(s) (${dropped.join(', ')}): a project with no hits cannot be authored, and silence needs no slot. ` +
@@ -396,16 +525,51 @@ export function gridDistance(a: QuantizedDrums, b: QuantizedDrums): number {
 }
 
 /**
+ * Per-step difference between two layer rows, normalized 0..1.
+ *
+ * A layer is treated as ONE row (the way one drum voice is one row), so a
+ * couple of differing cells in a 32-step window land near gridDistance's scale
+ * and the same `maxDistance` threshold reads naturally on both.
+ */
+export function layerDistance(a: readonly string[], b: readonly string[]): number {
+  const steps = Math.max(a.length, b.length);
+  if (steps === 0) return 0;
+  let diff = 0;
+  for (let i = 0; i < steps; i++) if ((a[i] ?? '') !== (b[i] ?? '')) diff++;
+  return diff / steps;
+}
+
+/**
  * Re-cluster an exact decomposition with a fuzzy threshold. Greedy in song
  * order: each window joins the nearest existing cluster within `maxDistance`,
  * else seeds a new one — so a groove's FIRST appearance defines the cluster and
  * later near-variants fold in, while a genuinely new section starts fresh
  * (labels stay musical: A is the opening groove). Each cluster's stored pattern
  * is its medoid (the member with least total distance to the others).
+ *
+ * When the decomposition carries `layers`, the merge distance is the WORST of
+ * the drum distance and every layer's distance: two windows fold together only
+ * when EVERY layer of the build is within `maxDistance`, never on the drums
+ * alone. The weakest layer governs — drums within threshold but a synth layer
+ * far apart is NO merge (the drum-only test silently flattened exactly that,
+ * the 2026-07-29 Amber-plan defect).
  */
 export function coalescePatterns(decomp: SongDecomposition, opts: CoalesceOptions = {}): CoalescedSong {
   const maxDistance = opts.maxDistance ?? 0.10;
   const W = decomp.windows;
+  const L = decomp.layers ?? [];
+  // Combined distance: the weakest layer governs the merge.
+  const dist = (a: number, b: number): number => {
+    let d = gridDistance(W[a], W[b]);
+    for (const l of L) {
+      const dl = layerDistance(l.cells[a], l.cells[b]);
+      if (dl > d) d = dl;
+    }
+    return d;
+  };
+  // Full window identity, layers included (the same composite decompose keys by).
+  const idOf = (m: number): string =>
+    L.length === 0 ? patternKey(W[m]) : [patternKey(W[m]), ...L.map((l) => l.cells[m].join(','))].join(LAYER_KEY_SEP);
   const seeds: number[] = [];      // window index that seeded each cluster
   const members: number[][] = [];
   const order: number[] = [];
@@ -414,7 +578,7 @@ export function coalescePatterns(decomp: SongDecomposition, opts: CoalesceOption
     let best = -1;
     let bestD = Infinity;
     for (let c = 0; c < seeds.length; c++) {
-      const d = gridDistance(W[seeds[c]], W[i]);
+      const d = dist(seeds[c], i);
       if (d <= maxDistance && d < bestD) { bestD = d; best = c; }
     }
     if (best >= 0) { members[best].push(i); order.push(best); }
@@ -427,10 +591,10 @@ export function coalescePatterns(decomp: SongDecomposition, opts: CoalesceOption
     let bestSum = Infinity;
     for (const m of mem) {
       let sum = 0;
-      for (const n of mem) if (n !== m) sum += gridDistance(W[m], W[n]);
+      for (const n of mem) if (n !== m) sum += dist(m, n);
       if (sum < bestSum) { bestSum = sum; medoid = m; }
     }
-    const variants = new Set(mem.map((m) => patternKey(W[m])));
+    const variants = new Set(mem.map(idOf));
     return { pattern: stripWindowMeta(W[medoid]), members: mem, variantCount: variants.size };
   });
 
@@ -438,7 +602,12 @@ export function coalescePatterns(decomp: SongDecomposition, opts: CoalesceOption
   const flattened = clusters.filter((c) => c.variantCount > 1);
   if (flattened.length > 0) {
     const collapsed = flattened.reduce((s, c) => s + (c.members.length - 1), 0);
-    warnings.push(`fuzzy(${maxDistance}): ${decomp.uniquePatternCount} → ${clusters.length} patterns; ${collapsed} window(s) folded into a near-variant (their individual fills are flattened to the cluster's representative bar).`);
+    // When layers keyed the windows, say what a fold was checked against: the
+    // receipt must name the layers compared, not imply a drums-only merge.
+    const compared = L.length > 0
+      ? ` Each fold held on EVERY layer of the build (drum grid + ${L.map((l) => l.label).join(' + ')}), each within ${maxDistance}.`
+      : '';
+    warnings.push(`fuzzy(${maxDistance}): ${decomp.uniquePatternCount} → ${clusters.length} patterns; ${collapsed} window(s) folded into a near-variant (their individual fills are flattened to the cluster's representative bar).${compared}`);
   }
 
   return {

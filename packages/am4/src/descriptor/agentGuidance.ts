@@ -535,11 +535,12 @@ export const AM4_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
     '"preset 12"), confirm the exact A01..Z04 code before saving; an',
     'off-by-one here overwrites the wrong preset.',
     '',
-    'CONCURRENT-EDITOR HAZARD: if AM4-Edit (or any editor) is open on the same',
-    'unit, it can write the working buffer out from under you between your read',
-    'and your save, and its on-screen state can be stale relative to the device.',
-    'When a save result looks wrong, trust the AM4 front panel and the',
-    'save_preset receipt (saved_snapshot), not the editor window.',
+    'CONCURRENT EDITOR: AM4-Edit MAY STAY OPEN and updates live; never tell the',
+    'user to close it to free the port (USB MIDI is not exclusive; only the FM3',
+    'serial channel is). Real hazard: an open editor can write the buffer',
+    'between your read and your save, and its screen can be stale. When a save',
+    'looks wrong, trust the AM4 front panel and the save_preset receipt',
+    '(saved_snapshot), not the editor window.',
   ].join('\n'),
 
   save_receipt: [

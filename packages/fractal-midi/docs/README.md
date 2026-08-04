@@ -30,13 +30,22 @@ Each per-device folder typically contains:
 - [`fractal-broadcast-vs-poll-research.md`](research/fractal-broadcast-vs-poll-research.md): which devices push state vs require polling.
 - [`fractal-protocol-decode-status.md`](research/fractal-protocol-decode-status.md): per-device decode status table.
 
-## Capture guides
+## Editor reverse-engineering methods
 
-[`capture-guides/`](capture-guides/): how to collect new captures
-when existing ones don't answer a question:
+[`capture-guides/`](capture-guides/): codec-domain techniques for pulling wire
+facts out of a Fractal editor when existing captures don't answer a question:
 
-- [`usbpcap-wireshark.md`](capture-guides/usbpcap-wireshark.md): bidirectional USB packet capture on Windows.
 - [`juce-binarydata-extraction.md`](capture-guides/juce-binarydata-extraction.md): 5-minute label discovery from JUCE editor binaries.
+- [`loopmidi-editor-emulation.md`](capture-guides/loopmidi-editor-emulation.md): driving an editor's own write path to observe its frames.
+
+**Contributor-facing capture guidance moved to the product repo**, under
+`docs/contributing/` in
+[mcp-midi-control](https://github.com/TheAndrewStaker/mcp-midi-control): the
+one-time sniffer setup, the Windows USBPcap workflow, the macOS MIDI Monitor
+workflow, and one page per registered device naming what it needs. It lives
+there because it says "install this server" and "file an issue here", which is
+product-repo territory, not codec territory. See
+[`capture-guides/README.md`](capture-guides/README.md).
 
 ## Cross-device manuals
 

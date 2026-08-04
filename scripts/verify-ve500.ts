@@ -28,6 +28,7 @@ import { VE500_DESCRIPTOR } from '@mcp-midi-control/ve-500/descriptor.js';
 import { writer } from '@mcp-midi-control/ve-500/descriptor/writer.js';
 import { reader } from '@mcp-midi-control/ve-500/descriptor/reader.js';
 import { collectApplyPresetPreflight } from '@mcp-midi-control/core/protocol-generic/dispatcher/preflight.js';
+import type { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 let failures = 0;
 const hex = (a: readonly number[]) =>
@@ -180,30 +181,58 @@ check(`catalog params checked (>800)`, checkedParams > 800, `got ${checkedParams
 }
 
 // ── 6. switch_preset Program Change mapping ─────────────────────────────────
+//
+// Every user-memory recall now begins with a PC-IN pre-flight read (§12), so a
+// mock has to answer that RQ1 before the recall reaches the wire. `recallCtx`
+// below is the shared harness: it replies with whatever PC-IN state the case
+// wants, and returns ONLY the frames the recall itself emitted, so the classic
+// "bare PC, no Bank Select" assertions stay about the recall.
+/** PC-IN read answers 1 (ON), 0 (OFF), or never (a device that is not talking). */
+type PcIn = 1 | 0 | 'silent';
+
+function recallCtx(pcIn: PcIn) {
+  const sent: number[][] = [];
+  const pcInDef = findParam('system_midi', 'midi_program_change_in')!;
+  const ctx = {
+    conn: {
+      send: (b: number[]) => sent.push(b),
+      receiveSysExMatching: () =>
+        pcIn === 'silent'
+          ? Promise.reject(new Error('timeout'))
+          : Promise.resolve(buildSetParam(pcInDef, pcIn)),
+    },
+  } as never;
+  // The pre-flight RQ1 is infrastructure, not part of the recall; drop it so the
+  // recall assertions read the same as they did before the gate existed.
+  const recallFrames = () => sent.filter((f) => f[0] !== 0xf0 || f[7] !== 0x11);
+  return { ctx, sent, recallFrames };
+}
+
 {
-  function pcBytes(loc: string | number): number[][] {
-    const sent: number[][] = [];
-    const ctx = { conn: { send: (b: number[]) => sent.push(b) } } as never;
-    void writer.switchPreset!(ctx, loc);
-    return sent;
+  async function pcBytes(loc: string | number): Promise<number[][]> {
+    const { ctx, recallFrames } = recallCtx(1);
+    await writer.switchPreset!(ctx, loc);
+    return recallFrames();
   }
   // U01 -> a SINGLE bare Program Change 0, with NO Bank Select (the VE-500
   // ignores the recall if a CC0/CC32 bank select precedes the PC — HW-confirmed).
-  const u01 = pcBytes('U01');
+  const u01 = await pcBytes('U01');
   check('U01 sends exactly one message', u01.length === 1, JSON.stringify(u01));
   check('U01 message is bare PC 0 (0xC0 00)', u01[0]?.[0] === 0xc0 && u01[0]?.[1] === 0);
   check('U01 sends NO Bank Select (no 0xB0)', !u01.some((m) => (m[0] & 0xf0) === 0xb0), JSON.stringify(u01));
   // U99 -> bare PC 98
-  const u99 = pcBytes(99);
+  const u99 = await pcBytes(99);
   check('U99 (n=99) sends bare PC 98', u99.length === 1 && u99[0][0] === 0xc0 && u99[0][1] === 98);
 
-  // bad location rejects (switchPreset is async; await rejections)
-  const noop = { conn: { send: () => {} } } as never;
+  // bad location rejects BEFORE anything is sent (the location is resolved first,
+  // so a typo never costs a wire round-trip).
+  const bad = recallCtx(1);
   let badThrew = false;
-  await writer.switchPreset!(noop, 'Z9').catch(() => {
+  await writer.switchPreset!(bad.ctx, 'Z9').catch(() => {
     badThrew = true;
   });
   check('bad location rejected', badThrew);
+  check('a bad location sends NOTHING, not even the pre-flight read', bad.sent.length === 0, JSON.stringify(bad.sent));
 }
 
 // ── 6b. Factory PRESET recall (P01-P50): SysEx "Current Patch Number" write ──
@@ -222,15 +251,14 @@ check(`catalog params checked (>800)`, checkedParams > 800, `got ${checkedParams
   const u01Expect = 'F0 41 10 00 00 00 55 12 00 00 00 00 00 00 00 F7';
   check('buildSwitchPatch(0) == U01 golden (register also recalls users)', u01 === u01Expect, `got ${u01}`);
 
-  function sentFrames(loc: string | number): number[][] {
-    const sent: number[][] = [];
-    const ctx = { conn: { send: (b: number[]) => sent.push(b) } } as never;
-    void writer.switchPreset!(ctx, loc);
-    return sent;
+  async function sentFrames(loc: string | number): Promise<number[][]> {
+    const { ctx, recallFrames } = recallCtx(1);
+    await writer.switchPreset!(ctx, loc);
+    return recallFrames();
   }
 
   // P01 recall is now UN-GATED: writer.switchPreset sends the SysEx write, not a throw.
-  const p01Frames = sentFrames('P01');
+  const p01Frames = await sentFrames('P01');
   check('switch_preset(P01) sends exactly one frame', p01Frames.length === 1, JSON.stringify(p01Frames));
   check(
     'switch_preset(P01) frame == buildSwitchPatch(99)',
@@ -240,7 +268,7 @@ check(`catalog params checked (>800)`, checkedParams > 800, `got ${checkedParams
   check('switch_preset(P01) sends NO Program Change (no 0xC0)', !p01Frames.some((m) => (m[0] & 0xf0) === 0xc0));
 
   // P50 -> index 148 (98 + 50).
-  const p50Frames = sentFrames('P50');
+  const p50Frames = await sentFrames('P50');
   check('switch_preset(P50) frame == buildSwitchPatch(148)', p50Frames[0] && hex(p50Frames[0]) === hex(buildSwitchPatch(148)));
 
   // Out-of-range preset numbers still reject.
@@ -255,7 +283,7 @@ check(`catalog params checked (>800)`, checkedParams > 800, `got ${checkedParams
   check('save_preset(P01) still rejected (factory/read-only)', saveRejected);
 
   // User-memory recall is UNCHANGED: still a bare Program Change, not the SysEx write.
-  const u10Frames = sentFrames('U10');
+  const u10Frames = await sentFrames('U10');
   check('switch_preset(U10) still sends bare PC (unchanged, hardware-confirmed path)', u10Frames[0]?.[0] === 0xc0 && u10Frames[0]?.[1] === 9);
 }
 
@@ -492,6 +520,97 @@ check(`catalog params checked (>800)`, checkedParams > 800, `got ${checkedParams
     }
   }
   check('every SYSTEM catalog param checked', sysChecked === VE500_SYSTEM_PARAMS.length);
+}
+
+// ── 12. The PC-IN gate on user-memory recall ─────────────────────────────────
+// THE SILENT FAILURE THIS CLOSES. U01-U99 recall is a bare Program Change, and
+// the VE-500 acts on one only while `system_midi.midi_program_change_in` is 1.
+// People turn it off on purpose, to stop a stray Program Change on a shared bus
+// recalling a patch mid-song. With it off the Program Change goes out, nothing
+// on the device moves, and a Program Change is never echoed, so switch_preset
+// used to return a clean success while the patch had not changed.
+{
+  const pcInDef = findParam('system_midi', 'midi_program_change_in')!;
+  check('the gate reads a real catalog param', !!pcInDef && pcInDef.region === 'system');
+  check('PC IN is a 0/1 switch', pcInDef.min === 0 && pcInDef.max === 1);
+
+  const isRq1 = (f: number[]) => f[0] === 0xf0 && f[7] === 0x11;
+  const isPc = (f: number[]) => (f[0] & 0xf0) === 0xc0;
+
+  // ── PC IN = OFF: refuse, and send NOTHING but the pre-flight read ──────────
+  {
+    const { ctx, sent } = recallCtx(0);
+    let err: DispatchError | undefined;
+    await writer.switchPreset!(ctx, 'U97').catch((e) => { err = e as DispatchError; });
+    check('PC IN off -> switch_preset REFUSES instead of reporting success', err !== undefined);
+    check('the refusal does NOT send a Program Change', !sent.some(isPc), JSON.stringify(sent));
+    check('the only frame sent is the pre-flight read', sent.length === 1 && isRq1(sent[0]), JSON.stringify(sent));
+    check('the pre-flight read targets the PC-IN address', hex(sent[0] ?? []) === hex(buildGetParam(pcInDef)),
+      `got ${hex(sent[0] ?? [])}`);
+
+    const m = err?.message ?? '';
+    check('the refusal explains WHY it cannot work',
+      m.includes('bare') && m.includes('Program Change') && m.includes('ignores'), m);
+    check('the refusal names the parameter, so it is actionable',
+      m.includes('system_midi.midi_program_change_in'), m);
+    check('the refusal offers the front panel as a way out', /front panel/i.test(m), m);
+    check('the refusal offers the setting change as the OTHER way out', m.includes('set to 1') || m.includes('to 1 first'), m);
+    check('the refusal states the cost of turning it on (stray PC exposure)',
+      m.includes('stray Program Change'), m);
+    check('the refusal says the server will not flip it for the user',
+      m.includes('will not') && m.includes('flip'), m);
+    // The asymmetry has to be IN the message: an agent that reads "recall is
+    // dead" and stops would strand a user whose target was a factory preset.
+    check('the refusal states that P01-P50 are unaffected', m.includes('P01-P50'), m);
+    check('the refusal carries a retry_action', (err?.details?.retry_action ?? '').length > 40);
+  }
+
+  // ── PC IN = ON: unchanged behaviour, plus a confirmed-precondition note ────
+  {
+    const { ctx, sent } = recallCtx(1);
+    const r = await writer.switchPreset!(ctx, 'U97');
+    check('PC IN on -> the recall goes through', r.acked === true);
+    check('PC IN on -> exactly one pre-flight read + one Program Change',
+      sent.filter(isRq1).length === 1 && sent.filter(isPc).length === 1, JSON.stringify(sent));
+    check('PC IN on -> the pre-flight happens BEFORE the Program Change',
+      isRq1(sent[0]) && isPc(sent[1]), JSON.stringify(sent));
+    check('PC IN on -> no warning', r.warning === undefined, r.warning);
+    check('PC IN on -> the result says the precondition was checked',
+      (r.info ?? '').includes('PC IN was read as ON'), r.info);
+  }
+
+  // ── PC IN unreadable: send anyway, and SAY it went out unverified ──────────
+  // A read timeout is not evidence the setting is off. Refusing on silence would
+  // turn an unrelated transport hiccup into a broken recall path, so the honest
+  // answer is to send and flag it.
+  {
+    const { ctx, sent } = recallCtx('silent');
+    const r = await writer.switchPreset!(ctx, 'U12');
+    check('an unreadable PC IN does NOT block the recall', sent.some(isPc), JSON.stringify(sent));
+    check('an unreadable PC IN produces a warning, not a silent success', r.warning !== undefined, JSON.stringify(r));
+    check('the warning says the recall was UNVERIFIED', (r.warning ?? '').includes('UNVERIFIED'), r.warning);
+    check('the warning points at the front panel', /front panel/i.test(r.warning ?? ''), r.warning);
+  }
+
+  // ── THE ASYMMETRY: factory presets recall by a register write, not a PC ────
+  // Gating P01-P50 on PC IN would refuse a path that demonstrably does not need
+  // it. This is the check that keeps a future refactor from "tidying" the two
+  // branches into one.
+  {
+    const { ctx, sent } = recallCtx(0);   // PC IN OFF, which kills U-recall
+    const r = await writer.switchPreset!(ctx, 'P12');
+    check('PC IN off does NOT block factory-preset recall', r.acked === true, JSON.stringify(r));
+    check('factory recall skips the pre-flight read entirely', !sent.some(isRq1), JSON.stringify(sent.map(hex)));
+    check('factory recall still sends its register write', sent.length === 1 && hex(sent[0]) === hex(buildSwitchPatch(110)),
+      JSON.stringify(sent.map(hex)));
+  }
+
+  // The agent has to be told not to "helpfully" flip the setting; that trade is
+  // the user's to make.
+  const recallGuidance = VE500_DESCRIPTOR.agent_guidance?.recall ?? '';
+  check('recall guidance warns the agent off flipping PC IN itself',
+    recallGuidance.includes('midi_program_change_in') && /do NOT/i.test(recallGuidance),
+    recallGuidance);
 }
 
 if (failures) {

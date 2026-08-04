@@ -139,6 +139,18 @@ The spec contract:
 
 - Every unified-surface tool returns `structuredContent` via the shared
   `asText()` helper (`packages/core/src/protocol-generic/tools/shared.ts`).
+- The companion TextContent block the spec asks for is kept, and is the
+  COMPACT serialization (2026-08-02). The spec asks for "the serialized
+  JSON", which compact satisfies; it says nothing about indentation. The
+  block used to be indented, which made it 2-24% longer than the
+  structured copy and left the two disagreeing about the size of the same
+  response — a difference that matters because host tool-result size
+  limits are enforced in characters. Claude Code measurably counts (and
+  forwards) the compact structured copy and discards this text block
+  entirely; emitting one length for both means a host that reads the
+  other field measures the same number, so no host can be over a size
+  cliff that `verify-describe-device-budget.ts` reports as green. Full
+  evidence in the `asText` docstring.
 - `outputSchema` (zod) is declared on tools with simple stable shapes so
   MCP clients can validate responses.
 - We deliberately do NOT declare `outputSchema` on tools with rich or

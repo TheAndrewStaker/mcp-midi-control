@@ -63,7 +63,17 @@ function getSpdsxFixtureRoot(): string {
 
 const MCP_CONFIG_PATH = path.resolve('scripts/agent-regression/mcp-config.json');
 const TRACES_DIR = path.resolve('scripts/agent-regression/traces');
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
+/**
+ * The agent under test. Bumped 4-6 -> 5 on 2026-08-01 at the maintainer's
+ * request.
+ *
+ * ⚠ A MODEL BUMP RESETS THE BASELINE. Every pass-rate in `results.jsonl` before
+ * this date was measured against Sonnet 4-6, so a rate change across the bump
+ * is not evidence of a code regression. `resultsLog` records `model` per row —
+ * segment by it before comparing, and rebuild a baseline over a few sweeps
+ * before treating any new rate as the norm.
+ */
+const DEFAULT_MODEL = 'claude-sonnet-5';
 /**
  * Claude Code's MCP tool naming convention prefixes every tool with
  * `mcp__<server_name>__<tool_name>`. Our server is registered in
@@ -479,6 +489,8 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
     }
   }
 
+  const undelivered = findUndeliveredResults(agent_tool_calls).length;
+
   return {
     case: testCase,
     passed: failures.length === 0,
@@ -489,6 +501,7 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
     raw_event_count,
     attempts: 1,
     flaked: false,
+    undelivered_results: undelivered > 0 ? undelivered : undefined,
   };
 }
 
@@ -635,7 +648,7 @@ function stringifyToolResult(content: unknown): string {
  * Apply the case's `expectations` to the captured run. Returns an
  * array of failure messages; an empty array means pass.
  */
-function applyAssertions(
+export function applyAssertions(
   testCase: AgentRegressionCase,
   tool_calls: readonly ToolCall[],
   final_text: string,
@@ -648,18 +661,88 @@ function applyAssertions(
     failures.push(`claude -p exited with code ${exitCode}`);
   }
 
+  // ── Delivery check, before any expectation is evaluated ──────────
+  // A result the model never received makes every downstream assertion
+  // meaningless: the agent answered from a stub, so "did it call the right
+  // tool with the right arguments" is measuring the wrong thing. No opt-out.
+  for (const { tool, why } of findUndeliveredResults(tool_calls)) {
+    failures.push(
+      `undelivered tool result: \`${tool}\` returned a payload the host did not deliver to the model (${why}). ` +
+      `The agent answered without ever seeing it. Fix the tool's response size, not this case.`,
+    );
+  }
+
+  // Hardware-unreachable detection, unconditional. This used to run only
+  // under AGENT_REGRESSION_REAL_HARDWARE, which is exactly backwards: on the
+  // MOCK sweep an unreachable device means the case has no transport behind
+  // it and is asserting nothing about the wire. Four device packages
+  // (`fractal-gen1`, `arturia`, `circuit-tracks`, `ve-500`) contain no
+  // MCP_MOCK_TRANSPORT / mockConnect reference at all.
+  //
+  // Distinct from the `is_error` handling further down: this matches on the
+  // RESULT TEXT, so it fires even when the layer returns the not-found
+  // envelope without setting the `is_error` flag.
+  for (const c of tool_calls) {
+    if (c.result === undefined) continue;
+    if (HARDWARE_UNREACHABLE_PATTERN.test(c.result)) {
+      failures.push(
+        `device unreachable: \`${c.short_name}\` returned a device-not-found error. ` +
+        `On a hardware sweep, re-plug and re-run. On the mock sweep, this case has no ` +
+        `mock transport behind it and is only asserting argument names. ` +
+        `(result snippet: ${c.result.slice(0, 120).replace(/\s+/g, ' ')})`,
+      );
+      break; // one diagnostic per case is enough
+    }
+  }
+
+  // TWO indexes, and the distinction is load-bearing.
+  //
+  // `callsByName` — every call, error or not. `must_not_call` (calling a
+  // forbidden tool is a violation however it ended), `max_repeats` (a retry
+  // loop is made of failures), and `tool_call_validators` (which routinely
+  // INSPECT an error result: `am4-unknown-param-recovery` asserts call #1
+  // carries the "Did you mean" refusal) all need it.
+  //
+  // `succeededByName` — calls that did NOT return `is_error`. `must_call` and
+  // `must_call_any` use this one. They mean "the agent got this done", and a
+  // call that errored did not get it done. `is_error` was captured on every
+  // ToolCall and then never read, so `must_call: ['set_param']` was satisfied
+  // by a set_param that failed: measured in the corpus, 13 traces carry a
+  // device-unreachable error and 8 of those runs were scored PASS.
+  //
+  // Deliberately NOT "any tool error fails the case". An agent that hits a
+  // refusal, reads it, and retries correctly has done the RIGHT thing, and
+  // several cases exist to test exactly that recovery. Failing them for the
+  // provoked error is the same mistake `max_tools` made when it punished an
+  // agent for reading back its own write. Requiring a SUCCESSFUL call
+  // separates "recovered" from "never got there" without a per-case opt-out
+  // list to maintain.
   const callsByName = new Map<string, ToolCall[]>();
+  const succeededByName = new Map<string, ToolCall[]>();
   for (const c of tool_calls) {
     const list = callsByName.get(c.short_name) ?? [];
     list.push(c);
     callsByName.set(c.short_name, list);
+    if (!c.is_error) {
+      const ok = succeededByName.get(c.short_name) ?? [];
+      ok.push(c);
+      succeededByName.set(c.short_name, ok);
+    }
   }
+
+  /** Failure detail that distinguishes "never called" from "only ever failed". */
+  const describeMissing = (tool: string): string => {
+    const attempts = callsByName.get(tool);
+    if (attempts === undefined || attempts.length === 0) return 'never called';
+    const firstErr = (attempts[0].result ?? '').slice(0, 200).replace(/\s+/g, ' ');
+    return `called ${attempts.length}× but EVERY call returned is_error — first: ${firstErr}`;
+  };
 
   // must_call (optional, omitted when the case accepts multiple paths
   // and asserts via tool_call_validators / text_contains only).
   for (const tool of exp.must_call ?? []) {
-    if (!callsByName.has(tool)) {
-      failures.push(`must_call: agent never called \`${tool}\``);
+    if (!succeededByName.has(tool)) {
+      failures.push(`must_call: \`${tool}\` did not succeed (${describeMissing(tool)})`);
     }
   }
 
@@ -669,14 +752,16 @@ function applyAssertions(
   // (e.g. apply_preset vs primitive set_block + set_params).
   if (exp.must_call_any !== undefined && exp.must_call_any.length > 0) {
     const satisfied = exp.must_call_any.some((group) =>
-      group.length > 0 && group.every((tool) => callsByName.has(tool)),
+      group.length > 0 && group.every((tool) => succeededByName.has(tool)),
     );
     if (!satisfied) {
       const groupDescs = exp.must_call_any
         .map((g) => `[${g.join(' + ')}]`)
         .join(' OR ');
       failures.push(
-        `must_call_any: agent satisfied none of the accepted paths (${groupDescs}); called: [${[...callsByName.keys()].join(', ')}]`,
+        `must_call_any: agent satisfied none of the accepted paths (${groupDescs}); ` +
+        `succeeded: [${[...succeededByName.keys()].join(', ')}]; ` +
+        `attempted: [${[...callsByName.keys()].join(', ')}]`,
       );
     }
   }
@@ -689,7 +774,9 @@ function applyAssertions(
   }
 
   // max_tools / min_tools
-  if (tool_calls.length > exp.max_tools) {
+  // max_tools is optional: a case with a deliberately open-ended prompt asserts
+  // the destination, not the route, and leans on max_wall_seconds instead.
+  if (exp.max_tools !== undefined && tool_calls.length > exp.max_tools) {
     failures.push(`max_tools: ${tool_calls.length} > ${exp.max_tools} (sequence: ${tool_calls.map((c) => c.short_name).join(' → ')})`);
   }
   const minTools = exp.min_tools ?? 1;
@@ -771,27 +858,64 @@ function applyAssertions(
     }
   }
 
-  // Hardware-unreachable detection. Hardware-tier cases that had
-  // hardware visible at sweep startup but lose it mid-sweep would
-  // otherwise pass silently: args-only validators ignore tool result
-  // errors. Scan every tool result for the device-not-found patterns the
-  // MCP layer emits (AM4 / Axe-Fx II/III / Hydrasynth use the same
-  // "not found in the MIDI device list" or "not visible" envelope) and
-  // fail loudly so the operator knows to re-plug.
-  if (process.env.AGENT_REGRESSION_REAL_HARDWARE === '1') {
-    for (const c of tool_calls) {
-      if (c.result === undefined) continue;
-      if (HARDWARE_UNREACHABLE_PATTERN.test(c.result)) {
-        failures.push(
-          `hardware unreachable mid-sweep: \`${c.short_name}\` returned a device-not-found error. Re-plug the device and re-run. ` +
-          `(result snippet: ${c.result.slice(0, 120).replace(/\s+/g, ' ')})`,
-        );
-        break; // one diagnostic per case is enough
-      }
-    }
-  }
-
   return failures;
+}
+
+/**
+ * Substitutions the HOST puts in place of a tool result it refused to deliver.
+ *
+ * A tool result over a host size limit does not reach the model AT ALL. The
+ * host swaps in one of these envelopes; an MCP-only agent (Claude Desktop, and
+ * this harness's own `claude -p --tools ""`) has no filesystem tool with which
+ * to open the sidecar file it points at. No error is raised, so the agent
+ * answers from a ~2 KB stub — or from nothing — and looks fine doing it.
+ *
+ * TWO limits, neither of which tokenizes anything:
+ *   1. a 50,000-CHARACTER output cap -> `<persisted-output>` + a ~2 KB preview;
+ *   2. MAX_MCP_OUTPUT_TOKENS (default 25,000), evaluated against an ESTIMATE of
+ *      floor(chars/2) -> a bare error, no preview at all.
+ *
+ * Why this is an assertion and not a warning: the regression this catches ran
+ * silent from 2026-07-17 to 2026-08-02. Across the archived corpus, 26 of 707
+ * traces carry one of these substitutions, and NINE of those runs were scored
+ * PASS — the harness watched the outage 37 times and reported green. An
+ * args-only validator cannot see it (the arguments were correct), and a
+ * content validator that `JSON.parse`s the result cannot either, because a
+ * truncated payload throws and the catch used to pass.
+ *
+ * A case CANNOT opt out. An undelivered result means the run measured
+ * something other than what the case claims to measure.
+ */
+const UNDELIVERED_RESULT_MARKERS: readonly { marker: string; why: string }[] = [
+  { marker: '<persisted-output>', why: 'host persisted the result to a sidecar file the agent cannot open' },
+  { marker: 'Output too large (', why: 'result exceeded the 50,000-character host delivery cap' },
+  { marker: 'exceeds maximum allowed tokens', why: 'result exceeded MAX_MCP_OUTPUT_TOKENS (estimated as chars/2)' },
+];
+
+/** The undelivered-result substitution in `result`, if any. */
+function undeliveredReason(result: string): string | undefined {
+  for (const { marker, why } of UNDELIVERED_RESULT_MARKERS) {
+    if (result.includes(marker)) return why;
+  }
+  return undefined;
+}
+
+/**
+ * Every tool call in this run whose result the model never saw. Exported shape
+ * is `{ tool, why }` so the failure message can name the offending tool — the
+ * fix is almost always "that tool's response needs a budget", not "this case
+ * is wrong".
+ */
+export function findUndeliveredResults(
+  tool_calls: readonly ToolCall[],
+): Array<{ tool: string; why: string }> {
+  const out: Array<{ tool: string; why: string }> = [];
+  for (const c of tool_calls) {
+    if (c.result === undefined) continue;
+    const why = undeliveredReason(c.result);
+    if (why !== undefined) out.push({ tool: c.short_name, why });
+  }
+  return out;
 }
 
 /**
@@ -824,12 +948,14 @@ if (isMain && process.argv[2] !== undefined) {
   appendResultRow(captureCodeState(), result, {
     mockFixture: testCase.mockFixture,
     via: 'single',
-    model: 'claude-sonnet-4-6',
+    model: DEFAULT_MODEL,
   });
   console.log(`\n${result.passed ? 'PASS' : 'FAIL'}: ${result.case.id} (${result.wall_seconds.toFixed(1)}s, ${result.tool_calls.length} tool calls)`);
   for (const f of result.failures) console.log(`  ✗ ${f}`);
   // Inline trend (automatic — no separate command needed).
-  const hist = caseHistoryLine(loadRows(), result.case.id);
+  // Scoped to the model that just ran: a rate blended across a model bump
+  // describes no configuration that ever existed.
+  const hist = caseHistoryLine(loadRows(), result.case.id, DEFAULT_MODEL);
   if (hist !== '') console.log(`  ${hist}`);
   process.exit(result.passed ? 0 : 1);
 }

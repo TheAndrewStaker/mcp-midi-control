@@ -13,8 +13,9 @@
  * is legitimately mid-construction while editing.
  */
 import {
-  applyRigEdit, validateRig, checkRigCompatibility, checkAudioOutput,
+  applyRigEdit, validateRig, checkRigCompatibility, checkAudioOutput, checkRigCapacity,
   type RigEditOp, type ValidationIssue, type CompatibilityReport, type AudioOutputReport,
+  type CapacityReport,
 } from 'openrig';
 
 import { loadRigManifest, writeRigManifest } from './manifest.js';
@@ -27,6 +28,10 @@ export interface RigEditExecResult {
   /** Human one-line description of the change. */
   summary?: string;
   edge_id?: string;
+  /** The node id added / removed (add_device / remove_device). */
+  node_id?: string;
+  /** Cables removed as collateral by remove_device. */
+  removed_edge_ids?: string[];
   /** True when this was a preview (nothing written). */
   dry_run: boolean;
   saved: boolean;
@@ -37,6 +42,12 @@ export interface RigEditExecResult {
   validation?: { ok: boolean; errors: ValidationIssue[]; warnings: ValidationIssue[] };
   compatibility?: CompatibilityReport;
   audio?: AudioOutputReport;
+  /**
+   * Post-edit free/used capacity. Included because the most common follow-up to
+   * `add_device` is "so where does it plug in", and the answer is a fact of the
+   * manifest that should not have to be inferred.
+   */
+  capacity?: CapacityReport;
 }
 
 /** Apply a structured rig edit and (unless dry_run) persist it. */
@@ -66,13 +77,17 @@ export function executeRigEdit(op: RigEditOp, opts: { dry_run?: boolean } = {}):
 
   const compatibility = checkRigCompatibility(res.rig, { capabilities: descriptorCapabilityLookup() });
   const audio = checkAudioOutput(res.rig);
+  const capacity = checkRigCapacity(res.rig);
   const common = {
     ok: true as const,
     summary: res.summary,
     edge_id: res.edge_id,
+    node_id: res.node_id,
+    removed_edge_ids: res.removed_edge_ids,
     validation: { ok: v.ok, errors: v.errors, warnings: v.warnings },
     compatibility,
     audio,
+    capacity,
   };
 
   if (dry_run) return { ...common, dry_run: true, saved: false };

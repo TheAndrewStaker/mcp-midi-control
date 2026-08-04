@@ -169,7 +169,7 @@ the few shapes neither covers.
 - **JUCE BinaryData extraction.** 5-minute label discovery from
   editor binaries via the embedded ZIP. 1,299 AM4-Edit labels and
   10,250 AxeEdit III labels recovered this way. See
-  [`fractal-midi/docs/capture-guides/juce-binarydata-extraction.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/capture-guides/juce-binarydata-extraction.md).
+  `packages/fractal-midi/docs/capture-guides/juce-binarydata-extraction.md`.
 - **Editor `effectDefinitions_*.cache` (the device-native dictionary; the FIRST
   community ask).** Each Fractal editor caches its per-firmware effect/param
   definitions at
@@ -209,7 +209,7 @@ the few shapes neither covers.
   surface per device (AM4 / II / gen-3 families) and writes one JSON file with
   raw hex plus decoded labels. One run replaces most of the itemized per-device
   capture asks. Community guide:
-  `packages/fractal-midi/docs/capture-guides/harvest-script.md`.
+  [`docs/contributing/tools/harvest-script.md`](contributing/tools/harvest-script.md).
 
 ### Hardware lanes (only after the above is exhausted)
 

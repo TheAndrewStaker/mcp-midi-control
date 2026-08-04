@@ -166,6 +166,12 @@ HARDENING TODO asked for. That TODO's "format is not yet reverse-engineered;
 needs a capture" note is **stale** — the reply is decoded; wiring it in is
 plumbing, not RE.
 
+**WIRED 2026-07-17.** `readProjectDirectory(conn, pack)` (a fileType-parameterized
+share of the sample-directory core, `sampleDirectory.ts` `readFileDirectory`)
+backs the Circuit's new `reader.scanLocations`, so `scan_locations(from, to, pack)`
+lists a pack's occupied projects in one round trip and filters to the range. On
+the EXISTING verb, not a new tool. Goldens in `verify-circuit-ncs.ts`.
+
 ---
 
 ## 6. Implementation status
@@ -181,7 +187,7 @@ plumbing, not RE.
 | Goldens — PURE layer (`verify-circuit-ncs.ts`) | DONE — refutation guard + capture-exact parser checks |
 | Goldens — I/O driver (`readPackDirectory`) | DONE (2026-07-16) — mocked round-trip + cross-talk + silent-device, in `verify-circuit-ncs.ts` |
 | **Tool surface** (`pack` arg on apply_pattern / upload_project / get_preset / export_preset; a `list_packs` read) | DONE (2026-07-16) — see "How the tool surface carries `pack`" below |
-| **Sample path** (`uploadSample` / `uploadKit` / `readSampleDirectory`) | **NOT DONE** — pack-aware plumbing exists but no caller passes it; every sample op targets Pack 1. The strings that claimed otherwise are corrected (2026-07-16) |
+| **Sample path** (`uploadSample` / `uploadKit` / `readSampleDirectory`) | **DONE (2026-07-17)** — `pack` threaded through `ctx.pack` into the sample read + write, exactly as projects. Tool args `pack` on `list_samples` / `upload_sample` / `upload_kit`; the dir read + every write frame carry it (goldens in `verify-circuit-ncs.ts` + `verify-circuit-ncs-transfer.ts`). Pack 0 hardware-confirmed; the nonzero-pack sample READ confirmed 2026-07-17 and the nonzero-pack sample WRITE confirmed 2026-07-27 (see §8) |
 
 Packs are now reachable from a conversation for PROJECTS and PATCHES. Samples
 are the remaining half.
@@ -238,17 +244,19 @@ Also landed:
 1. ~~**Overwrite-gate safety.**~~ **CLOSED 2026-07-16.** Gate, backup, and write
    all read `ctx.pack`; divergence is structurally impossible and golden-pinned.
    See "How the tool surface carries `pack`" above.
-2. **Half-pack-aware codebase.** Projects + patches are pack-aware; samples are
-   NOT (`uploadSample.ts` never passes `packIndex`; `sampleDirectory.ts`
-   hardcodes `[FILE_TYPE_SAMPLE, 0x00]`). **Still open**, but no longer silent:
-   the tool descriptions, receipts, and reader docstrings now say the sample path
-   always targets Pack 1.
+2. ~~**Half-pack-aware codebase.**~~ **CLOSED 2026-07-17.** `pack` is threaded
+   through `ctx.pack` into the sample read (`readSampleDirectory`) and write
+   (`uploadSample` / `uploadSampleKit`) — the SAME chosen byte projects address.
+   `list_samples` / `upload_sample` / `upload_kit` take a 1-based `pack` arg,
+   converted at `openCtx` like every other pack-addressed tool. The dir read and
+   every write frame now carry it (goldens: `verify-circuit-ncs.ts` pack-aware
+   round trip, `verify-circuit-ncs-transfer.ts` driver→builder threading).
 
-   The trap this leaves: an agent resolves `drum_binding` slots by NAME from
-   `list_samples` (Pack 1's pool) and then writes the project to another pack,
-   whose 64-slot pool is different — every frame acks and the project plays the
-   wrong samples. `apply_pattern`'s `pack` description warns about exactly this.
-   Closing it means threading `pack` into `sampleFileId` callers + the dir read.
+   This closes the cross-pack name trap: an agent that reads `list_samples
+   pack:N`, loads samples with `upload_sample pack:N`, and writes the project
+   with `pack:N` now has all three on one pack. Pack 0 is hardware-confirmed, and
+   the nonzero-pack sample WRITE was confirmed on hardware 2026-07-27 (§8), which
+   retires the community-beta label the receipts + `capacity_note` used to carry.
 3. ~~**Stale sample-path docs.**~~ **CLOSED 2026-07-16.** `sampleTransfer.ts` and
    `sampleDirectory.ts` are reconciled against this doc: the pack byte is CHOSEN,
    not reported, and the `0b 02` byte is a count. The refuted "active pack index
@@ -275,3 +283,80 @@ Also landed:
 `pack` defaults to `0` everywhere, which is byte-identical to the pre-fix output
 for every legal slot (`slot >> 7 === 0` for 0..63). No existing caller changes
 behavior; the golden `fileId(slot) defaults to pack 0 …` pins that.
+
+---
+
+## 8. The nonzero-pack WRITE, confirmed on hardware 2026-07-27
+
+Two SEPARATE claims, each with its own evidence. They landed on the same day on
+the same device and are still not the same claim: samples and projects are
+different file types on different code paths.
+
+### 8a. SAMPLES: confirmed, and the slot byte is ADDRESSED
+
+`scripts/circuit-clone-pack-samples.ts`, maintainer's 2-pack device, Pack 1 to
+Pack 2:
+
+- Pack 1's pool was read off the DEVICE, 64 of 64 slots, each download gated by
+  the device's own **CRC32**, so the source bytes are self-validating. All parsed
+  as 48 kHz mono 16-bit.
+- 63 slots were written to Pack 2. The 64th was already byte-identical (md5), so
+  writing it would have been a no-op on a device with no erase.
+- **Index alignment was proven, not assumed.** Wire slot 0 was written alone,
+  then wire slot 63 was written SECOND and out of order. It landed at 63 rather
+  than at the next free index, which proves the slot byte is **addressed**, not
+  append-ordered. That is the premise the whole index-preserving clone rests on,
+  and it was the cheapest possible experiment for it.
+- Eight slots spread across the pool were downloaded back off Pack 2 and were
+  **md5-identical** to the Pack 1 originals; a full 64-slot name diff between the
+  two pools came back identical. Final state: Pack 2 = 64 of 64.
+
+Not re-checked across a power-cycle: the evidence is a device read-back, not a
+reboot.
+
+**A real bug the device's CRC caught.** The downloader left the trailing `F7` on
+each frame, so `msbDeinterleave` decoded it as one EXTRA data byte per block and
+shifted the whole stream. The RIFF size still matched (the reader truncates to
+the declared length) and the WAV still parsed, so every structural check the host
+could make said fine. Only the device's own CRC32 said no. That is the argument
+for CRC-gating downloads rather than trusting a parse: a self-validating check
+the host cannot fool is worth more than any number of checks it authors itself.
+
+### 8b. PROJECTS: confirmed, separately, by read-back
+
+Two authored projects were written to **Pack 2 slots 1 and 2** (each read-checked
+empty first by the writer's own `gateProjectOverwrite`, `confirm_overwrite` never
+passed), then **independently downloaded back**, CRC ok on both, with each track
+asserted to hold the part it should rather than merely to hold something. A later
+byte-surgical rename of both projects re-read them again and diffed with zero
+collateral. So the pack byte addresses a project write the same way it addresses
+a sample write.
+
+What this does NOT establish: the projects have not yet been LOADED and PLAYED
+from Pack 2, and there was no power-cycle. The write and its addressing are
+confirmed; audible playback from a nonzero pack is not.
+
+### 8c. The verification read races the flash commit (~6-8 s)
+
+**The device flushes a pack's manifest roughly 6-8 SECONDS AFTER the transfer
+session CLOSES.** On 2026-07-27 a pool read taken 1.2 s after the clone reported
+**8 slots empty**, and a later read showed every one of them present. Nothing had
+been lost; the verification was simply too fast.
+
+Mitigation, and what any future verification loop should do: **poll**. Reconnect,
+wait ~9 s, then retry at 5 s intervals, and treat an absent slot as a failure only
+once the commit window has demonstrably passed. This matters more here than on
+most gear: the Circuit has **no erase**, so a spurious "the write failed" leads to
+a redo that is not harmless.
+
+This does not revive the refuted commit-wait theory in
+`docs/design/circuit-sample-upload.md`. That theory was about waiting IN-session
+on a group-`0x08` frame as a commit signal, and it stays refuted (the frame is a
+generic "ready" the device also sends pre-write). This is a different question:
+with the session already closed, **when does a read-back become admissible as
+evidence**. Answer: not for another ~6-8 s.
+
+Wired into the product surface so a caller meets it before writing its own loop:
+`readSampleDirectory`'s `capacity_note` (both pack branches), the `upload_sample`
+/ `upload_kit` receipts, the `pack` tool-arg descriptions, and the descriptor's
+`verification` string. Golden-pinned in `verify-circuit-ncs.ts`.

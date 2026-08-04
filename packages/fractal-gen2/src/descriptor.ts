@@ -294,6 +294,11 @@ export function createAxeFxIIDescriptor(config: AxeFxIIConfig): DeviceDescriptor
       preset_location_format: /^[1-9]\d{0,4}$/,
       supports_save: true,
       supports_lineage: true,
+      // This family has no decoded read-name-at-location, so `scanLocations`
+      // walks the range with a switch per slot and restores only the preset
+      // NUMBER afterwards. Unsaved edits do not survive it. Declaring this
+      // puts the scan behind the same buffer-dirty guard `switch_preset` uses.
+      scan_navigates: true,
       atomic_read: true,
       support_tier: config.supportTier,
       verification: config.verification,

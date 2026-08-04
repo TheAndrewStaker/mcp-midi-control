@@ -492,6 +492,90 @@ check(
 );
 
 // ─────────────────────────────────────────────────────────────────
+// Case 14b: a candidate list must stay PARSEABLE when the enum labels
+// themselves contain commas.
+//
+// 69 of the AM4's 79 reverb type names contain a comma ("Room, Small",
+// "Plate, Medium"). Comma-joined, "Room, Small, Room, Medium" reads as four
+// values instead of two, and the agent has to reproduce one of these strings
+// byte-exactly for its retry to resolve. This is a RECOVERY message: it is
+// the only thing the agent has left to work from.
+//
+// The assertion is recoverability, not string shape: split the rendered
+// candidate list on its separator and require every token to be a real
+// roster member. Under ", " that fails immediately, because "Room" and
+// "Small" are not reverb types.
+//
+// This bug was fixed once in `renderTypeNames` (the BROWSING list) and
+// missed here (the RECOVERY list). Hence a standing check, at both sites
+// where a roster is rendered.
+// ─────────────────────────────────────────────────────────────────
+console.log('\nCase 14b: comma-bearing enum labels stay parseable in the candidate list');
+
+const AM4_REVERB_TYPES: readonly string[] = (() => {
+  const p = AM4_DESCRIPTOR.blocks['reverb']?.params?.['type'];
+  return p?.enum_values !== undefined ? Object.values(p.enum_values) : [];
+})();
+check(
+  'AM4 reverb.type roster is comma-bearing (the precondition this case exists for)',
+  AM4_REVERB_TYPES.filter((v) => v.includes(',')).length > 10,
+  `${AM4_REVERB_TYPES.filter((v) => v.includes(',')).length} of ${AM4_REVERB_TYPES.length} contain a comma`,
+);
+
+const am4ReverbTypo: PresetSpec = {
+  slots: [{ slot: 1, block_type: 'reverb', params: { A: { type: 'Hall, Enormous' } } }],
+};
+const preflight14b = collectApplyPresetPreflight(am4ReverbTypo, AM4_DESCRIPTOR);
+const enum14bErr = preflight14b.errors.find((e) => /reverb\.type/i.test(e.error));
+check(
+  'AM4 unknown reverb type produces an error',
+  enum14bErr !== undefined,
+  preflight14b.errors.map((e) => `${e.path}: ${e.error}`).join(' | '),
+);
+
+/**
+ * Pull the rendered roster out of a "Candidates: …" segment and return the
+ * tokens the agent would parse. Stops at the "… (N options total)" tail and
+ * at the sentence-ending period.
+ */
+function candidateTokens(message: string): string[] {
+  const m = /Candidates: (.*?)(?: \.\.\. \(\d+ options total\))?\.(?: |$)/.exec(message);
+  if (m === null) return [];
+  return m[1].split(' | ').map((s) => s.trim()).filter((s) => s.length > 0);
+}
+
+const tokens14b = enum14bErr !== undefined ? candidateTokens(enum14bErr.error) : [];
+const roster14b = new Set(AM4_REVERB_TYPES);
+const orphans14b = tokens14b.filter((t) => !roster14b.has(t));
+check(
+  'every rendered candidate is a real reverb type (separator did not shred the labels)',
+  tokens14b.length > 0 && orphans14b.length === 0,
+  `parsed ${tokens14b.length} token(s); ${orphans14b.length} not in the roster: ${orphans14b.slice(0, 6).join(' / ')}`,
+);
+
+// The prose "Did you mean" and the structured suggestions[] answer the same
+// question and must not rank it differently. Before this was wired, the prose
+// came from errorFormat's Levenshtein ranking and suggestions[] came from the
+// enum-resolution cascade, so one message could point two ways.
+const didYouMean14b = enum14bErr !== undefined
+  ? /Did you mean: (.*?)\?(?: |$)/.exec(enum14bErr.error)
+  : null;
+if (didYouMean14b !== null && enum14bErr !== undefined) {
+  const prose = didYouMean14b[1].split(' | ').map((s) => s.trim());
+  const structured = (enum14bErr.suggestions ?? []).slice(0, prose.length);
+  check(
+    'prose "Did you mean" mirrors the structured suggestions[] (same array, same order)',
+    prose.length > 0 && prose.every((v, i) => v === structured[i]),
+    `prose=${JSON.stringify(prose)} suggestions=${JSON.stringify(enum14bErr.suggestions)}`,
+  );
+  check(
+    'every "Did you mean" value is a real reverb type',
+    prose.every((v) => roster14b.has(v)),
+    JSON.stringify(prose),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Case 13b: II close-typo unknown param surfaces "Did you mean".
 // "voluem" → typo of "volume" (distance 2) on II drive should
 // produce both the canonical "Known params: …" line AND a top-3

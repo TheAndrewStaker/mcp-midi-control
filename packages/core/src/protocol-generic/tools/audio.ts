@@ -17,6 +17,7 @@ import { asError, asText } from './shared.js';
 
 export function registerAudioTools(server: McpServer): void {
   server.registerTool('measure_loudness', {
+    title: 'Measure Loudness',
     annotations: { readOnlyHint: true, idempotentHint: false, openWorldHint: false },
     description: [
       'Measure real loudness (BS.1770 LUFS + true peak) from any OS audio input: a modeler\'s USB audio (the AM4 is a 4x4 interface), a mic, an interface bus. Read-only, no MIDI; gives you ears on devices with no meter read.',

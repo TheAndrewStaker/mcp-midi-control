@@ -436,6 +436,15 @@ function validateParamMap(
             // Reject: a fuzzy match could silently change the user's
             // intent. Surface the top match as `suggested_substitution`
             // so the agent can retry with a verbatim value if it agrees.
+            //
+            // ONE ranked array feeds both the prose "Did you mean" and the
+            // structured `suggestions[]`. They used to be computed separately
+            // (cascade candidates here, this file's Levenshtein ranking inside
+            // the formatter), so the two halves of one message could point the
+            // agent at different values.
+            const enumSuggestions = enumResult.candidates.length > 0
+              ? enumResult.candidates
+              : closest(value, validLabels);
             errors.push({
               slot_index: slotIndex,
               path,
@@ -446,16 +455,17 @@ function validateParamMap(
                   paramName: canonical,
                   badValue: value,
                   validValues: validLabels,
+                  suggestions: enumSuggestions,
                 }) +
                 ` Closest match is "${enumResult.match}" — retry with that value if it's what you meant.`,
-              suggestions:
-                enumResult.candidates.length > 0
-                  ? enumResult.candidates
-                  : closest(value, validLabels),
+              suggestions: enumSuggestions,
               suggested_substitution: enumResult.match,
             });
             continue;
           } else {
+            const enumSuggestions = enumResult.candidates.length > 0
+              ? enumResult.candidates
+              : closest(value, validLabels);
             errors.push({
               slot_index: slotIndex,
               path,
@@ -465,11 +475,9 @@ function validateParamMap(
                 paramName: canonical,
                 badValue: value,
                 validValues: validLabels,
+                suggestions: enumSuggestions,
               }),
-              suggestions:
-                enumResult.candidates.length > 0
-                  ? enumResult.candidates
-                  : closest(value, validLabels),
+              suggestions: enumSuggestions,
             });
             continue;
           }

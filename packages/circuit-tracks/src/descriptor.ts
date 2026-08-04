@@ -7,14 +7,17 @@
  *  - ORCHESTRATOR: a pattern TARGET (capabilities.pattern_realizers +
  *    voice_map) the device-neutral pattern module realizes onto.
  *
- * Support tier: community-beta. The wire framing + param map are
- * transcribed byte-for-byte from the v3 Programmer's Reference Guide and
- * cross-checked against the PDF; not yet hardware-confirmed end-to-end.
+ * Support tier: `verified` (see `capabilities.support_tier` below, which is the
+ * single source of truth and is what the contribution gate compares against).
+ * The wire framing + param map are transcribed byte-for-byte from the v3
+ * Programmer's Reference Guide and cross-checked against the PDF; the carve-outs
+ * that are NOT hardware-confirmed are named in `capabilities.verification`.
  */
 
 import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 import { buildBlocks, CH_DRUMS, CH_SYNTH1, CH_SYNTH2, CH_MIDI1, CH_MIDI2 } from './params.js';
+import { DRUM_TRACK_BASE_VOICES } from './ncs/drumBinding.js';
 import { reader } from './descriptor/reader.js';
 import { writer } from './descriptor/writer.js';
 import { CIRCUIT_AGENT_GUIDANCE } from './descriptor/agentGuidance.js';
@@ -38,7 +41,21 @@ export const CIRCUIT_TRACKS_DESCRIPTOR: DeviceDescriptor = {
     // patches / 64 samples, addressable by the `pack` arg (pack addressing
     // decoded + hardware-confirmed 2026-07-16, docs/design/circuit-pack-addressing.md).
     has_packs: true,
-    support_tier: 'community-beta',
+    // Set from the PRIMARY authoring surface, which is owner-confirmed on
+    // hardware: transport, drum-note triggering, the pattern orchestrator,
+    // note-track and drum authoring onto a stored project, and the pack-addressed
+    // read surface. It is the maintainer's clock master and is dogfooded daily,
+    // so `community-beta` (a decoded-but-unconfirmed codec) understated it.
+    //
+    // NOT "confirmed across every surface", and an earlier version of this
+    // comment wrongly said so while the `verification` string ten lines below
+    // named the carve-outs. ONE now remains unconfirmed on hardware, stated
+    // there: **synth CC/NRPN writes** (which is what `set_param` does). The
+    // nonzero-pack sample AND project write paths were both confirmed on
+    // 2026-07-27 and are stated there as two SEPARATE claims with separate
+    // evidence. The tier rates the primary surface; the prose carries the
+    // split. Do not let this comment drift from that string again.
+    support_tier: 'verified',
     verification:
       'Wire framing + param map transcribed byte-for-byte from the v3 Programmer\'s Reference Guide and ' +
       'cross-checked against the PDF. Transport + drum-note triggering (ch10) are owner-confirmed on ' +
@@ -48,7 +65,39 @@ export const CIRCUIT_TRACKS_DESCRIPTOR: DeviceDescriptor = {
       'loads and plays on the device clock (2026-06-19: octave bass on Synth 1 + kick on Drum 1). Synth ' +
       'CC/NRPN writes still await on-device confirmation. Drum tracks do NOT record ' +
       'external MIDI (manual p.38 + on-device test 2026-06-18): record-capture is synth-track only; a ' +
-      'drum beat is live_stream/audition only over MIDI (NCS upload, phase C, is the only drum-onto-device path).',
+      'drum beat is live_stream/audition only over MIDI (NCS upload, phase C, is the only drum-onto-device path). ' +
+      'The pack-addressed READ surface is owner-confirmed on a 5-pack card (2026-07-17): scan_locations lists a ' +
+      'pack\'s project directory in one round trip (Pack 5 occupancy matched the known layout exactly); get_preset ' +
+      'reports pattern_occupancy across all 8 patterns (a silent pattern 1 reads as "starts silent", not "empty"); ' +
+      'and list_samples reads a chosen pack\'s pool (Pack 5\'s pool came back distinct from Pack 1\'s, so the pack ' +
+      'byte reaches the wire). The note gate lane is owner-confirmed on hardware (2026-07-27): a tie authored at ' +
+      'magnitude 48 (raw byte 176) was loaded and SAVED on the unit and read back unchanged, and the save moved ' +
+      'the synth 1 mixer byte on its own, so the device re-serialised from its own state; tie and length are ' +
+      'independent fields. Authored note lengths themselves await an on-device listen. ' +
+      'PATTERN length (distinct from note length) is owner-confirmed by ear on 2026-07-29, by TWO tests that had to be ' +
+      'run separately because the first cannot answer what the second does. TEST A: four chained patterns at ' +
+      '24/24/30/18 steps, one hit each, on Drum 1 and Synth 1 at 60 bpm produced four hits per 24 s cycle, three on ' +
+      'the click and the fourth exactly between two, with both tracks always together. A chained pattern therefore ' +
+      'advances when its OWN length elapses rather than padding to 32, two tracks whose length sequences MATCH stay ' +
+      'in sync, and a four-pattern chain (end=3) works on a DRUM track. A alone could NOT separate one common ' +
+      'boundary from genuine per-track advance, because both tracks carried the same sequence. TEST B answered that: ' +
+      'Drum 1 at 24/24/30/18 against Synth 1 at 18/30/24/24, both totalling 96 steps, produced the predicted six ' +
+      'events per 24-click cycle (both together on 1, synth between 5 and 6, drum on 7, both on 13, synth on 19, ' +
+      'drum between 20 and 21, both again on 25). The four SINGLE events prove the tracks advance independently; the ' +
+      'two DOUBLED events holding over repeated cycles prove they do not drift apart. So two tracks holding ' +
+      'DIFFERENT pattern lengths at the same time stay in sync, a 4/4 part can sit under a 7/8 part, and mixed ' +
+      'metre is fully expressible on this device. ' +
+      'The pack-addressed WRITE path is owner-confirmed on hardware (2026-07-27) as TWO separate claims. ' +
+      'SAMPLES: 63 sample slots were cloned from Pack 1 onto Pack 2, each source download gated by the device\'s ' +
+      'own CRC32; a deliberately out-of-order write (slot 0, then slot 63) landed at slot 63 rather than the next ' +
+      'free index, proving the slot byte is ADDRESSED not append-ordered, and eight slots read back off Pack 2 were ' +
+      'md5-identical to the originals with a full 64-slot name diff clean. PROJECTS: two authored projects were ' +
+      'written to Pack 2 slots 1 and 2 (both read-checked empty first) and independently downloaded back, CRC-verified, ' +
+      'with every track asserted to hold the part it should. Neither claim was re-checked across a power-cycle: the ' +
+      'evidence is a device read-back, not a reboot, and the projects have not yet been played from Pack 2. ' +
+      'READ-BACK TIMING: the device flushes a pack manifest ~6-8 s AFTER a transfer session closes, so a verification ' +
+      'read taken sooner can report a just-written slot empty (it did, for 8 slots, on 2026-07-27). Poll past the ' +
+      'commit window before concluding a write failed; this device has no erase, so a needless re-send is not free.',
     has_scenes: false, // no MIDI scene/pattern selection (confirmed dead-end)
     has_channels: false,
     // The two synth engines are addressed as instances: instance 1 = Synth 1
@@ -98,6 +147,13 @@ export const CIRCUIT_TRACKS_DESCRIPTOR: DeviceDescriptor = {
       snare: { channel: CH_DRUMS, note: 62 },
       hat: { channel: CH_DRUMS, note: 64 },
       clap: { channel: CH_DRUMS, note: 65 },
+      // Drum 4 is the RIDE track under `DEFAULT_DRUM_BINDING` (its base sample
+      // is the ride, slot 3) — but `clap` was the only key naming note 65, so
+      // every cymbal role folded PAST this pad and landed on Drum 3, the hat.
+      // Naming the role explicitly puts cymbals on the cymbal track. `clap`
+      // keeps the pad too: both are legitimate Drum 4 voices, and a per-step
+      // sample flip is what distinguishes them in the authored pattern.
+      ride: { channel: CH_DRUMS, note: 65 },
       // Explicit pad aliases so a caller can target a specific pad by name
       // (e.g. route a hi-hat roll deliberately onto Drum 4) instead of relying
       // on the abstract kick/snare/hat/clap mapping. Same four pads, same notes.
@@ -120,6 +176,13 @@ export const CIRCUIT_TRACKS_DESCRIPTOR: DeviceDescriptor = {
     // external_targets routes a groove onto one of these, using the connected
     // device's note map). MIDI 1 transmits on ch3, MIDI 2 on ch4 by default.
     external_tracks: { midi1: CH_MIDI1, midi2: CH_MIDI2 },
+    // What Drum 1..4 play by default, in track order: the roster a full kit is
+    // CONDENSED onto (apply_pattern condense_drums) when the real drums are
+    // routed to an external sampler over MIDI 2 and these four tracks would
+    // otherwise sit empty. Same list as DRUM_TRACK_BASE_VOICES, which also
+    // derives DEFAULT_DRUM_BINDING, so the roles and the sample slots the
+    // project loads with cannot disagree.
+    drum_track_roles: DRUM_TRACK_BASE_VOICES,
   },
   canonical_terms: {
     block: 'parameter group',
@@ -127,7 +190,7 @@ export const CIRCUIT_TRACKS_DESCRIPTOR: DeviceDescriptor = {
     preset: 'patch / project',
     scene: '(no MIDI scene control)',
     channel: 'track channel',
-    location: 'project (0-63)',
+    location: 'Project 1-64, numbered exactly as the device shows it',
   },
   blocks: buildBlocks(),
   reader,

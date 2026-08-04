@@ -31,12 +31,19 @@
  * .ncs surface, so the project inherits the template's tempo — set it on the
  * device (Tempo button) to the song's BPM. Confirm the result by ear.
  *
- *   npx tsx scripts/circuit-songsterr-arrange.ts <songId|url> <out.ncs> [template.ncs]
+ * PROJECT COLOUR (optional, `--colour`). Projects View shows lit pads, not names,
+ * so a song's projects are only findable mid-set if they are coloured. The colour
+ * is a byte in the .ncs (hardware-confirmed 2026-07-29), so it is stamped HERE, at
+ * authoring time, and the project is born the right colour rather than needing a
+ * second surgical write per project afterwards. Omit the flag and nothing changes:
+ * the project inherits the template's colour exactly as it always has.
+ *
+ *   npx tsx scripts/circuit-songsterr-arrange.ts <songId|url> <out.ncs> [template.ncs] [--colour <name|0..13>]
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import {
-  fetchSongsterrDrums,
+  fetchSongsterrPart,
   decomposeToPatterns,
   coalescePatterns,
   arrangementSummary,
@@ -48,7 +55,10 @@ import {
 import { setDrumPattern, decodeDrumPattern, drumPatternToString } from '@mcp-midi-control/circuit-tracks/ncs/drumPattern.js';
 import { setAllDrumLengths } from '@mcp-midi-control/circuit-tracks/ncs/chain.js';
 import { setSceneChain, getSceneChainEnd } from '@mcp-midi-control/circuit-tracks/ncs/sceneChain.js';
-import { NCS_FILE_SIZE, META_OFFSETS, drumBlockIndex } from '@mcp-midi-control/circuit-tracks/ncs/format.js';
+import {
+  NCS_FILE_SIZE, META_OFFSETS, drumBlockIndex,
+  applyProjectColour, projectColourName, resolveProjectColour, DISTINCT_COLOURS,
+} from '@mcp-midi-control/circuit-tracks/ncs/format.js';
 
 const DEFAULT_TEMPLATE = 'samples/circuit-tracks/grooves/packed/scened/the_summoning__full4bar__scenes.ncs';
 
@@ -96,16 +106,31 @@ function decodeProjectName(buf: Uint8Array): string {
 }
 
 async function main(): Promise<void> {
-  const songRef = process.argv[2];
-  const outPath = process.argv[3];
-  const templatePath = process.argv[4] ?? DEFAULT_TEMPLATE;
+  // `--colour` is pulled OUT of argv before the positionals are read, so the
+  // existing `<song> <out> [template]` call shape is untouched by adding it.
+  const argv = process.argv.slice(2);
+  const ci = argv.findIndex((a) => a === '--colour' || a === '--color');
+  const colour = ci === -1 ? undefined : argv[ci + 1];
+  if (ci !== -1) argv.splice(ci, colour === undefined ? 1 : 2);
+  const [songRef, outPath, templateArg] = argv;
+  const templatePath = templateArg ?? DEFAULT_TEMPLATE;
   if (!songRef || !outPath) {
-    console.error('usage: tsx scripts/circuit-songsterr-arrange.ts <songId|url> <out.ncs> [template.ncs]');
+    console.error('usage: tsx scripts/circuit-songsterr-arrange.ts <songId|url> <out.ncs> [template.ncs] [--colour <name|0..13>]');
+    console.error(`  --colour: the Projects-View pad colour. Highest-contrast order: ${DISTINCT_COLOURS.map(projectColourName).join(' > ')}.`);
     process.exit(1);
   }
+  if (ci !== -1 && colour === undefined) {
+    console.error('--colour needs a value: a palette name (e.g. Green) or an index 0..13.');
+    process.exit(1);
+  }
+  // Resolve BEFORE the network fetch, so a typo'd colour fails in a second
+  // rather than after a song download and a full decompose.
+  const wantColour = colour === undefined
+    ? undefined
+    : resolveProjectColour(/^\d+$/.test(colour) ? Number(colour) : colour);
 
   console.log(`fetching ${songRef}…`);
-  const fetched = await fetchSongsterrDrums(songRef);
+  const fetched = await fetchSongsterrPart(songRef);
   const { flat } = fetched;
   console.log(`"${fetched.artist} — ${fetched.title}"  ${flat.bpm ?? '?'} bpm  ${flat.signature[0]}/${flat.signature[1]}  ${flat.measures.length} measures`);
 
@@ -148,6 +173,8 @@ async function main(): Promise<void> {
   // Scene-chain: auto-advance Scene 1 → 3 and loop (the song axis).
   setSceneChain(buf, scenes.length);
   setProjectName(buf, fetched.title);
+  // Colour, stamped at authoring time. A no-op when --colour was not passed.
+  const stamp = applyProjectColour(buf, wantColour);
 
   writeFileSync(outPath, buf);
 
@@ -157,6 +184,11 @@ async function main(): Promise<void> {
     [0, 1, 2, 3].every((t) => buf[META_OFFSETS[drumBlockIndex(t, slot)]] === 0x1f));
   console.log(`  lengths: all authored drum patterns = 32 steps → ${lenOk ? 'OK' : 'MISMATCH'}`);
   console.log(`  scene-chain end (read-back): Scene 1 → ${getSceneChainEnd(buf)} (auto-advance + loop)`);
+  console.log(stamp.inherited
+    ? `  colour: not set by this call, so the project keeps the template's ${projectColourName(stamp.previous)}`
+      + ` — pass --colour to make it findable in Projects View (highest-contrast order: ${DISTINCT_COLOURS.map(projectColourName).join(' > ')})`
+    : `  colour: ${projectColourName(stamp.index)} (index ${stamp.index})`
+      + `${stamp.changed ? ` — template held ${projectColourName(stamp.previous)}` : ' — unchanged, the template already held it'}`);
   console.log('\n  pattern bank authored into slots:');
   for (const sc of scenes) {
     console.log(`  Scene "${sc.name}" → patterns ${sc.slots.map((s) => s + 1).join('+')} (groove ${sc.grooves.map(patternLabel).join(',')})`);

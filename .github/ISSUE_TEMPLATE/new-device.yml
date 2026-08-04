@@ -1,0 +1,102 @@
+name: New device
+description: Tell us a device exists, or request support for one (amp modeler, synth, sampler, looper, pad).
+title: "[device] "
+labels: [enhancement, device-support]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A model nobody has asked for is a model nobody has built for, so
+        this issue is worth opening even if you cannot help beyond filing
+        it.
+
+        Adding a device means writing a `DeviceDescriptor`, a TypeScript
+        object describing its capabilities, blocks and wire adapters. The
+        unified tool surface is device-agnostic, so no new MCP tools are
+        needed. See "Path 2: Add a device" in `CONTRIBUTING.md`, and
+        `packages/hydrasynth/` for a non-Fractal reference descriptor.
+
+        **Owning the hardware and answering asks is usually worth more
+        than writing the descriptor.** The descriptor is the easy half;
+        the evidence is the hard half.
+
+  - type: input
+    id: device
+    attributes:
+      label: Device name + firmware
+      placeholder: "Line 6 Helix Floor, firmware 3.50"
+    validations:
+      required: true
+
+  - type: input
+    id: connection
+    attributes:
+      label: How does it connect to a host computer?
+      placeholder: "USB MIDI class-compliant / vendor driver / mounts as a drive / requires editor app"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: protocol_docs
+    attributes:
+      label: Is the MIDI protocol documented?
+      options:
+        - Official vendor SysEx spec exists
+        - Partial vendor docs + community wiki
+        - Community reverse engineering only (no vendor docs)
+        - Undocumented (would need capture-based work)
+    validations:
+      required: true
+
+  - type: textarea
+    id: protocol_refs
+    attributes:
+      label: Protocol references
+      description: |
+        Link to vendor docs, community wikis, or other projects that have
+        decoded this device. Even partial info helps.
+      placeholder: |
+        - https://line6.com/data/6/...
+        - https://github.com/.../helix-decoder
+    validations:
+      required: false
+
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: How can you help?
+      description: The middle option is the most valuable one here, not the first.
+      options:
+        - "I own the hardware and can answer asks: run a read-only command, report what the panel did, record a capture"
+        - "I own the hardware and want to author the descriptor myself"
+        - "I do not own it, just requesting"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: files
+    attributes:
+      label: Files you already have
+      description: |
+        A file the vendor app already stores on your computer is often the
+        single biggest jump per minute, and it costs no device time.
+      options:
+        - label: I can send an editor definition cache or equivalent dictionary file
+        - label: I can send a preset, patch or memory backup
+        - label: I can send a project, kit or set file
+        - label: I have none of these
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: What capabilities do you want first?
+      description: |
+        Suggested minimums: switch_preset, get_param, set_param,
+        describe_device. Beyond that, whole-preset builds, scenes, channel
+        switching and lineage data are nice to have.
+      placeholder: |
+        - Switch preset by Bank+PC
+        - Read/write amp drive + EQ on the active preset
+        - Switch scenes (if applicable)
+    validations:
+      required: false

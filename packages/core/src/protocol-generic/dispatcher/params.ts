@@ -326,12 +326,22 @@ export async function executeSetParams(args: {
     }
   }
   const ctx = openCtx(descriptor);
-  // Phase A.5: reconnect-and-retry-once on a handle-level fault. `setParams`
-  // is a batch of independent single-param writes (not a stateful multi-block
-  // transfer session), so restarting the whole batch on a fresh handle is
-  // safe — each write is idempotent (setting the same param to the same
-  // value twice is a no-op the second time).
-  const result = await withHandleRetry(ctx, (c) => setParams(c, validated));
+  // BK-075/BK-076 phantom-param + routing-mask pre-flight, per batch entry.
+  // executeSetParam has run these BEFORE its write since BK-075/BK-076
+  // shipped; set_params never ran them at all until this fix, so a batch
+  // write to an unplaced or uncabled block returned a clean ok:true with no
+  // hint that the write landed on the wire but not on the audible signal
+  // path. Collected here, before the write, to match executeSetParam's
+  // ordering — these are genuinely pre-flight, not post-hoc. Both
+  // collectors share one cached getBlockLayoutSnapshot read per device (5s
+  // TTL), so looping over the batch costs no extra wire round-trips beyond
+  // the first.
+  const phantomWarnings: ValidationInfo[] = [];
+  const routingWarnings: ValidationInfo[] = [];
+  for (const op of validated) {
+    phantomWarnings.push(...await collectPhantomParamWarnings(descriptor, ctx, op.block, op.name));
+    routingWarnings.push(...await collectRoutingMaskWarnings(descriptor, ctx, op.block, op.name));
+  }
   // Tempo-lock co-write advisory: if this batch set a tempo division AND
   // the absolute time/rate it locks, the absolute write is silently
   // ignored on the hardware. Pure inspection of the resolved writes —
@@ -341,13 +351,62 @@ export async function executeSetParams(args: {
   // the batch — read the live tempo and warn if synced (BUG-2). The
   // collector skips co-write cases internally, so the two don't double-warn.
   const tempoStandaloneWarnings = await collectTempoLockStandaloneWarnings(descriptor, ctx, displayWrites);
-  const allTempoWarnings = [...tempoWarnings, ...tempoStandaloneWarnings];
+  // Phase A.5: reconnect-and-retry-once on a handle-level fault. `setParams`
+  // is a batch of independent single-param writes (not a stateful multi-block
+  // transfer session), so restarting the whole batch on a fresh handle is
+  // safe — each write is idempotent (setting the same param to the same
+  // value twice is a no-op the second time).
+  const result = await withHandleRetry(ctx, (c) => setParams(c, validated));
+  const allWarnings = [...phantomWarnings, ...routingWarnings, ...tempoWarnings, ...tempoStandaloneWarnings];
   return {
     ...result,
-    ...(allTempoWarnings.length > 0 ? { validation_info: allTempoWarnings } : {}),
+    ...(allWarnings.length > 0 ? { validation_info: allWarnings } : {}),
     device: descriptor.display_name,
   };
 }
+
+/**
+ * Most queries one `get_params` call may carry.
+ *
+ * TWO INDEPENDENTLY MEASURED CONSTRAINTS LAND HERE, and the tighter one wins.
+ *
+ * 1. WIRE TIME. Every reader implements `getParams` as a per-query loop around
+ *    `getParam` (checked across am4 / gen1 / gen2 / arturia / circuit-tracks /
+ *    ve-500), so N queries is N SysEx round-trips at roughly 50 ms each.
+ *    CLAUDE.md's performance budget puts "> 5 s of wire work in a single
+ *    conversational turn" under "avoid altogether", which is ~100 reads. An
+ *    uncapped batch was minutes of silence in a chat window with no progress
+ *    channel to report it on.
+ *
+ * 2. RESPONSE SIZE. `scripts/verify-response-budget.ts` measured the whole AM4
+ *    catalog (894 queries) at 149,443 chars and the Axe-Fx II's (1,126) at
+ *    208,649, both far past the host's 50,000-char delivery cliff, i.e. the
+ *    model received NOTHING back from a read the device had genuinely
+ *    performed. That is ~167 chars per read on the AM4 and ~185 on the II, so
+ *    a 40,000-char response holds roughly 215-240 of them.
+ *
+ * 100 satisfies both with about a 2x margin on size, and it is twenty times
+ * the tool description's own worked example (gain + master + bass + mid +
+ * treble).
+ *
+ * AND IT BREAKS NOTHING AN AGENT HAS EVER ACTUALLY DONE. Measured over the 707
+ * archived agent-regression traces: 41 real `get_params` calls, the widest of
+ * them **23 queries** (`cross-am4-get-preset-state-anchor`), none over 100. The
+ * catalog-sized batches that blew past the cliff came from a size gate probing
+ * the worst legal call, not from any observed agent behaviour, so this cap
+ * costs no real workflow. Re-derive that figure before lowering it.
+ *
+ * WHY A REFUSAL RATHER THAN THE FIT-AND-PAGE USED ON `list_params`,
+ * `lookup_lineage` AND `list_backups`. Those three read from tables already in
+ * memory, so trimming a response costs nothing but the rows trimmed. A batch
+ * READ has already spent the wire time by the time there is a response to
+ * trim: fitting 894 reads into 240 rows would mean performing 654 SysEx
+ * round-trips, roughly half a minute of the user's time, and discarding them.
+ * Refusing BEFORE the first frame goes out costs nothing and tells the caller
+ * something true. It is also the one shape here that cannot be made silent:
+ * there is no partial answer to mistake for a whole one.
+ */
+export const GET_PARAMS_MAX_QUERIES = 100;
 
 /**
  * Full lifecycle for `get_params` — batch read. Continues past individual
@@ -358,6 +417,21 @@ export async function executeGetParams(args: {
   queries: readonly { block: string; name: string; channel?: string | number; instance?: number }[];
 }): Promise<BatchReadResult & { device: string }> {
   const descriptor = requireDevice(args.port);
+  if (args.queries.length > GET_PARAMS_MAX_QUERIES) {
+    throw new DispatchError(
+      'value_out_of_range',
+      descriptor.display_name,
+      `get_params: ${args.queries.length} queries is more than the ${GET_PARAMS_MAX_QUERIES} one call can answer, so NOTHING was read and nothing was sent to the device. `
+      + `Each query is its own round-trip (~50 ms), and a response this wide also exceeds what the host will deliver, so the answer would not reach you. `
+      + `Split it into calls of ${GET_PARAMS_MAX_QUERIES} or fewer, or (usually better) ask for the knobs you actually need rather than a whole catalog: `
+      // The census call, deliberately, and NOT a `block:["amp"]` template: this
+      // message reaches every registered device and most of them have no amp
+      // block, so a template naming one would hand the agent a call that
+      // errors. Agents paste our literals verbatim (commit `4c9c94a`), and the
+      // 2026-08-02 review found five model-facing templates that did not run.
+      + `list_params({port:"${descriptor.id}"}) returns a per-block census with no device I/O, and get_preset returns the loaded blocks in one round-trip.`,
+    );
+  }
   const validated: ParamQuery[] = [];
   for (let i = 0; i < args.queries.length; i++) {
     const q = args.queries[i];

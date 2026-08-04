@@ -55,6 +55,18 @@ export function gmDrumToVoice(note: number): string | undefined {
   return GM_DRUM_TO_VOICE[note];
 }
 
+/**
+ * Velocity a GHOST (soft) hit sounds at when nothing more specific is given.
+ *
+ * A ghost note is PLAYED, quietly; it is never dropped. 40 is not arbitrary: it
+ * is what the ASCII-tab `g` glyph already emits (`drumTab.ts`) and the threshold
+ * the SMF front-end already reads back as a ghost (`midiFile.ts`, velocity <= 40),
+ * so all three importers agree on one number. Against the compiler's ladder
+ * (`compile.ts`: plain hit 100, accent 120) it lands at 40% of a normal hit:
+ * clearly present, clearly under the backbeat.
+ */
+export const GHOST_HIT_VELOCITY = 40;
+
 /** One timed drum hit decoded from a score, BEFORE quantization. */
 export interface DrumEvent {
   /** Neutral voice name (kick/snare/hat/openhat/crash/ride/tom/perc/clap). */
@@ -63,6 +75,13 @@ export interface DrumEvent {
   beat: number;
   accent?: boolean;
   ghost?: boolean;
+  /**
+   * Explicit MIDI velocity 1..127, when the source carries a dynamic finer than
+   * the accent/ghost pair can express (a `p` or `mp` marking is softer than a
+   * plain hit but louder than a ghost). Wins over both flags at quantize time;
+   * omit it and the flags decide, which keeps a flag-only source unchanged.
+   */
+  velocity?: number;
   /** Micro roll: 2..6 evenly-spaced sub-hits (6 = buzz; positional mask HW-confirmed 2026-07-03). */
   roll?: number;
 }
@@ -127,7 +146,10 @@ export function quantizeDrumEvents(events: readonly DrumEvent[], opts: QuantizeO
     if (!voices[e.voice]) voices[e.voice] = Array.from({ length: steps }, () => ({ on: false } as Step));
     const cell: Step = { on: true };
     if (e.accent) cell.accent = true;
-    if (e.ghost) cell.velocity = 40;
+    // An explicit velocity wins over the coarse flags: it is how a source's full
+    // dynamic ladder (p / mp / mf, not just accent-plain-ghost) reaches the cell.
+    if (e.velocity !== undefined) cell.velocity = Math.max(1, Math.min(127, Math.round(e.velocity)));
+    else if (e.ghost) cell.velocity = GHOST_HIT_VELOCITY;
     // Rolls survive at their count (2..6 = evenly-spaced sub-hits; the drum
     // micro-mask is positional-confirmed, so partial rolls are authorable).
     if (e.roll !== undefined && e.roll > 1) cell.roll = Math.min(6, e.roll);

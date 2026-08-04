@@ -13,6 +13,30 @@
  * Device-specific connector wrappers (e.g. `connectAM4`,
  * `connectAxeFxII`) live in their device packages and delegate to
  * `connect()` here with device-specific needles + onboarding hints.
+ *
+ * ## Why an unclosed connection HANGS the process (read before "just exiting")
+ *
+ * `Input.openPort()` in @julusian/midi calls `setupCallback()`, which creates a
+ * `Napi::TypedThreadSafeFunction` (`src/input.cpp`, `handleMessage = TSFN_t::New`)
+ * so the RtMidi callback thread can hand messages to JS. A live thread-safe
+ * function holds a REF on the libuv event loop for as long as it exists, and the
+ * only thing that releases it is `closePortAndRemoveCallback()`, reached from
+ * `closePort()` or `destroy()`.
+ *
+ * So a process that opened an input port and never closed it NEVER EXITS. It
+ * sits there forever holding the device's exclusive OS MIDI port, which on
+ * Windows means every later open of that device fails. That is exactly the
+ * zombie-node-process failure that wedged a Circuit Tracks (2026-07-26).
+ *
+ * The nasty part: a TSFN ref is invisible to `process.getActiveResourcesInfo()`
+ * AND to `process._getActiveHandles()`: both report an EMPTY list while the
+ * loop is pinned. Do not conclude "nothing is holding the loop" from those.
+ *
+ * Consequences encoded below:
+ *   - `close()` is idempotent and fault-isolated (see `releaseNativeHandles`).
+ *   - every live connection is tracked in `liveConnections` so a caller can
+ *     release the lot with `closeAllMidiConnections()`, and so a `process.exit()`
+ *     path still gets an orderly WinMM close instead of an abrupt teardown.
  */
 import type { Input, Output } from '@julusian/midi';
 import { createRequire } from 'node:module';
@@ -201,6 +225,83 @@ export function createSysExAssembler(
   };
 }
 
+/**
+ * Release the native input + output handles of one connection, isolating each
+ * step so one failure cannot strand the others.
+ *
+ * Order and isolation are both load-bearing:
+ *
+ *  - OUTPUT FIRST. `MidiOutWinMM::closePort()` has no error path (it is a bare
+ *    `midiOutClose`), whereas `MidiInWinMM::closePort()` CAN raise
+ *    `RtMidiError::DRIVER_ERROR` when `midiInUnprepareHeader` fails on a handle
+ *    that was poisoned mid-SysEx, and `NodeMidiInput::ClosePort` does not wrap
+ *    that in a try/catch. Pre-fix, `close()` ran `input.closePort()` first, so a
+ *    poisoned input aborted the whole close and the OUTPUT port stayed open for
+ *    the life of the process. The next `connect()` then failed its
+ *    `isPortOpen()` assertion against our OWN leaked handle, which is why
+ *    `reconnect_midi` could never recover a wedged handle and only a full
+ *    restart cleared it. Closing output first makes the recoverable half
+ *    always recover.
+ *
+ *  - `destroy()` ONLY after a clean `closePort()`. RtMidi's WinMM input close
+ *    `delete[]`s its sysex buffers BEFORE the error return and never clears the
+ *    vector or `connected_`, so re-entering that path double-frees. A second
+ *    close attempt on a handle that already threw is therefore unsafe; skip it.
+ */
+function releaseNativeHandles(input: Input, output: Output): void {
+  try {
+    output.closePort();
+    try { output.destroy(); } catch { /* native object already gone */ }
+  } catch { /* output could not be closed; keep going, input still must be */ }
+  try {
+    input.closePort();
+    // Only reachable when closePort did NOT throw; see the double-free note.
+    try { input.destroy(); } catch { /* native object already gone */ }
+  } catch { /* poisoned handle: the OS releases it at process exit */ }
+}
+
+/**
+ * Every connection `connect()` has handed out and that has not been closed yet.
+ * Tracked so callers can release the whole set at the end of a run (scripts) and
+ * so the process-exit hook below can close ports in an orderly way.
+ */
+const liveConnections = new Set<{ close: () => void }>();
+
+/**
+ * Close every MIDI connection this process still holds open.
+ *
+ * This is the call that lets a script TERMINATE. Because an open input port
+ * pins the libuv loop through a thread-safe-function ref (see the module note),
+ * a script that finishes its work while holding a connection hangs forever and
+ * keeps the device's exclusive port. Call this at the end of any script that
+ * opened a connection, instead of reaching for `process.exit()`. Letting the
+ * loop drain naturally also means piped stdout is flushed and readers such as
+ * `tail` see EOF.
+ *
+ * Idempotent and safe to call when nothing is open. Returns how many
+ * connections were closed, which is what the regression guard asserts on.
+ */
+export function closeAllMidiConnections(): number {
+  const snapshot = Array.from(liveConnections);
+  for (const entry of snapshot) {
+    try {
+      entry.close();
+    } catch {
+      // close() is already fault-isolated internally; this only guards against
+      // a caller-supplied close throwing. Never let one bad handle strand the rest.
+    }
+  }
+  liveConnections.clear();
+  return snapshot.length;
+}
+
+// Belt-and-braces for the `process.exit()` paths (fail-stop branches in the
+// device scripts, and the MCP server's own shutdown). `exit` DOES fire on an
+// explicit `process.exit()`, and `closePort()` is synchronous native work, so
+// the ports get a proper midiInReset/midiInClose instead of being reclaimed
+// abruptly by the OS. Registered once, at module load.
+process.on('exit', () => { closeAllMidiConnections(); });
+
 function findPortByName(
   port: Input | Output,
   needles: readonly string[],
@@ -268,8 +369,10 @@ export function listMidiPorts(
       inputs = enumeratePorts(input, 'input', needles);
       outputs = enumeratePorts(output, 'output', needles);
     } finally {
-      input.closePort();
-      output.closePort();
+      // No port was ever opened here, so there is no thread-safe function to
+      // release, but disposing the RtMidi objects deterministically (rather
+      // than at GC) keeps a subsequent connect() looking at a clean state.
+      releaseNativeHandles(input, output);
     }
   } catch {
     // RtMidi could not initialise a client (e.g. headless Linux with no
@@ -512,6 +615,10 @@ export function connect(opts: ConnectOptions): MidiConnection {
     for (let i = 0; i < input.getPortCount(); i++) ins.push(`  [${i}] ${input.getPortName(i)}`);
     const outs: string[] = [];
     for (let i = 0; i < output.getPortCount(); i++) outs.push(`  [${i}] ${output.getPortName(i)}`);
+    // Nothing was opened, but dispose the RtMidi objects rather than leaving
+    // them for GC: a "device not found" throw is a normal, repeatable path
+    // (every retry loop hits it) and it should not accumulate native state.
+    releaseNativeHandles(input, output);
     throw buildNotFoundError(opts.needles, ins, outs, opts.notFoundLeadIn, opts.notFoundHints ?? []);
   }
 
@@ -545,8 +652,7 @@ export function connect(opts: ConnectOptions): MidiConnection {
     const failedSide = !input.isPortOpen()
       ? (!output.isPortOpen() ? 'input + output ports' : 'input port')
       : 'output port';
-    try { input.closePort(); } catch { /* best-effort */ }
-    try { output.closePort(); } catch { /* best-effort */ }
+    releaseNativeHandles(input, output);
     throw new Error(
       `MIDI ${failedSide} found but could NOT be opened (the OS refused the open). ` +
       'Windows MIDI ports are exclusive: another process is almost certainly holding the port. ' +
@@ -573,6 +679,7 @@ export function connect(opts: ConnectOptions): MidiConnection {
   // (cleared only by a fresh reconnect, i.e. a new closure), read by
   // isHandleHealthy on the NEXT acquire.
   const slowSendCell: { value: boolean } = { value: false };
+  let closed = false;
   const send = (bytes: number[]): void => {
     const startedAt = Date.now();
     try {
@@ -614,11 +721,20 @@ export function connect(opts: ConnectOptions): MidiConnection {
       try { return input.isPortOpen() && output.isPortOpen(); } catch { return false; }
     },
     close: () => {
+      // Idempotent: callers double-close routinely (a script's own teardown
+      // plus closeAllMidiConnections, or ensureConnection's stale-handle path
+      // plus the process-exit hook). A second native close on an input that
+      // already threw is a double-free, so the guard is a correctness
+      // requirement, not just tidiness.
+      if (closed) return;
+      closed = true;
+      liveConnections.delete(conn);
       handlers.clear();
-      input.closePort();
-      output.closePort();
+      releaseNativeHandles(input, output);
     },
   };
+  // Registered LAST so the entry always refers to a fully-built connection.
+  liveConnections.add(conn);
   return conn;
 }
 

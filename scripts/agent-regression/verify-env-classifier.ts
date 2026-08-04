@@ -64,9 +64,34 @@ console.log('\ncaseHistoryLine EXCLUDES env rows from pass-rate:');
     { timestamp: 't', sha: 's', case_id: 'demo', device: 'am4', passed: true, flaked: false, attempts: 1, tool_count: 3, wall_seconds: 30 }, // scored PASS
   ];
   const line = caseHistoryLine(rows, 'demo');
-  // 2 scored runs, both pass → 100% pass; 2 env-excluded.
-  check('100% pass over the 2 scored runs (2 env excluded), not 50% over 4',
-    /100% pass/.test(line) && /2 run\(s\)/.test(line) && /2 env-excluded/.test(line), line);
+  // 2 scored runs, both pass, 2 env-excluded. Rendered as the FRACTION "2/2"
+  // rather than "100%": below n=3 a percentage is one run wearing the
+  // authority of a rate (see MIN_RUNS_FOR_PCT in resultsLog.ts). The property
+  // under test is unchanged — the env rows are not in the denominator.
+  check('pass rate covers the 2 scored runs (2 env excluded), not 4',
+    /2\/2 pass/.test(line) && /2 run\(s\)/.test(line) && /2 env-excluded/.test(line), line);
+}
+
+console.log('\ncaseHistoryLine does not blend across a model bump:');
+{
+  const base = { timestamp: 't', sha: 's', case_id: 'demo', device: 'am4', flaked: false, attempts: 1, tool_count: 3, wall_seconds: 30 };
+  const rows: LoggedRow[] = [
+    { ...base, passed: false, model: 'claude-sonnet-4-6' },
+    { ...base, passed: false, model: 'claude-sonnet-4-6' },
+    { ...base, passed: false, model: 'claude-sonnet-4-6' },
+    { ...base, passed: true, model: 'claude-sonnet-5' },
+    { ...base, passed: true, model: 'claude-sonnet-5' },
+    { ...base, passed: true, model: 'claude-sonnet-5' },
+  ];
+  const scoped = caseHistoryLine(rows, 'demo', 'claude-sonnet-5');
+  check('scoped to the running model, the older model\'s rows are excluded',
+    /100% pass/.test(scoped) && /3 run\(s\)/.test(scoped) && /3 on other model\(s\) excluded/.test(scoped), scoped);
+  const blended = caseHistoryLine(rows, 'demo');
+  check('unscoped, the line SAYS it is blended rather than hiding it',
+    /50% pass/.test(blended) && /BLENDED across models/.test(blended), blended);
+  const noBaseline = caseHistoryLine(rows, 'demo', 'claude-opus-5');
+  check('a model with no history says so instead of borrowing another model\'s rate',
+    /NONE on claude-opus-5/.test(noBaseline), noBaseline);
 }
 
 console.log('\nabort-on-cascade counting (3 consecutive env → abort):');

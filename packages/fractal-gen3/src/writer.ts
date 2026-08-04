@@ -491,24 +491,51 @@ export function makeWriter(opts: {
         throw new DispatchError(
           'value_out_of_range',
           deviceLabel,
-          `${shape.id} setBlock: block_type is required (or "none" / "empty" / "shunt" to clear the cell).`,
+          `${shape.id} setBlock: block_type is required (or "none" / "empty" to clear the cell).`,
         );
       }
       const blockType = change.block_type.trim().toLowerCase();
       let blockId: number;
       if (blockType === 'none' || blockType === 'empty' || blockType === '') {
         blockId = 0; // 0 clears the cell per II convention
+      } else if (blockType === 'shunt') {
+        // A shunt is NOT a cleared cell, and this refusal replaces an error
+        // message that used to offer "shunt" as a synonym for "none". The
+        // decoded grid word puts the block TYPE in bits 8-15 with 0x08 marking
+        // a shunt and 0x00 a real block, and the shunt's sequential index in
+        // the low byte (gridLayout.ts, SYSEX-MAP "grid word"). So a shunt has
+        // its own encoding AND an index we do not assign; sending blockId 0
+        // would empty the cell instead, which breaks the row rather than
+        // connecting it. The read path already decodes shunts correctly.
+        throw new DispatchError(
+          'capability_not_supported',
+          deviceLabel,
+          `${shape.id} setBlock cannot place a shunt yet. A shunt is not an empty cell: the grid word carries `
+          + 'block type 0x08 plus a sequential shunt index, and assigning that index is undecoded, so there is no '
+          + 'frame to send. Clearing a cell ("none" / "empty") empties it rather than connecting through it. '
+          + 'get_preset DOES report existing shunts, so you can read a row you cannot yet author.',
+        );
       } else {
+        // Resolve through the CATALOG, exactly as every read path does.
+        // Passing the raw descriptor slug to `resolveEffectId` (which matches
+        // display names and 3-letter group codes) worked only for blocks whose
+        // slug and display name coincide: 15 blocks per device silently failed,
+        // among them `graphic_eq`, `gate_expander`, `volume_pan` and
+        // `multitap_delay`. Every one of them is advertised by describe_device
+        // and list_params, so an agent doing exactly what it was told got an
+        // "unknown block" error naming a block the device really has.
         try {
           // instance selects which block of the type (Amp 2 = effect id 59);
           // default 1 keeps single-instance placements byte-identical.
-          blockId = resolveEffectId(change.block_type, change.instance ?? 1);
+          ({ effectId: blockId } = resolveBlockOrThrow(blockType, deviceLabel, change.instance ?? 1));
         } catch (err) {
-          throw new DispatchError(
-            'unknown_block',
-            deviceLabel,
-            err instanceof Error ? err.message : String(err),
-          );
+          // resolveBlockOrThrow already throws a well-formed DispatchError
+          // (unknown_block with the device's own label, or
+          // capability_not_supported for a block with no addressable effect
+          // id). Re-wrapping it discarded the code and produced a plain
+          // "Unknown Axe-Fx III block" on an FM9.
+          if (err instanceof DispatchError) throw err;
+          throw new DispatchError('unknown_block', deviceLabel, err instanceof Error ? err.message : String(err));
         }
       }
       const bytes = codec.buildSetGridCell({ row: slot.row, col: slot.col, blockId, rows: grid.rows });
@@ -565,15 +592,17 @@ export function makeWriter(opts: {
       instance?: number,
     ): Promise<WriteResult> {
       gateWrite('set_bypass');
+      // Same slug-vs-display-name defect as setBlock above, in a tool an agent
+      // reaches for far more often: `set_bypass({block:"gate_expander"})`
+      // resolved nothing, because `resolveEffectId` matches display names and
+      // group codes, not descriptor slugs. Route through the catalog, which is
+      // what every read path already does.
       let effectId: number;
       try {
-        effectId = resolveEffectId(block, instance ?? 1);
+        ({ effectId } = resolveBlockOrThrow(block, deviceLabel, instance ?? 1));
       } catch (err) {
-        throw new DispatchError(
-          'unknown_block',
-          deviceLabel,
-          err instanceof Error ? err.message : String(err),
-        );
+        if (err instanceof DispatchError) throw err;
+        throw new DispatchError('unknown_block', deviceLabel, err instanceof Error ? err.message : String(err));
       }
       const bytes = codec.buildSetBypass(effectId, bypassed);
       const errorReport = await sendAndWatchForError(ctx, bytes);
@@ -703,7 +732,10 @@ export function makeWriter(opts: {
       // the slot id map, then emitted as fn=0x01 sub=0x35. Row-1 even-col
       // sources are refused by the builder (not yet decoded); all others are
       // validated for 6-row grids (FM9/III source rows 2-6 + row-1 odd-col) and
-      // 4-row grids (FM3, byte-confirmed from FM3-Edit loopMIDI captures).
+      // 4-row grids (FM3, byte-confirmed from FM3-Edit loopMIDI captures AND
+      // hardware-confirmed on a real FM3, 2026-06-27 ForgeFX field test:
+      // connect/disconnect land, same-column moves keep cables, cross-column
+      // moves drop them, matching the device's own behavior).
       const applyGrid = shape.grid;
       if (spec.routing && spec.routing.length > 0 && applyGrid) {
         // Build id -> {row, col} map from the placed slots.

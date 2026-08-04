@@ -85,8 +85,20 @@ const EXPECTED = {
   // WIRE byte-identity is intact: no wire builder was touched, a discrete SET
   // still emits sub=0x09 float32(ordinal). Only paramCount stays 1711 (no params
   // added/removed); the hash changes solely from the unit reclassification.
+  //
+  // Re-blessed AGAIN for the signed-raw-semitone fix (issue #6, 2026-07-21):
+  // PITCH_SHIFT1-4/PITCH_STEP1-16/PLEX_SHIFT1-8/SYNTH_SHIFT1-3 (31 params) were
+  // `unit: 'numeric'` with no display range (raw-wire passthrough); backfilled
+  // to `unit: 'semitones', displayMin: -24, displayMax: 24` from the same
+  // hardware-anchored range REVERB_SHIFT1/2 already carried, so their catalog
+  // decode routes through the new signed-int16 read path (catalog.ts
+  // SIGNED_RAW_SEMITONE_PARAMS) instead of the wrong-sign standard linear
+  // decode. CATALOG (family,name,paramId) and BLOCKS are UNCHANGED (no params
+  // added/removed) — only the SURFACE `unit` field changes for those 31 params.
+  // WIRE byte-identity is intact: SET still emits the standard normalized
+  // continuous form (sub=0x52, float32(normalized)); only READ decode changed.
   catalog: { count: 2216, hash: '109f858e07b904de65b8782edb41383d746844b0dce309ffd6628fabd2d30223' },
-  surface: { blockCount: 50, paramCount: 1711, hash: 'e9223a3de7f593f752277c57bde3e2cc4f3eefdf5fe4fc3c0b9e77b324f3cc23' },
+  surface: { blockCount: 50, paramCount: 1711, hash: '8576a2c86284c4306ed2c8de09f9f0959cfdeec6880c2aca09685e20ea33b954' },
   blocks: { count: 50, hash: '07db286053f0f4bd242e14c45697f5bbc612f642c5c7f6c7fdd9dd0e9dd7dd51' },
 };
 

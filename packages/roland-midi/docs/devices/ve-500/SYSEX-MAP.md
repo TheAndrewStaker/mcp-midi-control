@@ -100,6 +100,27 @@ different bank whose select values are **not yet decoded**, gated, not guessed.
   (which gates the device's command register), then the store, then waits for the
   device's store-ack echo. A set + save + flash-reload round-trip persisted on the
   unit. The 16-char ASCII patch NAME is set as part of `save_preset(location, name)`.
+  **Reliability caveat (2026-07-19):** the store-ack is still not proof of persistence
+  on every attempt — a same-session first attempt (18 params + a rename to U99) acked
+  `true` but a subsequent recall showed the target memory unchanged; an identical
+  immediate retry then persisted correctly and round-tripped byte-for-byte. Root cause
+  not isolated (leading hypothesis: a timing/settling race when a large batched
+  `set_params` write immediately precedes the store command, unconfirmed). Treat the
+  ack as "sent," not "landed" — a verify-by-recall read-back after every save is the
+  only confirmed-reliable check; see `STATE-VE500.md` 2026-07-19 for the full trail.
+- **SYSTEM (global) knob-target picklist** (`system_common.knob1_setting` /
+  `knob2_setting` / `knob3_setting`, raw ordinal `0`–`412`): the label table for this
+  ~413-entry picklist is NOT joined from `option-tbl.js` like the other 220 enum
+  params (unknown why — a follow-up decode task, not yet re-attempted). Three anchors
+  are hardware-confirmed by front-panel cross-check (2026-07-19): index `2` = **ENHANCE
+  ON/OFF**, index `375` = **PATCH LEVEL**, index `379` = **REVERB LEVEL** (`379` was
+  also this device's factory-default `knob3_setting`). The remaining ~410 indices are
+  undecoded; do not guess a target index without a front-panel round-trip to confirm.
+  No exposed per-knob sensitivity/curve/acceleration setting was found anywhere in the
+  decode or the manual (2026-07-22) — the only lever for "too much turning per unit of
+  change" is retargeting to a narrower-range parameter (e.g. `reverb1.reverb_level`/
+  `reverb2.reverb_level` at 0–100 each vs. the `master_reverb.block_level` aggregate at
+  0–200), not a curve control.
 - Not yet decoded (deferred): factory preset (P01–P50) recall bank mapping (gated),
   whole-patch `get_preset`, and the global SYSTEM params (input/mic/EQ, base
   `0x02000000`, out of the per-patch walk).

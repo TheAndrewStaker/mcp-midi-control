@@ -20,9 +20,10 @@ import { fileURLToPath } from 'node:url';
 
 import {
   buildKit, buildFullKit, editKitNotes, encodeMinimalKit, encodeFullKit, DEFAULT_FXOFF_HEADER,
-  isMinimalKit, nameToCodes, parseMinimalKit, parseFullKit,
+  isMinimalKit, nameToCodes, parseMinimalKit, parseFullKit, parseFullKitBase, parseKitHeader,
+  resolveFullPad, PAD_COUNT, SUBNAME_LEN,
 } from '@mcp-midi-control/spd-sx/codec/kitXml.js';
-import { editPadNotes } from '@mcp-midi-control/spd-sx/storage/authorKit.js';
+import { authorKit as authorKitFile, editPadNotes } from '@mcp-midi-control/spd-sx/storage/authorKit.js';
 import { validateKit } from '@mcp-midi-control/spd-sx/codec/verifyKit.js';
 import { dataFilename, encodeWavePrm, nameToNm, parseWavePrm } from '@mcp-midi-control/spd-sx/codec/wavePrm.js';
 import { addWaves, nextFreeIndex, usedIndices } from '@mcp-midi-control/spd-sx/storage/waveStore.js';
@@ -302,6 +303,76 @@ console.log('\nfull kit (per-pad MIDI/voice properties):');
     'explicit voice overrides the loop mono-default (poly-loop still Loop=1)');
 }
 
+// ── Re-author MERGE (the "tinny and loud" regression gate) ───────────────────
+// A full re-author used to rebuild from PAD_DEFAULTS, so swapping ONE wave reset
+// every level to 100 and every mute group to 0 — it flattened a balanced kit and
+// recurred despite being documented. buildFullKit(opts.base) makes preservation
+// the executor's job: caller-named wins, else the pad as it stands, else default.
+console.log('\nfull-kit merge (re-author keeps what the caller did not name):');
+{
+  // A balanced kit, shaped like the real kit 40: quiet ride (60) under a loud
+  // kick (86), the open/closed-hat mute pairing, and a non-GM custom note.
+  const before = buildFullKit('KIT40', [
+    { wv: 20, note: 36, level: 86 },
+    { wv: 21, note: 51, level: 60, muteGroup: 2, dynamics: false, voice: 'mono' },
+    { wv: 22, note: 46, level: 54, loop: true },
+  ]);
+  const base = parseFullKitBase(before);
+  assert(base !== undefined, 'parseFullKitBase reads a full kit');
+
+  // Swap ONLY pad 2's wave (the bow-ride swap that caused the regression).
+  const after = parseFullKit(buildFullKit('KIT40', [{ wv: 20 }, { wv: 99 }, { wv: 22 }], { base }));
+  assert(after.pads[1].wv === 99, 'merge: the named wave IS swapped');
+  assert(after.pads[0].wvLevel === 86 && after.pads[1].wvLevel === 60 && after.pads[2].wvLevel === 54,
+    'merge: EVERY level survives a re-author that named none (the regression)');
+  assert(after.pads[1].muteGrp === 2 && after.pads[1].dynamics === 0 && after.pads[1].voiceAsgn === 0,
+    'merge: mute group / dynamics / voice survive');
+  assert(after.pads[0].noteNum === 36 && after.pads[1].noteNum === 51 && after.pads[2].noteNum === 46,
+    'merge: per-pad notes survive');
+  assert(after.pads[2].playMode === 2 && after.pads[2].loop === 1 && after.pads[2].trigType === 1,
+    'merge: an unnamed loop pad stays a loop pad');
+
+  // Caller intent still wins over the base — preservation is a default, not a lock.
+  const named = parseFullKit(buildFullKit('KIT40', [
+    { wv: 20, level: 40 }, { wv: 21, muteGroup: 0 }, { wv: 22, loop: false },
+  ], { base }));
+  assert(named.pads[0].wvLevel === 40, 'merge: a named level overrides the inherited one');
+  assert(named.pads[1].muteGrp === 0, 'merge: a named mute group 0 clears the inherited group');
+  assert(named.pads[2].loop === 0 && named.pads[2].playMode === -1 && named.pads[2].trigType === 0,
+    'merge: naming loop:false re-derives the whole loop signature (no half-inherited pad)');
+
+  // No base = a fresh kit: device defaults, exactly as before this change.
+  const fresh = parseFullKit(buildFullKit('KIT40', [{ wv: 20 }, { wv: 21 }]));
+  assert(fresh.pads[0].wvLevel === 100 && fresh.pads[1].muteGrp === 0 && fresh.pads[1].voiceAsgn === 1,
+    'no base → a fresh kit still uses the device defaults');
+
+  // A minimal kit stores no per-pad state, so there is nothing to inherit.
+  assert(parseFullKitBase(buildKit('MIN', [1, 2])) === undefined,
+    'parseFullKitBase(minimal kit) → undefined (no per-pad state exists)');
+
+  // defaultNote is a FALLBACK: it fills a fresh kit but never overrides a note
+  // the kit already holds (else every re-author would stamp GM over custom notes).
+  const gm = parseFullKit(buildFullKit('GM', [{ wv: 1 }], { defaultNote: (i) => 36 + i }));
+  assert(gm.pads[0].noteNum === 36, 'defaultNote supplies the note on a fresh kit');
+  const gmBase = parseFullKit(buildFullKit('GM', [{ wv: 1 }], { base, defaultNote: () => 99 }));
+  assert(gmBase.pads[0].noteNum === 36, 'defaultNote never overrides a note the existing kit holds');
+
+  // The Level/Tempo/FX header carries over too: a re-author must not silently
+  // strip a kit's FX the way rebuilding from DEFAULT_FXOFF_HEADER did.
+  const fxOn = encodeFullKit(
+    nameToCodes('FX'), new Array(SUBNAME_LEN).fill(0),
+    { ...DEFAULT_FXOFF_HEADER, level: 90, tempo: 1400, fx1Sw: 1, fx1Type: 3 },
+    Array.from({ length: PAD_COUNT }, (_, i) => resolveFullPad({ wv: i === 0 ? 5 : -1 }, i)),
+  );
+  const fxHeader = parseKitHeader(buildFullKit('FX', [{ wv: 6 }], { base: parseFullKitBase(fxOn) }));
+  assert(fxHeader?.level === 90 && fxHeader?.tempo === 1400 && fxHeader?.fx1Sw === 1 && fxHeader?.fx1Type === 3,
+    'merge: the existing Level/Tempo/FX header carries over');
+  assert(parseKitHeader(buildKit('MIN', [1])) === undefined, 'parseKitHeader(minimal kit) → undefined');
+  // <Level> must not catch <WvLevel>, nor <Fx1Prm1> catch <Fx1Prm10>.
+  const hdr = parseKitHeader(buildFullKit('H', [{ wv: 1, level: 77 }]));
+  assert(hdr?.level === 100, 'parseKitHeader reads the header <Level>, not a pad <WvLevel>');
+}
+
 // ── Corpus round-trips (skipped if the gitignored snapshot is absent) ────────
 if (existsSync(SNAP_KIT)) {
   console.log('\nminimal kit round-trips (snap-A):');
@@ -442,9 +513,65 @@ await (async () => {
     catch { overwriteThrew = true; }
     assert(overwriteThrew, 'authorKit refuses to overwrite an occupied kit without confirm');
 
+    // ── Re-author through the DESCRIPTOR preserves the kit's balance ──────────
+    // The regression's real shape: a balanced full kit on the device, a session
+    // that swaps one wave, and levels silently flattened to 100. Enforced in the
+    // executor (guidance-only failed at the bench — BK-103b/c).
+    writeFileSync(join(root, 'KIT', 'kit004.spd'), buildFullKit('BAL', [
+      { wv: 0, note: 36, level: 86 },               // kick
+      { wv: 0, note: 51, level: 60, muteGroup: 2 }, // ride: quiet, grouped
+    ]));
+    // Swap pad 2's wave (0 → 1) and name nothing else — the bow-ride swap.
+    const reauthored = await writer.authorKit!(storageCtx, 5, 'BAL',
+      [{ wave: 'kick' }, { wave: 'snare' }], { confirmOverwrite: true, dryRun: true });
+    const merged = reauthored.merged;
+    assert(merged !== undefined, 'authorKit over an existing full kit reports a merge');
+    assert(JSON.stringify(merged?.levels) === JSON.stringify([{ pad: 1, level: 86 }, { pad: 2, level: 60 }]),
+      'authorKit merge: reports the levels it kept (86 / 60), not a flattened 100');
+    // Pad 2's wave changed under an inherited level: the one thing the merge
+    // cannot judge, so it must be surfaced rather than silently accepted.
+    assert(JSON.stringify(merged?.wave_changed) === JSON.stringify([2]),
+      'authorKit merge: flags ONLY the pad whose wave changed under an inherited level');
+    assert(/pad 2/i.test(reauthored.warning ?? '') && /re-level|by ear/i.test(reauthored.warning ?? ''),
+      'authorKit merge: warns that the re-waved pad may need re-levelling');
+    assert(/kept/i.test(reauthored.info), 'authorKit merge: info says what was preserved');
+
+    // BARE waves over a FULL kit must NOT downgrade it to minimal — that is the
+    // wave-swap path, and a minimal kit carries no levels/notes/mute groups.
+    assert(/\bfull kit\b/.test(reauthored.info),
+      'authorKit: bare-wave pads over an existing FULL kit stay FULL (no silent format downgrade)');
+
+    // A named level still wins; an unnamed one is not reported as "kept".
+    const relevelled = await writer.authorKit!(storageCtx, 5, 'BAL',
+      [{ wave: 'kick', level: 40 }, { wave: 0 }], { confirmOverwrite: true, dryRun: true });
+    assert(JSON.stringify(relevelled.merged?.levels) === JSON.stringify([{ pad: 2, level: 60 }]),
+      'authorKit merge: a caller-named level is applied, not listed as preserved');
+    assert((relevelled.merged?.wave_changed ?? []).length === 0,
+      'authorKit merge: a pad keeping its wave is not flagged as wave-changed');
+
+    // Authoring to a FREE kit number is unchanged: no base, no merge report.
+    const freshKit = await writer.authorKit!(storageCtx, 6, 'FRESH', [{ wave: 'kick' }], { dryRun: true });
+    assert(freshKit.merged === undefined, 'authorKit on a free kit number reports no merge');
+
+    // ignoreExisting (the storage-layer bulk-replace opt-out, not on the tool):
+    // a wholesale replace must NOT inherit the occupied slot's properties.
+    const wholesale = authorKitFile(root, 5, 'NEW', [77, 78], { force: true, ignoreExisting: true, dryRun: true, allowUnbounded: true });
+    assert(wholesale.merged === undefined && !wholesale.fullKit,
+      'authorKit ignoreExisting: bulk replace ignores the existing kit (no merge, minimal from bare waves)');
+
     // pure builder: kit recall PC bytes (ch10 → status 0xC9, kit 1 → PC 0).
     assert(JSON.stringify(writer.buildSwitchPreset!(1)) === JSON.stringify([0xc9, 0]),
       'buildSwitchPreset(kit 1) → [0xC9, 0]');
+
+    // MCP_SPDSX_GLOBAL_CHANNEL override (a real rig's GLOBAL CH is user-set on
+    // the unit, not readable over MIDI — same class of problem as boss-rc's
+    // ctl_channel_env, same fix shape): channel 4 → status 0xC3.
+    process.env.MCP_SPDSX_GLOBAL_CHANNEL = '4';
+    assert(JSON.stringify(writer.buildSwitchPreset!(1)) === JSON.stringify([0xc3, 0]),
+      'buildSwitchPreset honors MCP_SPDSX_GLOBAL_CHANNEL override (ch4)');
+    delete process.env.MCP_SPDSX_GLOBAL_CHANNEL;
+    assert(JSON.stringify(writer.buildSwitchPreset!(1)) === JSON.stringify([0xc9, 0]),
+      'buildSwitchPreset back to ch10 default once the override is cleared');
 
     // Mode guards: a storage method on a MIDI-surface ctx refuses; a MIDI method
     // on a storage-surface ctx refuses. Both name the mode to switch to.

@@ -16,7 +16,12 @@ import type {
   VoiceTarget,
 } from '../types.js';
 import type { NeutralPattern } from './types.js';
-import { PatternError } from './types.js';
+import {
+  GATE_SIXTHS_PER_STEP,
+  MAX_GATE_SIXTHS,
+  MIN_GATE_SIXTHS,
+  PatternError,
+} from './types.js';
 import { resolvePatternVoices } from './voiceMap.js';
 
 const BEATS_PER_BAR = 4;
@@ -30,8 +35,13 @@ export interface CompileOptions {
   repeat?: number;
   /** Realize-time arm flag for record_capture (forwarded to the plan). */
   armed?: boolean;
-  /** ncs_upload only: template project + target slot + optional scale + per-step sample flips + drum-track sample binding + overwrite gate + dry_run (forwarded to the plan). */
-  upload?: { template_path?: string; slot: number; scale?: string; drum_flips?: Record<string, Record<string, number>>; drum_binding?: number[]; confirm_overwrite?: boolean; dry_run?: boolean };
+  /**
+   * ncs_upload only: template project + target slot + optional scale + per-step
+   * sample flips (by slot AND by role) + drum-track sample binding + stored drum
+   * levels + overwrite gate + dry_run. Forwarded to the plan verbatim, so it
+   * takes the plan's own shape rather than a second copy that can drift.
+   */
+  upload?: NonNullable<RealizePlan['upload']>;
   /**
    * Semitone transpose applied to AUTHORED pitches only (`Step.notes`), so the
    * C-based library recipes play in any key. Drum triggers and un-pitched hits
@@ -105,9 +115,28 @@ export function compileToPlan(
       if (!step.on) continue;
       const velocity = step.velocity ?? (step.accent ? DEFAULT_ACCENT_VELOCITY : DEFAULT_HIT_VELOCITY);
       const time_ms = Math.round(i * stepMs);
-      // One-step gate: long enough to sound, short enough not to overhang the
-      // next hit. Drums ignore length; melodic voices get a clean gate.
-      const duration_ms = Math.max(20, Math.round(stepMs * 0.9));
+      // Note LENGTH. A step that states one gets EXACTLY that length; a step
+      // that doesn't gets the historical one-step-minus-10% gate: long enough
+      // to sound, short enough not to overhang the next hit. The 10% shave is
+      // deliberately NOT applied to a stated length: it is the right hedge when
+      // we picked the length ourselves, and an audible stutter in the middle of
+      // a tied 16-step drone when the caller asked for the full hold.
+      const gate = step.gate_sixths;
+      if (gate !== undefined
+        && (!Number.isInteger(gate) || gate < MIN_GATE_SIXTHS || gate > MAX_GATE_SIXTHS)) {
+        throw new PatternError(
+          'bad_grid',
+          `Voice '${voice}' step ${i + 1}: gate_sixths must be a whole number of sixths of a step, ` +
+          `${MIN_GATE_SIXTHS}..${MAX_GATE_SIXTHS} (${GATE_SIXTHS_PER_STEP} = one step, ${MAX_GATE_SIXTHS} = sixteen), got ${gate}.`,
+          { voice, step: i, gate_sixths: gate },
+        );
+      }
+      if (step.tie !== undefined && typeof step.tie !== 'boolean') {
+        throw new PatternError('bad_grid', `Voice '${voice}' step ${i + 1}: tie must be a boolean.`, { voice, step: i });
+      }
+      const duration_ms = gate !== undefined
+        ? Math.max(20, Math.round((stepMs * gate) / GATE_SIXTHS_PER_STEP))
+        : Math.max(20, Math.round(stepMs * 0.9));
       // A pitched step carries its own note(s) — a chord emits one event per
       // note at the same instant (so both live_stream and the .ncs author see a
       // chord), and `transpose` shifts those authored pitches. An un-pitched
@@ -147,6 +176,12 @@ export function compileToPlan(
               duration_ms,
               ...(micro_hits !== undefined ? { micro_hits } : {}),
               ...(micro > 0 ? { micro } : {}),
+              // Carried verbatim (not re-derived from duration_ms): a stored
+              // sequencer's gate field is a magnitude in sixths of a step, and
+              // going back through milliseconds would need the BPM and lose the
+              // exact value the caller asked for.
+              ...(gate !== undefined ? { gate_sixths: gate } : {}),
+              ...(step.tie ? { tie: true } : {}),
             });
           }
         }

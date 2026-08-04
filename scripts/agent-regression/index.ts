@@ -34,6 +34,18 @@ import type { AgentRegressionCase, CaseResult, Device } from './types.js';
 // machine-readable history. Read by `stats.ts` (npm run agent-sweep:stats).
 
 /**
+ * The agent under test, for BOTH the port-probe spawn and the results log.
+ * Must stay in step with `runner.ts` DEFAULT_MODEL — they were separately
+ * hardcoded before 2026-08-01, which is exactly how a sweep ends up reporting
+ * one model while running another.
+ *
+ * ⚠ Bumping this RESETS THE BASELINE: pre-bump pass-rates in `results.jsonl`
+ * were measured against a different agent. Segment history by the `model`
+ * column before reading any rate change as a code regression.
+ */
+const SWEEP_MODEL = 'claude-sonnet-5';
+
+/**
  * Pre-flight: ask the shipped MCP server which devices are visible
  * over MIDI right now. Used to skip hardware-tier cases cleanly when
  * the corresponding device isn't connected: the release gate works
@@ -125,7 +137,7 @@ async function preflightClaudeMcpHandshake(claudeBin: string): Promise<{ ok: boo
       '--no-session-persistence',
       '--strict-mcp-config',
       '--mcp-config', MCP_CONFIG_PATH,
-      '--model', 'claude-sonnet-4-6',
+      '--model', SWEEP_MODEL,
       '--permission-mode', 'bypassPermissions',
       '--tools', '',
     ], {
@@ -323,7 +335,7 @@ async function main(): Promise<void> {
     appendResultRow(codeState, result, {
       mockFixture: testCase.mockFixture,
       via: 'sweep',
-      model: args.model ?? 'claude-sonnet-4-6',
+      model: args.model ?? SWEEP_MODEL,
     });
 
     // Abort-on-cascade: once the OS starts refusing spawns it does not recover
@@ -371,9 +383,13 @@ async function main(): Promise<void> {
   // is visible without remembering `agent-sweep:stats`. The corpus already
   // includes this run's rows (appended above).
   const corpus = loadRows();
-  console.log('\nHistory (this case across all logged runs):');
+  const historyModel = args.model ?? SWEEP_MODEL;
+  console.log(`\nHistory (this case across logged runs on ${historyModel}):`);
   for (const r of results) {
-    const line = caseHistoryLine(corpus, r.case.id);
+    // Scoped to the model this sweep ran on. Blending across a model bump
+    // produces a rate describing no configuration that ever existed, and every
+    // row before 2026-08-01 was measured against Sonnet 4-6.
+    const line = caseHistoryLine(corpus, r.case.id, historyModel);
     if (line !== '') console.log(`  ${r.case.id.padEnd(34)} ${line}`);
   }
   console.log('  (full corpus query: npm run agent-sweep:stats)');

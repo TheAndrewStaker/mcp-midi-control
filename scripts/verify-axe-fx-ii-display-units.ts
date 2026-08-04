@@ -63,6 +63,13 @@ import {
 
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 
+/**
+ * Params whose wire is a small ordinal rather than the normalized 0..65534
+ * field, so `displayToWire` does not describe them. Keep in step with
+ * ORDINAL_OFFSET in packages/fractal-gen2/src/calibration.ts.
+ */
+const ORDINAL_OFFSET_PARAMS = new Set<string>(['pitch.voice_1_shift', 'pitch.voice_2_shift']);
+
 let failures = 0;
 
 function check(label: string, ok: boolean, detail?: string): void {
@@ -330,6 +337,15 @@ function rangeSpan(cal: ResolvedCalibration): number {
       // from KNOWN_PARAMS / overlay.
       const param = KNOWN_PARAMS[`${blockSlug}.${paramName}` as keyof typeof KNOWN_PARAMS] as AxeFxIIParam | undefined;
       if (param === undefined) continue;
+      // OFFSET-ORDINAL params are not on the normalized 0..65534 field, so
+      // `displayToWire` is not their encoder and this golden does not describe
+      // them. `pitch.voice_N_shift` carries a small ordinal 0..48 where the
+      // panel reads `wire - 24` (hardware-measured 2026-08-02; see
+      // ORDINAL_OFFSET in packages/fractal-gen2/src/calibration.ts). Their
+      // round-trip is swept exhaustively over their real domain by
+      // verify-display-first-fractal instead, which is stricter than this
+      // midpoint spot-check, not weaker.
+      if (ORDINAL_OFFSET_PARAMS.has(`${blockSlug}.${paramName}`)) continue;
       const cal = resolveForVerify(param);
       if (cal === undefined) continue;
       const expected = displayToWire(mid, cal);

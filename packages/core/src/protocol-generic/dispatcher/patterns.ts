@@ -9,8 +9,9 @@
 
 import { readFileSync } from 'node:fs';
 
-import { DispatchError, type RealizerMode, type VoiceTarget } from '../types.js';
+import { DispatchError, type RealizePlan, type RealizerMode, type StoredMixerLevels, type VoiceTarget } from '../types.js';
 import { buildExternalOverrides, type ExternalTarget, type ExternalVoiceResolution } from './externalRouting.js';
+import { buildCondensedDrums, type CondensedDrums } from './condenseDrums.js';
 import {
   PATTERN_RECIPES,
   PatternError,
@@ -75,7 +76,14 @@ export interface ApplyPatternArgs {
   midi_tracks?: Record<string, number>;
   /** Grid resolution for inline forms (required for notation / mini-notation voices). */
   steps?: number;
-  bpm: number;
+  /**
+   * Tempo for the realized pattern. OPTIONAL, and deliberately so: `ncs_upload`
+   * needs to tell "the caller stated a tempo" apart from "nobody said", because
+   * a stated tempo is what the stored project should carry and a defaulted 120
+   * is not evidence of anything. Undefined here means unstated; the timing math
+   * falls back to `DEFAULT_BPM`.
+   */
+  bpm?: number;
   mode?: RealizerMode;
   repeat?: number;
   /** record_capture two-phase: pass true once Record is armed on the device. */
@@ -84,6 +92,46 @@ export interface ApplyPatternArgs {
   ncs_template?: string;
   /** ncs_upload only: target project slot 0..63 on the device. */
   ncs_slot?: number;
+  /**
+   * ncs_upload only: the tempo to STORE in the project, 40..240 BPM. Overrides
+   * `bpm` for the stored value, for the case where the audition tempo and the
+   * song's real tempo differ on purpose.
+   */
+  ncs_tempo?: number;
+  /**
+   * ncs_upload only: the PAD COLOUR to store in the project — a palette index
+   * or a palette name, resolved (and refused) by the target device, whose
+   * palette it is. Absent leaves the template's, which is what authoring always
+   * did, so an existing call is unchanged byte-for-byte.
+   */
+  colour?: number | string;
+  /**
+   * US-spelled alias for `colour`, accepted so the American spelling is not
+   * silently dropped. An unknown key vanishes at the schema boundary with no
+   * error, so a caller that writes `color` would get a project stamped with the
+   * template's colour and a receipt truthfully saying none was set: the exact
+   * silent-no-op shape this codebase keeps paying for. Resolved via
+   * `resolveColourArg`; passing BOTH spellings with different values refuses.
+   */
+  color?: number | string;
+  /**
+   * ncs_upload only: the PROJECT NAME to store in the file, the fixed
+   * 32-character space-padded ASCII field the device's pack directory and
+   * Components show. Same contract as `colour`: absent leaves the template's
+   * name byte-identical (the backward-compat contract) and the receipt says so;
+   * over-long or non-ASCII REFUSES rather than truncating. No alias: unlike
+   * colour there is no spelling variant, the argument is exactly this key.
+   */
+  project_name?: string;
+  /**
+   * ncs_upload only: STORED per-track mixer levels (raw 0..127), partial by
+   * design: named tracks are written; an unnamed SYNTH stores level 0 (the
+   * stored-silent default, maintainer's 2026-07-29 instruction) while an
+   * unnamed DRUM keeps the template's byte, and the receipt lists all sides.
+   * Range-checked here, before any compile or port, so a bad fader number
+   * costs nothing.
+   */
+  mixer_levels?: StoredMixerLevels;
   /**
    * ncs_upload only: which microSD pack to write, 1-BASED as the device numbers
    * it (`pack: 5` = the front panel's "Pack 5"). Default 1. Converted to the
@@ -110,6 +158,25 @@ export interface ApplyPatternArgs {
    * docs/design/circuit-drum-binding.md.
    */
   drum_binding?: number[];
+  /**
+   * ncs_upload only: ALSO lay the drum part down, condensed, on the host's own
+   * internal drum tracks at stored level 0. For the case where the real kit
+   * plays an external multi-pad sampler through `external_targets` and the
+   * host's four drum tracks would otherwise sit empty: the same groove is
+   * squeezed onto them (per-step contention resolved, folded pieces kept
+   * distinct by per-step sample flips) and stored SILENT, so the player can dial
+   * it in from the mixer without re-authoring anything. Needs a device that
+   * declares `drum_track_roles`.
+   */
+  condense_drums?: boolean;
+  /**
+   * ncs_upload only: keep the note LENGTHS and TIE-FORWARD flags the template
+   * project already holds instead of resetting re-authored notes to a one-step
+   * gate. Default TRUE. Those lengths were dialled in by hand at the device
+   * (authoring could not write them until this epic), so flattening them is
+   * destruction of real work and has to be asked for, never assumed.
+   */
+  preserve_template_gates?: boolean;
   /** ncs_upload only: overwrite gate — true to write an occupied project slot (see SAFE-EDIT-WORKFLOW.md). */
   confirm_overwrite?: boolean;
   /** ncs_upload only: backup-before-overwrite. Default true — save the slot's current project before clobbering it. */
@@ -148,6 +215,20 @@ export interface ApplyPatternArgs {
      * per-section `repeat` is ignored.
      */
     order?: string[];
+    /**
+     * EXPLICIT scene grouping: each inner list is one scene's sections, by
+     * NAME, in play order. [["Fill"],["A","B","C"],["D","E"],["F","G"]] is a
+     * 1+3+2+2 split the automatic layout cannot express (it greedily merges
+     * consecutive sections into the fewest scenes). The plan IS the play order
+     * (scenes play 1..N then loop), so it is mutually exclusive with `order`.
+     * A section may recur across scenes (a repeated ostinato costs no extra
+     * pattern slots) but only once per scene; every section must be placed in
+     * at least one scene; a scene's members must be adjacent in `sections`
+     * (a scene stores one contiguous pattern range). Unknown names, double
+     * placement within a scene, unplaced sections, and plans needing more
+     * scenes than the device-confirmed range all REFUSE with the fault named.
+     */
+    scene_plan?: string[][];
   };
 }
 
@@ -354,6 +435,141 @@ function compressionLines(
   return pieceCompression(entries).lines;
 }
 
+/**
+ * Argument combinations `condense_drums` cannot serve honestly. Each one is a
+ * contradiction rather than a limitation, so it refuses instead of silently
+ * picking a winner:
+ *
+ *  - a live mode has no drum tracks to store anything on;
+ *  - `also_internal` asks for the RAW voices on the host's drum tracks while
+ *    condensation asks for the squeezed copy on those same tracks.
+ *
+ * `drum_binding` is deliberately NOT here any more: the two arguments COMPOSE
+ * (bind first, condense onto the bound layout). The binding declares which
+ * pool slot each track's own-role sample lives at; condensation lays the
+ * groove onto those tracks; and the condenser's per-step sample flips resolve
+ * against the BOUND slots rather than the canonical stoken layout (the device
+ * layer owns that join: `slotForFlipRole` in the Circuit's drumBinding.ts).
+ * A flip to a piece OUTSIDE the four bound roles cannot be located in a
+ * custom pool, so it is skipped with a per-step warning instead of guessed.
+ * The real repertoire needs the pair: After Dark's working build carries
+ * binding [1,2,5,11] AND condensed internal drums.
+ */
+function assertCondensable(args: ApplyPatternArgs, mode: RealizerMode): void {
+  if (mode !== 'ncs_upload') {
+    throw new PatternError(
+      'realizer_not_supported',
+      `condense_drums stores a condensed kit in an authored project, so it needs mode 'ncs_upload' (got '${mode}').`,
+    );
+  }
+  if (args.external_targets?.some((t) => t.also_internal === true)) {
+    throw new PatternError(
+      'parse_error',
+      'condense_drums and external_targets.also_internal both claim the host\'s internal drum tracks (the raw voices vs the condensed kit). Pick one: also_internal for an un-condensed doubling, condense_drums for the squeezed silent copy.',
+    );
+  }
+}
+
+/** Timing fallback when no tempo was stated. Only the live/record math uses it. */
+const DEFAULT_BPM = 120;
+/** The device's own tempo range (Circuit Tracks user guide). Refused outside, never clamped. */
+const STORED_TEMPO_MIN = 40;
+const STORED_TEMPO_MAX = 240;
+
+/**
+ * The tempo an `ncs_upload` should STORE in the project, or undefined to leave
+ * the template's.
+ *
+ * The rule, and why. A stored project carries its own tempo and the device
+ * adopts it on load, so a project authored without one does not play "at no
+ * tempo" — it plays at whatever the TEMPLATE held. Authoring used to always take
+ * that branch, which is how a whole pack of 140-bpm song parts ended up stored
+ * at the blank template's 120 with nothing anywhere to say so.
+ *
+ * So: an explicit `ncs_tempo` wins; failing that, a `bpm` the caller actually
+ * STATED is used, because if you are storing this pattern then the pattern's
+ * tempo is the project's tempo and there is no coherent reading where they
+ * differ by accident. If NEITHER was given we write nothing and the realizer
+ * says out loud what the template's value was, because inventing 120 over a
+ * hand-set tempo is as wrong as inheriting one.
+ *
+ * Out of range REFUSES rather than clamping: silently storing 240 for a
+ * 320-bpm pattern is the same silent-wrong-tempo bug wearing a different hat.
+ */
+function resolveStoredTempo(args: ApplyPatternArgs): number | undefined {
+  const stated = args.ncs_tempo ?? args.bpm;
+  if (stated === undefined) return undefined;
+  const rounded = Math.round(stated);
+  if (rounded < STORED_TEMPO_MIN || rounded > STORED_TEMPO_MAX) {
+    const which = args.ncs_tempo !== undefined ? 'ncs_tempo' : 'bpm';
+    throw new PatternError(
+      'bad_grid',
+      `A stored project's tempo must be ${STORED_TEMPO_MIN}..${STORED_TEMPO_MAX} BPM (the device's range), but ${which} is ${stated}. ` +
+      `Nothing was written. Pass ncs_tempo with a tempo in range (e.g. half or double time) to store this pattern.`,
+    );
+  }
+  return rounded;
+}
+
+/**
+ * Accept either spelling of the colour argument. `colour` is canonical (it
+ * matches the codec and the device's own docs), but an unknown key is stripped
+ * SILENTLY at the schema boundary, so a caller writing `color` would author a
+ * project carrying the template's colour while the receipt truthfully reported
+ * that none was set. That is a silent no-op, the failure shape this codebase
+ * has hit repeatedly (`backup_first`, `midi_channel`, `drum_map`).
+ *
+ * Both spellings with the SAME value is fine and passes through. Both with
+ * DIFFERENT values refuses rather than picking one, because either choice
+ * silently discards something the caller asked for.
+ */
+function resolveColourArg(args: ApplyPatternArgs): number | string | undefined {
+  const { colour, color } = args;
+  if (colour !== undefined && color !== undefined && colour !== color) {
+    throw new PatternError(
+      'bad_grid',
+      `Both colour and color were passed with different values (${JSON.stringify(colour)} and ${JSON.stringify(color)}). ` +
+      `Nothing was written. They are the same argument, so pass one: colour is canonical, color is accepted as an alias.`,
+    );
+  }
+  return colour ?? color;
+}
+
+/** Track keys `mixer_levels` accepts, in receipt order. */
+const MIXER_LEVEL_KEYS = ['synth1', 'synth2', 'drum1', 'drum2', 'drum3', 'drum4'] as const;
+
+/**
+ * Validate `mixer_levels` UP FRONT (before any compile, port, or template
+ * read), or return undefined when the caller passed nothing. Out of range
+ * REFUSES rather than clamping, in display shape: a fader silently stored at
+ * the wrong loudness is the exact quiet damage the stored-level surface exists
+ * to prevent. An empty object is refused too, it can only be a mistake, and
+ * treating it as "set nothing" would be a silent no-op.
+ */
+function resolveMixerLevels(args: ApplyPatternArgs): StoredMixerLevels | undefined {
+  const ml = args.mixer_levels;
+  if (ml === undefined) return undefined;
+  const named = MIXER_LEVEL_KEYS.filter((k) => ml[k] !== undefined);
+  if (named.length === 0) {
+    throw new PatternError(
+      'bad_grid',
+      'mixer_levels was passed but names no track. Name the tracks to set, e.g. {"synth1": 100, "drum1": 0} ' +
+      `(keys: ${MIXER_LEVEL_KEYS.join(', ')}); an omitted synth stores level 0 (the stored-silent default), an omitted drum keeps the template's stored level.`,
+    );
+  }
+  for (const k of named) {
+    const v = ml[k]!;
+    if (!Number.isInteger(v) || v < 0 || v > 127) {
+      throw new PatternError(
+        'bad_grid',
+        `mixer_levels.${k} must be an integer 0..127 (the stored fader scale, the same numbers as the mixer CCs; ` +
+        `100 is the factory default), got ${v}. Nothing was written.`,
+      );
+    }
+  }
+  return Object.fromEntries(named.map((k) => [k, ml[k]!]));
+}
+
 export interface ApplyPatternResult {
   device: string;
   pattern: string;
@@ -383,6 +599,10 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
     return executeApplyArrangement(args, descriptor);
   }
 
+  // Timing tempo: the stated one, or the documented default when nobody said.
+  // `args.bpm` stays the record of what the CALLER stated (see resolveStoredTempo).
+  const bpm = args.bpm ?? DEFAULT_BPM;
+
   // Capability gate (throws PatternError if not a target / mode unsupported).
   const mode = selectRealizer(caps, args.mode);
 
@@ -404,12 +624,30 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
   }
 
   // ncs_upload authors a project file + pushes it; gather its bespoke inputs.
-  let upload: { template_path?: string; slot: number; scale?: string; drum_flips?: Record<string, Record<string, number>>; drum_binding?: number[]; confirm_overwrite?: boolean; dry_run?: boolean } | undefined;
+  let upload: NonNullable<RealizePlan['upload']> | undefined;
   if (mode === 'ncs_upload') {
+    const storedTempo = resolveStoredTempo(args);
+    const storedColour = resolveColourArg(args);
+    const storedMixer = resolveMixerLevels(args);
     if (args.ncs_slot === undefined) {
-      throw new PatternError('bad_grid', 'ncs_upload requires ncs_slot (the 0..63 project slot to write).');
+      throw new PatternError('bad_grid', 'ncs_upload requires ncs_slot (the project to write, 1..64 as the device numbers it).');
     }
-    upload = { template_path: args.ncs_template, slot: args.ncs_slot, scale: args.scale, drum_flips: args.drum_flips, drum_binding: args.drum_binding, confirm_overwrite: args.confirm_overwrite, dry_run: args.dry_run };
+    if (!Number.isInteger(args.ncs_slot) || args.ncs_slot < 1 || args.ncs_slot > 64) {
+      throw new PatternError('bad_grid', `ncs_slot must be 1..64, numbered exactly as the device shows it (Project 1..64), got ${args.ncs_slot}.`);
+    }
+    // DEVICE numbering in, WIRE numbering below: `upload.slot` stays 0-based so
+    // the writer's transport calls and its "shown as Project slot+1" strings are
+    // unchanged. Convert once, here.
+    upload = {
+      template_path: args.ncs_template, slot: args.ncs_slot - 1, scale: args.scale,
+      drum_flips: args.drum_flips, drum_binding: args.drum_binding,
+      preserve_template_gates: args.preserve_template_gates,
+      confirm_overwrite: args.confirm_overwrite, dry_run: args.dry_run,
+      ...(storedTempo !== undefined ? { tempo: storedTempo } : {}),
+      ...(storedColour !== undefined ? { colour: storedColour } : {}),
+      ...(args.project_name !== undefined ? { project_name: args.project_name } : {}),
+      ...(storedMixer !== undefined ? { mixer_levels: storedMixer } : {}),
+    };
   }
 
   // External-instrument routing (ncs_upload only): some/all voices resolve against
@@ -433,6 +671,26 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
     extraWarnings.push(...built2.hints);
   }
 
+  // Condensed internal drums: the host's own drum tracks carry a squeezed,
+  // level-0 copy of the kit. Built AFTER external routing so a routed voice
+  // keeps its external destinations and loses only its internal one, and
+  // compiled from an AUGMENTED pattern (synthetic per-track voices) so the
+  // caller's pattern stays intact for the compression report. See condenseDrums.ts.
+  let compilePattern = pattern;
+  if (args.condense_drums === true) {
+    assertCondensable(args, mode);
+    const cd = buildCondensedDrums(pattern, caps, overrides);
+    if (cd === undefined) {
+      extraWarnings.push('condense_drums: this pattern has no drum voices, so the internal drum tracks were left alone.');
+    } else {
+      compilePattern = { ...pattern, voices: { ...pattern.voices, ...cd.voices } };
+      overrides = { ...(overrides ?? {}), ...cd.overrides };
+      upload!.drum_flip_roles = cd.flip_roles;
+      upload!.drum_levels = cd.levels;
+      extraWarnings.push(...cd.hints);
+    }
+  }
+
   // Piece-compression report: folds with hit counts + merged pieces, across
   // the host voice_map AND external destinations. Empty when the mapping is
   // clean — a real report is never buried in ceremony.
@@ -446,13 +704,13 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
   // Clamp repeat so one blocking realize stays within the perf budget.
   let repeat = Math.max(1, Math.floor(args.repeat ?? 1));
   let clampNote: string | undefined;
-  const plan0 = compileToPlan(pattern, caps, { bpm: args.bpm, mode, repeat: 1, armed: args.armed, upload, transpose, overrides });
+  const plan0 = compileToPlan(compilePattern, caps, { bpm, mode, repeat: 1, armed: args.armed, upload, transpose, overrides });
   const maxRepeat = Math.max(1, Math.floor(MAX_REALIZE_MS / Math.max(1, plan0.cycle_ms)));
   if (repeat > maxRepeat) {
     clampNote = `repeat clamped ${repeat}→${maxRepeat} to stay within the ${MAX_REALIZE_MS / 1000}s realize budget.`;
     repeat = maxRepeat;
   }
-  const plan = compileToPlan(pattern, caps, { bpm: args.bpm, mode, repeat, armed: args.armed, upload, transpose, overrides });
+  const plan = compileToPlan(compilePattern, caps, { bpm, mode, repeat, armed: args.armed, upload, transpose, overrides });
 
   // Dry run, live modes: the plan + report ARE the deliverable; nothing streams.
   // (ncs_upload dry runs continue into the writer, which authors + fit-checks
@@ -461,7 +719,7 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
     return {
       device: descriptor.display_name,
       pattern: pattern.name,
-      bpm: args.bpm,
+      bpm,
       steps: pattern.steps,
       mode, repeat,
       cycle_ms: plan.cycle_ms,
@@ -488,7 +746,7 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
   // nothing, so it also reads nothing.
   let backupNote = '';
   if (mode === 'ncs_upload' && upload && args.backup_first !== false && args.confirm_overwrite && !args.dry_run) {
-    const backup = await backupProjectSlot(descriptor, ctx, upload.slot);
+    const backup = await backupProjectSlot(descriptor, ctx, upload.slot + 1);   // DEVICE numbering
     backupNote = backup.note;
   }
   // ncs_upload uses the device's bespoke writer hook; live_stream / record_capture
@@ -500,7 +758,7 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
   return {
     device: descriptor.display_name,
     pattern: pattern.name,
-    bpm: args.bpm,
+    bpm,
     steps: pattern.steps,
     mode,
     repeat,
@@ -526,6 +784,11 @@ async function executeApplyArrangement(
   descriptor: ReturnType<typeof requireDevice>,
 ): Promise<ApplyPatternResult> {
   const caps = descriptor.capabilities;
+  const bpm = args.bpm ?? DEFAULT_BPM;
+  // Resolved up front so an out-of-range tempo (or fader level) refuses BEFORE
+  // any section is compiled or any port opened, not after the work is done.
+  const arrangementTempo = resolveStoredTempo(args);
+  const arrangementMixer = resolveMixerLevels(args);
   const mode = selectRealizer(caps, args.mode ?? 'ncs_upload');
   if (mode !== 'ncs_upload') {
     throw new PatternError(
@@ -542,14 +805,31 @@ async function executeApplyArrangement(
     );
   }
   if (args.ncs_slot === undefined) {
-    throw new PatternError('bad_grid', 'ncs_upload requires ncs_slot (the 0..63 project slot to write).');
+    throw new PatternError('bad_grid', 'ncs_upload requires ncs_slot (the Project to write, 1..64, numbered as the device shows it).');
   }
+  if (!Number.isInteger(args.ncs_slot) || args.ncs_slot < 1 || args.ncs_slot > 64) {
+    throw new PatternError('bad_grid', `ncs_slot must be 1..64, numbered exactly as the device shows it (Project 1..64), got ${args.ncs_slot}.`);
+  }
+  // DEVICE numbering in, WIRE numbering below: the same single conversion the
+  // single-pattern path makes. `upload.slot` is 0-based everywhere past this line.
+  const slotWire = args.ncs_slot - 1;
   const sectionsIn = args.arrangement!.sections;
   if (!Array.isArray(sectionsIn) || sectionsIn.length === 0) {
     throw new PatternError('parse_error', 'arrangement.sections must list at least one section.');
   }
   if (args.drum_flips && Object.keys(args.drum_flips).length > 0) {
     throw new PatternError('parse_error', 'drum_flips is per-step within ONE pattern and is not supported with `arrangement` yet.');
+  }
+  const scenePlanIn = args.arrangement!.scene_plan;
+  if (scenePlanIn !== undefined && args.arrangement!.order !== undefined) {
+    throw new PatternError(
+      'parse_error',
+      'scene_plan and order are mutually exclusive: the scene plan IS the play order (scenes play 1..N in listed order, then loop). ' +
+      'Keep scene_plan and drop order, or drop scene_plan for the automatic layout.',
+    );
+  }
+  if (scenePlanIn !== undefined && (!Array.isArray(scenePlanIn) || scenePlanIn.length === 0)) {
+    throw new PatternError('parse_error', 'arrangement.scene_plan must list at least one scene (a list of section names).');
   }
 
   // Build each section + expand the play order.
@@ -574,7 +854,7 @@ async function executeApplyArrangement(
     }
     built.push({ name: s.name, pattern: rr.pattern });
     for (const v of Object.keys(rr.pattern.voices)) unionVoices.add(v);
-    if (args.arrangement!.order === undefined) {
+    if (args.arrangement!.order === undefined && scenePlanIn === undefined) {
       const rep = Math.max(1, Math.min(16, Math.floor(s.repeat ?? 1)));
       for (let r = 0; r < rep; r++) order.push(i);
     }
@@ -594,6 +874,54 @@ async function executeApplyArrangement(
     }
     if (order.length === 0) throw new PatternError('parse_error', 'arrangement.order must list at least one section.');
   }
+  // Explicit scene grouping by section name. Resolve every name here (the
+  // display-first boundary: the caller speaks section names, never indices),
+  // refuse the name-level faults, and hand the writer index groups. The plan's
+  // concatenation IS the play order. Layout-level checks (contiguity, the
+  // confirmed-scene-count ceiling) stay in the device writer, which owns them.
+  let scenePlan: number[][] | undefined;
+  if (scenePlanIn !== undefined) {
+    if (sectionsIn.some((s) => s.repeat !== undefined)) {
+      warnings.push('arrangement.scene_plan given, so per-section repeat is ignored (repeat a section across scenes instead).');
+    }
+    const byName = new Map(built.map((b, i) => [b.name.toLowerCase(), i]));
+    scenePlan = [];
+    const placed = new Set<number>();
+    for (let sc = 0; sc < scenePlanIn.length; sc++) {
+      const members = scenePlanIn[sc];
+      if (!Array.isArray(members) || members.length === 0) {
+        throw new PatternError('parse_error', `arrangement.scene_plan scene ${sc + 1} is empty; every scene lists at least one section name.`);
+      }
+      const idxs: number[] = [];
+      const seen = new Set<number>();
+      for (const name of members) {
+        const idx = byName.get(String(name).toLowerCase());
+        if (idx === undefined) {
+          throw new PatternError('parse_error', `arrangement.scene_plan scene ${sc + 1} names unknown section "${name}". Sections: ${built.map((b) => b.name).join(', ')}.`);
+        }
+        if (seen.has(idx)) {
+          throw new PatternError(
+            'parse_error',
+            `arrangement.scene_plan scene ${sc + 1} lists "${built[idx].name}" twice; a scene plays each of its patterns once. ` +
+            'To play it again, repeat it in ANOTHER scene (scenes are pointers, so that costs no pattern slot).',
+          );
+        }
+        seen.add(idx);
+        placed.add(idx);
+        idxs.push(idx);
+      }
+      scenePlan.push(idxs);
+    }
+    const unplaced = built.map((b, i) => i).filter((i) => !placed.has(i));
+    if (unplaced.length > 0) {
+      throw new PatternError(
+        'parse_error',
+        `arrangement.scene_plan leaves section(s) ${unplaced.map((i) => `"${built[i].name}"`).join(', ')} in no scene, so they would ` +
+        'author into pattern slots but never play. Place every section in a scene, or remove the unused section(s) from sections.',
+      );
+    }
+    for (const scene of scenePlan) for (const i of scene) order.push(i);
+  }
 
   // External routing built once, validated against the UNION of section voices
   // (a voice routed externally applies wherever a section uses it).
@@ -607,10 +935,57 @@ async function executeApplyArrangement(
   }
 
   // Compile each section (repeat=1: the ARRANGEMENT owns repetition).
+  // Condensation is PER SECTION: each section's groove is squeezed onto the
+  // internal drum tracks on its own, and its flips ride on its OWN plan's
+  // `upload`, because `authorArrangementIntoProject` authors each section's plan
+  // independently into its own pattern slot. The drum LEVELS are project-global,
+  // so they travel on the arrangement-level upload instead.
+  if (args.condense_drums === true) assertCondensable(args, mode);
   const transpose = resolveTranspose(args.transpose, args.key);
   const sections: { name: string; plan: ReturnType<typeof compileToPlan> }[] = [];
+  let condensed: CondensedDrums | undefined;
+  let condensedSections = 0;
+  let condensedCollisions = 0;
   for (const b of built) {
-    sections.push({ name: b.name, plan: compileToPlan(b.pattern, caps, { bpm: args.bpm, mode, repeat: 1, transpose, overrides }) });
+    let secPattern = b.pattern;
+    let secOverrides = overrides;
+    let secUpload: NonNullable<RealizePlan['upload']> | undefined;
+    if (args.condense_drums === true) {
+      const cd = buildCondensedDrums(b.pattern, caps, overrides);
+      if (cd !== undefined) {
+        secPattern = { ...b.pattern, voices: { ...b.pattern.voices, ...cd.voices } };
+        secOverrides = { ...(overrides ?? {}), ...cd.overrides };
+        // The binding rides on each section's own upload too: the device layer
+        // resolves this section's flip ROLES against the BOUND slots, so a
+        // custom-bound pool never gets a canonical-layout flip guessed at it.
+        secUpload = {
+          slot: slotWire, drum_flip_roles: cd.flip_roles,
+          ...(args.drum_binding !== undefined ? { drum_binding: args.drum_binding } : {}),
+        };
+        condensed = cd;
+        condensedSections++;
+        condensedCollisions += cd.collisions;
+      }
+    }
+    sections.push({
+      name: b.name,
+      plan: compileToPlan(secPattern, caps, {
+        bpm, mode, repeat: 1, transpose, overrides: secOverrides,
+        ...(secUpload !== undefined ? { upload: secUpload } : {}),
+      }),
+    });
+  }
+  if (args.condense_drums === true) {
+    warnings.push(
+      condensed === undefined
+        ? 'condense_drums: no section has drum voices, so the internal drum tracks were left alone.'
+        : `Condensed the drum part onto the ${condensed.kit.length} internal drum tracks (${condensed.kit.join(' / ')}) in ` +
+          `${condensedSections} of ${built.length} section(s), stored at level 0 so it lies silent under the routed kit and the ` +
+          `player dials it up from the mixer.` +
+          (condensedCollisions > 0
+            ? ` ${condensedCollisions} step(s) across the song had two same-family pieces competing for one track; the louder hit kept the step.`
+            : ''),
+    );
   }
 
   // Piece-compression report over the WHOLE song: one synthetic union pattern
@@ -634,7 +1009,18 @@ async function executeApplyArrangement(
     warnings.push(...compressionLines(unionPattern, caps, extResolutions, hitsByVoice));
   }
 
-  const upload = { template_path: args.ncs_template, slot: args.ncs_slot, scale: args.scale, drum_binding: args.drum_binding, confirm_overwrite: args.confirm_overwrite, dry_run: args.dry_run };
+  const arrangementColour = resolveColourArg(args);
+  const upload: NonNullable<RealizePlan['upload']> = {
+    template_path: args.ncs_template, slot: slotWire, scale: args.scale,
+    drum_binding: args.drum_binding, preserve_template_gates: args.preserve_template_gates,
+    confirm_overwrite: args.confirm_overwrite, dry_run: args.dry_run,
+    ...(condensed !== undefined ? { drum_levels: condensed.levels } : {}),
+    ...(arrangementTempo !== undefined ? { tempo: arrangementTempo } : {}),
+    ...(arrangementColour !== undefined ? { colour: arrangementColour } : {}),
+    ...(args.project_name !== undefined ? { project_name: args.project_name } : {}),
+    ...(arrangementMixer !== undefined ? { mixer_levels: arrangementMixer } : {}),
+    ...(scenePlan !== undefined ? { scene_plan: scenePlan } : {}),
+  };
   // Same contract as the single-pattern path: a dry run authors against the
   // local template only, so it opens no port.
   const wirePack = toWirePack(args.pack);
@@ -643,7 +1029,7 @@ async function executeApplyArrangement(
   // A dry run touches nothing, so it also reads nothing.
   let backupNote = '';
   if (args.backup_first !== false && args.confirm_overwrite && !args.dry_run) {
-    const backup = await backupProjectSlot(descriptor, ctx, upload.slot);
+    const backup = await backupProjectSlot(descriptor, ctx, upload.slot + 1);   // DEVICE numbering
     backupNote = backup.note;
   }
   const result = await descriptor.writer.realizeArrangement(ctx, sections, order, upload);
@@ -651,7 +1037,7 @@ async function executeApplyArrangement(
   return {
     device: descriptor.display_name,
     pattern: `arrangement: ${built.map((b) => b.name).join(' → ')}`,
-    bpm: args.bpm,
+    bpm,
     steps: Math.max(...sections.map((s) => s.plan.steps)),
     mode,
     repeat: 1,

@@ -1,0 +1,102 @@
+name: Hardware evidence
+description: You tested, probed, captured, or have a file for a device. This is the most valuable issue type here.
+title: "[evidence] "
+labels: [hardware-evidence]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Evidence from a real device is what moves a capability
+        from `hardware-unverified` to `confirmed`.
+
+        If you are answering a specific ask from a device page under
+        `docs/contributing/devices/`, put its id (for example `PROBE-1`) in
+        the field below. If you are just reporting what you saw, leave it
+        blank and describe it.
+
+        Attach files by dragging them into a description box. Captures zip
+        up well.
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and firmware version
+      placeholder: "Arturia MiniFreak, firmware 3.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: What kind of evidence is this?
+      options:
+        - "REPORT: answering a question, no device time"
+        - "DONATE: a file from my computer (editor cache, preset backup, project file)"
+        - "PROBE: output from a read-only script"
+        - "SESSION: I drove the server and watched the device"
+        - "CAPTURE: a recorded wire capture"
+    validations:
+      required: true
+
+  - type: input
+    id: ask_id
+    attributes:
+      label: Which ask is this answering?
+      description: The id from your device's page under docs/contributing/devices/, if you were following one.
+      placeholder: "PROBE-1"
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What did the device actually do?
+      description: |
+        The front panel is the ground truth, not the vendor editor, which
+        caches stale state. If the tool reported success and the panel did
+        not move, say so. That is the single most valuable thing you can
+        report, and no offline check can catch it.
+      placeholder: |
+        Asked it to set the filter cutoff to 20. The tool said it succeeded.
+        The panel showed the cutoff move. Sounded right.
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Tool response, probe output, or file notes
+      description: |
+        Paste the response or the probe's REPORT block, or note which files
+        you attached. For a capture, include your ordered list of actions
+        and the front-panel reading before and after each one; a capture
+        with no notes usually cannot be decoded.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: vendor_app
+    attributes:
+      label: Was the vendor editor or manager app open at the same time?
+      description: This matters more than it sounds. A vendor app holding the port is the most common cause of a silent failure.
+      placeholder: "No, quit it first"
+    validations:
+      required: true
+
+  - type: input
+    id: loaded
+    attributes:
+      label: What was loaded at the time?
+      description: The preset, kit, memory or patch.
+      placeholder: "Preset A05, 'Clean Verb'"
+    validations:
+      required: false

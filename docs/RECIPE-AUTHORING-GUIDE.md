@@ -30,7 +30,11 @@ A recipe encodes ONE iconic tone, with:
   `describe_device.recipes[]` surface.
 - A `source_notes` line citing where the values came from (Premier
   Guitar rig rundown, Sound on Sound feature, forum thread with
-  player confirmation).
+  player confirmation). This is authored on every recipe, but where
+  it SURFACES depends on the family: inline for the Fractal
+  families, on the detail path for Hydrasynth patch archetypes (see
+  below). Either way it is reachable via
+  `describe_device({port, recipe:"<id>"})`.
 
 The agent discovers recipes via `describe_device(port).recipes[]` and
 applies them via `apply_preset({port, recipe_id, overrides?})` (guitar)
@@ -60,10 +64,25 @@ small and the agent uses it directly. The guitar side ships utility
 recipes for the common "make me a X" requests where parameter
 relationships matter: pitch, wah, filter, auto-wah, diatonic pitch.
 
-Block-stack recipes ship slim (id, description, slot_count,
-target_blocks, signature_params) because their full slot trees are
-6 to 9 KB per device. The agent picks by id; the dispatcher
-materializes.
+Block-stack recipes ship slim (id, family, description, slot_count,
+signature_params) because their full slot trees are 6 to 9 KB per
+device. The agent picks by id; the dispatcher materializes.
+
+**What a block-stack summary deliberately does NOT carry**, as of
+2026-08-02, after measuring the Axe-Fx II's 14 entries per field:
+
+| Field | Cost on the II | Why it left |
+|---|---|---|
+| `target_blocks` | 2,499 | The block roster is already in `description`, in English, on 14 of 14 recipes. The slot refs it also carried are only read when writing `apply_preset.overrides`, i.e. after a recipe is chosen. |
+| `source_notes` | 1,982 | Provenance answers a question about a recipe already picked. Same reasoning as the Hydrasynth archetypes below. |
+| `params` | 182 | It was `{}` on every entry — a block stack has no top-level params — and read as "this recipe sets nothing". |
+
+All three are served in full by
+`describe_device({port, recipe:"<id>"})`, where `slots` is a strict
+superset of the old `target_blocks`. Keep authoring `source_notes`
+thoroughly; it costs nothing until somebody asks. Do NOT add a new
+field to the summary without asking whether it is read while CHOOSING
+or after, and running `npx tsx scripts/verify-describe-device-budget.ts`.
 
 ### Synth family (Hydrasynth): patch archetypes
 
@@ -78,6 +97,23 @@ Around 33 archetypes have been auditioned on the Hydrasynth Explorer
 hardware. The ones that reproduce reliably are curated into the
 shipped set. Examples: a Prophet-5 warm analog pad, a Juno-106 chorus
 pad, an OB-Xa brass/jump lead.
+
+**What an archetype surfaces where.** `describe_device.recipes[]`
+carries the MATCH-time fields only: id, family, description, category,
+cultural_reference, tags, signature_params, requires_nrpn. The full
+`params` map materializes server-side from `recipe_id` (the summary
+stopped emitting an empty `params: {}` alongside it on 2026-08-02), and
+`source_notes` moved to the detail path
+(`describe_device({port:"hydrasynth", recipe:"<id>"})`, which also
+returns `full_params` / `mod_routes` / `macro_routes`). Reason: at
+687 chars per recipe across 36 recipes, the citations were 50% of
+this device's whole `describe_device` response, and every byte of
+that response is charged against a hard host delivery ceiling on
+every Hydrasynth question. Keep writing thorough `source_notes` —
+they cost nothing until someone asks — but do NOT add new prose
+fields to the summary without running
+`npx tsx scripts/verify-describe-device-budget.ts` first. A 37th
+archetype costs about 700 chars of a ~100-char margin.
 
 ---
 

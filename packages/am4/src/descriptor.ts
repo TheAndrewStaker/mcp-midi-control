@@ -160,6 +160,12 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
   capabilities: {
     slot_model: 'linear',
     slot_count: 4,
+    // Declared explicitly rather than inheriting the dispatcher's `?? 'verified'`
+    // default: the default lands on the right answer here by luck, and a future
+    // change to it would move this device's advertised status silently. The
+    // contribution-guide gate requires an explicit declaration on every
+    // registered descriptor.
+    support_tier: 'verified',
     has_scenes: true,
     scene_count: 4,
     has_channels: true,
@@ -184,6 +190,15 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
     // live outside the chunk; emitted via per-paramId GET only when
     // `include_channel_state: true`, mirroring II's pattern.
     atomic_read: true,
+    // NOTE: this descriptor should also declare `capabilities.backup`
+    // ({ unit_label: 'preset', first_location: 0, last_location:
+    // TOTAL_LOCATIONS - 1, seconds_per_unit: 0.6, restore_tool:
+    // 'import_preset' }), which is what lets `backup_device` sweep the whole
+    // device without the caller knowing the AM4 holds 104 presets. It is
+    // withheld only because this package typechecks against the core
+    // package's BUILT `dist/*.d.ts`, and the field cannot be referenced until
+    // core is rebuilt. Until then `resolveBackupPolicy` derives a correct but
+    // bounds-less policy, so a sweep works and simply asks for from/to.
   },
   canonical_terms: {
     block: 'block',

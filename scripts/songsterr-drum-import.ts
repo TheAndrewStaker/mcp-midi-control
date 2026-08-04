@@ -29,7 +29,7 @@ import { writeFileSync } from 'node:fs';
 import {
   quantizedToGrids,
   importSongsterrDrums,
-  fetchSongsterrDrums,
+  fetchSongsterrPart,
   flattenSongsterrDrums,
   unmappedSummary,
   decomposeToPatterns,
@@ -77,7 +77,7 @@ async function main() {
   console.log(`fetching ${input}…`);
   const trackName = argVal('--track-name');
   const cliTrack = argVal('--track') !== undefined ? Number(argVal('--track')) : undefined;
-  const fetched = await fetchSongsterrDrums(input, {
+  const fetched = await fetchSongsterrPart(input, {
     ...(cliTrack !== undefined ? { track: cliTrack } : {}),
     ...(trackName !== undefined ? { trackName } : {}),
   });
@@ -99,6 +99,12 @@ async function main() {
   }
   if (flat.flams_collapsed > 0) {
     console.log(`  (${flat.flams_collapsed} grace/flam doubling(s) folded into single hits)`);
+  }
+  if (flat.graces_folded > 0) {
+    console.log(`  (${flat.graces_folded} grace-ornament beat(s) folded onto the following onset; a grace takes no measure time)`);
+  }
+  if (flat.ghosts > 0) {
+    console.log(`  (${flat.ghosts} ghosted hit(s) imported SOFT at velocity 40, not dropped; a ghost note is played quietly)`);
   }
   if (flat.sections.length > 0) {
     console.log(`sections: ${flat.sections.map((s) => `${s.name}@m${s.startMeasure + 1}`).join('  ')}`);

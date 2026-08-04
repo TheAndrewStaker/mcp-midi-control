@@ -1,5 +1,46 @@
 # Circuit Tracks sample upload: research + feasibility
 
+## 2026-07-27: the NONZERO-PACK sample WRITE is HARDWARE-CONFIRMED, and the read-back races the flash commit
+
+Two findings, one session (`scripts/circuit-clone-pack-samples.ts`, maintainer's
+2-pack device). Full evidence in
+[`circuit-pack-addressing.md` §8](circuit-pack-addressing.md); the parts that
+belong to THIS document are the timing and the download bug.
+
+**1. The write is confirmed and the slot byte is ADDRESSED.** Pack 1's pool was
+read off the device, 64 of 64 slots, every download gated by the device's own
+CRC32; 63 were written to Pack 2 (the 64th was already byte-identical). Wire slot
+0 was written alone, then wire slot 63 SECOND and out of order, and it landed at
+63, not at the next free index. Eight slots read back off Pack 2 were
+md5-identical to the originals and the 64-slot name diff was clean.
+
+**2. THE MANIFEST FLUSH IS ~6-8 s AFTER SESSION CLOSE. Read this before writing
+a verification loop.** A pool read 1.2 s after the clone reported **8 slots
+empty**; a later read showed every one present. Nothing had been lost, the check
+was too fast. Verify by POLLING: reconnect, wait ~9 s, then retry at 5 s
+intervals, and call a slot absent only once the commit window has demonstrably
+passed. The Circuit has **no erase**, so a spurious "the write failed" leads to a
+redo that is not harmless, which is what makes this a hazard rather than a
+nuisance.
+
+**This does not revive the refuted commit-wait theory** documented further down
+(2026-06-23 / 2026-06-28). That theory was that the group-`0x08` frame ~6-8 s
+after CLOSE is a commit-complete signal you can WAIT ON IN-SESSION to make a
+write land; it is still refuted, because the device sends that frame pre-write
+too and the slot still read empty. What is confirmed here is narrower and lives
+on the other side of the close: the flush window is real, and a VERIFICATION READ
+taken inside it returns a false negative. The write does not need the wait. The
+reader does.
+
+**3. CRC-gate your downloads. A real bug proves the point.** The downloader left
+the trailing `F7` on each frame, so `msbDeinterleave` read it as one EXTRA data
+byte per block and shifted the whole stream. The RIFF size still matched (the
+reader truncates to the declared length) and the WAV still parsed, so every check
+the host could author itself passed. Only the device's own WRITE_FINISH CRC32
+caught it. Strip the envelope with `core()` exactly as `uploadProject.ts` does,
+and keep the CRC as the gate: a check the host cannot fool beats any number of
+checks the host wrote.
+
 ## 2026-07-10: prelude reply-desync bug fixed; sample LISTING is now HARDWARE-CONFIRMED
 
 A live bench run on the maintainer's device hit `occupied=0` on a pack that

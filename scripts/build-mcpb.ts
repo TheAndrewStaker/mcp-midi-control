@@ -33,29 +33,33 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import archiver from 'archiver';
+import {
+  externalDepVersions,
+  packWorkspaceTarball,
+  resolveBundlePackages,
+} from './_lib/bundle-packages.js';
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..');
 const BUILD_DIR = path.join(PROJECT_ROOT, 'build');
 const STAGING = path.join(BUILD_DIR, 'mcpb-staging');
 const DIST_DIR = path.join(BUILD_DIR, 'dist');
 
-// Keep in sync with build-installer.ts WORKSPACE_PACKAGES / leafDeps — both
-// describe the same bundle shape. (If you add a workspace package, add it in
-// both places or the bundle boots partially with ERR_MODULE_NOT_FOUND.)
-const WORKSPACE_PACKAGES = [
-  'core', 'am4', 'fractal-gen1', 'fractal-gen2', 'fractal-gen3',
-  'hydrasynth', 'circuit-tracks', 'spd-sx', 'server-all',
-] as const;
-const LEAF_DEPS = ['@modelcontextprotocol/sdk', 'fractal-midi', '@julusian/midi', 'serialport', 'zod'] as const;
-
+// DERIVED, NOT DECLARED. What goes in the bundle is computed from
+// `packages/server-all/package.json`'s transitive workspace dependency closure
+// (scripts/_lib/bundle-packages.ts) — the same derivation build-installer.ts
+// uses, so the two artifacts cannot describe different bundle shapes.
+//
+// This file used to carry its own hardcoded copy of that list and it was the
+// worse of the two drifts: missing `arturia`, `ve-500`, `boss-rc`, plus the
+// bare packages `roland-midi` and `openrig`. `openrig` is imported as a VALUE
+// by core's dispatcher/discovery.ts, the module that registers `describe_rig` /
+// `describe_device`, so the .mcpb would have died on first launch.
 const SERVER_ENTRY_REL = 'node_modules/@mcp-midi-control/server-all/dist/server/index.js';
 
 interface RootPkg {
   version: string;
   description: string;
   author: string;
-  dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
 }
 
 function parseAuthor(author: string): { name: string; email?: string; url?: string } {
@@ -157,21 +161,21 @@ async function main(): Promise<void> {
   console.log('[mcpb] Building TypeScript (all workspace packages)');
   execSync('npm run build', { cwd: PROJECT_ROOT, stdio: 'inherit' });
 
-  // 3. Lean root package.json: leaf deps only. fractal-midi is a workspace
-  //    package — pack it to a tarball so the bundle is self-contained.
-  const leanDeps: Record<string, string> = {};
-  for (const d of LEAF_DEPS) {
-    if (d === 'fractal-midi') continue; // handled via tarball below
-    const v = pkg.devDependencies?.[d] ?? pkg.dependencies?.[d];
-    if (!v) throw new Error(`Leaf dep ${d} missing from root package.json`);
-    leanDeps[d] = v;
+  // 3. Lean root package.json: registry leaf deps only, plus a local tarball
+  //    for each bare workspace package so the bundle is self-contained. Two of
+  //    the three bare packages are unpublished, so the tarball is the only way
+  //    they can reach the bundle at all.
+  const bundle = resolveBundlePackages(PROJECT_ROOT);
+  console.log(
+    `[mcpb] Bundle closure: ${bundle.scoped.length} scoped + ${bundle.bare.length} bare `
+    + `workspace package(s), ${bundle.externalDeps.length} registry leaf dep(s)`,
+  );
+  const leanDeps: Record<string, string> = externalDepVersions(bundle.externalDeps, PROJECT_ROOT);
+  for (const barePkg of bundle.bare) {
+    const { filename, spec } = packWorkspaceTarball(barePkg, STAGING);
+    leanDeps[barePkg.name] = spec;
+    console.log(`[mcpb] Packed ${barePkg.dir}: ${filename} (v${barePkg.version})`);
   }
-  const fmDir = path.join(PROJECT_ROOT, 'packages', 'fractal-midi');
-  const packInfo = JSON.parse(execSync('npm pack --json', { cwd: fmDir, encoding: 'utf8' })) as { filename: string }[];
-  const tarball = packInfo[0]?.filename;
-  if (!tarball) throw new Error('npm pack for fractal-midi produced no output');
-  fs.renameSync(path.join(fmDir, tarball), path.join(STAGING, tarball));
-  leanDeps['fractal-midi'] = `file:./${tarball}`;
 
   fs.writeFileSync(path.join(STAGING, 'package.json'),
     JSON.stringify({ name: 'mcp-midi-control-mcpb', version: pkg.version, private: true, type: 'module', dependencies: leanDeps }, null, 2) + '\n');
@@ -185,9 +189,9 @@ async function main(): Promise<void> {
   //    so npm doesn't prune them); strip @mcp-midi-control/* internal deps.
   const mcpNs = path.join(STAGING, 'node_modules', '@mcp-midi-control');
   fs.mkdirSync(mcpNs, { recursive: true });
-  for (const p of WORKSPACE_PACKAGES) {
-    const src = path.join(PROJECT_ROOT, 'packages', p);
-    const dst = path.join(mcpNs, p);
+  for (const p of bundle.scoped) {
+    const src = p.path;
+    const dst = path.join(mcpNs, p.dir);
     fs.mkdirSync(dst, { recursive: true });
     const pj = JSON.parse(fs.readFileSync(path.join(src, 'package.json'), 'utf8')) as { dependencies?: Record<string, string>; [k: string]: unknown };
     if (pj.dependencies) pj.dependencies = Object.fromEntries(Object.entries(pj.dependencies).filter(([n]) => !n.startsWith('@mcp-midi-control/')));

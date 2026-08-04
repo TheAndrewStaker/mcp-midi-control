@@ -1532,7 +1532,11 @@ function encodeParamForApply(
       'value_out_of_range',
       deviceLabel,
       `${blockSlug}.${paramName}: wire value out of range (0..65534): ${num}`,
-      { retry_action: `Uncalibrated param; pass an integer 0..65534. Call list_params({port:"${blockSlug}"}) to confirm the controlType.` },
+      // Was `list_params({port:"${blockSlug}"})`, which passed the BLOCK name
+      // as the `port` argument and would have refused as an unknown device.
+      // `block` is also required now, or the call returns a census with no
+      // param rows and cannot confirm anything about a controlType.
+      { retry_action: `Uncalibrated param; pass an integer 0..65534. Call list_params({port, block:["${blockSlug}"], name:["${paramName}"]}) to confirm the controlType.` },
     );
   }
   return num;

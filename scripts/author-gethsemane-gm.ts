@@ -89,7 +89,7 @@ function buzzSlots(note: number, velocity: number, room: number): NoteSlot[] {
   for (let k = 0; k < n; k++) {
     const delay = Math.round((k * 5) / (BUZZ_N - 1));
     const v = V2 ? Math.max(20, Math.round(velocity * 0.85 ** k)) : velocity;
-    out.push({ note, gate: DEFAULT_GATE, delay, velocity: v });
+    out.push({ note, gate: DEFAULT_GATE, tie: false, delay, velocity: v });
   }
   return out;
 }
@@ -113,7 +113,7 @@ function buildGrid(): { grid: Array<NoteSlot[] | undefined>; overflow: number } 
         cell.push(...slots);
       } else if (VEL[ch] !== undefined) {
         if (room <= 0) { overflow++; continue; }
-        cell.push({ note, gate: DEFAULT_GATE, delay: 0, velocity: VEL[ch] });
+        cell.push({ note, gate: DEFAULT_GATE, tie: false, delay: 0, velocity: VEL[ch] });
       }
     }
   }

@@ -13,14 +13,19 @@
  *   executor is responsible for display->wire conversion.
  *
  * Device coverage:
- *   - Axe-Fx II  : full coverage. Catalog at fractal-midi/gen2/axe-fx-ii
- *     KNOWN_PARAMS `pitch.*` (voice_1_shift, voice_2_shift,
- *     voice_1_detune, voice_2_detune, mix, voice_1_level,
- *     voice_2_level, control).
+ *   - Axe-Fx II  : full coverage, downward shifts included since the
+ *     2026-08-02 hardware measurement, see "Axe-Fx II shift range"
+ *     below. Catalog at
+ *     fractal-midi/gen2/axe-fx-ii KNOWN_PARAMS `pitch.*`
+ *     (voice_1_shift, voice_2_shift, voice_1_detune, voice_2_detune,
+ *     mix, voice_1_level, voice_2_level, control).
  *   - Axe-Fx III : full coverage. Catalog at fractal-midi/gen3/axe-fx-iii
  *     PARAMS family=PITCH (PITCH_SHIFT1, PITCH_SHIFT2, PITCH_DETUNE1,
  *     PITCH_DETUNE2, PITCH_MIX, PITCH_LEVEL1, PITCH_LEVEL2,
- *     PITCH_CTRL).
+ *     PITCH_CTRL). The gen-3 names resolve through the descriptor's
+ *     `pitch_shift1` -> `shift1` alias (case-insensitive), so the
+ *     SCREAMING_SNAKE catalog symbol is what an agent may paste and is
+ *     what this table stores.
  *   - AM4        : not applicable. AM4 has no standalone pitch block
  *     (reverb has a pitch-mix knob but that is not a pitch block).
  *     `applicable_devices` omits 'am4' on every recipe.
@@ -32,6 +37,67 @@
  *   for octave-down (avoids muddiness, common forum advice on Fractal
  *   forum pitch-block threads), 40/60 for harmonies (lead/harmony
  *   balance), 35/65 for power-chord stacks (root dominant).
+ *
+ * ── Axe-Fx II shift range (BK-PITCH-II) ────────────────────────────
+ *
+ * `pitch.voice_N_shift` and `pitch.voice_N_harmony` are declared
+ * `displayMin: 0, displayMax: 48, step: 1` in
+ * fractal-midi/gen2/axe-fx-ii params.ts. That 0..48 is NOT the device's
+ * display domain: it is the WIRE ordinal domain, copied from the
+ * Fractal wiki's MIDI_SysEx min/max column. Hardware proof, from the
+ * II XL+ (Q8.02) session captured in the maintainer's release-test log
+ * (2026-05-17): reading `pitch.voice_1_harmony` back, the device
+ * renders its OWN label alongside the wire value, and the labels come
+ * back wire 25 -> "2", 26 -> "3", 27 -> "4", 48 -> "25". So the display
+ * a musician reads is `wire - 23`, a signed domain centred on wire 24,
+ * not the 0..48 index. The sibling gen-3 catalog agrees on the concept:
+ * `pitch.shift1` on the III is declared `unit: 'semitones', -24..+24`,
+ * and the AM4's `reverb.voice_N_shift` is `semitones, -24..+24` from
+ * the Blocks Guide.
+ *
+ * SETTLED ON HARDWARE 2026-08-02, and the paragraph above needs one
+ * correction: the offset is 24, not 23. `scripts/probe-ii-pitch-domain.ts
+ * --sweep` drove an XL+ over USB and read the device's OWN rendered label
+ * back out of the GET frame, five points per param, both voices identical:
+ * sent 0/1/3/7/12 landed on wire 24/25/27/31/36 and the device called them
+ * "0"/"1"/"3"/"7"/"12". So `voice_N_shift` is display = wire - 24, unison
+ * at wire 24, and the write round-trips exactly as predicted. The wire - 23
+ * figure above comes from the 2026-05-17 log and is `voice_N_harmony`,
+ * which is a DIFFERENT param with a different offset and, on today's data,
+ * an unstable one (see the calibration note); do not conflate them.
+ *
+ * Consequence for these recipes: both directions now work on the II.
+ * `pitch.voice_1_shift` / `voice_2_shift` are declared signed semitones
+ * -24..+24 via ORDINAL_OFFSET in packages/fractal-gen2/src/calibration.ts,
+ * so `octave_down` is claimed for the II again. The write path is
+ * fn=0x2e SET_PARAM_DIRECT, which carries a float32 of the DISPLAY value
+ * and lets the device do its own conversion, so `voice_1_shift: -12` puts
+ * -12 semitones on the wire and lands one octave down.
+ *
+ * STILL OPEN, and deliberately not fixed here: `voice_N_harmony`,
+ * `stage_N_shift` and `multidelay.shift_N` all carry the same suspect
+ * `[0..48]` declaration. Harmony measured wire - 25 this session against
+ * the log's wire - 23, so something else varies (likely the block's
+ * key/scale, a harmony being a scale degree); the other two were never
+ * measured at all. Measure before touching. Note for whoever does: the
+ * sweep NEEDS a settle window between write and read-back (250 ms is
+ * enough). Without one the reads lag their writes and two voices of the
+ * same family disagree at the same input, which looks like a device
+ * quantization story and is purely the instrument.
+ *
+ * ── Voice levels are deliberately absent ───────────────────────────
+ *
+ * These recipes used to ship `voice_1_level: 0` / `PITCH_LEVEL1: 0`
+ * intending "unity". Both devices read that as the BOTTOM of the range,
+ * not unity: `pitch.voice_N_level` is uncalibrated on the II (the
+ * device's own hardware-verified cheat sheet in the gen-2 descriptor's
+ * `pitch_block` agent guidance reads "wire 0 = 0% (muted)"), and every
+ * uncalibrated gen-3 param takes a raw 0..65534 wire integer where 0 is
+ * likewise the floor. So the recipes were muting the very voice they
+ * had just configured. There is no calibrated display value for a pitch
+ * voice level on either device, so the honest move is to write nothing
+ * and leave the block's own level alone; add a level with `set_param`
+ * once `pitch.voice_N_level` gets a calibrated display range.
  *
  * The whammy_expression recipe is marked `modifier_needed: true` —
  * BK-063 (modifier system decode) hasn't landed yet, so an agent that
@@ -73,20 +139,35 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
     description: 'Whole octave up, 50/50 blend. Classic +12 semitone shimmer.',
     applicable_devices: ['axe-fx-ii', 'axe-fx-iii'] as const,
     params_per_device: {
-      'axe-fx-ii': { voice_1_shift: 12, voice_1_level: 0, mix: 50 },
-      'axe-fx-iii': { PITCH_SHIFT1: 12, PITCH_LEVEL1: 0, PITCH_MIX: 50 },
+      'axe-fx-ii': { voice_1_shift: 12, mix: 50 },
+      'axe-fx-iii': { PITCH_SHIFT1: 12, PITCH_MIX: 50 },
     },
   },
 
   // Octave down: dry-heavy mix avoids muddiness from sub-octave content.
   // Fractal forum advice on octave-down threads converges on ~30% wet.
+  //
+  // Axe-Fx II is NOT claimed: `pitch.voice_1_shift` is declared over the
+  // wiki's 0..48 wire-ordinal column, so -12 is refused at the tool
+  // boundary and no downward shift can be expressed. See the "Axe-Fx II
+  // shift range" section in the module docstring for the hardware
+  // evidence and the one-write test that unblocks it. Listing the II
+  // here would ship a recipe that can only throw.
   octave_down: {
     name: 'octave_down',
-    description: 'Whole octave down, dry-heavy 30/70 blend. Adds weight without mud.',
+    description:
+      'Whole octave down, dry-heavy 30/70 blend. Adds weight without mud.',
+    // The Axe-Fx II is back, on hardware evidence taken 2026-08-02: five
+    // measured points on an XL+ put `pitch.voice_N_shift` at display =
+    // wire - 24 with the write round-tripping, so the panel domain is signed
+    // semitones and the old `[0..48]` declaration (the WIRE domain, copied
+    // from the wiki's MIDI_SysEx column) was what refused every negative
+    // value before a byte was sent. See ORDINAL_OFFSET in
+    // packages/fractal-gen2/src/calibration.ts for the measurement.
     applicable_devices: ['axe-fx-ii', 'axe-fx-iii'] as const,
     params_per_device: {
-      'axe-fx-ii': { voice_1_shift: -12, voice_1_level: 0, mix: 30 },
-      'axe-fx-iii': { PITCH_SHIFT1: -12, PITCH_LEVEL1: 0, PITCH_MIX: 30 },
+      'axe-fx-ii': { voice_1_shift: -12, mix: 30 },
+      'axe-fx-iii': { PITCH_SHIFT1: -12, PITCH_MIX: 30 },
     },
   },
 
@@ -98,8 +179,8 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
     description: 'Minor-third up harmony, 40/60 blend. Adds melodic harmony voice.',
     applicable_devices: ['axe-fx-ii', 'axe-fx-iii'] as const,
     params_per_device: {
-      'axe-fx-ii': { voice_1_shift: 3, voice_1_level: 0, mix: 40 },
-      'axe-fx-iii': { PITCH_SHIFT1: 3, PITCH_LEVEL1: 0, PITCH_MIX: 40 },
+      'axe-fx-ii': { voice_1_shift: 3, mix: 40 },
+      'axe-fx-iii': { PITCH_SHIFT1: 3, PITCH_MIX: 40 },
     },
   },
 
@@ -110,13 +191,14 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
     description: 'Perfect-fifth up harmony, 40/60 blend. Iconic guitar-harmony interval.',
     applicable_devices: ['axe-fx-ii', 'axe-fx-iii'] as const,
     params_per_device: {
-      'axe-fx-ii': { voice_1_shift: 7, voice_1_level: 0, mix: 40 },
-      'axe-fx-iii': { PITCH_SHIFT1: 7, PITCH_LEVEL1: 0, PITCH_MIX: 40 },
+      'axe-fx-ii': { voice_1_shift: 7, mix: 40 },
+      'axe-fx-iii': { PITCH_SHIFT1: 7, PITCH_MIX: 40 },
     },
   },
 
   // Power-chord stack: root + fifth + octave. Voice 1 fifth, voice 2
-  // octave. 35/65 keeps the dry root dominant; voice levels balanced.
+  // octave. 35/65 keeps the dry root dominant. Voice levels are left
+  // alone (see "Voice levels are deliberately absent" above).
   power_chord_stack: {
     name: 'power_chord_stack',
     description: 'Root + fifth + octave stack. Big "5-power-chord" texture from a single note.',
@@ -125,48 +207,34 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
       'axe-fx-ii': {
         voice_1_shift: 7,
         voice_2_shift: 12,
-        voice_1_level: 0,
-        voice_2_level: 0,
         mix: 35,
       },
       'axe-fx-iii': {
         PITCH_SHIFT1: 7,
         PITCH_SHIFT2: 12,
-        PITCH_LEVEL1: 0,
-        PITCH_LEVEL2: 0,
         PITCH_MIX: 35,
       },
     },
   },
 
-  // Detune thicken: +/-10 cents stereo. Convention is "BBE Sonic
-  // Maximizer" / chorus-like doubling without pitch-shift artifacts.
-  // Mix is 30% wet so the detune sits behind the dry signal.
-  detune_thicken: {
-    name: 'detune_thicken',
-    description: 'Stereo +/-10 cent detune, 30/70 blend. Subtle doubling thickness.',
-    applicable_devices: ['axe-fx-ii', 'axe-fx-iii'] as const,
-    params_per_device: {
-      'axe-fx-ii': {
-        voice_1_shift: 0,
-        voice_2_shift: 0,
-        voice_1_detune: 10,
-        voice_2_detune: -10,
-        voice_1_level: 0,
-        voice_2_level: 0,
-        mix: 30,
-      },
-      'axe-fx-iii': {
-        PITCH_SHIFT1: 0,
-        PITCH_SHIFT2: 0,
-        PITCH_DETUNE1: 10,
-        PITCH_DETUNE2: -10,
-        PITCH_LEVEL1: 0,
-        PITCH_LEVEL2: 0,
-        PITCH_MIX: 30,
-      },
-    },
-  },
+  // PARKED: detune_thicken (+/-10 cents stereo doubling).
+  //
+  // It is not in the table because no registered device can express a
+  // cent value today, so every port it could claim would throw:
+  //
+  //   - Axe-Fx II  : `pitch.voice_N_detune` is uncalibrated, so the tool
+  //     boundary demands an integer 0..65534 and rejects -10 outright.
+  //   - gen-3      : `pitch.detune1/2` are likewise uncalibrated, and the
+  //     documented gen-3 contract for an uncalibrated param is a RAW
+  //     0..65534 wire integer (midpoint 32767) — so -10 is rejected and
+  //     +10 would write ~0, the bottom of the sweep, not +10 cents.
+  //
+  // Reviving it needs a cents display calibration on
+  // `pitch.voice_N_detune` (II) and `pitch.detune1/2` (gen-3). Until
+  // then a recipe here would only ever NACK, which is worse for the
+  // agent than the recipe not existing. Convention for the values when
+  // it returns: +/-10 cents, 30% wet so the detune sits behind the dry
+  // signal.
 
   // Diatonic harmonies — INTEL HARM mode. Session 88 failure was the
   // agent writing voice_1_harmony as a +27 semitone offset because it
@@ -199,7 +267,6 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
         key: 'C',
         scale: 'IONIAN MAJ',
         voice_1_harmony: 3,
-        voice_1_level: 0,
         mix: 40,
       },
     },
@@ -216,7 +283,6 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
         key: 'C',
         scale: 'IONIAN MAJ',
         voice_1_harmony: 5,
-        voice_1_level: 0,
         mix: 40,
       },
     },
@@ -233,7 +299,6 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
         key: 'A',
         scale: 'AEOLIAN MIN',
         voice_1_harmony: 3,
-        voice_1_level: 0,
         mix: 40,
       },
     },
@@ -251,8 +316,6 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
         scale: 'IONIAN MAJ',
         voice_1_harmony: 3,
         voice_2_harmony: 5,
-        voice_1_level: 0,
-        voice_2_level: 0,
         mix: 45,
       },
     },
@@ -273,13 +336,11 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
     params_per_device: {
       'axe-fx-ii': {
         voice_1_shift: 12,
-        voice_1_level: 0,
         control: 0,
         mix: 100,
       },
       'axe-fx-iii': {
         PITCH_SHIFT1: 12,
-        PITCH_LEVEL1: 0,
         PITCH_CTRL: 0,
         PITCH_MIX: 100,
       },

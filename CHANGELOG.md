@@ -8,6 +8,286 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.8.0]
+
+**A tool result over 50,000 characters is not delivered to the model at all.**
+The host substitutes a stub pointing at a sidecar file an MCP-only client has
+no way to open, so the call returns nothing and nothing says so. The cliff was
+measured to the character rather than estimated, and five read tools were found
+past it: `describe_device`, `list_params` (on ten of sixteen devices, and over
+even on a correctly narrowed single-block call), `lookup_lineage` at 219,171
+chars on one amp roster, `list_backups` at 212,623, and `get_params` at 208,649
+on a whole-catalog read. On the deepest-catalog devices `list_params` had never
+once returned an answer the model could read.
+
+Each is now bounded, and bounded differently depending on what a page costs.
+`list_params` gained a three-scope projection: no filter returns a per-block
+census, a `block` filter returns match-time rows, and adding `name` returns the
+full detail including enum tables. `lookup_lineage` and `list_backups` fit their
+rows to a budget and page the remainder through `truncated` / `next_offset` with
+a new `offset` argument. `get_params` instead REFUSES a batch over 100 queries
+before sending a single frame, because a batch read has already spent the wire
+by the time there is a response to trim. Four size gates now run in preflight,
+and a response that gets shortened has to say so.
+
+**A correctness bug surfaced underneath the size work.** 112 AM4 parameters told
+the agent they applied to any amp type while `set_param` refused those same
+writes as type-gated; `amp.fat` read as universal and is exposed on nine of 248
+amps. A May correction to the predicate had never reached the prose describing
+the same rule, and the two had diverged silently for months.
+
+A related misreport in the same surface: a parameter whose exposure depends on
+a sub-mode, not on the amp type, was described as applying to only the handful
+of amps its special-case editor page names. The AM4's graphic-EQ bands read as
+applying to four of 248 amps when they are available on most, because exposure
+in the editor's own layout is a disjunction over conditions and only one of
+them was being read. Confirmed on hardware in both directions: the bands are
+present on amps the old rule excluded, and the genuinely type-gated knobs it
+was right about still refuse.
+
+**Safe-edit gaps closed on the Axe-Fx II.** Saving to a location other than the
+one being edited now refuses until confirmed, and says plainly that this device
+cannot read what is stored there rather than implying a check happened;
+previously the store landed and the caution rode the receipt, which is a warning
+after a flash write rather than a gate. `scan_locations` reads each name by
+switching to that preset on this device, so it now sits behind the same
+buffer-dirty guard as `switch_preset`; previously it walked up to 64 presets and
+discarded unsaved edits without a word, while the single navigation after it
+warned about doing exactly that. The AM4, which reads a stored name without
+moving, is deliberately not gated.
+
+**Gen-3 block placement and bypass** resolved a block by matching the
+descriptor's slug against display names and group codes, so blocks whose slug
+and display name differ never resolved at all: 23 of 50 advertised slugs on the
+Axe-Fx III, 22 of 49 on the FM9 and FM3, 21 of 46 on the VP4. Fifteen per device
+are now reachable, including `graphic_eq`, `gate_expander`, `volume_pan` and
+`multitap_delay`, and are marked hardware-unverified on their device pages
+rather than shipped silently as confirmed.
+
+**The regression harness had been scoring a live outage green.** A tool result
+the host refused to deliver satisfied every assertion a case owned, and
+`must_call` was satisfied by a call that returned an error. Both now fail.
+`apply_preset` also silently stripped unrecognised `overrides` keys, returning
+success for a write that never happened.
+
+**The release bundles no longer carry a hand-maintained package list.** Both
+the Windows ZIP and the `.mcpb` extension used to name the workspace packages
+they bundled, which is how the VE-500 and RC-600 shipped MISSING from the ZIP
+for two releases: nothing in the pipeline ever booted their code paths against
+a real extracted bundle. Both now derive from the server's own dependency
+closure, a gate asserts no hardcoded list remains, and each artifact is
+extracted to a directory with no repository ancestor and driven over MCP so a
+missing package cannot be masked by resolving back into the checkout.
+
+Also: all 55 tools gained a human-readable `title`; `tools/list` shrank while
+adding them; auto-wah recipes were sending percent values into a parameter
+declared in counts and selecting the LFO-swept wah rather than the envelope
+one; and the Axe-Fx II pitch shift range was declared over the wire domain,
+which is why no downward interval was expressible.
+
+
+New device family: **Arturia Freak**, as one brand-level SysEx codec plus a
+per-device config factory, the same shape as the modern Fractal family. The
+**MicroFreak** is hardware-confirmed on firmware 5.0.0: stored preset-name
+reads and full preset dumps, Utility/global settings that read AND write over
+SysEx (so the server can set the device's MIDI channel, sync source and thru
+instead of walking someone through a menu), Program Change preset recall
+(0-based, which Arturia's manual does not document at all), and the complete
+21-entry CC map from the manufacturer's own Appendix D. Two limits are real
+and reported rather than papered over: preset parameters are WRITE-ONLY,
+because the device reports nothing back for them and its display does not
+show incoming CC contrary to the manual, and there is no save path, because
+the preset write protocol is undecoded. Plain Program Change reaches the
+first 128 presets; the rest need the front panel until Bank Select is
+decoded.
+
+The **MiniFreak** ships alongside it at the weaker `generic-only` tier rather
+than inheriting the MicroFreak's, and the gap is deliberate. Its CC numbers
+are transcribed from a third-party mirror rather than read from Arturia's own
+table, so every one of them carries a distinct `evidence_note` warning that a
+wrong number will move a DIFFERENT parameter rather than fail quietly. Its
+SysEx surface is absent entirely because its Arturia device-code byte is
+unknown, and guessing a byte would address some other product, so the globals
+and preset-name paths are structurally disabled instead of shipped broken.
+That single unknown byte is the only thing standing between the MiniFreak and
+the MicroFreak's full surface.
+
+The two models' CC numbers COLLIDE with different meanings (cutoff 23 vs 74,
+resonance 83 vs 71), so the tables are per-device, the port matchers are
+model-specific rather than a broad Arturia match, and a regression test pins
+the collisions so the tables can never be merged by accident.
+
+Circuit Tracks' sample path is now pack-aware
+(`list_samples` / `upload_sample` / `upload_kit` take a `pack` arg, matching
+projects and patches), closing the cross-pack name-mismatch trap where a
+project written to one pack could bind against another pack's different
+sample pool; `get_preset` also reports `pattern_occupancy` across all 8
+patterns so a project whose played pattern is intentionally silent no longer
+reads as an empty/failed write. `import_songsterr` gained `project_plan`:
+songs too big for one Circuit project (more than 8 pattern slots or 8 plays)
+now come back chunked into an ordered sequence of projects that each fit the
+device's limits.
+
+**Patterns now carry their own note lengths instead of borrowing them from
+whatever synth is receiving.** Mini-notation gains a `:len` suffix and a `_`
+tie marker, so `"c3:4"` holds four steps, `"c3:16_"` ties a drone forward, and
+`"c3:1/6"` is staccato. Before this, every authored note was a one-step
+trigger, so a pad got its sustain from the receiving instrument's amplitude
+envelope and became a blip the moment that instrument changed. Re-authoring
+over an existing project now PRESERVES the note lengths and ties already in
+it, per step and note, and an inherited tie the new arrangement no longer
+reaches is dropped and reported rather than left as a setting the device
+silently ignores; pass `preserve_template_gates: false` to deliberately
+flatten. The underlying decode: the Circuit's gate byte is two fields, a
+tie-forward flag in the top bit over a length in sixths of a step, settled by a
+274-file census and then confirmed on hardware. Standard MIDI File import takes
+note lengths from the note-offs it previously discarded, and the live-stream
+realizer was rebuilt on one absolute timeline so a multi-step note can no
+longer overrun its cycle and strand a note on. A full drum kit can also be
+folded onto the Circuit's four internal drum tracks with
+`apply_pattern condense_drums`.
+
+**Songsterr import reaches any part of a song, and three defects that made
+imported parts sound wrong are fixed.** Melodic parts now convert to pitches
+(`pitch = tuning[string] + fret`) as a mini-notation row that `apply_pattern`
+already parses; previously only drum parts converted. The drum map had been
+built from Songsterr's notation legend and then used as a voice map, so tabs
+using the General MIDI effect block (metronome clicks, sticks, scratches) grew
+phantom percussion hits; those entries are gone and unknown numbers are now
+reported rather than invented. Sticky dynamic markings are honoured across the
+full range, so a passage marked `p` no longer renders as loud as one marked
+`fff`. Grace notes no longer advance the measure cursor, which had been pushing
+everything after them late.
+
+**A wedged MIDI handle now recovers.** Two bugs in the shared MIDI transport,
+both of which could leave a port held by a process that would not exit. First,
+opening an input port creates a thread-safe function that holds a reference on
+the event loop, so any process that opened an input and never closed it never
+exited and sat holding the exclusive OS MIDI port; it was hard to find because
+that reference is invisible to Node's own handle and resource introspection.
+Second, the input port was closed before the output port, and a throwing input
+close (possible on Windows for a handle interrupted mid-SysEx) aborted the
+whole teardown and leaked the output port for the life of the process, so the
+next connection attempt failed against the server's own leaked handle. That
+second bug is the actual cause of the long-standing limitation that a wedged
+server could not be recovered with `reconnect_midi` and needed a full host
+restart. Both are fixed and guarded by a new preflight check.
+
+**A tool parameter that the schema declares but no handler reads is now a build
+failure.** `apply_pattern` advertised `midi_channel` and `drum_map`, validated
+them, and then dropped both, while the entire downstream support existed and
+worked. A tool schema is the contract an agent reads and trusts, so a parameter
+that exists and does nothing cannot be detected from the outside, and neither
+type checking nor the tool listing can see it. A static check now sweeps every
+registered tool; the sweep found exactly these two and nothing else.
+
+Eight community-reported GitHub issues investigated; seven fixed in code on
+the modern Fractal family (Axe-Fx III / FM3 / FM9): a USB-MIDI cold-start bug
+that made `fm9:verify` unable to run any write test, a stored-preset
+amp/drive name roster gap (whole-preset reads used an older, incomplete
+table than live reads), a firmware-12.0 classifier bug that mislabeled the
+FM9's OUTPUT and MIXER param families, and a wrong-sign decode bug on 33
+"semitone shift" params per device (the device stores these as a raw signed
+int16 register, not the standard normalized wire field — read only, writes
+were unaffected). Also closes a documentation gap where FM3 `set_block`
+placement and grid routing had been hardware-confirmed by the community but
+the project's own status docs still said otherwise, and cross-validates two
+community-contributed device-synced parameter caches (Axe-Fx III fw 32.06,
+FM3 fw 12.0) against the shared gen-3 model-name roster, merging clean
+additions and documenting three families with genuine cross-firmware naming
+conflicts rather than guessing. The eighth (#17) is a process question — how
+to report FM9 test observations — not a code defect; it needs a reply, not
+a patch.
+
+Boss VE-500: the SYSTEM and global parameter region, 248 parameters covering
+MIDI, USB, tuner, preferences and the input and output sections, moves from
+hardware-unverified to **confirmed**. Three of them were written and read back
+on hardware, and the result was corroborated by what the unit then did rather
+than by the read alone: MIDI notes played on a separate synthesizer retuning a
+vocal through the pedal's Pitch Correct block, end to end. Reading a STORED
+user memory is confirmed at the same time, every one of its 874 parameters
+answering at that memory's own address without recalling it and without
+disturbing the edit buffer. Also documents a `save_preset` reliability caveat
+found during dogfooding (a store-ack does not always mean the write persisted;
+verify by recall) and a partial decode of the SYSTEM knob-target picklist
+(3 of ~413 ordinals hardware-confirmed).
+
+RC-505mk2 gains a third onboard CTL footswitch assign source and a
+corrected SYSTEM*.RC0 MIDI section decode; Roland SPD-SX kit recall no
+longer assumes GLOBAL CH is always 10.
+
+### Added
+
+- **Arturia Freak family** (`packages/arturia`): a brand-level Arturia SysEx
+  codec (`00 20 6B` plus a device-code byte) and a `createFreakDescriptor`
+  config factory. Adding a Freak is a config, not a descriptor.
+- **Arturia MicroFreak**, community-beta, hardware-confirmed on firmware
+  5.0.0: preset-name reads and full 146-packet dumps, Utility globals read
+  (`0x43`) and write (`0x42`), 0-based Program Change recall, and all 21 CCs
+  from the manufacturer's Appendix D. Preset params are write-only and there
+  is no save path; both are reported by the tools rather than silently failing.
+- **Arturia MiniFreak**, `generic-only`: a curated CC map and Program Change,
+  with NO SysEx at all because its device-code byte is unknown. Every CC
+  carries an `evidence_note` marking it transcribed and unvalidated.
+- **`evidence_note` on `ParamSchema`**, surfaced through `list_params`: a
+  per-param caveat about how well evidenced that param's wire ADDRESS is.
+  Distinct from the ordinary unacknowledged-write case on purpose, since a
+  param addressed by a wrong number silently moves something else instead of
+  visibly doing nothing.
+- **Circuit Tracks sample pack-awareness**: `list_samples` / `upload_sample` /
+  `upload_kit` take a 1-based `pack` arg, reading/writing the SAME pack a
+  project addresses. Hardware-confirmed on both, and on a nonzero pack the
+  slot number is ADDRESSED rather than append-ordered: 63 slots were cloned
+  onto a second pack and read back byte-identical, with an out-of-order write
+  landing at its own index. The device flushes a pack's manifest 6 to 8
+  seconds AFTER the transfer session closes, so the tools now say so: a
+  read-back taken sooner reports a good write as missing, and this device has
+  no erase.
+- **Circuit Tracks `get_preset` pattern occupancy**: scans all 8 patterns
+  (in-memory, no extra wire round-trips) and reports which hold content, so
+  a silent played-pattern is distinguishable from a failed write.
+- **`import_songsterr` `project_plan`**: chunks a song's play order across
+  multiple Circuit projects when it exceeds one project's slot/play limits.
+- **Roland SPD-SX `author_kit` merge-on-reauthor**: re-authoring an existing
+  kit now MERGES over what's already there — an unnamed field (level, mute
+  group, dynamics) keeps its current device value — instead of rebuilding
+  from defaults. Closes a silent-data-loss trap where a one-wave swap
+  flattened every pad's level to 100 and cleared mute groups. `author_kit`
+  results report what a merge inherited (`merged.levels`, `merged.waveChanged`).
+
+### Fixed
+
+- FM9 `fm9:verify` probe: retried the first wire transaction once, closing a
+  USB-MIDI cold-start drop that made every write test skip with "active
+  preset number unreadable" (#18).
+- FM9 stored-preset reads: amp/drive block-type names now fall back to the
+  complete live-read roster when the whole-preset decoder's own table has a
+  gap (confirmed: amp ordinal 132 "FAS Modern II", among others) (#16).
+- FM9 device-true range generator: OUTPUT and MIXER param families no longer
+  mis-swap on newer firmware caches; backfilled the missing display ranges
+  that made the classifier's tie-break a coin flip (#19).
+- Gen-3 (Axe-Fx III / FM3 / FM9) "semitone shift" params (`PITCH_SHIFT`,
+  `PITCH_STEP`, `PLEX_SHIFT`, `SYNTH_SHIFT`, `REVERB_SHIFT`): reads no longer
+  return the wrong sign past the range midpoint (#6).
+- FM3 status docs (root + codec CLAUDE.md, SYSEX-MAP, server instructions,
+  serial transport) now correctly reflect that `set_block` placement and
+  grid routing are hardware-confirmed, not "still unconfirmed" (#9).
+- RC-505mk2 assign SOURCE ordinal: CTL3 (35) decoded, sequential from
+  CTL1=33/CTL2=34; a `SYSTEM*.RC0` MIDI section fix (the mk2 has no `B`
+  leaf, so every field from `RxChRhythm` onward was mapped one letter off
+  the RC-600-derived table it was inherited from) plus MeasureMode/
+  MeasureCount/InputEnableMask/LoopSyncSw/TempoSyncSw decodes.
+- Roland SPD-SX kit-recall Program Change now resolves its channel via
+  `MCP_SPDSX_GLOBAL_CHANNEL` (device default ch10) instead of a hardcoded
+  channel, for units whose GLOBAL CH is set differently.
+- `set_params` (batch write) now carries the same BK-075/BK-076 phantom-
+  param and routing-mask pre-flight as `set_param`: a batch write to a
+  block that isn't placed, or is placed but uncabled, now surfaces a
+  `validation_info[]` warning instead of wire-acking with no hint that
+  the audible state didn't change. This applies to every device with a
+  block-placement model (AM4, Axe-Fx II), not just one. Hardware-
+  confirmed on both AM4 and Axe-Fx II.
+
 ## [0.7.0]
 
 A new package, **OpenRig**, gives the agent a structured model of a whole

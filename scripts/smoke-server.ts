@@ -226,16 +226,40 @@ async function main(): Promise<void> {
   // Exercise unified list_params — doesn't touch MIDI. Confirms the
   // dispatcher routes port='am4' correctly and the catalog reaches
   // the MCP response.
-  const callResp = await request('tools/call', {
+  //
+  // TWO calls, because the tool has two answers. Unfiltered is a per-block
+  // CENSUS with no param rows (serializing all 894 was 219,691 chars, past
+  // the host's 50,000-char delivery cliff, so the model received none of it);
+  // the rows come from the block-scoped call. Asserting `gain` against the
+  // unfiltered call would only re-assert the behaviour that was removed.
+  const censusResp = await request('tools/call', {
     name: 'list_params',
     arguments: { port: 'am4' },
   });
+  if (censusResp.error) throw new Error(`tools/call error: ${censusResp.error.message}`);
+  const censusText = (censusResp.result as { content: { type: string; text: string }[] }).content[0].text;
+  const census = JSON.parse(censusText) as {
+    scope?: string;
+    params?: unknown[];
+    block_summary?: { block: string; param_count: number }[];
+  };
+  if (census.scope !== 'summary' || (census.params?.length ?? 0) > 0) {
+    throw new Error(`list_params(port) should be a census with no rows; got scope=${census.scope}, ${census.params?.length} rows`);
+  }
+  const ampCensus = census.block_summary?.find((b) => b.block === 'amp');
+  if (ampCensus === undefined || ampCensus.param_count < 100) {
+    throw new Error(`list_params census missing the amp block or its count:\n${censusText}`);
+  }
+
+  const callResp = await request('tools/call', {
+    name: 'list_params',
+    arguments: { port: 'am4', block: ['amp'] },
+  });
   if (callResp.error) throw new Error(`tools/call error: ${callResp.error.message}`);
-  const content = (callResp.result as { content: { type: string; text: string }[] }).content;
-  const text = content[0].text;
+  const text = (callResp.result as { content: { type: string; text: string }[] }).content[0].text;
   if (!text.includes('amp')) throw new Error(`list_params output missing amp block:\n${text}`);
   if (!text.includes('gain')) throw new Error(`list_params output missing gain param:\n${text}`);
-  console.log(`✓ list_params call returned catalog`);
+  console.log(`✓ list_params census (${census.block_summary?.length} blocks) + amp rows returned catalog`);
 
   // Exercise lookup_lineage forward + reverse — doesn't touch MIDI, just
   // reads src/knowledge/*.json. Confirms the tool is wired up and the data

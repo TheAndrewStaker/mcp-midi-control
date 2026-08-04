@@ -65,32 +65,175 @@ export function getApplicability(blockDotName: string): Applicability | undefine
  */
 function renderTypeNames(gate: ApplicabilityGate): string {
   const list = ENUM_LOOKUP[gate.typeEnum] ?? [];
-  return gate.values.map((v) => list[v] ?? `idx ${v}`).join(', ');
+  return gate.values.map((v) => list[v] ?? `idx ${v}`).join(NAME_SEP);
+}
+
+/**
+ * Above this many names, an inline roster stops being something an agent
+ * reads and starts being something it scrolls past, and it is the single
+ * largest contributor to the `list_params` payload. Past it, a SUMMARY
+ * states the count and names `find_compatible_types` as the exact-list path;
+ * `detail: 'full'` still renders every name, which is why the param-scoped
+ * `list_params({block, name})` call remains lossless.
+ */
+const INLINE_ROSTER_MAX = 10;
+
+/**
+ * SEPARATOR FOR ENUM-VALUE LISTS, and it must not be a comma.
+ *
+ * 69 of the AM4's 79 reverb type names CONTAIN a comma: "Room, Small",
+ * "Plate, Medium", "Spring, Large". Comma-joined, "Plate, Small, Plate,
+ * Medium" reads as four values instead of two, and the agent has to
+ * reproduce one of these strings byte-exactly for `set_param` to resolve it.
+ * An unparseable roster on the block with the most gated params is a wrong
+ * `set_param` argument waiting to happen.
+ *
+ * ` | ` collides with nothing across every AM4 roster (amp 248, reverb 79,
+ * delay 29, compressor 19: zero pipes, and only reverb has commas), and costs
+ * one character more than ", ".
+ */
+const NAME_SEP = ' | ';
+
+/** Render the roster's display names for `indices`, unambiguously joined. */
+function renderNames(roster: readonly string[], indices: readonly number[]): string {
+  return indices.map((i) => roster[i] ?? `idx ${i}`).join(NAME_SEP);
+}
+
+/**
+ * State a primary-type gate as prose, choosing whichever SIDE of the gate is
+ * shorter. A knob exposed on 232 of 248 amp types is described by its 16
+ * exceptions, not by its 232 inclusions: same information, ~7% of the
+ * characters, and far more readable. `amp.treble` went from a 5,331-char
+ * inclusion list to a one-line exclusion list this way.
+ */
+function renderPrimaryGate(
+  block: string,
+  paramName: string,
+  exposed: ReadonlySet<number>,
+  roster: readonly string[],
+  detail: 'summary' | 'full',
+  port: string,
+): string {
+  const total = roster.length;
+  if (total === 0) {
+    // No display-name table for this block's type enum (e.g. WAH_TYPE).
+    // Fall back to naming the indices; nothing better is available.
+    const idx = [...exposed].sort((a, b) => a - b);
+    return `applies only when ${block}.type is one of: ${renderNames(roster, idx)}`;
+  }
+  if (exposed.size >= total) return `applies to any ${block} type`;
+
+  const included = [...exposed].sort((a, b) => a - b);
+  const excluded: number[] = [];
+  for (let i = 0; i < total; i++) if (!exposed.has(i)) excluded.push(i);
+
+  const useExcluded = excluded.length < included.length;
+  const side = useExcluded ? excluded : included;
+  const lead = `applies on ${included.length} of ${total} ${block} types`;
+
+  if (detail === 'full' || side.length <= INLINE_ROSTER_MAX) {
+    return useExcluded
+      ? `${lead}, every type EXCEPT: ${renderNames(roster, excluded)}.`
+      : `${lead}: ${renderNames(roster, included)}.`;
+  }
+  // BOTH templates carry `port`, because BOTH tools require it and an agent
+  // pastes these literally. A template missing a required argument is not a
+  // hint, it is an error the agent has to recover from: `port` is required on
+  // find_compatible_types and on list_params, so the portless form this
+  // originally shipped returned -32602 every time. The repo has prior evidence
+  // of agents copying our literals verbatim (commit 4c9c94a, where the agent
+  // copied our quote marks into argument values).
+  return `${lead}. Call find_compatible_types({port:"${port}", block:"${block}", params:["${paramName}"]}) for the exact list, or list_params({port:"${port}", block:["${block}"], name:["${paramName}"]}) to read it here.`;
 }
 
 /**
  * One-line summary of a parameter's applicability for the agent — appears
- * in `list_params` row decoration. Returns `undefined` for the common
- * "no applicability data" case (out-of-band registers, params not yet
- * decoded by the type-applicability extractor) — caller should treat as
- * always-on. Empty string for confirmed-always-on with no special-case
- * gates (no decoration needed).
+ * in `list_params` row decoration and in `preflightApplicabilityWarning`.
+ * Returns `undefined` for the common "no applicability data" case
+ * (out-of-band registers, params not yet decoded by the type-applicability
+ * extractor). Caller should treat as always-on. Empty string for
+ * confirmed-always-on (no decoration needed).
+ *
+ * THIS PROSE AND `checkApplicability` MUST AGREE, AND FOR MONTHS THEY DID NOT.
+ * The rule is the one `checkApplicability` settled on after the 2026-05-13
+ * founder test: when a param carries PRIMARY-type gates (DISTORT_TYPE,
+ * FUZZ_TYPE, DELAY_TYPE, …), that gate list is the AUTHORITATIVE set of types
+ * exposing the knob, and `always: true` does not override it. This function used
+ * to branch on `always` alone and emit "applies to any type (special-cased
+ * on: …)" for exactly those params, so on 112 AM4 knobs `list_params` told the
+ * agent the knob was universal while `set_param` refused the write as
+ * type-gated. `amp.fat` read "applies to any type" and is exposed on NINE of
+ * 248; `amp.geq_band_1` on FOUR. `preflightApplicabilityWarning` interleaves
+ * both, so its warning text contradicted its own first sentence.
+ *
+ * Sub-mode gates (CABINET_MODE, DISTORT_MODE_1, REVERB_BASETYPE, …) stay
+ * informational, because `checkApplicability` cannot enforce against state we
+ * do not track. It mirrors the predicate exactly, including what it declines
+ * to claim.
+ *
+ * Size fell out of the correctness fix rather than driving it: the misleading
+ * branch was also 71,284 of the AM4's 101,734 applicability characters (both
+ * over all 440 keys in TYPE_APPLICABILITY; over the 435 that are REGISTERED
+ * params the before-total is 95,491), and the per-type "special-cased on:"
+ * enumerations it emitted (up to 6,404 chars for ONE param, `amp.gain`, now
+ * 89) are what put `list_params({block:["amp"]})` at 67,731, past
+ * the 50,000-char host delivery cliff, i.e. the agent received none of it.
  */
-export function describeApplicability(blockDotName: string): string | undefined {
+export function describeApplicability(
+  blockDotName: string,
+  opts?: { readonly detail?: 'summary' | 'full'; readonly port?: string },
+): string | undefined {
   const a = TYPE_APPLICABILITY[blockDotName];
   if (!a) return undefined;
-  if (a.always && a.gates.length === 0) return '';
-  if (a.always) {
-    // Always-on PLUS special-case pages (e.g. amp.negative_feedback has
-    // a Friedman BE special page in addition to the universal one).
-    // Surface the special cases as informational; agent doesn't need to
-    // gate writes on them.
-    const cases = a.gates.map((g) => `${g.typeEnum}=[${renderTypeNames(g)}]`).join('; ');
-    return `applies to any type (special-cased on: ${cases})`;
+  const detail = opts?.detail ?? 'summary';
+  // Only ever rendered into the call templates above. This table is the AM4's,
+  // so its descriptor id is the right default; the option exists so a caller
+  // that knows its own port id does not have to trust that.
+  const port = opts?.port ?? 'am4';
+  const [block, paramName] = blockDotName.split('.');
+
+  const primaryGates = a.gates.filter((g) => isPrimaryTypeEnum(g.typeEnum, block));
+  const subModeGates = a.gates.filter(
+    (g) => isGateForBlock(g.typeEnum, block) && !isPrimaryTypeEnum(g.typeEnum, block),
+  );
+
+  // A primary gate is only the WHOLE truth when it is the ONLY gate.
+  //
+  // Exposure in `__block_layout(.expert).xml` is a DISJUNCTION over gate rows:
+  // the control appears if any row's condition holds. The 2026-08-02 correction
+  // read the primary rows as the complete exposure set and dropped the rest,
+  // which is right for the 14 params whose only rows are primary and wrong for
+  // the 7 that also carry sub-mode rows.
+  //
+  // `amp.geq_band_1` is the worked example and was caught on hardware
+  // (2026-08-04, founder, AM4-Edit). It has ONE DISTORT_TYPE row naming the
+  // four JMPre-1 amps, which is that amp's own dedicated GEQ page, and SIXTEEN
+  // DISTORT_EQTYPE rows. DISTORT_EQTYPE is the `Type` selector on the GEQ page
+  // ("8 Band Var Q"), and it is what actually governs exposure, on any amp. We
+  // were telling users the band applies to 4 of 248 amps; the founder saw the
+  // full 8-band GEQ on 1959SLP Normal and 5F1 Tweed Champlifier, neither of
+  // which is in the primary row.
+  //
+  // So: when sub-mode rows exist, the amp type ALONE cannot prove the param
+  // inapplicable, and we must not claim it does. This deliberately errs toward
+  // "might apply": the failure it replaces told a user a working knob was
+  // unavailable, whereas over-claiming leaves the write to land with the
+  // existing audibility warning attached.
+  if (primaryGates.length > 0 && subModeGates.length === 0) {
+    const exposed = new Set<number>();
+    for (const g of primaryGates) for (const v of g.values) exposed.add(v);
+    const typeEnum = primaryTypeEnumFor(block);
+    const roster = typeEnum === undefined ? [] : ENUM_LOOKUP[typeEnum] ?? [];
+    return renderPrimaryGate(block, paramName, exposed, roster, detail, port);
   }
-  // Strictly type-gated. Surface the union of types that expose it.
-  const cases = a.gates.map((g) => `${g.typeEnum}=[${renderTypeNames(g)}]`).join(' OR ');
-  return `applies only when ${cases}`;
+
+  // No primary gate → nothing `checkApplicability` can enforce on the type
+  // axis, so do not imply otherwise.
+  if (subModeGates.length === 0) return a.always ? '' : undefined;
+  const enums = [...new Set(subModeGates.map((g) => g.typeEnum))].join(', ');
+  return detail === 'full'
+    ? `applies to any ${block} type; sub-mode dependent (${subModeGates.map((g) => `${g.typeEnum}=[${renderTypeNames(g)}]`).join('; ')})`
+    : `applies to any ${block} type; behaviour varies by sub-mode (${enums})`;
 }
 
 /** State the agent passes when checking applicability — current active type per block. */
@@ -150,15 +293,27 @@ export function checkApplicability(
     hasPrimaryGate = true;
     if (g.values.includes(activeIndex)) return { applicable: true };
   }
-  if (!hasPrimaryGate) {
-    // Only sub-mode gates — can't enforce; treat as applicable if
-    // `always: true` (the universal-with-special-pages case) or unknown
-    // otherwise (caller's fallback is "let the write through with a
-    // warning" — see preflightApplicabilityWarning).
+  // Only sub-mode gates, OR primary gates that did not match while sub-mode
+  // gates also exist. Either way we cannot enforce on the type axis: a
+  // sub-mode row can expose the param on a type the primary rows never name,
+  // and we do not track sub-mode state.
+  //
+  // The second half of that condition is the 2026-08-04 correction, and it
+  // must stay in lockstep with `describeApplicability` above. The two
+  // functions describing and enforcing the same rule drifting apart is
+  // exactly the bug that produced the 112-param misreport in the first place,
+  // so if you change one branch, change both.
+  const hasSubModeGate = a.gates.some(
+    (g) => isGateForBlock(g.typeEnum, block) && !isPrimaryTypeEnum(g.typeEnum, block),
+  );
+  if (!hasPrimaryGate || hasSubModeGate) {
+    // Treat as applicable if `always: true` (the universal-with-special-pages
+    // case) or unknown otherwise (caller's fallback is "let the write through
+    // with a warning" — see preflightApplicabilityWarning).
     return a.always ? { applicable: true } : { applicable: 'unknown' };
   }
-  // Primary-type gates exist AND the active type is NOT in any of
-  // them → the param doesn't apply on this type. Refuse the write
+  // Primary-type gates exist, are the ONLY gates, and the active type is NOT
+  // in any of them → the param doesn't apply on this type. Refuse the write
   // rather than letting the device silently no-op it.
   return { applicable: false, gates: a.gates };
 }

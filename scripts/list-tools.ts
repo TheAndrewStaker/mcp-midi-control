@@ -40,6 +40,48 @@ const DESCRIPTION_HARD_CAP_CHARS = 1000;
  *
  * Membership is intentionally tight: every new entry is a flag that
  * the description should be migrated to structured response fields.
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ * STANDING RULE, set 2026-07-29:
+ *   "Don't raise the cap. Have agents preread everything with proper
+ *    context and refine it carefully."
+ *
+ * WHEN YOU ADD TO A TOOL DESCRIPTION, READ THE WHOLE DESCRIPTION FIRST
+ * AND EDIT IT AS A WHOLE. Do not append. Do not raise the cap as a
+ * first resort. The cap is here to force exactly that read; raising it
+ * converts a design constraint into a ratchet.
+ *
+ * If you arrived here because the gate failed, the cap is almost
+ * certainly not the problem. On 2026-07-29 two descriptions blew their
+ * caps by pure accretion, each session appending an honest clause
+ * without reading the whole: `apply_pattern` hit 4,040 chars and
+ * `import_songsterr` 2,873. One read-through found, in both
+ * directions:
+ *   - the same fact stated TWICE, from two different sessions;
+ *   - detail that belonged in PARAMETER descriptions, which are
+ *     agent-visible and are NOT counted against this cap (the cheapest
+ *     real space there is, and where the detail belonged anyway);
+ *   - a stale clause advising a `poly` voice that exists on no
+ *     registered target;
+ *   - and a GAP: the pattern-source clause listed three sources when
+ *     the tool takes five.
+ * Excess and omission, found by the same read. A length-driven trim
+ * finds only the first; an append finds neither.
+ *
+ * Both came back under budget: `apply_pattern` 4,040 -> 3,050, so its
+ * 2026-07-27 raise was GIVEN BACK (3730 -> 3300) rather than kept, and
+ * `import_songsterr` 2,873 -> 1,855, so it was not raised a third time.
+ *
+ * The order to work in, and what an override entry must show:
+ *   1. read the whole description AND its param descriptions;
+ *   2. delete what is duplicated, stale, or contradicted;
+ *   3. move anything describing ONE argument into that argument;
+ *   4. rewrite as a whole, keeping only what no param can own;
+ *   5. only then, if the remainder is load-bearing, raise the cap AND
+ *      say inline what you read and why the excess survived it.
+ * A raise with no evidence of a read-through is what this rule stops.
+ * Full reasoning: docs/TOOL-AUTHORING-GUIDE.md, "Description budgets".
+ * ─────────────────────────────────────────────────────────────────────
  */
 const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
   // apply_patch (voice-class tool, formerly hydra_apply_patch): ships
@@ -49,20 +91,38 @@ const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
   // path. Honest cap until then.
   ['apply_patch', 6000],
   // apply_pattern: the sequencer-authoring surface (Circuit Tracks drums +
-  // melodic note tracks, SPD-SX). Carries five pattern-source forms (recipe /
-  // voices / notation / tab / midi_file), the step-string / mini-notation /
-  // Euclidean grammar, note-token pitch syntax, the key/transpose/scale
-  // controls, the live_stream / record_capture / ncs_upload mode semantics,
-  // the external_targets routing surface that drives a connected SPD-SX off
-  // the Circuit's MIDI 1/2 tracks, and (2026-07-01) one-line pointers to the
-  // arrangement (whole-song), drum-role fold, and dry_run piece-compression
-  // surfaces whose detail lives in the param descriptions. Migration to
-  // describe_device.agent_guidance is queued. Honest cap.
+  // melodic note tracks, SPD-SX). What stays here is what no parameter can
+  // own: the pattern-source menu, the step-string / mini-notation / Euclidean
+  // grammar with its three hit-token suffixes (:len / @vel / _, which live
+  // INSIDE the `voices` and `notation` strings), the note-token pitch syntax,
+  // the live_stream / record_capture / ncs_upload mode semantics, one worked
+  // external_targets call, and the two facts that change what a write MEANS
+  // (a fold onto a smaller kit is lossy; ncs_upload persists). Everything else
+  // sits in the param descriptions, which are not counted against this cap.
+  // Lowered 3730 -> 3300 on 2026-07-29 after reading it end to end: it stated
+  // the suffix grammar twice (separate NOTE LENGTH and VELOCITY clauses both
+  // re-teaching "suffix a hit token with"), re-taught key / transpose /
+  // note_offset / also_internal that their own params already teach, and
+  // carried a stale hat-roll line. Merging and deleting took it 4040 -> 3050
+  // with no contract lost, so the 2026-07-27 raise is given back rather than
+  // kept. Migration to describe_device.agent_guidance is still queued.
   ['apply_pattern', 3300],
-  // import_songsterr: gained the whole_song arrangement mode (2026-07-01);
-  // the description carries a one-line pointer, detail in whole_song/fuzz
-  // param descriptions. Honest cap.
-  ['import_songsterr', 1300],
+  // import_songsterr: the read-only tab fetcher. What stays here is the
+  // standing contract that a session has already read WRONG from a thinner
+  // version: that part selection is NOT drum-only, that BOTH kinds convert,
+  // that the returned melodic row carries :len / @vel / _ (so a pasted pad
+  // holds instead of landing as a blip), that whole_song chops against the
+  // 8 x 32-step ceiling, and that the call reports what it dropped. None of
+  // those can move into a param: the syntax lives inside the RETURNED strings,
+  // not in an input, and the misread cost a wrong "this fetcher is drum-only"
+  // conclusion.
+  // Rewritten end to end on 2026-07-29: the articulation mechanics, the gate
+  // counters (gate_splits / gate_clamps / ties_emitted), the bar-line packing
+  // behind `pattern_steps`, and the not_a_loss split moved into the
+  // `articulations` / `note_lengths` / `whole_song` param descriptions, which
+  // are not counted here. That took it 2873 -> 1855, back under the existing
+  // cap, so the cap is left at 1910 rather than raised a third time.
+  ['import_songsterr', 1910],
   // author_kit: the sampler-archetype kit-authoring surface (Roland SPD-SX).
   // Carries the pad-order assignment forms (index / name / -1) AND the object
   // per-pad form (note / poly-mono voice / mute group / dynamics) that switches
@@ -81,6 +141,10 @@ const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
   // save_preset is unavailable on gen-3 community-beta devices and refuses
   // a working tool: the 0.3.0 underselling class). Migration of the
   // capabilities-semantics prose to a structured field is the trim path.
+  // 1130 -> 1259 on 2026-08-02: `recipes[]` is now explicitly a MATCH-time
+  // surface with a named detail path (`describe_device({port, recipe:id})`)
+  // for the full knobs + source citations. That sentence is what stops an
+  // agent reading a slimmed summary as the whole recipe and re-authoring it.
   ['describe_device', 1300],
   // lookup_lineage: three call shapes (forward / reverse / structured)
   // plus the loudness-data callout. Migration to a per-call-shape
@@ -89,10 +153,11 @@ const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
   // get_preset: the active-channel default plus the include_channel_state
   // opt-in (per-device channel shape + latency tradeoff), the active-scene
   // scope caveat, per-device performance notes, the gen-3 live_meters/
-  // active_scene discovery hint, and the read-mutate-write discipline all live
-  // in the description. Migration to describe_device.agent_guidance is the
-  // planned trim path; pending post-announce.
-  ['get_preset', 1320],
+  // active_scene discovery hint, the Circuit stored-project read + multi-pattern
+  // occupancy (a 5th device family, 2026-07-17), and the read-mutate-write
+  // discipline all live in the description. Migration to
+  // describe_device.agent_guidance is the planned trim path; pending post-announce.
+  ['get_preset', 1470],
   // describe_rig: the whole-rig orchestration entry point. Beyond the roster it
   // returns the OpenRig manifest surface (MCP_RIG_MANIFEST): the declared rig
   // (devices + cabling + channels + cross-device bindings) plus THREE verification
@@ -113,6 +178,14 @@ interface ToolAnnotations {
 
 interface ToolEntry {
   name: string;
+  /**
+   * Human-readable display name (MCP `title`). This is what a host UI shows
+   * the user instead of the raw tool name, and it is gated: check (0) of
+   * `mcp-test-tool-annotations.ts` fails a tool that ships without one. It is
+   * in the inventory because the inventory documents the registered surface,
+   * and the title is now part of that surface.
+   */
+  title: string;
   description: string;
   charCount: number;
   annotations?: ToolAnnotations;
@@ -182,7 +255,10 @@ async function listAllTools(): Promise<ToolEntry[]> {
     const paramDescriptions = Object.values(props)
       .map((p) => (typeof p.description === 'string' ? p.description : ''))
       .filter((s) => s.length > 0);
-    return { name: t.name, description, charCount: description.length, annotations, paramDescriptions };
+    const title = typeof (t as { title?: unknown }).title === 'string'
+      ? (t as { title: string }).title
+      : '';
+    return { name: t.name, title, description, charCount: description.length, annotations, paramDescriptions };
   });
   entries.sort((a, b) => a.name.localeCompare(b.name));
   await client.close();
@@ -239,8 +315,8 @@ function renderToolsMd(all: ToolEntry[]): string {
       lines.push('');
       continue;
     }
-    lines.push('| Tool | Description length | First sentence |');
-    lines.push('|---|---|---|');
+    lines.push('| Tool | Title | Description length | First sentence |');
+    lines.push('|---|---|---|---|');
     for (const t of inSection) {
       const flag = t.charCount > DESCRIPTION_HARD_CAP_CHARS
         ? ` ⚠️ over ${DESCRIPTION_HARD_CAP_CHARS}`
@@ -248,7 +324,8 @@ function renderToolsMd(all: ToolEntry[]): string {
           ? ` ⚠`
           : '';
       const sentence = firstSentence(t.description).replace(/\|/g, '\\|');
-      lines.push(`| \`${t.name}\` | ${t.charCount}${flag} | ${sentence} |`);
+      const title = t.title === '' ? '⚠️ MISSING' : t.title.replace(/\|/g, '\\|');
+      lines.push(`| \`${t.name}\` | ${title} | ${t.charCount}${flag} | ${sentence} |`);
     }
     lines.push('');
   }
@@ -427,10 +504,20 @@ async function main(): Promise<void> {
       failed = true;
     }
     if (offenders.length > 0) {
+      // Deliberately does NOT offer "or raise the cap" as a co-equal option.
+      // It used to, and that phrasing is how both 2026-07-29 offenders got
+      // there: a gate that names the raise in the same breath as the fix
+      // teaches the raise. Read-and-rewrite is the fix; the raise is the
+      // last resort and has to be argued for.
       console.error(
         `Description budget: ${offenders.length} tool(s) exceed their cap. ` +
-        `Trim the description or add an override in scripts/list-tools.ts ` +
-        `DESCRIPTION_BUDGET_OVERRIDES (with an inline reason).`,
+        `READ THE WHOLE DESCRIPTION (and its param descriptions) AND REWRITE IT AS A WHOLE. ` +
+        `Do not append, and do not raise the cap as a first resort: an over-budget description is ` +
+        `usually also duplicated, stale, or missing something, and only a full read finds that. ` +
+        `Move anything that describes ONE argument into that argument's description, which is not ` +
+        `counted here. If the remainder is genuinely load-bearing, add an override in ` +
+        `scripts/list-tools.ts DESCRIPTION_BUDGET_OVERRIDES with an inline reason saying what you ` +
+        `read and why the excess survived it. See docs/TOOL-AUTHORING-GUIDE.md "Description budgets".`,
       );
       for (const o of offenders) {
         const overrideNote = DESCRIPTION_BUDGET_OVERRIDES.has(o.name)

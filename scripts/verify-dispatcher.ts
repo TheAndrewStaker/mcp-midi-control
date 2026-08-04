@@ -17,6 +17,12 @@
  * Run:  npx tsx scripts/verify-dispatcher.ts
  */
 
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import ts from 'typescript';
 import * as z from 'zod/v4';
 import {
   describeDevice,
@@ -37,7 +43,7 @@ import {
 import { presetShape } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
-import { buildSetParam } from 'fractal-midi/am4';
+import { buildSetParam, checkApplicability } from 'fractal-midi/am4';
 import { prepareApplyPresetWrites } from '@mcp-midi-control/am4/tools/applyExecutor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import {
@@ -371,11 +377,29 @@ assert(
 
 console.log('\nlist_params introspection:');
 
-const allParams = listParams({ port: 'AM4' });
+// The unfiltered call is a per-block CENSUS, not the whole catalog. It used
+// to serialize every param, which on the AM4 was 219,691 chars and on the FM9
+// 280,045, past the host's 50,000-char delivery cliff, so the model received
+// none of it. The assertion changed with the behaviour, deliberately: what is
+// checked now is that the census names every block and counts every param
+// WITHOUT emitting rows, which is a stronger claim than "returns > 50 rows".
+const census = listParams({ port: 'AM4' });
 assert(
-  'list_params(port) returns multiple entries',
-  allParams.params.length > 50,
-  `got ${allParams.params.length} entries`,
+  'list_params(port) returns a census, not param rows',
+  census.scope === 'summary' && census.params.length === 0,
+  `got scope=${census.scope}, ${census.params.length} rows`,
+);
+assert(
+  'list_params census covers every block and totals every param',
+  (census.block_summary?.length ?? 0) > 10
+  && (census.total_params ?? 0) > 500
+  && (census.block_summary ?? []).every((b) => b.param_count > 0),
+  `got ${census.block_summary?.length} blocks, ${census.total_params} params`,
+);
+assert(
+  'list_params census names each block\'s type selector and roster size',
+  (census.block_summary ?? []).some((b) => b.block === 'amp' && b.type_selector === 'type' && (b.type_count ?? 0) > 200),
+  `amp census = ${JSON.stringify((census.block_summary ?? []).find((b) => b.block === 'amp'))}`,
 );
 
 const ampOnly = listParams({ port: 'AM4', block: ['amp'] });
@@ -418,6 +442,132 @@ assert(
   'list_params(amp, gain) unit is knob_0_10 (native AM4 name preserved)',
   ampGain.params[0].unit === 'knob_0_10',
   `got unit=${ampGain.params[0].unit}`,
+);
+
+// ── scope projection ────────────────────────────────────────────────
+//
+// `host_label` and `parameter_name` are cross-reference fields for a knob the
+// agent has ALREADY identified; `parameter_name` alone is 26,358 chars across
+// the FM9 catalog. Serving them per-row in a block survey is what made those
+// surveys undeliverable, so they belong to the param scope only.
+const ampMasterBlockScope = ampOnly.params.find((p) => p.name === 'master');
+const ampMasterParamScope = listParams({ port: 'AM4', block: ['amp'], name: ['master'] }).params[0];
+assert(
+  'block scope withholds the post-choice cross-reference fields',
+  ampMasterBlockScope?.host_label === undefined && ampMasterBlockScope?.parameter_name === undefined,
+  `got host_label=${ampMasterBlockScope?.host_label}, parameter_name=${ampMasterBlockScope?.parameter_name}`,
+);
+assert(
+  'param scope serves them',
+  ampMasterParamScope.host_label !== undefined && ampMasterParamScope.parameter_name === 'DISTORT_MASTER',
+  `got host_label=${ampMasterParamScope.host_label}, parameter_name=${ampMasterParamScope.parameter_name}`,
+);
+assert(
+  'param scope upgrades applicability to the lossless rendering',
+  (ampMasterParamScope.applies_only_when?.length ?? 0)
+    > (ampMasterBlockScope?.applies_only_when?.length ?? 0),
+  `param=${ampMasterParamScope.applies_only_when?.length} block=${ampMasterBlockScope?.applies_only_when?.length}`,
+);
+
+// The prose and the predicate must agree. `amp.fat` is exposed on 9 of 248 amp
+// types; it read "applies to any type (special-cased on: ...)" until
+// 2026-08-02 while `set_param` refused the write as type-gated. 112 AM4 knobs
+// carried that contradiction. Never assert on the old wording again.
+const ampFat = ampOnly.params.find((p) => p.name === 'fat');
+assert(
+  'a strictly type-gated knob is NOT described as universal',
+  ampFat?.applies_only_when !== undefined
+    && !/applies to any/.test(ampFat.applies_only_when)
+    && /9 of 248/.test(ampFat.applies_only_when),
+  `got ${ampFat?.applies_only_when}`,
+);
+// ...and the converse, added 2026-08-04 after the founder caught it on
+// hardware. A primary gate is the whole truth only when it is the ONLY gate.
+// Exposure in the editor XML is a DISJUNCTION over gate rows, so a param that
+// also carries sub-mode rows can be exposed on a type the primary rows never
+// name. `amp.geq_band_1` has one DISTORT_TYPE row (the four JMPre-1 amps, that
+// amp's own dedicated GEQ page) and sixteen DISTORT_EQTYPE rows, and we were
+// telling users it applied to 4 of 248 amps. The founder photographed the full
+// 8-band GEQ in AM4-Edit on 1959SLP Normal AND 5F1 Tweed Champlifier, neither
+// of them in the primary row.
+//
+// So: sub-mode rows present => never claim a bare amp-type gate. Reverting this
+// re-ships a surface that tells users a working knob is unavailable.
+const ampGeq = ampOnly.params.find((p) => p.name === 'geq_band_1');
+assert(
+  'a param with sub-mode gates is NOT reported as narrowly amp-type-gated',
+  ampGeq?.applies_only_when !== undefined
+    && !/applies on \d+ of \d+/.test(ampGeq.applies_only_when)
+    && /DISTORT_EQTYPE/.test(ampGeq.applies_only_when),
+  `got ${ampGeq?.applies_only_when}`,
+);
+// And the predicate must agree with that prose on the exact amp the founder
+// checked. `1959SLP Normal` is wire index 0 and is absent from every primary
+// row of geq_band_1, so the pre-fix rule refused it.
+{
+  const check = checkApplicability('amp.geq_band_1', { currentTypes: { amp: 0 } });
+  assert(
+    'checkApplicability agrees: geq_band_1 is not refused on 1959SLP Normal (hardware-observed)',
+    check.applicable !== false,
+    `got applicable=${String(check.applicable)}`,
+  );
+  // The two hardware-CONFIRMED gates must still refuse, or the fix went too far.
+  const fatCheck = checkApplicability('amp.fat', { currentTypes: { amp: 0 } });
+  assert(
+    'amp.fat still refuses on 1959SLP Normal (hardware-confirmed absent)',
+    fatCheck.applicable === false,
+    `got applicable=${String(fatCheck.applicable)}`,
+  );
+}
+
+// 69 of 79 AM4 reverb type names contain a comma ("Room, Small"), so a
+// comma-joined roster is unparseable, and these are strings the agent must
+// reproduce byte-exactly for set_param.
+const reverbGated = listParams({ port: 'AM4', block: ['reverb'] })
+  .params.find((p) => /\bPlate, /.test(p.applies_only_when ?? ''));
+assert(
+  'enum rosters in applicability prose use a separator the names cannot contain',
+  reverbGated === undefined || reverbGated.applies_only_when?.includes(' | ') === true,
+  `got ${reverbGated?.applies_only_when?.slice(0, 120)}`,
+);
+
+// ── budget + pagination ─────────────────────────────────────────────
+//
+// Walking `next_offset` must be lossless and must terminate. A pager that
+// stalls or drops rows is worse than no pager: the agent believes it has the
+// whole catalog.
+const everyBlock = (census.block_summary ?? []).map((b) => b.block);
+const page1 = listParams({ port: 'AM4', block: everyBlock, include_descriptions: true });
+assert(
+  'an over-budget request truncates rather than overflowing',
+  page1.truncated !== undefined && JSON.stringify(page1).length <= 40_000,
+  `size=${JSON.stringify(page1).length}, truncated=${page1.truncated !== undefined}`,
+);
+{
+  let offset = page1.truncated?.next_offset ?? 0;
+  let seen = page1.params.length;
+  let pages = 1;
+  let stalled = false;
+  while (pages < 40) {
+    const pg = listParams({ port: 'AM4', block: everyBlock, include_descriptions: true, offset });
+    pages++;
+    seen += pg.params.length;
+    if (pg.truncated === undefined) break;
+    if (pg.truncated.next_offset <= offset) { stalled = true; break; }
+    offset = pg.truncated.next_offset;
+  }
+  assert(
+    'pagination is lossless and terminates',
+    !stalled && pages < 40 && seen === (page1.total_params ?? -1),
+    `${pages} pages, ${seen} rows vs total ${page1.total_params}${stalled ? ' (STALLED)' : ''}`,
+  );
+}
+assert(
+  'limit caps rows and says so, without blaming the size budget',
+  (() => {
+    const l = listParams({ port: 'AM4', block: ['amp'], limit: 3 });
+    return l.params.length === 3 && l.truncated?.note.includes('`limit`') === true;
+  })(),
 );
 
 // ── BK-051 Session B-cont — apply_preset PresetSpec validation ─────
@@ -764,6 +914,256 @@ for (const descriptor of registered) {
         }
       }
     }
+  }
+}
+
+// ── Schema key ↔ handler DESTRUCTURE contract (added 2026-07-26) ───
+//
+// The sibling of the shape-contract test above, one layer earlier: that
+// one asks "does the executor accept what the schema accepts", this one
+// asks "does the handler even PASS ON what the schema declares".
+//
+// Why it exists: `apply_pattern` declared `midi_channel` and `drum_map`
+// in its inputSchema, zod validated both, and the handler's parameter
+// destructure listed neither, so both were silently dropped before the
+// executor saw them. The caller got a successful call that quietly
+// ignored what it asked for, and the tool's own description pointed at
+// `drum_map` as the remedy for a skipped non-GM drum number. A tool
+// schema is the contract an LLM agent reads and trusts; a param that
+// exists in the schema and does nothing is a lie the agent cannot
+// detect from the outside. Neither the zod layer nor `tsc` can see it:
+// the handler's parameter type is INFERRED from the schema, so omitting
+// a key from the destructure is perfectly well typed.
+//
+// The check is static (AST over source), not runtime, because the
+// evidence lives in two places tools/list cannot show: the schema keys
+// AND the handler's binding pattern.
+//
+// FALSE POSITIVES, and how each is handled:
+//   - `async (args) => executeX(args)`: the handler forwards the whole
+//     object. Any BARE use of the parameter identifier (passed as an
+//     argument, spread, aliased, returned) marks the tool "forwards
+//     wholesale" and it is exempted, never flagged. Those are listed in
+//     the run output so the blind spot stays visible.
+//   - `async (args) => { ... args.foo ... }`: property and string
+//     element accesses off the parameter count as reads, as does a
+//     `const { a, b } = args` destructure inside the body.
+//   - renamed bindings (`{ drum_map: map }`): the SCHEMA key is what is
+//     matched, the local name is what the used-check looks for.
+//   - `...rest` in the destructure: rest captures the remainder, so the
+//     tool is treated as forwarding wholesale.
+//   - a genuinely ignored param: put it in SCHEMA_KEYS_IGNORED below
+//     with a reason. Stale entries fail too, so the opt-out cannot rot.
+//
+// KNOWN LIMIT: for a wholesale-forwarding handler this cannot tell
+// whether the EXECUTOR reads the key. Closing that would need a full
+// type-checker program over the monorepo. The forwarder list is printed
+// every run so the set stays small and reviewable.
+
+/**
+ * Schema keys a handler is ALLOWED to declare and not read. Each entry
+ * carries its reason inline, next to the exception it grants. Keyed
+ * "<tool>.<key>". Membership should stay near-empty: a schema key that
+ * does nothing is normally a defect, not a design.
+ */
+const SCHEMA_KEYS_IGNORED: ReadonlyMap<string, string> = new Map([
+  // (empty) No tool currently declares a param it deliberately ignores.
+]);
+
+/** Source files that register MCP tools, found by git-tracked path. */
+function toolSourceFiles(): string[] {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const out = execSync('git ls-files "packages/*/src/**/*.ts"', { cwd: root, encoding: 'utf8' });
+  return out
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .map((rel) => path.join(root, rel))
+    // Cheap string pre-filter so we only parse the handful of files that
+    // actually register tools, not the whole (large) src tree.
+    .filter((abs) => readFileSync(abs, 'utf8').includes('registerTool'));
+}
+
+interface SchemaWiring {
+  tool: string;
+  file: string;
+  /** Top-level inputSchema keys. */
+  keys: string[];
+  /** Keys the handler binds or reads. */
+  read: Set<string>;
+  /** Handler takes the whole args object through opaquely. */
+  forwardsWholesale: boolean;
+  /** Schema key -> local binding name, for the bound-but-never-used check. */
+  localOf: Map<string, string>;
+  /** Identifiers referenced anywhere in the handler body. */
+  referenced: Set<string>;
+  /** Set when the call shape defeats static analysis (reported, not silently skipped). */
+  unanalyzable?: string;
+}
+
+function collectToolWirings(): SchemaWiring[] {
+  const wirings: SchemaWiring[] = [];
+  for (const abs of toolSourceFiles()) {
+    const text = readFileSync(abs, 'utf8');
+    const sf = ts.createSourceFile(abs, text, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TS);
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node)
+        && ts.isPropertyAccessExpression(node.expression)
+        && node.expression.name.text === 'registerTool'
+      ) {
+        const w = analyzeRegisterTool(abs, node);
+        if (w) wirings.push(w);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
+  return wirings;
+}
+
+function analyzeRegisterTool(file: string, call: ts.CallExpression): SchemaWiring | undefined {
+  const [nameArg, cfgArg, handlerArg] = call.arguments;
+  const tool = nameArg !== undefined && ts.isStringLiteralLike(nameArg) ? nameArg.text : '<dynamic-name>';
+  const base: SchemaWiring = {
+    tool, file, keys: [], read: new Set(), forwardsWholesale: false,
+    localOf: new Map(), referenced: new Set(),
+  };
+  if (cfgArg === undefined || !ts.isObjectLiteralExpression(cfgArg)) {
+    return { ...base, unanalyzable: 'tool config is not an object literal' };
+  }
+  const schemaProp = cfgArg.properties.find(
+    (p): p is ts.PropertyAssignment =>
+      ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === 'inputSchema',
+  );
+  // No inputSchema at all means no params to drop.
+  if (schemaProp === undefined) return undefined;
+  if (!ts.isObjectLiteralExpression(schemaProp.initializer)) {
+    return { ...base, unanalyzable: 'inputSchema is not an object literal' };
+  }
+  for (const p of schemaProp.initializer.properties) {
+    if (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) {
+      if (ts.isIdentifier(p.name) || ts.isStringLiteralLike(p.name)) base.keys.push(p.name.text);
+      else return { ...base, unanalyzable: 'computed inputSchema key' };
+    } else if (ts.isSpreadAssignment(p)) {
+      return { ...base, unanalyzable: 'spread inside inputSchema' };
+    }
+  }
+  // A zero-key schema has nothing to wire; a paramless handler is correct.
+  if (base.keys.length === 0) return undefined;
+  if (handlerArg === undefined || !(ts.isArrowFunction(handlerArg) || ts.isFunctionExpression(handlerArg))) {
+    return { ...base, unanalyzable: 'handler is not a function literal' };
+  }
+  const param = handlerArg.parameters[0];
+  if (param === undefined) return base;   // declares keys, binds nothing: every key is unread
+
+  const bindPattern = (bp: ts.ObjectBindingPattern): void => {
+    for (const el of bp.elements) {
+      if (el.dotDotDotToken !== undefined) { base.forwardsWholesale = true; continue; }
+      const key = el.propertyName ?? el.name;
+      if (ts.isIdentifier(key) || ts.isStringLiteralLike(key)) {
+        base.read.add(key.text);
+        if (ts.isIdentifier(el.name)) base.localOf.set(key.text, el.name.text);
+      }
+    }
+  };
+
+  if (ts.isObjectBindingPattern(param.name)) {
+    bindPattern(param.name);
+  } else if (ts.isIdentifier(param.name)) {
+    const argName = param.name.text;
+    const walk = (n: ts.Node): void => {
+      if (ts.isIdentifier(n) && n.text === argName) {
+        const p = n.parent;
+        if (ts.isPropertyAccessExpression(p) && p.expression === n) { base.read.add(p.name.text); return; }
+        if (ts.isElementAccessExpression(p) && p.expression === n) {
+          if (ts.isStringLiteralLike(p.argumentExpression)) base.read.add(p.argumentExpression.text);
+          else base.forwardsWholesale = true;   // dynamic key: cannot resolve, assume read
+          return;
+        }
+        if (ts.isVariableDeclaration(p) && p.initializer === n && ts.isObjectBindingPattern(p.name)) {
+          bindPattern(p.name);
+          return;
+        }
+        if (ts.isParameter(p)) return;   // the declaration itself
+        base.forwardsWholesale = true;   // spread, passed as an argument, aliased, returned
+        return;
+      }
+      ts.forEachChild(n, walk);
+    };
+    walk(handlerArg.body);
+  } else {
+    return { ...base, unanalyzable: 'handler parameter is an array binding pattern' };
+  }
+
+  const walkRefs = (n: ts.Node): void => {
+    // Skip the `name` side of `x.name` so a property access does not count
+    // as a reference to a same-named local.
+    if (ts.isIdentifier(n) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) {
+      base.referenced.add(n.text);
+    }
+    ts.forEachChild(n, walkRefs);
+  };
+  walkRefs(handlerArg.body);
+  return base;
+}
+
+console.log('\nSchema key ↔ handler destructure contract (every registered MCP tool):');
+
+{
+  const wirings = collectToolWirings();
+  const forwarders: string[] = [];
+  const seenIgnored = new Set<string>();
+  let checkedTools = 0;
+  let checkedKeys = 0;
+
+  for (const w of wirings) {
+    const where = path.basename(w.file);
+    if (w.unanalyzable !== undefined) {
+      // Never silently skipped: an unreadable call shape is a gate hole.
+      assert(`${where}/${w.tool}: registerTool call is statically analyzable`, false, w.unanalyzable);
+      continue;
+    }
+    if (w.forwardsWholesale) { forwarders.push(`${w.tool} (${w.keys.length} keys, ${where})`); continue; }
+    checkedTools++;
+    checkedKeys += w.keys.length;
+    for (const key of w.keys) {
+      const allow = SCHEMA_KEYS_IGNORED.get(`${w.tool}.${key}`);
+      if (allow !== undefined) { seenIgnored.add(`${w.tool}.${key}`); continue; }
+      // (a) declared in the schema but never bound by the handler.
+      assert(
+        `${w.tool}: schema key '${key}' reaches the handler`,
+        w.read.has(key),
+        `'${key}' is declared in ${where} inputSchema, validated by zod, and then DROPPED (the handler never binds it). `
+        + `Add it to the handler's destructure and pass it to the executor, remove it from the schema, `
+        + `or allowlist it in SCHEMA_KEYS_IGNORED with a reason.`,
+      );
+      // (b) bound but never referenced: same defect, one step later.
+      const local = w.localOf.get(key);
+      if (w.read.has(key) && local !== undefined) {
+        assert(
+          `${w.tool}: schema key '${key}' is used, not just bound`,
+          w.referenced.has(local),
+          `'${key}' is destructured as '${local}' in ${where} and never referenced again, so it does nothing.`,
+        );
+      }
+    }
+  }
+
+  // A stale opt-out is as misleading as a missing one.
+  for (const entry of SCHEMA_KEYS_IGNORED.keys()) {
+    assert(
+      `SCHEMA_KEYS_IGNORED entry '${entry}' is still live`,
+      seenIgnored.has(entry),
+      'this tool/key pair no longer exists (or is no longer unread). Remove the allowlist entry.',
+    );
+  }
+
+  console.log(`  (${checkedTools} tools / ${checkedKeys} schema keys statically checked)`);
+  if (forwarders.length > 0) {
+    // Not a failure: forwarding IS the safe shape at the tool boundary. Printed
+    // so the set stays small and someone notices when it grows.
+    console.log(`  (${forwarders.length} tool(s) forward the whole args object, not statically checkable here: ${forwarders.join(', ')})`);
   }
 }
 
@@ -1894,6 +2294,130 @@ console.log('\nBK-076 routing-mask pre-flight (II grid):');
   _resetBlockLayoutCacheForTests();
 }
 
+// ── set_params batch phantom-param/routing-mask loop semantics ─────
+//
+// executeSetParams (dispatcher/params.ts) loops `collectPhantomParamWarnings`
+// / `collectRoutingMaskWarnings` over every validated op in the batch — the
+// same two collectors this file already unit-tests above, called once per
+// op rather than once. `executeSetParams` itself can't be exercised here
+// (it calls openCtx, which opens a real/mock MIDI handle that holds the
+// event loop open and hangs the script at exit — see the BK-071 comment
+// above), so this block proves the LOOP semantics directly: two ops
+// targeting the same unplaced block warn twice (no dedup), two ops on
+// different unplaced blocks each warn once, and a mixed batch (one
+// placed + one unplaced) only warns for the unplaced one. Hardware/
+// end-to-end confirmation of the actual set_params tool call lives in
+// launch-verification.ts ("set_params on unplaced block ... warning").
+
+console.log('\nset_params batch loop: phantom-param/routing-mask per-op semantics:');
+
+{
+  const {
+    _resetBlockLayoutCacheForTests,
+  } = await import('@mcp-midi-control/core/protocol-generic/dispatcher/blockLayoutCache.js');
+  const { collectPhantomParamWarnings, collectRoutingMaskWarnings } = await import(
+    '@mcp-midi-control/core/protocol-generic/dispatcher/params.js'
+  );
+
+  type StubDescriptor = Parameters<typeof collectPhantomParamWarnings>[0];
+  type StubCtx = Parameters<typeof collectPhantomParamWarnings>[1];
+
+  function stubDescriptor(
+    id: string,
+    snapshot: { placedBlocks: Set<string>; unroutedBlocks?: Set<string> },
+  ): StubDescriptor {
+    return {
+      id,
+      display_name: 'Stub Device',
+      reader: { getBlockLayoutSnapshot: async () => snapshot },
+    } as unknown as StubDescriptor;
+  }
+
+  async function runBatch(
+    descriptor: StubDescriptor,
+    ctx: StubCtx,
+    ops: readonly { block: string; name: string }[],
+  ): Promise<{ phantom: number; routing: number }> {
+    let phantom = 0;
+    let routing = 0;
+    for (const op of ops) {
+      phantom += (await collectPhantomParamWarnings(descriptor, ctx, op.block, op.name)).length;
+      routing += (await collectRoutingMaskWarnings(descriptor, ctx, op.block, op.name)).length;
+    }
+    return { phantom, routing };
+  }
+
+  // Two ops on the SAME unplaced block → two distinct warnings, not
+  // deduplicated. Matches executeSetParams having no dedup logic (BK-075/
+  // BK-076 comment: "Additive validation_info[]; write proceeds" per-entry).
+  {
+    _resetBlockLayoutCacheForTests();
+    const descriptor = stubDescriptor('test-batch-dup', { placedBlocks: new Set(['amp']) });
+    const ctx = { conn: { id: 'test-conn-batch-dup' } } as unknown as StubCtx;
+    const counts = await runBatch(descriptor, ctx, [
+      { block: 'phaser', name: 'rate' },
+      { block: 'phaser', name: 'depth' },
+    ]);
+    assert(
+      'two ops on the same unplaced block → two phantom-param warnings (no dedup)',
+      counts.phantom === 2 && counts.routing === 0,
+      `phantom=${counts.phantom}, routing=${counts.routing}`,
+    );
+  }
+
+  // Two ops on DIFFERENT unplaced blocks → one warning each, both fire off
+  // the SAME cached snapshot (one fresher call, asserted via call count).
+  {
+    _resetBlockLayoutCacheForTests();
+    let calls = 0;
+    const descriptor = {
+      id: 'test-batch-multi',
+      display_name: 'Stub Device',
+      reader: {
+        getBlockLayoutSnapshot: async () => {
+          calls += 1;
+          return { placedBlocks: new Set(['amp']) };
+        },
+      },
+    } as unknown as StubDescriptor;
+    const ctx = { conn: { id: 'test-conn-batch-multi' } } as unknown as StubCtx;
+    const counts = await runBatch(descriptor, ctx, [
+      { block: 'phaser', name: 'rate' },
+      { block: 'chorus', name: 'depth' },
+    ]);
+    assert(
+      'two ops on different unplaced blocks → one warning each',
+      counts.phantom === 2,
+      `phantom=${counts.phantom}`,
+    );
+    assert(
+      'both ops share ONE cached snapshot read, not one per op',
+      calls === 1,
+      `getBlockLayoutSnapshot calls=${calls}`,
+    );
+  }
+
+  // Mixed batch: one placed + one unplaced → only the unplaced op warns.
+  {
+    _resetBlockLayoutCacheForTests();
+    const descriptor = stubDescriptor('test-batch-mixed', {
+      placedBlocks: new Set(['amp', 'cab']),
+    });
+    const ctx = { conn: { id: 'test-conn-batch-mixed' } } as unknown as StubCtx;
+    const counts = await runBatch(descriptor, ctx, [
+      { block: 'amp', name: 'gain' },
+      { block: 'phaser', name: 'rate' },
+    ]);
+    assert(
+      'mixed batch (placed + unplaced) → exactly one phantom-param warning',
+      counts.phantom === 1,
+      `phantom=${counts.phantom}`,
+    );
+  }
+
+  _resetBlockLayoutCacheForTests();
+}
+
 // ── Axe-Fx III channel-nested apply_preset (Session 116 cont 5) ─────
 //
 // III's applyPreset now honors slots[].params.A/B/C/D nested params:
@@ -2560,6 +3084,158 @@ await testMultiInstanceSceneRef();
     'openOfflineCtx: exposes no reconnect (nothing to reconnect to)',
     offline.reconnect === undefined,
   );
+}
+
+// ── Unrecognised `overrides` / `spec` keys are REFUSED, not dropped ──
+//
+// The corpus defect: 3 of the 23 apply_preset calls carrying `overrides`
+// passed a flat `{"amp.type": "..."}` map instead of `slots[]`. The zod input
+// shape was `z.object`, which on an INPUT silently strips unknown keys, so the
+// call returned ok:true having sent nothing, and in all three traces the agent
+// told the user the value HAD been applied. That is the only measured case of
+// the agent confidently reporting a device change that never happened.
+//
+// Assert the refusal fires before any wire op. The negative controls in here
+// deliberately let a WELL-FORMED call through to prove the key check did not
+// eat it, and they identify the "it got through" state by the DIFFERENT error
+// code the MIDI layer throws.
+//
+// ⚠ THAT IDENTIFICATION ASSUMED NO DEVICE WAS ATTACHED, AND THE ASSUMPTION WAS
+// LOAD-BEARING. With an AM4 plugged in, `executeApplyPreset({port:'AM4', spec:
+// {slots:[{slot:1, block_type:'amp', params:{gain:5}}]}})` does not fail at the
+// port: it OPENS THE REAL DEVICE AND APPLIES THE PRESET, placing an amp and
+// setting gain on the maintainer's working buffer from a gate that is offline
+// by contract. It then leaves the MIDI handle open, so this script printed its
+// summary and never exited, hanging preflight (observed 2026-08-03, the first
+// run of this file with hardware attached; it had only ever run on a machine
+// with no AM4).
+//
+// So the whole block is pinned to the mock transport. A gate must not be
+// offline-by-luck. `verify-midi-handle-release` exists for the handle half of
+// this; the write half had nothing watching it.
+{
+  const priorMockTransport = process.env.MCP_MOCK_TRANSPORT;
+  process.env.MCP_MOCK_TRANSPORT = '1';
+  const expectRejects = async (
+    label: string,
+    fn: () => Promise<unknown>,
+    expectedCode: string,
+    messageMatch?: RegExp,
+  ): Promise<void> => {
+    try {
+      await fn();
+      failed++;
+      console.error(`  ✗ ${label}\n      expected DispatchError(${expectedCode}), nothing thrown`);
+    } catch (err) {
+      const codeOk = err instanceof DispatchError && err.code === expectedCode;
+      const msgOk = messageMatch === undefined
+        || (err instanceof Error && messageMatch.test(err.message));
+      if (codeOk && msgOk) { passed++; return; }
+      failed++;
+      const desc = err instanceof DispatchError
+        ? `got DispatchError(${err.code}): ${err.message}`
+        : `got ${err instanceof Error ? err.message : String(err)}`;
+      console.error(`  ✗ ${label}\n      expected DispatchError(${expectedCode})${messageMatch ? ` matching ${messageMatch}` : ''}, ${desc}`);
+    }
+  };
+
+  const { executeApplyPreset } = await import(
+    '@mcp-midi-control/core/protocol-generic/dispatcher.js'
+  );
+
+  await expectRejects(
+    'apply_preset refuses flat "block.param" keys in `overrides` (the measured defect)',
+    () => executeApplyPreset({
+      port: 'AM4',
+      recipe_id: 'texas_blues_crunch',
+      overrides: { 'amp.type': 'Brit Brown' } as never,
+    }),
+    'value_out_of_range',
+    /block\.param/i,
+  );
+  await expectRejects(
+    'the refusal states that nothing was sent (so ok:true can never mean "dropped")',
+    () => executeApplyPreset({
+      port: 'AM4',
+      recipe_id: 'texas_blues_crunch',
+      overrides: { 'reverb.type': 'Hall, Large' } as never,
+    }),
+    'value_out_of_range',
+    /NOTHING was sent/i,
+  );
+  await expectRejects(
+    'apply_preset refuses an unknown top-level `spec` key',
+    () => executeApplyPreset({
+      port: 'AM4',
+      spec: { slots: [{ slot: 1, block_type: 'amp' }], blocks: [] } as never,
+    }),
+    'value_out_of_range',
+    /"blocks"/,
+  );
+
+  // Negative control: the legitimate shape must still reach the wire layer.
+  // With no AM4 connected that surfaces as a port/connection failure — any
+  // code OTHER than value_out_of_range proves the key check let it past.
+  let legitCode = '(no throw)';
+  try {
+    await executeApplyPreset({
+      port: 'AM4',
+      spec: { slots: [{ slot: 1, block_type: 'amp', params: { gain: 5 } }], name: 'ok' },
+    });
+  } catch (err) {
+    legitCode = err instanceof DispatchError ? err.code : `(${(err as Error).message.slice(0, 40)})`;
+  }
+  assert(
+    'a well-formed spec passes the key check (fails later at the wire, not here)',
+    legitCode !== 'value_out_of_range',
+    `got ${legitCode}`,
+  );
+
+  // ── get_params refuses an over-wide batch BEFORE any wire work ──
+  //
+  // `scripts/verify-response-budget.ts` measured a whole-catalog read at
+  // 149,443 chars on the AM4 and 208,649 on the Axe-Fx II, both past the
+  // host's 50,000-char delivery cliff, so the device performed 894 (and
+  // 1,126) SysEx round-trips and the model received nothing at all. Its own
+  // leg for this needs a connected device; this one does not, which is the
+  // point: the cap has to be gated on a machine with the gear unplugged too.
+  //
+  // Both directions matter. The refusal must fire, and it must fire HERE
+  // rather than after the reads: with nothing connected, a batch that gets
+  // past the check surfaces as some other DispatchError code, so an
+  // `at the cap` batch reporting `value_out_of_range` would mean the cap is
+  // off by one and is refusing legal calls.
+  const { executeGetParams, GET_PARAMS_MAX_QUERIES } = await import(
+    '@mcp-midi-control/core/protocol-generic/dispatcher.js'
+  );
+  const queries = (n: number): { block: string; name: string }[] =>
+    Array.from({ length: n }, () => ({ block: 'amp', name: 'gain' }));
+
+  await expectRejects(
+    `get_params refuses a batch over the ${GET_PARAMS_MAX_QUERIES}-query cap`,
+    () => executeGetParams({ port: 'AM4', queries: queries(GET_PARAMS_MAX_QUERIES + 1) }),
+    'value_out_of_range',
+    /nothing was read and nothing was sent to the device/i,
+  );
+
+  // The over-cap call above refuses before `openCtx`, so it never opens a
+  // port. This one is SUPPOSED to get past the cap, which means it proceeds to
+  // a connection and 100 reads: it is the reason the mock pin above covers the
+  // whole block rather than one call.
+  let atCapCode = '(no throw)';
+  try {
+    await executeGetParams({ port: 'AM4', queries: queries(GET_PARAMS_MAX_QUERIES) });
+  } catch (err) {
+    atCapCode = err instanceof DispatchError ? err.code : `(${(err as Error).message.slice(0, 40)})`;
+  }
+  assert(
+    `get_params at exactly ${GET_PARAMS_MAX_QUERIES} passes the cap (fails later at the wire, not here)`,
+    atCapCode !== 'value_out_of_range',
+    `got ${atCapCode}`,
+  );
+
+  if (priorMockTransport === undefined) delete process.env.MCP_MOCK_TRANSPORT;
+  else process.env.MCP_MOCK_TRANSPORT = priorMockTransport;
 }
 
 // Reporting ───────────────────────────────────────────────────────

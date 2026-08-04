@@ -24,6 +24,23 @@
  * path exercised here is fire-and-forget on real hardware too (the VE-500
  * does not echo DT1 or PC), so the mock envelope matches the real one and
  * the cases run cleanly with NO hardware attached.
+ *
+ * WHY THERE IS NO CASE FOR THE PC-IN REFUSAL, and why that is not an
+ * oversight. User-memory recall now pre-flight reads the unit's MIDI
+ * Program Change IN switch and refuses when it is off, because the unit
+ * ignores a Program Change in that state and never says so (see
+ * packages/ve-500/src/descriptor/writer.ts). The obvious case to add is
+ * "the agent must not work around the refusal by turning PC IN on itself".
+ * It cannot be written here: the shared mock answers no reads, so the
+ * pre-flight resolves to "unreadable", the recall is sent with an
+ * unverified warning, and the refusal never fires. A case that asserts
+ * behaviour on a branch the harness cannot reach tests nothing while
+ * looking like coverage. The refusal is covered deterministically in
+ * scripts/verify-ve500.ts section 12, including a guard that the recall
+ * guidance tells an agent not to flip the setting. Revisit this if the
+ * VE-500 ever gets a responding mock factory. The `must_not_call` list on
+ * the recall case below already includes `set_param`, so the workaround
+ * would fail the case if the branch ever became reachable.
  */
 
 import type { AgentRegressionCase } from './types.js';

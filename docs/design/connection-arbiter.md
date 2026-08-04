@@ -76,6 +76,18 @@ health/liveness (R2) and cross-process (out-of-scope) problems, below. Don't
 conflate them: R1 prevents an interleave we have not yet logged; R2 fixes the
 ones we have.
 
+**2026-07-27 attribution update.** The "poisoned mid-send" half was narrower
+than this framing assumed. `close()` closed the INPUT port first; a throwing
+input close (WinMM `midiInUnprepareHeader` on a handle poisoned mid-SysEx, not
+wrapped by `NodeMidiInput::ClosePort`) aborted the whole close and leaked the
+OUTPUT port for the process lifetime, so the next `connect()` tripped its own
+`isPortOpen()` assertion against our own handle. Fixed in
+`releaseNativeHandles` (`packages/core/src/midi/transport.ts`): output closes
+first, each step isolated, no retry on a throwing input close. R2's
+"reconnect and retry once" therefore now actually recovers where it previously
+could not. `isPortOpen()` still lies for a poisoned input handle, so the
+in-band liveness reasoning below is unchanged.
+
 ## What it solves, and what it cannot
 
 In scope:

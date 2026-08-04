@@ -1,13 +1,14 @@
 /**
  * Gate: the generated FM9 device-true display ranges must keep their validated
  * shape: the hardware anchors (REVERB_TIME 0.1..100 step 0.02, amp/FUZZ/reverb
- * enum counts 331/86/79), the wire-confirmed fn=0x1F strides (DISTORT 147,
- * REVERB 73, plus CABINET 106 = ordinary records only, excluding the 4
- * special cab-table records the cache section also counts; sub=0x01
- * block-definition cross-validated), and a panel of spot rows read directly from the fw 11.0 cache
- * walk JSON at authoring time. A bad regeneration (wrong cache, broken
- * section-to-family vote, scale misapplied) fails here instead of silently
- * shipping wrong ranges.
+ * enum counts 336/87/79 as of the fw 12.0 cache — grew from 331/86 on fw 11.0
+ * as firmware appended new amp/drive models, issue #19), the wire-confirmed
+ * fn=0x1F strides (DISTORT 147, REVERB 73, plus CABINET 106 = ordinary records
+ * only, excluding the 4 special cab-table records the cache section also
+ * counts; sub=0x01 block-definition cross-validated), and a panel of spot rows
+ * read directly from the fw 12.0 cache walk JSON at authoring time. A bad
+ * regeneration (wrong cache, broken section-to-family vote, scale misapplied)
+ * fails here instead of silently shipping wrong ranges.
  *
  * When the source walk JSON is present locally (samples/ is gitignored), every
  * generated row is additionally cross-checked against it; on machines without
@@ -24,7 +25,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
-const WALK = resolve(root, 'samples/captured/fm9-community-2026-06-09/effectDefinitions_12_11p0.walk.json');
+const WALK = resolve(root, 'samples/captured/fm9-community-2026-07-18/effectDefinitions_12_12p0.walk.json');
 
 let failed = 0;
 function check(label: string, cond: boolean, detail: string): void {
@@ -67,9 +68,9 @@ function checkRow(
 console.log('hardware anchors:');
 checkRow('REVERB', 11, { kind: 'float', displayMin: 0.1, displayMax: 100, scale: 1, step: 0.02 },
   'REVERB_TIME = (0.1, 100, scale 1, step 0.02), hardware-confirmed range + sweep');
-check('DISTORT[10] amp enum count = 331', row('DISTORT', 10)?.enumCount === 331,
+check('DISTORT[10] amp enum count = 336 (fw 12.0; was 331 on fw 11.0)', row('DISTORT', 10)?.enumCount === 336,
   `got ${row('DISTORT', 10)?.enumCount}`);
-check('FUZZ[0] drive enum count = 86', row('FUZZ', 0)?.enumCount === 86,
+check('FUZZ[0] drive enum count = 87 (fw 12.0; was 86 on fw 11.0)', row('FUZZ', 0)?.enumCount === 87,
   `got ${row('FUZZ', 0)?.enumCount}`);
 check('REVERB[10] reverb-type enum count = 79', row('REVERB', 10)?.enumCount === 79,
   `got ${row('REVERB', 10)?.enumCount}`);
@@ -99,7 +100,7 @@ check('OUTPUT instance sections = 46..48', JSON.stringify(FM9_RANGE_SECTIONS.OUT
   `got ${JSON.stringify(FM9_RANGE_SECTIONS.OUTPUT?.instanceTags)}`);
 
 // ---------------------------------------------------------------------------
-// Spot rows, values read directly from effectDefinitions_12_11p0.walk.json
+// Spot rows, values read directly from effectDefinitions_12_12p0.walk.json
 // (sections 10/12/13/11/41/46/29/57; display = cache value * scale)
 // ---------------------------------------------------------------------------
 console.log('cache spot rows:');

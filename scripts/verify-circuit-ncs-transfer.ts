@@ -15,7 +15,7 @@ import {
   blockAddress, buildUploadFrames, crc32, fileId, intToNibbles, isAckFor,
   makeMessage, msbDeinterleave, msbInterleave, TRANSFER_CONSTANTS,
 } from '@mcp-midi-control/circuit-tracks/ncs/transfer.js';
-import { NCS_FILE_SIZE } from '@mcp-midi-control/circuit-tracks/ncs/format.js';
+import { NCS_FILE_SIZE, NCS_MAGIC, NCS_TOTAL_SESSION_SIZE_OFFSET } from '@mcp-midi-control/circuit-tracks/ncs/format.js';
 import { downloadProject, probeProjectSlot, runUploadFramePlan, readPackCount, uploadProject } from '@mcp-midi-control/circuit-tracks/ncs/uploadProject.js';
 import {
   FILE_TYPE_SAMPLE, buildSampleUploadFrames, sampleBlockCount, sampleFileId,
@@ -24,6 +24,8 @@ import { normalizeToDevice, parseWav } from '@mcp-midi-control/circuit-tracks/sa
 import { writer } from '@mcp-midi-control/circuit-tracks/descriptor/writer.js';
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import { DispatchError, type DispatchCtx } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 /** Build a minimal valid PCM WAV (for codec/round-trip checks). */
 function makeWav(sampleRate: number, channels: number, bits: number, frames: number): Uint8Array {
@@ -38,6 +40,25 @@ function makeWav(sampleRate: number, channels: number, bits: number, frames: num
   w(36, 'data'); dv.setUint32(40, dataLen, true);
   for (let i = 0; i < frames * channels; i++) dv.setInt16(44 + i * 2, ((i * 137) % 65536) - 32768, true);
   return buf;
+}
+
+/**
+ * A structurally VALID empty project, for the mock-connection tests below.
+ *
+ * These used to pass `new Uint8Array(NCS_FILE_SIZE)`, which is all zeros and is
+ * therefore not a project at all. That was harmless while `uploadProject` only
+ * checked the length; since it gained the structural gate (2026-07-29) an
+ * all-zero buffer is REFUSED before a single frame is sent, which would make
+ * every session-hygiene test below assert against a code path the caller never
+ * reaches. The fix is for the fixture to be a plausible project, which it should
+ * always have been: the tests here are about session and handle behaviour, and a
+ * fixture that trips an unrelated argument gate tests nothing.
+ */
+function blankNcs(): Uint8Array {
+  const b = new Uint8Array(NCS_FILE_SIZE);
+  for (let i = 0; i < NCS_MAGIC.length; i++) b[i] = NCS_MAGIC.charCodeAt(i);
+  new DataView(b.buffer).setUint32(NCS_TOTAL_SESSION_SIZE_OFFSET, NCS_FILE_SIZE, true);
+  return b;
 }
 
 let failed = 0;
@@ -131,7 +152,7 @@ check('wrong size throws', (() => { try { buildUploadFrames(new Uint8Array(10), 
     eq(dm.sent[dm.sent.length - 1], closeFrame), JSON.stringify(dm.sent[dm.sent.length - 1]));
 
   const um = mock();
-  const up = await uploadProject(um.conn, new Uint8Array(NCS_FILE_SIZE), 32, fast);
+  const up = await uploadProject(um.conn, blankNcs(), 32, fast);
   check('uploadProject no-ACK → ok:false', up.ok === false, JSON.stringify(up));
   check('uploadProject ALWAYS closes the session last (no stranded transfer)',
     eq(um.sent[um.sent.length - 1], closeFrame), JSON.stringify(um.sent[um.sent.length - 1]));
@@ -139,7 +160,7 @@ check('wrong size throws', (() => { try { buildUploadFrames(new Uint8Array(10), 
 
 // ── B2: the DEAD-HANDLE paths (the reboot scenario) — previously untested ──
 {
-  const NCS = new Uint8Array(NCS_FILE_SIZE);
+  const NCS = blankNcs();
   const fast = { responseTimeoutMs: 20, ackTimeoutMs: 20, sleepScale: 0.001 };
 
   // A send that THROWS mid-transfer must abort at that block (not fire all 29),
@@ -390,8 +411,8 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
   const SUB = TRANSFER_CONSTANTS.SUBCMD;
   const HDRLEN = TRANSFER_CONSTANTS.HEADER.length;
   const subcmdOf = (frame: readonly number[]) => frame[1 + HDRLEN];
-  const ctxOf = (conn: MidiConnection): DispatchCtx =>
-    ({ conn, descriptor: {} as never, reconnect: () => conn }) as unknown as DispatchCtx;
+  const ctxOf = (conn: MidiConnection, pack?: number): DispatchCtx =>
+    ({ conn, descriptor: {} as never, pack, reconnect: () => conn }) as unknown as DispatchCtx;
 
   // ACKs every send so an upload that passes the gate completes; never emits a
   // READ_INIT (irrelevant here — every writer call below is no-read).
@@ -413,7 +434,7 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
     } as unknown as MidiConnection;
     return { conn, sent };
   };
-  const NCS = new Uint8Array(NCS_FILE_SIZE);
+  const NCS = blankNcs();   // must pass the writer's structural pre-flight; see blankNcs
   const sampleWav = makeWav(48000, 1, 16, 200);
   const isOverwriteRefusal = (e: unknown) => e instanceof DispatchError && e.code === 'overwrite_confirmation_required';
   const grab = async (fn: () => Promise<unknown>): Promise<{ threw: boolean; err?: unknown; res?: unknown }> => {
@@ -444,6 +465,33 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
     check('gate: upload_sample with confirm_overwrite proceeds (ok:true)',
       !r.threw && (r.res as { ok: boolean }).ok === true, JSON.stringify({ threw: r.threw, err: (r.err as Error | undefined)?.message }));
   }
+  // PACK THREADING (2026-07-17): ctx.pack must reach every sample WRITE frame, so
+  // an upload lands on the SAME pack a project targets (the cross-pack name trap).
+  // Proven at the wire off the writer, not the builder — the builder is golden
+  // below, but this is the driver→builder handoff the trap actually depends on.
+  {
+    const m = acking();
+    const WIRE_PACK = 4; // device "Pack 5"
+    await grab(() => writer.uploadSample!(ctxOf(m.conn, WIRE_PACK), sampleWav, 6, 's.wav', { confirmOverwrite: true }));
+    const listing = m.sent.find((f) => f[7] === SUB.DIR_CONTROL && f[8] === FILE_TYPE_SAMPLE);
+    const setf = m.sent.find((f) => f[7] === SUB.SET_FILENAME && f[8] === FILE_TYPE_SAMPLE);
+    const writeInit = m.sent.find((f) => f[7] === SUB.WRITE_INIT && f[16] === FILE_TYPE_SAMPLE);
+    check('upload_sample(pack 4): dir-listing scope frame carries pack 4',
+      listing !== undefined && listing[9] === WIRE_PACK, JSON.stringify(listing?.slice(7, 10)));
+    check('upload_sample(pack 4): SET_FILENAME fid carries pack 4',
+      setf !== undefined && setf[9] === WIRE_PACK, JSON.stringify(setf?.slice(7, 11)));
+    check('upload_sample(pack 4): WRITE_INIT fid carries pack 4, slot unchanged (6)',
+      writeInit !== undefined && writeInit[17] === WIRE_PACK && writeInit[18] === 6, JSON.stringify(writeInit?.slice(16, 19)));
+    // No frame may speak a different pack (the divergence the pack-gate guards).
+    const packs = [...new Set(m.sent.flatMap((f) => {
+      if ((f[7] === SUB.WRITE_INIT || f[7] === SUB.WRITE_DATA || f[7] === SUB.WRITE_FINISH) && f[16] === FILE_TYPE_SAMPLE) return [f[17]];
+      if (f[7] === SUB.SET_FILENAME && f[8] === FILE_TYPE_SAMPLE) return [f[9]];
+      if ((f[7] === SUB.DIR_CONTROL || f[7] === 0x0d || f[7] === 0x08) && f[8] === FILE_TYPE_SAMPLE) return [f[9]];
+      return [];
+    }))];
+    check('upload_sample(pack 4): every sample frame speaks ONE pack (4)',
+      packs.length === 1 && packs[0] === WIRE_PACK, `distinct packs: ${JSON.stringify(packs)}`);
+  }
   // SET_FILENAME REJECTION (empty/uninitialized pack directory): the device does
   // NOT ack the slot registration → the upload now FAILS LOUD with a directory
   // error instead of the old "all acked" false success (decoded 2026-06-27,
@@ -469,10 +517,12 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
     check('SET_FILENAME rejection → upload ok:false (no false success)', rr.ok === false, JSON.stringify(rr));
     check('SET_FILENAME rejection → error names the UNINITIALIZED directory', /UNINITIALIZED|directory/.test(rr.error ?? ''), rr.error);
   }
-  // PACK INDEX (decoded 2026-06-27): sample frames carry the device's ACTIVE pack
-  // index (its 0b 02 reply), not a hardcoded 0. sampleFileId = [0x05, pack, slot];
-  // our old [0x05, slot>>7, slot] was [0x05, 0, slot] = pack 0 by accident → the
-  // "0/64" bug whenever the active pack wasn't 0.
+  // PACK INDEX (decode 2026-07-16, hardware-confirmed for projects/patches):
+  // sample frames carry the CHOSEN 0-based pack, not a hardcoded 0. The byte is
+  // the caller's choice, NOT something the device reports (the refuted "active
+  // pack index the device reports in its 0b 02 reply" reading — 0b 02 is a COUNT).
+  // sampleFileId = [0x05, pack, slot]; our old [0x05, slot>>7, slot] was
+  // [0x05, 0, slot] = pack 0 by accident → the "0/64" bug on any non-zero pack.
   {
     check('sampleFileId(5) defaults pack 0 → [05,00,05]', JSON.stringify(sampleFileId(5)) === JSON.stringify([0x05, 0x00, 0x05]));
     check('sampleFileId(5, 2) → [05,02,05] (pack is the middle byte)', JSON.stringify(sampleFileId(5, 2)) === JSON.stringify([0x05, 0x02, 0x05]));
@@ -511,6 +561,40 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
     const writeInits = m.sent.filter((f) => subcmdOf(f) === SUB.WRITE_INIT).length;
     check('gate: confirm_overwrite SKIPS the occupancy read (only the upload\'s WRITE_INIT, no read-request)',
       writeInits === 1, `WRITE_INIT count = ${writeInits} (expected 1)`);
+  }
+
+  // STRUCTURAL GATE on the write path (2026-07-29). A file that is exactly the
+  // right length and is not a project must be refused BEFORE any frame goes out.
+  // The device has no erase, so a slot written with one cannot be emptied.
+  {
+    const notAProject = new Uint8Array(NCS_FILE_SIZE);   // right length, no USER magic, size field 0
+    const m = acking();
+    const r = await grab(() => writer.uploadProject!(ctxOf(m.conn), notAProject, 33, { confirmOverwrite: true }));
+    check('gate: upload_project REFUSES a right-length non-project',
+      r.threw && r.err instanceof DispatchError && (r.err as DispatchError).code === 'bad_location',
+      JSON.stringify({ threw: r.threw, err: (r.err as Error | undefined)?.message }));
+    check('gate: the refusal names the CRC as not vouching for structure',
+      /transfer CRC covers the encoded stream/.test((r.err as Error | undefined)?.message ?? ''));
+    check('gate: NOTHING was sent (refused before the first frame)', m.sent.length === 0, `${m.sent.length} frame(s) sent`);
+  }
+
+  // The same gate, driven by the real specimen: the file a backup manifest
+  // recorded as crc_verified while being structurally invalid. `samples/` is
+  // gitignored, so this is a bonus over the synthetic case above.
+  {
+    const p = join('samples', 'circuit-ncs', 'card-backup-2026-07-27T16-49Z', 'pack1', 'proj64__63_OOO.ncs');
+    if (!existsSync(p)) {
+      console.log(`  SKIP  gate: real corrupt capture not on disk (${p}); the synthetic refusal above still ran`);
+    } else {
+      const bad = new Uint8Array(readFileSync(p));
+      const m = acking();
+      const r = await grab(() => writer.uploadProject!(ctxOf(m.conn), bad, 33, { confirmOverwrite: true }));
+      check('gate: upload_project REFUSES the real CRC-verified-but-corrupt capture',
+        r.threw && r.err instanceof DispatchError, (r.err as Error | undefined)?.message);
+      check('gate: the refusal cites its totalSessionSize, the only invariant that catches it',
+        /totalSessionSize/.test((r.err as Error | undefined)?.message ?? ''));
+      check('gate: nothing was sent for the real corrupt capture either', m.sent.length === 0, `${m.sent.length} frame(s) sent`);
+    }
   }
 }
 

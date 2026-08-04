@@ -25,10 +25,11 @@ import {
   ON_EDITED_SCHEMA,
 } from '../../server-shared/safeEdit.js';
 
-import { PORT_DESC, asError, asText } from './shared.js';
+import { PACK_DESC, PORT_DESC, asError, asText } from './shared.js';
 
 export function registerNavigationTools(server: McpServer): void {
   server.registerTool('switch_preset', {
+    title: 'Switch Preset',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Load a stored preset into the working buffer. Same effect as turning the device\'s preset knob.',
@@ -58,6 +59,7 @@ export function registerNavigationTools(server: McpServer): void {
   });
 
   server.registerTool('save_preset', {
+    title: 'Save Preset',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'DESTRUCTIVE: persist the working buffer to a stored location, optionally renaming first. Call ONLY when the user explicitly said save/store/keep/persist.',
@@ -92,6 +94,7 @@ export function registerNavigationTools(server: McpServer): void {
   });
 
   server.registerTool('switch_scene', {
+    title: 'Switch Scene',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Change the active scene within the current preset. Toggles per-scene bypass + channel state; the block layout stays the same.',
@@ -124,26 +127,29 @@ export function registerNavigationTools(server: McpServer): void {
   // it via a new focused tool then.
 
   server.registerTool('scan_locations', {
+    title: 'Scan Preset Locations',
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
-      'Bulk-read stored preset names across a location range. Non-destructive; working buffer and active location preserved.',
-      'Canonical use: before bulk-applying or restoring a range, scan first to surface which locations hold customised presets vs are empty.',
-      '- Empty locations come back with is_empty=true.',
-      '- On mid-loop failure the scan aborts and returns partial results + the failure location.',
-      '- Performance: ~50-100 ms per location on AM4 (4-location bank ~200-400 ms); ~80 ms per slot on Axe-Fx II (64-slot scan ~5 s). For II ranges larger than ~12 slots, announce the wait to the user up front.',
+      'Bulk-read stored preset names across a location range. The active location is always restored.',
+      'Canonical use: before bulk-applying or restoring a range, scan first to see which locations hold presets vs are empty. Empty locations return is_empty=true; a mid-loop failure returns partial results plus the failure location.',
+      '- Axe-Fx II / AX8 scan by SWITCHING to each preset: unsaved edits are LOST, and 64 slots take ~16 s. Refuses on a dirty buffer unless you pass on_active_preset_edited; announce the wait above ~12 slots. AM4 (~50-100 ms/location) and Circuit Tracks (whole pack in ONE round trip) read without moving, so they are non-destructive and fast.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       from: z.union([z.string(), z.number()]).describe(
-        'Inclusive start of the scan range. AM4: "A1".."Z4"; Axe-Fx II: 0..383; etc.',
+        'Inclusive start of the scan range. AM4: "A1".."Z4"; Axe-Fx II: 0..383; Circuit Tracks: Project 1..64, as the device numbers it.',
       ),
       to: z.union([z.string(), z.number()]).describe(
         'Inclusive end of the scan range. Pass from <= to.',
       ),
+      pack: z.number().int().min(1).max(32).optional().describe(`Which pack to scan. ${PACK_DESC}`),
+      on_active_preset_edited: ON_EDITED_SCHEMA.optional().describe(
+        "Navigating scanners (Axe-Fx II / AX8) only. Default 'warn' refuses on unsaved edits; 'discard' scans anyway; 'save_active_first' saves first.",
+      ),
     },
-  }, async ({ port, from, to }) => {
+  }, async ({ port, from, to, pack, on_active_preset_edited }) => {
     try {
-      const result = await executeScanLocations({ port, from, to });
+      const result = await executeScanLocations({ port, from, to, pack, on_active_preset_edited });
       return asText(result);
     } catch (err) {
       return asError(err);
@@ -152,6 +158,7 @@ export function registerNavigationTools(server: McpServer): void {
 
   // set_mod_route ----------------------------------------------------------
   server.registerTool('set_mod_route', {
+    title: 'Set Modulation Route',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     description: 'Wire one modulation-matrix route by NAME on a synth with a mod matrix (e.g. Hydrasynth): picks a free slot and writes source + target + depth in one call (env-to-filter, velocity-to-brightness, LFO-to-pitch on an agent-built patch). source/target use the device\'s own labels (source e.g. "Env 2", "LFO 1", "Velocity"; target e.g. "Filt 1 Cutoff", "Osc 1 Pitch"); full lists: list_params({port, block:"modmatrix"}). depth is bipolar -128..+128 (0 = no modulation). Slot auto-allocation assumes a fresh/INIT patch; on a factory patch pass an explicit slot. The MOD MATRIX front-panel page DOES redraw to show NRPN-set routes (live-verified), so confirm by screen or by ear. Returns capability_not_supported on devices without a mod matrix.',
     inputSchema: {
@@ -171,6 +178,7 @@ export function registerNavigationTools(server: McpServer): void {
 
   // set_macro_route --------------------------------------------------------
   server.registerTool('set_macro_route', {
+    title: 'Set Macro Route',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     description: 'Assign one of a performance Macro\'s (1-8) destinations by NAME on the Hydrasynth macro page (up to 8 each); allocates a free slot and writes target + depth + button value. A destination has exactly THREE fields: Destination, Button Value, Depth. There is NO sweep start/min; the knob sweeps the destination from the patch\'s programmed value by depth (bipolar -128..+128). button_value is what the macro\'s physical Control button applies when pressed; new destinations initialize it to 0 (the device otherwise leaves -128, which would slam the destination full-negative on a button press). After this, set_macro(macro, value) moves the destination; an unwired macro is silent. Target labels match set_mod_route; discover via list_params({port, block:"macros"}). Auto-allocation assumes a fresh/INIT patch; pass an explicit slot on a factory patch. CONFIRM BY EAR: the macro edit page may not redraw over MIDI (the MOD MATRIX page does). capability_not_supported on devices without authorable macros.',
     inputSchema: {

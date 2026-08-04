@@ -127,6 +127,50 @@ export const HYDRASYNTH_CASES: AgentRegressionCase[] = [
     },
   },
 
+  // Recipe PICKUP: match tone vocabulary against describe_device.recipes[] ──
+  //
+  // The sibling case above names the id in the prompt, so it exercises
+  // apply_patch's resolver and nothing else — its passing traces do not call
+  // describe_device at all. That left the surface with no coverage at the
+  // point where it is actually load-bearing: the agent hearing a tone in a
+  // user's words and finding the id itself.
+  //
+  // That gap became live on 2026-08-02, when `source_notes` (687 chars x 36
+  // recipes, half this device's entire describe_device payload) moved off the
+  // summary onto `describe_device({port, recipe})`. Nothing about matching
+  // should depend on a citation string, but "should not" is a prediction, and
+  // the AM4 regression this whole budget effort came from was exactly a case
+  // where the discovery surface changed and pickup silently stopped. This case
+  // is the sensor. It is the AM4/FM9 `*-recipe-*-pickup` shape, ported.
+  //
+  // "Rhodes electric piano" is the least ambiguous vocabulary on the device:
+  // `suitcase_ep` is the ONLY E-piano recipe, tagged 'rhodes', and its
+  // description ends "The classic Rhodes voice." A miss here is a real miss,
+  // not a coin-flip between siblings.
+  {
+    id: 'hydrasynth-recipe-vocab-pickup',
+    device: 'hydrasynth',
+    description:
+      'Recipe pickup by VOCABULARY (not by id): "give me a Rhodes electric piano" should route describe_device -> match recipes[] -> apply_patch({recipe_id:"suitcase_ep"}). Catches the regression where a change to the recipes[] discovery surface stops the agent finding a curated recipe and it hand-authors a dozen params instead. Distinct from hydrasynth-recipe-apply, which names the id in the prompt and never reads recipes[].',
+    prompt: 'I want a Rhodes electric piano sound on the Hydrasynth. Just audition it, do not save.',
+    expectations: {
+      must_call: ['describe_device', 'apply_patch'],
+      max_tools: 5,
+      tool_call_validators: [{
+        tool: 'apply_patch',
+        check: (args) => {
+          if (args.recipe_id !== 'suitcase_ep') {
+            return `apply_patch should apply the curated recipe by id ("suitcase_ep", the device's only E-piano/Rhodes archetype), got recipe_id=${JSON.stringify(args.recipe_id)}${args.params !== undefined ? ' with hand-authored params' : ''}.`;
+          }
+          if (args.save === true) return 'apply_patch must not save on an audition request.';
+          return true;
+        },
+      }],
+      text_not_contains: ['I saved', 'I stored'],
+      max_wall_seconds: 120,
+    },
+  },
+
   // ── Large coverage: patch recipe + macro + system param ───────────────────
   {
     id: 'hydrasynth-archetype-patch-macro-system',

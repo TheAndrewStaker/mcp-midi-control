@@ -5,7 +5,8 @@
  */
 import {
   LOOPER_HUB_RIG, validateRig, bootstrapRig, toCytoscapeElements, summarizeSignal,
-  checkRigCompatibility, checkAudioOutput, applyRigEdit, validateInventory, crossReferenceInventory,
+  checkRigCompatibility, checkAudioOutput, checkRigCapacity, rankAttachments,
+  applyRigEdit, validateInventory, crossReferenceInventory,
   type Rig, type Binding, type CapabilityLookup, type CompatibilityReport,
   type DeviceSeed, type Inventory,
 } from '../src/index.js';
@@ -713,6 +714,252 @@ function inv(): Inventory {
     && rep.devices.find((d) => d.id === 'commander')?.status === 'spare');
   check('inventory: rig devices not owned are listed', rep.rig_devices_not_in_inventory.includes('rc505')
     && rep.rig_devices_not_in_inventory.includes('cab'));
+}
+
+// --- edit: device (node) add/remove ---
+console.log('\nopenrig edit (devices):');
+{
+  const r = applyRigEdit(LOOPER_HUB_RIG, {
+    op: 'add_device', id: 'mf', name: 'Test Synth', roles: ['sound_source'],
+    manufacturer: 'Arturia', family: 'MicroFreak',
+    ports: [{ id: 'midi_in', kind: 'midi_din_in' }, { id: 'out', kind: 'audio_out', audio: 'mono' }],
+    note: '[planned] not cabled yet',
+  });
+  check('edit: add_device adds the node', r.ok === true && r.node_id === 'mf'
+    && r.rig?.nodes.some((n) => n.id === 'mf') === true);
+  check('edit: add_device adds NO cables (cabling is a separate decision)',
+    r.rig?.edges.length === LOOPER_HUB_RIG.edges.length);
+  check('edit: added device still validates clean', validateRig(r.rig as Rig).errors.length === 0);
+  check('edit: add_device does not mutate the input',
+    LOOPER_HUB_RIG.nodes.some((n) => n.id === 'mf') === false);
+}
+{
+  const dup = applyRigEdit(LOOPER_HUB_RIG, {
+    op: 'add_device', id: LOOPER_HUB_RIG.nodes[0].id, name: 'Clash', roles: ['sound_source'],
+  });
+  check('edit: add_device rejects a colliding id', dup.ok === false && dup.error?.includes('already in this rig') === true);
+}
+{
+  const noRole = applyRigEdit(LOOPER_HUB_RIG, { op: 'add_device', id: 'x', name: 'X', roles: [] });
+  check('edit: add_device requires at least one role', noRole.ok === false);
+}
+{
+  // Removing a device must take its cables with it, or the rig no longer validates.
+  const victim = LOOPER_HUB_RIG.edges[0].to.node;
+  const before = LOOPER_HUB_RIG.edges.filter((e) => e.from.node === victim || e.to.node === victim).length;
+  const r = applyRigEdit(LOOPER_HUB_RIG, { op: 'remove_device', device: victim });
+  check('edit: remove_device drops the node', r.ok === true
+    && r.rig?.nodes.some((n) => n.id === victim) === false);
+  check('edit: remove_device drops every cable touching it', r.removed_edge_ids?.length === before);
+  check('edit: rig still validates after remove_device (no dangling endpoints)',
+    validateRig(r.rig as Rig).errors.length === 0, JSON.stringify(validateRig(r.rig as Rig).errors));
+}
+{
+  const miss = applyRigEdit(LOOPER_HUB_RIG, { op: 'remove_device', device: 'nope' });
+  check('edit: remove_device unknown device -> error', miss.ok === false);
+}
+
+// --- capacity: "where is there room to plug something in" ---
+console.log('\nopenrig capacity check:');
+{
+  const rep = checkRigCapacity(LOOPER_HUB_RIG);
+  const partitions = rep.devices.every(
+    (d) => d.totals.used + d.totals.reserved + d.totals.free === d.totals.total
+      && d.totals.total === d.ports.length,
+  );
+  check('capacity: per-device totals partition every port', partitions);
+  check('capacity: every rig node is reported', rep.devices.length === LOOPER_HUB_RIG.nodes.length);
+}
+// A port no cable names is FREE and shows up in the by-kind lookup. This is the
+// exact lookup whose absence caused the 2026-07-25 miss.
+{
+  const r = clone();
+  r.nodes[0].ports.push({ id: 'spare_out', kind: 'midi_din_out', label: 'Spare DIN Out' });
+  const rep = checkRigCapacity(r);
+  const free = rep.free_by_kind.midi_din_out ?? [];
+  check('capacity: an uncabled port is free and listed by kind',
+    free.some((p) => p.node_id === r.nodes[0].id && p.port_id === 'spare_out'));
+  check('capacity: free port carries its label through to the lookup',
+    free.find((p) => p.port_id === 'spare_out')?.label === 'Spare DIN Out');
+}
+// A [planned] (enabled:false) cable RESERVES the port: not free (recommending it
+// would double-book) but distinguishable from a live connection.
+{
+  const r = clone();
+  r.nodes[0].ports.push({ id: 'spare_out', kind: 'midi_din_out' });
+  r.nodes[1].ports.push({ id: 'spare_in', kind: 'midi_din_in' });
+  r.edges.push({
+    id: 'planned-cable', directed: true, enabled: false,
+    from: { node: r.nodes[0].id, port: 'spare_out' },
+    to: { node: r.nodes[1].id, port: 'spare_in' },
+    signal: { kind: 'midi', signals: [{ type: 'clock' }] },
+  });
+  const rep = checkRigCapacity(r);
+  const port = rep.devices.find((d) => d.id === r.nodes[0].id)?.ports.find((p) => p.port_id === 'spare_out');
+  check('capacity: planned cable marks the port reserved, not used', port?.state === 'reserved');
+  check('capacity: reserved port is NOT offered as free',
+    (rep.free_by_kind.midi_din_out ?? []).every((p) => p.port_id !== 'spare_out'));
+  check('capacity: reserved port still names the claiming edge', port?.edge_ids.includes('planned-cable') === true);
+}
+// A fan-out hub with every output spoken for is the shape that sends someone
+// hunting for a workaround, so it gets its own named issue.
+{
+  const r = clone();
+  const sink = r.nodes[0];
+  r.nodes.push({
+    id: 'thrubox', name: 'Test Thru Box', identity: { manufacturer: 'Test', family: 'Thru' },
+    server_device_id: null, roles: ['midi_router'],
+    ports: [{ id: 'in', kind: 'midi_din_in' }, { id: 'out1', kind: 'midi_din_out' }],
+  });
+  sink.ports.push({ id: 'hub_in', kind: 'midi_din_in' });
+  r.edges.push({
+    id: 'hub-out1', directed: true,
+    from: { node: 'thrubox', port: 'out1' },
+    to: { node: sink.id, port: 'hub_in' },
+    signal: { kind: 'midi', signals: [{ type: 'clock' }] },
+  });
+  const rep = checkRigCapacity(r);
+  check('capacity: exhausted fan-out hub raises fanout-hub-exhausted',
+    rep.issues.some((i) => i.code === 'fanout-hub-exhausted' && i.ref === 'thrubox'));
+  check('capacity: exhausted-hub issue is advisory (warning, never error)',
+    rep.issues.every((i) => i.severity === 'warning'));
+  check('capacity: a hub with a spare output raises nothing',
+    checkRigCapacity((() => {
+      const r2 = JSON.parse(JSON.stringify(r)) as Rig;
+      r2.nodes.find((n) => n.id === 'thrubox')!.ports.push({ id: 'out2', kind: 'midi_din_out' });
+      return r2;
+    })()).issues.every((i) => i.ref !== 'thrubox'));
+}
+
+// --- attachment ranking: "where do I plug this new device in?" ---
+console.log('\nopenrig attachment ranking:');
+
+/**
+ * Minimal purpose-built rig: a sequencer with TWO free outputs, a thru box fed
+ * from one of them with a spare output of its own, and a new synth with nothing
+ * plugged in. Both a direct and a chained attachment are genuinely available, so
+ * the tier ordering is actually exercised (the maintainer's real rig happens to
+ * yield a single candidate, which would not test the ranking at all).
+ */
+function attachRig(): Rig {
+  return {
+    openrig_version: '0.1',
+    id: 'attach-fixture',
+    name: 'Attachment fixture',
+    nodes: [
+      {
+        id: 'seq', name: 'Sequencer', identity: { manufacturer: 'T', family: 'Seq' },
+        server_device_id: null, roles: ['sequencer'],
+        ports: [
+          { id: 'out_a', kind: 'midi_din_out', label: 'Out A' },
+          { id: 'out_b', kind: 'midi_din_out', label: 'Out B' },
+        ],
+        routing: {
+          originate: [
+            { port: 'out_a', kind: 'midi', type: 'note', channel: 3 },
+            { port: 'out_b', kind: 'midi', type: 'note', channel: 3 },
+          ],
+        },
+      },
+      {
+        id: 'hub', name: 'Thru Box', identity: { manufacturer: 'T', family: 'Thru' },
+        server_device_id: null, roles: ['midi_router'],
+        ports: [
+          { id: 'in', kind: 'midi_din_in' },
+          { id: 'out1', kind: 'midi_din_out' },
+          { id: 'out2', kind: 'midi_din_out' },
+        ],
+        routing: { pass: [{ port: 'in', kind: 'midi' }] },
+      },
+      {
+        id: 'synth', name: 'New Synth', identity: { manufacturer: 'T', family: 'Synth' },
+        server_device_id: null, roles: ['sound_source'],
+        ports: [{ id: 'midi_in', kind: 'midi_din_in' }],
+      },
+    ],
+    edges: [{
+      id: 'seq-to-hub', directed: true,
+      from: { node: 'seq', port: 'out_a' }, to: { node: 'hub', port: 'in' },
+      signal: { kind: 'midi', signals: [{ type: 'note', channel: 3 }] },
+    }],
+  };
+}
+const NOTE3 = { type: 'note', channel: 3 } as const;
+
+{
+  const rep = rankAttachments(attachRig(), { device: 'synth', signal: NOTE3 });
+  // 3 = the sequencer's free second out, plus BOTH of the thru box's free outs.
+  check('attach: enumerates every free port that can carry the signal', rep.candidates.length === 3);
+  check('attach: DIRECT wins over chained', rep.best?.from.node_id === 'seq' && rep.best?.from.port_id === 'out_b');
+  check('attach: direct has zero relay dependencies', rep.best?.relay_dependencies.length === 0);
+  check('attach: chained option names its intermediate device',
+    rep.candidates[1].from.node_id === 'hub' && rep.candidates[1].relay_dependencies.includes('Thru Box'));
+  check('attach: hop counts are direct=1, chained=2',
+    rep.best?.hops === 1 && rep.candidates[1].hops === 2);
+  check('attach: summary explains WHY it beat the runner-up',
+    rep.summary.includes('Beats') && rep.summary.includes('intermediate device'));
+}
+// A signal that reaches nowhere is ELIMINATED, never ranked low. A candidate that
+// cannot carry the signal is not a bad option, it is not an option.
+{
+  const rep = rankAttachments(attachRig(), { device: 'synth', signal: { type: 'note', channel: 9 } });
+  check('attach: a signal nothing originates is an error, not a bad candidate',
+    rep.ok === false && rep.candidates.length === 0);
+}
+// A [planned] cable RESERVES the port, so the planner must not double-book it.
+{
+  const r = attachRig();
+  r.edges.push({
+    id: 'planned', directed: true, enabled: false,
+    from: { node: 'seq', port: 'out_b' }, to: { node: 'synth', port: 'midi_in' },
+    signal: { kind: 'midi', signals: [{ type: 'note', channel: 3 }] },
+  });
+  const rep = rankAttachments(r, { device: 'synth', signal: NOTE3 });
+  check('attach: a port reserved by a planned cable is not offered again',
+    rep.candidates.every((c) => !(c.from.node_id === 'seq' && c.from.port_id === 'out_b')));
+}
+// Tie on relay dependencies -> more spare capacity left on the host wins.
+{
+  const r = attachRig();
+  r.edges = [];                                   // both seq outs free, hub unreachable
+  r.nodes[0].ports.push({ id: 'out_c', kind: 'midi_din_out' });
+  const rep = rankAttachments(r, { device: 'synth', signal: NOTE3 });
+  check('attach: all-tied candidates still rank deterministically',
+    rep.candidates.length === 3 && rep.candidates.every((c) => c.relay_dependencies.length === 0));
+  const again = rankAttachments(r, { device: 'synth', signal: NOTE3 });
+  check('attach: same input gives the same answer (determinism)',
+    JSON.stringify(rep.candidates) === JSON.stringify(again.candidates));
+}
+// Guard rails: the request itself can be unanswerable, and that is reported, not guessed.
+{
+  const rep = rankAttachments(attachRig(), { device: 'nope', signal: NOTE3 });
+  check('attach: unknown device -> error', rep.ok === false && rep.error?.includes('not a node') === true);
+}
+{
+  const r = attachRig();
+  r.edges.push({
+    id: 'occupied', directed: true,
+    from: { node: 'seq', port: 'out_b' }, to: { node: 'synth', port: 'midi_in' },
+    signal: { kind: 'midi', signals: [{ type: 'note', channel: 3 }] },
+  });
+  const rep = rankAttachments(r, { device: 'synth', signal: NOTE3 });
+  check('attach: target with no free input -> error',
+    rep.ok === false && rep.error?.includes('no free MIDI input') === true);
+}
+{
+  const r = attachRig();
+  r.nodes.push({
+    id: 'seq2', name: 'Second Sequencer', identity: { manufacturer: 'T', family: 'Seq' },
+    server_device_id: null, roles: ['sequencer'],
+    ports: [{ id: 'out', kind: 'midi_din_out' }],
+    routing: { originate: [{ port: 'out', kind: 'midi', type: 'note', channel: 3 }] },
+  });
+  const rep = rankAttachments(r, { device: 'synth', signal: NOTE3 });
+  check('attach: ambiguous origin is reported, never guessed',
+    rep.ok === false && rep.error?.includes('more than one node') === true);
+  const pinned = rankAttachments(r, { device: 'synth', signal: NOTE3, origin: 'seq2' });
+  check('attach: naming the origin resolves the ambiguity',
+    pinned.ok === true && pinned.best?.from.node_id === 'seq2');
 }
 
 console.log(failures === 0 ? '\nopenrig: all checks passed' : `\nopenrig: ${failures} FAILURE(S)`);

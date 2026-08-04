@@ -7865,42 +7865,54 @@
         "paramId": 0,
         "name": "MIXER_GAIN1",
         "displayLabel": "Row 1 Gain",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0,
+        "displayMax": 100
       },
       {
         "family": "MIXER",
         "paramId": 1,
         "name": "MIXER_GAIN2",
         "displayLabel": "Row 2 Gain",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0,
+        "displayMax": 100
       },
       {
         "family": "MIXER",
         "paramId": 2,
         "name": "MIXER_GAIN3",
         "displayLabel": "Row 3 Gain",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0,
+        "displayMax": 100
       },
       {
         "family": "MIXER",
         "paramId": 3,
         "name": "MIXER_GAIN4",
         "displayLabel": "Row 4 Gain",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0,
+        "displayMax": 100
       },
       {
         "family": "MIXER",
         "paramId": 4,
         "name": "MIXER_GAIN5",
         "displayLabel": "Row 5 Gain",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0,
+        "displayMax": 100
       },
       {
         "family": "MIXER",
         "paramId": 5,
         "name": "MIXER_GAIN6",
         "displayLabel": "Row 6 Gain",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0,
+        "displayMax": 100
       },
       {
         "family": "MIXER",
@@ -7961,7 +7973,9 @@
         "paramId": 12,
         "name": "MIXER_MASTER",
         "displayLabel": "Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -80,
+        "displayMax": 20
       },
       {
         "family": "MIXER",
@@ -9334,42 +9348,54 @@
         "paramId": 0,
         "name": "OUTPUT_LEVEL1",
         "displayLabel": "Row 1 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 1,
         "name": "OUTPUT_LEVEL2",
         "displayLabel": "Row 2 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 2,
         "name": "OUTPUT_LEVEL3",
         "displayLabel": "Row 3 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 3,
         "name": "OUTPUT_LEVEL4",
         "displayLabel": "Row 4 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 4,
         "name": "OUTPUT_LEVEL5",
         "displayLabel": "Row 5 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 5,
         "name": "OUTPUT_LEVEL6",
         "displayLabel": "Row 6 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
@@ -9430,7 +9456,9 @@
         "paramId": 12,
         "name": "OUTPUT_LEVEL",
         "displayLabel": "Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -80,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
@@ -9473,56 +9501,72 @@
         "paramId": 18,
         "name": "OUTPUT_SCENE1",
         "displayLabel": "Scene 1 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 19,
         "name": "OUTPUT_SCENE2",
         "displayLabel": "Scene 2 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 20,
         "name": "OUTPUT_SCENE3",
         "displayLabel": "Scene 3 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 21,
         "name": "OUTPUT_SCENE4",
         "displayLabel": "Scene 4 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 22,
         "name": "OUTPUT_SCENE5",
         "displayLabel": "Scene 5 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 23,
         "name": "OUTPUT_SCENE6",
         "displayLabel": "Scene 6 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 24,
         "name": "OUTPUT_SCENE7",
         "displayLabel": "Scene 7 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "OUTPUT",
         "paramId": 25,
         "name": "OUTPUT_SCENE8",
         "displayLabel": "Scene 8 Level",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "PEQ",
@@ -10147,28 +10191,36 @@
         "paramId": 15,
         "name": "PITCH_SHIFT1",
         "displayLabel": "Shift 1",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 16,
         "name": "PITCH_SHIFT2",
         "displayLabel": "Shift 2",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 17,
         "name": "PITCH_SHIFT3",
         "displayLabel": "Shift 3",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 18,
         "name": "PITCH_SHIFT4",
         "displayLabel": "Shift 4",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
@@ -10593,112 +10645,144 @@
         "paramId": 77,
         "name": "PITCH_STEP1",
         "displayLabel": "Step 1 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 78,
         "name": "PITCH_STEP2",
         "displayLabel": "Step 2 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 79,
         "name": "PITCH_STEP3",
         "displayLabel": "Step 3 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 80,
         "name": "PITCH_STEP4",
         "displayLabel": "Step 4 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 81,
         "name": "PITCH_STEP5",
         "displayLabel": "Step 5 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 82,
         "name": "PITCH_STEP6",
         "displayLabel": "Step 6 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 83,
         "name": "PITCH_STEP7",
         "displayLabel": "Step 7 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 84,
         "name": "PITCH_STEP8",
         "displayLabel": "Step 8 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 85,
         "name": "PITCH_STEP9",
         "displayLabel": "Step 9 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 86,
         "name": "PITCH_STEP10",
         "displayLabel": "Step 10 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 87,
         "name": "PITCH_STEP11",
         "displayLabel": "Step 11 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 88,
         "name": "PITCH_STEP12",
         "displayLabel": "Step 12 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 89,
         "name": "PITCH_STEP13",
         "displayLabel": "Step 13 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 90,
         "name": "PITCH_STEP14",
         "displayLabel": "Step 14 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 91,
         "name": "PITCH_STEP15",
         "displayLabel": "Step 15 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 92,
         "name": "PITCH_STEP16",
         "displayLabel": "Step 16 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
@@ -10865,56 +10949,72 @@
         "paramId": 2,
         "name": "PLEX_SHIFT1",
         "displayLabel": "Shift 1",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 3,
         "name": "PLEX_SHIFT2",
         "displayLabel": "Shift 2",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 4,
         "name": "PLEX_SHIFT3",
         "displayLabel": "Shift 3",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 5,
         "name": "PLEX_SHIFT4",
         "displayLabel": "Shift 4",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 6,
         "name": "PLEX_SHIFT5",
         "displayLabel": "Shift 5",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 7,
         "name": "PLEX_SHIFT6",
         "displayLabel": "Shift 6",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 8,
         "name": "PLEX_SHIFT7",
         "displayLabel": "Shift 7",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 9,
         "name": "PLEX_SHIFT8",
         "displayLabel": "Shift 8",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
@@ -13066,7 +13166,9 @@
         "paramId": 3,
         "name": "SYNTH_SHIFT1",
         "displayLabel": "Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "SYNTH",
@@ -13145,7 +13247,9 @@
         "paramId": 14,
         "name": "SYNTH_SHIFT2",
         "displayLabel": "Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "SYNTH",
@@ -13277,7 +13381,9 @@
         "paramId": 32,
         "name": "SYNTH_SHIFT3",
         "displayLabel": "Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "SYNTH",
@@ -15730,11 +15836,11 @@
         "0": {
           "kind": "enum",
           "displayMin": 0,
-          "displayMax": 17,
+          "displayMax": 26,
           "scale": 1,
           "step": 0,
           "typecode": 16,
-          "enumCount": 18
+          "enumCount": 27
         },
         "1": {
           "kind": "float",
@@ -15967,6 +16073,30 @@
           "step": 0,
           "typecode": 16,
           "enumCount": 2
+        },
+        "29": {
+          "kind": "float",
+          "displayMin": 1,
+          "displayMax": 40,
+          "scale": 1000,
+          "step": 0.00001,
+          "typecode": 1074
+        },
+        "30": {
+          "kind": "float",
+          "displayMin": 0,
+          "displayMax": 10,
+          "scale": 10,
+          "step": 0.001,
+          "typecode": 50
+        },
+        "31": {
+          "kind": "float",
+          "displayMin": 0,
+          "displayMax": 10,
+          "scale": 10,
+          "step": 0.001,
+          "typecode": 50
         }
       },
       "COMP": {
@@ -18210,6 +18340,14 @@
           "step": 0,
           "typecode": 16,
           "enumCount": 3
+        },
+        "90": {
+          "kind": "float",
+          "displayMin": 0,
+          "displayMax": 100,
+          "scale": 100,
+          "step": 0.001,
+          "typecode": 1329
         }
       },
       "DISTORT": {
@@ -18298,11 +18436,11 @@
         "10": {
           "kind": "enum",
           "displayMin": 0,
-          "displayMax": 330,
+          "displayMax": 335,
           "scale": 1,
           "step": 0,
           "typecode": 16,
-          "enumCount": 331
+          "enumCount": 336
         },
         "11": {
           "kind": "float",
@@ -18647,7 +18785,7 @@
           "displayMax": 10,
           "scale": 1,
           "step": 0,
-          "typecode": 66
+          "typecode": 67
         },
         "53": {
           "kind": "float",
@@ -18680,7 +18818,7 @@
           "displayMax": 10,
           "scale": 2,
           "step": 0.001,
-          "typecode": 50
+          "typecode": 51
         },
         "57": {
           "kind": "float",
@@ -18822,11 +18960,11 @@
         "74": {
           "kind": "enum",
           "displayMin": 0,
-          "displayMax": 24,
+          "displayMax": 25,
           "scale": 1,
           "step": 0,
           "typecode": 16,
-          "enumCount": 25
+          "enumCount": 26
         },
         "75": {
           "kind": "enum",
@@ -18952,19 +19090,19 @@
         },
         "90": {
           "kind": "float",
-          "displayMin": -10,
-          "displayMax": 10,
-          "scale": 10,
-          "step": 0.002,
-          "typecode": 50
+          "displayMin": 0,
+          "displayMax": 1,
+          "scale": 1,
+          "step": 0,
+          "typecode": 0
         },
         "91": {
           "kind": "float",
           "displayMin": 0,
-          "displayMax": 10,
-          "scale": 10,
-          "step": 0.001,
-          "typecode": 50
+          "displayMax": 1,
+          "scale": 1,
+          "step": 0,
+          "typecode": 0
         },
         "92": {
           "kind": "enum",
@@ -20290,11 +20428,11 @@
         "0": {
           "kind": "enum",
           "displayMin": 0,
-          "displayMax": 85,
+          "displayMax": 86,
           "scale": 1,
           "step": 0,
           "typecode": 16,
-          "enumCount": 86
+          "enumCount": 87
         },
         "1": {
           "kind": "float",
@@ -20551,11 +20689,11 @@
         "32": {
           "kind": "enum",
           "displayMin": 0,
-          "displayMax": 20,
+          "displayMax": 21,
           "scale": 1,
           "step": 0,
           "typecode": 16,
-          "enumCount": 21
+          "enumCount": 22
         },
         "33": {
           "kind": "float",
@@ -20568,11 +20706,11 @@
         "34": {
           "kind": "enum",
           "displayMin": 0,
-          "displayMax": 20,
+          "displayMax": 21,
           "scale": 1,
           "step": 0,
           "typecode": 16,
-          "enumCount": 21
+          "enumCount": 22
         },
         "35": {
           "kind": "float",
@@ -20640,6 +20778,15 @@
           "scale": 10,
           "step": 0.001,
           "typecode": 50
+        },
+        "43": {
+          "kind": "enum",
+          "displayMin": 0,
+          "displayMax": 1,
+          "scale": 1,
+          "step": 0,
+          "typecode": 16,
+          "enumCount": 2
         }
       },
       "GATE": {
@@ -20653,7 +20800,7 @@
         },
         "1": {
           "kind": "float",
-          "displayMin": 1,
+          "displayMin": 0.1,
           "displayMax": 1000,
           "scale": 1000,
           "step": 0,
@@ -22898,7 +23045,7 @@
         },
         "3": {
           "kind": "float",
-          "displayMin": 1,
+          "displayMin": 0.1,
           "displayMax": 100,
           "scale": 1000,
           "step": 0,
@@ -23583,6 +23730,54 @@
           "scale": 1,
           "step": 0,
           "typecode": 224
+        },
+        "17": {
+          "kind": "float",
+          "displayMin": 0,
+          "displayMax": 64,
+          "scale": 1,
+          "step": 0.1,
+          "typecode": 49
+        },
+        "18": {
+          "kind": "float",
+          "displayMin": 0,
+          "displayMax": 64,
+          "scale": 1,
+          "step": 0.1,
+          "typecode": 49
+        },
+        "19": {
+          "kind": "float",
+          "displayMin": 0,
+          "displayMax": 64,
+          "scale": 1,
+          "step": 0.1,
+          "typecode": 49
+        },
+        "20": {
+          "kind": "float",
+          "displayMin": 0,
+          "displayMax": 64,
+          "scale": 1,
+          "step": 0.1,
+          "typecode": 49
+        },
+        "21": {
+          "kind": "float",
+          "displayMin": 0,
+          "displayMax": 64,
+          "scale": 1,
+          "step": 0.1,
+          "typecode": 49
+        },
+        "22": {
+          "kind": "float",
+          "displayMin": 0,
+          "displayMax": 64,
+          "scale": 1,
+          "step": 0.1,
+          "typecode": 49
         }
       },
       "MOD": {

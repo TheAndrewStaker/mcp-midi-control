@@ -24,11 +24,34 @@ import {
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 
+// hydra_navigate_to's declared output shape.
+//
+// This tool is NOT on the live surface (see `server.ts`: the registration is
+// commented out, the code is kept for one-off diagnostics), but the shape is
+// declared loose anyway so that re-registering it cannot silently re-open the
+// hazard. `z.looseObject`, never `z.object`: the SDK renders a plain
+// `z.object` as `"additionalProperties": false` and the MCP client throws on
+// any key the schema does not name. Full reasoning in the block comment in
+// `packages/core/src/protocol-generic/tools/preset.ts` above
+// `validationErrorShape`.
+const navigateToOutputShape = {
+  target_slot: z.string(),
+  target_bank: z.number().int(),
+  target_patch: z.number().int(),
+  elapsed_ms: z.number(),
+  inbound_message_count: z.number().int(),
+  has_input: z.boolean(),
+};
+
+/** The schema hydra_navigate_to declares when it is registered. */
+export const HYDRA_NAVIGATE_TO_OUTPUT_SCHEMA = z.looseObject(navigateToOutputShape);
+
 export function registerHydrasynthNavigationTools(server: McpServer): void {
 
 // hydra_navigate_to (diagnostic) ----------------------------------------
 
 server.registerTool('hydra_navigate_to', {
+  title: 'Hydrasynth: Go To Patch',
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: [
     'Diagnostic primitive. Sends Bank Select + Program Change to navigate the Hydrasynth\'s active patch to a slot ("A001".."H128"), then captures inbound MIDI for 200 ms.',
@@ -40,14 +63,7 @@ server.registerTool('hydra_navigate_to', {
       'Target slot in "A001".."H128" form. Letter A..H + patch 1..128.',
     ),
   },
-  outputSchema: {
-    target_slot: z.string(),
-    target_bank: z.number().int(),
-    target_patch: z.number().int(),
-    elapsed_ms: z.number(),
-    inbound_message_count: z.number().int(),
-    has_input: z.boolean(),
-  },
+  outputSchema: HYDRA_NAVIGATE_TO_OUTPUT_SCHEMA,
 }, async ({ slot }) => {
   let target: ReturnType<typeof parseSlot>;
   try {

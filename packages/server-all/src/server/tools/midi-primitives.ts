@@ -68,8 +68,44 @@ function sendErrorResponse(
     };
 }
 
+/** One scheduled wire message in a `send_sequence` timeline. */
+export interface SequenceWireEvent {
+    /** Milliseconds from the start of this repeat. */
+    at: number;
+    /** True for a Note Off. Used only for stable ordering at equal timestamps. */
+    off: boolean;
+    bytes: number[];
+}
+
+/**
+ * Expand `send_sequence` events into a time-ordered list of note-on / note-off
+ * wire messages. Pure, so the scheduling contract is testable without hardware.
+ *
+ * Exists because the original inline implementation collected every note-off and
+ * fired them all at `max(time_ms + duration_ms)`, silently discarding per-event
+ * `duration_ms`: the first note of a sequence sustained until the LAST note
+ * ended, so notes accumulated into a growing chord instead of playing a rhythm.
+ * Caught by ear on a MicroFreak (2026-07-25) when a single note following a
+ * chord still sounded like the chord.
+ *
+ * At equal timestamps a note-off sorts BEFORE a note-on, so retriggering the
+ * same note back-to-back works rather than the off cancelling the new note.
+ */
+export function buildSequenceTimeline(
+    events: ReadonlyArray<{ note: number; velocity: number; time_ms: number; duration_ms: number }>,
+    wireChannel: number,
+): SequenceWireEvent[] {
+    const timeline: SequenceWireEvent[] = [];
+    for (const event of events) {
+        timeline.push({ at: event.time_ms, off: false, bytes: buildNoteOn(wireChannel, event.note, event.velocity) });
+        timeline.push({ at: event.time_ms + event.duration_ms, off: true, bytes: buildNoteOff(wireChannel, event.note, 0) });
+    }
+    return timeline.sort((a, b) => a.at - b.at || Number(b.off) - Number(a.off));
+}
+
 export function registerMidiPrimitiveTools(server: McpServer): void {
     server.registerTool('send_cc', {
+        title: 'Send CC',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Send a MIDI Control Change to any CC-responsive device. Channel 1..16 (musician convention), controller 0..127, value 0..127.',
@@ -101,6 +137,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_note', {
+        title: 'Send Note',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         description: [
             'Play one MIDI note on any note-responsive device (synth, drum pad, sampler). Sends Note On, waits `duration_ms` (default 500, max 5000), sends Note Off.',
@@ -137,6 +174,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_program_change', {
+        title: 'Send Program Change',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Switch patches on any PC-responsive device. Sends optional Bank Select (CC 0 MSB + CC 32 LSB), then Program Change.',
@@ -184,6 +222,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_nrpn', {
+        title: 'Send NRPN',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Write an NRPN on any NRPN-responsive device. Emits the standard 3- or 4-message sequence (CC 99, CC 98, CC 6, optional CC 38).',
@@ -226,6 +265,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     // Code preserved in git history; builders still in messages.ts.
 
     server.registerTool('send_clock_start', {
+        title: 'Start Clock',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         description: [
             'Send MIDI Timing Clock Start (0xFA) to start a sequencer / drum machine / clock-aware synth from the beginning. System message; affects every receiver on the port.',
@@ -251,6 +291,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_clock_stop', {
+        title: 'Stop Clock',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Send MIDI Timing Clock Stop (0xFC) to halt a running sequencer / drum machine / clock-aware synth. System message; affects every receiver on the port.',
@@ -275,6 +316,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_clock_continue', {
+        title: 'Continue Clock',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         description: [
             'Send MIDI Timing Clock Continue (0xFB) to resume a stopped sequencer / drum machine from its current position. System message.',
@@ -300,6 +342,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_song_position', {
+        title: 'Set Song Position',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Send MIDI Song Position Pointer (0xF2): jump a sequencer / drum machine to a specific beat.',
@@ -329,6 +372,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_panic', {
+        title: 'Panic (All Notes Off)',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'MIDI panic: silence every stuck note on every channel of a device. Sends All Sound Off (CC 120) + All Notes Off (CC 123) on all 16 channels (32 messages). CC 120 cuts release tails; CC 123 lets natural release finish; doing both covers every receiver.',
@@ -359,6 +403,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_reset_controllers', {
+        title: 'Reset Controllers',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         description: [
             'Reset All Controllers (CC 121) on a channel: pitch bend, mod wheel, expression, channel pressure, etc. revert to defaults.',
@@ -385,6 +430,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_sysex', {
+        title: 'Send SysEx',
         annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
         description: [
             'Send a raw SysEx frame. Power-user escape hatch: validates F0/F7 framing + 7-bit body, then sends verbatim. Useful for ad-hoc RE and device one-offs without a wrapper.',
@@ -413,6 +459,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_chord', {
+        title: 'Send Chord',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         description: [
             'Play a chord: multiple simultaneous MIDI notes with a shared duration.',
@@ -454,6 +501,7 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
     });
 
     server.registerTool('send_sequence', {
+        title: 'Send Sequence',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         description: [
             'Play a timed sequence of MIDI notes (arpeggios, riffs, test patterns).',
@@ -493,26 +541,20 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
             const conn = ensureConnection(port);
             const sorted = [...events].sort((a, b) => a.time_ms - b.time_ms);
             let totalNotes = 0;
+            // Emit a per-event-scheduled timeline (see buildSequenceTimeline for
+            // why this is not a batch of note-offs at the end).
             for (let rep = 0; rep < repeats; rep++) {
+                const timeline = buildSequenceTimeline(sorted, wireChannel);
+                totalNotes += sorted.length;
+
                 const repStartMs = Date.now();
-                const pendingOffs: Array<{ note: number; offAt: number }> = [];
-                for (const event of sorted) {
-                    const targetMs = repStartMs + event.time_ms;
+                for (const ev of timeline) {
+                    const targetMs = repStartMs + ev.at;
                     const now = Date.now();
                     if (targetMs > now) {
                         await new Promise<void>((resolve) => setTimeout(resolve, targetMs - now));
                     }
-                    conn.send(buildNoteOn(wireChannel, event.note, event.velocity));
-                    pendingOffs.push({ note: event.note, offAt: repStartMs + event.time_ms + event.duration_ms });
-                    totalNotes++;
-                }
-                const lastOffAt = Math.max(...pendingOffs.map((p) => p.offAt));
-                const remaining = lastOffAt - Date.now();
-                if (remaining > 0) {
-                    await new Promise<void>((resolve) => setTimeout(resolve, remaining));
-                }
-                for (const { note } of pendingOffs) {
-                    conn.send(buildNoteOff(wireChannel, note, 0));
+                    conn.send(ev.bytes);
                 }
             }
             return {

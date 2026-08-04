@@ -9946,28 +9946,36 @@
         "paramId": 15,
         "name": "PITCH_SHIFT1",
         "displayLabel": "Shift 1",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 16,
         "name": "PITCH_SHIFT2",
         "displayLabel": "Shift 2",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 17,
         "name": "PITCH_SHIFT3",
         "displayLabel": "Shift 3",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 18,
         "name": "PITCH_SHIFT4",
         "displayLabel": "Shift 4",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
@@ -10392,112 +10400,144 @@
         "paramId": 77,
         "name": "PITCH_STEP1",
         "displayLabel": "Step 1 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 78,
         "name": "PITCH_STEP2",
         "displayLabel": "Step 2 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 79,
         "name": "PITCH_STEP3",
         "displayLabel": "Step 3 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 80,
         "name": "PITCH_STEP4",
         "displayLabel": "Step 4 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 81,
         "name": "PITCH_STEP5",
         "displayLabel": "Step 5 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 82,
         "name": "PITCH_STEP6",
         "displayLabel": "Step 6 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 83,
         "name": "PITCH_STEP7",
         "displayLabel": "Step 7 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 84,
         "name": "PITCH_STEP8",
         "displayLabel": "Step 8 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 85,
         "name": "PITCH_STEP9",
         "displayLabel": "Step 9 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 86,
         "name": "PITCH_STEP10",
         "displayLabel": "Step 10 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 87,
         "name": "PITCH_STEP11",
         "displayLabel": "Step 11 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 88,
         "name": "PITCH_STEP12",
         "displayLabel": "Step 12 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 89,
         "name": "PITCH_STEP13",
         "displayLabel": "Step 13 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 90,
         "name": "PITCH_STEP14",
         "displayLabel": "Step 14 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 91,
         "name": "PITCH_STEP15",
         "displayLabel": "Step 15 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
         "paramId": 92,
         "name": "PITCH_STEP16",
         "displayLabel": "Step 16 Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PITCH",
@@ -10664,56 +10704,72 @@
         "paramId": 2,
         "name": "PLEX_SHIFT1",
         "displayLabel": "Shift 1",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 3,
         "name": "PLEX_SHIFT2",
         "displayLabel": "Shift 2",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 4,
         "name": "PLEX_SHIFT3",
         "displayLabel": "Shift 3",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 5,
         "name": "PLEX_SHIFT4",
         "displayLabel": "Shift 4",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 6,
         "name": "PLEX_SHIFT5",
         "displayLabel": "Shift 5",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 7,
         "name": "PLEX_SHIFT6",
         "displayLabel": "Shift 6",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 8,
         "name": "PLEX_SHIFT7",
         "displayLabel": "Shift 7",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
         "paramId": 9,
         "name": "PLEX_SHIFT8",
         "displayLabel": "Shift 8",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "PLEX",
@@ -12859,7 +12915,9 @@
         "paramId": 3,
         "name": "SYNTH_SHIFT1",
         "displayLabel": "Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "SYNTH",
@@ -12938,7 +12996,9 @@
         "paramId": 14,
         "name": "SYNTH_SHIFT2",
         "displayLabel": "Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "SYNTH",
@@ -13070,7 +13130,9 @@
         "paramId": 32,
         "name": "SYNTH_SHIFT3",
         "displayLabel": "Shift",
-        "unit": "numeric"
+        "unit": "semitones",
+        "displayMin": -24,
+        "displayMax": 24
       },
       {
         "family": "SYNTH",

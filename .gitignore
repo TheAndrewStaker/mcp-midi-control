@@ -41,6 +41,14 @@ packages/fractal-midi/docs/devices/am4/manuals/ct-guide.txt
 scripts/groove-analysis/_microstep-capture.json
 scripts/**/_*-capture.json
 
+# Agent-harness scratch that lands in the repo ROOT with its absolute path
+# flattened into the filename. Two of these (a listing of trace filenames)
+# were swept into a release commit by an over-broad `git add`; they are the
+# session's own bookkeeping, never project content. The pattern matches the
+# flattening, not one session id, so the next one cannot be committed either.
+UsersSteph*scratchpad*.json
+*AppDataLocalTemp*.json
+
 # samples/ is entirely local-only — captures, factory preset exports
 # (Fractal IP, don't redistribute), debug logs, and decoded outputs
 # from analysis scripts. Nothing in here is committed. Generated

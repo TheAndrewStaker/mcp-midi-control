@@ -6,12 +6,23 @@
  * am4_list_params used to surface.
  *
  * Hardware-free.
+ *
+ * STALE, AND KEPT ONLY BECAUSE DELETING SOMEONE ELSE'S GATE IS THEIR CALL.
+ * It is wired into no npm script and its server path had already rotted
+ * (`dist/server/index.js` predates the workspace split). Everything it checks
+ * now has preflight-gated coverage in `scripts/verify-dispatcher.ts` under
+ * "scope projection". Two fixes were applied 2026-08-02 so that running it by
+ * hand does not produce a misleading red: the server path, and Probe 3, which
+ * read `parameter_name` off the BLOCK-scoped response. That field is now
+ * served only at param scope (`block` + `name`). It is 26-27 KB per gen-3
+ * catalog and inlining it per row is part of what put this tool past the
+ * host's delivery cliff. Delete this file when convenient.
  */
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-const SERVER = path.resolve(process.cwd(), 'dist', 'server', 'index.js');
+const SERVER = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 function extractText(r: unknown): string {
   if (!r || typeof r !== 'object') return '';
   const c = r as { content?: Array<{ type?: string; text?: string }> };
@@ -56,8 +67,11 @@ async function main(): Promise<void> {
       console.log(`  sample: amp.${sample.name} — "${sample.applies_only_when.slice(0, 80)}..."`);
     }
 
-    // Probe 3: a param with a known firmware symbolic id (parameter_name)
-    const distortMaster = (parsed2.params ?? []).find((p: { name: string }) => p.name === 'master');
+    // Probe 3: a param with a known firmware symbolic id (parameter_name).
+    // Read it from the PARAM-scoped response (parsed1), not the block-scoped
+    // one: `parameter_name` is a post-choice cross-reference field and is
+    // withheld from block scope for size.
+    const distortMaster = (parsed1.params ?? []).find((p: { name: string }) => p.name === 'master');
     const hasParamName = distortMaster?.parameter_name === 'DISTORT_MASTER';
     console.log(hasParamName
       ? '✓ amp.master surfaces parameter_name="DISTORT_MASTER" (firmware symbolic id)'

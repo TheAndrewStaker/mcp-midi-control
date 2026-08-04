@@ -1117,19 +1117,19 @@ export const FM9_PARAMS: readonly Param[] = [
   { family: 'MIDIBLOCK', paramId: 263, name: 'MIDIBLOCK_TEST_ROW6', displayLabel: 'Test', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'MIDIBLOCK', paramId: 264, name: 'MIDIBLOCK_TEST_ROW7', displayLabel: 'Test', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'MIDIBLOCK', paramId: 265, name: 'MIDIBLOCK_TEST_ROW8', displayLabel: 'Test', unit: 'enum' }, // inferred from AxeEdit III XML controlType
-  { family: 'MIXER', paramId: 0, name: 'MIXER_GAIN1', displayLabel: 'Row 1 Gain', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'MIXER', paramId: 1, name: 'MIXER_GAIN2', displayLabel: 'Row 2 Gain', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'MIXER', paramId: 2, name: 'MIXER_GAIN3', displayLabel: 'Row 3 Gain', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'MIXER', paramId: 3, name: 'MIXER_GAIN4', displayLabel: 'Row 4 Gain', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'MIXER', paramId: 4, name: 'MIXER_GAIN5', displayLabel: 'Row 5 Gain', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'MIXER', paramId: 5, name: 'MIXER_GAIN6', displayLabel: 'Row 6 Gain', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'MIXER', paramId: 0, name: 'MIXER_GAIN1', displayLabel: 'Row 1 Gain', unit: 'numeric', displayMin: 0, displayMax: 100 }, // range: FM9-Edit cache (ranges.generated.ts); also disambiguates the MIXER/OUTPUT section vote, issue #19
+  { family: 'MIXER', paramId: 1, name: 'MIXER_GAIN2', displayLabel: 'Row 2 Gain', unit: 'numeric', displayMin: 0, displayMax: 100 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'MIXER', paramId: 2, name: 'MIXER_GAIN3', displayLabel: 'Row 3 Gain', unit: 'numeric', displayMin: 0, displayMax: 100 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'MIXER', paramId: 3, name: 'MIXER_GAIN4', displayLabel: 'Row 4 Gain', unit: 'numeric', displayMin: 0, displayMax: 100 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'MIXER', paramId: 4, name: 'MIXER_GAIN5', displayLabel: 'Row 5 Gain', unit: 'numeric', displayMin: 0, displayMax: 100 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'MIXER', paramId: 5, name: 'MIXER_GAIN6', displayLabel: 'Row 6 Gain', unit: 'numeric', displayMin: 0, displayMax: 100 }, // range: FM9-Edit cache (ranges.generated.ts)
   { family: 'MIXER', paramId: 6, name: 'MIXER_PAN1', displayLabel: 'Row 1 Balance', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'MIXER', paramId: 7, name: 'MIXER_PAN2', displayLabel: 'Row 2 Balance', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'MIXER', paramId: 8, name: 'MIXER_PAN3', displayLabel: 'Row 3 Balance', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'MIXER', paramId: 9, name: 'MIXER_PAN4', displayLabel: 'Row 4 Balance', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'MIXER', paramId: 10, name: 'MIXER_PAN5', displayLabel: 'Row 5 Balance', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'MIXER', paramId: 11, name: 'MIXER_PAN6', displayLabel: 'Row 6 Balance', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
-  { family: 'MIXER', paramId: 12, name: 'MIXER_MASTER', displayLabel: 'Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'MIXER', paramId: 12, name: 'MIXER_MASTER', displayLabel: 'Level', unit: 'numeric', displayMin: -80, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
   { family: 'MIXER', paramId: 13, name: 'MIXER_PAN', displayLabel: 'Balance', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'MIXER', paramId: 14, name: 'MIXER_MODE', displayLabel: 'Mono/Stereo', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'MIXER', paramId: 15, name: 'MIXER_BYPASSMODE', unit: 'enum' }, // inferred from Fractal convention
@@ -1324,32 +1324,32 @@ export const FM9_PARAMS: readonly Param[] = [
   { family: 'MULTITAP', paramId: 118, name: 'MULTITAP_FEEDBACK34', unit: 'unverified' },
   { family: 'MULTITAP', paramId: 119, name: 'MULTITAP_FEEDBACK41', unit: 'unverified' },
   { family: 'MULTITAP', paramId: 120, name: 'MULTITAP_KILLDRY', displayLabel: 'Kill Dry', unit: 'enum' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 0, name: 'OUTPUT_LEVEL1', displayLabel: 'Row 1 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 1, name: 'OUTPUT_LEVEL2', displayLabel: 'Row 2 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 2, name: 'OUTPUT_LEVEL3', displayLabel: 'Row 3 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 3, name: 'OUTPUT_LEVEL4', displayLabel: 'Row 4 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 4, name: 'OUTPUT_LEVEL5', displayLabel: 'Row 5 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 5, name: 'OUTPUT_LEVEL6', displayLabel: 'Row 6 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'OUTPUT', paramId: 0, name: 'OUTPUT_LEVEL1', displayLabel: 'Row 1 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts); also disambiguates the MIXER/OUTPUT section vote, issue #19
+  { family: 'OUTPUT', paramId: 1, name: 'OUTPUT_LEVEL2', displayLabel: 'Row 2 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 2, name: 'OUTPUT_LEVEL3', displayLabel: 'Row 3 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 3, name: 'OUTPUT_LEVEL4', displayLabel: 'Row 4 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 4, name: 'OUTPUT_LEVEL5', displayLabel: 'Row 5 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 5, name: 'OUTPUT_LEVEL6', displayLabel: 'Row 6 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
   { family: 'OUTPUT', paramId: 6, name: 'OUTPUT_PAN1', displayLabel: 'Row 1 Pan', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'OUTPUT', paramId: 7, name: 'OUTPUT_PAN2', displayLabel: 'Row 2 Pan', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'OUTPUT', paramId: 8, name: 'OUTPUT_PAN3', displayLabel: 'Row 3 Pan', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'OUTPUT', paramId: 9, name: 'OUTPUT_PAN4', displayLabel: 'Row 4 Pan', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'OUTPUT', paramId: 10, name: 'OUTPUT_PAN5', displayLabel: 'Row 5 Pan', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'OUTPUT', paramId: 11, name: 'OUTPUT_PAN6', displayLabel: 'Row 6 Pan', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
-  { family: 'OUTPUT', paramId: 12, name: 'OUTPUT_LEVEL', displayLabel: 'Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'OUTPUT', paramId: 12, name: 'OUTPUT_LEVEL', displayLabel: 'Level', unit: 'numeric', displayMin: -80, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
   { family: 'OUTPUT', paramId: 13, name: 'OUTPUT_PAN', displayLabel: 'Balance', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'OUTPUT', paramId: 14, name: 'OUTPUT_BYPASSMODE', unit: 'enum' }, // inferred from Fractal convention
   { family: 'OUTPUT', paramId: 15, name: 'OUTPUT_BYPASS', displayLabel: 'Bypass', unit: 'enum' }, // inferred from Fractal convention
   { family: 'OUTPUT', paramId: 16, name: 'OUTPUT_VUL', displayLabel: 'Left', unit: 'db' }, // inferred from AxeEdit III XML controlType
   { family: 'OUTPUT', paramId: 17, name: 'OUTPUT_VUR', displayLabel: 'Right', unit: 'db' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 18, name: 'OUTPUT_SCENE1', displayLabel: 'Scene 1 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 19, name: 'OUTPUT_SCENE2', displayLabel: 'Scene 2 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 20, name: 'OUTPUT_SCENE3', displayLabel: 'Scene 3 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 21, name: 'OUTPUT_SCENE4', displayLabel: 'Scene 4 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 22, name: 'OUTPUT_SCENE5', displayLabel: 'Scene 5 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 23, name: 'OUTPUT_SCENE6', displayLabel: 'Scene 6 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 24, name: 'OUTPUT_SCENE7', displayLabel: 'Scene 7 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'OUTPUT', paramId: 25, name: 'OUTPUT_SCENE8', displayLabel: 'Scene 8 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'OUTPUT', paramId: 18, name: 'OUTPUT_SCENE1', displayLabel: 'Scene 1 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 19, name: 'OUTPUT_SCENE2', displayLabel: 'Scene 2 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 20, name: 'OUTPUT_SCENE3', displayLabel: 'Scene 3 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 21, name: 'OUTPUT_SCENE4', displayLabel: 'Scene 4 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 22, name: 'OUTPUT_SCENE5', displayLabel: 'Scene 5 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 23, name: 'OUTPUT_SCENE6', displayLabel: 'Scene 6 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 24, name: 'OUTPUT_SCENE7', displayLabel: 'Scene 7 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
+  { family: 'OUTPUT', paramId: 25, name: 'OUTPUT_SCENE8', displayLabel: 'Scene 8 Level', unit: 'numeric', displayMin: -20, displayMax: 20 }, // range: FM9-Edit cache (ranges.generated.ts)
   { family: 'PEQ', paramId: 0, name: 'PEQ_FREQ1', displayLabel: 'Frequency 1', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PEQ', paramId: 1, name: 'PEQ_FREQ2', displayLabel: 'Frequency 2', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PEQ', paramId: 2, name: 'PEQ_FREQ3', displayLabel: 'Frequency 3', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
@@ -1433,10 +1433,10 @@ export const FM9_PARAMS: readonly Param[] = [
   { family: 'PITCH', paramId: 12, name: 'PITCH_DETUNE2', displayLabel: 'Detune 2', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PITCH', paramId: 13, name: 'PITCH_DETUNE3', displayLabel: 'Detune 3', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PITCH', paramId: 14, name: 'PITCH_DETUNE4', displayLabel: 'Detune 4', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 15, name: 'PITCH_SHIFT1', displayLabel: 'Shift 1', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 16, name: 'PITCH_SHIFT2', displayLabel: 'Shift 2', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 17, name: 'PITCH_SHIFT3', displayLabel: 'Shift 3', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 18, name: 'PITCH_SHIFT4', displayLabel: 'Shift 4', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'PITCH', paramId: 15, name: 'PITCH_SHIFT1', displayLabel: 'Shift 1', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 16, name: 'PITCH_SHIFT2', displayLabel: 'Shift 2', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 17, name: 'PITCH_SHIFT3', displayLabel: 'Shift 3', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 18, name: 'PITCH_SHIFT4', displayLabel: 'Shift 4', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
   { family: 'PITCH', paramId: 19, name: 'PITCH_LEVEL1', displayLabel: 'Level 1', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PITCH', paramId: 20, name: 'PITCH_LEVEL2', displayLabel: 'Level 2', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PITCH', paramId: 21, name: 'PITCH_LEVEL3', displayLabel: 'Level 3', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
@@ -1495,22 +1495,22 @@ export const FM9_PARAMS: readonly Param[] = [
   { family: 'PITCH', paramId: 74, name: 'PITCH_NUMREPEATS', displayLabel: 'Repeats', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PITCH', paramId: 75, name: 'PITCH_ARPRUN', displayLabel: 'Run', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'PITCH', paramId: 76, name: 'PITCH_TEMPO', displayLabel: 'Tempo', unit: 'enum' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 77, name: 'PITCH_STEP1', displayLabel: 'Step 1 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 78, name: 'PITCH_STEP2', displayLabel: 'Step 2 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 79, name: 'PITCH_STEP3', displayLabel: 'Step 3 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 80, name: 'PITCH_STEP4', displayLabel: 'Step 4 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 81, name: 'PITCH_STEP5', displayLabel: 'Step 5 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 82, name: 'PITCH_STEP6', displayLabel: 'Step 6 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 83, name: 'PITCH_STEP7', displayLabel: 'Step 7 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 84, name: 'PITCH_STEP8', displayLabel: 'Step 8 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 85, name: 'PITCH_STEP9', displayLabel: 'Step 9 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 86, name: 'PITCH_STEP10', displayLabel: 'Step 10 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 87, name: 'PITCH_STEP11', displayLabel: 'Step 11 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 88, name: 'PITCH_STEP12', displayLabel: 'Step 12 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 89, name: 'PITCH_STEP13', displayLabel: 'Step 13 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 90, name: 'PITCH_STEP14', displayLabel: 'Step 14 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 91, name: 'PITCH_STEP15', displayLabel: 'Step 15 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PITCH', paramId: 92, name: 'PITCH_STEP16', displayLabel: 'Step 16 Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'PITCH', paramId: 77, name: 'PITCH_STEP1', displayLabel: 'Step 1 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 78, name: 'PITCH_STEP2', displayLabel: 'Step 2 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 79, name: 'PITCH_STEP3', displayLabel: 'Step 3 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 80, name: 'PITCH_STEP4', displayLabel: 'Step 4 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 81, name: 'PITCH_STEP5', displayLabel: 'Step 5 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 82, name: 'PITCH_STEP6', displayLabel: 'Step 6 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 83, name: 'PITCH_STEP7', displayLabel: 'Step 7 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 84, name: 'PITCH_STEP8', displayLabel: 'Step 8 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 85, name: 'PITCH_STEP9', displayLabel: 'Step 9 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 86, name: 'PITCH_STEP10', displayLabel: 'Step 10 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 87, name: 'PITCH_STEP11', displayLabel: 'Step 11 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 88, name: 'PITCH_STEP12', displayLabel: 'Step 12 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 89, name: 'PITCH_STEP13', displayLabel: 'Step 13 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 90, name: 'PITCH_STEP14', displayLabel: 'Step 14 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 91, name: 'PITCH_STEP15', displayLabel: 'Step 15 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PITCH', paramId: 92, name: 'PITCH_STEP16', displayLabel: 'Step 16 Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
   { family: 'PITCH', paramId: 93, name: 'PITCH_AMPSHAPE', displayLabel: 'Amplitude Shape', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'PITCH', paramId: 94, name: 'PITCH_AMPALPHA', displayLabel: 'Amplitude Alpha', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PITCH', paramId: 95, name: 'PITCH_PANSHAPE', displayLabel: 'Pan Shape', unit: 'enum' }, // inferred from AxeEdit III XML controlType
@@ -1534,14 +1534,14 @@ export const FM9_PARAMS: readonly Param[] = [
   { family: 'PITCH', paramId: 113, name: 'PITCH_THRESH', displayLabel: 'Trigger Threshold', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PLEX', paramId: 0, name: 'PLEX_BASETYPE', unit: 'unverified' },
   { family: 'PLEX', paramId: 1, name: 'PLEX_NUMDLINES', displayLabel: 'Number of Delays', unit: 'enum' }, // inferred from AxeEdit III XML controlType
-  { family: 'PLEX', paramId: 2, name: 'PLEX_SHIFT1', displayLabel: 'Shift 1', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PLEX', paramId: 3, name: 'PLEX_SHIFT2', displayLabel: 'Shift 2', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PLEX', paramId: 4, name: 'PLEX_SHIFT3', displayLabel: 'Shift 3', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PLEX', paramId: 5, name: 'PLEX_SHIFT4', displayLabel: 'Shift 4', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PLEX', paramId: 6, name: 'PLEX_SHIFT5', displayLabel: 'Shift 5', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PLEX', paramId: 7, name: 'PLEX_SHIFT6', displayLabel: 'Shift 6', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PLEX', paramId: 8, name: 'PLEX_SHIFT7', displayLabel: 'Shift 7', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PLEX', paramId: 9, name: 'PLEX_SHIFT8', displayLabel: 'Shift 8', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'PLEX', paramId: 2, name: 'PLEX_SHIFT1', displayLabel: 'Shift 1', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PLEX', paramId: 3, name: 'PLEX_SHIFT2', displayLabel: 'Shift 2', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PLEX', paramId: 4, name: 'PLEX_SHIFT3', displayLabel: 'Shift 3', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PLEX', paramId: 5, name: 'PLEX_SHIFT4', displayLabel: 'Shift 4', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PLEX', paramId: 6, name: 'PLEX_SHIFT5', displayLabel: 'Shift 5', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PLEX', paramId: 7, name: 'PLEX_SHIFT6', displayLabel: 'Shift 6', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PLEX', paramId: 8, name: 'PLEX_SHIFT7', displayLabel: 'Shift 7', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
+  { family: 'PLEX', paramId: 9, name: 'PLEX_SHIFT8', displayLabel: 'Shift 8', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
   { family: 'PLEX', paramId: 10, name: 'PLEX_DETUNE1', displayLabel: 'Detune 1', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PLEX', paramId: 11, name: 'PLEX_DETUNE2', displayLabel: 'Detune 2', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'PLEX', paramId: 12, name: 'PLEX_DETUNE3', displayLabel: 'Detune 3', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
@@ -1833,7 +1833,7 @@ export const FM9_PARAMS: readonly Param[] = [
   { family: 'SYNTH', paramId: 0, name: 'SYNTH_TYPE1', displayLabel: 'Type', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 1, name: 'SYNTH_FREQ1', displayLabel: 'Frequency', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 2, name: 'SYNTH_TRACK1', displayLabel: 'Track', unit: 'enum' }, // inferred from AxeEdit III XML controlType
-  { family: 'SYNTH', paramId: 3, name: 'SYNTH_SHIFT1', displayLabel: 'Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'SYNTH', paramId: 3, name: 'SYNTH_SHIFT1', displayLabel: 'Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
   { family: 'SYNTH', paramId: 4, name: 'SYNTH_DETUNE1', displayLabel: 'Tune', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 5, name: 'SYNTH_DUTY1', displayLabel: 'Duty Cycle', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 6, name: 'SYNTH_LEVEL1', displayLabel: 'Voice 1 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
@@ -1844,7 +1844,7 @@ export const FM9_PARAMS: readonly Param[] = [
   { family: 'SYNTH', paramId: 11, name: 'SYNTH_TYPE2', displayLabel: 'Type', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 12, name: 'SYNTH_FREQ2', displayLabel: 'Frequency', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 13, name: 'SYNTH_TRACK2', displayLabel: 'Track', unit: 'enum' }, // inferred from AxeEdit III XML controlType
-  { family: 'SYNTH', paramId: 14, name: 'SYNTH_SHIFT2', displayLabel: 'Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'SYNTH', paramId: 14, name: 'SYNTH_SHIFT2', displayLabel: 'Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
   { family: 'SYNTH', paramId: 15, name: 'SYNTH_DETUNE2', displayLabel: 'Tune', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 16, name: 'SYNTH_DUTY2', displayLabel: 'Duty Cycle', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 17, name: 'SYNTH_LEVEL2', displayLabel: 'Voice 2 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
@@ -1862,7 +1862,7 @@ export const FM9_PARAMS: readonly Param[] = [
   { family: 'SYNTH', paramId: 29, name: 'SYNTH_TYPE3', displayLabel: 'Type', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 30, name: 'SYNTH_FREQ3', displayLabel: 'Frequency', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 31, name: 'SYNTH_TRACK3', displayLabel: 'Track', unit: 'enum' }, // inferred from AxeEdit III XML controlType
-  { family: 'SYNTH', paramId: 32, name: 'SYNTH_SHIFT3', displayLabel: 'Shift', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'SYNTH', paramId: 32, name: 'SYNTH_SHIFT3', displayLabel: 'Shift', unit: 'semitones', displayMin: -24, displayMax: 24 }, // range -24..24 semitones: device-true (roundtrip capture, issue #6, 2026-06-18; matches the AM4-inferred REVERB_SHIFT range)
   { family: 'SYNTH', paramId: 33, name: 'SYNTH_DETUNE3', displayLabel: 'Tune', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 34, name: 'SYNTH_DUTY3', displayLabel: 'Duty Cycle', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'SYNTH', paramId: 35, name: 'SYNTH_LEVEL3', displayLabel: 'Voice 3 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType

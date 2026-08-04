@@ -77,6 +77,32 @@ export function circuitSlotForVoice(voice: string): number | undefined {
 }
 
 /**
+ * Resolve a per-step FLIP role to the pool slot it should play, honouring an
+ * optional custom track binding. This is the join that lets `condense_drums`
+ * and `drum_binding` COMPOSE instead of conflicting.
+ *
+ * Without a binding the pool is the canonical role-ordered kit, so this is
+ * exactly {@link circuitSlotForVoice} (byte-identical to the pre-composition
+ * behaviour). WITH a binding, the caller has declared the pool's layout
+ * themselves: the only slots whose contents are then known are the four the
+ * binding names, and each holds the sample for its track's own role
+ * (kick / snare / closed_hat / ride, at the caller's slots). So a flip to one
+ * of those four roles resolves to the BOUND slot (a ride flip on the hat track
+ * plays the caller's ride sample, wherever they put it), and a flip to any
+ * OTHER role (crash, tom, ride_bell…) returns undefined: the canonical layout
+ * no longer describes this pool, and guessing a slot from it would flip the
+ * step to whatever sample happens to live there, a silent misroute. The
+ * caller layer reports the skipped flip; the hit keeps the track's bound sound.
+ */
+export function slotForFlipRole(voice: string, binding?: readonly number[]): number | undefined {
+  const role = canonicalRole(voice);
+  if (role === undefined) return undefined;
+  if (binding === undefined) return CIRCUIT_VOICE_SLOT[role];
+  const track = DRUM_TRACK_BASE_VOICES.findIndex((v) => canonicalRole(v) === role);
+  return track >= 0 ? binding[track] : undefined;
+}
+
+/**
  * Resolve a per-track voice list (Drum 1..4 base voices) to a 4-slot binding via
  * the canonical role→slot map (any dialect accepted). Unknown voices throw
  * (author-time misconfig).

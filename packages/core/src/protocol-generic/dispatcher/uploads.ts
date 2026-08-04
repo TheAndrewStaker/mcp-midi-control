@@ -39,6 +39,14 @@ export interface UploadSampleArgs {
   slot?: number;
   /** Optional name shown on the device; defaults to the file's basename. */
   name?: string;
+  /**
+   * Destination microSD pack, 1-BASED as the device numbers it ("Pack 5" = 5).
+   * Circuit Tracks only; default 1. Write the SAME pack the project targets, or
+   * the project's drum bindings resolve against a different pool. Converted to
+   * the wire index at `openCtx`; see `DispatchCtx.pack`. A nonzero-pack sample
+   * write is hardware-confirmed (2026-07-27).
+   */
+  pack?: number;
   /** Overwrite gate: true to write a slot that may hold a sample (see SAFE-EDIT-WORKFLOW.md). */
   confirm_overwrite?: boolean;
 }
@@ -51,6 +59,12 @@ export interface UploadKitArgs {
   kit?: string;
   /** First device slot to fill, 1..64 (default 1). */
   start_slot?: number;
+  /**
+   * Destination microSD pack, 1-BASED ("Pack 5" = 5). Circuit Tracks only;
+   * default 1. Write the SAME pack the project targets. Nonzero-pack is
+   * hardware-confirmed (2026-07-27).
+   */
+  pack?: number;
   /** Overwrite gate: true to write slots that may hold samples (see SAFE-EDIT-WORKFLOW.md). */
   confirm_overwrite?: boolean;
 }
@@ -59,7 +73,7 @@ export interface UploadProjectArgs {
   port: string;
   /** Path to a prepared whole-project file (e.g. a Circuit Tracks .ncs). */
   file: string;
-  /** Destination project slot, 0..63 (device shows Project slot+1). */
+  /** Destination PROJECT, 1..64, numbered exactly as the device shows it. */
   slot: number;
   /**
    * Destination microSD pack, 1-BASED as the device numbers it ("Pack 5" = 5).
@@ -111,7 +125,7 @@ export async function executeUploadSample(args: UploadSampleArgs): Promise<Sampl
   }
   const wav = readWav(args.file);
   const filename = args.name ?? basename(args.file);
-  const ctx = openCtx(descriptor);
+  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
   // Convert the device-facing 1-based slot to the wire 0-based index here (once),
   // or pass undefined through for append-only pools.
   const wireSlot = args.slot === undefined ? undefined : args.slot - 1;
@@ -221,7 +235,7 @@ export async function executeUploadKit(args: UploadKitArgs): Promise<KitUploadOu
     filename: f,
   }));
 
-  const ctx = openCtx(descriptor);
+  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
   const result = await descriptor.writer.uploadKit(ctx, items, { confirmOverwrite: args.confirm_overwrite });
   if (dropped.length > 0) {
     const note = ` ${dropped.length} file(s) did not fit in the 64 slots and were SKIPPED: ${dropped.slice(0, 6).join(', ')}${dropped.length > 6 ? ', …' : ''}.`;
@@ -237,10 +251,18 @@ export async function executeUploadProject(args: UploadProjectArgs): Promise<Pro
     throw new DispatchError('capability_not_supported', descriptor.display_name,
       `${descriptor.display_name} has no project file-transfer; upload_project is a Circuit Tracks-family capability.`);
   }
-  if (!Number.isInteger(args.slot) || args.slot < 0 || args.slot > 63) {
+  // Project numbers are 1-BASED on the tool surface, exactly as the device shows
+  // them (Project 1..64) and exactly as `upload_sample`'s slot already worked in
+  // this same file. They were 0-based here, which is a display-first violation:
+  // the front panel says "Project 35" and the argument wanted 34. Worse, the
+  // on-card filename is 0-based too (`34_SESSION.ncs` IS device Project 35), so
+  // three numbering schemes were live at once and agents were being TOLD to use
+  // the wire one. Convert once, here, at the boundary.
+  if (!Number.isInteger(args.slot) || args.slot < 1 || args.slot > 64) {
     throw new DispatchError('bad_location', descriptor.display_name,
-      `slot must be 0..63 (project slot; device shows Project slot+1), got ${args.slot}.`);
+      `project must be 1..64, numbered exactly as the device shows it (Project 1..64), got ${args.slot}.`);
   }
+  const wireSlot = args.slot - 1;
   if (!isNcs(args.file)) {
     throw new DispatchError('bad_location', descriptor.display_name,
       `'${args.file}' is not a .ncs file. upload_project sends a prepared Circuit Tracks project verbatim.`);
@@ -263,11 +285,20 @@ export async function executeUploadProject(args: UploadProjectArgs): Promise<Pro
   // any destructive byte is sent (never overwrite a slot we couldn't back up).
   let backupNote = '';
   if (args.backup_first !== false && args.confirm_overwrite) {
-    const backup = await backupProjectSlot(descriptor, ctx, args.slot);
+    const backup = await backupProjectSlot(descriptor, ctx, args.slot);   // DEVICE numbering
     backupNote = ` ${backup.note}`;
+  } else if (args.backup_first === true && !args.confirm_overwrite) {
+    // The flag only ever fires on the overwrite path, because that is the only
+    // path that can destroy anything: without confirm_overwrite the writer
+    // reads the slot and REFUSES if it is occupied. That reasoning is sound but
+    // it was INVISIBLE, so a caller who asked for `backup_first: true` got
+    // silence and could reasonably believe a backup had been taken. Say it.
+    backupNote =
+      ' No pre-write backup was needed: without confirm_overwrite this call refuses rather than overwrites, ' +
+      'so an occupied project cannot be lost here. To take a backup deliberately, use backup_device or export_preset(location).';
   }
 
-  const outcome = await descriptor.writer.uploadProject(ctx, project, args.slot, { confirmOverwrite: args.confirm_overwrite });
+  const outcome = await descriptor.writer.uploadProject(ctx, project, wireSlot, { confirmOverwrite: args.confirm_overwrite });
   if (backupNote) outcome.info = `${outcome.info}${backupNote}`;
   return outcome;
 }

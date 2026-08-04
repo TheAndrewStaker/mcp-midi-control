@@ -56,6 +56,24 @@
  *                                          body envelope shape (2 + 3072 bytes).
  *      - case-xor-fold-hash                17-line XOR-fold over a known ushort
  *                                          array.
+ *      - case-device-reserialization-oracle
+ *                                          a METHOD primitive, which has no
+ *                                          bytes of its own: the case pins the
+ *                                          adjudication rule + the oracle-
+ *                                          admissibility predicate, the worked
+ *                                          case's arithmetic, and that the
+ *                                          cited probe scripts still carry the
+ *                                          oracle leg. This is the shape to
+ *                                          copy for future method entries.
+ *      - case-deferred-commit-readback-window
+ *                                          the second METHOD entry, copying that
+ *                                          shape: pins the "absence is only
+ *                                          conclusive after the commit window"
+ *                                          rule and its asymmetry, the measured
+ *                                          Circuit fixture, that the cited
+ *                                          verification loop still waits past
+ *                                          the window, and that the runtime
+ *                                          surface still carries the timing.
  *
  * Build-break policy: any structural gate fail or any functional case fail
  * exits with code 1. Wired into `npm run preflight` after `verify-msg`.
@@ -1871,6 +1889,8 @@ const FUNCTIONAL_CASES: Record<string, () => string | null> = {
   'ii-fn07-modifier-read': caseIiFn07ModifierRead,
   'vp4-fn01-swapped-septet-float32': caseVp4Fn01SwappedSeptetFloat32,
   'ii-grid-routing-cell-matrix': caseIiGridRoutingCellMatrix,
+  'device-reserialization-oracle': caseDeviceReserializationOracle,
+  'deferred-commit-readback-window': caseDeferredCommitReadbackWindow,
 };
 
 /**
@@ -2001,6 +2021,265 @@ function caseVp4Fn01SwappedSeptetFloat32(): string | null {
     if (got.length !== want.length || got.some((b, i) => b !== want[i])) {
       return `${label}: built ${got.map(h2).join(' ')} != captured ${wantHex}`;
     }
+  }
+  return null;
+}
+
+/**
+ * Device re-serialization oracle (METHOD primitive, so there are no bytes of
+ * its own to assert). The fixture pins four things instead:
+ *
+ *   1. the ADJUDICATION RULE, over all four rows of the entry's table plus the
+ *      inadmissible-oracle case, including the asymmetry (a CHANGED field under
+ *      test is conclusive with no oracle at all);
+ *   2. the ORACLE-ADMISSIBILITY predicate (live-composed, not authored by our
+ *      upload, not read-volatile, independent of the field under test);
+ *   3. the worked case's arithmetic (Circuit Tracks pack 5 project 42,
+ *      2026-07-27: gate lane 0x1a281 held 176 across an on-device Save while
+ *      the synth-1 mixer level at 0x2701c moved 0 -> 57 on its own);
+ *   4. that the cited probe scripts are reachable and still carry the oracle
+ *      leg. A refactor that drops it leaves the shipped implementation unable
+ *      to discharge the entry's claim.
+ *
+ * The gate-lane byte packing itself is NOT this primitive and is pinned
+ * separately, in both directions, by scripts/verify-circuit-ncs.ts.
+ */
+function caseDeviceReserializationOracle(): string | null {
+  // ---- Recorded fixture: the post-save read-back diffed against the pre-save
+  // backup. Two bytes in 160,780. Both images are 160,780-byte .ncs projects.
+  const IMAGE_BYTES = 160_780;
+  const GATE_OFF = 0x1a281;   // midi1 / pattern 1 / step 1 / slot 1 gate lane (field under test)
+  const MIXER_OFF = 0x2701c;  // synth 1 mixer level (the oracle)
+  // midi1 / pattern 1 note-step region: 32 steps x 28 bytes from noteStepBase.
+  const NOTE_REGION = { start: 0x1a27c, end: 0x1a5fc };
+  const WROTE = 176;          // 0x80 | 48: tie ON at a magnitude of 48 sixths = 8 steps
+  const START_STATE = 224;    // 0x80 | 96: the corpus-wide tie value the vehicle held
+  const diff: { off: number; before: number; after: number }[] = [
+    { off: GATE_OFF, before: START_STATE, after: 176 },
+    { off: MIXER_OFF, before: 0, after: 57 },
+  ];
+
+  // ---- 1. The adjudication rule.
+  type Verdict =
+    | 'device-authored'                 // field under test CHANGED: conclusive alone
+    | 'device-endorsed'                 // survived + oracle moved: re-serialization proven
+    | 'not-a-pure-echo'                 // survived + unwritten bytes moved, but no oracle
+    | 'inconclusive-echo-not-excluded'  // survived + nothing to distinguish an echo
+    | 'oracle-inadmissible';            // the named oracle does not qualify
+  interface OracleObservation { admissible: boolean; moved: boolean }
+  const adjudicate = (
+    fut: { written: number; readBack: number },
+    oracle: OracleObservation | undefined,
+    otherUnwrittenBytesMoved: boolean,
+  ): Verdict => {
+    if (fut.readBack !== fut.written) return 'device-authored';
+    if (oracle !== undefined && !oracle.admissible) return 'oracle-inadmissible';
+    if (oracle !== undefined && oracle.moved) return 'device-endorsed';
+    if (otherUnwrittenBytesMoved) return 'not-a-pure-echo';
+    return 'inconclusive-echo-not-excluded';
+  };
+  const rows: [string, Verdict, Verdict][] = [
+    // [label, got, want]
+    ['the real 2026-07-27 case',
+      adjudicate({ written: WROTE, readBack: 176 }, { admissible: true, moved: true }, true),
+      'device-endorsed'],
+    ['asymmetry: a CHANGED value needs no oracle',
+      adjudicate({ written: WROTE, readBack: 224 }, undefined, false),
+      'device-authored'],
+    ['asymmetry holds even when the oracle stayed put',
+      adjudicate({ written: WROTE, readBack: 224 }, { admissible: true, moved: false }, false),
+      'device-authored'],
+    ['asymmetry outranks oracle quality: a CHANGED value is conclusive even with a junk oracle',
+      adjudicate({ written: WROTE, readBack: 224 }, { admissible: false, moved: true }, true),
+      'device-authored'],
+    ['survived, oracle silent, other unwritten bytes moved',
+      adjudicate({ written: WROTE, readBack: 176 }, { admissible: true, moved: false }, true),
+      'not-a-pure-echo'],
+    ['survived, byte-identical image',
+      adjudicate({ written: WROTE, readBack: 176 }, { admissible: true, moved: false }, false),
+      'inconclusive-echo-not-excluded'],
+    ['survived, no oracle named at all',
+      adjudicate({ written: WROTE, readBack: 176 }, undefined, false),
+      'inconclusive-echo-not-excluded'],
+    ['survived, oracle moved but does not qualify',
+      adjudicate({ written: WROTE, readBack: 176 }, { admissible: false, moved: true }, true),
+      'oracle-inadmissible'],
+  ];
+  for (const [label, got, want] of rows) {
+    if (got !== want) return `adjudication row '${label}': got '${got}', expected '${want}'`;
+  }
+
+  // ---- 2. Oracle admissibility. Three hard criteria plus independence.
+  interface Candidate {
+    name: string;
+    offset: number;
+    composedFromLiveHardwareState: boolean;
+    authoredByOurUpload: boolean;
+    volatileAcrossReadsWithoutSave: boolean;
+  }
+  const admissible = (c: Candidate): boolean =>
+    c.composedFromLiveHardwareState &&
+    !c.authoredByOurUpload &&
+    !c.volatileAcrossReadsWithoutSave &&
+    c.offset !== GATE_OFF &&
+    !(c.offset >= NOTE_REGION.start && c.offset < NOTE_REGION.end);
+  const candidates: [Candidate, boolean][] = [
+    [{ name: 'synth 1 mixer level (physical fader position at save time)', offset: MIXER_OFF,
+      composedFromLiveHardwareState: true, authoredByOurUpload: false, volatileAcrossReadsWithoutSave: false }, true],
+    [{ name: 'the gate lane itself', offset: GATE_OFF,
+      composedFromLiveHardwareState: false, authoredByOurUpload: true, volatileAcrossReadsWithoutSave: false }, false],
+    [{ name: 'the project name we uploaded', offset: 0x00010,
+      composedFromLiveHardwareState: false, authoredByOurUpload: true, volatileAcrossReadsWithoutSave: false }, false],
+    [{ name: 'a read-volatile telemetry byte (AM4 dump cluster / VP4 blob float shape)', offset: 0x00140,
+      composedFromLiveHardwareState: true, authoredByOurUpload: false, volatileAcrossReadsWithoutSave: true }, false],
+    [{ name: 'a live-composed byte sitting INSIDE the region under test', offset: NOTE_REGION.start + 9,
+      composedFromLiveHardwareState: true, authoredByOurUpload: false, volatileAcrossReadsWithoutSave: false }, false],
+  ];
+  for (const [c, want] of candidates) {
+    if (admissible(c) !== want) {
+      return `oracle admissibility for '${c.name}': got ${admissible(c)}, expected ${want}`;
+    }
+  }
+
+  // ---- 3. The worked case's arithmetic.
+  const split = (b: number): { tie: boolean; sixths: number } => ({ tie: (b & 0x80) !== 0, sixths: b & 0x7f });
+  const join = (sixths: number, tie: boolean): number => (tie ? 0x80 : 0) | (sixths & 0x7f);
+  const under = split(176);
+  if (!under.tie || under.sixths !== 48) return `176 must split to {tie, 48 sixths}, got {${under.tie}, ${under.sixths}}`;
+  if (join(48, true) !== 176) return `join(48, tie) must be 176, got ${join(48, true)}`;
+  if (under.sixths / 6 !== 8) return `48 sixths must be 8 whole steps, got ${under.sixths / 6}`;
+  // The rival hypothesis ("a tie forces maximum length") predicts the device
+  // rewrites the magnitude to 96, i.e. byte 224. The observation falsifies it.
+  const coupledPrediction = join(96, true);
+  if (coupledPrediction !== 224) return `the coupled-hypothesis prediction must be 224, got ${coupledPrediction}`;
+  if (diff[0].after === coupledPrediction) return 'the observed read-back must differ from the coupled-hypothesis prediction';
+  if (diff[0].after !== WROTE) return `the field under test read back ${diff[0].after}, fixture says we wrote ${WROTE}`;
+  // The oracle was POISONED (uploaded as 0) and came back holding a live value.
+  if (diff[1].before !== 0) return 'the oracle must be poisoned to a value the live control cannot hold (0)';
+  if (diff[1].after === diff[1].before) return 'the oracle did not move, which would make the case inconclusive';
+  if (diff.length !== 2) return `the recorded diff is ${diff.length} bytes, expected exactly 2`;
+  for (const d of diff) {
+    if (d.off < 0 || d.off >= IMAGE_BYTES) return `diff offset 0x${d.off.toString(16)} outside the ${IMAGE_BYTES}-byte image`;
+  }
+  // Structural independence: the oracle is outside the region under test.
+  if (MIXER_OFF >= NOTE_REGION.start && MIXER_OFF < NOTE_REGION.end) {
+    return 'the oracle offset must lie outside the note-pattern region under test';
+  }
+  if (!(GATE_OFF >= NOTE_REGION.start && GATE_OFF < NOTE_REGION.end)) {
+    return `the field under test 0x${GATE_OFF.toString(16)} must lie inside its own declared region`;
+  }
+
+  // ---- 4. Cited artifacts reachable, and the oracle leg still present.
+  const arm = path.join(MCP_ROOT, 'scripts', 'circuit-tie-orthogonality-arm.ts');
+  const read = path.join(MCP_ROOT, 'scripts', 'circuit-tie-orthogonality-read.ts');
+  if (!existsSync(arm)) return `cited probe missing: ${arm}`;
+  if (!existsSync(read)) return `cited probe missing: ${read}`;
+  const readSrc = readFileSync(read, 'utf8');
+  if (!readSrc.includes('MIXER_SYNTH1_LEVEL')) {
+    return `${path.basename(read)} no longer references the oracle field (MIXER_SYNTH1_LEVEL); ` +
+      `without it the probe cannot tell re-serialization from an echo. Repoint the entry or restore the leg.`;
+  }
+  if (!readSrc.includes('--before')) {
+    return `${path.basename(read)} no longer implements the --before pre-save diff, which is the ` +
+      `method's load-bearing step. Repoint the entry or restore the leg.`;
+  }
+
+  // ---- Optional corroboration: the arm-time backup, when it is on this
+  // machine (timestamped and gitignored, so absence is not a failure). Its
+  // pre-state must match the fixture: the vehicle byte at 224, the oracle
+  // poisoned to 0.
+  const ncsRoot = path.join(MCP_ROOT, 'samples', 'circuit-ncs');
+  if (existsSync(ncsRoot)) {
+    const backupDir = readdirSync(ncsRoot).find((n) => n.startsWith('restore-tiegate-'));
+    if (backupDir !== undefined) {
+      const backup = path.join(ncsRoot, backupDir, 'pack5-proj42.ncs');
+      if (existsSync(backup)) {
+        const buf = readFileSync(backup);
+        if (buf.length !== IMAGE_BYTES) return `arm backup is ${buf.length} bytes, expected ${IMAGE_BYTES}`;
+        if (buf[GATE_OFF] !== START_STATE) {
+          return `arm backup gate lane reads ${buf[GATE_OFF]}, fixture start state is ${START_STATE}`;
+        }
+        if (buf[MIXER_OFF] !== 0) {
+          return `arm backup oracle byte reads ${buf[MIXER_OFF]}, fixture says it was poisoned to 0`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Deferred-commit read-back window: a device that commits stored state
+ * asynchronously has a window in which its own listing lags its own flash, so a
+ * read-back taken inside it reports a GOOD write as absent. Another METHOD
+ * primitive with no bytes of its own, so the case pins (1) the adjudication
+ * rule and its asymmetry, (2) the measured Circuit fixture, (3) that the cited
+ * verification loop still waits past the observed window, and (4) that the
+ * runtime surface an agent actually reads still carries the timing.
+ */
+function caseDeferredCommitReadbackWindow(): string | null {
+  // ---- Recorded fixture: Circuit Tracks, 2026-07-27, 63-slot clone onto Pack 2.
+  const FLUSH_MIN_MS = 6_000;   // observed commit window, measured from session CLOSE
+  const FLUSH_MAX_MS = 8_000;
+  const EARLY_READ_MS = 1_200;  // the read that lied
+  const EARLY_READ_ABSENT = 8;  // slots it called empty
+  const LATE_READ_ABSENT = 0;   // the same slots, re-read after the window
+
+  // ---- 1. The adjudication rule. Absence is a measurement only after the
+  // window; presence is conclusive at any time. That asymmetry IS the primitive.
+  type Verdict = 'confirmed-present' | 'confirmed-absent' | 'inadmissible-too-early';
+  const adjudicate = (elapsedMs: number, sawIt: boolean): Verdict => {
+    if (sawIt) return 'confirmed-present';
+    return elapsedMs > FLUSH_MAX_MS ? 'confirmed-absent' : 'inadmissible-too-early';
+  };
+  const rows: [string, Verdict, Verdict][] = [
+    ['the read that lied (absent at 1.2 s)', adjudicate(EARLY_READ_MS, false), 'inadmissible-too-early'],
+    ['absent at the window minimum is still too early', adjudicate(FLUSH_MIN_MS, false), 'inadmissible-too-early'],
+    ['absent exactly AT the maximum is still too early', adjudicate(FLUSH_MAX_MS, false), 'inadmissible-too-early'],
+    ['absent after the window is a real failure', adjudicate(FLUSH_MAX_MS + 1_000, false), 'confirmed-absent'],
+    ['asymmetry: PRESENT inside the window still counts', adjudicate(EARLY_READ_MS, true), 'confirmed-present'],
+    ['present after the window counts too', adjudicate(20_000, true), 'confirmed-present'],
+  ];
+  for (const [label, got, want] of rows) {
+    if (got !== want) return `adjudication '${label}': got '${got}', expected '${want}'`;
+  }
+
+  // ---- 2. The measured fixture is internally coherent.
+  if (!(FLUSH_MIN_MS < FLUSH_MAX_MS)) return 'the flush window must be an interval';
+  if (!(EARLY_READ_MS < FLUSH_MIN_MS)) {
+    return `the early read (${EARLY_READ_MS} ms) must fall INSIDE the window to explain the false negative`;
+  }
+  if (EARLY_READ_ABSENT <= LATE_READ_ABSENT) {
+    return 'the fixture must show the early read reporting MORE absent slots than the late read; ' +
+      'otherwise it is not evidence of a deferred commit';
+  }
+
+  // ---- 3. The cited verification loop still waits past the window. A refactor
+  // that trims the post-write wait back below the flush window reintroduces
+  // exactly the false negative this entry exists to prevent.
+  const clone = path.join(MCP_ROOT, 'scripts', 'circuit-clone-pack-samples.ts');
+  if (!existsSync(clone)) return `cited verification loop missing: ${clone}`;
+  const cloneSrc = readFileSync(clone, 'utf8');
+  // Every numeric literal inside a `sleep(...)` argument, so a ternary schedule
+  // (`sleep(attempt === 1 ? 9000 : 5000)`) is read as the two waits it is.
+  const waits = [...cloneSrc.matchAll(/\bsleep\(([^)]*)\)/g)]
+    .flatMap((m) => [...m[1].matchAll(/\d+/g)].map((n) => Number(n[0])));
+  const longest = waits.length > 0 ? Math.max(...waits) : 0;
+  if (longest < FLUSH_MAX_MS) {
+    return `${path.basename(clone)}'s longest post-write wait is ${longest} ms, below the observed ` +
+      `${FLUSH_MAX_MS} ms flush window. A verification read that early reports good writes as absent, ` +
+      `and on a device with no erase that conclusion costs a needless re-send.`;
+  }
+
+  // ---- 4. The runtime surface still warns. `capacity_note` is what an agent
+  // reads at the exact moment it is about to draw the wrong conclusion, so the
+  // timing living only in docs is not enough.
+  const dir = path.join(MCP_ROOT, 'packages', 'circuit-tracks', 'src', 'ncs', 'sampleDirectory.ts');
+  if (!existsSync(dir)) return `cited surface missing: ${dir}`;
+  const dirSrc = readFileSync(dir, 'utf8');
+  if (!/6-8\s*s/i.test(dirSrc)) {
+    return `${path.basename(dir)} no longer carries the ~6-8 s manifest-flush warning in its ` +
+      `capacity_note / docstring. That string is the only place a caller meets this hazard in-band.`;
   }
   return null;
 }

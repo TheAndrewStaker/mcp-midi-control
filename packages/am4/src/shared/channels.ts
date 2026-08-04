@@ -201,7 +201,15 @@ export function preflightApplicabilityWarning(blockDotName: string): string | un
     // Strictly gated AND we know the active type AND it doesn't match.
     const block = blockDotName.split('.')[0];
     const activeIndex = lastKnownType[block];
-    const expected = describeApplicability(blockDotName);
+    // `detail: 'full'` deliberately. The SUMMARY rendering exists to bound a
+    // long roster inside a per-row survey of a whole block; this message is
+    // about ONE param and has no size pressure, and its closing instruction is
+    // literally "set <block>.type to one of the applicable values". Rendered
+    // as a summary it ends with "call find_compatible_types for the exact
+    // list" and then tells the reader to pick from a list it did not print:
+    // on 25 AM4 params, including amp.master / bass / mid / treble, the
+    // warning named zero applicable types.
+    const expected = describeApplicability(blockDotName, { detail: 'full' });
     return (
         `WARNING: ${blockDotName} is type-gated and the active ${block}.type ` +
         `(wire index ${activeIndex}) is not in the applicable set. ${expected ?? ''} ` +

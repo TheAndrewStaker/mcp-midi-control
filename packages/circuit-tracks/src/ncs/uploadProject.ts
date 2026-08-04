@@ -15,7 +15,7 @@
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import { isHandleHealthy, withReconnectRetry } from '@mcp-midi-control/core/server-shared/handleHealth.js';
 import { recordAckOutcome } from '@mcp-midi-control/core/server-shared/connections.js';
-import { NCS_FILE_SIZE } from './format.js';
+import { NCS_FILE_SIZE, assertNcsStructure, checkNcsStructure } from './format.js';
 import {
   blockAddress, buildUploadFrames, crc32, fileId, makeMessage, msbDeinterleave, TRANSFER_CONSTANTS,
   type UploadFrame,
@@ -345,7 +345,14 @@ async function runFramePlanOnce(
 export async function uploadProject(
   conn: MidiConnection, ncs: Uint8Array, slot: number, opts: TransferOptions = {},
 ): Promise<UploadResult> {
-  if (ncs.length !== NCS_FILE_SIZE) throw new RangeError(`.ncs must be ${NCS_FILE_SIZE} bytes, got ${ncs.length}`);
+  // STRUCTURAL GATE, not just a length check. This is the last point before the
+  // bytes reach a device slot, and it is the point EVERY caller passes through
+  // (the MCP writer, the twenty one-off patch scripts, circuit-ncs-upload-file),
+  // so the gate belongs here rather than only in the tool pre-flight. The device
+  // has no erase: a slot written with a de-framed blob cannot be emptied, only
+  // overwritten from a good copy, and `card-backup-2026-07-27T16-49Z` proves such
+  // a blob can be sitting on disk wearing a `crc_verified: true` label.
+  assertNcsStructure(ncs, `refusing to upload to project slot ${slot}`);
   const frames = buildUploadFrames(ncs, slot, undefined, opts.pack ?? 0);
   const dataCount = frames.filter((f) => f.label.startsWith('write_data')).length;
   const r = await runUploadFramePlan(conn, frames, opts);
@@ -356,6 +363,22 @@ export interface DownloadResult {
   ok: boolean; slot: number; bytes?: Uint8Array; crcOk: boolean; error?: string;
   /** True when the slot held no readable project (no READ_INIT) — empty, not an error. */
   empty?: boolean;
+  /**
+   * Does the decoded file look like a project? INDEPENDENT of `crcOk`, and the
+   * two answer different questions: `crcOk` says the TRANSFER was faithful,
+   * `structureOk` says the THING transferred is a `.ncs`. The device's CRC32
+   * covers the encoded stream, so a de-framing failure comes back
+   * `crcOk: true, structureOk: false`, which is how a structurally corrupt
+   * project ended up in a backup manifest marked verified (2026-07-29).
+   *
+   * Reported, never enforced here: a read of a bad slot must still hand back the
+   * bytes (they are what the device holds, and a backup of them is evidence),
+   * and it is the CALLER that decides whether a non-project is fatal for what it
+   * is about to do. Undefined when there are no bytes to judge.
+   */
+  structureOk?: boolean;
+  /** One line per failed structural invariant. Empty when `structureOk`. */
+  structureFaults?: string[];
 }
 
 /**
@@ -476,7 +499,11 @@ async function downloadOnce(
       else { crcRx = nibblesToInt(m.slice(HDR.length + 1 + 8 + 3, HDR.length + 1 + 8 + 3 + 8)); break; }
     }
     const bytes = Uint8Array.from(raw.slice(0, NCS_FILE_SIZE));
-    return { ok: bytes.length === NCS_FILE_SIZE, slot, bytes, crcOk: crcRx === crc32(bytes) };
+    const structure = checkNcsStructure(bytes);
+    return {
+      ok: bytes.length === NCS_FILE_SIZE, slot, bytes, crcOk: crcRx === crc32(bytes),
+      structureOk: structure.ok, structureFaults: structure.faults,
+    };
     // Session close happens in `finally` — one close path for success and every
     // early-return/throw, so the device is never stranded mid-transfer.
   } finally {

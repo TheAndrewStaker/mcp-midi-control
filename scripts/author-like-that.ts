@@ -10,7 +10,7 @@
  * advances the song.
  *
  * Pipeline per section (PRODUCTION code path, micro-placement included):
- *   fetchSongsterrDrums → per-2-measure-window importSongsterrDrums (the
+ *   fetchSongsterrPart → per-2-measure-window importSongsterrDrums (the
  *   quantizer PLACES 32nds/triplets as Step.micro — B0-confirmed wire timing)
  *   → dedupe identical windows → compileToPlan (ch4 / GM+12 overrides, the
  *   SPD-SX route) → authorArrangementIntoProject (chain ≤8 / scenes ≤4 runs).
@@ -29,7 +29,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 import {
-  fetchSongsterrDrums,
+  fetchSongsterrPart,
   importSongsterrDrums,
   quantizedToGrids,
   compileToPlan,
@@ -78,7 +78,7 @@ function foldRepeats(order: number[]): number[] {
 async function main(): Promise<void> {
   mkdirSync(OUT_DIR, { recursive: true });
   console.log(`fetching Songsterr ${SONG} track "${TRACK}"…`);
-  const fetched = await fetchSongsterrDrums(SONG, { trackName: TRACK });
+  const fetched = await fetchSongsterrPart(SONG, { trackName: TRACK });
   // This tab writes its CLAP layer on percussion number 0 (not a GM number:
   // 75 hits, always stacked with the doubled snare on backbeats, plus
   // clap-only doubles at fill turnarounds). drumMap places it as the clap

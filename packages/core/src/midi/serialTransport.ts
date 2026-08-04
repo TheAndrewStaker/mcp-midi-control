@@ -16,7 +16,11 @@
  * (zero malformed frames across broadcast bursts), and the full read+write
  * probe session ran over THIS implementation. macOS lists the /dev/tty.*
  * node; we prefer the /dev/cu.* callout twin when present (tty.* can block
- * on carrier-detect on some setups).
+ * on carrier-detect on some setups). The LINUX leg is separately
+ * HARDWARE-CONFIRMED (FM3 fw 12.0, 2026-06-27, ForgeFX — an independent app
+ * built on this codec): discovery by Fractal VID at the `/dev/serial/by-id/`
+ * path, open, and a full read+write session over raw USB-serial, matching
+ * the discovery-by-vendor-id path this module already implements.
  *
  * ## Deferred open
  *

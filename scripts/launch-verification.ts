@@ -86,6 +86,36 @@ function extractText(callResult: unknown): string {
 function isError(r: unknown): boolean { return !!(r as { isError?: boolean })?.isError; }
 
 /**
+ * Every guidance topic an agent can REACH for a device, which is not the same
+ * as what `describe_device` puts inline.
+ *
+ * `describeDevice` withholds guidance topics when a response would otherwise
+ * cross the host's tool-result delivery cliff (50,000 chars, above which the
+ * model receives a stub and nothing else), names them in
+ * `agent_guidance_withheld.topics`, and serves them from
+ * `describe_device({port, guidance:[...]})`. Assertions about guidance CONTENT
+ * belong against the union: asserting only the inline half would pass on a
+ * device whose entire payload is being discarded by the host and fail on one
+ * being delivered correctly.
+ */
+async function reachableGuidance(
+  client: { callTool: (a: { name: string; arguments: Record<string, unknown> }) => Promise<unknown> },
+  port: string,
+  parsedDescribe: unknown,
+): Promise<Record<string, string>> {
+  const inline = (parsedDescribe as { agent_guidance?: Record<string, string> })?.agent_guidance ?? {};
+  const withheld = (parsedDescribe as { agent_guidance_withheld?: { topics?: string[] } })
+    ?.agent_guidance_withheld?.topics ?? [];
+  if (withheld.length === 0) return { ...inline };
+  const r = await client.callTool({ name: 'describe_device', arguments: { port, guidance: withheld } });
+  let fetched: Record<string, string> = {};
+  try {
+    fetched = (JSON.parse(extractText(r)) as { agent_guidance?: Record<string, string> }).agent_guidance ?? {};
+  } catch { fetched = {}; }
+  return { ...inline, ...fetched };
+}
+
+/**
  * True when the call returned either:
  *   - an MCP `isError: true` envelope (old throw-on-first-error path), OR
  *   - a structured `{ok: false, validation_errors: [...]}` body (BK-059
@@ -149,7 +179,14 @@ async function verifyAm4(client: Client): Promise<void> {
     // BK-103 (2026-07-15): mix-ready cab polish defaults must reach the agent,
     // reference the CORRECT registers (master_low_cut, NOT the old misnamed
     // cab_master_low_cut = proximity), and carry the amp-type reset trap.
-    const guidance = (parsed as { agent_guidance?: Record<string, string> })?.agent_guidance;
+    // Reachable, not necessarily inline: `describe_device` withholds guidance
+    // topics that would push the response over the host's delivery cliff (see
+    // the hydrasynth block below and DESCRIBE_DEVICE_BUDGET_CHARS). cab_polish
+    // is inline on the AM4 today, but it is also the 3.7 KB topic that pushed
+    // the AM4 over that cliff in the first place — so assert against the union
+    // of inline + withheld-and-fetched, or a future eviction reports here as
+    // "cab_polish present=false" and sends the next reader to the descriptor.
+    const guidance = await reachableGuidance(client, 'am4', parsed);
     record(
       'am4 agent_guidance carries cab_polish with correct keys + reset trap',
       !!guidance?.cab_polish &&
@@ -165,6 +202,46 @@ async function verifyAm4(client: Client): Promise<void> {
       !!guidance?.cab_polish && /dynacab_1_cab/.test(guidance.cab_polish),
       `cab_polish present=${!!guidance?.cab_polish}`,
     );
+
+    // The block_stack summary is match-time only (2026-08-02), the same triage
+    // the Hydrasynth archetypes got. `source_notes` and the per-slot refs that
+    // used to ride as `target_blocks` are authored on every recipe and served
+    // from describe_device({port, recipe:id}) — where `slots` is a strict
+    // superset of target_blocks. `params` was `{}` on every entry and is gone.
+    // Assert BOTH ENDS: absent from the summary, present on the detail. A
+    // one-sided assertion is how a move quietly becomes a deletion.
+    const stacks = ((parsed as { recipes?: Record<string, unknown>[] })?.recipes ?? [])
+      .filter((r2) => r2.family === 'block_stack');
+    record(
+      'am4 recipes[] block_stack entries are match-time only (no source_notes / target_blocks / params)',
+      stacks.length > 0 && stacks.every((r2) =>
+        r2.source_notes === undefined && r2.target_blocks === undefined && r2.params === undefined),
+      `${stacks.length} block_stack entr(ies), `
+      + `${stacks.filter((r2) => r2.source_notes !== undefined || r2.target_blocks !== undefined || r2.params !== undefined).length} carrying a post-choice field`,
+    );
+    record(
+      'am4 recipes[] block_stack entries keep the match-time fields (description + signature_params + slot_count)',
+      stacks.length > 0 && stacks.every((r2) =>
+        typeof r2.description === 'string' && (r2.description as string).length > 0
+        && typeof r2.slot_count === 'number'
+        && Object.keys((r2.signature_params ?? {}) as object).length > 0),
+      `${stacks.length} block_stack entr(ies)`,
+    );
+    const stackId = typeof stacks[0]?.id === 'string' ? (stacks[0].id as string) : undefined;
+    if (stackId !== undefined) {
+      const d = await client.callTool({ name: 'describe_device', arguments: { port: 'am4', recipe: stackId } });
+      let detail: { recipe?: Record<string, unknown> } = {};
+      try { detail = JSON.parse(extractText(d)) as { recipe?: Record<string, unknown> }; } catch { detail = {}; }
+      const slots = (detail.recipe?.slots ?? []) as { slot?: unknown; block_type?: unknown }[];
+      record(
+        `describe_device({recipe:"${stackId}"}) serves source_notes + the slot refs`,
+        typeof detail.recipe?.source_notes === 'string'
+          && (detail.recipe.source_notes as string).length > 0
+          && Array.isArray(slots) && slots.length > 0
+          && slots.every((s) => s.slot !== undefined && typeof s.block_type === 'string'),
+        extractText(d).slice(0, 200),
+      );
+    }
   }
 
   // get_param — amp.gain (works regardless of active type)
@@ -505,6 +582,49 @@ async function verifyAm4(client: Client): Promise<void> {
     const t = extractText(r);
     record(
       'set_param on placed block (amp.gain) has no phantom-param warning',
+      !isError(r) && !/validation_info/.test(t),
+      t.slice(0, 300),
+    );
+  }
+
+  // set_params (batch) carries the SAME BK-075 phantom-param pre-flight as
+  // set_param — until this fix, executeSetParams only ran the tempo-lock
+  // collectors, so a batch write to an unplaced block wire-acked with no
+  // hint the audible state never changed. Same switch_preset(Z3, discard)
+  // setup as the set_param case above, so 'phaser' is guaranteed-absent.
+  {
+    await client.callTool({
+      name: 'switch_preset',
+      arguments: { port: 'am4', location: 'Z3', on_active_preset_edited: 'discard' },
+    });
+    const r = await client.callTool({
+      name: 'set_params',
+      arguments: { port: 'am4', ops: [{ block: 'phaser', name: 'rate', value: 3 }] },
+    });
+    const t = extractText(r);
+    record(
+      'set_params on unplaced block (phaser) surfaces validation_info[] warning',
+      !isError(r) && /validation_info/.test(t)
+        && /"dropped_param"\s*:\s*"rate"/.test(t)
+        && /"level"\s*:\s*"warning"/.test(t),
+      t.slice(0, 500),
+    );
+  }
+
+  // set_params negative case, same shape as the set_param one above: a
+  // batch write to a PLACED block should not carry a phantom-param warning.
+  {
+    await client.callTool({
+      name: 'set_block',
+      arguments: { port: 'am4', slot: 1, block_type: 'amp' },
+    });
+    const r = await client.callTool({
+      name: 'set_params',
+      arguments: { port: 'am4', ops: [{ block: 'amp', name: 'gain', value: 5 }] },
+    });
+    const t = extractText(r);
+    record(
+      'set_params on placed block (amp.gain) has no phantom-param warning',
       !isError(r) && !/validation_info/.test(t),
       t.slice(0, 300),
     );
@@ -920,23 +1040,80 @@ async function verifyHydrasynth(client: Client): Promise<void> {
     let parsed: unknown;
     try { parsed = JSON.parse(t); } catch { parsed = undefined; }
     const caps = (parsed as { capabilities?: { preset_location_format?: string } })?.capabilities;
-    const guidance = (parsed as { agent_guidance?: Record<string, string> })?.agent_guidance;
     record('describe_device returns capabilities', !isError(r) && !!caps, t.slice(0, 200));
+
+    // Guidance is REACHABLE from the tool surface, not necessarily inline.
+    // `describe_device` withholds guidance topics when a response would cross
+    // the host's tool-result delivery cliff (50,000 chars, above which the
+    // model gets a stub and nothing else) and serves them from
+    // `describe_device({port, guidance:[...]})`. The Hydrasynth is the device
+    // that needs this most: 93% of its payload is recipes[], so ALL of its
+    // guidance is currently withheld. Merge both paths and assert against the
+    // union, or this check passes on a device whose whole payload is being
+    // discarded and fails on one that is being delivered correctly.
+    const withheld = (parsed as { agent_guidance_withheld?: { topics?: string[] } })
+      ?.agent_guidance_withheld?.topics ?? [];
+    const guidance = await reachableGuidance(client, 'hydrasynth', parsed);
+    if (withheld.length > 0) {
+      record(
+        'withheld guidance topics are all served by describe_device({guidance:[...]})',
+        withheld.every((k) => typeof guidance[k] === 'string' && guidance[k].length > 0),
+        `withheld=[${withheld.join(', ')}] reachable=[${Object.keys(guidance).join(', ')}]`,
+      );
+    }
     record(
       'agent_guidance carries audition_slot_honesty (Session 73 fix)',
-      !!guidance?.audition_slot_honesty && /working buffer/i.test(guidance.audition_slot_honesty),
-      `present=${!!guidance?.audition_slot_honesty}`,
+      !!guidance.audition_slot_honesty && /working buffer/i.test(guidance.audition_slot_honesty),
+      `present=${!!guidance.audition_slot_honesty}`,
     );
     record(
       'agent_guidance carries envelope_time_units (Session 73 fix)',
-      !!guidance?.envelope_time_units && /knob units|not.*(milliseconds|seconds)/i.test(guidance.envelope_time_units),
-      `present=${!!guidance?.envelope_time_units}`,
+      !!guidance.envelope_time_units && /knob units|not.*(milliseconds|seconds)/i.test(guidance.envelope_time_units),
+      `present=${!!guidance.envelope_time_units}`,
     );
     record(
       'agent_guidance carries device_precondition (NRPN TX/RX hint)',
-      !!guidance?.device_precondition && /NRPN/i.test(guidance.device_precondition),
-      `present=${!!guidance?.device_precondition}`,
+      !!guidance.device_precondition && /NRPN/i.test(guidance.device_precondition),
+      `present=${!!guidance.device_precondition}`,
     );
+
+    // The patch-archetype summary is match-time only: `source_notes` is
+    // authored on every recipe but served from the detail path, because at 687
+    // chars x 36 it was half this device's entire response and it answers a
+    // question about a recipe the agent has ALREADY picked. Assert BOTH ends —
+    // absent from the summary, present on the detail — or the pair silently
+    // becomes "deleted" the next time someone edits one side.
+    const summary = (parsed as { recipes?: Record<string, unknown>[] })?.recipes ?? [];
+    record(
+      'hydrasynth recipes[] omits source_notes (match-time surface only)',
+      summary.length > 0 && summary.every((r) => r.source_notes === undefined),
+      `${summary.length} recipe(s), ${summary.filter((r) => r.source_notes !== undefined).length} carrying source_notes`,
+    );
+    const firstRecipeId = typeof summary[0]?.id === 'string' ? (summary[0].id as string) : undefined;
+    if (firstRecipeId !== undefined) {
+      const d = await client.callTool({ name: 'describe_device', arguments: { port: 'hydrasynth', recipe: firstRecipeId } });
+      let detail: { recipe?: Record<string, unknown> } = {};
+      try { detail = JSON.parse(extractText(d)) as { recipe?: Record<string, unknown> }; } catch { detail = {}; }
+      record(
+        `describe_device({recipe:"${firstRecipeId}"}) serves source_notes + full_params`,
+        typeof detail.recipe?.source_notes === 'string'
+          && (detail.recipe.source_notes as string).length > 0
+          && Object.keys((detail.recipe.full_params ?? {}) as object).length > 0,
+        extractText(d).slice(0, 200),
+      );
+    }
+    // An unknown id must hand back the ids that DO exist. A bare "not found"
+    // on a recipe id is how an agent ends up hand-authoring the tone.
+    {
+      const d = await client.callTool({ name: 'describe_device', arguments: { port: 'hydrasynth', recipe: 'no_such_recipe_id' } });
+      let miss: { available_recipe_ids?: string[] } = {};
+      try { miss = JSON.parse(extractText(d)) as { available_recipe_ids?: string[] }; } catch { miss = {}; }
+      record(
+        'describe_device({recipe:<unknown>}) lists the available ids',
+        Array.isArray(miss.available_recipe_ids) && miss.available_recipe_ids.length > 0,
+        extractText(d).slice(0, 200),
+      );
+    }
   }
 
   // hydra_get_active_patch removed; Hydrasynth has no SysEx for reading

@@ -13,7 +13,7 @@
  * reply: source flag, 20-char name, and the 4×12 effect grid. Per-parameter
  * VALUES are NOT included — the spec leaves the dump's ~1790-byte parameter
  * region "undetermined", so the snapshot honestly says so instead of guessing
- * (one community capture closes it; captures-axe-fx-gen1.md C1). Bank-C
+ * (one community capture closes it; docs/contributing/devices/axe-fx-gen1.md ask CAPTURE-1). Bank-C
  * stored requests (≥ 256) refuse: the spec flags their request byte as OR'd
  * with an unknown value.
  *
@@ -185,7 +185,7 @@ function resolvePresetNumber(loc: string | number): number {
       DEVICE_LABEL,
       `Stored-preset reads are pinned only for presets 0..255 (banks A/B); ${preset} is in bank C. ` +
         `The published gen-1 spec flags bank-C request bytes as OR'd with an unknown value, so bank-C ` +
-        `requests need one community capture to decode (captures-axe-fx-gen1.md, C1). ` +
+        `requests need one community capture to decode (docs/contributing/devices/axe-fx-gen1.md, ask CAPTURE-1). ` +
         `Workaround: recall the preset on the device (send_program_change + bank select), then read the edit buffer.`,
     );
   }
@@ -226,7 +226,7 @@ async function getPresetSnapshot(ctx: DispatchCtx, options?: GetPresetOptions): 
       'no_ack',
       DEVICE_LABEL,
       `Malformed MIDI_PATCH_DUMP from ${DEVICE_LABEL}: ${err instanceof Error ? err.message : String(err)} ` +
-        `A capture of this frame would be valuable — see captures-axe-fx-gen1.md (C1).`,
+        `A capture of this frame would be valuable: see docs/contributing/devices/axe-fx-gen1.md (ask CAPTURE-1).`,
     );
   }
 
@@ -253,7 +253,7 @@ async function getPresetSnapshot(ctx: DispatchCtx, options?: GetPresetOptions): 
       `(${dump.paramBlockBytes} bytes in this dump) is not pinned by the published spec ("undetermined — ` +
       'assume parameter and modifier state"), so it is not decoded — a guess could return wrong values. ' +
       'Name + block layout only. Use get_param / get_params for live values. One community capture closes ' +
-      'the gap (captures-axe-fx-gen1.md, C1).',
+      'the gap (docs/contributing/devices/axe-fx-gen1.md, ask DONATE-1).',
     'gen-1 patch dump is community-beta, decoded from the published spec, hardware-unverified: confirm the ' +
       'name and block list against the front panel and report the result.',
   ];

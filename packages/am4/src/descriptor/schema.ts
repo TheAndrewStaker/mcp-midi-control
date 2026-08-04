@@ -133,7 +133,13 @@ export function buildBlocks(): Record<string, BlockSchema> {
     // `list_params` path so the LLM can avoid writing type-gated
     // params on incompatible types.
     const bridge = resolveBridge(block, name);
+    // Two renderings of the same gate. The match-time one goes in every
+    // block-scoped row; the lossless one is served only when the agent asks
+    // for THIS param by name. On `amp.master` they are 203 and 1,496 chars
+    // respectively, and the block has 217 params. That is how the old
+    // single-rendering path reached 67,731 chars and stopped being delivered.
     const applicability = describeApplicability(key);
+    const applicabilityFull = describeApplicability(key, { detail: 'full' });
     // `display_name` is the friendly label the LLM sees in list_params /
     // describe_device output. Priority order:
     //   1. `param.displayLabel` — hand-set in params.ts from the
@@ -157,6 +163,7 @@ export function buildBlocks(): Record<string, BlockSchema> {
       host_label: bridge?.canonicalLabel,
       parameter_name: bridge?.parameterName,
       applies_only_when: applicability,
+      applies_only_when_full: applicabilityFull === applicability ? undefined : applicabilityFull,
     };
   }
   // Per-block aliases: PARAM_ALIASES has fully-qualified keys

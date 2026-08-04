@@ -38,7 +38,7 @@ const GATE = 3;
 const VEL = 100;
 
 function slot(note: number, delay: number): NoteSlot {
-  return { note, gate: GATE, delay, velocity: VEL };
+  return { note, gate: GATE, tie: false, delay, velocity: VEL };
 }
 
 function setProjectName(buf: Uint8Array, name: string): void {

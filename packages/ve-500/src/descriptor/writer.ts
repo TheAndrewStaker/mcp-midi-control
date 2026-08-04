@@ -11,9 +11,12 @@
  *
  * Wired: set_param / set_params (live edit, enum names accepted), set_bypass
  * (a section's on/off switch), switch_preset (recall USER memories U01–U99 via a
- * BARE Program Change, hardware-confirmed; recall PRESETS P01–P50 via a DT1
+ * BARE Program Change, hardware-confirmed, GATED on a pre-flight read of the
+ * unit's MIDI Program Change IN switch because the unit ignores the recall while
+ * that is off and never says so; recall PRESETS P01–P50 via a DT1
  * write to the "Current Patch Number" register, decoded from the editor's own
- * patch-switch handler (see `patch.ts`); community-beta/hardware-unverified),
+ * patch-switch handler (see `patch.ts`); community-beta/hardware-unverified,
+ * and deliberately NOT gated because a register write does not depend on PC IN),
  * applyPreset (build a whole patch into the active buffer), and savePreset
  * (persist the active buffer to a user memory). savePreset's store sequence: a
  * bare store command was HARDWARE-REFUTED on 2026-07-08 (did not persist a
@@ -38,11 +41,14 @@ import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js'
 
 import {
   buildCommMode,
+  buildGetParam as buildGetBytes,
   buildSavePreset as buildSaveBytes,
   buildSetParam as buildSetBytes,
   buildSetPatchName,
   buildSwitchPatch,
+  decodeParamReply,
   findParam,
+  paramReplyMatcher,
   saveAckMatcher,
 } from 'roland-midi/ve-500';
 
@@ -52,11 +58,82 @@ const BETA_NOTE =
   '(set_param / get_param / set_bypass / user-memory recall / save_preset are hardware-confirmed; ' +
   'factory preset P01-P50 recall is newly wired via a SysEx write, community-beta / hardware-unverified.)';
 
-/** VE-500 default MIDI receive channel (1, i.e. 0-indexed 0). */
-const RX_CHANNEL = 0;
+/**
+ * VE-500 MIDI receive channel for Program Change, 0-indexed. Defaults to
+ * channel 1; override with `MCP_VE500_RX_CHANNEL` (1..16).
+ *
+ * This was hardcoded, which quietly blocked the unit's two most interesting
+ * vocal features. The VOCODER block carries no channel parameter of its own, so
+ * it follows the GLOBAL `system_midi.midi_rx_channel`. Moving that global off
+ * channel 1 (which you must do to isolate a vocal-target melody from the rest of
+ * a sequencer's stream, or the vocoder chases drum and bass notes) then left
+ * `switch_preset` transmitting on a channel the device was no longer listening
+ * to, so preset recall silently stopped working. Making it configurable is what
+ * lets both coexist. Matches the per-device channel-env pattern already used by
+ * the Arturia and Boss RC descriptors.
+ *
+ * PITCH CORRECT's `M>PCR` is unaffected either way: it has its OWN channel
+ * setting (Ch.1-16 / RX / OFF), so it can be pinned independently of the global.
+ */
+function rxChannel(): number {
+  const raw = process.env.MCP_VE500_RX_CHANNEL;
+  const n = raw === undefined ? 1 : Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 16) return 0;
+  return n - 1;
+}
 
 /** Wait window for the device's STORE-command echo (0x7F000104 DT1 reply). */
 const SAVE_ACK_TIMEOUT_MS = 300;
+
+/**
+ * Wait window for the PC-IN pre-flight read. Same 300ms as the reader's ordinary
+ * get_param window: a VE-500 answers an RQ1 in tens of milliseconds, so this is
+ * the "device is not talking" threshold, not a latency budget.
+ */
+const PC_IN_READ_TIMEOUT_MS = 300;
+
+/** What the pre-flight read of `system_midi.midi_program_change_in` found. */
+type PcInState = 'on' | 'off' | 'unknown';
+
+/**
+ * Read the unit's MIDI Program Change IN switch before recalling a user memory.
+ *
+ * WHY THIS READ EXISTS. U01-U99 recall is a bare Program Change and the VE-500
+ * acts on one only when this global is ON. It is a real setting people turn off
+ * on purpose (the maintainer did, to stop a stray Program Change on a shared bus
+ * recalling a patch mid-song). With it off, the Program Change goes out, nothing
+ * on the device moves, and nothing comes back to say so, because a Program
+ * Change is never echoed. So `switch_preset` reported a clean success while the
+ * patch did not change. That is the worst failure shape available: healthy
+ * everywhere, wrong on the device.
+ *
+ * WHY IT IS AFFORDABLE. One RQ1 -> DT1 round trip, which this device answers in
+ * roughly 50ms, against a per-call budget of about 200ms. `switch_preset` was a
+ * single fire-and-forget message, so this roughly doubles a very small number
+ * and stays well inside the budget.
+ *
+ * WHY IT IS NOT CACHED. Caching would need an invalidation story, and the two
+ * events that change this value are (a) a `set_param` through this server, which
+ * we could hook, and (b) somebody pressing buttons on the front panel, which we
+ * cannot see at all. A cache that misses (b) hands back a stale "PC IN is on"
+ * and re-opens the exact silent failure this read closes, only now with the
+ * server's own confidence behind it. Fifty milliseconds is not worth that.
+ */
+async function readPcIn(ctx: DispatchCtx): Promise<PcInState> {
+  const def = findParam('system_midi', 'midi_program_change_in');
+  if (!def) return 'unknown';
+  // Subscribe before sending so the reply cannot outrace the listener.
+  const respPromise = ctx.conn
+    .receiveSysExMatching(paramReplyMatcher(def), PC_IN_READ_TIMEOUT_MS)
+    .catch(() => undefined);
+  ctx.conn.send(buildGetBytes(def));
+  const resp = await respPromise;
+  if (resp === undefined) return 'unknown';
+  const value = decodeParamReply(def, resp);
+  if (value === 1) return 'on';
+  if (value === 0) return 'off';
+  return 'unknown';
+}
 
 function resolve(block: string, name: string) {
   const def = findParam(block, name);
@@ -97,6 +174,12 @@ interface PatchTarget {
  * Preset recall (2026-07-09): NOT a Program Change at all. Decoded from the
  * editor's `preset_patch.js` (see `patch.ts` for the full citation); see
  * `switchPreset` below for the SysEx write this resolves into.
+ *
+ * The kind is what decides whether the PC-IN pre-flight applies. USER recall
+ * rides a Program Change and is gated on it; PRESET recall is a SysEx register
+ * write that the unit obeys regardless, so gating it would refuse a path that
+ * works. Keep that asymmetry: it is the difference between the two mechanisms,
+ * not a policy choice.
  */
 function resolvePatchTarget(location: LocationRef): PatchTarget {
   if (typeof location === 'number') {
@@ -201,16 +284,61 @@ export const writer: DeviceWriter = {
     const target = resolvePatchTarget(location);
 
     if (target.kind === 'user') {
+      // PRE-FLIGHT: the whole recall depends on a device setting that can be off,
+      // and a Program Change is never echoed, so without this read a recall onto
+      // a unit with PC IN off reports success and does nothing. See readPcIn.
+      const pcIn = await readPcIn(ctx);
+      if (pcIn === 'off') {
+        throw new DispatchError(
+          'capability_not_supported',
+          LABEL,
+          `Cannot recall ${target.label} over MIDI: this ${LABEL} has MIDI Program Change IN switched ` +
+            `OFF (system_midi.midi_program_change_in = 0). User memories U01-U99 recall by a bare ` +
+            `Program Change, and the unit ignores one while that setting is off, so sending it would ` +
+            `report success and change nothing on the device. Two ways forward, and which one is right ` +
+            `is your call: (1) select ${target.label} on the VE-500's front panel, which always works ` +
+            `and changes no settings; or (2) set system_midi.midi_program_change_in to 1 first, which ` +
+            `re-enables MIDI recall and also re-exposes the unit to any stray Program Change on the bus ` +
+            `recalling a patch mid-song, which is usually why it was turned off. This server will not ` +
+            `flip that setting for you. Factory presets P01-P50 are unaffected either way: they recall ` +
+            `by a SysEx register write, not a Program Change.`,
+          {
+            retry_action:
+              `Select ${target.label} on the front panel, or, if you accept stray Program Changes on ` +
+              `the bus recalling patches, call set_param({port, block:"system_midi", ` +
+              `name:"midi_program_change_in", value:1}) and then retry the recall.`,
+          },
+        );
+      }
+
       // BARE Program Change, NO Bank Select. Hardware-confirmed (2026-06-28):
       // the VE-500 ignores the recall if a Bank Select precedes the PC.
-      ctx.conn.send([0xc0 | RX_CHANNEL, target.n]);
+      const rx = rxChannel();
+      ctx.conn.send([0xc0 | rx, target.n]);
+      // 'unknown' means the pre-flight read got no answer. Send anyway rather
+      // than refuse: a read timeout is not evidence the setting is off, and
+      // turning an unrelated transport hiccup into a hard block would break a
+      // recall path that works. Say plainly that it went out unverified.
+      const unverified = pcIn === 'unknown';
       return {
         op: 'switch_preset',
         target: target.label,
         acked: true,
+        ...(unverified
+          ? {
+              warning:
+                `PC IN could not be read before sending (no reply within ${PC_IN_READ_TIMEOUT_MS}ms), ` +
+                `so ${target.label} was recalled UNVERIFIED. If this unit has MIDI Program Change IN ` +
+                `switched off it ignored the recall silently. Confirm on the front panel.`,
+            }
+          : {}),
         info:
-          `Recalled ${target.label} on ${LABEL} (Program Change ${target.n} on MIDI ch ${RX_CHANNEL + 1}; ` +
-          `requires PC IN = ON and RX CH = OMNI/Ch.1 on the device). User-memory recall is hardware-confirmed; ` +
+          `Recalled ${target.label} on ${LABEL} (Program Change ${target.n} on MIDI ch ${rx + 1}; ` +
+          `requires PC IN = ON and RX CH = OMNI/Ch.1 on the device). ` +
+          (unverified
+            ? ''
+            : 'PC IN was read as ON before sending, so the precondition is confirmed for this call. ') +
+          `User-memory recall is hardware-confirmed; ` +
           `PC is not echoed, so the front panel is ground truth. ${BETA_NOTE}`,
       };
     }

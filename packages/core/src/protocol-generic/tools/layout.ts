@@ -24,6 +24,7 @@ export function registerLayoutTools(server: McpServer): void {
   const blockTypeArg = blockTypeSchema();
 
   server.registerTool('set_block', {
+    title: 'Place Block',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: 'Place ONE block, or clear a slot (block_type "none"), on a single preset. Surgical primitive. For grid devices (Axe-Fx II / III / FM3 / FM9) or ANY multi-block build, use apply_preset, NOT set_block: set_block does not cable cells, propagate routing, or terminate the chain at the device output, whereas apply_preset auto-cables row 2 and terminates at col 12. On grid, set_block is safe only for post-apply_preset cleanup (e.g. swapping one cell\'s block_type). 60% of agent set_block failures were reaching for it on a grid device when apply_preset was right. block_type is a registered name ("amp", "drive", "reverb"); see describe_device.block_types. To silence without removing, use set_bypass.',
     inputSchema: {
@@ -53,6 +54,7 @@ export function registerLayoutTools(server: McpServer): void {
   });
 
   server.registerTool('set_bypass', {
+    title: 'Bypass Block',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
       'Silence (bypassed=true) or activate (bypassed=false) a block on the currently-active scene. Params stay intact; the block just passes signal through.',

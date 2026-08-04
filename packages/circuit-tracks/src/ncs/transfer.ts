@@ -26,9 +26,24 @@ const SUBCMD = {
   WRITE_DATA: 0x02,
   WRITE_FINISH: 0x03,
   ACK: 0x04,
+  /** Device -> host: the EMPTY-slot record, the negative answer to QUERY_EXISTS. */
+  EMPTY_RECORD: 0x05,
   SET_FILENAME: 0x07,
+  /**
+   * DELETE a stored file, `03 08 <fileType> <pack> <slot>`. Destructive and
+   * IMMEDIATE: the device drops the file and ACKs. See `fileDelete.ts` for the
+   * capture evidence and for the read-before-delete discipline every caller owes.
+   */
+  DELETE_FILE: 0x08,
   QUERY_INFO: 0x09,
   DIR_CONTROL: 0x0b,
+  /**
+   * Ask whether a slot holds a file, `03 0d <fileType> <pack> <slot>`. Read-only.
+   * The device answers with its own CRC32 when the slot is occupied and with the
+   * EMPTY_RECORD when it is free, so this is an occupancy oracle INDEPENDENT of
+   * the directory listing. See `fileDelete.ts`.
+   */
+  QUERY_EXISTS: 0x0d,
   OPEN_SESSION: 0x40,
   CLOSE_SESSION: 0x41,
 } as const;

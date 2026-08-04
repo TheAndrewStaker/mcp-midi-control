@@ -149,7 +149,7 @@ mismatch, not merely "untested." Every direct single-write op (`set_param`,
 `set_params`, `set_block`, `set_bypass`, `switch_preset`, `switch_scene`,
 `save_preset`, `rename`, plus every read) IS correctly addressed with
 `{ modelId: 0x08 }` and ships community-beta. See
-[`docs/capture-guides/testing-ax8.md`](../../capture-guides/testing-ax8.md)
+`docs/contributing/devices/ax8.md` (in the mcp-midi-control repo)
 for the community verification ask.
 
 ## 2. Source documents and where each fact comes from

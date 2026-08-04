@@ -268,46 +268,91 @@ export interface FullPad {
   subWv?: number;
 }
 
-/** Resolve one FullPad (+ its pad index, for the default note) to a ResolvedPad. */
-export function resolveFullPad(p: FullPad, padIndex: number): ResolvedPad {
-  const note = p.note ?? 60 + padIndex;
+/** The kit already at a location, for a re-author to inherit from (see buildFullKit). */
+export interface FullKitBase {
+  header: KitHeader;
+  subnm: readonly number[];
+  pads: readonly ResolvedPad[];
+}
+
+export interface BuildFullKitOptions {
+  /**
+   * The kit CURRENTLY at this location. Every per-pad field the caller does not
+   * name — level, note, mute group, pan, dynamics, voice — plus the Level/Tempo/
+   * FX header is inherited from it, so a re-author changes only what it was
+   * asked to change. Omit for a fresh kit (device defaults apply).
+   */
+  base?: FullKitBase;
+  /**
+   * Device-convention <NoteNum> for pad i, used ONLY when neither the pad nor
+   * `base` names one (i.e. on a fresh kit). Default: 60 + padIndex.
+   */
+  defaultNote?: (padIndex: number) => number;
+}
+
+/**
+ * Resolve one FullPad to a ResolvedPad. Precedence per field: what the CALLER
+ * named wins; else what `base` (the pad on the device now) holds; else the fresh-
+ * kit default. That precedence is what stops a re-author from silently flattening
+ * levels/mute groups the caller never mentioned — see buildFullKit.
+ */
+export function resolveFullPad(p: FullPad, padIndex: number, base?: ResolvedPad, defaultNote?: number): ResolvedPad {
+  const note = p.note ?? base?.noteNum ?? defaultNote ?? 60 + padIndex;
   if (!Number.isInteger(note) || note < 0 || note > 127) throw new Error(`pad ${padIndex + 1} note must be 0..127, got ${note}`);
-  const muteGrp = p.muteGroup ?? 0;
+  const muteGrp = p.muteGroup ?? base?.muteGrp ?? 0;
   if (!Number.isInteger(muteGrp) || muteGrp < 0 || muteGrp > 9) throw new Error(`pad ${padIndex + 1} mute group must be 0..9, got ${muteGrp}`);
-  const wvLevel = p.level ?? PAD_DEFAULTS.wvLevel;
+  const wvLevel = p.level ?? base?.wvLevel ?? PAD_DEFAULTS.wvLevel;
   if (!Number.isInteger(wvLevel) || wvLevel < 0 || wvLevel > 127) throw new Error(`pad ${padIndex + 1} level must be 0..127, got ${wvLevel}`);
+
+  // `loop` drives four fields at once (PlayMode/Loop/TrigType + the MONO voice
+  // default). Naming it re-derives all four — it changes the pad's nature, so the
+  // loop-pad signature must come out coherent rather than half-inherited. Leaving
+  // it unnamed inherits the pad exactly as it stands.
+  const loopNamed = p.loop !== undefined;
+  const loop = p.loop ?? base?.loop === 1;
+  const loopFields = loopNamed || !base
+    ? (loop
+      ? { playMode: 2, loop: 1, trigType: 1 }
+      : { playMode: PAD_DEFAULTS.playMode, loop: PAD_DEFAULTS.loop, trigType: PAD_DEFAULTS.trigType })
+    : { playMode: base.playMode, loop: base.loop, trigType: base.trigType };
   // A loop pad defaults to MONO (a re-trigger restarts the bed rather than
   // stacking overlapping copies) — matching the corpus, where every loop pad is
   // VoiceAsgn 0. An explicit `voice` still wins for the rare poly-loop case.
-  const loop = p.loop ?? false;
-  const voice = p.voice ?? (loop ? 'mono' : 'poly');
+  const voice = p.voice ?? (loopNamed || !base ? (loop ? 'mono' : 'poly') : (base.voiceAsgn === 0 ? 'mono' : 'poly'));
+
+  const inherited: Omit<ResolvedPad, 'wv' | 'noteNum'> = base ?? PAD_DEFAULTS;
   return {
-    ...PAD_DEFAULTS,
+    ...inherited,
+    ...loopFields,
     wv: Math.trunc(p.wv),
     noteNum: note,
     muteGrp,
     wvLevel,
-    dynamics: (p.dynamics ?? true) ? 1 : 0,
+    dynamics: (p.dynamics ?? (base ? base.dynamics === 1 : true)) ? 1 : 0,
     voiceAsgn: voice === 'mono' ? 0 : 1,
-    playMode: loop ? 2 : PAD_DEFAULTS.playMode,
-    loop: loop ? 1 : PAD_DEFAULTS.loop,
-    trigType: loop ? 1 : PAD_DEFAULTS.trigType,
-    subWv: p.subWv === undefined ? -1 : Math.trunc(p.subWv),
+    subWv: p.subWv !== undefined ? Math.trunc(p.subWv) : (base?.subWv ?? PAD_DEFAULTS.subWv),
   };
 }
 
 /**
  * Build a FULL kit from a name + per-pad specs. Pads beyond the supplied list
- * are emitted empty (Wv -1) with ascending default notes, so the file always
- * carries all 15 PadPrm blocks the device expects.
+ * are emitted empty (Wv -1), so the file always carries all 15 PadPrm blocks the
+ * device expects — `pads` DECLARES the kit's pad list, it is not a patch.
+ *
+ * Pass `opts.base` (the kit already at this location) for a re-author: within a
+ * listed pad, any field the caller did not name keeps its current device value
+ * instead of snapping back to a default. Without it, re-authoring a kit to swap
+ * ONE wave rewrites every level to 100 and every mute group to 0 — the documented
+ * regression that flattened a balanced kit into a loud one.
  */
-export function buildFullKit(name: string, pads: readonly FullPad[]): string {
+export function buildFullKit(name: string, pads: readonly FullPad[], opts: BuildFullKitOptions = {}): string {
   if (pads.length > PAD_COUNT) throw new Error(`max ${PAD_COUNT} pads`);
   const resolved: ResolvedPad[] = [];
   for (let i = 0; i < PAD_COUNT; i++) {
-    resolved.push(resolveFullPad(pads[i] ?? { wv: -1 }, i));
+    resolved.push(resolveFullPad(pads[i] ?? { wv: -1 }, i, opts.base?.pads[i], opts.defaultNote?.(i)));
   }
-  return encodeFullKit(nameToCodes(name), new Array(SUBNAME_LEN).fill(0), DEFAULT_FXOFF_HEADER, resolved);
+  const subnm = opts.base?.subnm ?? new Array(SUBNAME_LEN).fill(0);
+  return encodeFullKit(nameToCodes(name), subnm, opts.base?.header ?? DEFAULT_FXOFF_HEADER, resolved);
 }
 
 /**
@@ -326,6 +371,54 @@ export function editKitNotes(text: string, notes: ReadonlyMap<number, number>): 
     if (note === undefined) return block;
     return block.replace(/<NoteNum>-?\d+<\/NoteNum>/, `<NoteNum>${note}</NoteNum>`);
   });
+}
+
+/**
+ * Parse a full kit's Level/Tempo/FX header. Returns undefined for a minimal kit
+ * (which carries no header). Tag matches are exact, so <Level> never catches
+ * <WvLevel> and <Fx1Prm1> never catches <Fx1Prm10>.
+ */
+export function parseKitHeader(text: string): KitHeader | undefined {
+  const num = (tag: string): number | undefined => {
+    const m = new RegExp(`<${tag}>(-?\\d+)</${tag}>`).exec(text);
+    return m ? Number.parseInt(m[1], 10) : undefined;
+  };
+  const level = num('Level');
+  const tempo = num('Tempo');
+  if (level === undefined || tempo === undefined) return undefined;
+  const prms = (prefix: string): number[] =>
+    Array.from({ length: FX_PRM_COUNT }, (_, i) => num(`${prefix}${i}`) ?? 0);
+  return {
+    level,
+    tempo,
+    fx2Asgn: num('Fx2Asgn') ?? 0,
+    linkPad0: num('LinkPad0') ?? -1,
+    linkPad1: num('LinkPad1') ?? -1,
+    fx1Sw: num('Fx1Sw') ?? 0,
+    fx1Type: num('Fx1Type') ?? 0,
+    fx1Prm: prms('Fx1Prm'),
+    fx2Sw: num('Fx2Sw') ?? 0,
+    fx2Type: num('Fx2Type') ?? 0,
+    fx2Prm: prms('Fx2Prm'),
+  };
+}
+
+/**
+ * Read an existing kit's full state (header + sub-name + all 15 resolved pads)
+ * so a re-author can inherit it. Returns undefined when `text` is a MINIMAL kit
+ * — it stores no per-pad state, so there is nothing to preserve. THROWS if the
+ * kit looks full but will not parse: silently falling back to defaults is the
+ * exact flattening this exists to prevent.
+ */
+export function parseFullKitBase(text: string): FullKitBase | undefined {
+  if (isMinimalKit(text)) return undefined;
+  const header = parseKitHeader(text);
+  if (header === undefined) return undefined;
+  const { subnm, pads } = parseFullKit(text);
+  if (pads.length !== PAD_COUNT) {
+    throw new Error(`kit has ${pads.length} <PadPrm> blocks, expected ${PAD_COUNT}`);
+  }
+  return { header, subnm, pads };
 }
 
 /** Parse a full kit's Nm/SubNm + all 15 PadPrm blocks (for the round-trip golden). */

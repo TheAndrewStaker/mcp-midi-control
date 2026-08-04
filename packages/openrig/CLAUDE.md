@@ -68,6 +68,8 @@ packages/openrig/
     validate.ts         # validateRig: referential integrity + graph checks (§6)
     compat.ts           # checkRigCompatibility: cross-device BINDING + CABLE agreement + capability-legality (§4)
     audio.ts            # checkAudioOutput: "will I hear this instrument?" reachability to a monitor node
+    capacity.ts         # checkRigCapacity: "where is there room to plug something in?" free/used/reserved ports
+    attach.ts           # rankAttachments: "where should THIS new device plug in, and why there?" (planner, not a check)
     bootstrap.ts        # bootstrapRig(seeds): seed nodes from a generic DeviceSeed[]
     cytoscape.ts        # toCytoscapeElements: view-only render projection
     examples/looperHub.ts  # the §10 worked example, typed fixture + golden
@@ -76,14 +78,30 @@ packages/openrig/
   test/run-all.ts       # self-contained golden runner (npm test)
 ```
 
-**Three checks, three questions (keep them separate).** `validateRig` = "is the
+**Four checks, four questions (keep them separate).** `validateRig` = "is the
 graph well-formed?" (referential integrity, MIDI cycles, clock topology).
 `checkRigCompatibility` = "will the cross-device MIDI coordination WORK?" (do a
 binding's two ends agree, is the mapping legal for the gear, for governed
 bindings AND for ungoverned cables; needs an injected
 `CapabilityLookup` so the package stays zero-dep). `checkAudioOutput` = "will I
-actually HEAR each instrument?" (audio reaches a monitor node). Do not fold them
-together: each answers a distinct question and the `§10` example must stay
+actually HEAR each instrument?" (audio reaches a monitor node). `checkRigCapacity`
+= "WHERE IS THERE ROOM to plug something in?" (free vs used vs reserved ports,
+plus a `free_by_kind` lookup). Capacity exists because free capacity is a FACT of
+the manifest that was being INFERRED and got inferred wrong: on 2026-07-25 the
+manifest recorded a sequencer's second DIN out as `"MIDI Out (unused)"` and the
+recommendation was still to daisy-chain around a full thru box. Consult
+`free_by_kind` before ever proposing a chain, a thru box, or a splitter. Do not
+fold them together: each answers a distinct question and the `§10` example must stay
+
+**`rankAttachments` (attach.ts) is a PLANNER, not a fifth check.** Checks judge a
+rig you already have; this one chooses between rigs you could have. Two rules it
+must keep: hard constraints **eliminate** (a port that cannot carry the signal is
+not a low-ranked candidate, it is not a candidate), and survivors rank
+**lexicographically**, never by a weighted score. Do not "simplify" the tiers into
+one number: hops and relay-dependencies share no unit, so any weighting is
+invented and untestable. Read the header comment before changing the tier order,
+it records why daisy-chaining loses on single-point-of-failure grounds rather
+than the weaker latency argument.
 `validateRig`-clean even while it is deliberately audio-incomplete (its Circuit /
 SPD-SX have audio outs but no audio cables, so `checkAudioOutput` flags them,
 correctly, which is why audio lives OUTSIDE `validateRig`).

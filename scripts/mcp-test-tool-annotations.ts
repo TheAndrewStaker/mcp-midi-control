@@ -42,6 +42,12 @@ interface ToolAnnotations {
 
 interface ToolDef {
   name: string;
+  /**
+   * Top-level display name (MCP spec). Distinct from `annotations.title`,
+   * which the spec keeps only as a fallback for older servers: a client
+   * prefers this one. Every tool must set it — see check (0).
+   */
+  title?: string;
   description?: string;
   annotations?: ToolAnnotations;
   outputSchema?: unknown;
@@ -136,12 +142,29 @@ async function main(): Promise<void> {
     console.log(`Got ${tools.length} tools from server.\n`);
 
     let withAnnotations = 0;
+    let withTitle = 0;
     let withReadOnly = 0;
     let withDestructive = 0;
     let withIdempotent = 0;
     let withOutputSchema = 0;
 
     for (const t of tools) {
+      // (0) Every tool must carry a human-readable `title`.
+      //
+      // Without one, a client's UI shows the raw tool NAME, and this server's
+      // user is a working guitarist, not a developer: Claude Desktop was
+      // showing them `send_reset_controllers` and `list_params`. All 55 tools
+      // were titled on 2026-08-02; this check exists so number 56 cannot ship
+      // without one. Title Case, no snake_case leaking through, and not just
+      // the tool name with the underscores swapped for spaces.
+      if (typeof t.title !== 'string' || t.title.trim().length === 0) {
+        ISSUES.push({ tool: t.name, problem: 'missing `title` (clients show the bare tool name to the user)' });
+      } else if (t.title.includes('_')) {
+        ISSUES.push({ tool: t.name, problem: `title "${t.title}" still carries snake_case; write it as a human would say it` });
+      } else {
+        withTitle++;
+      }
+
       // (1) Every tool must carry annotations.
       if (!t.annotations || Object.keys(t.annotations).length === 0) {
         ISSUES.push({ tool: t.name, problem: 'missing annotations object' });
@@ -184,6 +207,7 @@ async function main(): Promise<void> {
     }
 
     console.log(`Annotation coverage:`);
+    console.log(`  ${withTitle}/${tools.length} tools carry a human-readable title.`);
     console.log(`  ${withAnnotations}/${tools.length} tools carry annotations.`);
     console.log(`  ${withReadOnly} declare readOnlyHint: true`);
     console.log(`  ${withDestructive} declare destructiveHint: true`);

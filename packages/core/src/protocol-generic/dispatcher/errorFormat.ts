@@ -161,12 +161,31 @@ export function formatUnknownParamError(parts: UnknownParamErrorParts): string {
 }
 
 /**
+ * SEPARATOR FOR ENUM-VALUE LISTS, and it must not be a comma.
+ *
+ * Enum LABELS routinely contain commas: 69 of the AM4's 79 reverb type names
+ * do ("Room, Small", "Plate, Medium", "Spring, Large"). Comma-joined,
+ * "Plate, Small, Plate, Medium" reads as four values instead of two, and the
+ * agent has to reproduce one of these strings byte-exactly for the retry to
+ * resolve. An unparseable roster inside a RECOVERY message is worse than the
+ * same bug in a browsing list: this string is the only thing the agent has
+ * left to work from.
+ *
+ * ` | ` collides with nothing across the registered rosters and costs one
+ * character more than ", ". Same constant, same reasoning, as `NAME_SEP` in
+ * `fractal-midi/src/am4/applicability.ts` — that site was fixed first and
+ * this one was missed, which is why `verify-apply-preflight.ts` now asserts
+ * that no rendered candidate list uses ", " as its separator.
+ */
+export const ENUM_VALUE_SEP = ' | ';
+
+/**
  * Format an "unknown enum value" error in the same shape. Used when
  * the agent types an enum label that doesn't resolve (after the
  * BK-066 four-tier cascade has already given up).
  *
  *   <slot context>: <block>.<param>: unknown enum value "<bad>".
- *   Candidates: <c1>, <c2>, … (<N> options). Did you mean: <c1>, …?
+ *   Candidates: <c1> | <c2> | … (<N> options). Did you mean: <c1> | …?
  */
 export interface UnknownEnumErrorParts {
   slotContext?: string;
@@ -174,10 +193,23 @@ export interface UnknownEnumErrorParts {
   paramName: string;
   badValue: string;
   validValues: readonly string[];
+  /**
+   * The SAME array the caller puts in the structured `suggestions[]` field.
+   * When supplied, the prose "Did you mean" renders it verbatim instead of
+   * re-ranking internally.
+   *
+   * Why this exists: the prose used to be ranked by this file's
+   * `rankCandidates` while `suggestions[]` came from the enum-resolution
+   * cascade's own candidate list. Two rankings of the same question in one
+   * message, and an agent reading the prose could be steered somewhere the
+   * structured field did not point. Omit it and the internal ranking still
+   * applies (single-param paths that have no structured field to agree with).
+   */
+  suggestions?: readonly string[];
 }
 
 export function formatUnknownEnumError(parts: UnknownEnumErrorParts): string {
-  const { slotContext, block, paramName, badValue, validValues } = parts;
+  const { slotContext, block, paramName, badValue, validValues, suggestions } = parts;
   const prefix = slotContext !== undefined && slotContext.length > 0
     ? `${slotContext}: `
     : '';
@@ -192,10 +224,14 @@ export function formatUnknownEnumError(parts: UnknownEnumErrorParts): string {
   const totalSuffix = ordered.length > shownCap
     ? ` ... (${ordered.length} options total)`
     : '';
-  const candidatesLine = `Candidates: ${shown.join(', ')}${totalSuffix}.`;
-  const close = ranked.filter((r) => r.distance <= 3).slice(0, 3);
+  const candidatesLine = `Candidates: ${shown.join(ENUM_VALUE_SEP)}${totalSuffix}.`;
+  // Prose mirrors the caller's structured `suggestions[]` when it has one;
+  // otherwise fall back to this file's own top-3-within-distance-3 ranking.
+  const close = suggestions !== undefined
+    ? suggestions.slice(0, 3)
+    : ranked.filter((r) => r.distance <= 3).slice(0, 3).map((r) => r.value);
   const didYouMean = close.length > 0
-    ? ` Did you mean: ${close.map((c) => c.value).join(', ')}?`
+    ? ` Did you mean: ${close.join(ENUM_VALUE_SEP)}?`
     : '';
   return `${head}. ${candidatesLine}${didYouMean}`;
 }

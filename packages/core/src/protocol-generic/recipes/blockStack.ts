@@ -324,37 +324,112 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
       },
     },
 
-    // ── Texas blues crunch ───────────────────────────────────────────
+    // ── Texas blues crunch (SRV) ─────────────────────────────────────
     //
-    // SRV / Joe Bonamassa / Kenny Wayne Shepherd territory. The
-    // canonical "Tube Screamer in front of an edge-of-breakup Brit
-    // amp" arrangement. T808 OD at low gain pushes the front end;
-    // the amp does the actual distortion.
+    // SPLIT FROM A SINGLE RECIPE ON 2026-08-02, and the reason is worth
+    // keeping: the old `texas_blues_crunch` was described as "SRV /
+    // Bonamassa" and bound to `Brit Super`, which our own lineage records
+    // as the Marshall AFD100 (Slash's amp). Its comment called that a
+    // "Plexi 50W crunch amp", which it is not. Two different rigs had been
+    // collapsed into one entry:
+    //
+    //   SRV ran a Tube Screamer into FENDERS (Vibroverb / Super Reverb)
+    //   and famously did not use Marshalls.
+    //   Bonamassa and Kenny Wayne Shepherd run one into MARSHALLS.
+    //
+    // Both are real, canonical tones. Neither is served by averaging them.
+    // The split was surfaced by an agent-regression run in which the model,
+    // asked for an "SRV-style" tone, rejected the recipe and chose
+    // `Vibrato Verb SRV` on its own — it was being MORE faithful to the
+    // named artist than our curated entry was.
     //
     // Signature elements:
-    //   - T808 OD with gain low (~3), tone ~6 (slight high-mid push),
-    //     level ~5. The pedal is a clean boost more than an OD here.
-    //   - Brit Super / Plexi 50W crunch amp — natural tube saturation
-    //     when struck hard.
-    //   - Spring reverb (medium) — the only effect SRV typically had,
-    //     baked into his Vibroverb's tank.
+    //   - T808 OD with gain low (~3), tone ~6, level ~5. A clean boost that
+    //     pushes the front end, not an overdrive.
+    //   - A Vibroverb. Fenders break up later than Marshalls, so the amp
+    //     runs hotter here (gain 7) than in the Marshall sibling.
+    //   - Spring reverb — the only effect SRV typically had, and it lived
+    //     in the Vibroverb's own tank.
     //
-    // No delay / no chorus. Raw three-block stack.
-    //
-    // Sources: Premier Guitar "Rig Rundown: SRV Tribute" (2018);
-    // Joe Bonamassa documented Tube Screamer + Marshall pairings
-    // (Sound on Sound 2010 + multiple Premier Guitar features).
+    // Sources: Premier Guitar "Rig Rundown: SRV Tribute" (2018). Fractal's
+    // own note on the Vibrato Verb CS transformer records the SRV
+    // association, which is why the II binds the CS variant.
     texas_blues_crunch: {
       name: 'texas_blues_crunch',
       description:
-        'Texas blues crunch (SRV / Bonamassa): T808 OD as clean boost + Plexi-crunch amp + spring reverb. The pedal pushes the front end; the amp distorts.',
+        'Texas blues crunch (Stevie Ray Vaughan): T808 OD as a clean boost into a cranked Vibroverb + spring reverb. Fender-voiced, not Marshall. For the Marshall-based blues-rock version, see blues_rock_marshall.',
+      applicable_devices: ['am4', 'axe-fx-ii'] as const,
+      signature_params_per_device: {
+        am4: { 'drive.type': 'T808 OD', 'amp.type': 'Vibrato Verb SRV', 'reverb.type': 'Spring, Medium' },
+        'axe-fx-ii': { 'drive.effect_type': 'T808 OD', 'amp.effect_type': 'VIBRATO VERB CS', 'reverb.effect_type': 'MEDIUM SPRING' },
+      },
+      source_notes:
+        'Premier Guitar Rig Rundown: SRV Tribute (2018). Amp binding cross-checked against the lineage corpus: Vibrato Verb = Fender Vibroverb; the CS variant carries Fractal\'s own SRV transformer note.',
+      slots_per_device: {
+        am4: [
+          {
+            slot: 1,
+            block_type: 'drive',
+            params: p({ type: 'T808 OD', drive: 3, tone: 6, level: 5 }),
+          },
+          {
+            slot: 2,
+            block_type: 'amp',
+            params: p({ type: 'Vibrato Verb SRV', gain: 7, bass: 5, mid: 6, treble: 6, master: 6 }),
+          },
+          {
+            slot: 3,
+            block_type: 'reverb',
+            params: p({ type: 'Spring, Medium', mix: 15 }),
+          },
+        ],
+        'axe-fx-ii': [
+          {
+            slot: { row: 2, col: 1 },
+            block_type: 'drive',
+            params: p({ effect_type: 'T808 OD', gain: 3, tone: 6, volume: 5 }),
+          },
+          {
+            slot: { row: 2, col: 2 },
+            block_type: 'amp',
+            params: p({ effect_type: 'VIBRATO VERB CS', input_drive: 7, bass: 5, middle: 6, treble: 6, master_volume: 6 }),
+          },
+          {
+            slot: { row: 2, col: 3 },
+            block_type: 'reverb',
+            params: p({ effect_type: 'MEDIUM SPRING', mix: 15 }),
+          },
+        ],
+      },
+    },
+
+    // ── Blues rock, Marshall-voiced (Bonamassa / KWS) ────────────────
+    //
+    // The other half of the 2026-08-02 split. Tube Screamer into an
+    // edge-of-breakup Marshall: the amp does the distortion, the pedal
+    // pushes it there. Joe Bonamassa's documented pairing, and the same
+    // arrangement Kenny Wayne Shepherd uses.
+    //
+    // The amp binding is UNCHANGED from the pre-split recipe (`Brit Super`
+    // = Marshall AFD100 per Fractal's own quote in the lineage corpus), and
+    // its settings are carried over verbatim. Only the label is corrected:
+    // the old comment called this a "Plexi 50W", which it is not. If you
+    // want an actual Plexi voicing, AM4 carries `Plexi 100W 1970`,
+    // `1959SLP *` and `1987X Jumped`.
+    //
+    // Sources: Sound on Sound "Joe Bonamassa" feature (2010) and multiple
+    // Premier Guitar rundowns documenting Tube Screamer + Marshall.
+    blues_rock_marshall: {
+      name: 'blues_rock_marshall',
+      description:
+        'Blues-rock crunch, Marshall-voiced (Bonamassa / Kenny Wayne Shepherd): T808 OD as a clean boost into an edge-of-breakup Marshall + spring reverb. For the Fender-voiced SRV version, see texas_blues_crunch.',
       applicable_devices: ['am4', 'axe-fx-ii'] as const,
       signature_params_per_device: {
         am4: { 'drive.type': 'T808 OD', 'amp.type': 'Brit Super', 'reverb.type': 'Spring, Medium' },
         'axe-fx-ii': { 'drive.effect_type': 'T808 OD', 'amp.effect_type': 'BRIT SUPER', 'reverb.effect_type': 'MEDIUM SPRING' },
       },
       source_notes:
-        'Premier Guitar Rig Rundown: SRV Tribute (2018); Sound on Sound "Joe Bonamassa" feature (2010).',
+        'Sound on Sound "Joe Bonamassa" feature (2010); Premier Guitar rundowns on Tube Screamer + Marshall pairings. Amp is the AFD100-derived Brit Super, per the lineage corpus — a Marshall, not a Plexi.',
       slots_per_device: {
         am4: [
           {
@@ -990,10 +1065,21 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
     // Voicing rationale: gain-staging convention for a clean pedal platform
     // (low drive for headroom, slight treble lift, ~18% reverb). Not an
     // artist-specific tone; the amp model is the user's pick.
+    //
+    // WORDING NOTE for all three gen-3 platform recipes (2026-08-02). These
+    // used to end "...pick a high-gain amp model separately". Agents read that
+    // as an instruction to leave the recipe behind: in the failing
+    // `fm9-recipe-platform-pickup` traces the agent finds the recipe, says in
+    // as many words "the recipe gen3_high_gain_platform fits", then calls
+    // list_params for the amp roster and hand-authors an apply_preset spec
+    // that restates the recipe's own knobs. It never issues `recipe_id`. An
+    // unset model is not a reason to abandon the recipe — `overrides` exists
+    // precisely to carry it — so each description now names that one-call path
+    // instead of implying a separate step.
     gen3_clean_platform: {
       name: 'gen3_clean_platform',
       description:
-        'gen-3 clean platform (III / FM3 / FM9): light comp + near-flat amp tone-stack at low gain + medium reverb. Model-agnostic numeric voicing; pick the amp model separately (model-by-name works on gen-3).',
+        'gen-3 clean platform (III / FM3 / FM9): light comp + near-flat amp tone-stack at low gain + medium reverb. The amp MODEL is deliberately unset so any clean amp can carry the voicing — apply with apply_preset({recipe_id}) and name the model in `overrides` (model-by-name works on gen-3), never by rebuilding these knobs by hand.',
       applicable_devices: GEN3_DEVICES,
       signature_params_per_device: gen3(p({ 'amp.drive': 2, 'reverb.mix': 18 })),
       source_notes:
@@ -1025,7 +1111,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
     gen3_crunch_platform: {
       name: 'gen3_crunch_platform',
       description:
-        'gen-3 crunch platform (III / FM3 / FM9): mid-gain amp tone-stack with a slight mid push + light reverb. Edge-of-breakup rhythm voicing. Model-agnostic; pick a crunch amp model separately (model-by-name works on gen-3).',
+        'gen-3 crunch platform (III / FM3 / FM9): mid-gain amp tone-stack with a slight mid push + light reverb. Edge-of-breakup rhythm voicing. The amp MODEL is deliberately unset so any crunch amp can carry the voicing — apply with apply_preset({recipe_id}) and name the model in `overrides` (model-by-name works on gen-3), never by rebuilding these knobs by hand.',
       applicable_devices: GEN3_DEVICES,
       signature_params_per_device: gen3(p({ 'amp.drive': 5, 'reverb.mix': 12 })),
       source_notes:
@@ -1052,7 +1138,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
     gen3_high_gain_platform: {
       name: 'gen3_high_gain_platform',
       description:
-        'gen-3 high-gain platform (III / FM3 / FM9): high-drive scooped-mid amp tone-stack + tight short reverb. Modern metal rhythm voicing. Model-agnostic; pick a high-gain amp model separately (model-by-name works on gen-3).',
+        'gen-3 high-gain platform (III / FM3 / FM9): high-drive scooped-mid amp tone-stack + tight short reverb. Modern metal rhythm voicing. The amp MODEL is deliberately unset so any high-gain amp can carry the voicing — apply with apply_preset({recipe_id}) and name the model in `overrides` (model-by-name works on gen-3), never by rebuilding these knobs by hand.',
       applicable_devices: GEN3_DEVICES,
       signature_params_per_device: gen3(p({ 'amp.drive': 8, 'amp.mid': 4 })),
       source_notes:

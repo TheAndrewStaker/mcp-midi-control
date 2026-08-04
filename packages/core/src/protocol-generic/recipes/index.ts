@@ -61,7 +61,9 @@ export {
 
 export {
   summarizeRecipesForPort,
+  describeRecipeForPort,
   type RecipeSummaryEntry,
+  type RecipeDetailEntry,
 } from './summary.js';
 
 export {

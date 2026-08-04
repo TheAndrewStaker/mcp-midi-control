@@ -216,7 +216,9 @@ for (const kp of plan) {
     if (idx === undefined) throw new Error(`wave '${p.wave}' not in pool after import (kit ${kp.name})`);
     return { wv: idx, level: p.level, loop: p.loop, note: p.note };
   });
-  const r = authorKit(spdRoot, kp.slot, kp.name, pads, { force });
+  // Wholesale replace: the pack plan fully DECLARES each slot's kit, so ignore
+  // whatever was there rather than inheriting an unrelated kit's pad properties.
+  const r = authorKit(spdRoot, kp.slot, kp.name, pads, { force, ignoreExisting: true });
   authored++;
   if (r.backedUp) console.log(`    slot ${kp.slot} '${kp.name}': wrote (prior kit backed up)`);
 }

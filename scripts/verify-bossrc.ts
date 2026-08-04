@@ -150,6 +150,7 @@ eq('TRK5 LEVEL = 54', trackTargetOrdinal(5, 'LEVEL'), 54);
 // 3. SOURCE ordinal: CTL fixed, CC#64-95 = cc+6, CC#01-31 refused.
 eq('CTL1 source = 33', sourceOrdinal({ kind: 'ctl', n: 1 }), 33);
 eq('CTL2 source = 34', sourceOrdinal({ kind: 'ctl', n: 2 }), 34);
+eq('CTL3 source = 35', sourceOrdinal({ kind: 'ctl', n: 3 }), 35);
 eq('CC#64 source = 70', sourceOrdinal({ kind: 'cc', cc: 64 }), 70);
 eq('CC#80 source = 86', sourceOrdinal({ kind: 'cc', cc: 80 }), 86);
 eq('CC#81 source = 87', sourceOrdinal({ kind: 'cc', cc: 81 }), 87);
@@ -217,6 +218,7 @@ eq('setCount preserves byte-exactness elsewhere', serializeRc0(doc3), src.replac
 // 8. Read-path inverse decoders (ordinal -> label).
 eq('decodeSource(0) = (none)', decodeSource(0), '(none)');
 eq('decodeSource(33) = CTL1', decodeSource(33), 'CTL1');
+eq('decodeSource(35) = CTL3', decodeSource(35), 'CTL3');
 eq('decodeSource(87) = CC#81', decodeSource(87), 'CC#81');
 eq('decodeSource(999) = SOURCE#999 (un-decoded)', decodeSource(999), 'SOURCE#999');
 eq('decodeTarget(0) = TRK1 REC/PLY', decodeTarget(0), 'TRK1 REC/PLY');

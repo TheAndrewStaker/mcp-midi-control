@@ -84,8 +84,10 @@ implementation strategy:
 | Device-sourced dirty signal | ❌ not exposed (verified by capture: zero MIDI bytes on front-panel edits). Dirty gate uses the deterministic in-memory `markDirty`/`markClean` tracker (`core/server-shared/bufferDirty.ts`), set at AM4 write call sites + cleared on save/switch; see `tools/safeEdit.ts`. Does NOT track front-panel / parallel-editor edits (deliberate tradeoff; the old fingerprint poll did, but non-deterministically, which false-refused users). | ✅ via `0x74` state-broadcast | ❌ not exposed in MIDI | n/a: no working-buffer "save" model. Edits are either live (fire-and-forget CC/NRPN, instantly audible, nothing to lose) or whole-slot file transfers (see the slot-transfer gate below). There is no dirty preset buffer to guard. |
 | `on_active_preset_edited` guard | ✅ unified surface (`apply_preset`, `switch_preset`) | ✅ shipped | n/a (no dirty detection) | n/a (no working buffer) |
 | `save_authorized` guard on apply-at-slot | ✅ unified `apply_preset(target_location, save_authorized)` | ✅ shipped | ✅ `apply_patch(save: true)` | replaced by the **slot-transfer overwrite gate** (`confirm_overwrite`) on the destructive transfer tools, see below |
-| Multi-preset overwrite scan | ✅ `scan_locations` | ✅ `scan_locations` | n/a (different patch model) | ⚠️ partial: `upload_project` / `apply_pattern ncs_upload` READ the target project slot (empty→write, occupied→refuse + name); sample slots can't be read yet (`upload_sample` / `upload_kit` refuse by default). |
-| Tool-description guidance for agent | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance | ✅ the `confirm_overwrite` contract is in every transfer tool's description |
+| Multi-preset overwrite scan | ✅ `scan_locations` | ✅ `scan_locations` | n/a (different patch model) | ⚠️ partial: `upload_project` / `apply_pattern ncs_upload` READ the target project slot (empty→write, occupied→refuse + name); sample slots can't be read yet (`upload_sample` / `upload_kit` refuse by default). `delete_project` scans every named slot and its refusal IS the report (see below). |
+| `save_preset` single-target overwrite gate | ✅ reads the target's stored name and refuses a non-active occupied location until `confirm_overwrite: true` | ✅ **since 2026-08-03, on a different basis**: this device can read which preset is ACTIVE but has no decoded read for what is stored at an ARBITRARY location, so occupancy is genuinely unknown. It refuses any NON-ACTIVE target until `confirm_overwrite: true`, and the refusal SAYS no occupancy check was possible rather than implying one happened. Saving back to the location being edited is unaffected. Before this the store landed `acked: true` with the caution on the RECEIPT, which is a warning after a flash write, not a gate | n/a (patch model, `apply_patch(save)`) | see the slot-transfer gate below |
+| Erase (make a stored slot empty) | n/a: no erase exists on the device, a location always holds something | n/a | n/a | ✅ `delete_project`, gated harder than any overwrite: see "erasing, which is not overwriting" below |
+| Tool-description guidance for agent | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance, all 13 topics inline (they were withheld until 2026-08-02, when patch-archetype `source_notes` moved to `describe_device({port, recipe})` and freed ~24 KB). Any topic a device cannot fit is still named in `agent_guidance_withheld` and read via `describe_device(port, guidance: [...topics])` | ✅ the `confirm_overwrite` contract is in every transfer tool's description |
 
 AM4 / Axe-Fx II / Hydrasynth are fully shipped on the unified surface
 (`apply_preset`, `save_preset`, `switch_preset`). Device-namespaced tools have
@@ -97,7 +99,8 @@ contract.
 The Circuit Tracks has no working-buffer "save" model, so the preset
 dirty/save gates above don't apply. What it DOES have is **destructive
 slot transfers**: `upload_sample` / `upload_kit` (a sample slot, 1..64),
-`upload_project` (a project slot, 0..63), and `apply_pattern mode:ncs_upload`
+`upload_project` (a project, 1..64 as the device numbers it), and
+`apply_pattern mode:ncs_upload`
 (authors a pattern into a template, then writes a project slot). Each one
 permanently overwrites whatever is in the target slot. The project's
 "read before write / confirm before overwriting non-empty" contract applies
@@ -122,6 +125,19 @@ adds friction only where there's something to lose:
   save/overwrite/replace language) writes immediately and skips the occupancy
   read on every path.
 
+**A second, finer-grained destruction the slot gate cannot see (added 2026-07-27):
+`preserve_template_gates`.** `apply_pattern mode:ncs_upload` template-modifies a
+stored project, so a re-author with `confirm_overwrite` already granted can still
+destroy work WITHIN a slot the user meant to keep. Before authored note lengths
+existed, the writer emitted only a one-step gate, so every re-author flattened
+every hand-dialled note length and dropped every tie flag in the project. The
+template's gate and tie are now carried through per `(step, note)`, and the flag
+**defaults to preserving**: the destructive direction is the one you have to ask
+for. An inherited tie the new arrangement no longer reaches is dropped and
+reported rather than left as a device no-op, and a pattern-stated length beats
+template inheritance. Pass `preserve_template_gates: false` to deliberately
+flatten.
+
 The mechanism is `SlotWriteOptions.confirmOverwrite` threaded from each
 transfer tool's `confirm_overwrite` arg; the refusal is a
 `DispatchError('overwrite_confirmation_required', …)` formatted into the
@@ -129,6 +145,36 @@ canonical refusal text. Implementation: `gateProjectOverwrite` /
 `gateSampleOverwrite` + `probeProjectSlot` in
 `packages/circuit-tracks/src/descriptor/writer.ts` and
 `.../ncs/uploadProject.ts`.
+
+### Circuit Tracks: erasing, which is not overwriting
+
+`delete_project` is the only tool in this server that makes stored content stop
+existing. Every other destructive path REPLACES: the slot still holds something
+afterwards and the receipt names what. A delete leaves nothing, on a device with
+no undo, no trash, and no front-panel erase. Its gates are therefore stricter
+than the overwrite gate, and three of them are deliberately NOT symmetric with
+it. Implementation:
+`packages/core/src/protocol-generic/dispatcher/deleteProject.ts` (gates) and
+`packages/circuit-tracks/src/ncs/fileDelete.ts` (wire).
+
+| Gate | Behaviour | Why it differs from the overwrite gate |
+|---|---|---|
+| **Read before delete** | Unconditional, both oracles, per slot, and again in-session one instruction before each destructive frame. Refuses on empty, on unreadable, and on the two oracles DISAGREEING. | The overwrite gate SKIPS its read when `confirm_overwrite` is passed, because on a write the read only buys information: the write lands either way. Here the read is the only thing separating "erase this project" from "erase the wrong project", and the only evidence that the file backed up is the file destroyed. |
+| **Backup** | Mandatory, CRC-verified, with NO flag to skip it. Anything other than a saved, structurally valid file aborts the whole call before a single delete frame. | `upload_project`'s `backup_first` is a flag, and was found on 2026-07-29 to be a silent no-op unless `confirm_overwrite` was also passed. A flag whose effect depends on another flag is the failure mode. There is also no non-destructive path here for it to be optional on: the tool refuses empty slots, so every call that reaches the backup destroys something. The backup IS the undo, and an undo you can switch off is not an undo. |
+| **Authorization** (`confirm_delete`) | Refuse-by-default. The refusal CARRIES the pre-flight report, naming every project that would be lost. | This is the multi-preset overwrite gate above ("pre-flight scan the target range and surface what would be overwritten"), not a second gate beside it. It is also why the tool needs no `dry_run`: the unauthorized call already is one. |
+| **Per-call ceiling** | 8 slots. Over it the call is REFUSED, never trimmed to fit. | A truncating delete leaves the caller believing a range is clear when it is not, which is the same class of lie as a silent no-op. The number is an order of magnitude below the 64 slots a loop of these frames cleared on 2026-06-27; clearing a pack takes eight separate calls, each re-reading the card and re-stating what it will destroy. |
+| **Verify after** | Both oracles, in a fresh session, past the manifest-flush window: the device's own per-file query AND a directory read, plus a byte-for-byte comparison against a known-free control slot. | The directory is the table a delete edits, so verifying with it alone is circular; reading it too early reports stale contents. The control comparison exists because a 2026-07-29 verification whose matcher accepted only the occupied reply shape scored a real successful erase as "still there", and the obvious next move after reading that is to send the delete again. |
+
+**Named slots, never a range.** `slots` is a list the caller writes out; there is
+no `from`/`to` at any layer. The 2026-06-27 incident that emptied a pack's
+64-slot sample pool was a loop over a range, and Novation Components does not
+loop either: it enumerates the pack, then sends one frame per slot its own
+directory lists as occupied. A caller who wants a range enumerates it with
+`scan_locations` first, which means they have seen what is in it before they name
+it.
+
+Sample and patch slots use the same opcode and stay gated: a project can be read
+back byte-exact and backed up before it is erased, and a sample slot cannot.
 
 ## Implementation pattern
 

@@ -146,17 +146,10 @@ const DRAIN_TIMEOUT_MS = 40;
 /** Fixed on-wire length of a DIR_CONTROL listing-header reply (F0 + 6-byte header + sub + fileType + pack + count-lo + count-hi + F7). */
 const DIR_LIST_HEADER_LENGTH = 13;
 
-/** One sample-pool slot: 0-based wire slot, device-facing 1-based number, and name (undefined = empty). */
-export interface SampleSlot {
-  slot: number;        // 0..63 (wire)
-  device_slot: number; // 1..64 (what the device/Components shows)
-  name?: string;       // ASCII name, or undefined if the slot is empty
-}
+/** One sample-pool slot: 0-based wire slot, device-facing 1-based number, and name (undefined = empty). Alias of the generic {@link DirectorySlot}. */
+export type SampleSlot = DirectorySlot;
 
-export interface SampleDirectoryResult {
-  occupied: number;
-  total: number;
-  slots: SampleSlot[];
+export interface SampleDirectoryResult extends FileDirectoryResult {
   /** Honesty note about evidence tier (e.g. the sample-fileType listing caveat above). */
   capacity_note?: string;
 }
@@ -220,17 +213,41 @@ export function buildReadFileRequest(fileType: number, pack: number, slot: numbe
 
 export const SAMPLE_DIRECTORY_CONSTANTS = { FILE_TYPE_PROJECT, FILE_TYPE_PATCH, FILE_TYPE_SAMPLE, DIR_ENTRY } as const;
 
+/** One occupied-directory slot: 0-based wire slot, 1-based device number, name. */
+export interface DirectorySlot {
+  slot: number;        // 0..63 (wire)
+  device_slot: number; // 1..64 (what the device/Components shows)
+  name?: string;       // ASCII name, or undefined if the slot is empty
+}
+
+export interface FileDirectoryResult {
+  occupied: number;
+  total: number;
+  slots: DirectorySlot[];
+  /** The 0-based microSD pack this directory was read from (device Pack 1 = 0). */
+  pack: number;
+}
+
 /**
- * Read the 64-slot sample-pool directory over the file-transfer transport.
- * Requires a bidirectional connection (the caller gates `conn.hasInput`).
+ * Read one 64-slot file directory (by `fileType`) over the file-transfer
+ * transport, non-destructively. Shared core for the sample pool (0x05) and the
+ * project directory (0x03) — both are the SAME listing protocol, differing only
+ * in the fileType byte (module docstring). Requires a bidirectional connection
+ * (the caller gates `conn.hasInput`).
+ *
+ * `pack` is the 0-based microSD pack (device Pack 1 = 0), the chosen byte every
+ * file-transfer subcommand addresses (`docs/design/circuit-pack-addressing.md`).
  *
  * Sends ONLY OPEN_SESSION / DIR_CONTROL / QUERY_INFO / CLOSE_SESSION frames
- * (see the module docstring for the byte-exact sequence + capture citation).
- * NEVER sends WRITE_INIT/DATA/FINISH/SET_FILENAME, so it cannot open (or
- * abandon) a write transaction the way the disabled 2026-06-27 code did.
+ * (module docstring for the byte-exact sequence + capture citation). NEVER sends
+ * WRITE_INIT/DATA/FINISH/SET_FILENAME, so it cannot open (or abandon) a write
+ * transaction the way the disabled 2026-06-27 code did.
  */
-export async function readSampleDirectory(conn: MidiConnection): Promise<SampleDirectoryResult> {
-  const slots: SampleSlot[] = Array.from({ length: SLOT_COUNT }, (_, slot) => ({ slot, device_slot: slot + 1 }));
+export async function readFileDirectory(conn: MidiConnection, fileType: number, pack = 0): Promise<FileDirectoryResult> {
+  if (!Number.isInteger(pack) || pack < 0 || pack > 31) {
+    throw new RangeError(`pack must be 0..31 (0-based; device Pack 1 = 0), got ${pack}`);
+  }
+  const slots: DirectorySlot[] = Array.from({ length: SLOT_COUNT }, (_, slot) => ({ slot, device_slot: slot + 1 }));
   try {
     // Replay the captured, non-destructive open + directory handshake (drain
     // each reply). Byte-identical to the first 4 steps of the hardware-
@@ -256,26 +273,18 @@ export async function readSampleDirectory(conn: MidiConnection): Promise<SampleD
     // sequence, only what gets pulled off the wire first.
     await conn.receiveSysEx(DRAIN_TIMEOUT_MS).catch(() => undefined);
 
-    // The sample-directory LISTING request (fileType=0x05): HARDWARE-CONFIRMED
-    // 2026-07-10 (see module docstring). STRICT header matcher: a reply is
-    // only accepted as THIS call's header when it is sub=DIR_CONTROL AND
-    // answers fileType=SAMPLE AND is the full fixed 13-byte header shape. A
-    // stray sub=0x0b reply for a different fileType/pack, or a truncated
-    // frame (the 2026-07-10 desync bug's root cause: a loose `m[7] ===
-    // SUB.DIR_CONTROL`-only predicate accepted such a straggler and returned
-    // occupied=0 on a real 64-sample pack), now fails this predicate and is
-    // left alone so the real header can still be matched when it arrives.
+    // The directory LISTING request. STRICT header matcher: a reply is only
+    // accepted as THIS call's header when it is sub=DIR_CONTROL AND answers the
+    // requested fileType AND pack AND is the full fixed 13-byte header shape. A
+    // stray sub=0x0b reply for a different fileType/pack, or a truncated frame
+    // (the 2026-07-10 desync bug's root cause: a loose `m[7] === SUB.DIR_CONTROL`-
+    // only predicate accepted such a straggler and returned occupied=0 on a real
+    // 64-sample pack), fails this predicate and is left alone so the real header
+    // can still be matched when it arrives.
     const headerReplyP = conn
-      .receiveSysExMatching((m) => m[7] === SUB.DIR_CONTROL && m[8] === FILE_TYPE_SAMPLE && m.length === DIR_LIST_HEADER_LENGTH, PRELUDE_TIMEOUT_MS)
+      .receiveSysExMatching((m) => m[7] === SUB.DIR_CONTROL && m[8] === fileType && m[9] === (pack & 0x7f) && m.length === DIR_LIST_HEADER_LENGTH, PRELUDE_TIMEOUT_MS)
       .catch(() => [] as number[]);
-    // pack is hardcoded to 0 (the active/written SD pack; hardware-confirmed
-    // 2026-07-10). The second byte is the 0-based PACK (docs/design/
-    // circuit-pack-addressing.md), hardcoded 0 here, so this always reads
-    // PACK 1's sample pool — NOT "the active pack" (nothing on the wire reports
-    // which pack the front panel selected). Projects + patches are pack-aware;
-    // the sample path is not yet. Threading `pack` through here is tracked in
-    // the design doc §6 "Known-incomplete".
-    conn.send(makeMessage(SUB.DIR_CONTROL, [FILE_TYPE_SAMPLE, 0x00]));
+    conn.send(makeMessage(SUB.DIR_CONTROL, [fileType, pack & 0x7f]));
     const headerReply = await headerReplyP;
     const header = parseDirListHeader(headerReply);
     const count = header?.count ?? 0;
@@ -284,7 +293,7 @@ export async function readSampleDirectory(conn: MidiConnection): Promise<SampleD
     for (let i = 0; i < count; i++) {
       // Register the matcher BEFORE any further send (sync-throw-safe ordering).
       const entryReply = await conn
-        .receiveSysExMatching((m) => m[7] === DIR_ENTRY && m[8] === FILE_TYPE_SAMPLE, REPLY_TIMEOUT_MS)
+        .receiveSysExMatching((m) => m[7] === DIR_ENTRY && m[8] === fileType && m[9] === (pack & 0x7f), REPLY_TIMEOUT_MS)
         .catch(() => [] as number[]);
       if (entryReply.length === 0) break; // honest partial result on a stall, never a silent hang
       const entry = parseDirEntry(entryReply);
@@ -293,15 +302,7 @@ export async function readSampleDirectory(conn: MidiConnection): Promise<SampleD
       occupied++;
     }
 
-    return {
-      occupied, total: SLOT_COUNT, slots,
-      capacity_note:
-        'The sample-directory LISTING call (DIR_CONTROL fileType=0x05, pack 0) is HARDWARE-CONFIRMED ' +
-        '(2026-07-10, live bench run): the device returned all 64 pack-0 sample slot names, byte-for-byte ' +
-        'matching Novation Components (e.g. "00_PCM.wav", "01_stoken_4_02_kick2.wav"). This reads only pack 0, ' +
-        'the active/written SD pack; the device\'s other SD packs (higher pack indices) are not yet read ' +
-        '(see the module docstring).',
-    };
+    return { occupied, total: SLOT_COUNT, slots, pack };
   } finally {
     // ALWAYS end the session so the device leaves its transfer screen.
     try {
@@ -310,4 +311,53 @@ export async function readSampleDirectory(conn: MidiConnection): Promise<SampleD
       /* handle already dead — nothing to clean up */
     }
   }
+}
+
+/**
+ * Read the 64-slot SAMPLE pool directory (fileType 0x05) — each slot's stored
+ * name. `pack` reads a specific pack's pool (the SAME byte projects address), so
+ * `list_samples pack:5` reads the pool a Pack-5 project binds against instead of
+ * always Pack 1's. Pack 0 is hardware-confirmed (2026-07-10) and a nonzero pack
+ * reuses the identical listing call, owner-confirmed on a 5-pack card
+ * (2026-07-17). Both are surfaced in `capacity_note`.
+ *
+ * READ-BACK TIMING (2026-07-27, the trap this call sets for its callers): the
+ * device flushes a pack's sample manifest ~6-8 s AFTER a transfer session
+ * CLOSES. A listing taken sooner reports slots "(empty)" that are simply still
+ * in flight: a verification read 1.2 s after a 63-slot clone reported 8 slots
+ * empty and a later read showed every one present. So this call is NOT a valid
+ * write verifier until the commit window has passed. Poll (reconnect, ~9 s,
+ * then 5 s retries) as `scripts/circuit-clone-pack-samples.ts` does. On a device
+ * with no erase, a false "the write failed" leads to a re-send that is not free.
+ */
+export async function readSampleDirectory(conn: MidiConnection, pack = 0): Promise<SampleDirectoryResult> {
+  const r = await readFileDirectory(conn, FILE_TYPE_SAMPLE, pack);
+  return {
+    ...r,
+    capacity_note: pack === 0
+      ? 'Pack 1 (wire pack 0). The sample-directory LISTING call (DIR_CONTROL fileType=0x05, pack 0) is ' +
+        'HARDWARE-CONFIRMED (2026-07-10, live bench run): the device returned all 64 pack-0 sample slot names, ' +
+        'byte-for-byte matching Novation Components (e.g. "00_PCM.wav", "01_stoken_4_02_kick2.wav"). ' +
+        'If you are reading this to VERIFY a write you just made, wait: the device flushes a pack\'s sample manifest ' +
+        '~6-8 s after the transfer session closes, so a listing taken sooner can report a just-written slot empty.'
+      : `Pack ${pack + 1} (wire pack ${pack}). The nonzero-pack sample READ is owner-confirmed on a 5-pack card ` +
+        '(2026-07-17): a higher pack returned a pool distinct from Pack 1\'s, so the chosen pack byte reaches the ' +
+        'wire. The nonzero-pack sample WRITE is hardware-confirmed too (2026-07-27): 63 slots cloned onto Pack 2, ' +
+        'read back off the device byte-identical, with an out-of-order write landing at its own index, so the slot ' +
+        'byte is addressed rather than append-ordered. Names are read straight off the pack you selected. ' +
+        'If you are reading this to VERIFY a write you just made, wait: the device flushes a pack\'s sample manifest ' +
+        '~6-8 s after the transfer session closes, so a listing taken sooner can report a just-written slot empty.',
+  };
+}
+
+/**
+ * Read the 64-slot PROJECT directory (fileType 0x03) — each occupied project
+ * slot's stored `.ncs` name, in ONE round trip. This is the fast pack-occupancy
+ * read: seeing what a pack holds otherwise costs a get_preset per slot. The
+ * fileType-0x03 header + entries are byte-confirmed against
+ * `get_pack_from_circuit_tracks.pcapng` (52-project pack). `pack` is the 0-based
+ * microSD pack.
+ */
+export async function readProjectDirectory(conn: MidiConnection, pack = 0): Promise<FileDirectoryResult> {
+  return readFileDirectory(conn, FILE_TYPE_PROJECT, pack);
 }

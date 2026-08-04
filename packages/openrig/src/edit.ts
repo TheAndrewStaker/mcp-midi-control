@@ -11,7 +11,7 @@
  * Node add/remove is a later increment.
  */
 import type {
-  AudioChannel, Edge, EdgeSignal, MidiSignal, MidiSignalType, Node, PortKind, Rig,
+  AudioChannel, Edge, EdgeSignal, MidiSignal, MidiSignalType, Node, Port, PortKind, Rig, Role,
 } from './types.js';
 
 export type CableKind = 'audio' | 'midi' | 'footswitch';
@@ -37,7 +37,32 @@ export type RigEditOp =
       note?: string;
     }
   | { op: 'remove_cable'; cable_id?: string; from?: string; to?: string; kind?: CableKind }
-  | { op: 'set_cable_enabled'; cable_id: string; enabled: boolean };
+  | { op: 'set_cable_enabled'; cable_id: string; enabled: boolean }
+  | {
+      /**
+       * Add a DEVICE (node) to the rig, with no cables. Cabling is a separate
+       * `add_cable`, deliberately: a device usually arrives before you have
+       * decided where it plugs in, and `rankAttachments` is what answers that.
+       */
+      op: 'add_device';
+      /** Stable, opaque node id, unique in the rig (§8: authored once, never regenerated). */
+      id: string;
+      name: string;
+      roles: Role[];
+      manufacturer?: string;
+      family?: string;
+      /** Registered server descriptor id, or null/omitted for opaque gear. */
+      server_device_id?: string | null;
+      /** Jacks on the device. Omit to add a node with no ports yet. */
+      ports?: Array<Pick<Port, 'id' | 'kind' | 'label' | 'audio' | 'output_role'>>;
+      note?: string;
+    }
+  | {
+      /** Remove a device AND every cable touching it (leaving them would dangle). */
+      op: 'remove_device';
+      /** Node id or display name. */
+      device: string;
+    };
 
 export interface RigEditResult {
   ok: boolean;
@@ -47,6 +72,10 @@ export interface RigEditResult {
   summary?: string;
   /** The edge id added / removed / toggled. */
   edge_id?: string;
+  /** The node id added / removed (device ops). */
+  node_id?: string;
+  /** Cable ids removed as collateral by `remove_device`. */
+  removed_edge_ids?: string[];
   /** Set when the edit could not be applied (device not found, cable not found). */
   error?: string;
 }
@@ -132,6 +161,54 @@ export function applyRigEdit(rig: Rig, op: RigEditOp): RigEditResult {
     if (op.note !== undefined) edge.note = op.note;
     next.edges.push(edge);
     return { ok: true, rig: next, edge_id: id, summary: `added ${KIND_LABEL[op.kind]} cable ${from.name} -> ${to.name}${op.enabled === false ? ' [planned]' : ''}` };
+  }
+
+  if (op.op === 'add_device') {
+    if (op.id.trim().length === 0) return { ok: false, error: 'a device needs a non-empty id' };
+    if (next.nodes.some((n) => n.id === op.id)) {
+      return { ok: false, error: `a device with id "${op.id}" is already in this rig. Node ids are stable and opaque, so reuse is a collision, not an update.` };
+    }
+    if (op.roles.length === 0) {
+      return { ok: false, error: 'a device needs at least one role (the checks key on roles: an instrument with no sound_source role is invisible to the audio check)' };
+    }
+    const seen = new Set<string>();
+    for (const p of op.ports ?? []) {
+      if (seen.has(p.id)) return { ok: false, error: `duplicate port id "${p.id}" on ${op.name}` };
+      seen.add(p.id);
+    }
+    const node: Node = {
+      id: op.id,
+      name: op.name,
+      identity: { manufacturer: op.manufacturer ?? null, family: op.family ?? null },
+      server_device_id: op.server_device_id ?? null,
+      roles: [...op.roles],
+      ports: (op.ports ?? []).map((p) => ({ ...p })),
+    };
+    if (op.note !== undefined) node.note = op.note;
+    next.nodes.push(node);
+    return {
+      ok: true, rig: next, node_id: node.id,
+      summary: `added device ${node.name} (${node.ports.length} port${node.ports.length === 1 ? '' : 's'}, no cables yet)`,
+    };
+  }
+
+  if (op.op === 'remove_device') {
+    const node = findNode(next, op.device);
+    if (node === undefined) return { ok: false, error: `no device matches "${op.device}"` };
+    // Cables to a removed device would dangle (validateRig: dangling-endpoint),
+    // so they go with it, and the caller is told exactly which.
+    const doomed = next.edges.filter((e) => e.from.node === node.id || e.to.node === node.id);
+    next.edges = next.edges.filter((e) => !doomed.includes(e));
+    next.nodes = next.nodes.filter((n) => n.id !== node.id);
+    // A binding naming the removed device is likewise left invalid, so drop it.
+    const bindings = next.bindings;
+    if (bindings !== undefined) {
+      next.bindings = bindings.filter((b) => b.from.node !== node.id && b.to.node !== node.id);
+    }
+    return {
+      ok: true, rig: next, node_id: node.id, removed_edge_ids: doomed.map((e) => e.id),
+      summary: `removed device ${node.name}${doomed.length > 0 ? ` and ${doomed.length} cable${doomed.length === 1 ? '' : 's'} touching it` : ''}`,
+    };
   }
 
   if (op.op === 'remove_cable') {

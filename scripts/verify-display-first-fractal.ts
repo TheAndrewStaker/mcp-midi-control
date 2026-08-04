@@ -68,6 +68,7 @@ import {
   FM9_DESCRIPTOR,
   VP4_DESCRIPTOR,
 } from '@mcp-midi-control/fractal-gen3/device.js';
+import { SIGNED_RAW_SEMITONE_PARAMS } from '@mcp-midi-control/fractal-gen3/catalog.js';
 import { AXEFXGEN1_DESCRIPTOR } from '@mcp-midi-control/fractal-gen1/descriptor.js';
 import { KNOWN_PARAMS as GEN1_PARAMS, type AxeFxGen1Param } from 'fractal-midi/gen1';
 
@@ -119,15 +120,15 @@ const PARITY_PENDING_ALLOWLIST: AllowlistEntry[] = [
     device: 'axe-fx-iii',
     pattern: /.*/,
     reason:
-      "continuous params without a calibrated display range (AM4-symbol-join overlay miss): raw 0..65534 wire passthrough by design; they cross to display-first automatically as ranges land. Encode and decode are BOTH wire-identity (no one-sided leak, enforced by the identity probe).",
-    max_hits: 844,
+      "continuous params without a calibrated display range (AM4-symbol-join overlay miss): raw 0..65534 wire passthrough by design; they cross to display-first automatically as ranges land. Encode and decode are BOTH wire-identity (no one-sided leak, enforced by the identity probe). Ceiling tightened 844→813 (2026-07-21): the signed-raw-semitone fix (issue #6) backfilled displayMin/displayMax for 31 PITCH_SHIFT/PITCH_STEP/PLEX_SHIFT/SYNTH_SHIFT params, moving them from passthrough to calibrated (routed through the new SIGNED_RAW_SEMITONE_PARAMS decode, not the standard one).",
+    max_hits: 813,
   },
   {
     device: 'fm3',
     pattern: /.*/,
     reason:
-      "device-true FM3 catalog is unit:'unverified'; params without an AM4-overlay range are raw-wire passthrough by design (no device-synced range cache yet — the FM3 has no ranges.generated.ts). Both closures are wire-identity. Ceiling tightened 875→839 (2026-07-02): the FM3 family-join discrete overlay (FM3_FAMILY_JOIN_DISCRETE) moved former passthrough selectors to the discrete class.",
-    max_hits: 839,
+      "device-true FM3 catalog is unit:'unverified'; params without an AM4-overlay range are raw-wire passthrough by design (no device-synced range cache yet — the FM3 has no ranges.generated.ts). Both closures are wire-identity. Ceiling tightened 875→839 (2026-07-02): the FM3 family-join discrete overlay (FM3_FAMILY_JOIN_DISCRETE) moved former passthrough selectors to the discrete class. Ceiling tightened 839→808 (2026-07-21): the signed-raw-semitone fix (issue #6) backfilled the same 31 params as FM9/III.",
+    max_hits: 808,
   },
   {
     device: 'fm9',
@@ -151,6 +152,17 @@ const PARITY_PENDING_ALLOWLIST: AllowlistEntry[] = [
     max_hits: 174,
   },
 ];
+
+/**
+ * Offset-ordinal params and their INCLUSIVE wire maximum. These do not use the
+ * normalized 0..65534 field, so the standard grid sweep does not apply to them;
+ * they are swept exhaustively over their real domain instead. Keep in step with
+ * ORDINAL_OFFSET in packages/fractal-gen2/src/calibration.ts.
+ */
+const ORDINAL_OFFSET_WIRE_MAX: Readonly<Record<string, number>> = {
+  'pitch.voice_1_shift': 48,
+  'pitch.voice_2_shift': 48,
+};
 
 /** Match a debt param against the allowlist; false = untracked NEW leak. */
 function trackDebt(device: string, key: string): boolean {
@@ -321,6 +333,37 @@ console.log('\n[display-first] Axe-Fx II — GATE A + GATE B via resolveAxeFxIIP
       continue;
     }
     calibrated++;
+
+    // OFFSET-ORDINAL params get their OWN sweep, over their OWN wire domain.
+    // Same carve-out, same reason, as SIGNED_RAW_SEMITONE_PARAMS on the III
+    // below: GATE B assumes the standard normalized 0..65534 field, and these
+    // params are not that. `pitch.voice_N_shift` carries a small ordinal 0..48
+    // where the panel reads `wire - 24` (hardware-measured 2026-08-02, five
+    // points, both voices; see ORDINAL_OFFSET in fractal-gen2/calibration.ts).
+    // Sweeping wire 2048 at it is sweeping a value the device cannot emit, and
+    // the round-trip "failure" that produces is the GATE being wrong about the
+    // domain, not the codec being wrong about the mapping.
+    if (ORDINAL_OFFSET_WIRE_MAX[key] !== undefined) {
+      const wmax = ORDINAL_OFFSET_WIRE_MAX[key];
+      const bad: string[] = [];
+      for (let u = 0; u <= wmax; u++) {
+        const d = kind.decodeWire!(u);
+        if (typeof d !== 'number') { bad.push(`wire ${u} decoded to non-number "${d}"`); break; }
+        let u2: number;
+        try { u2 = kind.encodeDisplay!(d); } catch (err) {
+          bad.push(`wire ${u} -> "${d}" -> encode threw: ${err instanceof Error ? err.message : err}`);
+          break;
+        }
+        if (u2 !== u) { bad.push(`wire ${u} -> "${d}" -> wire ${u2}`); break; }
+      }
+      check(
+        `axe-fx-ii ${key}: offset-ordinal round-trips exactly over its OWN wire domain 0..${wmax}`,
+        bad.length === 0,
+        bad.join(' | '),
+      );
+      continue;
+    }
+
     // GATE B: exact display stability over the wire grid.
     for (const u of wireGrid(65534)) {
       const d = kind.decodeWire!(u);
@@ -413,6 +456,22 @@ for (const [device, descriptor] of [
         continue;
       }
       calibrated++;
+      // Signed-raw-semitone params (issue #6, 2026-07-21): decode is
+      // INTENTIONALLY not the wire-endpoint-onto-display-bounds mapping every
+      // other calibrated param uses — the device's register is a raw signed
+      // int16, not a renormalized 0..65534 field (hardware roundtrip evidence
+      // in catalog.ts). Give them their own dedicated check instead of GATE
+      // A/B, which assume the standard normalized mapping.
+      if (s.parameter_name !== undefined && SIGNED_RAW_SEMITONE_PARAMS.has(s.parameter_name)) {
+        const bad: string[] = [];
+        if (s.decode(65512) !== -24) bad.push(`decode(65512)=${s.decode(65512)} (want -24)`);
+        if (s.decode(24) !== 24) bad.push(`decode(24)=${s.decode(24)} (want 24)`);
+        if (s.decode(0) !== 0) bad.push(`decode(0)=${s.decode(0)} (want 0)`);
+        if (s.encode(-24) !== 0) bad.push(`encode(-24)=${s.encode(-24)} (want 0)`);
+        if (s.encode(24) !== 65534) bad.push(`encode(24)=${s.encode(24)} (want 65534)`);
+        if (bad.length > 0) endpointBad.push(`${key} (signed-raw semitone: ${bad.join('; ')})`);
+        continue;
+      }
       // GATE A: calibrated closures must decode the wire endpoints onto the
       // schema's advertised display bounds (panel-rounded).
       const dMin = s.decode(0);

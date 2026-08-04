@@ -5,7 +5,8 @@
       "command": "node",
       "args": ["packages/server-all/dist/server/index.js"],
       "env": {
-        "MCP_MOCK_TRANSPORT": "${MCP_MOCK_TRANSPORT:-0}"
+        "MCP_MOCK_TRANSPORT": "${MCP_MOCK_TRANSPORT:-0}",
+        "MCP_RIG_MANIFEST": "${MCP_RIG_MANIFEST:-docs/_private/rig/rig.json}"
       },
       "timeout": 360000
     }

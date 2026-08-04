@@ -384,6 +384,91 @@ Hand-roll outputSchema to match the actual return shape; don't
 hand-wave with `z.unknown()`. The schema is a contract the model
 reads to plan how to use the result.
 
+### Declare it with `z.looseObject`, never `z.object`, at EVERY nesting level
+
+The SDK renders a plain `z.object` as `"additionalProperties": false`, and the
+MCP **client** compiles that into an Ajv validator that throws **after the tool
+has already run**. So adding a field to a result type without updating its
+declared shape turns a successful, already-executed hardware write into
+`MCP error -32602: Structured content does not match the tool's output schema`.
+On `apply_preset` that is a `destructiveHint: true` **and**
+`idempotentHint: true` tool, so the agent reads a retry as safe and re-runs a
+write that already landed.
+
+Note that `additionalProperties: false` appears nowhere in this repo. It is
+emitted by zod v4's converter, at every level, which is why this is easy to
+miss: a nested `z.object` inside a `looseObject` parent still renders closed.
+Measured on SDK 1.30.0, `apply_preset` had eight nested shapes closed this way
+(`chain_integrity`, its `breaks[]` items, `validation_errors[]`, `failed_step`,
+and more) while the old gate's top-level `.strict()` check could not see any of
+them.
+
+**Keep `required`.** Only one direction of the strictness has a compiler behind
+it: a MISSING required key cannot drift silently, because the executor's return
+type already forces every path to supply it. An EXTRA key is the drift nothing
+catches, and that is exactly the half that throws at runtime. So declare the
+keys, drop the closure.
+
+`scripts/verify-apply-output-schema.ts` (in `test:cross-device`, so in
+preflight) gates three separate properties: that no rendered schema closes at
+any depth (checked through the SDK's own converter and its own Ajv validator
+class), that the declared shape still names every field of the typed result
+(stale documentation, not an outage), and that a NEW declaration site cannot
+appear without being registered in the gate.
+
+### The rule above is about **outputSchema**. On an **inputSchema** the same keyword solves the opposite problem
+
+Read the rest of this section before applying `looseObject` anywhere. The two
+cases share a keyword and share nothing else, and conflating them costs a real
+defect in each direction.
+
+- On an **output** schema, `z.object` is dangerous because it makes the CLIENT
+  **reject** a response, after the hardware write already ran.
+- On an **input** schema, `z.object` is dangerous because it does not reject
+  anything: zod **silently strips** the unrecognised key before the handler
+  ever sees it. The tool then does less than it was asked to and reports
+  success.
+
+Measured on 2026-08-02: 3 of the 23 `apply_preset` calls in the trace corpus
+that passed `overrides` used a flat `{"amp.type": "...", "reverb.type": "..."}`
+map instead of the `slots[]` shape. Every key was stripped, the call answered
+`ok: true`, and in all three the agent told the user the value **had** been
+applied and asked them to confirm it on the front panel. Nothing was ever sent.
+That is the only defect measured in that sweep where the agent confidently told
+the user something false about the hardware.
+
+So the input rule is: **make the shape loose so unknown keys REACH the handler,
+then reject them explicitly with a message that teaches the correct shape.**
+`rejectUnknownSpecKeys` in `dispatcher/preset.ts` is the worked example, and
+`verify-dispatcher.ts` gates it (including a negative control proving a
+well-formed spec still gets through).
+
+Do not "fix" an input schema by making it strict again: a bare zod rejection
+names the key but not the shape the caller should have used, and this surface's
+value is in error envelopes an agent can actually recover from.
+
+**The same trap has a second form, and it is easier to fall into: a zod
+CONSTRAINT, not just a closed shape.** `get_params` was given
+`.max(GET_PARAMS_MAX_QUERIES)` on its `queries` array alongside a carefully
+written dispatcher refusal. Driven through a real client, the model got:
+
+```
+MCP error -32602: Input validation error: Invalid arguments for tool
+get_params: Too big: expected array to have <=100 items at queries
+```
+
+The dispatcher message was unreachable, because zod refuses at the boundary
+first. That message names the constraint and nothing else: not that zero reads
+happened, not how to split the call, not that `list_params` answers the same
+question with no device I/O at all. So the `.max()` came off and the cap is
+enforced in the dispatcher, while the argument description still ADVERTISES it
+(a client that reads the description can still avoid the call).
+
+The general rule: **let zod enforce what it can express well (a type, a range on
+a scalar, an enum) and let the dispatcher enforce anything whose violation needs
+a recovery path.** If you write a refusal message worth reading, check that it
+is reachable: drive the tool through a client and look at what comes back.
+
 ---
 
 ## Recipe surface
@@ -403,11 +488,27 @@ Pattern:
   before preflight, so all existing gates (type-knob applicability,
   phantom-param, channel-Y inactive on guitar; range and routing checks
   on synth) still fire.
-- `describe_device.recipes[]` ships SLIM for block_stack: id, family,
-  description, slot_count, target_blocks, signature_params. Full
-  slots are materialized server-side via `recipe_id`. Single-block
-  recipes (auto_wah, pitch, wah, filter) stay inline: they're
-  small and the agent needs the params directly.
+- `describe_device.recipes[]` ships MATCH-TIME-ONLY for block_stack: id,
+  family, description, slot_count, signature_params. Full slots are
+  materialized server-side via `recipe_id`. Single-block recipes
+  (auto_wah, pitch, wah, filter) stay inline: they're small and the
+  agent needs the params directly. Hydrasynth patch archetypes ship the
+  same way (id, family, description, category, cultural_reference, tags,
+  signature_params, requires_nrpn).
+- `describe_device({port, recipe:"<id>"})` is the DETAIL path for one
+  recipe: `source_notes` plus the full authored knobs (`full_params`
+  and `mod_routes`/`macro_routes` on an archetype, `slots` on a block
+  stack). It is read-only inspection; applying still goes by id.
+  `slots` is also where the per-slot REFS live — read them before
+  keying `apply_preset.overrides.slots[]`, because a ref matching no
+  recipe slot is appended rather than merged.
+- Three fields left the block_stack summary on 2026-08-02 after a
+  per-field measurement of the Axe-Fx II's 14 entries: `target_blocks`
+  (2,499 chars — the block roster it carried is already in
+  `description` in English on 14 of 14, and the slot refs it also
+  carried are post-choice), `source_notes` (1,982 — provenance is a
+  question about a recipe already chosen), and `params` (182 — `{}` on
+  every entry). Net −4,621 on a device that had 3,279 chars of margin.
 - The response's `applied_spec` field echoes the spec the writer
   consumed (recipe + override merge resolved). The agent confirms
   what landed without a follow-up get_preset call.
@@ -433,9 +534,13 @@ hard look:
   applies too, so the affordance moved to the always-on path.
 - An agent reaching for dry_run to inspect what a recipe contains
   is a smell that the recipe discovery surface is incomplete.
-  Better fix is to grow `describe_device.recipes[]` self-
-  description (`signature_params`, `target_blocks`, source notes)
-  so the agent never needs to write-to-inspect.
+  Better fix is a recipe surface complete enough that the agent
+  never needs to write-to-inspect: `signature_params` inline for
+  the match, and `describe_device({port, recipe})` for the full
+  authored record. (Written when that self-description was to be
+  grown INLINE. It was — and then measured, and the post-choice
+  half moved to the detail path. Completeness, not inlineness, is
+  what stops the write-to-inspect.)
 - Smaller tool surface = better first-call accuracy.
 
 Batch tools (if reintroduced) may keep their own `dry_run` with
@@ -508,6 +613,64 @@ Corollary: a feature that is only discoverable AFTER calling the tool is
 half-shipped. Declare an `outputSchema` (see above) so the model can plan around
 the shape before it calls, rather than learning it from the response.
 
+---
+
+## Description budgets: read the whole thing, edit it as a whole
+
+**The standing rule, set 2026-07-29:** *"Don't raise the cap. Have agents preread
+everything with proper context and refine it carefully."*
+
+**When you add to a tool description, READ THE WHOLE DESCRIPTION FIRST and edit it
+as a whole. Do not append. Do not raise the cap as a first resort.** The cap
+(`DESCRIPTION_WARN_CHARS` / `DESCRIPTION_HARD_CAP_CHARS` and the
+`DESCRIPTION_BUDGET_OVERRIDES` table in `scripts/list-tools.ts`, enforced by
+`npm run tools:inventory-check` in preflight) exists to force exactly that read.
+Raising it converts a design constraint into a ratchet: every session that
+appends one honest clause and lifts the ceiling by 300 chars leaves a description
+nobody has read end to end since it was written.
+
+### Why, with the day's evidence
+
+Two descriptions blew their caps on 2026-07-29 by pure honest accretion, each
+session appending a clause without reading the whole. `apply_pattern` reached
+**4,040** characters and `import_songsterr` **2,873**. Neither had a bad clause
+added; they had simply never been read as a unit.
+
+A single proper read-through found problems in both directions, which is the
+argument for the read:
+
+| Found | What it was |
+|---|---|
+| **Duplication** | The same fact stated twice, contributed by two different sessions that each thought they were adding it for the first time. |
+| **Misplacement** | Detail that belonged in a **parameter** description, which is not counted against the cap at all. Moving it cost nothing and freed the most space. |
+| **Staleness** | A clause advising a `poly` voice that exists on no registered target. Appending can only add; it never notices that an old clause stopped being true. |
+| **Omission** | The pattern-source clause listed **three** sources when the tool takes **five**. The description was over budget AND incomplete at the same time. |
+
+That last row is the point. **Excess and omission were both found by the same
+read**, and only by that read: a length-driven trim finds the first and would
+never find the second, and an append-driven addition finds neither.
+
+The result: `apply_pattern` went 4,040 to 3,050 with no contract lost, so its
+2026-07-27 raise was **given back** (cap lowered 3730 to 3300) rather than kept.
+`import_songsterr` went 2,873 to 1,855, back under its existing cap, so it was
+**not raised a third time**. Both are recorded with that reasoning inline beside
+their override entries.
+
+### The order to work in
+
+1. Read the entire description, and the parameter descriptions with it.
+2. Ask what the new clause duplicates, contradicts, or makes stale.
+3. Move anything that describes ONE argument into that argument's description.
+   Param descriptions are agent-visible and are not counted against the cap, so
+   this is the cheapest real space there is (it is also where the detail belongs).
+4. Rewrite as a whole. Keep only what no parameter can own: cross-argument
+   grammar, mode semantics, and the facts that change what a call MEANS.
+5. Only if it is still over, and the remaining text is load-bearing, raise the
+   cap, and write the inline reason next to the override entry saying what you
+   read and why the excess survived it.
+
+A raise with no evidence of a read-through is the thing this rule exists to stop.
+
 ## Agent guidance for tool use
 
 The unified tool descriptions stay focused on the tool's mechanics.
@@ -533,6 +696,231 @@ Add a new guidance key when:
 
 Each guidance entry should answer: "Given this user phrase, which
 tool do I call, with what shape, and what do I do with the response?"
+
+### Guidance is not free, and the response it rides in has a hard ceiling
+
+`describe_device` is the mandatory first call for every device question,
+so every guidance key you add is paid on every session, and the response
+it rides in cannot grow without limit.
+
+**A tool result over 50,000 characters is not delivered to the model at
+all.** The host replaces the entire result with a path to a sidecar file,
+and an MCP-only agent (Claude Desktop; the `claude -p --tools ""`
+regression harness) has no filesystem tool with which to open it. There is
+no error and no partial payload.
+
+50,000 is measured to the character, not inferred from a bracket:
+`scripts/probe-host-delivery-cliff.ts` returns a synthetic tool result of
+exactly N compact chars (canary token as its last field, so "delivered
+whole" is provable), drives it through `claude -p`, and bisects. 50,000
+arrives; 50,001 does not. It is a **character** limit, not a token one —
+low-entropy and high-entropy payloads, an order of magnitude apart in real
+token count, cliff at the identical character. The host's own
+"exceeds maximum allowed tokens" error is evaluated against an estimate of
+`floor(chars / 2)`, so it too is a character rule; raising
+`MAX_MCP_OUTPUT_TOKENS` does not buy a device more room.
+
+This has already cost a shipped capability once. `cab_polish` was added to
+the AM4's guidance on 2026-07-17 and pushed its `describe_device` past the
+cliff. From that run on, the AM4's whole `recipes[]` surface and its 35 KB
+of guidance stopped arriving, silently, and recipe pickup went from 2 tool
+calls to 17.
+
+Five rules follow:
+
+1. **`recipes[]` is emitted first, immediately after the identity fields.**
+   Not because agents skim — the corpus refutes that. With `recipes[]`
+   emitted LAST and the payload delivered whole, the AM4 picked its
+   recipe 5 times out of 5 at 71-75% depth and the Axe-Fx II 8 of 9 at
+   61-65%. The reason is that when an over-cliff payload IS replaced by a
+   preview stub, that **2 KB preview** is the whole of what the model
+   receives. Same AM4 case, same 50.9 KB stub: recipes[] at the front got
+   a recipe picked in 4 calls; the runs where `capabilities` filled the
+   preview instead took 9-17 and never picked one.
+   `verify-describe-device-budget.ts` hard-fails if `recipes[]` starts
+   past character 2,048.
+
+   Treat that as defence-in-depth, not a safety net. The preview is **not
+   guaranteed to exist**: at the default `MAX_MCP_OUTPUT_TOKENS` only a
+   payload of exactly 50,001 chars gets one, and anything larger returns a
+   bare error with nothing in it. Any realistically-over-budget device
+   delivers zero bytes. Ordering recipes first costs nothing and is worth
+   doing; staying under 50,000 is what actually keeps the surface alive.
+2. **The server rations guidance to stay under the ceiling.**
+   `describeDevice` withholds guidance topics largest-first at
+   `DESCRIBE_DEVICE_BUDGET_CHARS` (50,000), names them in
+   `agent_guidance_withheld.topics`, and serves them from
+   `describe_device({port, guidance:[...topics]})`. So a guidance key you
+   add may not ship inline on a large device: it is reachable, not
+   guaranteed-present. **Never assert that a topic is inline** — assert it
+   is reachable, against the union of inline and fetched (see
+   `reachableGuidance` in `scripts/launch-verification.ts`).
+3. **`npm run verify-describe-device-budget` runs in preflight** and freezes
+   every device's payload at its measured size. Growing one fails on the
+   device that grew. Raising a ceiling needs a recorded reason in the
+   constant table, and the fix is almost always to move a surface off the
+   default path rather than to widen the door.
+4. **When a per-item list is over budget, triage it per FIELD, not per
+   item.** Ask of each field: is it read at MATCH time (the agent is
+   choosing) or after? Post-choice reference material belongs on a detail
+   path, where nobody pays for it until somebody asks. The Hydrasynth's
+   `source_notes` was 24,737 chars, 50% of its entire response, answering
+   a question ("where do these values come from?") that cannot be asked
+   until a recipe is already chosen; moving it to
+   `describe_device({port, recipe})` took the device from 49,814 to 41,984
+   and handed back all 13 guidance topics, with no capability lost.
+   **Measure per field before you cut** — this file previously blamed the
+   archetypes' inline `params`, which were `{}` and totalled 432 chars.
+   The same pass over the Fractal `block_stack` entries then found
+   `target_blocks` (2,499 chars on the II) to be a machine-readable
+   restatement of a roster already spelled out in `description` on 14 of
+   14 recipes, plus slot refs nobody reads until they write an override.
+5. **On a device that is WITHHOLDING, a byte saved is not a byte banked.**
+   The ration loop is greedy: free 3,562 chars of recipes[] on a device
+   holding a 10.3 KB topic back and it re-admits the topic, so the
+   response gets *larger*. That is what happened to the AM4 on
+   2026-08-02 (41,881 → 48,599, withheld 1 → 0). It is the policy
+   working as written and it is safe — the loop can never emit more than
+   `DESCRIBE_DEVICE_BUDGET_CHARS` — but if the goal is headroom rather
+   than more prose, trimming another surface will not get it. The levers
+   are the server budget and the topic itself.
+
+Before adding a guidance key, run the gate and look at the device's
+headroom. If it is inside 10% of the cliff the gate warns, and your key
+will simply evict someone else's.
+
+### The ceiling belongs to every response, not to `describe_device`
+
+The five rules above were written about `describe_device` because that is
+where the cliff was first paid for. Reading them as being *about*
+`describe_device` cost the project a second silent outage in the same file.
+
+`list_params` lives in the same source module, is the tool whose own
+description tells the agent to "call before `set_param` when unsure of an
+enum spelling", and had no budget, no rationing and no gate. Measured
+2026-08-02:
+
+| device | unfiltered | device | unfiltered |
+|---|---|---|---|
+| fm9 | 280,045 | am4 | 219,691 |
+| axe-fx-iii | 264,553 | axe-fx-ii | 144,697 |
+| fm3 | 254,289 | ve-500 | 132,287 |
+
+**Ten of sixteen registered devices were past the cliff**, so on the devices
+with the deepest catalogs this tool had never once returned an answer the
+model could read. Corroboration was sitting in the corpus the whole time:
+all 13 token-capped tool results in 669 traces are `list_params`.
+
+Two things generalize from the fix:
+
+6. **Narrowing correctly is not a defence.** The AM4 exceeded the cliff on a
+   properly-filtered call: `list_params({block:["amp"]})` was 67,731 chars.
+   An agent that did exactly what the description asked still got silence.
+   So gate the FILTERED shapes too, not just the widest one
+   (`verify-list-params-budget.ts` walks census, every single block, every
+   block at once, and each block's type-selector enum).
+7. **Give an unbounded list a scope ladder and a real pager.** The three
+   scopes now are census (no filter) → match-time rows (`block`) → full
+   detail (`block`+`name`), which is rule 4's match-time/post-choice split
+   applied to the request instead of to one item. What could not be
+   projected away is paged: the rows are FITTED to the budget and the
+   remainder is reported with the argument that fetches it. Silence is the
+   failure being gated; a short answer that says it is short is not. Gate
+   the pager as well as the size, because a pager that stalls or drops rows
+   is worse than none: the agent believes it has the whole catalog.
+
+Take real margin when it is free. `describe_device` budgets at exactly
+50,000 because every character it gives back costs a named guidance topic.
+`list_params` budgets at **40,000**, because there a page boundary costs one
+cheap follow-up call, and 10,000 characters of headroom against a host that
+counts even slightly differently is worth more than the extra rows.
+
+### Third time: measure the WHOLE read surface, once, and gate it
+
+The lesson above was written about `list_params` after it was read as being
+about `describe_device`. It was then read as being about `list_params`. A
+census of all 18 `readOnlyHint` tools at their widest legal arguments found
+**four more past the cliff, none of them previously measured**:
+
+| tool | argument shape | chars |
+|---|---|---|
+| `lookup_lineage` | am4 `amp`, all 248 names, quotes on | 219,171 |
+| `list_backups` | `limit:500` (folder held 1,548 indexed) | 212,623 |
+| `get_params` | axe-fx-ii, 1,126 queries (whole catalog) | 208,649 |
+| `import_songsterr` | `{whole_song:true, parts:"all"}`, 17 parts | 72,927 |
+
+None of the crossings are exotic. `lookup_lineage` forward crossed at
+**forty-two** amp names, `get_params` at 294 on the AM4, `list_backups` at
+limit=130 against a schema maximum of 500. Every one is a call the tool's
+own description invites ("Batch all names in one call", "batch-read
+parameters ... for state-anchoring before a tone-edit").
+
+Two further things generalize:
+
+8. **A row cap is a proxy; a character budget is the thing.** `list_backups`
+   already had a cap, `limit`, with a maximum of 500, and it was honoured
+   literally: exactly as many entries as asked for, however heavy. Lowering
+   the maximum to what fits today re-breaks the day an entry grows a field,
+   and it is not even monotonic in the filter: `device:"circuit"` measured
+   **larger** at the same limit (221,739 vs 212,375) because the filter
+   selected the heavier rows. Bind the budget to what the host counts.
+9. **For a batch that costs wire time, refuse up front instead of paging.**
+   The other three tools read from tables already in memory, so trimming a
+   response costs only the rows trimmed. `get_params` has already spent the
+   wire by the time there is a response to trim: fitting 894 reads into the
+   ~240 that fit would mean performing 654 SysEx round-trips, about half a
+   minute of the user's time, and discarding them. So `get_params` caps its
+   `queries` array at 100 and refuses beyond it **before the first frame
+   goes out**. That is also the one shape here that cannot fail silently,
+   because there is no partial answer to mistake for a whole one. The cap
+   is the tighter of two independently measured limits: the response budget
+   allows ~215-240 reads, and CLAUDE.md's "> 5 s of wire work" ceiling
+   allows ~100.
+
+The instrument is `scripts/verify-response-budget.ts`, in preflight. When
+you add a read tool, add it there; the file's header lists what is measured
+but deliberately not gated, and why, so the next pass does not re-derive it.
+
+### A doc string and its runtime predicate must be one source of truth
+
+The same pass found that 112 AM4 params told the agent
+`applies_only_when: "applies to any type (special-cased on: ...)"` while
+`set_param`'s own `checkApplicability` **refused** those writes as
+type-gated. `amp.fat` read "applies to any type" and is exposed on 9 of 248
+amp types; `amp.geq_band_1` on 4.
+
+The cause is worth recognizing because it is generic: the predicate was
+corrected (2026-05-13, when a founder test proved primary-type gates are
+authoritative even with `always: true`) and **the prose that describes the
+same rule was not**. They had drifted apart silently for months, and
+`preflightApplicabilityWarning`, which interleaves both, was emitting a
+warning that contradicted its own first sentence.
+
+When a rule is expressed twice, once as behaviour and once as prose, derive
+them from the same branch or assert their agreement in a gate. Here both:
+`describeApplicability` now branches exactly as `checkApplicability` does,
+and `verify-dispatcher.ts` asserts that a strictly-gated knob is never
+described as universal.
+
+That fix was also worth **74,735 characters** (applicability prose across all
+440 `TYPE_APPLICABILITY` keys, 101,734 before and 26,999 after; over the 435
+keys that are registered params it is 95,491 to 26,754). State the denominator
+when you quote it, because the two differ by ~6,000.
+
+That is the third lesson: **a string that is wrong is very often a string that
+is long.** The misleading branch enumerated every special-cased type, up to
+6,404 chars for a single param (`amp.gain`, now 89), to say something that was
+not true. Rendering the shorter side of the gate ("applies on 246 of 248 amp
+types, every type EXCEPT: ...") is more accurate AND a fraction of the size.
+
+Two smaller conventions came out of the same rendering work:
+
+- **Never comma-join enum values.** 69 of the AM4's 79 reverb type names
+  CONTAIN a comma ("Room, Small"), so `A, B` is unparseable, and these are
+  strings the agent must reproduce byte-exactly for `set_param`. Use ` | `.
+- **Name the real cause in a truncation notice.** Telling an agent its own
+  `limit:3` was a size problem invites it to "fix" the call by narrowing
+  further.
 
 ---
 

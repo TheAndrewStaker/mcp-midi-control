@@ -222,6 +222,7 @@ async function getActivePresetNumber(): Promise<number> {
 
 export function registerAxeFxIIAtomicApplyTool(server: McpServer): void {
   server.registerTool('axefx2_atomic_apply', {
+    title: 'Axe-Fx II: Atomic Apply',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description: [
       'Atomic preset modification via dump, patch, push, save. ZERO use of per-frame channel/param frames; the device sees one coherent preset binary instead of 50+ race-prone wire frames.',

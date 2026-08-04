@@ -1,0 +1,102 @@
+name: release-bundle
+
+# End-to-end verification of the SHIPPABLE Windows ZIP, run before a tag
+# exists.
+#
+# WHY THIS EXISTS. `release.yml` is the only workflow that has ever run
+# `build:installer` + `verify-release-zip`, and it triggers on a tag push.
+# That means a broken bundle is discovered at the single worst moment: the
+# tag is already public, and unwinding it costs a delete/retag or a burnt
+# version number. `preflight.yml` never builds a bundle at all, so bundle
+# drift is invisible on main.
+#
+# The concrete instance: `server-all` has statically imported
+# `@mcp-midi-control/arturia` since 2026-07-26 (commit 7088741) while
+# `build-installer.ts` omitted it from its bundle list. That commit lives on
+# `release/0.8.0`, NOT on main, so nothing on the main-only workflows could
+# have seen it; the next ZIP would have died at boot on the MicroFreak
+# descriptor import. A push trigger on the release branch would have caught
+# it the day it landed. That is the trigger this workflow uses.
+#
+# WHAT IT DOES NOT DUPLICATE. `verify-bundle-package-lists` (a fast static
+# comparison of the hand-maintained bundle lists against server-all's
+# workspace dependency closure) already runs inside `preflight`, so
+# list-shaped drift is caught at PR time on main. This workflow is the
+# heavier complement: it actually downloads the pinned Node runtime, runs
+# `npm ci --omit=dev` inside the staging tree, packages the ZIP, extracts it
+# into a clean tmpdir and boots the BUNDLED node.exe over MCP. That catches
+# the classes a static list cannot: a package present in the list but broken
+# at runtime, a native prebuild that will not load, a dependency that does
+# not resolve under the lean bundle package.json, an entry point that throws.
+#
+# NO NIGHTLY SCHEDULE, deliberately. A cron run was considered and rejected:
+#   - The failure mode is commit-driven, not time-driven. The bundle breaks
+#     because someone added an import or a dependency, and a release-branch
+#     push trigger reports that on the exact commit that caused it. A nightly
+#     reports it detached from the change, hours or days later.
+#   - This repo goes quiet between releases (main sat unmoved for ~11 days
+#     across the window that produced the arturia drift). A nightly would
+#     spend a ~30-minute Windows runner re-verifying an unchanged tree on
+#     most nights, and the signal would be ignored precisely because it is
+#     usually noise.
+#   - GitHub disables scheduled workflows after 60 days of repository
+#     inactivity. A cron gate that silently switches itself off during quiet
+#     stretches is worse than no cron gate, because it is believed in.
+# The residual gap a nightly WOULD cover is environment drift with no commit
+# behind it (the pinned Node download URL disappearing, a registry or
+# prebuild-availability change). That is covered instead by
+# `workflow_dispatch`, which lets the maintainer run this against any ref on
+# demand, and by the release branch itself: a release branch is created
+# before its tag, so the branch push re-proves the environment on release
+# day, ahead of the tag.
+#
+# NOT run on pull_request or push to main: `build:installer` downloads a Node
+# runtime and does a full `npm ci` inside the staging tree, and making that a
+# gate on every PR to main would tax normal development for a check that only
+# has to be true at release time.
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+# Release branches take a run of commits before the tag. Only the tip needs
+# proving, so supersede in-flight runs rather than queueing a stack of
+# 30-minute Windows jobs behind each push.
+concurrency:
+  group: release-bundle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          cache: 'npm'
+
+      # Same action, path and key as release.yml, so the bundled Node runtime
+      # is downloaded once per .node-version rather than once per run.
+      - name: Cache bundled Node download
+        uses: actions/cache@v4
+        with:
+          path: build/node-cache
+          key: node-bundle-${{ hashFiles('.node-version') }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `build:installer` runs `npm run build` itself as its first step, so a
+      # compile break across any workspace package fails here too; no separate
+      # build step is needed.
+      - name: Build release bundle
+        run: npm run build:installer
+
+      - name: Verify release ZIP (hermetic - extracts to a clean tmpdir)
+        run: npm run verify-release-zip

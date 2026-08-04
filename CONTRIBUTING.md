@@ -5,15 +5,24 @@ need to write any code for the first one.
 
 ## Help confirm hardware (no code)
 
-You own a supported device, and you confirm the protocol on real
-hardware. **This is the most valuable contribution right now**,
-especially for Axe-Fx III / FM9 / FM3 owners. Three ways, easiest first:
-run a one-command read-only probe, paste back a few chat responses, or
-record a short capture. None require a developer setup.
+You own a device this server supports, and you confirm the protocol on
+real hardware. **This is the most valuable contribution right now**, for
+any device, not just the Fractal ones.
 
-→ Everything you need is in **[`packages/fractal-midi/docs/capture-guides/`](packages/fractal-midi/docs/capture-guides/README.md)**:
-per-device pages with the probe, a report-from-a-chat menu, and the exact
-captures still needed.
+There are five tiers, ordered by effort: tell us your device exists,
+send a file your computer already has, run one read-only command, drive
+the server and report what the front panel did, or record the wire. None
+require a developer setup, and you only need to do one.
+
+→ Everything you need is in
+**[`docs/contributing/`](docs/contributing/README.md)**: one page per
+registered device, with its asks ranked by value and labelled with what
+each one unlocks. Start there and find your device in the index table.
+
+A capability here can be fully built and still unconfirmed on hardware.
+Those are separate things, and your five-minute test is what converts
+`hardware-unverified` into `confirmed`. See
+[`docs/contributing/EVIDENCE.md`](docs/contributing/EVIDENCE.md).
 
 ## Contribute code
 
@@ -119,13 +128,15 @@ The simplest contribution. You need:
 
 Run any tool call against your device, paste the JSON response into a
 GitHub issue, and note whether the device's front panel did what the
-response says. That's it.
+response says. That's it. The front panel is the ground truth, not the
+vendor editor, which caches stale state.
 
-The Axe-Fx III is a high-value target for this. A 2026-06 owner test
-confirmed reads and continuous writes end-to-end, but discrete set-by-name,
-`save_preset`, `set_block`, and the live grid read are still community beta
-and want a second owner's confirmation. See [`packages/fractal-midi/docs/capture-guides/testing-axe-fx-iii.md`](packages/fractal-midi/docs/capture-guides/testing-axe-fx-iii.md)
-for the probe, a report-from-a-chat menu, and the captures still needed.
+**Which device, and which ask?** Do not guess. Every registered device
+has a page under
+[`docs/contributing/devices/`](docs/contributing/README.md) naming what
+that device needs right now, ranked, with an ask id you can quote in the
+issue. Confirming something already confirmed costs you an evening and
+tells us nothing; the pages exist so that does not happen.
 
 ## Recipes need your ears
 
@@ -134,6 +145,10 @@ auto-wah) that a player calls by name. The Hydrasynth library is mostly
 auditioned on hardware, but the guitar recipes are early and the
 iconic-tone coverage is still thin, so this is one of the most useful
 places to help and it needs no protocol knowledge.
+
+This is a SESSION-tier contribution in the terms used by
+[`docs/contributing/TIERS.md`](docs/contributing/TIERS.md): you drive the
+server from a normal conversation and report what came out.
 
 - **Tell us what landed.** If you tried a recipe, open an issue with the
   device, the tone you reached for, what sounded right, and what you
@@ -284,11 +299,13 @@ action `.syx` files are far easier to decode than mixed sessions.
 MIDI output ports are write-only from the OS side, so the passive-
 capture script above can't see what an editor app (AxeEdit, AM4-Edit,
 Hydrasynth Manager) sends to the device. The full step-by-step lives at
-[`packages/fractal-midi/docs/capture-guides/usbpcap-wireshark.md`](packages/fractal-midi/docs/capture-guides/usbpcap-wireshark.md):
+[`docs/contributing/tools/usbpcap-wireshark.md`](docs/contributing/tools/usbpcap-wireshark.md):
 install pointers, USB device identification, single-action capture
 discipline, SysEx extraction, and the citation expectations for any
-decode that goes into `docs/SYSEX-MAP*.md`. This is the maintainer's
-default workflow for any unknown editor-write op.
+decode that goes into a per-device `SYSEX-MAP.md`. This is the
+maintainer's default workflow for any unknown editor-write op. The
+one-time setup, for both Windows and macOS, is
+[`docs/contributing/tools/capture-setup.md`](docs/contributing/tools/capture-setup.md).
 
 ### What goes in `samples/`, what gets committed
 
