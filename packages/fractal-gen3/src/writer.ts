@@ -338,13 +338,52 @@ export function makeWriter(opts: {
       blockSlugIn: string,
       name: string,
       wireValue: number,
-      _channel?: number,
+      channel?: number,
       instance?: number,
     ): Promise<WriteResult> {
       gateWrite('set_param');
       const { effectId } = resolveBlockOrThrow(blockSlugIn, deviceLabel, instance);
       const { param } = resolveParamOrThrow(blockSlugIn, name, deviceLabel);
       const kind = catalog.blocks[blockSlugIn]?.params[name]?.wire_kind;
+      // The channel arg used to be dropped here, so `set_param(channel: "B")`
+      // wrote whichever channel the active scene happened to be on. fn=0x0B
+      // SET_CHANNEL targets the ACTIVE scene only (unlike the Axe-Fx II, where a
+      // channel switch mutates several scenes), so selecting first is safe and
+      // leaves the active scene pointing at the channel just written.
+      // Hardware-confirmed on FM3 fw 12 (2026-09-14): the selection persists
+      // through a store and decodes back per scene from the stored preset.
+      const channelName = channel !== undefined ? shape.channel_names[channel] : undefined;
+      if (channel !== undefined) {
+        if (channelName === undefined) {
+          throw new DispatchError(
+            'bad_channel',
+            deviceLabel,
+            `${shape.id} set_param: channel index ${channel} is out of range ` +
+              `(valid: 0..${shape.channel_names.length - 1} / ${shape.channel_names.join('/')}).`,
+          );
+        }
+        const channelError = await sendAndWatchForError(
+          ctx,
+          codec.buildSetChannel(effectId, channel as 0 | 1 | 2 | 3),
+        );
+        if (channelError !== undefined) {
+          return {
+            op: 'set_param',
+            target: `${blockSlugIn}.${name}`,
+            block: blockSlugIn,
+            name,
+            wire_value: wireValue,
+            acked: false,
+            channel: channelName,
+            warning:
+              `${deviceLabel} rejected the channel ${channelName} select ahead of set_param via 0x64 ` +
+              `MULTIPURPOSE_RESPONSE: ${formatErrorCode(channelError)}. Nothing was written. ` +
+              BETA_WARNING,
+          };
+        }
+        markDirty(connectionLabel);
+      }
+      const channelField = channelName !== undefined ? { channel: channelName } : {};
       let bytes: number[];
       try {
         bytes = buildSetForKind(effectId, param.paramId, wireValue, kind);
@@ -374,6 +413,7 @@ export function makeWriter(opts: {
           wire_value: wireValue,
           display_value: sentToDisplay(blockSlugIn, name, wireValue),
           acked: false,
+          ...channelField,
           warning:
             `${deviceLabel} rejected set_param via 0x64 MULTIPURPOSE_RESPONSE: ${desc}. ` +
             BETA_WARNING,
@@ -391,6 +431,7 @@ export function makeWriter(opts: {
           wire_value: echoDisplay?.wire ?? wireValue,
           display_value: echoDisplay?.display ?? sentToDisplay(blockSlugIn, name, wireValue),
           acked: true,
+          ...channelField,
           warning: BETA_WARNING,
         };
       }
@@ -411,6 +452,7 @@ export function makeWriter(opts: {
         display_value: sentToDisplay(blockSlugIn, name, wireValue),
         acked: false,
         unconfirmed: true,
+        ...channelField,
         warning:
           `${deviceLabel} did not confirm set_param ${blockSlugIn}.${name}: the write was sent ` +
           `and not rejected, but no device value-echo returned, so it is UNVERIFIED (it may have ` +
@@ -954,6 +996,145 @@ export function makeWriter(opts: {
         }
       }
 
+      // 2.5. Scenes. This step used to be missing entirely: scenes[] and
+      //      landingScene were accepted by preflight and then never sent, so a
+      //      multi-scene build left every scene on whatever channel/bypass the
+      //      last param write happened to leave. Channel (fn=0x0B) and bypass
+      //      (fn=0x0A) both target the ACTIVE scene, so each authored scene is
+      //      selected first. Hardware-confirmed on FM3 fw 12 (2026-09-14): state
+      //      written this way survives a store and decodes back per scene from
+      //      the stored preset. Scene names have no write envelope yet, so they
+      //      are reported in the warning instead of sent.
+      const sceneNamesNotWritten: number[] = [];
+      if (spec.scenes && spec.scenes.length > 0) {
+        // Scene-map keys follow the routing[] id rules: a slot's explicit `id`,
+        // the bare block slug (instance 1), or `<slug>_<instance>`.
+        const slotsById = new Map<string, { block: string; instance?: number }>();
+        for (const s of spec.slots) {
+          const block = s.block_type.trim().toLowerCase();
+          const derived = `${block}${s.instance !== undefined && s.instance !== 1 ? `_${s.instance}` : ''}`;
+          slotsById.set(s.id ?? derived, { block, instance: s.instance });
+        }
+        const resolveSceneBlock = (key: string): { block: string; instance?: number } => {
+          const bySlot = slotsById.get(key);
+          if (bySlot !== undefined) return bySlot;
+          const suffixed = /^(.+?)_(\d+)$/.exec(key.trim());
+          if (suffixed) return { block: suffixed[1].toLowerCase(), instance: Number(suffixed[2]) };
+          return { block: key.trim().toLowerCase() };
+        };
+
+        for (const sc of spec.scenes) {
+          if (overBudget()) break;
+          let sceneSwitch: WriteResult;
+          try {
+            sceneSwitch = await writer.switchScene!(ctx, sc.scene);
+          } catch (err) {
+            sceneSwitch = {
+              op: 'switch_scene',
+              target: String(sc.scene),
+              acked: false,
+              warning: `switch_scene failed: ${err instanceof Error ? err.message : String(err)}`,
+            };
+          }
+          writes.push(sceneSwitch);
+          if (!sceneSwitch.acked) {
+            // Writing channels/bypass now would land on the wrong scene.
+            anyFailed = true;
+            continue;
+          }
+
+          for (const [key, channelIn] of Object.entries(sc.channels ?? {})) {
+            if (overBudget()) break;
+            const upper = typeof channelIn === 'number'
+              ? shape.channel_names[channelIn]
+              : String(channelIn).trim().toUpperCase();
+            const wireChannel = upper !== undefined ? channelValues[upper] : undefined;
+            const target = `scene ${sc.scene} ${key} (channel ${upper ?? String(channelIn)})`;
+            if (wireChannel === undefined) {
+              writes.push({
+                op: 'set_channel',
+                target,
+                acked: false,
+                warning:
+                  `${shape.id} apply_preset: unknown channel "${String(channelIn)}" for ${key} on scene ` +
+                  `${sc.scene}. Valid channels: ${shape.channel_names.join(', ')}.`,
+              });
+              anyFailed = true;
+              continue;
+            }
+            try {
+              const { block, instance } = resolveSceneBlock(key);
+              const { effectId } = resolveBlockOrThrow(block, deviceLabel, instance);
+              const channelError = await sendAndWatchForError(
+                ctx,
+                codec.buildSetChannel(effectId, wireChannel as 0 | 1 | 2 | 3),
+              );
+              if (channelError !== undefined) {
+                writes.push({
+                  op: 'set_channel',
+                  target,
+                  acked: false,
+                  warning:
+                    `${deviceLabel} rejected set_channel via 0x64 MULTIPURPOSE_RESPONSE: ` +
+                    `${formatErrorCode(channelError)}. ${BETA_WARNING}`,
+                });
+                anyFailed = true;
+                continue;
+              }
+              markDirty(connectionLabel);
+              writes.push({ op: 'set_channel', target, acked: true, display_value: upper, warning: BETA_WARNING });
+            } catch (err) {
+              writes.push({
+                op: 'set_channel',
+                target,
+                acked: false,
+                warning: `set_channel failed: ${err instanceof Error ? err.message : String(err)}`,
+              });
+              anyFailed = true;
+            }
+          }
+
+          for (const [key, bypassed] of Object.entries(sc.bypassed ?? {})) {
+            if (overBudget()) break;
+            const target = `scene ${sc.scene} ${key}`;
+            try {
+              const { block, instance } = resolveSceneBlock(key);
+              const result = await writer.setBypass!(ctx, block, bypassed, instance);
+              writes.push({ ...result, target });
+              if (!result.acked) anyFailed = true;
+            } catch (err) {
+              writes.push({
+                op: 'set_bypass',
+                target,
+                acked: false,
+                warning: `set_bypass failed: ${err instanceof Error ? err.message : String(err)}`,
+              });
+              anyFailed = true;
+            }
+          }
+
+          if (sc.name !== undefined) sceneNamesNotWritten.push(sc.scene);
+        }
+      }
+      // Land on the requested scene (default 1) whenever scenes were authored,
+      // so the device is not left on the last scene the walk above selected.
+      if (!budgetExceeded && (spec.landingScene !== undefined || (spec.scenes?.length ?? 0) > 0)) {
+        const landing = Math.min(shape.scene_count, Math.max(1, Math.trunc(spec.landingScene ?? 1)));
+        try {
+          const result = await writer.switchScene!(ctx, landing);
+          writes.push({ ...result, target: `landing scene ${landing}` });
+          if (!result.acked) anyFailed = true;
+        } catch (err) {
+          writes.push({
+            op: 'switch_scene',
+            target: `landing scene ${landing}`,
+            acked: false,
+            warning: `switch_scene failed: ${err instanceof Error ? err.message : String(err)}`,
+          });
+          anyFailed = true;
+        }
+      }
+
       // 3. Optional rename + save (only if caller asked to persist).
       //    Skipped when the burst aborted on budget — a half-applied buffer
       //    must not be persisted, and the rename ack would itself wait a window.
@@ -993,7 +1174,7 @@ export function makeWriter(opts: {
           anyFailed = true;
         }
       }
-      // landingScene / no_save_on_done not yet wired (options.save handled above).
+      // no_save_on_done not yet wired (options.save handled above).
 
       // A failed step is a REAL failure (rejection/error), not a merely-
       // unconfirmed write — so `failed_step` points the agent at something that
@@ -1004,6 +1185,7 @@ export function makeWriter(opts: {
       // not abort on budget; advertising it on a non-saving audition apply
       // would tell a tester a save envelope went out when none did.
       const envelopes = ['block-insert (fn=0x01 sub=0x32)', 'SET_PARAMETER', 'SET_PRESET_NAME'];
+      if ((spec.scenes?.length ?? 0) > 0) envelopes.push('SET_SCENE / SET_CHANNEL / SET_BYPASS (fn=0x0C / 0x0B / 0x0A)');
       if (!budgetExceeded && shouldSave) envelopes.push('store (fn=0x01 sub=0x26)');
       const ackedCount = writes.filter((w) => w.acked).length;
       const unconfirmedCount = writes.filter((w) => !w.acked && w.unconfirmed).length;
@@ -1029,7 +1211,11 @@ export function makeWriter(opts: {
           (anyUnconfirmed && !anyFailed
             ? 'Treat this as applied-pending-verification, not a failure: confirm the audible / ' +
               'visible result on the device.'
-            : 'Confirm the audible / visible result on the device.'),
+            : 'Confirm the audible / visible result on the device.') +
+          (sceneNamesNotWritten.length > 0
+            ? ` Scene names were NOT written for scene(s) ${sceneNamesNotWritten.join(', ')}: there is ` +
+              'no gen-3 scene-rename envelope yet; name them on the device.'
+            : ''),
         saved: shouldSave ? !anyFailed : undefined,
       };
     },
