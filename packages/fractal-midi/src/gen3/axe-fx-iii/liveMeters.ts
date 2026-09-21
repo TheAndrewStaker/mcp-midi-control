@@ -123,14 +123,12 @@ export function parseGen3LiveMeters(frame: readonly number[]): Gen3LiveMeters {
     const f = 10 ** dp;
     return Math.round(v * f) / f;
   };
-  // FM3 (model 0x11): the CPU load is an 8-bit field worth 2 x percent that
-  // starts at bit 0 of frame[37] (its low bit is the top bit of frame[38]),
-  // so percent = frame[37] + 0.5 * (frame[38] bit 6). Calibrated on FM3 fw 12
-  // (2026-09-21): a 12-block preset read 67 against the front panel's 67%;
-  // raising reverb quality moved it 134 -> 135 -> 136 (field units) and back;
-  // the value ramps up for a few seconds after a preset load before settling.
-  // The old `32 + raw*0.5` read 65.5% there and 79.5% on a 3-block preset the
-  // panel showed at 24%. Other models keep the prior formula (unverified).
+  // FM3 (model 0x11): frame[37] starts an 8-bit field (low bit = frame[38]
+  // bit 6); decoded here as field/2. This is NOT the panel CPU (FM3 fw 12,
+  // 2026-09-21): it matched the panel once (67%) but read 86% on a new
+  // 3-block preset the panel showed at 21%, and climbs in a repeatable
+  // wrap-around sequence as blocks are added. The reader flags it invalid on
+  // FM3. Other models keep the prior formula (unverified).
   const cpu = frame[4] === FM3_MODEL_BYTE
     ? frame[OFFSET_CPU] + (((frame[OFFSET_CPU + 1] ?? 0) >> 6) & 1) * 0.5
     : CPU_BASE + frame[OFFSET_CPU] * CPU_SLOPE;

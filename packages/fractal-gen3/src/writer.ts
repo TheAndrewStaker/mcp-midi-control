@@ -1286,6 +1286,35 @@ export function makeWriter(opts: {
     async savePreset(ctx: DispatchCtx, location: LocationRef, name?: string): Promise<WriteResult> {
       gateWrite('save_preset');
       const n = parseLocation(location);
+      // Grid gen-3 stores the edit buffer to the CURRENTLY LOADED preset, not to
+      // the location in the frame (FM3 fw 12, 2026-09-21: saving 405's buffer
+      // "to 501" left 501 <EMPTY> and rewrote 405; BigSaurus axefx-sysex-maps
+      // SAFETY.md says the same for the III). So a non-active target is refused
+      // before anything is sent: it would silently overwrite the loaded preset.
+      const readActive = async (): Promise<number | undefined> => {
+        try {
+          const resp = ctx.conn.receiveSysExMatching((b) => codec.isQueryPatchNameResponse(b), 250);
+          ctx.conn.send(codec.buildQueryPatchName('current'));
+          return codec.parseQueryPatchNameResponse(await resp).presetNumber;
+        } catch {
+          return undefined;
+        }
+      };
+      if (shape.grid !== undefined) {
+        const active = await readActive();
+        if (active !== undefined && active !== n) {
+          return {
+            op: 'save_preset',
+            target: String(n),
+            acked: false,
+            warning:
+              `${deviceLabel} stores the edit buffer to the LOADED preset (${active}), not to the ` +
+              `requested location ${n}, so nothing was sent (it would have overwritten preset ` +
+              `${active}). Load ${n} first (switch_preset discards unsaved edits), build there, ` +
+              `then save. Copying a preset to another location is not supported over this path.`,
+          };
+        }
+      }
       // Rename the working buffer first so the store persists the name. A
       // failed rename must not be silent: the save still runs (the content is
       // what the user asked to keep) but the receipt says the name did not land.
@@ -1312,6 +1341,29 @@ export function makeWriter(opts: {
             `state (e.g. an unsaved-edit guard). For now, save on the device front panel. ` + BETA_WARNING,
         };
       }
+      // Verify the store by reading the target's name back (fn=0x0D by number,
+      // read-only). With a requested name, a mismatch means it did not land.
+      let verifyNote = '';
+      if (shape.grid !== undefined && name !== undefined) {
+        try {
+          const resp = ctx.conn.receiveSysExMatching((b) => codec.isQueryPatchNameResponse(b), 400);
+          ctx.conn.send(codec.buildQueryPatchName(n));
+          const stored = codec.parseQueryPatchNameResponse(await resp).name.trim();
+          if (stored !== name.trim()) {
+            return {
+              op: 'save_preset',
+              target: String(n),
+              acked: false,
+              warning:
+                `${deviceLabel} save_preset: location ${n} reads back as "${stored}", not "${name}"; ` +
+                `the store did not land. ` + renameNote + BETA_WARNING,
+            };
+          }
+          verifyNote = `Read back "${stored}" at ${n}. `;
+        } catch {
+          verifyNote = 'Name read-back got no answer; confirm on the front panel. ';
+        }
+      }
       return {
         op: 'save_preset',
         target: String(n),
@@ -1326,7 +1378,7 @@ export function makeWriter(opts: {
               `destination preset at the 14-bit arg slot). Wire shape is captured byte-exact from the ` +
               `editor, but device persistence is not yet hardware-verified. `) +
           `Device emitted no rejection. CONFIRM by switching to a different preset and back: if the ` +
-          `saved state survived, the save landed. ` + renameNote + BETA_WARNING,
+          `saved state survived, the save landed. ` + verifyNote + renameNote + BETA_WARNING,
       };
     },
 

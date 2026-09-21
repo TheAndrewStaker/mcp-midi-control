@@ -72,10 +72,10 @@ cases.push(() => {
   assert(threw, 'a non-sub=0x2E frame must throw');
 });
 
-// 5b. FM3 CPU = frame[37] + 0.5 * (frame[38] bit 6), calibrated on FM3 fw 12
-//     against the front panel (2026-09-21): a 12-block preset read f[37]=67,
-//     f[38]=0x10 and the panel showed 67%; field 135 (f[37]=67, f[38] bit 6
-//     set) is 67.5%.
+// 5b. FM3 field decode = frame[37] + 0.5 * (frame[38] bit 6). Pins the bit
+//     layout only: on FM3 fw 12 this field is NOT the panel CPU (67 matched a
+//     saved preset once, but a new 3-block preset read 86 vs a 21% panel), so
+//     the reader flags it invalid on FM3.
 cases.push(() => {
   const f = buildFrame(84, 109, 67, 590);
   f[4] = 0x11;
