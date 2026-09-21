@@ -126,7 +126,7 @@ function classifyShape(params: PresetSlotSpec['params']): 'empty' | 'flat' | 'ne
  * Pure function: returns NEW slot objects (the input spec is never
  * mutated) plus the `auto_applied` report, or the input untouched when
  * nothing injects (no cab placed, caller has cab opinions, or this
- * device's catalog cannot display-encode the cuts, the III/FM3 case).
+ * device's catalog cannot display-encode the cuts, the III case).
  *
  * Ordering: defaults are appended AFTER each channel window's own spec
  * params (insertion order is write order on the gen-3 apply path), so a

@@ -160,9 +160,10 @@ for (const desc of [AXEFX3_DESCRIPTOR, FM3_DESCRIPTOR, FM9_DESCRIPTOR]) {
     `${desc.id} set reverb.type 16 (numeric ordinal passthrough) → 16`,
     encodeValue(desc, 'reverb', 'type', 16) === 16,
   );
-  // FM9 has a device-true reverb roster (cache-mined): adjective-first labels.
-  // III/FM3 still borrow AM4 REVERB_TYPES noun-first names until their own caches.
-  const expRev16 = desc.id === 'fm9' ? 'Medium Spring' : 'Spring, Medium';
+  // FM9 and FM3 carry device-true reverb rosters (their own editor data):
+  // adjective-first labels. The III still borrows AM4 REVERB_TYPES noun-first
+  // names until its own cache lands. Old spellings still set by name (aliases).
+  const expRev16 = desc.id === 'fm9' || desc.id === 'fm3' ? 'Medium Spring' : 'Spring, Medium';
   check(
     `${desc.id} reverb.type decode(16) → "${expRev16}" (read leg intact)`,
     schema?.decode(16) === expRev16,
@@ -715,7 +716,7 @@ for (const { desc } of [
 ]) {
   const typeSchema = desc.blocks['reverb']?.params['type'];
   // FM9 = device-true cache roster (adjective-first); III/FM3 = AM4-borrowed.
-  const expRev16 = desc.id === 'fm9' ? 'Medium Spring' : 'Spring, Medium';
+  const expRev16 = desc.id === 'fm9' || desc.id === 'fm3' ? 'Medium Spring' : 'Spring, Medium';
   check(`${desc.id} reverb.type carries enum_values`, typeSchema?.enum_values !== undefined);
   check(
     `${desc.id} reverb.type ordinal 16 → '${expRev16}' (byte-anchor)`,
@@ -915,7 +916,7 @@ async function readerChecks(): Promise<void> {
     }
     check(`${desc.id} get_param(reverb.type) reads the fn=0x1F dump`, res !== undefined, String(err));
     check(`${desc.id} get_param(reverb.type) wire_value = 16 (device-true paramId ${typeParamId})`, res?.wire_value === 16, JSON.stringify(res?.wire_value));
-    check(`${desc.id} get_param(reverb.type) display_value labels via S1 overlay`, res?.display_value === (desc.id === 'fm9' ? 'Medium Spring' : 'Spring, Medium'), JSON.stringify(res?.display_value));
+    check(`${desc.id} get_param(reverb.type) display_value labels via S1 overlay`, res?.display_value === (desc.id === 'fm9' || desc.id === 'fm3' ? 'Medium Spring' : 'Spring, Medium'), JSON.stringify(res?.display_value));
   }
 
   // Channel-DIVERGENT read: the four channel copies of REVERB_TYPE differ. This

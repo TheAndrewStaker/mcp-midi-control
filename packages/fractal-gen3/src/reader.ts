@@ -428,6 +428,28 @@ async function readCurrentTypeName(
  * undefined when the device doesn't answer in time; the caller then leaves the
  * active scene simply unknown rather than failing the whole read.
  */
+/**
+ * Best-effort firmware version (fn=0x08 query, read-only; FM3 fw 12 answers
+ * "12.00" + a build-date string, the III answers major/minor). Returns
+ * undefined when the device does not answer within a short window.
+ */
+async function readFirmwareVersion(
+  ctx: DispatchCtx,
+  codec: ModernFractalCodec,
+): Promise<string | undefined> {
+  const respPromise = ctx.conn.receiveSysExMatching(
+    (b) => codec.isFirmwareVersionResponse(b),
+    250,
+  );
+  try {
+    ctx.conn.send(codec.buildQueryFirmwareVersion());
+    const parsed = codec.parseFirmwareVersionResponse(await respPromise);
+    return parsed.build ? `${parsed.version} (${parsed.build})` : parsed.version;
+  } catch {
+    return undefined;
+  }
+}
+
 async function readActiveScene(
   ctx: DispatchCtx,
   codec: ModernFractalCodec,
@@ -876,6 +898,7 @@ export function makeReader(opts: {
       let placedEffectIds: Set<number> | undefined;
       let liveMeters: Gen3LiveMeters | undefined;
       let activeScene: number | undefined;
+      let firmware: string | undefined;
       let vp4Structure: Vp4StructureBlob | undefined;
 
       // VP4 (serial AM4-shape): the whole preset STRUCTURE — name, scene
@@ -924,6 +947,7 @@ export function makeReader(opts: {
           // won't pay a full timeout. (Skipped entirely when the grid read failed,
           // so a dead/held port isn't probed twice.)
           activeScene = await readActiveScene(ctx, codec, getResponseTimeoutMs);
+          firmware = await readFirmwareVersion(ctx, codec);
         } catch {
           // No grid reply (older firmware / port held / III-FM3 unconfirmed):
           // fall back to probing every catalog block, as before.
@@ -1055,6 +1079,7 @@ export function makeReader(opts: {
         read_warnings: warnings,
         _meta: {
           device: deviceLabel,
+          ...(firmware !== undefined ? { firmware } : {}),
           read_at_ms: readStartedMs,
           active_scene_only: true,
           // The VP4 structure blob carries the serial chain = the routing.

@@ -760,7 +760,7 @@ export function makeWriter(opts: {
       // channel window's own params), unless the spec carries any cab
       // cut/room/slope opinion. Capability-probed per device: it only
       // fires where the cab cut params are display-calibrated in THIS
-      // device's catalog (FM9 today; III/FM3 skip until their own range
+      // device's catalog (FM9 + FM3 today; the III skips until its own range
       // evidence lands). The injected writes ride the same community-beta
       // set_param path below; the report surfaces as `auto_applied`.
       const { slots: cabPolishedSlots, cabPolish } = injectGen3CabPolish(

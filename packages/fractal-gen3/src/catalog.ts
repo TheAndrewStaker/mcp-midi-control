@@ -198,11 +198,14 @@ function makeEnumEncode(
   family: string,
   paramKey: string,
   enumValues: Readonly<Record<number, string>>,
+  aliases: Readonly<Record<number, string>> = {},
 ): ParamSchema['encode'] {
   // name (normalized + word-order variants) → ordinal. Built once. Lowest
   // ordinal wins a collision so a canonical name maps deterministically.
+  // `aliases` are superseded spellings of the same ordinal (accepted on input,
+  // never used for display); canonical labels are registered first and win.
   const reverse = new Map<string, number>();
-  for (const [ordStr, label] of Object.entries(enumValues)) {
+  for (const [ordStr, label] of [...Object.entries(enumValues), ...Object.entries(aliases)]) {
     const ord = Number(ordStr);
     for (const form of enumLabelForms(label)) {
       const existing = reverse.get(form);
@@ -289,6 +292,12 @@ export interface DeviceParamRange {
    * type/mode selectors the overlay missed were stored wrong as continuous).
    */
   readonly enumCount?: number;
+  /**
+   * Float rows only: the device's own taper, when the table carries one (the
+   * FM3 table derives it from the editor typecode; see factory.ts). Takes
+   * precedence over the catalog param's `scaling`. Omitted = keep the catalog's.
+   */
+  readonly scaling?: 'linear' | 'log10';
 }
 
 /** Device-true ranges keyed family → paramId → range (e.g. `FM9_RANGES`). */
@@ -339,7 +348,9 @@ function resolveCalibration(
     if (displayMin !== undefined) displayMin = roundDisplay(displayMin);
     if (displayMax !== undefined) displayMax = roundDisplay(displayMax);
   }
-  const { scaling } = param;
+  const scaling = deviceRange?.kind === 'float' && deviceRange.scaling !== undefined
+    ? deviceRange.scaling
+    : param.scaling;
   if (displayMin === undefined || displayMax === undefined) return undefined;
   if (!Number.isFinite(displayMin) || !Number.isFinite(displayMax)) return undefined;
   if (displayMin >= displayMax) return undefined;
@@ -503,6 +514,17 @@ function buildParamSchema(
     deviceOverlayValues !== undefined || overlayValues !== undefined || sharedRoster !== undefined
       ? { ...(sharedRoster ?? {}), ...(overlayValues ?? {}), ...(deviceOverlayValues ?? {}) }
       : undefined;
+  // Spellings a device-captured name replaced for the same ordinal (e.g. FM3
+  // "Modern VCA Compressor" over the overlay's "VCA Modern Compressor") stay
+  // accepted on set-by-name so existing callers keep working.
+  const enumAliases: Record<number, string> = {};
+  if (deviceOverlayValues !== undefined) {
+    const before = { ...(sharedRoster ?? {}), ...(overlayValues ?? {}) };
+    for (const [ord, name] of Object.entries(before)) {
+      const dev = deviceOverlayValues[Number(ord)];
+      if (dev !== undefined && dev !== name) enumAliases[Number(ord)] = name;
+    }
+  }
 
   // Device-cache enum WITHOUT a correlated name table: the editor cache marks
   // this paramId enum (kind:'enum' + enumCount) but the AM4/XML/roster overlays
@@ -555,7 +577,7 @@ function buildParamSchema(
   if (enumValues !== undefined) {
     // Set-by-name = float32(read-ordinal): encode resolves a NAME to the same
     // ordinal the decode labels with. The wire form is DISCRETE (sub 09 00).
-    encode = makeEnumEncode(family, key, enumValues);
+    encode = makeEnumEncode(family, key, enumValues, enumAliases);
     decode = (wire: number): number | string => enumValues[wire] ?? wire;
   } else if (deviceEnumNoNames) {
     // Count-known device-cache enum, no names yet: discrete numeric-ordinal

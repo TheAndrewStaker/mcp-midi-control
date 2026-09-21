@@ -1846,6 +1846,58 @@ export function buildSetTuner(on: boolean): number[] {
   return buildEnvelope(FN_TUNER_ON_OFF, [on ? 1 : 0]);
 }
 
+// ── 0x08 FIRMWARE VERSION ──────────────────────────────────────────
+
+/**
+ * QUERY FIRMWARE VERSION (function 0x08, no payload). Read-only.
+ *
+ *   Request:  `F0 00 01 74 <model> 08 <cs> F7`
+ *   Response: `F0 00 01 74 <model> 08 <major> <minor> <dd dd> <build text…> <cs> F7`
+ *
+ * Source: rudib/axess (fractal_protocol firmware_version.rs, III + FM3 reply
+ * goldens). FM3 fw 12 hardware reply (2026-09-21):
+ * `… 11 08 0c 00 00 00 "Jan 19 2026 14:57:49" 00…` = 12.00, build date text.
+ */
+export const FN_FIRMWARE_VERSION = 0x08;
+
+export function buildQueryFirmwareVersion(modelByte: number = AXE_FX_III_MODEL_ID): number[] {
+  return buildEnvelope(FN_FIRMWARE_VERSION, [], modelByte);
+}
+
+export function isFirmwareVersionResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return (
+    bytes.length >= 10 &&
+    bytes[0] === SYSEX_START &&
+    bytes[1] === FRACTAL_MFR_PREFIX[0] && bytes[2] === FRACTAL_MFR_PREFIX[1] && bytes[3] === FRACTAL_MFR_PREFIX[2] &&
+    bytes[4] === modelByte &&
+    bytes[5] === FN_FIRMWARE_VERSION &&
+    bytes[bytes.length - 1] === SYSEX_END
+  );
+}
+
+/** Parse a 0x08 reply: `version` is "major.minor" (minor zero-padded, as the panel shows it). */
+export function parseFirmwareVersionResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): { major: number; minor: number; version: string; build?: string } {
+  if (!isFirmwareVersionResponse(bytes, modelByte)) {
+    throw new Error(`parseFirmwareVersionResponse: not a 0x08 frame (len=${bytes.length})`);
+  }
+  const major = bytes[6] & 0x7f;
+  const minor = bytes[7] & 0x7f;
+  // Build text (FM3 fw 12): printable ASCII run after the two reserved bytes.
+  let build = '';
+  for (let i = 10; i < bytes.length - 2; i++) {
+    const c = bytes[i];
+    if (c < 0x20 || c > 0x7e) break;
+    build += String.fromCharCode(c);
+  }
+  return { major, minor, version: `${major}.${String(minor).padStart(2, '0')}`, build: build.trim() || undefined };
+}
+
 // ── 0x13 STATUS DUMP ───────────────────────────────────────────────
 
 /**
@@ -2384,6 +2436,9 @@ export interface ModernFractalCodec {
   isSetGetTempoResponse(bytes: readonly number[]): boolean;
   parseTempoResponse(bytes: readonly number[]): ReturnType<typeof parseTempoResponse>;
   buildStatusDump(): number[];
+  buildQueryFirmwareVersion(): number[];
+  isFirmwareVersionResponse(bytes: readonly number[]): boolean;
+  parseFirmwareVersionResponse(bytes: readonly number[]): ReturnType<typeof parseFirmwareVersionResponse>;
   isStatusDumpResponse(bytes: readonly number[]): boolean;
   parseStatusDumpResponse(bytes: readonly number[]): ReturnType<typeof parseStatusDumpResponse>;
   // fn=0x03 REQUEST_PRESET_DUMP (host → device) → 0x77/0x78/0x79 dump chain.
@@ -2438,6 +2493,9 @@ export function createModernFractalCodec(
     isSetGetTempoResponse: (b) => isSetGetTempoResponse(b, modelByte),
     parseTempoResponse: (b) => parseTempoResponse(b, modelByte),
     buildStatusDump: () => buildStatusDump(modelByte),
+    buildQueryFirmwareVersion: () => buildQueryFirmwareVersion(modelByte),
+    isFirmwareVersionResponse: (b) => isFirmwareVersionResponse(b, modelByte),
+    parseFirmwareVersionResponse: (b) => parseFirmwareVersionResponse(b, modelByte),
     isStatusDumpResponse: (b) => isStatusDumpResponse(b, modelByte),
     parseStatusDumpResponse: (b) => parseStatusDumpResponse(b, modelByte),
     buildRequestPresetDump: (n) => buildRequestPresetDump(n, modelByte),

@@ -28,6 +28,8 @@ import {
   buildSceneBlobHeader,
   buildSceneBlobChecksum,
   xorChecksum32Words,
+  buildQueryFirmwareVersion,
+  parseFirmwareVersionResponse,
 } from '../../../src/gen3/axe-fx-iii/index.js';
 import { fractalChecksum } from '../../../src/shared/checksum.js';
 
@@ -173,6 +175,20 @@ cases.push(() => {
 // Case 8: the "<EMPTY>" frame from the editor's "Clearing preset..."
 // flow — full hand-traced byte literal (header fields plus the
 // 37-byte packed tail traced through the FUN_14033f2d0 algorithm).
+// Firmware version query (fn 0x08). Request + parse goldens: the FM3 reply is a
+// real FM3 fw 12 hardware response (2026-09-21); the III reply is from
+// rudib/axess's fractal_protocol test (fw 13.03).
+cases.push(() => {
+  const req = buildQueryFirmwareVersion(0x11);
+  assert(hexStr(req) === 'f0 00 01 74 11 08 1c f7', `firmware query (FM3) mismatch: ${hexStr(req)}`);
+  const fm3 = parseFirmwareVersionResponse(parseHex(
+    'f0 00 01 74 11 08 0c 00 00 00 4a 61 6e 20 31 39 20 32 30 32 36 20 31 34 3a 35 37 3a 34 39 ' +
+    '00 00 00 00 00 00 00 00 00 00 00 00 71 f7'), 0x11);
+  assert(fm3.version === '12.00' && fm3.build === 'Jan 19 2026 14:57:49', `FM3 firmware parse: ${JSON.stringify(fm3)}`);
+  const iii = parseFirmwareVersionResponse(parseHex('f0 00 01 74 10 08 0d 03 10 01 08 00 00 0a f7'), 0x10);
+  assert(iii.version === '13.03', `III firmware parse: ${JSON.stringify(iii)}`);
+});
+
 // buildRenamePreset with a preset number: the FM9-Edit rename capture
 // (wagahai850/ai-tone-assistant set_preset_name, "Confirmed via Wireshark")
 // carries the target preset 14-bit LSB-first in the first two value bytes and

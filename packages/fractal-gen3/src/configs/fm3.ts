@@ -10,7 +10,30 @@
  * paramIds are FM3's own (reusing the III's mis-addresses 6.9% of shared
  * params; see `docs/_private/MINING-FINDINGS-FM-VP4.md`). community-beta.
  */
-import { FM3_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm3';
+import { FM3_PARAMS_BY_FAMILY, FM3_ROSTERS } from 'fractal-midi/gen3/fm3';
+
+/**
+ * FM3 device-true model names (FM3 editor data, fw 12.0; forgefx-midi), keyed
+ * by type-param symbol like FM9_ENUM_OVERRIDES. The ordinal is the discrete-SET
+ * value. Cross-checked against the shared gen-3 rosters: amp/drive/wah/GEQ
+ * identical, delay adds the 3 gap ordinals, comp/reverb differ only in wording
+ * and these are the FM3's own panel spellings ("Modern VCA Compressor", "Small
+ * Room"). Cab is left out: cab ordinals are bank-conditioned.
+ */
+const FM3_ROSTER_SYMBOLS: Readonly<Record<string, string>> = {
+  amp: 'DISTORT_TYPE',
+  comp: 'COMP_TYPE',
+  delay: 'DELAY_TYPE',
+  drive: 'FUZZ_TYPE',
+  reverb: 'REVERB_TYPE',
+  wah: 'WAH_TYPE',
+  geq: 'GEQ_TYPE',
+};
+const FM3_ENUM_OVERRIDES: Readonly<Record<string, Readonly<Record<number, string>>>> = Object.fromEntries(
+  Object.entries(FM3_ROSTER_SYMBOLS)
+    .filter(([key]) => FM3_ROSTERS[key] !== undefined)
+    .map(([key, symbol]) => [symbol, Object.fromEntries(FM3_ROSTERS[key].map((m) => [m.value, m.name]))]),
+);
 import type { FractalModernConfig, } from '../factory.js';
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 import {
@@ -90,10 +113,12 @@ export const FM3_CONFIG: FractalModernConfig = {
     'sub=0x52 continuous SET (echo + read-back), set_bypass, switch_scene, and the sub=0x27 ' +
     'preset switch. Discrete set-by-name SET (float32(ordinal), sub 09 00) is FM3-hardware-' +
     'confirmed separately via a 2026-06-10 community session: frames byte-identical to this ' +
-    'server\'s builder, sent from the tester\'s own rig, moved the FM3 front panel. Not yet ' +
-    'confirmed: set_block placement, save_preset, and the Windows serial-driver path ' +
-    '(untested, not falsified).',
+    'server\'s builder, sent from the tester\'s own rig, moved the FM3 front panel. ' +
+    'Confirmed via this server (fw 12.00, 2026-09-21): set_block, routing, channel writes, ' +
+    'scenes, save_preset, names, live grid, ranges (362/364 match panel). Unconfirmed: ' +
+    'Windows serial; cpu_percent invalid.',
   params_by_family: FM3_PARAMS_BY_FAMILY,
+  enum_overrides: FM3_ENUM_OVERRIDES,
   device_true_roster: true,
   canonical_terms: {
     block: 'block',
@@ -123,16 +148,12 @@ export const FM3_CONFIG: FractalModernConfig = {
       'lows and highs than any real rig in a room; the validated starting point',
       'is a low cut ~80 Hz / high cut ~6.5 kHz plus a little cab room, and the',
       'server auto-applies it on fresh cab-bearing builds on the AM4, Axe-Fx II,',
-      'and FM9 (reported in `auto_applied`).',
+      'FM9, and FM3 (reported in `auto_applied`).',
       '',
-      'NOT AUTO-APPLIED ON THE FM3 YET: the FM3\'s cab cut/room params',
-      '(cab locut / hicut / roommix) are registered but carry NO calibrated',
-      'display range in the FM3 catalog, so a Hz value like 80 cannot be',
-      'expressed on the wire without guessing (set_param on them takes a raw',
-      '0..65534 wire integer, NOT Hz). Do NOT write display-shaped values to',
-      'them, and do not claim cuts were applied. Until FM3 range evidence lands,',
-      'advise the user to set the cab low/high cut (80 Hz / 6.5-7.5 kHz,',
-      '12 dB/oct) on the front panel or in FM3-Edit for direct/FRFR presets.',
+      'FM3: the cab cut/room params are display-calibrated from the FM3\'s own',
+      'editor ranges (locut 20..2000 Hz, hicut 200..20000 Hz, log taper; FM3 fw',
+      '12 panel text read 80 -> "80.0 Hz", 6500 -> "6500 Hz"). Pass Hz values.',
+      'Any explicit cab cut/room value in the spec suppresses the defaults.',
     ].join('\n'),
   },
   example_spec: FM3_EXAMPLE_SPEC,
