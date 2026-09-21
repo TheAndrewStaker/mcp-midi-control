@@ -72,6 +72,19 @@ cases.push(() => {
   assert(threw, 'a non-sub=0x2E frame must throw');
 });
 
+// 5b. FM3 CPU = frame[37] + 0.5 * (frame[38] bit 6), calibrated on FM3 fw 12
+//     against the front panel (2026-09-21): a 12-block preset read f[37]=67,
+//     f[38]=0x10 and the panel showed 67%; field 135 (f[37]=67, f[38] bit 6
+//     set) is 67.5%.
+cases.push(() => {
+  const f = buildFrame(84, 109, 67, 590);
+  f[4] = 0x11;
+  f[38] = 0x10;
+  assert(parseGen3LiveMeters(f).cpu_percent === 67, `FM3 cpu should be 67, got ${parseGen3LiveMeters(f).cpu_percent}`);
+  f[38] = 0x50;
+  assert(parseGen3LiveMeters(f).cpu_percent === 67.5, `FM3 cpu half-step should be 67.5, got ${parseGen3LiveMeters(f).cpu_percent}`);
+});
+
 // 5. A frame too short for the CPU offset throws (no partial decode).
 cases.push(() => {
   let threw = false;
@@ -86,7 +99,8 @@ cases.push(() => {
 // 6. A BLOCK-TARGETED sub=0x2E frame (target bytes [8]/[10] populated) decodes
 //    the SAME meters: in the FM3 capture (fm3-community-2026-06-12, job3,
 //    three block-targeted reads of one static preset) f[35]/f[36] varied
-//    (output meters) while f[37]=69 held constant (66.5% CPU). The earlier
+//    (output meters) while f[37]=69 held constant (69% CPU under the FM3
+//    decode below; the old formula said 66.5). The earlier
 //    refusal's premise ("bytes 35-37 are not meters there") was never
 //    established. Parity with parseGen3GridLayout.
 cases.push(() => {
@@ -95,7 +109,7 @@ cases.push(() => {
   f[8] = 0x3a; // effectId populated → block-targeted
   f[10] = 0x0a; // paramId populated
   const m = parseGen3LiveMeters(f);
-  assert(m.cpu_percent === 66.5, `block-targeted cpu should be 66.5, got ${m.cpu_percent}`);
+  assert(m.cpu_percent === 69, `block-targeted FM3 cpu should be 69, got ${m.cpu_percent}`);
   assert(m.output_left === Math.round((38 / 127) * 1000) / 1000, `block-targeted outL mismatch: ${m.output_left}`);
 });
 

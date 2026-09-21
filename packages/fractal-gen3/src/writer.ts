@@ -1221,15 +1221,38 @@ export function makeWriter(opts: {
         // hardware-FALSIFIED on the FM3 for presets >127 (fw 12.00 ignores
         // CC32 → preset 438 landed on 54).
         ctx.conn.send(codec.buildSwitchPresetSysEx(n));
+        // The device never acks a switch, so confirm it: read the active preset
+        // back (fn=0x0D query, read-only) until it reports `n`. This also holds
+        // the call open until the frame has left the port: returning straight
+        // after send() let a short-lived server exit before the serial write
+        // drained, and the switch was silently lost (FM3 fw 12, 2026-09-21:
+        // a lone switch_preset 403 left the unit on 405 while reporting acked).
+        let landedOn: number | undefined;
+        for (let attempt = 0; attempt < 4 && landedOn !== n; attempt++) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 120));
+          try {
+            const respPromise = ctx.conn.receiveSysExMatching(
+              (b) => codec.isQueryPatchNameResponse(b),
+              250,
+            );
+            ctx.conn.send(codec.buildQueryPatchName('current'));
+            landedOn = codec.parseQueryPatchNameResponse(await respPromise).presetNumber;
+          } catch {
+            // no answer this round; retry
+          }
+        }
+        const confirmed = landedOn === n;
         return {
           op: 'switch_preset',
           target: String(n),
-          acked: true,
-          display_value: String(n),
-          warning:
-            `${shape.id} switch_preset: sent the gen-3 SysEx preset switch (fn=0x01 sub=0x27, ` +
-            `hardware-confirmed on this device family). ${deviceLabel} does not ack preset ` +
-            `switches; confirm by reading the new active preset name or by checking the front panel.`,
+          acked: confirmed,
+          display_value: String(landedOn ?? n),
+          warning: confirmed
+            ? `${shape.id} switch_preset: sent the gen-3 SysEx preset switch (fn=0x01 sub=0x27) and ` +
+              `read back preset ${n} as active.`
+            : `${shape.id} switch_preset: sent the gen-3 SysEx preset switch (fn=0x01 sub=0x27) but the ` +
+              `device reports preset ${landedOn ?? 'unknown'} as active, not ${n}. The switch did not ` +
+              `land (or the read-back got no answer); check the front panel and retry.`,
         };
       }
       const bytes = codec.buildSwitchPresetPC(n);

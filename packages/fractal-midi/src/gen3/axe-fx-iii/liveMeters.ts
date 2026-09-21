@@ -55,7 +55,10 @@ const OFFSET_OUTPUT_LEFT = 35;
 const OFFSET_OUTPUT_RIGHT = 36;
 const OFFSET_CPU = 37;
 
-/** CPU% = CPU_BASE + raw7 * CPU_SLOPE (raw7 in 0..127 → 32.0 .. 95.5 %). */
+/** FM3 SysEx model byte (its CPU field decodes differently, see parseGen3LiveMeters). */
+const FM3_MODEL_BYTE = 0x11;
+
+/** Non-FM3: CPU% = CPU_BASE + raw7 * CPU_SLOPE (raw7 in 0..127 → 32.0 .. 95.5 %). */
 const CPU_BASE = 32;
 const CPU_SLOPE = 0.5;
 
@@ -120,8 +123,19 @@ export function parseGen3LiveMeters(frame: readonly number[]): Gen3LiveMeters {
     const f = 10 ** dp;
     return Math.round(v * f) / f;
   };
+  // FM3 (model 0x11): the CPU load is an 8-bit field worth 2 x percent that
+  // starts at bit 0 of frame[37] (its low bit is the top bit of frame[38]),
+  // so percent = frame[37] + 0.5 * (frame[38] bit 6). Calibrated on FM3 fw 12
+  // (2026-09-21): a 12-block preset read 67 against the front panel's 67%;
+  // raising reverb quality moved it 134 -> 135 -> 136 (field units) and back;
+  // the value ramps up for a few seconds after a preset load before settling.
+  // The old `32 + raw*0.5` read 65.5% there and 79.5% on a 3-block preset the
+  // panel showed at 24%. Other models keep the prior formula (unverified).
+  const cpu = frame[4] === FM3_MODEL_BYTE
+    ? frame[OFFSET_CPU] + (((frame[OFFSET_CPU + 1] ?? 0) >> 6) & 1) * 0.5
+    : CPU_BASE + frame[OFFSET_CPU] * CPU_SLOPE;
   return {
-    cpu_percent: round(CPU_BASE + frame[OFFSET_CPU] * CPU_SLOPE, 1),
+    cpu_percent: round(cpu, 1),
     output_left: round(frame[OFFSET_OUTPUT_LEFT] / METER_FULL_SCALE, 3),
     output_right: round(frame[OFFSET_OUTPUT_RIGHT] / METER_FULL_SCALE, 3),
   };

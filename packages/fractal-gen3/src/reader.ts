@@ -1041,15 +1041,13 @@ export function makeReader(opts: {
               'Community beta: the server-driven fn=0x1F poll is not yet hardware-confirmed end to end.',
       );
       if (liveMeters !== undefined && codec.modelByte === 0x11) {
-        // FM3 panel contradicts the decode (fw 12, 2026-09-21): the panel read
-        // 24% CPU while cpu_percent read 79.5%, and the formula's own floor is
-        // 32%. Across single-block placements the value also fell (88 -> 36.5).
-        // Contradicted evidence ships loudly flagged, never as a headroom answer.
+        // FM3 CPU decode calibrated against the front panel (fw 12, 2026-09-21):
+        // 67% panel = 67% read; the field tracks load (reverb quality steps).
         warnings.push(
-          `gen-3 live_meters: cpu_percent (${liveMeters.cpu_percent}%) is NOT a valid CPU reading on ` +
-            'the FM3: an owner\'s front panel showed 24% while this field read 79.5%, and it moved ' +
-            'down as blocks were added. Do not use it for headroom or DSP-limit decisions; ask the ' +
-            'user to read CPU on the unit. output_left/right are momentary peaks at read time.',
+          `gen-3 live_meters: cpu_percent (${liveMeters.cpu_percent}%) is the FM3's DSP load, ` +
+            'calibrated against the front panel. It ramps up for a few seconds after a preset ' +
+            'load or block change; re-read after ~5 s for the settled value. output_left/right ' +
+            'are momentary peaks at read time.',
         );
       } else if (liveMeters !== undefined) {
         warnings.push(

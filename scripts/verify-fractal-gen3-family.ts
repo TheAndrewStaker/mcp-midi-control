@@ -516,10 +516,38 @@ async function writerChecks(): Promise<void> {
   // (the WinMM long-message drop workaround). Preset 475: bank 3, PC 91.
   {
     const codec11 = createModernFractalCodec(0x11);
-    const { ctx, sent } = fakeCtx();
+    // The FM3 never acks a switch, so switch_preset confirms it with the fn=0x0D
+    // current-preset query (FM3 fw 12 fix, 2026-09-21: a switch sent right
+    // before process exit was silently lost). The mock answers that query the
+    // way the device does: `F0 00 01 74 11 0D <num14> <name x32> 00 cs F7`.
+    const patchNameReply = (num: number): number[] => {
+      const body = [0xf0, 0x00, 0x01, 0x74, 0x11, 0x0d, num & 0x7f, (num >> 7) & 0x7f,
+        ...Array.from('TEST'.padEnd(32, ' '), (c) => c.charCodeAt(0)), 0x00];
+      return [...body, body.reduce((a, b) => a ^ b, 0) & 0x7f, 0xf7];
+    };
+    const switchCtx = (activeAfter: number) => {
+      const sent: number[][] = [];
+      const ctx = {
+        conn: {
+          send: (b: number[]) => { sent.push(b); },
+          receiveSysExMatching: (pred: (b: number[]) => boolean) => {
+            const reply = patchNameReply(activeAfter);
+            return pred(reply) ? Promise.resolve(reply) : Promise.reject(new Error('mock-timeout'));
+          },
+          onMessage: () => () => {},
+          close: () => {},
+        },
+      } as unknown as Parameters<NonNullable<DeviceDescriptor['writer']['setBlock']>>[0];
+      return { ctx, sent };
+    };
+    const { ctx, sent } = switchCtx(475);
     const r = await FM3_DESCRIPTOR.writer.switchPreset!(ctx, 475);
-    check('FM3 switch_preset(475) acked', r.acked === true);
-    check('FM3 switch_preset emits exactly ONE frame', sent.length === 1, `sent ${sent.length}`);
+    check('FM3 switch_preset(475) acked once the read-back reports 475', r.acked === true);
+    check('FM3 switch_preset sends the switch then ONE read-back query when it lands',
+      sent.length === 2 && sent[1][5] === 0x0d, `sent ${sent.length}`);
+    const { ctx: ctxMiss } = switchCtx(405);
+    const miss = await FM3_DESCRIPTOR.writer.switchPreset!(ctxMiss, 475);
+    check('FM3 switch_preset NOT acked when the device reports a different preset', miss.acked === false);
     const f = sent[0] ?? [];
     check('FM3 switch_preset frame = SysEx model 0x11, fn=0x01, sub=0x27',
       f[0] === 0xf0 && f[4] === 0x11 && f[5] === 0x01 && f[6] === 0x27,

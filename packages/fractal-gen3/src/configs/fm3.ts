@@ -116,7 +116,7 @@ export const FM3_CONFIG: FractalModernConfig = {
     'server\'s builder, sent from the tester\'s own rig, moved the FM3 front panel. ' +
     'Confirmed via this server (fw 12.00, 2026-09-21): set_block, routing, channel writes, ' +
     'scenes, save_preset, names, live grid, ranges (362/364 match panel). Unconfirmed: ' +
-    'Windows serial; cpu_percent invalid.',
+    'Windows serial. cpu_percent panel-calibrated (settles ~5 s after load).',
   params_by_family: FM3_PARAMS_BY_FAMILY,
   enum_overrides: FM3_ENUM_OVERRIDES,
   device_true_roster: true,
