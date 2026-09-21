@@ -173,6 +173,21 @@ cases.push(() => {
 // Case 8: the "<EMPTY>" frame from the editor's "Clearing preset..."
 // flow — full hand-traced byte literal (header fields plus the
 // 37-byte packed tail traced through the FUN_14033f2d0 algorithm).
+// buildRenamePreset with a preset number: the FM9-Edit rename capture
+// (wagahai850/ai-tone-assistant set_preset_name, "Confirmed via Wireshark")
+// carries the target preset 14-bit LSB-first in the first two value bytes and
+// is otherwise identical to the decoded frame. Literal = that builder's output
+// for "PC GREENBACK" at preset 405 on the FM3 (0x11).
+cases.push(() => {
+  const got = buildRenamePreset('PC GREENBACK', 0x11, 405);
+  const want = parseHex(
+    'f0 00 01 74 11 01 28 00 00 00 00 00 15 03 00 00 00 00 00 20 00 ' +
+    '28 10 64 04 3a 49 0a 45 27 10 48 14 1a 2c 40 20 10 08 04 02 01 00 ' +
+    '40 20 10 08 04 02 01 00 40 20 10 08 04 02 00 4c f7',
+  );
+  assert(hexStr(got) === hexStr(want), `buildRenamePreset(405) mismatch:\n  exp ${hexStr(want)}\n  got ${hexStr(got)}`);
+});
+
 cases.push(() => {
   const got = buildRenamePreset('<EMPTY>', III);
   const want = parseHex(

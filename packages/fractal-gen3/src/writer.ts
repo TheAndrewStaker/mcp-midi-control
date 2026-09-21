@@ -316,6 +316,89 @@ export function makeWriter(opts: {
     return codec.buildSetParameterContinuous(effectId, paramId, normalized);
   }
 
+  /**
+   * Name writes. Grid devices (III/FM3/FM9) use the editor's own fn=0x01 name
+   * frames: sub=0x28 for the preset (carrying the preset number, per an FM9-Edit
+   * capture) and sub=0x2b for scene N. The old fn=0x09 SET_PRESET_NAME (a gen-2
+   * port) was sent here before and the FM3 silently ignored it: a save with a
+   * name persisted the preset but kept "<EMPTY>" as its name (fw 12,
+   * 2026-09-21). Non-grid models keep the fn=0x09 path.
+   */
+  async function renameGen3(
+    ctx: DispatchCtx,
+    target: RenameTarget,
+    name: string,
+    presetNumber?: number,
+  ): Promise<WriteResult> {
+    const isScene = target !== 'preset';
+    let sceneIndex = 0;
+    if (isScene) {
+      const m = /^scene:(\d+)$/.exec(target);
+      sceneIndex = m ? Number(m[1]) - 1 : -1;
+      if (shape.grid === undefined || sceneIndex < 0 || sceneIndex >= shape.scene_count) {
+        throw new DispatchError(
+          'capability_not_supported',
+          deviceLabel,
+          `${shape.id} rename: target '${target}' is not writable on ${deviceLabel} ` +
+            `(scene names need a grid device and scene:1..scene:${shape.scene_count}).`,
+        );
+      }
+    }
+    let number = presetNumber;
+    if (!isScene && shape.grid !== undefined && number === undefined) {
+      try {
+        const respPromise = ctx.conn.receiveSysExMatching(
+          (b) => codec.isQueryPatchNameResponse(b),
+          getResponseTimeoutMs,
+        );
+        ctx.conn.send(codec.buildQueryPatchName('current'));
+        number = codec.parseQueryPatchNameResponse(await respPromise).presetNumber;
+      } catch {
+        number = undefined;
+      }
+    }
+    let bytes: number[];
+    let frameLabel: string;
+    try {
+      if (isScene) {
+        bytes = codec.buildSetSceneName(sceneIndex, name);
+        frameLabel = 'fn=0x01 sub=0x2b SET_SCENE_NAME';
+      } else if (shape.grid !== undefined) {
+        bytes = codec.buildRenamePreset(name, number ?? 0);
+        frameLabel = 'fn=0x01 sub=0x28 SET_PRESET_NAME';
+      } else {
+        bytes = codec.buildSetPresetName(name);
+        frameLabel = 'fn=0x09 SET_PRESET_NAME';
+      }
+    } catch (err) {
+      throw new DispatchError('value_out_of_range', deviceLabel, err instanceof Error ? err.message : String(err));
+    }
+    const errorReport = await sendAndWatchForError(ctx, bytes, 100);
+    markDirty(connectionLabel);
+    if (errorReport !== undefined) {
+      return {
+        op: 'rename',
+        target,
+        acked: false,
+        warning:
+          `${deviceLabel} rejected rename (${frameLabel}) via 0x64 MULTIPURPOSE_RESPONSE: ` +
+          `${formatErrorCode(errorReport)}. ` + BETA_WARNING,
+      };
+    }
+    return {
+      op: 'rename',
+      target,
+      acked: true,
+      display_value: name,
+      warning:
+        `🟡 ${shape.id} rename: sent ${frameLabel}` +
+        (!isScene && shape.grid !== undefined && number === undefined
+          ? ' (active preset number unknown; sent 0)' : '') +
+        '. No device rejection; confirm the name on the front panel. Working-buffer ' +
+        'scope only; persist with save_preset. ' + BETA_WARNING,
+    };
+  }
+
   const writer: DeviceWriter = {
     buildSetParam(block: string, name: string, wireValue: number): number[] {
       const { effectId } = resolveBlockOrThrow(block, deviceLabel);
@@ -338,12 +421,46 @@ export function makeWriter(opts: {
       blockSlugIn: string,
       name: string,
       wireValue: number,
-      _channel?: number,
+      channel?: number,
       instance?: number,
     ): Promise<WriteResult> {
       gateWrite('set_param');
       const { effectId } = resolveBlockOrThrow(blockSlugIn, deviceLabel, instance);
       const { param } = resolveParamOrThrow(blockSlugIn, name, deviceLabel);
+      // A channel-targeted write must select that channel first: the gen-3
+      // SET frame carries no channel field and lands on the block's ACTIVE
+      // channel. This arg used to be accepted and ignored, so
+      // set_param({channel: "B"}) silently overwrote channel A (FM3 fw 12,
+      // 2026-09-21). Same fn=0x0B select apply_preset's channel-nested path
+      // sends; like it, this switches the ACTIVE scene's channel for the block.
+      if (channel !== undefined) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 3) {
+          throw new DispatchError(
+            'bad_channel',
+            deviceLabel,
+            `${shape.id} set_param: channel index ${channel} out of range (0..3 = A..D).`,
+          );
+        }
+        const channelError = await sendAndWatchForError(
+          ctx,
+          codec.buildSetChannel(effectId, channel as 0 | 1 | 2 | 3),
+        );
+        if (channelError !== undefined) {
+          return {
+            op: 'set_param',
+            target: `${blockSlugIn}.${name}`,
+            block: blockSlugIn,
+            name,
+            wire_value: wireValue,
+            display_value: sentToDisplay(blockSlugIn, name, wireValue),
+            acked: false,
+            warning:
+              `${deviceLabel} rejected the channel select before set_param via 0x64 ` +
+              `MULTIPURPOSE_RESPONSE: ${formatErrorCode(channelError)}. The param was NOT written. ` +
+              BETA_WARNING,
+          };
+        }
+      }
       const kind = catalog.blocks[blockSlugIn]?.params[name]?.wire_kind;
       let bytes: number[];
       try {
@@ -954,12 +1071,72 @@ export function makeWriter(opts: {
         }
       }
 
+      // 2.5. Scenes (grid devices). The gen-3 protocol has no per-scene write:
+      //      channel select (fn=0x0B) and bypass (fn=0x0A) land on the ACTIVE
+      //      scene, so each scene is switched to first. This used to be skipped
+      //      entirely on gen-3 (spec.scenes was dropped with no warning). The
+      //      sequence below (switch, channel, bypass) was built by hand this way
+      //      on FM3 fw 12 and its stored dump matched every scene (2026-09-21).
+      if (!budgetExceeded && shape.grid !== undefined && spec.scenes && spec.scenes.length > 0) {
+        for (const sc of spec.scenes) {
+          if (overBudget()) break;
+          const sw = await writer.switchScene!(ctx, sc.scene);
+          writes.push(sw);
+          if (!sw.acked) { anyFailed = true; continue; }
+          for (const [blockKey, ch] of Object.entries(sc.channels ?? {})) {
+            const upper = String(ch).trim().toUpperCase();
+            const wireChannel = typeof ch === 'number' ? ch : channelValues[upper];
+            const target = `scene ${sc.scene} ${blockKey} (channel ${upper})`;
+            try {
+              if (wireChannel === undefined || wireChannel < 0 || wireChannel > 3) {
+                throw new Error(`unknown channel "${ch}" (valid: ${shape.channel_names.join(', ')})`);
+              }
+              const { effectId } = resolveBlockOrThrow(blockKey.trim().toLowerCase(), deviceLabel);
+              const rej = await sendAndWatchForError(ctx, codec.buildSetChannel(effectId, wireChannel as 0 | 1 | 2 | 3));
+              markDirty(connectionLabel);
+              writes.push(rej === undefined
+                ? { op: 'set_channel', target, acked: true, display_value: upper, warning: BETA_WARNING }
+                : { op: 'set_channel', target, acked: false, warning: `${deviceLabel} rejected set_channel: ${formatErrorCode(rej)}. ${BETA_WARNING}` });
+              if (rej !== undefined) anyFailed = true;
+            } catch (err) {
+              writes.push({ op: 'set_channel', target, acked: false, warning: `set_channel failed: ${err instanceof Error ? err.message : String(err)}` });
+              anyFailed = true;
+            }
+          }
+          for (const [blockKey, byp] of Object.entries(sc.bypassed ?? {})) {
+            try {
+              const r = await writer.setBypass!(ctx, blockKey.trim().toLowerCase(), byp);
+              writes.push({ ...r, target: `scene ${sc.scene} ${r.target}` });
+              if (!r.acked) anyFailed = true;
+            } catch (err) {
+              writes.push({ op: 'set_bypass', target: `scene ${sc.scene} ${blockKey}`, acked: false, warning: `set_bypass failed: ${err instanceof Error ? err.message : String(err)}` });
+              anyFailed = true;
+            }
+          }
+          if (sc.name !== undefined) {
+            try {
+              const r = await renameGen3(ctx, `scene:${sc.scene}`, sc.name);
+              writes.push(r);
+              if (!r.acked) anyFailed = true;
+            } catch (err) {
+              writes.push({ op: 'rename', target: `scene:${sc.scene}`, acked: false, warning: `scene rename failed: ${err instanceof Error ? err.message : String(err)}` });
+              anyFailed = true;
+            }
+          }
+        }
+        if (!budgetExceeded) {
+          const landing = await writer.switchScene!(ctx, spec.landingScene ?? 1);
+          writes.push(landing);
+          if (!landing.acked) anyFailed = true;
+        }
+      }
+
       // 3. Optional rename + save (only if caller asked to persist).
       //    Skipped when the burst aborted on budget — a half-applied buffer
       //    must not be persisted, and the rename ack would itself wait a window.
       if (!budgetExceeded && spec.name !== undefined) {
         try {
-          const result = await writer.rename!(ctx, 'preset', spec.name);
+          const result = await renameGen3(ctx, 'preset', spec.name, target !== undefined ? parseLocation(target) : undefined);
           writes.push(result);
           if (!result.acked) anyFailed = true;
         } catch (err) {
@@ -1086,11 +1263,16 @@ export function makeWriter(opts: {
     async savePreset(ctx: DispatchCtx, location: LocationRef, name?: string): Promise<WriteResult> {
       gateWrite('save_preset');
       const n = parseLocation(location);
+      // Rename the working buffer first so the store persists the name. A
+      // failed rename must not be silent: the save still runs (the content is
+      // what the user asked to keep) but the receipt says the name did not land.
+      let renameNote = '';
       if (name !== undefined) {
         try {
-          await writer.rename!(ctx, 'preset', name);
-        } catch {
-          // Continue to save attempt anyway.
+          const r = await renameGen3(ctx, 'preset', name, n);
+          if (!r.acked) renameNote = `RENAME NOT APPLIED: ${r.warning ?? ''} `;
+        } catch (err) {
+          renameNote = `RENAME NOT APPLIED: ${err instanceof Error ? err.message : String(err)} `;
         }
       }
       const bytes = codec.buildStorePreset(n);
@@ -1121,7 +1303,7 @@ export function makeWriter(opts: {
               `destination preset at the 14-bit arg slot). Wire shape is captured byte-exact from the ` +
               `editor, but device persistence is not yet hardware-verified. `) +
           `Device emitted no rejection. CONFIRM by switching to a different preset and back: if the ` +
-          `saved state survived, the save landed. ` + BETA_WARNING,
+          `saved state survived, the save landed. ` + renameNote + BETA_WARNING,
       };
     },
 
@@ -1158,45 +1340,7 @@ export function makeWriter(opts: {
 
     async rename(ctx: DispatchCtx, target: RenameTarget, name: string): Promise<WriteResult> {
       gateWrite('rename');
-      if (target !== 'preset') {
-        throw new DispatchError(
-          'capability_not_supported',
-          deviceLabel,
-          `${shape.id} rename: only target='preset' is wired (tried target='${target}'). ` +
-            'Scene rename would need SET_SCENE_NAME which has no envelope to port from.',
-        );
-      }
-      let bytes: number[];
-      try {
-        bytes = codec.buildSetPresetName(name);
-      } catch (err) {
-        throw new DispatchError(
-          'value_out_of_range',
-          deviceLabel,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-      const errorReport = await sendAndWatchForError(ctx, bytes, 100);
-      if (errorReport !== undefined) {
-        return {
-          op: 'rename',
-          target: 'preset',
-          acked: false,
-          warning:
-            `${deviceLabel} rejected rename (0x09 SET_PRESET_NAME envelope) via 0x64 ` +
-            `MULTIPURPOSE_RESPONSE: ${formatErrorCode(errorReport)}. ` + BETA_WARNING,
-        };
-      }
-      return {
-        op: 'rename',
-        target: 'preset',
-        acked: true,
-        display_value: name,
-        warning:
-          `🟡 ${shape.id} rename: sent the 0x09 SET_PRESET_NAME envelope. Device emitted no ` +
-          `rejection but may have ignored the write; confirm via the front-panel preset title. ` +
-          `Working-buffer scope only; persist with save_preset. ` + BETA_WARNING,
-      };
+      return renameGen3(ctx, target, name);
     },
 
     guardActiveBufferOrSave: makeGuard({

@@ -70,7 +70,14 @@ const GRID_ROW_STRIDE = 32; // bits per cell row
 // puts its first byte at mido offset >= 361, the shared header length. A
 // tail-anchor below this floor means the frame cannot contain the region.
 const GRID_MIN_REGION_OFFSET = 350;
-const FIELD_BLOCK_ID = 0; // bits 0-7:  (effectId | shuntIndex) << 1
+const FIELD_BLOCK_ID = 0; // bits 0-7:  (effectId | shuntIndex) << 1, low 7 bits of the id
+// Bit 7 of the id (value 128) is NOT in bits 0-7: it sits in the bit just
+// BEFORE the cell (base - 1), making the id a 9-bit MSB-first field
+// [base-1 .. base+7] shifted left by one. Reading only bits 0-7 truncated every
+// effect id >= 128 to 7 bits (Gate/Expander 1 = 146 decoded as 18). Pinned on
+// FM3 fw 12 (2026-09-21 live read: the Gate cell carried 1 at base-1 and
+// 0x24 in bits 0-7; every id < 128 carried 0 there).
+const FIELD_BLOCK_ID_HIGH_BIT = -1;
 const FIELD_BLOCK_TYPE = 8; // bits 8-15: 0x08 = shunt, 0x00 = real block
 const FIELD_CABLE_IN = 16; // bits 16-23: incoming-cable bitmask
 
@@ -176,7 +183,7 @@ export function parseGen3GridLayout(
   for (let col = 0; col < cols; col++) {
     for (let row = 0; row < rows; row++) {
       const base = GRID_BASE_BIT + col * colStride + row * GRID_ROW_STRIDE;
-      const idField = readBitsMsb(region, base + FIELD_BLOCK_ID, 8) >> 1;
+      const idField = readBitsMsb(region, base + FIELD_BLOCK_ID_HIGH_BIT, 9) >> 1;
       const blockType = readBitsMsb(region, base + FIELD_BLOCK_TYPE, 8);
       const isShunt = blockType === BLOCK_TYPE_SHUNT;
       if (idField === 0 && !isShunt) continue; // empty cell

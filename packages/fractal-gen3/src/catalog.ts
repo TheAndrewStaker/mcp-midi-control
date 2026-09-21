@@ -349,6 +349,29 @@ function resolveCalibration(
 }
 
 /**
+ * True when `overlay` names any model at a different ordinal than `roster`
+ * does (compared case/whitespace-insensitively), i.e. the overlay's list is
+ * shifted relative to the device-correlated roster and cannot be trusted as an
+ * ordinal oracle for this param.
+ */
+function overlayShiftsAgainst(
+  overlay: Readonly<Record<number, string>>,
+  roster: Readonly<Record<number, string>>,
+): boolean {
+  const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  const rosterOrdinalByName = new Map<string, number>();
+  for (const [ord, name] of Object.entries(roster)) {
+    const n = norm(name);
+    if (!rosterOrdinalByName.has(n)) rosterOrdinalByName.set(n, Number(ord));
+  }
+  for (const [ord, name] of Object.entries(overlay)) {
+    const at = rosterOrdinalByName.get(norm(name));
+    if (at !== undefined && at !== Number(ord)) return true;
+  }
+  return false;
+}
+
+/**
  * Round a decoded display value to the panel's natural resolution, stripping
  * the float noise the wire→display inverse leaves behind (7.0000305 → 7).
  * Mirrors the Axe-Fx II decode boundary; two decimals preserves every
@@ -463,9 +486,22 @@ function buildParamSchema(
   // spellings. Layered precedence (later spread wins):
   //   shared roster < family overlay < device-captured (hardware truth).
   const sharedRoster = sharedEnumRosters?.[param.name];
+  // The overlay may only win on SPELLING, never on ordinals. If it names a model
+  // the shared gen-3 roster places at a DIFFERENT ordinal, the overlay's list is
+  // shifted (e.g. AM4 DRIVE_TYPES lacks the gen-3 Riot/Timothy/Compulsion/PI Fuzz
+  // variants, so from ordinal 31 on it mislabels, and set-by-name "Klone Chiron"
+  // sent 54 = DS1 Distortion Mod; FM3 fw 12 hardware, 2026-09-21). The shared
+  // roster is device-correlated (FM9 cache + FM3 fw 12 cache for FUZZ_TYPE), so a
+  // conflicting overlay is dropped for that param. Pure spelling variants
+  // ("Plate, Medium" vs "Medium Plate") share no names and keep the overlay.
+  const overlayValues =
+    overlay?.values !== undefined && sharedRoster !== undefined &&
+    overlayShiftsAgainst(overlay.values, sharedRoster)
+      ? undefined
+      : overlay?.values;
   const enumValues =
-    deviceOverlayValues !== undefined || overlay?.values !== undefined || sharedRoster !== undefined
-      ? { ...(sharedRoster ?? {}), ...(overlay?.values ?? {}), ...(deviceOverlayValues ?? {}) }
+    deviceOverlayValues !== undefined || overlayValues !== undefined || sharedRoster !== undefined
+      ? { ...(sharedRoster ?? {}), ...(overlayValues ?? {}), ...(deviceOverlayValues ?? {}) }
       : undefined;
 
   // Device-cache enum WITHOUT a correlated name table: the editor cache marks

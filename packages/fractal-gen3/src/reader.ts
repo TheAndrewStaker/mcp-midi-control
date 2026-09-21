@@ -774,7 +774,13 @@ export function makeReader(opts: {
       // The positional bulk read mis-addresses type selectors (its value is not
       // the roster ordinal), so the device's own name string is authoritative.
       const schema = catalog.blocks[blockSlugIn]?.params[name];
-      if (schema?.wire_kind === 'discrete') {
+      // FM3 fw 12 (2026-09-21): the sub=0x1F name read answered "Rat Distortion"
+      // (ordinal 0) while the drive's active channel held ordinal 54, and it
+      // ignores the requested channel entirely. The per-channel state-broadcast
+      // projection below was correct on every read, so the FM3 uses it. (The
+      // FM9 capture this path rests on also only ever returned ordinal-0 names:
+      // Small Room / 59 Bassguy Bright / Rat Distortion; worth re-checking.)
+      if (schema?.wire_kind === 'discrete' && codec.modelByte !== 0x11 && channel === undefined) {
         const typeName = await readCurrentTypeName(
           ctx, codec, effectId, param.paramId, Math.min(250, getResponseTimeoutMs),
         );
@@ -1010,7 +1016,18 @@ export function makeReader(opts: {
               'as ordinal labels; uncalibrated continuous params read back as raw wire values. ' +
               'Community beta: the server-driven fn=0x1F poll is not yet hardware-confirmed end to end.',
       );
-      if (liveMeters !== undefined) {
+      if (liveMeters !== undefined && codec.modelByte === 0x11) {
+        // FM3 panel contradicts the decode (fw 12, 2026-09-21): the panel read
+        // 24% CPU while cpu_percent read 79.5%, and the formula's own floor is
+        // 32%. Across single-block placements the value also fell (88 -> 36.5).
+        // Contradicted evidence ships loudly flagged, never as a headroom answer.
+        warnings.push(
+          `gen-3 live_meters: cpu_percent (${liveMeters.cpu_percent}%) is NOT a valid CPU reading on ` +
+            'the FM3: an owner\'s front panel showed 24% while this field read 79.5%, and it moved ' +
+            'down as blocks were added. Do not use it for headroom or DSP-limit decisions; ask the ' +
+            'user to read CPU on the unit. output_left/right are momentary peaks at read time.',
+        );
+      } else if (liveMeters !== undefined) {
         warnings.push(
           `gen-3 live_meters: cpu_percent (${liveMeters.cpu_percent}%) is the active preset's steady ` +
             'DSP cost (the headroom answer); output_left/right are momentary peaks at read time. ' +
