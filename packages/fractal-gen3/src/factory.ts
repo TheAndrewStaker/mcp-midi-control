@@ -52,8 +52,47 @@ import {
   buildVp4SetParam,
 } from 'fractal-midi/gen3/vp4';
 import { FM9_RANGES, FM9_ROUNDTRIP_DISCRETE } from 'fractal-midi/gen3/fm9';
-import { FM3_FAMILY_JOIN_DISCRETE } from 'fractal-midi/gen3/fm3';
-import { createModernCatalog, type AxeFxIIIParam } from './catalog.js';
+import { FM3_FAMILY_JOIN_DISCRETE, FM3_RANGES } from 'fractal-midi/gen3/fm3';
+import { createModernCatalog, type AxeFxIIIParam, type DeviceRangeTable, type DeviceParamRange } from './catalog.js';
+
+/**
+ * FM3 device-true ranges (FM3 editor data, fw 12.0; vendored from forgefx-midi)
+ * with the taper decoded from each row's editor typecode: low byte 0x40..0x4F
+ * = log10, anything else = linear. Rule checked against every independent
+ * source on hand with zero disagreements: the FM3 catalog's own scaling flags
+ * (37/37), the FM9 catalog vs the FM9 cache (24/24), the Axe-Fx III
+ * device-verified word laws (39/39, BigSaurus/axefx-sysex-maps), and FM3 fw 12
+ * front-panel text (2026-09-21). The 0xD0 class matches the looser bit-6 test
+ * but has no evidence, so it stays linear. Hardware sweep after import (every
+ * numeric-display param of a 12-block FM3 preset, passive 01 10 text reads):
+ * 354/364 exact before the 0x52 rule below, the rest all 0x52 knobs + two
+ * signed-raw pitch shifts decoded on the bulk-read path by design.
+ */
+const FM3_DEVICE_RANGES: DeviceRangeTable = Object.fromEntries(
+  Object.entries(FM3_RANGES).map(([family, rows]) => [
+    family,
+    Object.fromEntries(
+      Object.entries(rows).map(([pid, r]): [string, DeviceParamRange] => [
+        pid,
+        r.kind === 'float'
+          ? (r.typecode & 0xff) === 0x52
+            // Typecode 0x52 rows (scale 10) display as a plain 0..10 linear knob
+            // whatever internal range the row states (Q 20..200, drive 0.5..500,
+            // slew 1..100, ...): FM3 fw 12 panel text matched 0..10 linear on
+            // 8/8 such params (wah Q/drive, drive slew, amp PA hardness,
+            // chorus/delay drive, delay Q, reverb drive; 2026-09-21).
+            ? { kind: 'float', displayMin: 0, displayMax: 10, scaling: 'linear' }
+            : {
+                kind: 'float',
+                displayMin: r.displayMin,
+                displayMax: r.displayMax,
+                scaling: (r.typecode & 0xf0) === 0x40 ? 'log10' : 'linear',
+              }
+          : { kind: r.kind, displayMin: r.displayMin, displayMax: r.displayMax, enumCount: r.enumCount },
+      ]),
+    ),
+  ]),
+);
 
 /** FM9 SysEx model byte: its device-true editor-cache ranges (FM9_RANGES) take
  *  precedence over the AM4-overlay-inferred catalog bounds. */
@@ -245,7 +284,10 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
     // calibration, correcting the float params whose inherited range contradicts
     // the real front panel (DELAY_TIME, REVERB_PREDELAY, etc.). The III/FM3/VP4
     // have no device-true range table yet, so they keep the catalog inference.
-    deviceRanges: config.model_byte === FM9_MODEL_ID ? FM9_RANGES : undefined,
+    deviceRanges:
+      config.model_byte === FM9_MODEL_ID ? FM9_RANGES
+      : config.model_byte === FM3_MODEL_ID ? FM3_DEVICE_RANGES
+      : undefined,
     // Discrete-ordinal overlay: params the enum paths missed but oracle
     // evidence proves are ordinals (the device quantizes a continuous SET), so
     // they must route DISCRETE. III and FM9 each get their OWN roundtrip-derived

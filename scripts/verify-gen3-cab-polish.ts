@@ -176,8 +176,11 @@ console.log('Case 6: no cab block placed injects NOTHING (never auto-place)');
   check('cabPolish is undefined', cabPolish === undefined);
 }
 
-// ── Case 7: III and FM3 are evidence-gated OFF (uncalibrated cab cuts) ──
-console.log('Case 7: III + FM3 inject NOTHING (cab cuts registered but uncalibrated)');
+// ── Case 7: III is evidence-gated OFF; FM3 is ON since its own ranges landed ──
+// FM3 cab cuts are display-calibrated from FM3_RANGES (FM3 editor data, fw 12.0)
+// with a log taper; FM3 fw 12 panel text confirmed 80 -> "80.0 Hz" and
+// 6500 -> "6500 Hz" (2026-09-21).
+console.log('Case 7: III injects NOTHING (uncalibrated cab cuts); FM3 injects like FM9');
 {
   const spec: PresetSlotSpec[] = [
     { slot: { row: 2, col: 4 }, block_type: 'cab' },
@@ -185,12 +188,14 @@ console.log('Case 7: III + FM3 inject NOTHING (cab cuts registered but uncalibra
   const iii = inject(spec, iiiCab);
   check('Axe-Fx III: no injection, slots untouched', iii.cabPolish === undefined && iii.slots === spec);
   const fm3 = inject(spec, fm3Cab);
-  check('FM3: no injection, slots untouched', fm3.cabPolish === undefined && fm3.slots === spec);
-  // Sanity-pin the gate premise so a future calibration drop flips this
-  // case loudly instead of silently: III/FM3 locut has no display range,
-  // FM9 locut does (device-true 20..2000 from its own editor cache).
+  check('FM3: defaults injected (cab cuts now calibrated)', fm3.cabPolish !== undefined && fm3.slots !== spec);
+  // Sanity-pin the gate premise so a future calibration change flips this
+  // case loudly instead of silently.
   check('gate premise: III cab locut has no calibrated display range', iiiCab?.params['locut']?.display_min === undefined);
-  check('gate premise: FM3 cab locut has no calibrated display range', fm3Cab?.params['locut']?.display_min === undefined);
+  check(
+    'gate premise: FM3 cab locut is display-calibrated 20..2000 Hz',
+    fm3Cab?.params['locut']?.display_min === 20 && fm3Cab?.params['locut']?.display_max === 2000,
+  );
   check(
     'gate premise: FM9 cab locut is display-calibrated 20..2000 Hz',
     fm9Cab?.params['locut']?.display_min === 20 && fm9Cab?.params['locut']?.display_max === 2000,

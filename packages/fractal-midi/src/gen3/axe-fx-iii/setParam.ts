@@ -417,6 +417,14 @@ export function buildSetParameterContinuous(
 /**
  * GET PARAMETER (function 0x01, sub-action 0x09 0x00 with value=0).
  *
+ * ⚠️ NOT READ-ONLY. These bytes are identical to `buildSetParameter(e, p, 0)`:
+ * the device treats the frame as a discrete SET of ordinal 0 and THEN replies
+ * with the display string. Hardware-observed on FM3 fw 12 (2026-09-21): every
+ * "read" reset the param on the active channel (types to roster entry 0, knobs
+ * to 0, amp input trim to 0.100). Never use it to inspect a preset. For a
+ * block's current type name use `buildRequestCurrentTypeName` (sub 1F 00); for
+ * values use the fn=0x1F state-broadcast read.
+ *
  * 🟡 Hypothesis only — no public GET capture exists. The send shape
  * mirrors SET with the value field zeroed, on the theory that the III
  * either echoes the param's current value or emits a `04 01`
@@ -449,8 +457,9 @@ export function buildGetParameter(
  * region carries the model name — decode the reply with `parseGetParameterResponse`
  * (`.displayString`). Byte-confirmed on FM9 fw 11.0 (capture 2026-06-19): the
  * reverb/amp/drive type reads returned "Small Room" / "59 Bassguy Bright" /
- * "Rat Distortion". (`buildGetParameter`'s `09 00` GET elicits the same
- * display-string reply; this `1F 00` form matches what the editor sends.)
+ * "Rat Distortion". (`buildGetParameter`'s `09 00` form also draws this reply,
+ * but only AFTER applying itself as a SET of ordinal 0; this `1F 00` form is
+ * the non-mutating read the editor sends.)
  *
  * Wire (23 bytes): `F0 00 01 74 <model> 01 1F 00 <eid:14b LE> <pid:14b LE>
  *  00*9 <cks> F7`. Read-only; carries no value, mutates nothing.
@@ -1282,16 +1291,18 @@ function buildFn01NameFrame(
   name: string,
   builder: string,
   modelByte: number,
+  valueArg14 = 0,
 ): number[] {
   const tail = packValueChunked(encodeName32(name, builder));
-  // Payload: [sub, pad, blockId14=0, paramId14, value32=0, modifier14=0,
-  // tailCount14=32, 8-to-7-packed 32-byte name (37 wire bytes)].
+  // Payload: [sub, pad, blockId14=0, paramId14, value field (first two bytes
+  // carry valueArg14, the rest 0), modifier14=0, tailCount14=32, 8-to-7-packed
+  // 32-byte name (37 wire bytes)].
   return buildEnvelope(FN_PARAMETER_SETGET, [
     subAction,
     0x00,
     0x00, 0x00,
     ...encode14(paramId),
-    0x00, 0x00, 0x00, 0x00, 0x00,
+    ...encode14(valueArg14), 0x00, 0x00, 0x00,
     0x00, 0x00,
     ...encode14(NAME_FIELD_BYTES),
     ...tail,
@@ -1306,13 +1317,21 @@ function buildFn01NameFrame(
  * (`buildStorePreset`, fn=0x01 sub=0x26).
  *
  * Decoded from the Axe-Edit III binary (Ghidra FACT tier); pad byte
- * convention-based (see section comment). Hardware-unverified.
+ * convention-based (see section comment). `presetNumber` goes in the first
+ * two value bytes (14-bit LSB-first): an FM9-Edit rename capture
+ * (wagahai850/ai-tone-assistant, 2026-05-27) carries the target preset there
+ * and is otherwise byte-identical to this frame. Default 0 keeps the
+ * Ghidra-decoded shape.
  */
 export function buildRenamePreset(
   name: string,
   modelByte: number = AXE_FX_III_MODEL_ID,
+  presetNumber = 0,
 ): number[] {
-  return buildFn01NameFrame(SUB_ACTION_SET_PRESET_NAME, 0, name, 'buildRenamePreset', modelByte);
+  if (!Number.isInteger(presetNumber) || presetNumber < 0 || presetNumber > 16383) {
+    throw new Error(`buildRenamePreset: presetNumber ${presetNumber} out of range (0..16383)`);
+  }
+  return buildFn01NameFrame(SUB_ACTION_SET_PRESET_NAME, 0, name, 'buildRenamePreset', modelByte, presetNumber);
 }
 
 /**
@@ -1827,6 +1846,58 @@ export function buildSetTuner(on: boolean): number[] {
   return buildEnvelope(FN_TUNER_ON_OFF, [on ? 1 : 0]);
 }
 
+// ── 0x08 FIRMWARE VERSION ──────────────────────────────────────────
+
+/**
+ * QUERY FIRMWARE VERSION (function 0x08, no payload). Read-only.
+ *
+ *   Request:  `F0 00 01 74 <model> 08 <cs> F7`
+ *   Response: `F0 00 01 74 <model> 08 <major> <minor> <dd dd> <build text…> <cs> F7`
+ *
+ * Source: rudib/axess (fractal_protocol firmware_version.rs, III + FM3 reply
+ * goldens). FM3 fw 12 hardware reply (2026-09-21):
+ * `… 11 08 0c 00 00 00 "Jan 19 2026 14:57:49" 00…` = 12.00, build date text.
+ */
+export const FN_FIRMWARE_VERSION = 0x08;
+
+export function buildQueryFirmwareVersion(modelByte: number = AXE_FX_III_MODEL_ID): number[] {
+  return buildEnvelope(FN_FIRMWARE_VERSION, [], modelByte);
+}
+
+export function isFirmwareVersionResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return (
+    bytes.length >= 10 &&
+    bytes[0] === SYSEX_START &&
+    bytes[1] === FRACTAL_MFR_PREFIX[0] && bytes[2] === FRACTAL_MFR_PREFIX[1] && bytes[3] === FRACTAL_MFR_PREFIX[2] &&
+    bytes[4] === modelByte &&
+    bytes[5] === FN_FIRMWARE_VERSION &&
+    bytes[bytes.length - 1] === SYSEX_END
+  );
+}
+
+/** Parse a 0x08 reply: `version` is "major.minor" (minor zero-padded, as the panel shows it). */
+export function parseFirmwareVersionResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): { major: number; minor: number; version: string; build?: string } {
+  if (!isFirmwareVersionResponse(bytes, modelByte)) {
+    throw new Error(`parseFirmwareVersionResponse: not a 0x08 frame (len=${bytes.length})`);
+  }
+  const major = bytes[6] & 0x7f;
+  const minor = bytes[7] & 0x7f;
+  // Build text (FM3 fw 12): printable ASCII run after the two reserved bytes.
+  let build = '';
+  for (let i = 10; i < bytes.length - 2; i++) {
+    const c = bytes[i];
+    if (c < 0x20 || c > 0x7e) break;
+    build += String.fromCharCode(c);
+  }
+  return { major, minor, version: `${major}.${String(minor).padStart(2, '0')}`, build: build.trim() || undefined };
+}
+
 // ── 0x13 STATUS DUMP ───────────────────────────────────────────────
 
 /**
@@ -2334,6 +2405,10 @@ export interface ModernFractalCodec {
   buildSelectCell(opts: { row: number; col: number; rows?: number }): number[];
   buildSetGridRouting(opts: { srcRow: number; srcCol: number; destRow: number; rows?: number; op?: number }): number[];
   buildSetPresetName(name: string): number[];
+  /** RENAME PRESET (fn=0x01 sub=0x28), the gen-3 editor's own name write. */
+  buildRenamePreset(name: string, presetNumber?: number): number[];
+  /** SET SCENE NAME (fn=0x01 sub=0x2b), sceneIndex 0..7. */
+  buildSetSceneName(sceneIndex: number, name: string): number[];
   buildStorePreset(presetNumber: number): number[];
   buildSwitchPresetPC(presetNumber: number, channel?: number): number[];
   /** SysEx-native preset switch (fn=0x01 sub=0x27); alternative to buildSwitchPresetPC. */
@@ -2361,6 +2436,9 @@ export interface ModernFractalCodec {
   isSetGetTempoResponse(bytes: readonly number[]): boolean;
   parseTempoResponse(bytes: readonly number[]): ReturnType<typeof parseTempoResponse>;
   buildStatusDump(): number[];
+  buildQueryFirmwareVersion(): number[];
+  isFirmwareVersionResponse(bytes: readonly number[]): boolean;
+  parseFirmwareVersionResponse(bytes: readonly number[]): ReturnType<typeof parseFirmwareVersionResponse>;
   isStatusDumpResponse(bytes: readonly number[]): boolean;
   parseStatusDumpResponse(bytes: readonly number[]): ReturnType<typeof parseStatusDumpResponse>;
   // fn=0x03 REQUEST_PRESET_DUMP (host → device) → 0x77/0x78/0x79 dump chain.
@@ -2393,6 +2471,8 @@ export function createModernFractalCodec(
     buildSelectCell: (opts) => buildSelectCell(opts, modelByte),
     buildSetGridRouting: (opts) => buildSetGridRouting(opts, modelByte),
     buildSetPresetName: (n) => buildSetPresetName(n, modelByte),
+    buildRenamePreset: (n, p) => buildRenamePreset(n, modelByte, p),
+    buildSetSceneName: (i, n) => buildSetSceneName(i, n, modelByte),
     buildStorePreset: (n) => buildStorePreset(n, modelByte),
     buildSwitchPresetPC: (n, ch) => buildSwitchPresetPC(n, ch, bankSelect),
     buildSwitchPresetSysEx: (n) => buildSwitchPresetSysEx(n, modelByte),
@@ -2413,6 +2493,9 @@ export function createModernFractalCodec(
     isSetGetTempoResponse: (b) => isSetGetTempoResponse(b, modelByte),
     parseTempoResponse: (b) => parseTempoResponse(b, modelByte),
     buildStatusDump: () => buildStatusDump(modelByte),
+    buildQueryFirmwareVersion: () => buildQueryFirmwareVersion(modelByte),
+    isFirmwareVersionResponse: (b) => isFirmwareVersionResponse(b, modelByte),
+    parseFirmwareVersionResponse: (b) => parseFirmwareVersionResponse(b, modelByte),
     isStatusDumpResponse: (b) => isStatusDumpResponse(b, modelByte),
     parseStatusDumpResponse: (b) => parseStatusDumpResponse(b, modelByte),
     buildRequestPresetDump: (n) => buildRequestPresetDump(n, modelByte),

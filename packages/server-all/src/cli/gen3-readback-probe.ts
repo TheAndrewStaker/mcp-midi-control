@@ -51,7 +51,7 @@ import {
   buildBlockBulkReadPoll,
   assembleGen3BlockBulkRead,
   isGen3BroadcastFrame,
-  buildGetParameter,
+  buildRequestCurrentTypeName,
   isSetGetParameterResponse,
   parseSetGetParameterResponse,
   buildQueryPatchName,
@@ -249,7 +249,9 @@ interface GetExperiment {
 
 async function runJob2(): Promise<GetExperiment> {
   console.error(`\nJOB 2 — GET experiment on Reverb 1 TYPE (eff ${REVERB_EFFECT_ID}, pid ${REVERB_TYPE_PARAM_ID})…`);
-  const req = buildGetParameter(REVERB_EFFECT_ID, REVERB_TYPE_PARAM_ID, MODEL);
+  // sub 1F 00 type-name GET, not buildGetParameter: that frame is a discrete SET
+  // of ordinal 0 and would reset the reverb type before replying.
+  const req = buildRequestCurrentTypeName(REVERB_EFFECT_ID, REVERB_TYPE_PARAM_ID, MODEL);
   const frames = await sendAndCollect(req, GET_WINDOW_MS);
   const decoded: GetExperiment['frames'] = [];
   const carriedValues: number[] = [];

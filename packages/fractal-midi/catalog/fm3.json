@@ -776,7 +776,8 @@
         "displayLabel": "Rate",
         "unit": "hz",
         "displayMin": 0.1,
-        "displayMax": 10
+        "displayMax": 10,
+        "scaling": "log10"
       },
       {
         "family": "CHORUS",
@@ -1031,7 +1032,7 @@
         "name": "COMP_LEVEL",
         "displayLabel": "Level",
         "unit": "db",
-        "displayMin": -80,
+        "displayMin": -20,
         "displayMax": 20
       },
       {
@@ -1096,7 +1097,9 @@
         "paramId": 13,
         "name": "COMP_SUSTAIN",
         "displayLabel": "Compression",
-        "unit": "numeric"
+        "unit": "knob_0_10",
+        "displayMin": 0,
+        "displayMax": 10
       },
       {
         "family": "COMP",
@@ -2424,8 +2427,8 @@
         "name": "DELAY_TIME",
         "displayLabel": "Time",
         "unit": "ms",
-        "displayMin": 0,
-        "displayMax": 8000
+        "displayMin": 1,
+        "displayMax": 16000
       },
       {
         "family": "DELAY",
@@ -2439,7 +2442,9 @@
         "paramId": 10,
         "name": "DELAY_FEED",
         "displayLabel": "Feedback",
-        "unit": "numeric"
+        "unit": "bipolar_percent",
+        "displayMin": -100,
+        "displayMax": 100
       },
       {
         "family": "DELAY",
@@ -3355,7 +3360,10 @@
         "paramId": 49,
         "name": "DISTORT_TRIM",
         "displayLabel": "Input Trim",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0.1,
+        "displayMax": 10,
+        "scaling": "log10"
       },
       {
         "family": "DISTORT",
@@ -3413,56 +3421,72 @@
         "paramId": 57,
         "name": "DISTORT_EQ1",
         "displayLabel": "Bass",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -12,
+        "displayMax": 12
       },
       {
         "family": "DISTORT",
         "paramId": 58,
         "name": "DISTORT_EQ2",
         "displayLabel": "Mid",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -12,
+        "displayMax": 12
       },
       {
         "family": "DISTORT",
         "paramId": 59,
         "name": "DISTORT_EQ3",
         "displayLabel": "Treble",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -12,
+        "displayMax": 12
       },
       {
         "family": "DISTORT",
         "paramId": 60,
         "name": "DISTORT_EQ4",
         "displayLabel": "Presence",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -12,
+        "displayMax": 12
       },
       {
         "family": "DISTORT",
         "paramId": 61,
         "name": "DISTORT_EQ5",
         "displayLabel": "1600",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -12,
+        "displayMax": 12
       },
       {
         "family": "DISTORT",
         "paramId": 62,
         "name": "DISTORT_EQ6",
         "displayLabel": "2K",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -12,
+        "displayMax": 12
       },
       {
         "family": "DISTORT",
         "paramId": 63,
         "name": "DISTORT_EQ7",
         "displayLabel": "4K",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -12,
+        "displayMax": 12
       },
       {
         "family": "DISTORT",
         "paramId": 64,
         "name": "DISTORT_EQ8",
         "displayLabel": "8K",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -12,
+        "displayMax": 12
       },
       {
         "family": "DISTORT",
@@ -5178,21 +5202,27 @@
         "paramId": 1,
         "name": "FUZZ_DRIVE",
         "displayLabel": "Drive",
-        "unit": "numeric"
+        "unit": "knob_0_10",
+        "displayMin": 0,
+        "displayMax": 10
       },
       {
         "family": "FUZZ",
         "paramId": 2,
         "name": "FUZZ_TONE",
         "displayLabel": "Tone",
-        "unit": "numeric"
+        "unit": "knob_0_10",
+        "displayMin": 0,
+        "displayMax": 10
       },
       {
         "family": "FUZZ",
         "paramId": 3,
         "name": "FUZZ_LEVEL",
         "displayLabel": "Level",
-        "unit": "numeric"
+        "unit": "knob_0_10",
+        "displayMin": 0,
+        "displayMax": 10
       },
       {
         "family": "FUZZ",
@@ -9328,105 +9358,145 @@
         "paramId": 0,
         "name": "PEQ_FREQ1",
         "displayLabel": "Frequency 1",
-        "unit": "numeric"
+        "unit": "hz",
+        "displayMin": 20,
+        "displayMax": 2000,
+        "scaling": "log10"
       },
       {
         "family": "PEQ",
         "paramId": 1,
         "name": "PEQ_FREQ2",
         "displayLabel": "Frequency 2",
-        "unit": "numeric"
+        "unit": "hz",
+        "displayMin": 100,
+        "displayMax": 10000,
+        "scaling": "log10"
       },
       {
         "family": "PEQ",
         "paramId": 2,
         "name": "PEQ_FREQ3",
         "displayLabel": "Frequency 3",
-        "unit": "numeric"
+        "unit": "hz",
+        "displayMin": 100,
+        "displayMax": 10000,
+        "scaling": "log10"
       },
       {
         "family": "PEQ",
         "paramId": 3,
         "name": "PEQ_FREQ4",
         "displayLabel": "Frequency 4",
-        "unit": "numeric"
+        "unit": "hz",
+        "displayMin": 100,
+        "displayMax": 10000,
+        "scaling": "log10"
       },
       {
         "family": "PEQ",
         "paramId": 4,
         "name": "PEQ_FREQ5",
         "displayLabel": "Frequency 5",
-        "unit": "numeric"
+        "unit": "hz",
+        "displayMin": 200,
+        "displayMax": 20000,
+        "scaling": "log10"
       },
       {
         "family": "PEQ",
         "paramId": 5,
         "name": "PEQ_Q1",
         "displayLabel": "Q1",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0.1,
+        "displayMax": 10,
+        "scaling": "log10"
       },
       {
         "family": "PEQ",
         "paramId": 6,
         "name": "PEQ_Q2",
         "displayLabel": "Q2",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0.1,
+        "displayMax": 10,
+        "scaling": "log10"
       },
       {
         "family": "PEQ",
         "paramId": 7,
         "name": "PEQ_Q3",
         "displayLabel": "Q3",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0.1,
+        "displayMax": 10,
+        "scaling": "log10"
       },
       {
         "family": "PEQ",
         "paramId": 8,
         "name": "PEQ_Q4",
         "displayLabel": "Q4",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0.1,
+        "displayMax": 10,
+        "scaling": "log10"
       },
       {
         "family": "PEQ",
         "paramId": 9,
         "name": "PEQ_Q5",
         "displayLabel": "Q5",
-        "unit": "numeric"
+        "unit": "numeric",
+        "displayMin": 0.1,
+        "displayMax": 10,
+        "scaling": "log10"
       },
       {
         "family": "PEQ",
         "paramId": 10,
         "name": "PEQ_GAIN1",
         "displayLabel": "Gain 1",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "PEQ",
         "paramId": 11,
         "name": "PEQ_GAIN2",
         "displayLabel": "Gain 2",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "PEQ",
         "paramId": 12,
         "name": "PEQ_GAIN3",
         "displayLabel": "Gain 3",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "PEQ",
         "paramId": 13,
         "name": "PEQ_GAIN4",
         "displayLabel": "Gain 4",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "PEQ",
         "paramId": 14,
         "name": "PEQ_GAIN5",
         "displayLabel": "Gain 5",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -20,
+        "displayMax": 20
       },
       {
         "family": "PEQ",
@@ -9468,7 +9538,9 @@
         "paramId": 20,
         "name": "PEQ_LEVEL",
         "displayLabel": "Level",
-        "unit": "numeric"
+        "unit": "db",
+        "displayMin": -80,
+        "displayMax": 20
       },
       {
         "family": "PEQ",
@@ -9579,7 +9651,8 @@
         "displayLabel": "Rate",
         "unit": "hz",
         "displayMin": 0.1,
-        "displayMax": 10
+        "displayMax": 10,
+        "scaling": "log10"
       },
       {
         "family": "PHASER",

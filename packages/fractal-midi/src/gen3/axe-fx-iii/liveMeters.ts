@@ -55,7 +55,10 @@ const OFFSET_OUTPUT_LEFT = 35;
 const OFFSET_OUTPUT_RIGHT = 36;
 const OFFSET_CPU = 37;
 
-/** CPU% = CPU_BASE + raw7 * CPU_SLOPE (raw7 in 0..127 → 32.0 .. 95.5 %). */
+/** FM3 SysEx model byte (its CPU field decodes differently, see parseGen3LiveMeters). */
+const FM3_MODEL_BYTE = 0x11;
+
+/** Non-FM3: CPU% = CPU_BASE + raw7 * CPU_SLOPE (raw7 in 0..127 → 32.0 .. 95.5 %). */
 const CPU_BASE = 32;
 const CPU_SLOPE = 0.5;
 
@@ -120,8 +123,17 @@ export function parseGen3LiveMeters(frame: readonly number[]): Gen3LiveMeters {
     const f = 10 ** dp;
     return Math.round(v * f) / f;
   };
+  // FM3 (model 0x11): frame[37] starts an 8-bit field (low bit = frame[38]
+  // bit 6); decoded here as field/2. This is NOT the panel CPU (FM3 fw 12,
+  // 2026-09-21): it matched the panel once (67%) but read 86% on a new
+  // 3-block preset the panel showed at 21%, and climbs in a repeatable
+  // wrap-around sequence as blocks are added. The reader flags it invalid on
+  // FM3. Other models keep the prior formula (unverified).
+  const cpu = frame[4] === FM3_MODEL_BYTE
+    ? frame[OFFSET_CPU] + (((frame[OFFSET_CPU + 1] ?? 0) >> 6) & 1) * 0.5
+    : CPU_BASE + frame[OFFSET_CPU] * CPU_SLOPE;
   return {
-    cpu_percent: round(CPU_BASE + frame[OFFSET_CPU] * CPU_SLOPE, 1),
+    cpu_percent: round(cpu, 1),
     output_left: round(frame[OFFSET_OUTPUT_LEFT] / METER_FULL_SCALE, 3),
     output_right: round(frame[OFFSET_OUTPUT_RIGHT] / METER_FULL_SCALE, 3),
   };

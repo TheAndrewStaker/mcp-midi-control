@@ -130,7 +130,7 @@ export const FM3_PARAMS: readonly Param[] = [
   { family: 'CABINET', paramId: 65289, name: 'CABINET_BTN_SOLO2', displayLabel: 'S', unit: 'enum' }, // inferred from AxeEdit III XML controlType; device-true 65289 (III 65297 would mis-address)
   { family: 'CHORUS', paramId: 0, name: 'CHORUS_TYPE', unit: 'enum' }, // inferred from AM4
   { family: 'CHORUS', paramId: 1, name: 'CHORUS_VOICES', displayLabel: 'Number of Voices', unit: 'count', displayMin: 1, displayMax: 4 }, // inferred from AM4
-  { family: 'CHORUS', paramId: 2, name: 'CHORUS_RATE', displayLabel: 'Rate', unit: 'hz', displayMin: 0.1, displayMax: 10 }, // inferred from AM4
+  { family: 'CHORUS', paramId: 2, name: 'CHORUS_RATE', displayLabel: 'Rate', unit: 'hz', displayMin: 0.1, displayMax: 10, scaling: 'log10' }, // FM3 fw 12 panel text (01 10 read, 2026-09-21): wire 2648 -> "0.120 Hz" = log10 0.1..10 (linear would be 0.50); Axe-Fx III law device-verified log too
   { family: 'CHORUS', paramId: 3, name: 'CHORUS_TEMPO', displayLabel: 'Tempo', unit: 'enum' }, // inferred from AM4
   { family: 'CHORUS', paramId: 4, name: 'CHORUS_DEPTH', displayLabel: 'Depth', unit: 'percent', displayMin: 0, displayMax: 100 }, // inferred from AM4
   { family: 'CHORUS', paramId: 5, name: 'CHORUS_HICUT', displayLabel: 'High Cut', unit: 'hz', displayMin: 200, displayMax: 20000 }, // inferred from AM4
@@ -161,7 +161,7 @@ export const FM3_PARAMS: readonly Param[] = [
   { family: 'COMP', paramId: 1, name: 'COMP_RATIO', displayLabel: 'Ratio', unit: 'ratio', displayMin: 1, displayMax: 20, scaling: 'log10' }, // inferred from AM4
   { family: 'COMP', paramId: 2, name: 'COMP_ATTACK', displayLabel: 'Attack Time', unit: 'ms', displayMin: 0.1, displayMax: 100, scaling: 'log10' }, // inferred from AM4
   { family: 'COMP', paramId: 3, name: 'COMP_RELEASE', displayLabel: 'Release Time', unit: 'ms', displayMin: 2, displayMax: 2000, scaling: 'log10' }, // inferred from AM4
-  { family: 'COMP', paramId: 4, name: 'COMP_LEVEL', displayLabel: 'Level', unit: 'db', displayMin: -80, displayMax: 20 }, // inferred from AM4
+  { family: 'COMP', paramId: 4, name: 'COMP_LEVEL', displayLabel: 'Level', unit: 'db', displayMin: -20, displayMax: 20 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: wire 32767 -> "0.00 dB" (the AM4-inferred -80..20 put unity at -30); +-20 per FM9 cache / III law; was: inferred from AM4
   { family: 'COMP', paramId: 5, name: 'COMP_KNEE', displayLabel: 'Knee Type', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'COMP', paramId: 6, name: 'COMP_AUTO', displayLabel: 'Auto Makeup', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'COMP', paramId: 7, name: 'COMP_PEAKRMS', displayLabel: 'Detector Type', unit: 'enum' }, // inferred from AxeEdit III XML controlType
@@ -170,7 +170,7 @@ export const FM3_PARAMS: readonly Param[] = [
   { family: 'COMP', paramId: 10, name: 'COMP_SIDECHAIN', displayLabel: 'Sidechain Source', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'COMP', paramId: 11, name: 'COMP_MIX', displayLabel: 'Mix', unit: 'percent', displayMin: 0, displayMax: 100 }, // inferred from AM4
   { family: 'COMP', paramId: 12, name: 'COMP_TYPE', unit: 'enum' }, // inferred from AM4
-  { family: 'COMP', paramId: 13, name: 'COMP_SUSTAIN', displayLabel: 'Compression', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'COMP', paramId: 13, name: 'COMP_SUSTAIN', displayLabel: 'Compression', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: 26214 -> "4.00"; was: inferred from AxeEdit III XML controlType
   { family: 'COMP', paramId: 14, name: 'COMP_BYPASSMODE', displayLabel: 'Bypass Mode', unit: 'enum' }, // inferred from AM4
   { family: 'COMP', paramId: 15, name: 'COMP_DELAYTIME', displayLabel: 'Look-Ahead Time', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'COMP', paramId: 16, name: 'COMP_AUTOMODE', displayLabel: 'Auto Att/Rel', unit: 'enum' }, // inferred from AxeEdit III XML controlType
@@ -358,9 +358,9 @@ export const FM3_PARAMS: readonly Param[] = [
   { family: 'DELAY', paramId: 5, name: 'DELAY_BYPASS', displayLabel: 'Bypass', unit: 'enum' }, // inferred from Fractal convention; device-true 5 (III 22 would mis-address)
   { family: 'DELAY', paramId: 6, name: 'DELAY_MODEL', unit: 'unverified' }, // device-true 6 (III 0 would mis-address)
   { family: 'DELAY', paramId: 7, name: 'DELAY_TYPE', unit: 'enum' }, // inferred from AM4; device-true 7 (III 1 would mis-address)
-  { family: 'DELAY', paramId: 8, name: 'DELAY_TIME', displayLabel: 'Time', unit: 'ms', displayMin: 0, displayMax: 8000 }, // inferred from AM4; device-true 8 (III 2 would mis-address)
+  { family: 'DELAY', paramId: 8, name: 'DELAY_TIME', displayLabel: 'Time', unit: 'ms', displayMin: 1, displayMax: 16000 }, // device-true 8 (III 2 would mis-address). Range: FM3 fw 12 panel text (01 10 reads, 2026-09-21) wire 2458 -> "601 ms", 1228 -> "301 ms", 1556 -> "381 ms" = linear 1..16000 (the AM4-inferred 0..8000 wrote every delay at 2x); matches the FM9 device cache
   { family: 'DELAY', paramId: 9, name: 'DELAY_RATIO', displayLabel: 'L/R Time Ratio', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 9 (III 3 would mis-address)
-  { family: 'DELAY', paramId: 10, name: 'DELAY_FEED', displayLabel: 'Feedback', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 10 (III 4 would mis-address)
+  { family: 'DELAY', paramId: 10, name: 'DELAY_FEED', displayLabel: 'Feedback', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: 32767 -> 0%, 39320 -> "20.0 %", 44235 -> "35.0 %"; was: inferred from AxeEdit III XML controlType; device-true 10 (III 4 would mis-address)
   { family: 'DELAY', paramId: 11, name: 'DELAY_FEEDL', unit: 'unverified' }, // device-true 11 (III 5 would mis-address)
   { family: 'DELAY', paramId: 12, name: 'DELAY_FEEDR', displayLabel: 'Feedback R', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 12 (III 6 would mis-address)
   { family: 'DELAY', paramId: 13, name: 'DELAY_DELAYPAN', displayLabel: 'Echo Pan', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 13 (III 7 would mis-address)
@@ -485,7 +485,7 @@ export const FM3_PARAMS: readonly Param[] = [
   { family: 'DISTORT', paramId: 46, name: 'DISTORT_SPKRHFGAIN', displayLabel: 'HF Reso', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 46 (III 44 would mis-address)
   { family: 'DISTORT', paramId: 47, name: 'DISTORT_CUT', displayLabel: 'Cut', unit: 'enum' }, // inferred from AxeEdit III XML controlType; device-true 47 (III 45 would mis-address)
   { family: 'DISTORT', paramId: 48, name: 'DISTORT_XDRIVE', displayLabel: 'XFormer Drive', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 48 (III 46 would mis-address)
-  { family: 'DISTORT', paramId: 49, name: 'DISTORT_TRIM', displayLabel: 'Input Trim', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 49 (III 47 would mis-address)
+  { family: 'DISTORT', paramId: 49, name: 'DISTORT_TRIM', displayLabel: 'Input Trim', unit: 'numeric', displayMin: 0.1, displayMax: 10, scaling: 'log10' }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: 32767 -> "1.000" (log10 0.1..10; III law device-verified log); was: inferred from AxeEdit III XML controlType; device-true 49 (III 47 would mis-address)
   { family: 'DISTORT', paramId: 50, name: 'DISTORT_HARDNESS2', displayLabel: 'Tube Hardness', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 50 (III 48 would mis-address)
   { family: 'DISTORT', paramId: 51, name: 'DISTORT_MVPOSITION', displayLabel: 'Master Vol Location', unit: 'enum' }, // inferred from AxeEdit III XML controlType; device-true 51 (III 49 would mis-address)
   { family: 'DISTORT', paramId: 52, name: 'DISTORT_SPKRDRIVE', displayLabel: 'Speaker Drive', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4; device-true 52 (III 50 would mis-address)
@@ -493,14 +493,14 @@ export const FM3_PARAMS: readonly Param[] = [
   { family: 'DISTORT', paramId: 54, name: 'DISTORT_SCREENFREQ', displayLabel: 'Screen Frequency', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 54 (III 52 would mis-address)
   { family: 'DISTORT', paramId: 55, name: 'DISTORT_SCREENQ', displayLabel: 'Screen Q', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 55 (III 53 would mis-address)
   { family: 'DISTORT', paramId: 56, name: 'DISTORT_SATSWITCH', displayLabel: 'Saturation Switch', unit: 'enum' }, // inferred from AxeEdit III XML controlType; device-true 56 (III 54 would mis-address)
-  { family: 'DISTORT', paramId: 57, name: 'DISTORT_EQ1', displayLabel: 'Bass', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 57 (III 55 would mis-address)
-  { family: 'DISTORT', paramId: 58, name: 'DISTORT_EQ2', displayLabel: 'Mid', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 58 (III 56 would mis-address)
-  { family: 'DISTORT', paramId: 59, name: 'DISTORT_EQ3', displayLabel: 'Treble', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 59 (III 57 would mis-address)
-  { family: 'DISTORT', paramId: 60, name: 'DISTORT_EQ4', displayLabel: 'Presence', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 60 (III 58 would mis-address)
-  { family: 'DISTORT', paramId: 61, name: 'DISTORT_EQ5', displayLabel: '1600', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 61 (III 59 would mis-address)
-  { family: 'DISTORT', paramId: 62, name: 'DISTORT_EQ6', displayLabel: '2K', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 62 (III 60 would mis-address)
-  { family: 'DISTORT', paramId: 63, name: 'DISTORT_EQ7', displayLabel: '4K', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 63 (III 61 would mis-address)
-  { family: 'DISTORT', paramId: 64, name: 'DISTORT_EQ8', displayLabel: '8K', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 64 (III 62 would mis-address)
+  { family: 'DISTORT', paramId: 57, name: 'DISTORT_EQ1', displayLabel: 'Bass', unit: 'db', displayMin: -12, displayMax: 12 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: EQ1..5 49151/38228/13653/43689 -> "6.00"/"2.00"/"-7.00"/"4.00" (+-12 linear, FM9 cache range); was: inferred from AxeEdit III XML controlType; device-true 57 (III 55 would mis-address)
+  { family: 'DISTORT', paramId: 58, name: 'DISTORT_EQ2', displayLabel: 'Mid', unit: 'db', displayMin: -12, displayMax: 12 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: EQ1..5 49151/38228/13653/43689 -> "6.00"/"2.00"/"-7.00"/"4.00" (+-12 linear, FM9 cache range); was: inferred from AxeEdit III XML controlType; device-true 58 (III 56 would mis-address)
+  { family: 'DISTORT', paramId: 59, name: 'DISTORT_EQ3', displayLabel: 'Treble', unit: 'db', displayMin: -12, displayMax: 12 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: EQ1..5 49151/38228/13653/43689 -> "6.00"/"2.00"/"-7.00"/"4.00" (+-12 linear, FM9 cache range); was: inferred from AxeEdit III XML controlType; device-true 59 (III 57 would mis-address)
+  { family: 'DISTORT', paramId: 60, name: 'DISTORT_EQ4', displayLabel: 'Presence', unit: 'db', displayMin: -12, displayMax: 12 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: EQ1..5 49151/38228/13653/43689 -> "6.00"/"2.00"/"-7.00"/"4.00" (+-12 linear, FM9 cache range); was: inferred from AxeEdit III XML controlType; device-true 60 (III 58 would mis-address)
+  { family: 'DISTORT', paramId: 61, name: 'DISTORT_EQ5', displayLabel: '1600', unit: 'db', displayMin: -12, displayMax: 12 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: EQ1..5 49151/38228/13653/43689 -> "6.00"/"2.00"/"-7.00"/"4.00" (+-12 linear, FM9 cache range); was: inferred from AxeEdit III XML controlType; device-true 61 (III 59 would mis-address)
+  { family: 'DISTORT', paramId: 62, name: 'DISTORT_EQ6', displayLabel: '2K', unit: 'db', displayMin: -12, displayMax: 12 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: EQ1..5 49151/38228/13653/43689 -> "6.00"/"2.00"/"-7.00"/"4.00" (+-12 linear, FM9 cache range); was: inferred from AxeEdit III XML controlType; device-true 62 (III 60 would mis-address)
+  { family: 'DISTORT', paramId: 63, name: 'DISTORT_EQ7', displayLabel: '4K', unit: 'db', displayMin: -12, displayMax: 12 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: EQ1..5 49151/38228/13653/43689 -> "6.00"/"2.00"/"-7.00"/"4.00" (+-12 linear, FM9 cache range); was: inferred from AxeEdit III XML controlType; device-true 63 (III 61 would mis-address)
+  { family: 'DISTORT', paramId: 64, name: 'DISTORT_EQ8', displayLabel: '8K', unit: 'db', displayMin: -12, displayMax: 12 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: EQ1..5 49151/38228/13653/43689 -> "6.00"/"2.00"/"-7.00"/"4.00" (+-12 linear, FM9 cache range); was: inferred from AxeEdit III XML controlType; device-true 64 (III 62 would mis-address)
   { family: 'DISTORT', paramId: 65, name: 'DISTORT_BIASEXCURSION', displayLabel: 'Bias Excursion', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 65 (III 63 would mis-address)
   { family: 'DISTORT', paramId: 66, name: 'DISTORT_EXCURSIONTIME', displayLabel: 'Excursion Time', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 66 (III 64 would mis-address)
   { family: 'DISTORT', paramId: 67, name: 'DISTORT_RECOVERYTIME', displayLabel: 'Recovery Time', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 67 (III 65 would mis-address)
@@ -734,9 +734,9 @@ export const FM3_PARAMS: readonly Param[] = [
   { family: 'FORMANT', paramId: 10, name: 'FORMANT_GLOBALMIX', unit: 'percent', displayMin: 0, displayMax: 100 }, // inferred from Fractal convention
   { family: 'FORMANT', paramId: 11, name: 'FORMANT_SCENEIGNORE', displayLabel: 'Scene Ignore', unit: 'enum' }, // inferred from Fractal convention
   { family: 'FUZZ', paramId: 0, name: 'FUZZ_TYPE', unit: 'unverified' },
-  { family: 'FUZZ', paramId: 1, name: 'FUZZ_DRIVE', displayLabel: 'Drive', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'FUZZ', paramId: 2, name: 'FUZZ_TONE', displayLabel: 'Tone', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'FUZZ', paramId: 3, name: 'FUZZ_LEVEL', displayLabel: 'Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'FUZZ', paramId: 1, name: 'FUZZ_DRIVE', displayLabel: 'Drive', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: 0 -> "0.00", 3277 -> "0.50"; was: inferred from AxeEdit III XML controlType
+  { family: 'FUZZ', paramId: 2, name: 'FUZZ_TONE', displayLabel: 'Tone', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: 32767 -> "5.00"; was: inferred from AxeEdit III XML controlType
+  { family: 'FUZZ', paramId: 3, name: 'FUZZ_LEVEL', displayLabel: 'Level', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: 52427 -> "8.00", 65534 -> "10.00"; was: inferred from AxeEdit III XML controlType
   { family: 'FUZZ', paramId: 4, name: 'FUZZ_MIX', displayLabel: 'Mix', unit: 'percent', displayMin: 0, displayMax: 100 }, // inferred from Fractal convention
   { family: 'FUZZ', paramId: 5, name: 'FUZZ_BYPASSMODE', displayLabel: 'Bypass Mode', unit: 'enum' }, // inferred from Fractal convention
   { family: 'FUZZ', paramId: 6, name: 'FUZZ_SLEW', displayLabel: 'Slew Rate', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
@@ -1320,27 +1320,27 @@ export const FM3_PARAMS: readonly Param[] = [
   { family: 'OUTPUT', paramId: 23, name: 'OUTPUT_SCENE6', displayLabel: 'Scene 6 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'OUTPUT', paramId: 24, name: 'OUTPUT_SCENE7', displayLabel: 'Scene 7 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
   { family: 'OUTPUT', paramId: 25, name: 'OUTPUT_SCENE8', displayLabel: 'Scene 8 Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 0, name: 'PEQ_FREQ1', displayLabel: 'Frequency 1', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 1, name: 'PEQ_FREQ2', displayLabel: 'Frequency 2', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 2, name: 'PEQ_FREQ3', displayLabel: 'Frequency 3', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 3, name: 'PEQ_FREQ4', displayLabel: 'Frequency 4', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 4, name: 'PEQ_FREQ5', displayLabel: 'Frequency 5', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 5, name: 'PEQ_Q1', displayLabel: 'Q1', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 6, name: 'PEQ_Q2', displayLabel: 'Q2', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 7, name: 'PEQ_Q3', displayLabel: 'Q3', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 8, name: 'PEQ_Q4', displayLabel: 'Q4', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 9, name: 'PEQ_Q5', displayLabel: 'Q5', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 10, name: 'PEQ_GAIN1', displayLabel: 'Gain 1', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 11, name: 'PEQ_GAIN2', displayLabel: 'Gain 2', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 12, name: 'PEQ_GAIN3', displayLabel: 'Gain 3', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 13, name: 'PEQ_GAIN4', displayLabel: 'Gain 4', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 14, name: 'PEQ_GAIN5', displayLabel: 'Gain 5', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 0, name: 'PEQ_FREQ1', displayLabel: 'Frequency 1', unit: 'hz', displayMin: 20, displayMax: 2000, scaling: 'log10' }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: 21404 -> "90.00 Hz" (log10 20..2000, same as III law); was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 1, name: 'PEQ_FREQ2', displayLabel: 'Frequency 2', unit: 'hz', displayMin: 100, displayMax: 10000, scaling: 'log10' }, // III law (BigSaurus axefx-sysex-maps, FW 32.02 cache); FM3 band 1 matched the same table; was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 2, name: 'PEQ_FREQ3', displayLabel: 'Frequency 3', unit: 'hz', displayMin: 100, displayMax: 10000, scaling: 'log10' }, // III law device-verified (1000 Hz -> 0.5); FM3 band 1 matched the same table; was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 3, name: 'PEQ_FREQ4', displayLabel: 'Frequency 4', unit: 'hz', displayMin: 100, displayMax: 10000, scaling: 'log10' }, // III law (FW 32.02 cache); FM3 band 1 matched the same table; was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 4, name: 'PEQ_FREQ5', displayLabel: 'Frequency 5', unit: 'hz', displayMin: 200, displayMax: 20000, scaling: 'log10' }, // III law device-verified (0.60205 -> 3200 Hz); FM3 band 1 matched the same table; was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 5, name: 'PEQ_Q1', displayLabel: 'Q1', unit: 'numeric', displayMin: 0.1, displayMax: 10, scaling: 'log10' }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: Q1 27833 -> "0.707" (log10 0.1..10, III law); was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 6, name: 'PEQ_Q2', displayLabel: 'Q2', unit: 'numeric', displayMin: 0.1, displayMax: 10, scaling: 'log10' }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: Q1 27833 -> "0.707" (log10 0.1..10, III law); was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 7, name: 'PEQ_Q3', displayLabel: 'Q3', unit: 'numeric', displayMin: 0.1, displayMax: 10, scaling: 'log10' }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: Q1 27833 -> "0.707" (log10 0.1..10, III law); was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 8, name: 'PEQ_Q4', displayLabel: 'Q4', unit: 'numeric', displayMin: 0.1, displayMax: 10, scaling: 'log10' }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: Q1 27833 -> "0.707" (log10 0.1..10, III law); was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 9, name: 'PEQ_Q5', displayLabel: 'Q5', unit: 'numeric', displayMin: 0.1, displayMax: 10, scaling: 'log10' }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: Q1 27833 -> "0.707" (log10 0.1..10, III law); was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 10, name: 'PEQ_GAIN1', displayLabel: 'Gain 1', unit: 'db', displayMin: -20, displayMax: 20 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: gain1 38501 -> "3.50 dB", 32767 -> 0 dB (+-20 linear, III law); was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 11, name: 'PEQ_GAIN2', displayLabel: 'Gain 2', unit: 'db', displayMin: -20, displayMax: 20 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: gain1 38501 -> "3.50 dB", 32767 -> 0 dB (+-20 linear, III law); was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 12, name: 'PEQ_GAIN3', displayLabel: 'Gain 3', unit: 'db', displayMin: -20, displayMax: 20 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: gain1 38501 -> "3.50 dB", 32767 -> 0 dB (+-20 linear, III law); was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 13, name: 'PEQ_GAIN4', displayLabel: 'Gain 4', unit: 'db', displayMin: -20, displayMax: 20 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: gain1 38501 -> "3.50 dB", 32767 -> 0 dB (+-20 linear, III law); was: inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 14, name: 'PEQ_GAIN5', displayLabel: 'Gain 5', unit: 'db', displayMin: -20, displayMax: 20 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: gain1 38501 -> "3.50 dB", 32767 -> 0 dB (+-20 linear, III law); was: inferred from AxeEdit III XML controlType
   { family: 'PEQ', paramId: 15, name: 'PEQ_TYPE1', displayLabel: 'Type 1', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'PEQ', paramId: 16, name: 'PEQ_TYPE2', displayLabel: 'Type 2', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'PEQ', paramId: 17, name: 'PEQ_TYPE3', displayLabel: 'Type 3', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'PEQ', paramId: 18, name: 'PEQ_TYPE4', displayLabel: 'Type 4', unit: 'enum' }, // inferred from AxeEdit III XML controlType
   { family: 'PEQ', paramId: 19, name: 'PEQ_TYPE5', displayLabel: 'Type 5', unit: 'enum' }, // inferred from AxeEdit III XML controlType
-  { family: 'PEQ', paramId: 20, name: 'PEQ_LEVEL', displayLabel: 'Level', unit: 'numeric' }, // inferred from AxeEdit III XML controlType
+  { family: 'PEQ', paramId: 20, name: 'PEQ_LEVEL', displayLabel: 'Level', unit: 'db', displayMin: -80, displayMax: 20 }, // FM3 fw 12 panel text via 01 10 read, 2026-09-21: 52427 -> "0.0 dB"; was: inferred from AxeEdit III XML controlType
   { family: 'PEQ', paramId: 21, name: 'PEQ_PAN', displayLabel: 'Balance', unit: 'bipolar_percent', displayMin: -100, displayMax: 100 }, // inferred from Fractal convention
   { family: 'PEQ', paramId: 22, name: 'PEQ_BYPASSMODE', displayLabel: 'Bypass Mode', unit: 'enum' }, // inferred from AM4
   { family: 'PEQ', paramId: 23, name: 'PEQ_GLOBALMIX', unit: 'percent', displayMin: 0, displayMax: 100 }, // inferred from Fractal convention
@@ -1355,7 +1355,7 @@ export const FM3_PARAMS: readonly Param[] = [
   { family: 'PEQ', paramId: 32, name: 'PEQ_SCENEIGNORE', displayLabel: 'Scene Ignore', unit: 'enum' }, // inferred from Fractal convention
   { family: 'PHASER', paramId: 0, name: 'PHASER_TYPE', unit: 'enum' }, // inferred from AM4
   { family: 'PHASER', paramId: 1, name: 'PHASER_ORDER', displayLabel: 'Order', unit: 'count', displayMin: 1, displayMax: 12 }, // inferred from AM4
-  { family: 'PHASER', paramId: 2, name: 'PHASER_RATE', displayLabel: 'Rate', unit: 'hz', displayMin: 0.1, displayMax: 10 }, // inferred from AM4
+  { family: 'PHASER', paramId: 2, name: 'PHASER_RATE', displayLabel: 'Rate', unit: 'hz', displayMin: 0.1, displayMax: 10, scaling: 'log10' }, // FM3 fw 12 panel text (01 10 read, 2026-09-21): wire 1655 -> "0.112 Hz" = log10 0.1..10 (linear would be 0.35)
   { family: 'PHASER', paramId: 3, name: 'PHASER_LFOTYPE', displayLabel: 'Type', unit: 'enum' }, // inferred from AM4
   { family: 'PHASER', paramId: 4, name: 'PHASER_TEMPO', displayLabel: 'Tempo', unit: 'enum' }, // inferred from AM4
   { family: 'PHASER', paramId: 5, name: 'PHASER_DEPTH', displayLabel: 'Depth', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4

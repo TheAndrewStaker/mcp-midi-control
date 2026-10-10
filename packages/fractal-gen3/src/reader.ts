@@ -428,6 +428,28 @@ async function readCurrentTypeName(
  * undefined when the device doesn't answer in time; the caller then leaves the
  * active scene simply unknown rather than failing the whole read.
  */
+/**
+ * Best-effort firmware version (fn=0x08 query, read-only; FM3 fw 12 answers
+ * "12.00" + a build-date string, the III answers major/minor). Returns
+ * undefined when the device does not answer within a short window.
+ */
+async function readFirmwareVersion(
+  ctx: DispatchCtx,
+  codec: ModernFractalCodec,
+): Promise<string | undefined> {
+  const respPromise = ctx.conn.receiveSysExMatching(
+    (b) => codec.isFirmwareVersionResponse(b),
+    250,
+  );
+  try {
+    ctx.conn.send(codec.buildQueryFirmwareVersion());
+    const parsed = codec.parseFirmwareVersionResponse(await respPromise);
+    return parsed.build ? `${parsed.version} (${parsed.build})` : parsed.version;
+  } catch {
+    return undefined;
+  }
+}
+
 async function readActiveScene(
   ctx: DispatchCtx,
   codec: ModernFractalCodec,
@@ -774,7 +796,13 @@ export function makeReader(opts: {
       // The positional bulk read mis-addresses type selectors (its value is not
       // the roster ordinal), so the device's own name string is authoritative.
       const schema = catalog.blocks[blockSlugIn]?.params[name];
-      if (schema?.wire_kind === 'discrete') {
+      // FM3 fw 12 (2026-09-21): the sub=0x1F name read answered "Rat Distortion"
+      // (ordinal 0) while the drive's active channel held ordinal 54, and it
+      // ignores the requested channel entirely. The per-channel state-broadcast
+      // projection below was correct on every read, so the FM3 uses it. (The
+      // FM9 capture this path rests on also only ever returned ordinal-0 names:
+      // Small Room / 59 Bassguy Bright / Rat Distortion; worth re-checking.)
+      if (schema?.wire_kind === 'discrete' && codec.modelByte !== 0x11 && channel === undefined) {
         const typeName = await readCurrentTypeName(
           ctx, codec, effectId, param.paramId, Math.min(250, getResponseTimeoutMs),
         );
@@ -870,6 +898,7 @@ export function makeReader(opts: {
       let placedEffectIds: Set<number> | undefined;
       let liveMeters: Gen3LiveMeters | undefined;
       let activeScene: number | undefined;
+      let firmware: string | undefined;
       let vp4Structure: Vp4StructureBlob | undefined;
 
       // VP4 (serial AM4-shape): the whole preset STRUCTURE — name, scene
@@ -918,6 +947,7 @@ export function makeReader(opts: {
           // won't pay a full timeout. (Skipped entirely when the grid read failed,
           // so a dead/held port isn't probed twice.)
           activeScene = await readActiveScene(ctx, codec, getResponseTimeoutMs);
+          firmware = await readFirmwareVersion(ctx, codec);
         } catch {
           // No grid reply (older firmware / port held / III-FM3 unconfirmed):
           // fall back to probing every catalog block, as before.
@@ -1010,7 +1040,19 @@ export function makeReader(opts: {
               'as ordinal labels; uncalibrated continuous params read back as raw wire values. ' +
               'Community beta: the server-driven fn=0x1F poll is not yet hardware-confirmed end to end.',
       );
-      if (liveMeters !== undefined) {
+      if (liveMeters !== undefined && codec.modelByte === 0x11) {
+        // Not a CPU reading on the FM3 (fw 12, 2026-09-21). It matched the panel
+        // once (67% on a saved 12-block preset) but read 86% on a new 3-block
+        // preset the panel showed at 21%, and while blocks are added it climbs
+        // in a repeatable per-block sequence that wraps past 100%. Whatever the
+        // field counts, it is not the front panel's CPU.
+        warnings.push(
+          `gen-3 live_meters: cpu_percent (${liveMeters.cpu_percent}%) is NOT a valid CPU reading on ` +
+            'the FM3 (it disagreed with the front panel by 65 points on a new preset). Do not use it ' +
+            'for headroom or DSP-limit decisions; ask the user to read CPU on the unit. ' +
+            'output_left/right are momentary peaks at read time.',
+        );
+      } else if (liveMeters !== undefined) {
         warnings.push(
           `gen-3 live_meters: cpu_percent (${liveMeters.cpu_percent}%) is the active preset's steady ` +
             'DSP cost (the headroom answer); output_left/right are momentary peaks at read time. ' +
@@ -1038,6 +1080,7 @@ export function makeReader(opts: {
         read_warnings: warnings,
         _meta: {
           device: deviceLabel,
+          ...(firmware !== undefined ? { firmware } : {}),
           read_at_ms: readStartedMs,
           active_scene_only: true,
           // The VP4 structure blob carries the serial chain = the routing.

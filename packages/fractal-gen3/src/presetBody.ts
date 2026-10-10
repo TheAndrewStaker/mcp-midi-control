@@ -136,8 +136,24 @@ const DEVICE_PROFILES: Record<number, DeviceProfile> = {
       71: 'Reverb',
       43: 'Drive',
       42: 'Drive', // firmware 10.0 (was Synth on old firmware)
+      // FM3 fw 12 column counts that collide with the shared (III/FM9) map.
+      // Each count equals that block's FM3 catalog param count, and was pinned
+      // on a stored FM3 dump (2026-09-21, a preset with In/Out/PEQ/Gate/...):
+      // the 10-col block holds the Input gate params, the 26-col block the
+      // Output levels, the 33-col block the PEQ (its first word was the written
+      // band-1 frequency). The shared map read them as Vol/Pan / PEQ / a dropped
+      // "Flanger", so the real PEQ and its scene bypass/channel went missing.
+      // On FM3 Flanger is 55 cols and Vol/Pan 15.
+      10: 'Input',
+      26: 'Output',
+      33: 'PEQ',
+      15: 'Vol/Pan',
+      55: 'Flanger',
     },
-    typeLocations: { ...SHARED_TYPE_LOCS, Amp: TYPE_P0, Delay: TYPE_P0, Reverb: TYPE_H17, Comp: TYPE_P6 },
+    // Delay type is per-channel param word 1 on FM3 fw 12 (word 0 reads 0 on
+    // every channel; word 1 held the written Mono Tape=4 / Digital Mono=0, with
+    // time at word 2 and feedback at word 4), same 2026-09-21 dump.
+    typeLocations: { ...SHARED_TYPE_LOCS, Amp: TYPE_P0, Delay: ['param', 1], Reverb: TYPE_H17, Comp: TYPE_P6 },
   },
   [MODEL_FM9]: {
     name: 'FM9',

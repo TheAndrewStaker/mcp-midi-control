@@ -49,10 +49,10 @@ Two shape differences matter for asks on this page:
 | `switch_scene`, `switch_preset` | confirmed | Same field test |
 | Serial transport, discovery and framing | confirmed on macOS, hardware-unverified on Windows | The field tests were macOS. The Windows serial-driver path is implemented and unconfirmed |
 | `set_block` placement | confirmed | An independent app built on this codec placed blocks on a real FM3 over Linux USB serial. The FM3 needs an extra cell-select frame ahead of the insert, which this server already sends automatically for four-row grids |
-| `set_block` / `set_bypass` on the 15 multi-word blocks | **hardware-unverified, newly reachable** | These never resolved before 2026-08-03: the write path matched display names and group codes against the descriptor SLUG, so `graphic_eq`, `parametric_eq`, `gate_expander`, `volume_pan`, `pan_tremolo`, `multitap_delay`, `megatap_delay`, `ten_tap_delay`, `plex_delay`, `ring_modulator`, `multiband_compressor`, `tone_match`, `ir_capture`, `ir_player` and `real_time_analyzer` returned "unknown block" for a block the device really has. The resolver now matches the read path, but none of THESE blocks has been exercised on hardware |
+| `set_block` / `set_bypass` on the 15 multi-word blocks | confirmed for `gate_expander` and `parametric_eq`, the rest hardware-unverified | Built, saved and read back a 12-block preset on FM3 fw 12.00, macOS, through this server (2026-09-21); both placed, cabled and bypassed per scene. Earlier note:  These never resolved before 2026-08-03: the write path matched display names and group codes against the descriptor SLUG, so `graphic_eq`, `parametric_eq`, `gate_expander`, `volume_pan`, `pan_tremolo`, `multitap_delay`, `megatap_delay`, `ten_tap_delay`, `plex_delay`, `ring_modulator`, `multiband_compressor`, `tone_match`, `ir_capture`, `ir_player` and `real_time_analyzer` returned "unknown block" for a block the device really has. The resolver now matches the read path, but none of THESE blocks has been exercised on hardware |
 | Grid routing, cable connect and disconnect | confirmed | Same independent field test |
-| `get_preset` live grid read | hardware-unverified | The four-row grid decode was pinned offline against the field-test capture. Never compared to a real panel |
-| `save_preset` | hardware-unverified | The save envelope is unconfirmed on any gen-3 device |
+| `get_preset` live grid read | confirmed | Built, saved and read back a 12-block preset on FM3 fw 12.00, macOS, through this server (2026-09-21); matched the placed grid after fixing effect ids >= 128 (bit 7 sits before the cell). Reports `_meta.firmware` (fn 0x08). `live_meters.cpu_percent` is NOT a valid CPU reading on FM3: the field at frame byte 37 matched the panel once (67%) but read 86% on a new 3-block preset the panel showed at 21%, and climbs in a repeatable wrap-around sequence as blocks are added. Read CPU on the unit |
+| `save_preset` | confirmed | Built, saved and read back a 12-block preset on FM3 fw 12.00, macOS, through this server (2026-09-21): stored dump CRC-valid and matching, survived switching away and back. Preset and scene names via fn=0x01 sub=0x28/0x2b |
 
 Support tier: `community-beta`. This mirrors `capabilities.support_tier` on the
 descriptor at `packages/fractal-gen3/src/configs/fm3.ts`, and preflight fails if
@@ -78,7 +78,7 @@ Nothing on the FM3 is refused for an undecoded wire shape.
 
 | Blocked capability | Missing evidence | Closed by |
 |---|---|---|
-| Device-true display ranges, steps, tapers and enum name lists | The FM3 cache copies on hand are small unsynced stubs | DONATE-1 |
+| Device-true display ranges, steps, tapers and enum name lists | Closed 2026-09-21: FM3 editor data (fw 12.0) vendored from forgefx-midi; tapers from the typecode; 362/364 numeric params matched FM3 panel text | Closed |
 | The Windows serial-driver path | No Windows run has happened. Both field tests were macOS, and the third was Linux | SESSION-1 |
 | Confirmation of the discrete routing classification | The FM3's type and count selectors were classified as discrete by joining sibling evidence on symbol, not on parameter id, because no FM3 catalog round-trip exists yet | SESSION-2 |
 | Named tempo divisions on any gen-3 device | The wire encoding for the TEMPO division select is undecoded | See [axe-fx-iii.md](axe-fx-iii.md) CAPTURE-2 |

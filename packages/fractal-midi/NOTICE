@@ -43,3 +43,8 @@ derived from:
     reimplementation from that spec; the roster name tables are derived
     from its data, independently cross-validated against our own
     hardware captures.
+
+This product includes FM3 data files (src/gen3/fm3/ranges.generated.ts,
+rosters.generated.ts, modifiers.ts) from forgefx-midi
+(https://github.com/sKuhLight/forgefx-midi, commit 553d24b),
+licensed under the Apache License, Version 2.0.

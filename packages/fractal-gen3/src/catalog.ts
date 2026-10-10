@@ -198,11 +198,14 @@ function makeEnumEncode(
   family: string,
   paramKey: string,
   enumValues: Readonly<Record<number, string>>,
+  aliases: Readonly<Record<number, string>> = {},
 ): ParamSchema['encode'] {
   // name (normalized + word-order variants) → ordinal. Built once. Lowest
   // ordinal wins a collision so a canonical name maps deterministically.
+  // `aliases` are superseded spellings of the same ordinal (accepted on input,
+  // never used for display); canonical labels are registered first and win.
   const reverse = new Map<string, number>();
-  for (const [ordStr, label] of Object.entries(enumValues)) {
+  for (const [ordStr, label] of [...Object.entries(enumValues), ...Object.entries(aliases)]) {
     const ord = Number(ordStr);
     for (const form of enumLabelForms(label)) {
       const existing = reverse.get(form);
@@ -289,6 +292,12 @@ export interface DeviceParamRange {
    * type/mode selectors the overlay missed were stored wrong as continuous).
    */
   readonly enumCount?: number;
+  /**
+   * Float rows only: the device's own taper, when the table carries one (the
+   * FM3 table derives it from the editor typecode; see factory.ts). Takes
+   * precedence over the catalog param's `scaling`. Omitted = keep the catalog's.
+   */
+  readonly scaling?: 'linear' | 'log10';
 }
 
 /** Device-true ranges keyed family → paramId → range (e.g. `FM9_RANGES`). */
@@ -339,13 +348,38 @@ function resolveCalibration(
     if (displayMin !== undefined) displayMin = roundDisplay(displayMin);
     if (displayMax !== undefined) displayMax = roundDisplay(displayMax);
   }
-  const { scaling } = param;
+  const scaling = deviceRange?.kind === 'float' && deviceRange.scaling !== undefined
+    ? deviceRange.scaling
+    : param.scaling;
   if (displayMin === undefined || displayMax === undefined) return undefined;
   if (!Number.isFinite(displayMin) || !Number.isFinite(displayMax)) return undefined;
   if (displayMin >= displayMax) return undefined;
   const displayScale: 'linear' | 'log10' = scaling === 'log10' ? 'log10' : 'linear';
   if (displayScale === 'log10' && (displayMin <= 0 || displayMax <= 0)) return undefined;
   return { displayMin, displayMax, displayScale };
+}
+
+/**
+ * True when `overlay` names any model at a different ordinal than `roster`
+ * does (compared case/whitespace-insensitively), i.e. the overlay's list is
+ * shifted relative to the device-correlated roster and cannot be trusted as an
+ * ordinal oracle for this param.
+ */
+function overlayShiftsAgainst(
+  overlay: Readonly<Record<number, string>>,
+  roster: Readonly<Record<number, string>>,
+): boolean {
+  const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  const rosterOrdinalByName = new Map<string, number>();
+  for (const [ord, name] of Object.entries(roster)) {
+    const n = norm(name);
+    if (!rosterOrdinalByName.has(n)) rosterOrdinalByName.set(n, Number(ord));
+  }
+  for (const [ord, name] of Object.entries(overlay)) {
+    const at = rosterOrdinalByName.get(norm(name));
+    if (at !== undefined && at !== Number(ord)) return true;
+  }
+  return false;
 }
 
 /**
@@ -463,10 +497,34 @@ function buildParamSchema(
   // spellings. Layered precedence (later spread wins):
   //   shared roster < family overlay < device-captured (hardware truth).
   const sharedRoster = sharedEnumRosters?.[param.name];
+  // The overlay may only win on SPELLING, never on ordinals. If it names a model
+  // the shared gen-3 roster places at a DIFFERENT ordinal, the overlay's list is
+  // shifted (e.g. AM4 DRIVE_TYPES lacks the gen-3 Riot/Timothy/Compulsion/PI Fuzz
+  // variants, so from ordinal 31 on it mislabels, and set-by-name "Klone Chiron"
+  // sent 54 = DS1 Distortion Mod; FM3 fw 12 hardware, 2026-09-21). The shared
+  // roster is device-correlated (FM9 cache + FM3 fw 12 cache for FUZZ_TYPE), so a
+  // conflicting overlay is dropped for that param. Pure spelling variants
+  // ("Plate, Medium" vs "Medium Plate") share no names and keep the overlay.
+  const overlayValues =
+    overlay?.values !== undefined && sharedRoster !== undefined &&
+    overlayShiftsAgainst(overlay.values, sharedRoster)
+      ? undefined
+      : overlay?.values;
   const enumValues =
-    deviceOverlayValues !== undefined || overlay?.values !== undefined || sharedRoster !== undefined
-      ? { ...(sharedRoster ?? {}), ...(overlay?.values ?? {}), ...(deviceOverlayValues ?? {}) }
+    deviceOverlayValues !== undefined || overlayValues !== undefined || sharedRoster !== undefined
+      ? { ...(sharedRoster ?? {}), ...(overlayValues ?? {}), ...(deviceOverlayValues ?? {}) }
       : undefined;
+  // Spellings a device-captured name replaced for the same ordinal (e.g. FM3
+  // "Modern VCA Compressor" over the overlay's "VCA Modern Compressor") stay
+  // accepted on set-by-name so existing callers keep working.
+  const enumAliases: Record<number, string> = {};
+  if (deviceOverlayValues !== undefined) {
+    const before = { ...(sharedRoster ?? {}), ...(overlayValues ?? {}) };
+    for (const [ord, name] of Object.entries(before)) {
+      const dev = deviceOverlayValues[Number(ord)];
+      if (dev !== undefined && dev !== name) enumAliases[Number(ord)] = name;
+    }
+  }
 
   // Device-cache enum WITHOUT a correlated name table: the editor cache marks
   // this paramId enum (kind:'enum' + enumCount) but the AM4/XML/roster overlays
@@ -519,7 +577,7 @@ function buildParamSchema(
   if (enumValues !== undefined) {
     // Set-by-name = float32(read-ordinal): encode resolves a NAME to the same
     // ordinal the decode labels with. The wire form is DISCRETE (sub 09 00).
-    encode = makeEnumEncode(family, key, enumValues);
+    encode = makeEnumEncode(family, key, enumValues, enumAliases);
     decode = (wire: number): number | string => enumValues[wire] ?? wire;
   } else if (deviceEnumNoNames) {
     // Count-known device-cache enum, no names yet: discrete numeric-ordinal

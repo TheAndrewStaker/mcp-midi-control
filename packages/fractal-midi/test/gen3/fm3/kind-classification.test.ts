@@ -45,14 +45,37 @@ const cases: Array<() => void> = [];
 // ── Export surface (documented; a change here is a classification-story change) ─
 cases.push(() => {
   const got = Object.keys(fm3).sort().join(',');
-  const want = 'FM3_FAMILIES,FM3_FAMILY_JOIN_DISCRETE,FM3_FAMILY_JOIN_PROVENANCE,FM3_PARAMS,FM3_PARAMS_BY_FAMILY';
+  const want = 'FM3_FAMILIES,FM3_FAMILY_JOIN_DISCRETE,FM3_FAMILY_JOIN_PROVENANCE,FM3_MOD_EFFECT_ID,FM3_MOD_FIELDS,' +
+    'FM3_MOD_SLOT_COUNT,FM3_MOD_SOURCES,FM3_MOD_SOURCE_PEDAL1,FM3_PARAMS,FM3_PARAMS_BY_FAMILY,FM3_RANGES,' +
+    'FM3_RANGE_SECTIONS,FM3_ROSTERS,FM3_UNMAPPED_SECTIONS,fm3ModBindFrames,fm3ModParamId,fm3ModSlotEid';
   assert(got === want, `FM3 export surface changed: ${got} (documented: ${want})`);
 });
 // A true FM3 oracle still does NOT exist: no roundtrip overlay, no cache
 // ranges. When either lands, the family-join overlay must be superseded by a
 // regeneration against the device's own data — rewrite this suite then.
 cases.push(() => assert(!('FM3_ROUNDTRIP_DISCRETE' in fm3), 'FM3 now exports FM3_ROUNDTRIP_DISCRETE — a device-own roundtrip oracle landed; regenerate and rewrite this suite against it (supersede the family join)'));
-cases.push(() => assert(!('FM3_RANGES' in fm3), 'FM3 now exports FM3_RANGES — device-cache ranges landed; rewrite this suite against them (supersede the family join)'));
+// FM3_RANGES landed (FM3 editor data, fw 12.0, vendored from forgefx-midi):
+// the device's own enum rows now back the discrete routing (the catalog's
+// deviceEnumNoNames path runs ahead of the family join). Pin the family join's
+// agreement with that oracle so a regression in either shows up here:
+//   418 join entries match a device enum row count exactly,
+//    18 differ only in count (the device row wins in the catalog),
+//    35 are stepped ints the device lists as float (join keeps them discrete),
+//     2 have no device row.
+cases.push(() => {
+  const byName = new Map(FM3_PARAMS.map((p) => [p.name, p]));
+  let agree = 0, countDiff = 0, deviceFloat = 0, noRow = 0;
+  for (const [sym, maxOrd] of Object.entries(FM3_FAMILY_JOIN_DISCRETE)) {
+    const p = byName.get(sym);
+    const r = p ? fm3.FM3_RANGES[p.family]?.[p.paramId] : undefined;
+    if (!r) noRow++;
+    else if (r.kind !== 'enum') deviceFloat++;
+    else if ((r.enumCount ?? 0) - 1 === maxOrd) agree++;
+    else countDiff++;
+  }
+  const got = `${agree}/${countDiff}/${deviceFloat}/${noRow}`;
+  assert(got === '418/18/35/2', `family join vs FM3_RANGES enum rows drifted: agree/countDiff/deviceFloat/noRow = ${got} (pinned 418/18/35/2)`);
+});
 
 // ── Overlay: derived invariants ─────────────────────────────────────────────
 // Every overlay key must join to a real device-true FM3 catalog param — an

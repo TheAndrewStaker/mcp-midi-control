@@ -58,7 +58,7 @@ function buildSyntheticFrame(
   const region = new Array(391).fill(0);
   for (const c of cells) {
     const base = GRID_BASE_BIT + c.col * GRID_COL_STRIDE + c.row * GRID_ROW_STRIDE;
-    writeBitsMsb(region, base + 0, c.id << 1, 8); // bits 0-7: id<<1
+    writeBitsMsb(region, base - 1, c.id << 1, 9); // bit -1 = id bit 7, bits 0-7 = (id & 0x7f) << 1
     writeBitsMsb(region, base + 8, c.type, 8); // bits 8-15: block type
     writeBitsMsb(region, base + 16, c.cable, 8); // bits 16-23: cable mask
   }
@@ -109,6 +109,20 @@ cases.push(() => {
 
   const comp = cells.find((c) => c.col === 2 && c.row === 1)!;
   assert(comp.effectId === 46 && comp.cableInputMask === 0b00000100, 'col2row1 should be Comp with cable mask 4');
+});
+
+// 3b. Effect ids >= 128 keep their high bit (Gate/Expander 1 = 146, carried in
+//     the bit before the cell; FM3 fw 12 live read 2026-09-21). Neighbours
+//     below and after it must not pick the bit up.
+cases.push(() => {
+  const frame = buildSyntheticFrame([
+    { col: 2, row: 0, id: 46, type: 0x00, cable: 0x04 }, // Comp 1
+    { col: 3, row: 0, id: 146, type: 0x00, cable: 0x04 }, // Gate/Expander 1
+    { col: 4, row: 0, id: 118, type: 0x00, cable: 0x04 }, // Drive 1
+  ]);
+  const cells = parseGen3GridLayout(frame, FM9);
+  const ids = cells.map((c) => c.effectId).join(',');
+  assert(ids === '46,146,118', `expected ids 46,146,118, got ${ids}`);
 });
 
 // 4. Empty cells are omitted.
