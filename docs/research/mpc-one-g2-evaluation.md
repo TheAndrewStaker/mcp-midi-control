@@ -172,6 +172,16 @@ question, not a settled one.
 | H6 | MPC 3 Desktop (Win/Mac) runs the same engine and saves .xpj; redeemable for registered hardware; free MPC 3 Beats tier | VERIFIED | [Akai MPC 3 Desktop FAQ](https://support.akaipro.com/en/support/solutions/articles/69000869156-akai-pro-mpc-3-desktop-public-beta-faq) |
 | H7 | Desktop-saved .xpj loads on standalone (header line 5 differs: `Linux` vs desktop platform) | INFERRED | Akai transfer article implies project interchange; kurtjcu notes the platform line. Test T-FILE-3 |
 | H8 | Live route: MCP streams notes over USB-MIDI into an armed MPC track with MMC Record + Play | INFERRED | D3, A7. Test T-MCP-1 |
+| H9 | Loading a .mid creates a **new sequence**; type 0 and type 1 both load; a multi-track file lands on separate tracks; move events into an existing sequence with Copy Events | VERIFIED-2ND (MPC 2.x/3.x era reports) | [MPC-Forums 2021-22](https://www.mpc-forums.com/viewtopic.php?p=1832074), [2022](https://www.mpc-forums.com/viewtopic.php?t=213689&p=1846059) |
+| H10 | 3.9 notes say "Importing a MIDI file into a sequence or clip should import its time signature", suggesting import into an existing sequence or clip may now be possible | VERIFIED (wording) / UNVERIFIED (behaviour) | [3.9 release notes](https://cdn.inmusicbrands.com/Software/15JM26PSBC/MPC%203.9%20Release%20Notes.pdf). Test T-FILE-4 |
+| H11 | In MPC 3 imported .mid parts arrive as **MIDI tracks**; route them with MIDI Send to a drum/keygroup/plugin track, or set the output port/channel to an external synth | VERIFIED-2ND | [MPC-Forums Jan 2026 (3.6)](https://www.mpc-forums.com/viewtopic.php?p=1900085) |
+| H12 | 3.6 bug: imported MIDI only played 2 bars; workaround copy the track with events onto itself at bar 1 | RISK | Same thread. Check on 3.10 (T-FILE-4) |
+| H13 | Imports carry volume, pan, Program Change and CC events that may need cleaning | VERIFIED-2ND | [MPC-Forums 2021-22](https://www.mpc-forums.com/viewtopic.php?p=1832074) |
+| H14 | Whether the tempo meta event is imported | UNVERIFIED | Not documented. Test T-FILE-4 |
+| H15 | Drum programs play by **pad note map**; presets Chromatic C1 (A01 = note 36 ascending, current default), Chromatic C-2, Classic MPC; per track/program, no global GM preset; notes not in the map are silent | VERIFIED (manual p.125) / VERIFIED-2ND (default and no GM preset: [MPC-Forums 2022](https://www.mpc-forums.com/viewtopic.php?p=1852125), [Akai remap article](https://support.akaipro.com/en/support/solutions/articles/69000867733-akai-pro-mpc-series-how-to-remap-the-mpc-pads)) | |
+| H16 | GM drum notes (36 kick, 38 snare, 42 closed hat, 46 open hat) under Chromatic C1 hit pads A01, A03, A07, A11; they only sound right if the kit's samples sit on those pads, otherwise remap the file or the program (a saved GM drum program template works) | INFERRED (arithmetic from H15) / VERIFIED-2ND (template advice) | MPC-Forums 2022 (H15) |
+| H17 | Note-name offset: the MPC labels note 36 as C1 (so 60 = C3); our pattern grammar uses c4 = 60. Exchange **numbers**, not names | VERIFIED (MPC: "Chromatic C1" = 36, manual p.125; repo: `docs/CIRCUIT-TRACKS-SEQUENCING.md`) | |
+| H18 | Our repo already **parses** SMF (`packages/core/src/protocol-generic/patterns/midiFile.ts`, GM drum mapping, drum map presets) but has no SMF **writer** | VERIFIED (repo) | |
 
 ## I. Community, root, firmware (affects future capability)
 
@@ -301,6 +311,9 @@ Record pass/fail and notes for each.
 | T-FILE-1 | Controller Mode over USB-C: SD card mounts on Windows; copy files both ways; eject; back to standalone | Works | G11 |
 | T-FILE-2 | Load a .mid and an .mpcpattern written by us | .mid becomes new sequence; pattern lands on next unused track | H3, H4 |
 | T-FILE-3 | Load a desktop-saved .xpj on the unit | Loads cleanly | H7 |
+| T-FILE-4 | Load a type-1 .mid we write (960 PPQ; tempo + time signature at tick 0; one named track each for drums, bass, chords; notes closed with note-offs; end-of-track exactly on a bar line; no CC/PC) | Record: new sequence or chosen target; track types created; tempo imported?; plays full length (no 2-bar bug); track names kept? | H9-H14 |
+| T-FILE-5 | Drum mapping: load a GM drum .mid onto a kit with the default Chromatic C1 map, then onto a saved GM-mapped drum program | First plays wrong or partial pads; second plays correctly | H15, H16 |
+| T-FILE-6 | Route an imported MIDI track to the Hydrasynth (output port/channel) and another via MIDI Send to a plugin track | Both play | H11 |
 | T-MCP-1 | From our server: generic `send_note` stream into an armed MPC MIDI track with MMC Record + Play | Notes recorded (quantize after) | H8 |
 | T-FIX-1 | Save blank + 1-note projects on the unit; diff against Beats-saved equivalents and the kurtjcu schema. Include one project using Song Mode | Header and fields documented in our repo as device fixtures; Song Mode order located | H2, H7, K3 |
 | T-ABL-1 | Live Control over USB-C: record the exact Live MIDI preference settings that make it work | Matrix View shows Live's session | J1-J3 |
