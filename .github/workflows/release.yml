@@ -47,6 +47,12 @@ jobs:
           }
           Write-Host "Tag matches package.json version: $tag"
 
+      # preflight runs the Rig Console flow gate, which needs a browser the
+      # runner does not ship. preflight.yml installs it; this workflow did not,
+      # and the v0.9.0 tag run failed here for that reason alone.
+      - name: Install Playwright chromium (console flow gate)
+        run: npx playwright install chromium
+
       - name: Preflight (build + typecheck + test + lint)
         run: npm run preflight
 
