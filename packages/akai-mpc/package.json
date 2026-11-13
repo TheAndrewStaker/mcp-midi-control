@@ -1,0 +1,18 @@
+{
+  "name": "@mcp-midi-control/akai-mpc",
+  "version": "0.9.0",
+  "description": "Akai MPC (standalone, MPC OS 3) descriptors for the unified MCP surface: sequence recall, drum-pad pattern streaming, transport guidance.",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./*": "./dist/*"
+  },
+  "dependencies": {
+    "@mcp-midi-control/core": "*",
+    "@modelcontextprotocol/server": "^2.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

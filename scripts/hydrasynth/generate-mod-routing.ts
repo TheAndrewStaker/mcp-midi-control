@@ -111,6 +111,11 @@ const sourceNames = parseStrings(extractBlock('MOD_SOURCES', 'String', /"/));
 const sourceValues = parseValues(extractBlock('MOD_SOURCE_NRPN_VALUES', 'int', /0x/));
 const destNames = parseStrings(extractBlock('MOD_DESTINATIONS', 'String', /"/));
 const destValues = parseValues(extractBlock('MOD_DESTINATION_NRPN_VALUES', 'int', /0x/));
+// Per-destination device CATEGORY ids (parallel to MOD_DESTINATIONS). The
+// PATCH IMAGE stores a route's destination as (linear index, category id)
+// across two regions (SysexPatchFormat.txt 966+/1030+), so the category
+// array is load-bearing for apply_patch route persistence, not just UI.
+const destCategories = parseValues(extractBlock('MOD_DESTINATION_CATEGORIES', 'int', /\d/));
 
 // Hard correctness gates.
 if (sourceNames.length !== sourceValues.length) {
@@ -119,6 +124,23 @@ if (sourceNames.length !== sourceValues.length) {
 if (destNames.length !== destValues.length) {
   throw new Error(`generate-mod-routing: MOD_DESTINATIONS (${destNames.length}) != MOD_DESTINATION_NRPN_VALUES (${destValues.length})`);
 }
+if (destNames.length !== destCategories.length) {
+  throw new Error(`generate-mod-routing: MOD_DESTINATIONS (${destNames.length}) != MOD_DESTINATION_CATEGORIES (${destCategories.length})`);
+}
+// Category anchors, validated against the 1024-image flash-corpus census
+// (2026-08-22): every (category, linear-index) pair observed on factory
+// patches matched these parallel arrays.
+function assertCategoryAnchor(name: string, expectCat: number): void {
+  const idx = destNames.indexOf(name);
+  if (idx < 0) throw new Error(`generate-mod-routing: category anchor "${name}" not found`);
+  if (destCategories[idx] !== expectCat) {
+    throw new Error(`generate-mod-routing: category anchor "${name}" cat ${destCategories[idx]} != expected ${expectCat}`);
+  }
+}
+assertCategoryAnchor('Mut 1 Depth', 6);
+assertCategoryAnchor('Filt 1 Cutoff', 12);
+assertCategoryAnchor('Reverb Dry/Wet', 17);
+assertCategoryAnchor('Noise Vol', 11);
 function assertAnchor(table: 'src' | 'dest', name: string, expectWire: number): void {
   const names = table === 'src' ? sourceNames : destNames;
   const values = table === 'src' ? sourceValues : destValues;
@@ -188,6 +210,13 @@ out.push(`export const MOD_SOURCE_NAMES: readonly string[] = Object.freeze(${JSO
 out.push('');
 out.push('/** Ordered DESTINATION labels (index = edisyn list position; for discovery UIs). */');
 out.push(`export const MOD_DEST_NAMES: readonly string[] = Object.freeze(${JSON.stringify(destNames)});`);
+out.push('');
+out.push('/**');
+out.push(' * Per-destination device CATEGORY id, parallel to MOD_DEST_NAMES. The patch');
+out.push(' * IMAGE stores a route destination as (linear index @966+/1222+, category');
+out.push(' * @1030+/1478+) - see SysexPatchFormat.txt and the 2026-08-22 corpus census.');
+out.push(' */');
+out.push(`export const MOD_DEST_CATEGORIES: readonly number[] = Object.freeze(${JSON.stringify(destCategories)});`);
 out.push('');
 
 writeFileSync(OUT, out.join('\n'), 'utf8');

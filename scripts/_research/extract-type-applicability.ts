@@ -79,7 +79,7 @@ interface Block {
 // `<EffectVariant value="6,14" name="Analog">` to gate type-groups but
 // has no `parameters=` attribute on its EditorControls. Without this
 // fallback, the extractor saw all compressor controls as ungated —
-// Billie Jean iconic-tone test then wrote ratio/threshold to dead
+// an iconic-tone test then wrote ratio/threshold to dead
 // registers on Dynami-Comp Classic (a pedal-style comp that doesn't
 // expose them). GraphicEQ has the same schema shape (gates by GEQ_TYPE).
 const BLOCK_TYPE_ENUM_FALLBACK: Record<string, string> = {

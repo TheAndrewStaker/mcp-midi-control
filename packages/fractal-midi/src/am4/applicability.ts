@@ -43,7 +43,9 @@ const ENUM_LOOKUP: Readonly<Record<string, readonly string[]>> = {
   FUZZ_TYPE: DRIVE_TYPES,
   REVERB_TYPE: REVERB_TYPES,
   REVERB_BASETYPE: REVERB_TYPES,
-  DELAY_TYPE: DELAY_TYPES,
+  // DELAY_MODEL is the 29-model `delay.type` selector. DELAY_TYPE is a
+  // different register (id 11, the 8-value delay mode / algorithm), whose
+  // display names are not extracted, so it renders as indices.
   DELAY_MODEL: DELAY_TYPES,
   CHORUS_TYPE: CHORUS_TYPES,
   FLANGER_TYPE: FLANGER_TYPES,
@@ -426,7 +428,7 @@ function primaryTypeEnumFor(block: string): string | undefined {
   switch (block) {
     case 'amp':        return 'DISTORT_TYPE';
     case 'drive':      return 'FUZZ_TYPE';
-    case 'delay':      return 'DELAY_TYPE';
+    case 'delay':      return 'DELAY_MODEL';
     case 'reverb':     return 'REVERB_TYPE';
     case 'chorus':     return 'CHORUS_TYPE';
     case 'flanger':    return 'FLANGER_TYPE';
@@ -452,7 +454,11 @@ function isPrimaryTypeEnum(typeEnum: string, block: string): boolean {
   switch (block) {
     case 'amp':        return typeEnum === 'DISTORT_TYPE' || typeEnum === 'AMP_TYPE';
     case 'drive':      return typeEnum === 'FUZZ_TYPE';
-    case 'delay':      return typeEnum === 'DELAY_TYPE' || typeEnum === 'DELAY_MODEL';
+    // DELAY_TYPE is a sub-mode (the 8-value delay algorithm), NOT the model:
+    // reading its 0..7 gate values as model indices claimed Time / Tempo / Feedback
+    // exist on only the first 8 of 29 models (Digital Mono .. Dual Delay), so
+    // apply_preset refused tempo on Graphite Copy / Ambient Stereo / Mono BBD.
+    case 'delay':      return typeEnum === 'DELAY_MODEL';
     case 'reverb':     return typeEnum === 'REVERB_TYPE';
     case 'chorus':     return typeEnum === 'CHORUS_TYPE';
     case 'flanger':    return typeEnum === 'FLANGER_TYPE';

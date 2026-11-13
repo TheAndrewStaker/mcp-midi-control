@@ -24,8 +24,8 @@
  *    re-ordered or re-saved pack cannot cause a write to the wrong song.
  *  - CONTENT GUARD: refuses any slot whose synth1/synth2 tracks actually contain
  *    notes, unless `--allow-synth-content`. Zeroing the level of a track that
- *    has parts DELETES those parts from the mix. Found the hard way: Sugar
- *    2/10 was silenced before anyone checked for note content.
+ *    has parts DELETES those parts from the mix. Found the hard way: one
+ *    project was silenced before anyone checked for note content.
  *  - IDEMPOTENT + RESUMABLE. A slot already at the target values is skipped, so
  *    an interrupted run is simply re-run. An hour-long batch WILL be interrupted.
  *  - FAIL-STOP. On the first failed verify it stops and prints exactly what is

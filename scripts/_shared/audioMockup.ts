@@ -1,7 +1,7 @@
 /**
  * audioMockup — shared helpers for assembling song-level audio mockups from
  * baked one-shot / roll samples (offline, no MIDI device). Extracted from
- * scripts/gethsemane-full-beat.ts after that script's first full-beat render
+ * a per-song full-beat script after that script's first full-beat render
  * exposed a loop-seam comb-filter bug (2026-07-04): a fresh hi-hat hit landed
  * on top of a still-ringing crescendo fill from the previous bar, and two
  * overlapping copies of the same-family sample source is audible as phasing.
@@ -11,7 +11,7 @@
  * of the same instrument is still ringing) to the whole song assembly: any
  * placement tagged with a `family` gets truncated + faded when a later
  * same-family placement's onset would otherwise overlap it. Any future
- * per-song full-beat render (Like That, etc.) should import this instead of
+ * per-song full-beat render should import this instead of
  * re-deriving the choke pass — the bug is easy to reintroduce because it only
  * shows up at specific overlaps (loop seams, adjacent fills), not on casual
  * listening to an isolated figure.

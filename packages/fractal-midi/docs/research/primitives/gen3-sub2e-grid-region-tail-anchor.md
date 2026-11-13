@@ -23,7 +23,8 @@ before the trailing `[checksum, F7]` pair**, where the geometry is per-device:
 ```
 III / FM9 (0x10 / 0x12):  6 rows × 14 cols  → region = 391 B, col stride 192 bits
 FM3        (0x11):        4 rows × 12 cols  → region = 226 B, col stride 128 bits
-cell_start_bit = 46 + col·(rows·32) + row·32   (MSB-first within each 7-bit byte)
+cell_start_bit = 45 + col·(rows·32) + row·32   (MSB-first within each 7-bit byte)
+cell = u16 id (low byte first; shunt = 1024 + n) + u16 input mask (bit k = row k of the previous column)
 ```
 
 On the canonical 755-byte FM9 frame the anchor lands at mido byte 361, which
@@ -42,7 +43,10 @@ indistinguishable by construction).
   job3, three checksum-valid block-targeted replies. Decoded grid on ALL
   three (including the 606 B length variant) is byte-exactly the same
   session's own `fn=0x13` status dump: Input1(37)@r1c0 → Amp1(58)@r1c1
-  (cableIn 0x04) → Output1(42)@r1c2 (cableIn 0x04). Device-oracled, offline.
+  (mask 0x02) → Output1(42)@r1c2 (mask 0x02). Device-oracled, offline.
+- **FM3 hardware axis (2026-10-23)**: 7 generated presets loaded to the edit
+  buffer (splits, merges, 4 rows, Send 182 / Return 186 / Synth 130 /
+  Multiplexer 191, shunts 1024+) read back identical in all 48 cells.
 - Frame-length arithmetic is exact on both devices:
   `590 = 1 + 361 + 226 + 2`, `755 = 1 + 361 + 391 + 2`.
 
@@ -68,6 +72,8 @@ had an all-zero grid region. Both `parseGen3GridLayout` and
   is correct data, not a parse failure.
 - The FM3-only field at f[76..110] (zero on FM9) is undecoded; do not assign
   it meaning.
+- **Do not read the id as 7 bits at bit 46.** That was the pre-2026-10-23
+  reading; it misreads every effect ID above 127 (Return 186 decodes as Amp 58).
 
 ## Symptoms / grep terms
 
@@ -78,6 +84,10 @@ had an all-zero grid region. Both `parseGen3GridLayout` and
 
 ## Refinement history
 
+- 2026-10-23: cell word corrected to `u16 id + u16 mask` from bit 45 (the
+  preset-body cell). The old `(id << 1)`@46 / type@54 / cable@62 reading is the
+  same bits shifted by one: right for ids < 128, wrong above, mask doubled.
+  FM3 hardware-confirmed (see evidence).
 - 2026-07-01: registered `matched` (FM9 + FM3 capture axes). Supersedes the
   fixed-offset-361 note in the 2026-06-17 grid-read shipping and the
   block-targeted refusal added 2026-06-20.

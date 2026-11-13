@@ -46,6 +46,17 @@ export const ROLE_FOLDS: Readonly<Partial<Record<DrumRole, readonly DrumRole[]>>
   // resort because its slot holds an arbitrary texture sample (cowbell,
   // shaker) that can voice a fill wrong.
   tom: ['snare', 'perc'],
+  // Split-tom lanes (opt-in importer): prefer a real `tom` pad, else fall
+  // through to the SAME substitutes `tom` itself takes. PRE-FLATTENED, because
+  // `foldVoice` is non-recursive: `tom` first, then tom's own chain inline, so
+  // a real-tom device (SPD-SX, note 45) lands on its tom pad while a tom-less
+  // kit (Circuit — kick/snare/hat/clap/ride, no tom) folds through to snare.
+  tom_flo: ['tom', 'snare', 'perc'],
+  tom_fhi: ['tom', 'snare', 'perc'],
+  tom_lo: ['tom', 'snare', 'perc'],
+  tom_lm: ['tom', 'snare', 'perc'],
+  tom_hm: ['tom', 'snare', 'perc'],
+  tom_hi: ['tom', 'snare', 'perc'],
   clap: ['snare', 'perc'],
   sticks: ['perc', 'clap', 'snare'],
   snare_roll: ['snare'],

@@ -35,6 +35,20 @@ import {
   AM4_BODY_AMP_GAIN_CHA_OFFSET,
 } from '../../src/am4/presetContainer.js';
 import { AM4_MODEL_ID } from '../../src/am4/setParam.js';
+import {
+  AM4_BODY_CHAIN_START,
+  AM4_BODY_CHAIN_TAIL_BYTES,
+  AM4_BODY_PATCH_RECORD_ID,
+  AM4_BODY_PATCH_SLOT_WORD,
+  AM4_BODY_PATCH_LOCATION_WORD,
+  AM4_BODY_PATCH_VOLATILE_WORD,
+  AM4_BODY_ACTIVE_SCENE_OFFSET,
+  AM4_BODY_SCENE_CHANNEL_OFFSET,
+  AM4_BODY_SCENE_BYPASS_OFFSET,
+  walkAm4BodyChain,
+  decodeAm4PresetBody,
+  am4ComparableBody,
+} from '../../src/am4/bodyChain.js';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
@@ -233,7 +247,85 @@ function caseCorruptionDetection(): void {
   assert(threw, 'truncated dump must throw');
 }
 
+// ── Body block-record chain (synthetic body, no captures) ────────────
+
+/** Append one chain record (7-word header + cols*rows zeroed words); returns its params offset. */
+function pushRecord(bytes: number[], id: number, cols: number, rows: number): number {
+  for (const w of [id, 0, 0, 0, 0, cols, rows]) bytes.push(w & 0xff, (w >> 8) & 0xff);
+  const paramsOffset = bytes.length;
+  for (let i = 0; i < cols * rows * 2; i++) bytes.push(0);
+  return paramsOffset;
+}
+
+function buildSyntheticBody(): { body: Uint8Array; drive: number; patch: number } {
+  const bytes: number[] = new Array(AM4_BODY_CHAIN_START).fill(0);
+  pushRecord(bytes, 0x0002, 99, 1);
+  pushRecord(bytes, 0x003e, 78, 4); // cab section, always present
+  const drive = pushRecord(bytes, 0x0076, 50, 4);
+  const patch = pushRecord(bytes, AM4_BODY_PATCH_RECORD_ID, 118, 1);
+  for (let i = 0; i < AM4_BODY_CHAIN_TAIL_BYTES; i++) bytes.push(0);
+  const body = Uint8Array.from(bytes);
+  // Slot 2 holds the drive; slots 1, 3, 4 are empty.
+  writeU16le(body, patch + (AM4_BODY_PATCH_SLOT_WORD + 1) * 2, 0x0076);
+  writeU16le(body, patch + AM4_BODY_PATCH_LOCATION_WORD * 2, 0x005d);
+  writeU16le(body, patch + AM4_BODY_PATCH_VOLATILE_WORD * 2, 0xa375);
+  // drive.drive (pidHigh 0x0B) on channel B = 5.1 -> round(5.1 / 10 * 65534) = 0x828E.
+  writeU16le(body, drive + (1 * 50 + 0x0b) * 2, 0x828e);
+  // Scene 3 (index 2): slot 2 on channel C and bypassed.
+  const scene3 = AM4_BODY_SCENE_NAME_OFFSET + 2 * AM4_BODY_SCENE_RECORD_STRIDE;
+  writeU16le(body, scene3 + AM4_BODY_SCENE_CHANNEL_OFFSET + 1 * 4, 2);
+  writeU16le(body, scene3 + AM4_BODY_SCENE_BYPASS_OFFSET + 1 * 4, 1);
+  writeU16le(body, AM4_BODY_ACTIVE_SCENE_OFFSET, 2);
+  return { body, drive, patch };
+}
+
+function caseBodyChainDecode(): void {
+  const { body, patch } = buildSyntheticBody();
+  const chain = walkAm4BodyChain(body);
+  assert(chain.complete, 'synthetic chain must walk to exactly tail-2');
+  assert(chain.records.map((r) => r.id).join() === [0x02, 0x3e, 0x76, 0xce].join(), 'record ids in stored order');
+
+  const decoded = decodeAm4PresetBody(body);
+  assert(decoded !== undefined, 'body must decode');
+  if (decoded === undefined) return;
+  assert(decoded.slotEffectIds.join() === [0, 0x76, 0, 0].join(), 'slot register words');
+  assert(decoded.activeScene === 2, 'active scene word');
+  assert(decoded.blocks.length === 1, 'one placed block');
+  const b = decoded.blocks[0];
+  assert(b.slot === 2 && b.block === 'drive' && b.instance === 1 && b.rows === 4, 'drive in slot 2, four rows');
+  assert(b.channels.B.drive === 5.1, `drive.drive chB = 5.1, got ${b.channels.B.drive}`);
+  assert(b.channels.A.drive === 0, 'drive.drive chA untouched');
+  assert(b.sceneChannels.join('') === 'AACA', `scene channels, got ${b.sceneChannels.join('')}`);
+  assert(b.sceneBypass.map(Number).join('') === '0010', 'scene bypass');
+
+  // Second instance: effect id base + 1 resolves to the same block, instance 2.
+  const two = body.slice();
+  writeU16le(two, AM4_BODY_CHAIN_START + (7 + 99) * 2 + (7 + 78 * 4) * 2, 0x0077);
+  writeU16le(two, patch + (AM4_BODY_PATCH_SLOT_WORD + 1) * 2, 0x0077);
+  const d2 = decodeAm4PresetBody(two);
+  assert(d2?.blocks[0].block === 'drive' && d2.blocks[0].instance === 2, 'effect id 0x77 = drive, instance 2');
+  assert(d2?.blocks[0].channels.B.drive === 5.1, 'instance 2 decodes through the drive table');
+
+  // Comparable body masks exactly the two non-content PATCH words.
+  const other = body.slice();
+  writeU16le(other, patch + AM4_BODY_PATCH_LOCATION_WORD * 2, 0x005f);
+  writeU16le(other, patch + AM4_BODY_PATCH_VOLATILE_WORD * 2, 0x9d1d);
+  const ca = am4ComparableBody(body);
+  const cb = am4ComparableBody(other);
+  assert(ca !== undefined && cb !== undefined && bytesEqual(ca, cb), 'location + volatile words do not affect the comparable body');
+  writeU16le(other, patch + (AM4_BODY_PATCH_SLOT_WORD + 2) * 2, 0x0046);
+  const cc = am4ComparableBody(other);
+  assert(ca !== undefined && cc !== undefined && !bytesEqual(ca, cc), 'a content word does');
+
+  // A body the chain does not consume exactly yields nothing.
+  const truncated = body.subarray(0, body.length - 4);
+  assert(!walkAm4BodyChain(truncated).complete, 'truncated chain is not complete');
+  assert(decodeAm4PresetBody(truncated) === undefined, 'truncated body decodes to undefined');
+  assert(am4ComparableBody(truncated) === undefined, 'truncated body has no comparable form');
+}
+
 const cases: Array<{ label: string; run: () => void }> = [
+  { label: 'body block-record chain decode', run: caseBodyChainDecode },
   { label: 'crc vectors', run: caseCrcVectors },
   { label: 'xor vectors', run: caseXorVectors },
   { label: 'huffman round-trip', run: caseHuffmanRoundTrip },

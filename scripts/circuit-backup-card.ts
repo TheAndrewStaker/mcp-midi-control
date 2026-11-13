@@ -530,7 +530,7 @@ async function main(): Promise<void> {
             });
             rec.projects_captured++;
             // The directory name is the FILE name, shaped `<wireSlot>_<embedded>.ncs`
-            // (e.g. wire 32 "32_The Summoning.ncs" holds embedded "The Summoning").
+            // (e.g. wire 32 "32_Song Title.ncs" holds embedded "Song Title").
             // Only flag a real divergence, not that fixed prefix/extension.
             const stem = dirName.replace(/\.ncs$/i, '').replace(/^\d+_/, '');
             const mismatch = en !== stem ? `   [dir "${dirName}" vs embedded "${en}"]` : '';

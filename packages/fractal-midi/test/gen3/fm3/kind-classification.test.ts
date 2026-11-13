@@ -23,12 +23,27 @@
  * session) is the hardware confirm; when it lands, regenerate against it with
  * `scripts/generate-gen3-roundtrip-discrete.ts` and rewrite this suite again
  * against the device's own data.
+ *
+ * 2026-08-11 (BK-GEN3-RANGES, the planned partial rewrite this suite's own
+ * tripwire demanded): FM3_RANGES landed, mined from the FM3's OWN editor
+ * cache (community capture 2026-06-27, 1831 rows / 39 families,
+ * ranges.generated.ts, gate scripts/verify-fm3-ranges.ts). Layering at the
+ * catalog boundary (fractal-gen3 catalog.ts): a cache kind:'enum' row now
+ * outranks the family-join entry for the same symbol (FM3-true editor data
+ * beats sibling pattern), while the join KEEPS covering symbols the cache
+ * marks float or placeholder; the III conflict audit proved the caches
+ * systematically mislabel device-quantized ordinals as float (35 params), so
+ * join-discrete over cache-float stays correct. The family join is therefore
+ * REDUCED to a fallback overlay, not superseded; only an FM3 device roundtrip
+ * retires it (the FM3_ROUNDTRIP_DISCRETE tripwire below still stands).
  */
 import * as fm3 from '../../../src/gen3/fm3/index.js';
 import {
   FM3_PARAMS,
   FM3_FAMILY_JOIN_DISCRETE,
   FM3_FAMILY_JOIN_PROVENANCE,
+  FM3_RANGES,
+  FM3_RANGE_SECTIONS,
 } from '../../../src/gen3/fm3/index.js';
 
 function assert(cond: boolean, msg: string): void {
@@ -43,16 +58,42 @@ const byName = new Map(FM3_PARAMS.map((p) => [p.name, p]));
 const cases: Array<() => void> = [];
 
 // ── Export surface (documented; a change here is a classification-story change) ─
+// 2026-08-19: grew from community-contributed data/address-model modules
+// (rosters, enum-value labels, cab IR names, editor UI layouts, the FC/
+// Modifier virtual-block address models, and the shared gen-3 help catalog).
+// None of these touch kind-classification (discrete vs continuous routing) —
+// they're additive lookup tables and addressing helpers, not a routing-story
+// change — so growing this list is the correct outcome, not a tripwire hit.
+// 2026-10-24: + FM3_ENUM_OVERRIDES_BY_NAME, the same enum labels re-keyed by
+// param name for the gen-3 catalog. Labels only: every joined param is already
+// an enum in FM3_RANGES, so it routes discrete with or without names.
 cases.push(() => {
   const got = Object.keys(fm3).sort().join(',');
-  const want = 'FM3_FAMILIES,FM3_FAMILY_JOIN_DISCRETE,FM3_FAMILY_JOIN_PROVENANCE,FM3_PARAMS,FM3_PARAMS_BY_FAMILY';
+  const want = 'FM3_CAB_IRS,FM3_EFFECT_IDS,FM3_EFFECT_ID_TABLE,FM3_ENUM_OVERRIDES,FM3_ENUM_OVERRIDES_BY_NAME,FM3_FAMILIES,FM3_FAMILY_BY_EFFECT_ID,FM3_FAMILY_JOIN_DISCRETE,FM3_FAMILY_JOIN_PROVENANCE,FM3_FC_CATEGORIES,FM3_FC_CHANNELS,FM3_FC_COLORS,FM3_FC_CONFIGS,FM3_FC_CONFIGS_PER_LAYOUT,FM3_FC_EFFECT_ID,FM3_FC_FIELDS,FM3_FC_FUNCTIONS,FM3_FC_LABEL_LEN,FM3_FC_LABEL_MODES,FM3_FC_LAYOUTS,FM3_FC_PARAMS_WIDTH,FM3_FC_SWITCHES,FM3_FC_VIEWS,FM3_HELP_OVERRIDES,FM3_LAYOUTS,FM3_MOD_EFFECT_ID,FM3_MOD_FIELDS,FM3_MOD_SLOT_COUNT,FM3_MOD_SOURCES,FM3_MOD_SOURCE_PEDAL1,FM3_PARAMS,FM3_PARAMS_BY_FAMILY,FM3_RANGES,FM3_RANGE_SECTIONS,FM3_ROSTERS,FM3_UNMAPPED_SECTIONS,GEN3_COMMON_PARAM_HELP,GEN3_HELP,blockHelpFor,fm3EffectId,fm3FcConfigIndex,fm3FcDecodeLabel,fm3FcEncodeLabel,fm3FcFunctions,fm3FcParamId,fm3ModBindFrames,fm3ModParamId,fm3ModSlotEid,resolveHelp';
   assert(got === want, `FM3 export surface changed: ${got} (documented: ${want})`);
 });
-// A true FM3 oracle still does NOT exist: no roundtrip overlay, no cache
-// ranges. When either lands, the family-join overlay must be superseded by a
-// regeneration against the device's own data — rewrite this suite then.
+// A true FM3 DEVICE roundtrip still does NOT exist. When it lands, regenerate
+// with scripts/generate-gen3-roundtrip-discrete.ts and rewrite this suite
+// against the device's own data (retire the family join).
 cases.push(() => assert(!('FM3_ROUNDTRIP_DISCRETE' in fm3), 'FM3 now exports FM3_ROUNDTRIP_DISCRETE — a device-own roundtrip oracle landed; regenerate and rewrite this suite against it (supersede the family join)'));
-cases.push(() => assert(!('FM3_RANGES' in fm3), 'FM3 now exports FM3_RANGES — device-cache ranges landed; rewrite this suite against them (supersede the family join)'));
+
+// ── Device-cache ranges (BK-GEN3-RANGES, 2026-08-11) ────────────────────────
+// FM3_RANGES is the FM3's own editor-cache range table: 1831 rows / 39
+// families, gated row-by-row against the walk JSON by verify-fm3-ranges. At
+// the catalog boundary a cache kind:'enum' row outranks the family-join entry
+// for the same symbol; the join keeps covering cache-float/placeholder rows.
+cases.push(() => {
+  const rows = Object.values(FM3_RANGES).reduce((a, fam) => a + Object.keys(fam).length, 0);
+  assert(rows === 1831 && Object.keys(FM3_RANGES).length === 39,
+    `FM3_RANGES shape ${rows} rows / ${Object.keys(FM3_RANGES).length} families (want 1831 / 39)`);
+});
+cases.push(() => assert(FM3_RANGE_SECTIONS['DISTORT']?.sectionTag === 10 && FM3_RANGES['DISTORT']?.[6]?.enumCount === 331,
+  'FM3_RANGES anchor: DISTORT section 10 with the 331-amp enum at FM3-true id 6'));
+// Overlap example: DELAY_SVFTYPE is in BOTH the cache (kind enum, count 3 at
+// id 87) and the family join; the cache row wins the routing at the catalog
+// boundary, so both being present is the documented layered state, not drift.
+cases.push(() => assert(FM3_RANGES['DELAY']?.[87]?.kind === 'enum' && FM3_RANGES['DELAY']?.[87]?.enumCount === 3,
+  `FM3_RANGES DELAY[87] (DELAY_SVFTYPE) expected enum/3, got ${FM3_RANGES['DELAY']?.[87]?.kind}/${FM3_RANGES['DELAY']?.[87]?.enumCount}`));
 
 // ── Overlay: derived invariants ─────────────────────────────────────────────
 // Every overlay key must join to a real device-true FM3 catalog param — an

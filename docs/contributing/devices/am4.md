@@ -30,11 +30,12 @@ stored in a slot.
 | `set_param` / `set_params` | confirmed | Hardware-verified on the maintainer's unit. Capture-cited decodes live in the codec package at `packages/fractal-midi/docs/devices/am4/SYSEX-MAP.md` |
 | `get_param` / `get_params` | confirmed | Same. The atomic read primitive returns a per-block chunk, hardware-validated across 17 audio blocks (`packages/am4/src/descriptor.ts`, the `atomic_read` note) |
 | `set_block`, `set_bypass` | confirmed | Same |
-| `switch_preset`, `switch_scene`, `save_preset` | confirmed | Same |
+| `switch_preset`, `switch_scene`, `save_preset` | confirmed | Same. `switch_preset` reads the loaded location back, so a switch the unit echoed but did not perform is reported as not changed |
 | `apply_preset` | confirmed | Same |
-| `get_preset` on the active working buffer | confirmed | A full four-slot snapshot in roughly 250 ms, round-tripping through `get_param` byte-exactly |
-| `get_preset` on a STORED location | hardware-unverified | The preset container decode is self-validating offline against the device's own CRC across all 104 factory presets. The live stored-dump request has not been confirmed end to end through the reader |
-| Per-parameter values inside a stored `get_preset` | gated | Reported as labelled-omitted rather than guessed. The container body's field map is undecoded |
+| `get_preset` on the active working buffer | confirmed | A full four-slot snapshot in roughly 250 ms, round-tripping through `get_param` byte-exactly. A second instance of a block (two drives) reads as `drive_2`, and a `channel` on `get_param` reads that channel without switching to it |
+| `get_preset` on a STORED location | confirmed | The live stored-dump request round-trips through the reader on the maintainer's unit (15 locations), leaving the working buffer untouched. The container decode is self-validating against the device's own CRC across all 104 factory presets |
+| Per-parameter values inside a stored `get_preset` | confirmed for 13 block types; hardware-unverified for tremolo, rotary, GEQ, PEQ | Every placed block's values on all four channels, the slot order, and each scene's channel and bypass per block are decoded from the stored dump. Cross-checked on hardware against the working-buffer read of the same 15 presets: 18,687 of 18,737 values equal, and the rest are values the device itself changes when it loads a preset. Tremolo and rotary decode through the same self-describing record layout and are checked offline against the factory bank only; no preset on hand places a GEQ or PEQ |
+| Per-scene channel and bypass of every block, without switching scenes | confirmed | Read from the scene table in the working-buffer dump (active `get_preset`, the `switch_scene` receipt) or the stored dump. Matched the live state 200 of 200 across all four scenes of three presets |
 | `export_preset` / `import_preset` | confirmed | Same self-validating container |
 
 Support tier: `verified`. This mirrors `capabilities.support_tier` on the
@@ -49,6 +50,9 @@ disagree.
 - The atomic per-block read, validated across 17 audio blocks.
 - Preset export and import, against a container that validates against the
   device's own CRC.
+- The stored-location preset read, including every placed block's values, the
+  slot order, and the per-scene channel and bypass table, cross-checked against
+  the working-buffer read of the same presets.
 
 **Please do not re-run these.**
 
@@ -56,8 +60,8 @@ disagree.
 
 | Blocked capability | Missing evidence | Closed by |
 |---|---|---|
-| Per-parameter values inside a stored-location `get_preset` | The preset container body's field map. The container itself is decoded and CRC-validated; where each parameter sits inside the body is not | Nothing a contributor can send today. This is offline decode work |
-| Reading an INACTIVE scene's state | Not possible on this device. The AM4 only reports the active scene | Nothing can close it |
+| Controller / modifier assignments, Input and Output block settings, and scene MIDI inside a stored `get_preset` | Their records are located in the stored body but their fields are not mapped | A pair of exports of the same preset differing by ONE such setting (one modifier assigned, one Output level changed) pins the field. A closable contributor ask |
+| Stored-read values for tremolo, rotary, GEQ and PEQ confirmed on a device | No preset on the maintainer's unit places one, so those four are checked offline only | A stored read and an active read of any preset that places one, see SESSION-1 |
 | Confirming a write to an UNPLACED block | The device accepts the frame and nothing observable happens, so a bad address cannot be distinguished from a successful write | Nothing can close it |
 
 ## Before you start
@@ -79,26 +83,22 @@ Read [../SAFETY.md](../SAFETY.md) once. The device-specific parts:
 
 ## Asks, ranked
 
-### SESSION-1: Confirm a stored-location preset read
-**Tier: SESSION | ~3 minutes | read-only | unlocks: `get_preset` on a stored location**
+### SESSION-1: Stored read of a preset with a tremolo, rotary, GEQ or PEQ
+**Tier: SESSION | ~3 minutes | read-only | unlocks: stored-read values for those four blocks**
 
-The one AM4 capability that is decoded and shipping but has not been confirmed
-end to end through the reader. The container decode is self-validating offline
-across all 104 factory presets; what is unconfirmed is the **live request**
-round-tripping through this server.
+The stored-location read is confirmed for thirteen block types. These four are
+decoded through the same record layout but no preset on the maintainer's unit
+places one, so they have not been compared on a device.
 
-With the AM4 connected and AM4-Edit quit:
+With the AM4 connected, AM4-Edit quit, and a preset that places one of those
+blocks loaded and saved at, say, A05:
 
-> "What's stored at A05?"
+> "Read the stored preset at A05, then read the loaded preset, and tell me
+> every value that differs."
 
-Compare the returned preset name and its four scene names to the front panel.
-Any location works; A05 is just an example.
-
-Per-parameter values will be reported as omitted with a label saying so. That is
-expected and correct.
-
-Report the response and the panel readings. A mismatch in the name or any scene
-name is the valuable outcome.
+Report the differences, or that there were none. A handful of differences in
+the amp's Cab Blend or other values the AM4 recomputes on load is expected; a
+difference inside the tremolo, rotary, GEQ or PEQ block is the valuable outcome.
 
 ### PROBE-1: Run the harvest sweep on your firmware
 **Tier: PROBE | ~2 to 4 minutes | read-only by construction | unlocks: firmware-specific rosters, ranges and enum spellings**

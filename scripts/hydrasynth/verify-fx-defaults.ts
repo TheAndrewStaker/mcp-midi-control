@@ -25,9 +25,9 @@ import {
   encodePatch,
   decodePatch,
   defaultPatchBuffer,
+  resolveApplyPatchValue,
 } from '@mcp-midi-control/hydrasynth/patchEncoder.js';
 import { findHydraNrpn } from '@mcp-midi-control/hydrasynth/nrpn.js';
-import { resolveNrpnValue } from '@mcp-midi-control/hydrasynth/encoding.js';
 import { HYDRASYNTH_ENUMS } from '@mcp-midi-control/hydrasynth/enums.js';
 
 let failed = 0;
@@ -40,9 +40,13 @@ const FX_TYPES = HYDRASYNTH_ENUMS['FX_TYPES'] as Record<number, string>;
 /** Patch buffer stores wire/8, so a wire default round-trips to this. */
 const grid = (wire: number) => Math.round(wire / 8) * 8;
 
+// FX-type selectors are `space: 'image-index'` fields since the 2026-08-23
+// image-first fix: the encodePatch value is the raw enum INDEX, resolved by
+// the image-pipeline resolver (not resolveNrpnValue, whose idx×8 output is
+// the NRPN wire).
 function typeWire(surface: 'pre' | 'post', idx: number): number {
   const entry = findHydraNrpn(`${surface}fxtype`)!;
-  return resolveNrpnValue(entry, FX_TYPES[idx]!).wire;
+  return resolveApplyPatchValue(entry, FX_TYPES[idx]!).wire;
 }
 
 console.log('[fx-defaults] GATE A — type-without-params loads the type defaults');

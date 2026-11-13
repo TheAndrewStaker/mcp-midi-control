@@ -34,7 +34,17 @@ function main(): void {
   const file = process.argv[2];
   if (!file) { console.error('usage: measure_loop.ts <events.jsonl> [--bars 2] [--anchor <note>]'); process.exit(1); }
   const bars = Number(arg('bars') ?? 2);
-  const events: Ev[] = readFileSync(file, 'utf-8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  // The sidecar carries MIXED row shapes since 2026-09-12: note-ons {t_ms, ch, note, vel} AND
+  // program changes {t_ms, ch, program}. Keep only rows with a numeric `note`. Without this filter a
+  // PC row's `e.note` is undefined, every PC pools into one `undefined` bucket, and because the
+  // anchor is the bucket with the FEWEST onsets that bucket WINS on any capture with >=2 program
+  // changes — silently measuring the loop from PC arrival times instead of note onsets, which is
+  // exactly the wrong-tempo bake this script exists to prevent. `JSON.parse` is `any`, so the `Ev`
+  // annotation does not catch it and tsc stays green.
+  const rows: unknown[] = readFileSync(file, 'utf-8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const events: Ev[] = rows.filter((e): e is Ev => typeof (e as Ev).note === 'number');
+  const skipped = rows.length - events.length;
+  if (skipped > 0) console.error(`note: ignored ${skipped} non-note row(s) in the sidecar (program changes).`);
   if (events.length < 4) { console.error(`only ${events.length} note-ons — play a few loops and re-capture.`); process.exit(1); }
 
   const byNote = new Map<number, number[]>();

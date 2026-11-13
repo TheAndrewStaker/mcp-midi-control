@@ -10,7 +10,7 @@
  * the device whose roundtrip validates the direction, so this gates on FM9.
  *
  * Guards:
- *   - cache-enum params (DELAY_MODEL, PITCH_TYPE, DISTORT_DRIVETYPE, ...) route
+ *   - cache-enum params (DELAY_TYPE, PITCH_TYPE, DISTORT_DRIVETYPE, ...) route
  *     discrete with a bounded numeric-ordinal encode and an 'enum' unit;
  *   - the ordinal encode refuses out-of-range ordinals and refuses names
  *     (no vocab to resolve against);
@@ -55,7 +55,7 @@ const fm9 = createModernCatalog({
 // Each of these is kind:'enum' in FM9_RANGES with no overlay name table, so
 // pre-fix they fell through to continuous. (block slug, param key, enumCount).
 const ENUM_CASES: ReadonlyArray<[string, string, number]> = [
-  ['delay', 'model', 29],
+  ['delay', 'type', 8], // delay.model is named now (AM4-shared model list)
   ['pitch', 'type', 16],
   ['amp', 'drivetype', 8],
   ['amp', 'fbtype', 69],

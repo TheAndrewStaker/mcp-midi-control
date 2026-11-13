@@ -27,7 +27,7 @@ F0 00 01 74 01 02 [bb bb] [pp pp] [vv vv] 01 F7
 |---|---|
 | `F0` | SysEx start |
 | `00 01 74` | Fractal manufacturer id |
-| `01` | model byte (Ultra; Standard presumed same, unconfirmed) |
+| `01` | model byte (Ultra). The Standard is listed as `0x00` (assumed) by both the wiki spec header (line 42: "Axe-Fx Standard = 0x00 (assumed), Ultra = 0x01") and the community Fractal model-ID table; unconfirmed either way on hardware. This codec sends `0x01` on every frame and warns at runtime on Standard-named ports |
 | `02` | function = set / query parameter value |
 | `bb bb` | block id (nibble-split) |
 | `pp pp` | parameter id (nibble-split) |
@@ -186,9 +186,13 @@ parameter region (the pinned header/name/grid subset SHIPS as `get_preset`,
 see above; the ~1790-byte param block is explicitly undetermined in the spec,
 so it is surfaced as a byte count only until a capture closes it), bank-C
 stored-dump requests (unknown OR-value), modifier query (0x07),
-get-firmware (0x08), get-preset-name (0x0f). Not in the protocol at all: save /
-store-to-location, preset-change / bank-select, scenes, X/Y channels. The device
-package omits those ops; the dispatcher returns `capability_not_supported`.
+get-firmware (0x08), get-preset-name (0x0f). Not in the SysEx protocol at all:
+save / store-to-location, preset-change / bank-select, scenes, X/Y channels.
+The device package omits save/scene/channel ops (the dispatcher returns
+`capability_not_supported`). `switch_preset` ships OUTSIDE this SysEx map as a
+standard MIDI Program Change (channel voice message, presets 0..127,
+community-beta); presets >= 128 refuse because no bank-select mechanism is
+pinned anywhere in the published gen-1 material.
 
 ## Catalog
 
@@ -209,8 +213,13 @@ no fabricated linear interpolation.
 
 ## Open items
 
-- **Standard model byte:** the doc covers the Ultra (`0x01`); the Standard is
-  presumed to share it but is unconfirmed. Ship Ultra first.
+- **Standard model byte:** the doc covers the Ultra (`0x01`). The Standard is
+  NOT presumed to share it: the wiki spec's own header line 42 and the
+  community Fractal model-ID table both list **Standard = 0x00 (assumed)**.
+  Unconfirmed either way on hardware. This codec keeps `0x01` on every frame
+  (also unconfirmed for the Standard) and the device package warns at runtime
+  when the matched port name says "standard"; a Standard owner report settles
+  it (contributing page, ask REPORT-2).
 - **Hardware verification:** nothing is confirmed on a physical gen-1 unit.
 - **Primitives:** the nibble-split primitive warrants a primitive entry + golden
   (follow-up; the gen-1 golden in `test/axe-fx-gen1/setparam.test.ts` already

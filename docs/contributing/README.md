@@ -38,17 +38,18 @@ id, so a device that exists in the server always has a page here.
 
 | Device | Page | Support tier | Top ask right now | Tier of that ask |
 |---|---|---|---|---|
-| Fractal AM4 | [`am4`](devices/am4.md) | `verified` | Confirm a stored-location preset read | SESSION |
+| Fractal AM4 | [`am4`](devices/am4.md) | `verified` | Stored read of a preset with a tremolo, rotary, GEQ or PEQ | SESSION |
 | Fractal AX8 | [`ax8`](devices/ax8.md) | `community-beta` | Build a small preset in one step, the first AX8 hardware run of any kind | SESSION |
 | Fractal Axe-Fx Standard / Ultra | [`axe-fx-gen1`](devices/axe-fx-gen1.md) | `community-beta` | One structural editing-session capture, which unlocks preset authoring and save | CAPTURE |
 | Fractal Axe-Fx II XL+ | [`axe-fx-ii`](devices/axe-fx-ii.md) | `verified` | Tell us if you own a Mark I, Mark II or non-plus XL | REPORT |
 | Fractal Axe-Fx III | [`axe-fx-iii`](devices/axe-fx-iii.md) | `community-beta` | Send your Axe-Edit III definition cache | DONATE |
 | Novation Circuit Tracks | [`circuit-tracks`](devices/circuit-tracks.md) | `verified` | Confirm a synth parameter write by ear | SESSION |
-| Fractal FM3 | [`fm3`](devices/fm3.md) | `community-beta` | Anything at all, on Windows. The serial driver path is unrun | SESSION |
+| Fractal FM3 | [`fm3`](devices/fm3.md) | `community-beta` | Your FM3-Edit definition cache | DONATE |
 | Fractal FM9 | [`fm9`](devices/fm9.md) | `community-beta` | Confirm a discrete set-by-name write | SESSION |
 | ASM Hydrasynth | [`hydrasynth`](devices/hydrasynth.md) | `verified` | Tell us if you have a Deluxe or a Keyboard | REPORT |
 | Arturia MicroFreak | [`microfreak`](devices/microfreak.md) | `verified` | Run the Arturia discovery probe, which validates the method that unblocks its siblings | PROBE |
 | Arturia MiniFreak | [`minifreak`](devices/minifreak.md) | `generic-only` | **Recover the Arturia device-code byte.** One read-only minute, one byte, and the entire SysEx surface unblocks | PROBE |
+| Akai MPC One G2 | [`mpc-one-g2`](devices/mpc-one-g2.md) | `generic-only` | Select a sequence from the server and name the USB ports | SESSION |
 | Boss RC-505mk2 | [`rc-505mk2`](devices/rc-505mk2.md) | `verified` | Drive a looper CC through the server and watch the unit | SESSION |
 | Boss RC-600 | [`rc-600`](devices/rc-600.md) | `generic-only` | Send a memory file with populated assign slots | DONATE |
 | Roland SPD-SX | [`spd-sx`](devices/spd-sx.md) | `verified` | Confirm kit recall and pad triggering over MIDI | SESSION |

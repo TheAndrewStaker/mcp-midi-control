@@ -1,5 +1,15 @@
 # Circuit Tracks → first-class support: plan
 
+> **SUPERSEDED (stamped 2026-08-10, coverage audit).** The promotion this plan tracked
+> HAPPENED: the descriptor has been `verified` tier since 2026-07-27, and several claims below
+> aged out un-updated (sample durability was confirmed 06-23; `list_samples` shipped 07-09 and
+> was hardware-confirmed 07-17; the pattern LENGTH byte and drum-track default-sample field are
+> both decoded and shipped; Circuit appears in ROADMAP.md and CLAUDE.md; the GM collision-graph
+> packer shipped ~06-22). Do not plan from this file. Current ground truth: the descriptor's
+> `verification` prose, `docs/contributing/devices/circuit-tracks.md`, and the private audit
+> `audit-output/2026-08-10-device-coverage/audit-circuit-tracks.md`. Kept as a historical
+> record of the promotion path.
+
 Living plan for promoting the Novation Circuit Tracks from "supported" to
 **first-class** (the tier of AM4 / Axe-Fx II / Hydrasynth: hardware-verified
 depth, reliable transfers, agent guidance, test coverage, and docs that position

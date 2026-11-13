@@ -1,6 +1,6 @@
 /**
  * circuit-bake-scenes — replicate the 4-scene block from a scene-baked REFERENCE
- * project (Project 43, the_summoning full, decoded 2026-06-22/23) into every other
+ * project (Project 43, a full4bar groove set, decoded 2026-06-22/23) into every other
  * `__full4bar` packed groove, so each song ships with Scene 1–4 = its four grooves
  * (tap-to-switch, each a looping 2-pattern chain).
  *
@@ -29,7 +29,6 @@ import { META_OFFSETS, NCS_FILE_SIZE, drumBlockIndex } from '@mcp-midi-control/c
 
 const LEN32 = 0x1f;                                      // 32 steps, stored as steps-1
 const CHAIN_FLAG_OFFSETS = [0x2d5, 0x2d9, 0x2dd, 0x2e1]; // one per drum track (endPattern=1)
-const CHAIN_TAIL_OFFSET = 0x26fc7;
 
 // Offset windows where a scene delta is EXPECTED to land. Verified 2026-06-23:
 // across all 10 baseline full4bar files the header window is all-zero and the two
@@ -43,6 +42,36 @@ const SCENE_WINDOWS: readonly [number, number, string][] = [
   [0x26f00, 0x27000, 'scene-selection state / chain tail'],
 ];
 
+/**
+ * CARVED OUT of the windows above, 2026-09-20. "Byte-IDENTICAL across all 10 baselines" was true in
+ * June and is not a property of the FORMAT — it was a property of ten files that had not yet been
+ * given per-song kits, levels or reverb. Every field below has since been decoded and is PER PROJECT,
+ * so transplanting a reference song's copy of it into every other song would overwrite exactly the
+ * work that makes the songs sound different:
+ *
+ *   0x1a278..0x1a27b  drum -> sample slot, one per track. HARDWARE-CONFIRMED both directions
+ *                     (drumBinding.ts). This is each song's KIT.
+ *   0x26fbc..0x26fe7  the 4x11 per-drum record: patch_select, level, pitch, decay, distortion, eq,
+ *                     pan, sends. `level` is hardware-confirmed and is set per song.
+ *   0x26ff0..0x26ff2  reverb type / decay / damping, per project.
+ *   0x26ff8..0x26fff  reverb send, 8 lanes, per project.
+ *
+ * Three of these offsets were previously read as scene state and transplanted by name
+ * (0x1a27a = Drum 3's sample slot, 0x26fbc = Drum 1 patch_select, 0x26fd2 = Drum 3 patch_select) —
+ * the same single-diff mis-decode corrected in chain.ts and sceneChain.ts the same day. A diff names
+ * a REGION, never a field: everything the operator had selected when the capture was taken moves in
+ * the same save.
+ *
+ * Being excluded means a reference that differs here now trips the out-of-window HARD ABORT in
+ * bakeAll rather than silently carrying its own kit into ten other songs.
+ */
+const NOT_SCENE_STATE: readonly [number, number, string][] = [
+  [0x1a278, 0x1a27c, 'drum -> sample binding (each song\'s kit)'],
+  [0x26fbc, 0x26fe8, 'per-drum record: patch_select / level / pitch / decay / distortion / eq / pan / sends'],
+  [0x26ff0, 0x26ff3, 'reverb type / decay / damping (per project)'],
+  [0x26ff8, 0x27000, 'reverb send, 8 lanes (per project)'],
+];
+
 /** Apply the length(+chain) bake in-place — byte-identical to circuit-set-length-chain.ts. */
 function processLengthChain(buf: Uint8Array, mode: 'full' | 'chop' = 'full'): Uint8Array {
   for (let track = 0; track < 4; track++) {
@@ -52,7 +81,8 @@ function processLengthChain(buf: Uint8Array, mode: 'full' | 'chop' = 'full'): Ui
   }
   if (mode === 'full') {
     for (const off of CHAIN_FLAG_OFFSETS) buf[off] = 0x01;
-    buf[CHAIN_TAIL_OFFSET] = 0x0c;
+    // (was: buf[0x26fc7] = 0x0c — the "chain enable tail". It is Drum 2's patch_select; see
+    //  NOT_SCENE_STATE above and the corrected note in packages/circuit-tracks/src/ncs/chain.ts.)
   }
   return buf;
 }
@@ -82,7 +112,15 @@ function applyDelta(target: Uint8Array, delta: readonly DeltaByte[]): void {
 }
 
 function classify(off: number): string | undefined {
+  // Exclusions win: a decoded per-project field inside a scene window is NOT scene state.
+  for (const [a, b] of NOT_SCENE_STATE) if (off >= a && off < b) return undefined;
   for (const [a, b, label] of SCENE_WINDOWS) if (off >= a && off < b) return label;
+  return undefined;
+}
+
+/** Why an offset was refused, for a report that names the field instead of saying "outside". */
+function refusedBecause(off: number): string | undefined {
+  for (const [a, b, label] of NOT_SCENE_STATE) if (off >= a && off < b) return label;
   return undefined;
 }
 
@@ -96,7 +134,10 @@ function reportDelta(delta: readonly DeltaByte[]): { outOfWindow: number } {
     const run = delta.filter((d) => d.off >= runStart && d.off <= end);
     const ref = run.map((d) => d.ref.toString(16).padStart(2, '0')).join(' ');
     const base = run.map((d) => d.base.toString(16).padStart(2, '0')).join(' ');
-    const where = classify(runStart) ?? '!! OUTSIDE expected scene windows !!';
+    const where = classify(runStart)
+      ?? (refusedBecause(runStart) !== undefined
+        ? `!! NOT scene state: ${refusedBecause(runStart)} — per project, must not transplant !!`
+        : '!! OUTSIDE expected scene windows !!');
     if (classify(runStart) === undefined) outOfWindow += run.length;
     console.log(`  @0x${runStart.toString(16)}..0x${end.toString(16)} (${run.length}B) [${where}]`);
     console.log(`     ref : ${ref}`);
@@ -167,7 +208,10 @@ function selftest(): void {
   const sceneBytes: [number, number[]][] = [
     [0x51, [0x01, 0x00, 0x00, 0x00]], [0x78, [0x02, 0x03, 0x00, 0x00]],
     [0xa0, [0x04, 0x05, 0x00, 0x00]], [0xc8, [0x06, 0x07, 0x00, 0x00]],
-    [0x1a27a, [0x01]], [0x26fbc, [0x01]], [0x26fd2, [0x01]],
+    // 2026-09-20: these were 0x1a27a / 0x26fbc / 0x26fd2 — Drum 3's sample slot and Drum 1 + Drum 3
+    // patch_select. Moved to offsets inside the same windows that no decode has claimed, so the
+    // selftest exercises the splice mechanics without asserting a mis-decode as scene state.
+    [0x1a240, [0x01]], [0x26f40, [0x01]], [0x26f80, [0x01]],
   ];
   for (const [off, bytes] of sceneBytes) bytes.forEach((b, i) => { reference[off + i] = b; });
 
@@ -188,6 +232,21 @@ function selftest(): void {
   const GROOVE_OFF = META_OFFSETS[drumBlockIndex(0, 0)] + 0x40; // some pattern-data byte, outside scene windows
   target[GROOVE_OFF] = 0x7a;
   ck('chosen groove byte is outside scene windows', classify(GROOVE_OFF) === undefined);
+
+  // REGRESSION GUARD 2026-09-20. Every decoded per-project field must be REFUSED as scene state, so
+  // a reference that differs there aborts the bake instead of carrying its own kit, drum levels and
+  // reverb into every other song. Named offsets, not just the ranges, because the three that were
+  // actually transplanted are the ones a future edit is most likely to re-add.
+  for (const [off, what] of [
+    [0x1a278, 'Drum 1 sample slot'], [0x1a27a, 'Drum 3 sample slot'], [0x1a27b, 'Drum 4 sample slot'],
+    [0x26fbc, 'Drum 1 patch_select'], [0x26fbd, 'Drum 1 level'], [0x26fc7, 'Drum 2 patch_select'],
+    [0x26fd2, 'Drum 3 patch_select'], [0x26ff0, 'reverb type'], [0x26ff8, 'reverb send lane 0'],
+  ] as [number, string][]) {
+    ck(`refused as scene state: 0x${off.toString(16)} (${what})`,
+      classify(off) === undefined && refusedBecause(off) !== undefined);
+  }
+  ck('processLengthChain no longer writes the mis-decoded chain tail at 0x26fc7',
+    processLengthChain(new Uint8Array(NCS_FILE_SIZE), 'full')[0x26fc7] === 0);
   const tgtBaked = target.slice();
   applyDelta(tgtBaked, delta);
   ck('target keeps its groove byte (delta did not touch pattern data)', tgtBaked[GROOVE_OFF] === 0x7a);

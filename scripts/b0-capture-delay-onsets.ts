@@ -1,7 +1,7 @@
 /**
  * b0-capture-delay-onsets — timestamped note-on capture + automatic verdict for
  * the B0 GATE (companion to scripts/b0-author-delay-test.ts; see
- * samples/circuit-tracks/grooves/gm/gethsemane_electronic_HANDOFF.md).
+ * the local handoff note under samples/circuit-tracks/grooves/gm/).
  *
  * Opens the Circuit Tracks MIDI INPUT as a parallel listener (shared read, same
  * approach as capture-midi-passive.ts) and records the driver-timestamped

@@ -11,8 +11,8 @@
  *
  * Run:  npx tsx scripts/_research/screech-fix-hwtest.ts
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import path from 'node:path';
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -41,7 +41,7 @@ const SPEC = {
 
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({ command: 'node', args: [SERVER_ENTRY], env: { ...process.env } });
-  const client = new Client({ name: 'screech-fix-hwtest', version: '0.0.1' }, { capabilities: { tools: {} } });
+  const client = new Client({ name: 'screech-fix-hwtest', version: '0.0.1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
   console.log('=== fresh server (new dist) connected ===\n');
 

@@ -26,8 +26,8 @@
  *   - Confirm tone is audible (clean chime)
  */
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER = path.resolve(process.cwd(), 'dist', 'server', 'index.js');
 const TARGET_SLOT = 608;
@@ -43,7 +43,7 @@ async function main(): Promise<void> {
   console.log(`Hardware test 1 — unified apply_preset → Axe-Fx II slot ${TARGET_SLOT}\n`);
   const t = new StdioClientTransport({ command: process.execPath, args: [SERVER], stderr: 'pipe' });
   if (t.stderr) t.stderr.on('data', (b: Buffer) => process.stderr.write(`[server] ${b.toString()}`));
-  const c = new Client({ name: 'hwtest-1', version: '1' }, { capabilities: {} });
+  const c = new Client({ name: 'hwtest-1', version: '1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await c.connect(t);
   let pass = true;
   try {

@@ -4,8 +4,9 @@
  * Implementation is split across per-family modules under
  * `src/protocol/generic/dispatcher/`:
  *
- *   - `core.ts`        — port resolution (`requireDevice`) + connection
- *                        setup (`openCtx`). Step-1 and step-5 of the
+ *   - `core.ts`        — port resolution (`requireDevice`) + locked
+ *                        connection setup (`withEndpoint`: per-endpoint
+ *                        mutex + ctx build). Step-1 and step-5 of the
  *                        6-step request lifecycle.
  *   - `resolvers.ts`   — block / param / channel name resolution +
  *                        display→wire value encoding. Steps 3 and 4.
@@ -30,11 +31,11 @@
  *   2. capability gate (e.g. has_scenes for switch_scene)     [per family]
  *   3. argument normalization (block / param / channel)       [resolvers]
  *   4. value validation + display→wire encoding               [resolvers]
- *   5. ensureConnection(label)                                [core]
+ *   5. withEndpoint: endpoint lock + ensureConnection(label)  [core]
  *   6. hand-off to descriptor.writer / descriptor.reader      [per family]
  */
 
-export { assertPackSupported, openCtx, openOfflineCtx, requireDevice, toWirePack, withHandleRetry } from './dispatcher/core.js';
+export { assertPackSupported, openOfflineCtx, requireDevice, toWirePack, withEndpoint, withHandleRetry } from './dispatcher/core.js';
 export {
   encodeSetParam,
   encodeValue,
@@ -63,15 +64,24 @@ export {
   descriptorToSeed,
   bootstrapRigFromRegistry,
   loadRigManifest,
+  invalidateRigManifest,
   clearRigManifestCache,
   writeRigManifest,
+  createRigManifest,
   rigManifestSource,
   executeRigEdit,
+  buildRigEditOp,
+  RIG_EDIT_SCHEMA,
   loadRigInventory,
   clearRigInventoryCache,
   RIG_MANIFEST_ENV,
   RIG_INVENTORY_ENV,
+  executeSetlistPlan,
+  executeSongPlan,
+  clearRepertoireCache,
+  RIG_REPERTOIRE_ENV,
   type LoadedRigManifest,
+  type RigEditArgs,
   type RigEditExecResult,
   type LoadedInventory,
 } from './openrig/index.js';

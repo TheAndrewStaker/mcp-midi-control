@@ -617,14 +617,36 @@ all SETUP menu pages. Key confirmed mappings (full tables in `params.ts`):
 | `global.auto_truebypass` | 0x0081 | 0=Off, 1=On |
 | `global.dynacab_sync` | 0x009e | 0=Off, 1=On; front panel label "DynaCab Auto-Match" in Amp Expert→IMPEDANCE (not Setup) |
 
-**Not visible on front-panel Setup menu** (still `unit:'count'` placeholders):
-`global.tunermute`, `global.scene_revert`, `global.usetuneoffsets`,
-`global.tuner_source`. These write via MIDI and persist, but have no front-panel
-UI and are cleared by SETUP → Reset → Reset System Parameters.
+**Not visible on front-panel Setup menu**: `global.tunermute`,
+`global.scene_revert`, `global.usetuneoffsets`, `global.tuner_source`. These
+write via MIDI and persist, but have no front-panel UI and are cleared by
+SETUP → Reset → Reset System Parameters. All but `tuner_source` now carry
+cache-oracle enum shapes (BK-AM4-CACHE-ORACLE integration, 2026-08-11;
+read-shape corroborated by the 2026-06-10 deep-verify pass,
+`samples/captured/probe-am4-deep-verify-raw.syx`); `tuner_source` has no cache
+record and stays a `count` placeholder.
 
-**`global.sprk_model`** (Speaker Imp. Curve, pidHigh=0x0097): partial, indices 0-8
-confirmed (Default + named cabs starting with Resistive Load); more entries likely exist.
-See BK-AM4-GLOBAL-REMAINING.
+**`global.sprk_model`** (Speaker Imp. Curve, pidHigh=0x0097): full 94-entry
+roster registered from the cache oracle (0=DEFAULT + 93 named curves; the same
+list as `amp.spkr_imp_curve` minus the DEFAULT row). Indices 0-8 order matches
+the 2026-06-05 front-panel probe; label spellings follow the cache
+('Princetone'). Labels beyond index 8 are cache-sourced, untested on the panel
+(the AM4 echoes no label over MIDI).
+
+**BK-AM4-CACHE-ORACLE integration (2026-08-11)**: 26 GLOBAL entries now carry
+the cache oracle's shapes: 15 enum shapes (14 count/ms/percent/semitones
+placeholders flipped to true enums, incl. `midi_chan` 0-based with OMNI at 16
+and `default_scene` with AS SAVED at 0, plus the `sprk_model` full roster) and
+11 float-range corrections (the six tuner cent offsets, `gate_offset` -40..40,
+and the -40..20 dB level group `metlevel1`/`usblevel1`/`usblevel2`/`aeslevel`). The 28 CC-assignment registers were REVIEWED and kept as raw-int
+count 0..127 + 128 None sentinel (that register class is hardware-confirmed,
+BUG-6/GAP-2 2026-07-03/04, and postdates the cache draft); the cache's PEDAL
+1/2 tail at 129/130 on the n=130 lists is real unshipped capability awaiting
+one write+panel-read. `tuneraccidentals` keeps the front-panel probe order
+(cache order conflicts; front panel is ground truth), `delayspill` keeps the
+probe spelling (cosmetic), `fc_ring_bright/dim_level` keep `percent` (the
+cache reshape's 1:1-wire inference is contradicted by the deep-verify Q16
+read).
 
 ---
 
@@ -2677,9 +2699,14 @@ standard AM4 LE u16 on the 0..65534 wire scale), **PARTIAL**:
 
 | Body offset | Field |
 |---|---|
-| `0x0004 + n×0x50` (n=0..3) | scene record n: 32-byte ASCII scene name (space-padded, NUL at 31), then per-scene state (channel bytes visible, unmapped) |
-| AMP block (walked marker) | 4 per-channel amp records (see below) |
-| `0x140E` u16 | **volatile**: churns between back-to-back no-op redumps; exclude from decoded-layer diffs |
+| `0x0000` u16 | active scene, 0-based (in a stored dump: the scene the preset was saved on) |
+| `0x0004 + n×0x50` (n=0..3) | scene record n: 32-byte ASCII scene name (space-padded, NUL at 31) |
+| scene record `+0x20 + (slot-1)×4` u16 | channel (0..3 = A..D) the scene selects for the block in that slot |
+| scene record `+0x30 + (slot-1)×4` u16 | bypass for the block in that slot (nonzero = bypassed) |
+| `0x0144` … decompSize − 2 | the block-record chain (see below) |
+| PATCH record (`0xCE`) words `0x0F..0x12` | effect id in slots 1..4 (0 = empty): the signal-chain order |
+| PATCH record word `0x0A` | index of the location the buffer was loaded from; **not content** |
+| PATCH record word `0x0E` | **volatile**: churns between back-to-back no-op redumps (this is the word at body `0x140E` in the warm-pair preset); exclude from decoded-layer diffs |
 
 #### Body = a walkable BLOCK-RECORD CHAIN (AMP block decoded byte-exact) 🟢 amp / 🟡 other blocks
 
@@ -2715,21 +2742,97 @@ channel TYPE ordinals in `[0,247]`), resolving the base in every config with
 false-positives on param-value / modifier-record collisions (reads two
 reverbs, `cab@0x0934` nonsense); the shape validation is what makes it robust.
 
-**Scope: AMP only.** Only the amp block has a validated record shape + an
-ordinal-bounded TYPE enum to reject false markers. Cab (`0x003E`) and FX blocks
-share the chain structure but their per-block stride/param formula is UNVERIFIED
-(no isolated one-variable capture yet), so they are an honest omission; see the
-captured-artifacts `UNMINED[2026-07-02]` entry for the 5 captures that close it.
+#### The whole chain: every record is self-describing 🟢 DECODED 2026-11-12
+
+The amp record above is one instance of a uniform record, so the chain needs
+no marker scan and no size table. Decoder: `walkAm4BodyChain` /
+`decodeAm4PresetBody` in `src/am4/bodyChain.ts`. Primitive:
+`docs/research/primitives/am4-body-block-record-chain.md`.
+
+```
+word 0      effect id  (== the block's pidLow; a second instance is id + 1)
+words 1..4  zero
+word 5      cols  (param words per row; amp = 0x98, which is the 0x130-byte stride)
+word 6      rows  (4 = channels A/B/C/D, 1 = one shared row)
+then        cols × rows u16 words; a param sits at  row × cols + pidHigh
+```
+
+The chain starts at body `0x0144` (right after the four scene records), runs
+record to record with no gaps, and ends exactly 2 bytes before decompSize in all
+104 factory presets (fw 1.01) and every fw 2.00 hardware dump taken. The record
+layout equals the fn 0x1F chunk (`channel × stride + pidHigh`, §fn 0x1F), so the
+live param table and scaling decode it unchanged.
+
+Records and their sizes across the factory bank (id: cols × rows, presets):
+
+| Always present (104/104) | Present when the block is placed |
+|---|---|
+| `0x02`: 99×1; `0x03..0x12`: 35×1 each; Input `0x25`: 18×4; Output `0x2A`: 38×4; Cab `0x3E`: 78×4; PATCH `0xCE`: 118×1 | Comp `0x2E` 42×4 (18); Amp `0x3A` 152×4 (87); Reverb `0x42` 73×4 (68); Delay `0x46` 90×4 (48); Chorus `0x4E` 32×4 (17); Flanger `0x52` 36×4 (2); Rotary `0x56` 24×4 (2); Phaser `0x5A` 38×4 (8); Wah `0x5E` 30×4 (20); Vol/Pan `0x66` 20×4 (1); Tremolo `0x6A` 25×4 (6); Filter `0x72` 41×4 (1); Drive `0x76` 50×4 (67); Drive 2 `0x77` 50×4 (3); Enhancer `0x7A` 18×4 (2); Gate `0x92` 23×4 (2) |
+
+The ids are the gen-3 effect ids. The chain lists placed blocks in ascending id
+order, which is not the signal-chain order: that is PATCH words `0x0F..0x12`
+(the same registers as the live slot read, pidLow `0xCE` pidHigh `0x0F + slot − 1`).
+Table sizes move with firmware (a fw 1.01 Vol/Pan record is 20 columns; the same
+preset loaded on fw 2.00 dumps 21, the new column appended to each row), which
+the walk absorbs because each record states its own size.
+
+Evidence, hardware 2026-11-12 (fw 2.00):
+
+- **Values.** For 15 stored presets the stored decode was compared with the
+  working-buffer read (fn 0x1F) of the same preset after loading it, through the
+  shipped tools: **18,687 of 18,737 values equal**, across 13 block types (amp,
+  drive, delay, reverb, chorus, flanger, phaser, wah, filter, compressor,
+  enhancer, gate, vol/pan). The other 50 are not offset errors: diffing the
+  stored dump against the working-buffer dump shows the device rewriting those
+  words when it loads the preset (amp word `0x2D` on fw 1.01-era presets, Cab
+  Blend 1/2 at Cab words `0x4B`/`0x4C`, gate word `0x0B`, a wah bypass), and for
+  the reverb low/high cut Q the fn 0x1F read rounds differently while `get_param`
+  returns the stored word exactly (27833).
+- **Scene words, one change per dump** (working-buffer dumps, which reflect
+  unsaved edits): un-bypassing the slot-4 block on scene 1 moved only scene
+  record 0 `+0x3C` (1→0); putting the slot-2 amp on channel C moved only scene
+  record 0 `+0x24` (0→2); switching to scene 3 moved body word `0x0000` and
+  PATCH word `0x0D` (0→2). Across all four scenes of three presets the decoded
+  channel and bypass matched the live state 200/200 (live bypass flag, the
+  switch_scene receipt, and a plain `get_param` returning the selected channel's
+  value).
+- **One change per save**, on a scratch location, each save followed by a
+  stored read: delay mix on channel A 18→37 changed only `delay.mix[A]`;
+  un-bypassing the flanger on scene 1 changed only that block's scene-1 bypass;
+  flanger mix 45→41 changed only `flanger.mix`. (The first of the three saves
+  also stored a moved Cab Blend pair, see below.)
+- **Second instance.** Factory preset 11 (`Bass NoAmp DI`) places two drives:
+  slot 2 reads `0x77` and record `0x77` has the drive table size.
+
+**A copy is not always byte-identical to its source.** Two stored presets, one
+saved from the other's loaded buffer, differed in 6 bytes: PATCH word `0x0E`
+(volatile), and Cab words `0x4B`/`0x4C` on channel A (Cab 1 / Cab 2 Blend,
+60/40 in the source, 65/35 in the copy). The blend pair in the working buffer
+is not always the stored pair: loads of the same source showed 65/35 and later
+75/25 in the buffer while its stored value stayed 60/40, other presets showed
+50/50 against a stored 60/40 or 35/65, and a later save of the copy stored
+75/25 although no write through this server touches the pair. What moves it is
+NOT pinned: eight controlled steps (load, dump, active read, param read, param
+write with and without a channel, two reloads) left it unchanged. So a save
+stores whatever the buffer holds for that pair. An exact "same content" check is
+available (`am4ComparableBody` masks PATCH words `0x0A` and `0x0E` and compares
+the rest), and it reports such a copy as different, correctly: the blend really
+differs.
+
+**Not decoded:** records `0x02` and `0x03..0x12` (controllers / modifiers), the
+Input and Output records, scene MIDI in the PATCH record, and the scene-record
+bytes past the two per-slot tables.
 
 Corpus + oracles (all green via `scripts/verify-am4-preset-container.ts`,
-890 checks / 117 dumps; adds the body block-record-chain amp walk):
+1,413 checks / 117 dumps; includes the whole-chain walk and factory goldens):
 `samples/factory/AM4-Factory-Presets-1p01.syx`
 (104 fw 1.01 presets: CRC, footer XOR, Huffman termination, plaintext
 names + scene names), `samples/factory/A01-original.syx`,
 `samples/captured/hw132/am4-{stored-a01,active-1}.syx`, and the 5 warm
 pairs `samples/captured/am4-warm-pair-*-{before,after}.syx` (fw 2.00).
 Goldens: `test/am4/presetcontainer.test.ts`. Primitives:
-`docs/research/primitives/am4-gen3-preset-container.md`.
+`docs/research/primitives/am4-gen3-preset-container.md`,
+`docs/research/primitives/am4-body-block-record-chain.md`.
 
 ### MCP-facing stored `get_preset(location)` 🟢: SHIPPED 2026-07-02
 
@@ -2747,16 +2850,25 @@ exactly like the gen-3 `amp1`). One round-trip, ~150-200 ms; read-only.
 `get_preset` with **no** `location` keeps the active-buffer fn 0x1F per-block
 param read.
 
-AMP VALUES surfaced (community-beta): `whole_preset.amp` carries all four
-channels A/B/C/D, decoded byte-exact via the body block-record chain
-(`decodeAm4AmpBlock`). The four warm-pair-anchored fields (amp.type, amp.gain
-chA/chB, amp.master chA) are hardware-CONFIRMED; the remaining amp knobs ride
-the same confirmed record geometry (formula-extrapolated). `read_warnings`
-labels this + says non-amp block VALUES stay omitted (their per-block formula
-isn't capture-confirmed yet) rather than guessing. Absent-amp presets return no
-`amp` and the rest of the snapshot still resolves. Reader drive + the amp-base
-walk + anchor decode are covered by `scripts/verify-am4-preset-container.ts`
-(§1 bank walk 70/17/17, §3 warm-pair anchors → 5.1, §4 mock fn-0x03 connection).
+**Updated 2026-11-12: every placed block is surfaced.** The stored snapshot now
+fills `slots[]` in signal-chain order from `decodeAm4PresetBody`: each slot
+carries `params_by_channel` (A/B/C/D, the amp entry including its cab section
+and channel LED colours), `scene_channels` (the channel each of the 4 scenes
+selects) and `scene_bypass` (omitted for the amp, which has no bypass). The amp
+values moved there from `whole_preset.amp`, which is no longer emitted.
+`whole_preset.content_fingerprint` is a hash of the body with PATCH words
+`0x0A`/`0x0E` masked: equal between two stored presets exactly when their
+content is identical. `read_warnings` names what is not decoded (controllers /
+modifiers, Input/Output, scene MIDI). A body whose chain does not walk to
+exactly decompSize − 2 yields name + scene names only. Largest response across
+the factory bank: 31,446 characters. Covered by
+`scripts/verify-am4-preset-container.ts` (§1 bank walk, §1b factory goldens,
+§3 warm-pair anchors, §4 mock fn-0x03 reader drive + size sweep).
+
+The same decode backs three working-buffer facts (`packages/am4/src/shared/bufferState.ts`,
+one working-buffer dump, about 80 ms): active `get_preset` states each slot's
+`active_channel` plus `scene_channels` / `scene_bypass`, and the `switch_scene`
+receipt lists each block's channel and bypass on the scene just selected.
 
 ### Upload semantics
 

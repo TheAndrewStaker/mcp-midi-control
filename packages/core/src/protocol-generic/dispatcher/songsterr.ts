@@ -48,7 +48,9 @@ import {
   importSongsterrMelodic,
   flattenSongsterrMelodic,
   isMelodicPart,
+  detectPickupBar,
   type MelodicCell,
+  type PickupBarInfo,
   type SongsterrFlat,
   type SongsterrPart,
 } from '../patterns/songsterr.js';
@@ -60,6 +62,7 @@ import {
   type LegatoCause,
   type LengthArticulationReport,
 } from '../patterns/songsterrArticulation.js';
+import type { GlideGestureReport } from '../patterns/pitchGestures.js';
 import {
   planSongChop,
   toChopPart,
@@ -67,11 +70,12 @@ import {
   type ChopPartFlat,
   type SongChopPlan,
 } from '../patterns/songChop.js';
+import { resolveClockMaster, type ClockMasterInfo } from '../clockMaster.js';
 
 export interface ImportSongsterrArgs {
-  /** Songsterr URL (…-s1467797t11) or bare id (1467797 / 1467797t11). */
+  /** Songsterr URL (…-s1234567t11) or bare id (1234567 / 1234567t11). */
   url?: string;
-  /** Name search ("Sleep Token Gethsemane"); resolves to a song when you don't have the URL. */
+  /** Name search ("Artist Song Title"); resolves to a song when you don't have the URL. */
   query?: string;
   /**
    * Roster-only dry run: return every part the song has and stop. No part data
@@ -133,6 +137,8 @@ export interface ImportSongsterrArgs {
    * ghosts are inaudible on the target's pads, lower it for a lighter touch.
    */
   ghost_velocity?: number;
+  /** Read a swung tab straight: ignore the source's triplet-feel (swing) marking. Default false. */
+  straight_feel?: boolean;
   /**
    * MELODIC parts only: the key the returned pitch row is filed under in
    * `voices`, i.e. which track of the target plays it. Default "synth1".
@@ -167,6 +173,15 @@ export interface ImportSongsterrArgs {
   let_ring_max_beats?: number;
   /** Sixths a legato launch note holds past its target's onset. Default 2. 0 disables legato. */
   legato_overlap_sixths?: number;
+  /**
+   * MELODIC parts only: render bends and slides into / out of unwritten pitches as overlapping glide
+   * notes for a mono synth set to glide. See `pitchGestures.ts`. Off by default.
+   */
+  pitch_gestures?: 'glide';
+  /** MELODIC parts only: keep one note of each chord (0 = lowest, -1 = highest), for a mono synth. */
+  mono_voice?: number;
+  /** `pitch_gestures` only: semitones a scoop starts below / a fall drops. Default 2. */
+  slide_semitones?: number;
 }
 
 /** One row of the part roster, as returned to the agent. */
@@ -221,8 +236,27 @@ export interface ImportSongsterrResult {
   search_results?: SearchHit[];
   sections: { name: string; measure: number; beat: number }[];
   tempo_map: { measure: number; bpm: number }[];
+  /**
+   * The song's tempo, as an actionable "set the clock master to N BPM" instruction
+   * (see TempoSetupInfo). Present whenever the tab carries a tempo. Reports the
+   * tempo the clock-slaved sequencer needs rather than leaving it to be guessed;
+   * the target device is resolved by role from the rig manifest, so it names
+   * whichever device is the clock master (not hardwired to any one box).
+   */
+  tempo_setup?: TempoSetupInfo;
   /** Present when a window was requested: the grids to feed apply_pattern. */
   window?: { section?: string; from_measure?: number; from_beat: number; beats: number; bpm?: number; steps: number; signature: string };
+  /**
+   * Present when the song OPENS with a pickup (anacrusis) bar and this reply
+   * covers the song's head. Carries the pad that squares the head to a whole
+   * bar so clock-slaved gear (a looper's measure-quantized record-start, an
+   * in-ear click counted from MIDI Start) stays on the song's barlines.
+   * `padded_voices`, when present, is `voices` with `pad_steps` leading rest
+   * steps — a paste-ready aligned head. NOT applied automatically: authoring
+   * the padded head changes the Play press from "press = the pickup downbeat"
+   * to "press = a short count before the pickup", which is the user's call.
+   */
+  pickup?: PickupBarInfo & { padded_voices?: Record<string, string> };
   /**
    * The step content to pass to apply_pattern. A DRUM part fills this with one
    * char grid per percussion voice; a MELODIC part fills it with ONE
@@ -268,12 +302,17 @@ export interface ImportSongsterrResult {
       dead_notes: number;
       staccatos: number;
       let_rings: number;
-      legato: Record<LegatoCause, number>;
+      /** Source-marked legato connections by marking (the renderer's own `glide` is not a source marking). */
+      legato: Record<Exclude<LegatoCause, 'glide'>, number>;
       /** Slide values with no written destination (or unknown to us), by value. */
       slides_unauthored: Record<string, number>;
     };
     /** What the length articulations DID in this window (extended, connected, damped). */
     articulation_applied: LengthArticulationReport;
+    /** Chord notes `mono_voice` dropped, track-wide. Absent when none. */
+    mono_dropped?: number;
+    /** What `pitch_gestures` rendered, track-wide. Absent when the option is off. */
+    pitch_gestures?: GlideGestureReport;
   };
   /** Present in whole_song mode: paste into apply_pattern's `arrangement` input. */
   arrangement?: {
@@ -326,6 +365,92 @@ export interface ImportSongsterrResult {
   next_step: string;
 }
 
+/**
+ * A song's tempo resolved to an actionable instruction. The stored drum patterns
+ * are tempo-independent step grids and the sequencer that plays them is slaved to
+ * the rig's clock master, so the tempo has to be set on that device before the
+ * song plays at the right speed. This reports it. SCOPED to single-tempo songs:
+ * a tab with more than one distinct tempo gets a per-section notice, not a
+ * per-region tempo plan.
+ */
+export interface TempoSetupInfo {
+  /** Distinct tempos the tab carries, in first-appearance order. */
+  bpms: number[];
+  /** True when the tab carries >1 distinct tempo (no single automatic BPM). */
+  multi_tempo: boolean;
+  /** The clock-master device name(s), when a rig manifest (MCP_RIG_MANIFEST) names one. */
+  clock_master?: string;
+  /** The clock-follower device name(s) slaved to it, when the manifest names them. */
+  followers?: string[];
+  /** Plain-language instruction to set the tempo before playing. */
+  instruction: string;
+}
+
+/** Distinct bpm values from a tempo map, in first-appearance order. */
+export function distinctTempos(tempos: readonly { bpm: number }[]): number[] {
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const t of tempos) if (!seen.has(t.bpm)) { seen.add(t.bpm); out.push(t.bpm); }
+  return out;
+}
+
+/** "A" / "A and B" / "A, B, and C". */
+function andList(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
+/** BPM as a clean string (no float noise on the common integer case). */
+function fmtBpm(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+/**
+ * Build the "set the clock master to N BPM" instruction from a song's distinct
+ * tempos + the rig's resolved clock master. Returns undefined when the tab
+ * carries no tempo at all (nothing to instruct). Names the clock master when the
+ * rig manifest declares one, else uses a generic "your clock master" phrase, so
+ * the guidance works with or without a configured rig.
+ */
+export function buildTempoSetup(bpms: number[], cm: ClockMasterInfo): TempoSetupInfo | undefined {
+  if (bpms.length === 0) return undefined;
+  const masterName = cm.masters.length > 0 ? andList(cm.masters) : undefined;
+  const masterPhrase = masterName ? `your clock master (${masterName})` : 'your clock master';
+  const followPhrase = cm.followers.length > 0
+    ? ` ${andList(cm.followers)} follow its clock, so the tempo has to live there.`
+    : ' The clock-slaved sequencer follows its clock, so the tempo has to live there.';
+  const common = {
+    bpms,
+    ...(masterName ? { clock_master: masterName } : {}),
+    ...(cm.followers.length > 0 ? { followers: cm.followers } : {}),
+  };
+  if (bpms.length === 1) {
+    return {
+      ...common,
+      multi_tempo: false,
+      instruction: `Set ${masterPhrase} to ${fmtBpm(bpms[0])} BPM before you play this.${followPhrase}`,
+    };
+  }
+  return {
+    ...common,
+    multi_tempo: true,
+    instruction:
+      `This song changes tempo (${bpms.map(fmtBpm).join(' → ')} BPM). This tool sets ONE tempo, so set ` +
+      `${masterPhrase} to the tempo of the section you are laying down (${fmtBpm(bpms[0])} BPM for the opening) ` +
+      `and change it by hand at each tempo boundary.${followPhrase}`,
+  };
+}
+
+/** A short tempo pointer to append to `next_step` (the full text lives in tempo_setup). */
+function tempoHint(ts: TempoSetupInfo | undefined): string {
+  if (ts === undefined) return '';
+  const where = ts.clock_master ?? 'your clock master';
+  return ts.multi_tempo
+    ? ` This song changes tempo: see tempo_setup and set ${where} per section (starts at ${fmtBpm(ts.bpms[0])} BPM).`
+    : ` Set the tempo on ${where} to ${fmtBpm(ts.bpms[0])} BPM first (see tempo_setup).`;
+}
+
 const hasWindow = (a: ImportSongsterrArgs): boolean =>
   a.section !== undefined || a.from_measure !== undefined || a.to_measure !== undefined || a.from_beat !== undefined || a.beats !== undefined;
 
@@ -369,7 +494,7 @@ const GRID_SCOPE_NOTE =
  * layer, so two windows share a section letter only when EVERY layer of the
  * build matches — the drum grid alone is a false certificate there (two windows
  * with identical drums but different synth/pad content are NOT the same
- * section; the 2026-07-29 Amber plan hit exactly that and survived by luck).
+ * section; a 2026-07-29 build plan hit exactly that and survived by luck).
  */
 function buildWholeSongBank(
   src: SongsterrFlat,
@@ -377,12 +502,24 @@ function buildWholeSongBank(
   fuzz: number | undefined,
   layers?: DecomposeLayer[],
   totalBeats?: number,
+  /**
+   * Quarter-note beats of leading rest to prepend to the WHOLE timeline before
+   * windowing. Set when the song opens with a pickup bar: the fixed 32-step
+   * windows chop from beat 0, so without the pad EVERY window boundary of a
+   * pickup song sits off the barlines (and two musically-identical sections
+   * whose windows cut them at different bar phases stop deduping).
+   */
+  padBeats = 0,
 ): { arrangement: NonNullable<ImportSongsterrResult['arrangement']>; warnings: string[] } {
-  const decomp = decomposeToPatterns(src.events, {
-    totalBeats: totalBeats ?? src.totalBeats,
+  const events = padBeats > 0 ? src.events.map((e) => ({ ...e, beat: e.beat + padBeats })) : src.events;
+  const shiftedLayers = padBeats > 0 && layers !== undefined
+    ? layers.map((l) => ({ ...l, onsets: l.onsets.map((o) => ({ ...o, beat: o.beat + padBeats })) }))
+    : layers;
+  const decomp = decomposeToPatterns(events, {
+    totalBeats: (totalBeats ?? src.totalBeats) + padBeats,
     stepsPerPattern: 32,
     stepsPerBeat,
-    ...(layers !== undefined && layers.length > 0 ? { layers } : {}),
+    ...(shiftedLayers !== undefined && shiftedLayers.length > 0 ? { layers: shiftedLayers } : {}),
   });
   const barsPerWindow = 32 / stepsPerBeat / 4; // 2 bars at 16ths, 1 bar at 32nds (4/4)
   const co = coalescePatterns(decomp, { maxDistance: fuzz ?? 0.10 });
@@ -396,13 +533,14 @@ function buildWholeSongBank(
   };
   const sections = co.patterns.map((q, i) => {
     const firstWindow = co.order.indexOf(i);
-    const firstMeasure = Math.floor(firstWindow * barsPerWindow); // 0-based, 4/4 approximation
+    // 0-based, 4/4 approximation; pad-corrected back into SOURCE measure time.
+    const firstMeasure = Math.max(0, Math.floor((firstWindow * barsPerWindow * 4 - padBeats) / 4));
     const marker = markerAt(firstMeasure);
     // A SILENT window (a count-in, a tab's empty measures) quantizes to no
     // voices at all. `voices: {}` is unusable downstream: apply_pattern refuses
     // "`voices` must have at least one voice", so a whole-song arrangement
-    // containing a rest bar could not be authored (it killed both the Amber
-    // intro upload and the Blindside outro, 2026-07-16). Emit an explicit
+    // containing a rest bar could not be authored (it killed one song's
+    // intro upload and another's outro, 2026-07-16). Emit an explicit
     // rest-only line instead, which carries the window's LENGTH and produces
     // no events — the same shape a hand-authored silent section uses.
     const grids = quantizedToGrids(q);
@@ -500,8 +638,26 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
   const flattenOpts = {
     ...(drumMap !== undefined ? { drumMap } : {}),
     ...(args.ghost_velocity !== undefined ? { ghostVelocity: args.ghost_velocity } : {}),
+    ...(args.straight_feel === true ? { straightFeel: true } : {}),
   };
   const flat = Object.keys(flattenOpts).length > 0 ? flattenSongsterrDrums(fetched.part, flattenOpts) : fetched.flat;
+
+  // Leading pickup (anacrusis) bar, detected ONCE off the measure walk and
+  // surfaced as DATA on every head-covering reply (never applied in place —
+  // the pad changes the Play-press feel, which is the user's decision). The
+  // measure walk is part-independent, so this serves the melodic path too.
+  const pickup = detectPickupBar(flat.measures, args.steps ?? 4);
+  const pickupWarning = (padded: boolean): string =>
+    `PICKUP BAR: m1 is ${pickup!.pickup_signature} (${pickup!.pickup_steps} steps) against the song's `
+    + `${pickup!.prevailing_signature} bar (${pickup!.prevailing_bar_steps}). From MIDI Start every barline of the whole `
+    + `song then sits ${pickup!.pad_steps} steps off the 4-beat grid a clock-slaved device counts, so a looper's `
+    + 'measure-quantized record-start can NEVER land on the song\'s one, and a chain whose cycle is a non-whole-bar '
+    + `total drifts further every wrap. `
+    + (padded
+      ? '`pickup.padded_voices` is this head with the pad already prepended. '
+      : `To align, author the HEAD with ${pickup!.pad_steps} leading rest steps so it fills a whole bar. `)
+    + 'ASK THE USER before authoring the padded head: it changes the Play press from "press = the pickup downbeat" '
+    + `to "press = a ${pickup!.pad_steps / 4}-beat count before the pickup".`;
 
   // Which reading does this part want? The part's own top-level `tuning` array,
   // not the instrument name: only a melodic staff carries open-string tunings,
@@ -516,6 +672,7 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
     ...(args.palm_mute_velocity_scale !== undefined ? { palmMuteVelocityScale: args.palm_mute_velocity_scale } : {}),
     ...(args.let_ring_max_beats !== undefined ? { letRingMaxBeats: args.let_ring_max_beats } : {}),
     ...(args.legato_overlap_sixths !== undefined ? { legatoOverlapSixths: args.legato_overlap_sixths } : {}),
+    ...(args.straight_feel === true ? { straightFeel: true } : {}),
   };
 
   /**
@@ -548,7 +705,17 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
       + 'PITCH ROW: pitch = tuning[string] + fret, returned as one mini-notation line in `voices` '
       + `(key "${args.voice_name ?? DEFAULT_MELODIC_VOICE}"). Each hit carries its NOTE LENGTH (":len" in steps), its `
       + 'VELOCITY ("@vel") and its TIE ("_"), so the row can be pasted into apply_pattern as-is; the un-split source '
-      + 'length and the per-cell articulations are in `melodic.cells`. drum_map / ghost_velocity do not apply here.',
+      + 'length and the per-cell articulations are in `melodic.cells`. drum_map does not apply here; ghost_velocity does '
+      + `(ghosted notes import at ${args.ghost_velocity ?? 40}).`,
+    );
+  }
+  // Swing is a measure-level marking, so the drum walk's count holds for a melodic part too.
+  if (flat.swung_measures > 0) {
+    trackWarnings.push(
+      `TRACK-WIDE: SWUNG. ${flat.swung_measures} measure(s) carry the tab's triplet feel `
+      + `(${[...new Set(flat.measures.flatMap((m) => (m.swing !== undefined ? [m.swing] : [])))].join(', ')}), so their written `
+      + 'straight pairs import as triplet long-short (the second note lands 2/3 of the way through the pair). '
+      + 'Use steps 6 (either feel) to land them on the grid; at steps 4 they are placed on micro-ticks (drums) or snapped (pitch rows).',
     );
   }
   if (!melodicPart && flat.unmapped > 0) {
@@ -564,7 +731,7 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
     trackWarnings.push(`TRACK-WIDE: ${flat.graces_folded} grace-ornament beat(s) folded onto the following onset (a grace note takes no time in the measure).`);
   }
   // Ghost policy, stated rather than left to inference: a ghosted hit is PLAYED
-  // quietly (40 by default, tunable), never dropped. Sugar's silent china turned
+  // quietly (40 by default, tunable), never dropped. One tab's silent china turned
   // out to be an unmapped effect NUMBER, not the ghost flag, and the same part
   // ghosts real snare/tom/pedal-hat hits that a blanket drop would delete.
   if (!melodicPart && flat.ghosts > 0) {
@@ -590,6 +757,13 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
     );
   }
 
+  // The song's tempo, as an actionable "set the clock master to N BPM" line. The
+  // target device is resolved by ROLE from the rig manifest (clock_master role),
+  // so it names whichever node holds tempo, not a hardcoded box; single-tempo
+  // scope, multi-tempo gets a per-section notice. Distinct tempos (not raw tempo
+  // marks) gate it: two marks at the same bpm are not a tempo change.
+  const tempoSetup = buildTempoSetup(distinctTempos(flat.tempos), resolveClockMaster());
+
   const base: ImportSongsterrResult = {
     song: { songId: fetched.songId, revisionId: fetched.revisionId, title: fetched.title, artist: fetched.artist },
     track: {
@@ -601,6 +775,7 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
     drum_tracks: fetched.drumTracks.map((t) => ({ partId: t.partId, name: t.name, views: t.views, popular: t.popular })),
     sections: flat.sections.map((s) => ({ name: s.name, measure: s.startMeasure + 1, beat: s.startBeat })),
     tempo_map: flat.tempos.map((t) => ({ measure: (flat.measures.find((m) => m.startBeat === t.beat)?.index ?? 0) + 1, bpm: t.bpm })),
+    ...(tempoSetup ? { tempo_setup: tempoSetup } : {}),
     next_step: '',
     ...(searchResults && searchResults.length > 1 ? { search_results: searchResults.slice(0, 5) } : {}),
   };
@@ -667,7 +842,7 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
       // and its identity (and the `fuzz` merge) covered the DRUM GRID ALONE. In
       // a multi-part build that key is a false certificate: two windows with
       // identical drums but different synth/pad content merged as "the same
-      // section" (the 2026-07-29 Amber-plan defect; Amber survived only because
+      // section" (the 2026-07-29 plan defect; that build survived only because
       // its pad alternated in lockstep with the drums). When the caller names
       // the parts, the SAME bank is built here with every selected part in the
       // window identity: the first drum part supplies the grids, every other
@@ -685,7 +860,7 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
           if (id === drumId) continue;
           const p = rawParts.get(id)!;
           if (isMelodicPart(p)) {
-            const m = flattenSongsterrMelodic(p);
+            const m = flattenSongsterrMelodic(p, artOpts);
             layers.push({
               label: label(id),
               onsets: m.notes.map((n) => ({
@@ -705,9 +880,19 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
           return lm === undefined ? 0 : lm.startBeat + (lm.signature[0] * 4) / lm.signature[1];
         };
         const totalBeats = Math.max(drumFlat.totalBeats, ...chopParts.map(walkEnd));
-        const bank = buildWholeSongBank(drumFlat, chopSteps, args.fuzz, layers, totalBeats);
+        const bank = buildWholeSongBank(
+          drumFlat, chopSteps, args.fuzz, layers, totalBeats,
+          pickup !== undefined ? pickup.pad_steps / chopSteps : 0,
+        );
         base.arrangement = bank.arrangement;
         bankWarnings = bank.warnings;
+        if (pickup !== undefined) {
+          bankWarnings = [
+            ...bankWarnings,
+            `\`arrangement\` windows are cut from a timeline padded by ${pickup.pad_steps} rest steps (the m1 pickup), `
+            + 'so every window boundary is a real barline; the head window therefore begins with those rests.',
+          ];
+        }
         if (layers.length > 0) {
           bankNote =
             `\`arrangement\` is keyed over ALL ${wanted.length} selected part(s): grids from ${label(drumId)}; `
@@ -726,6 +911,13 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
         ...(bankNote !== undefined ? [bankNote] : []),
         ...droppedFidelitySummary(base.dropped_fidelity),
       ];
+      if (pickup !== undefined) {
+        base.pickup = { ...pickup };
+        chopWarnings.push(
+          `${pickupWarning(false)} The plan's project-1 head window includes m1, so its authored head pattern should be `
+          + `its listed steps + ${pickup.pad_steps} (rests first) once the user confirms.`,
+        );
+      }
       if (flat.tempos.length > 1) {
         chopWarnings.push(
           `This song has ${flat.tempos.length} tempo marks (${flat.tempos.map((t) => t.bpm).join(' → ')} bpm); a stored project `
@@ -761,13 +953,24 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
           ? ' `arrangement` carries the groove bank for the same build, its section letters keyed over ALL selected '
             + 'parts (see warnings): use those letters, not drum-content eyeballing, to decide which windows are the '
             + 'same section.'
-          : '');
+          : '')
+        + tempoHint(tempoSetup);
       return base;
     }
     const stepsPerBeat = args.steps ?? 4;
-    const bank = buildWholeSongBank(flat, stepsPerBeat, args.fuzz);
+    const bank = buildWholeSongBank(
+      flat, stepsPerBeat, args.fuzz, undefined, undefined,
+      pickup !== undefined ? pickup.pad_steps / stepsPerBeat : 0,
+    );
     base.dropped_fidelity = trackFidelity();
     const warnings = [...trackWarnings, ...bank.warnings, ...droppedFidelitySummary(base.dropped_fidelity)];
+    if (pickup !== undefined) {
+      base.pickup = { ...pickup };
+      warnings.push(
+        `${pickupWarning(false)} The \`arrangement\` windows are already cut from a timeline padded by those `
+        + `${pickup.pad_steps} rest steps, so its head window begins with them and every window boundary is a real barline.`,
+      );
+    }
     if (flat.tempos.length > 1) {
       warnings.push(
         `This song has ${flat.tempos.length} tempo marks (${flat.tempos.map((t) => t.bpm).join(' → ')} bpm); the arrangement plays at ONE bpm ` +
@@ -788,7 +991,8 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
           'Only fall back to raising fuzz (lossy: flattens fills) or arranging a sub-span with from_measure/to_measure if you do NOT want the whole song.';
     base.next_step =
       `Pass \`arrangement: {sections, order}\` (with each section's voices/steps) to apply_pattern ` +
-      `(mode ncs_upload + ncs_slot/ncs_template${bpm !== undefined ? `, bpm:${bpm}` : ''}). ${fitNote}`;
+      `(mode ncs_upload + ncs_slot/ncs_template${bpm !== undefined ? `, bpm:${bpm}` : ''}). ${fitNote}` +
+      tempoHint(tempoSetup);
     return base;
   }
 
@@ -804,9 +1008,10 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
     base.dropped_fidelity = trackFidelity();
     const discoveryWarnings = [...trackWarnings, ...droppedFidelitySummary(base.dropped_fidelity)];
     base.warnings = discoveryWarnings.length ? discoveryWarnings : undefined;
-    base.next_step = base.ambiguous_track
+    base.next_step = (base.ambiguous_track
       ? `This song has ${fetched.drumTracks.length} drum tracks. Confirm with track_name, then call again with a section (e.g. section:"${egSection}") to get the grids.`
-      : `Call again with a window (e.g. section:"${egSection}" or from_measure:N) to get the voice grids, then pass them to apply_pattern. Or call with whole_song:true for the full-song arrangement. all_tracks lists every other part of this song; pass one of its partIds as track to fetch that part instead.`;
+      : `Call again with a window (e.g. section:"${egSection}" or from_measure:N) to get the voice grids, then pass them to apply_pattern. Or call with whole_song:true for the full-song arrangement. all_tracks lists every other part of this song; pass one of its partIds as track to fetch that part instead.`)
+      + tempoHint(tempoSetup);
     return base;
   }
 
@@ -825,6 +1030,14 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
       ...(args.section !== undefined ? { section: args.section } : {}),
       ...(args.transpose !== undefined ? { transpose: args.transpose } : {}),
       ...(args.note_lengths !== undefined ? { noteLengths: args.note_lengths } : {}),
+      // ghost_velocity reaches melodic parts too (2026-09-03, BK-SONGSTERR-GHOST-
+      // MELODIC): the flattener always honoured it, only this call dropped it, so a
+      // synth sub-bass line whose tab ghosts two thirds of its notes rode at 40
+      // against 100 with no knob to compress the spread.
+      ...(args.ghost_velocity !== undefined ? { ghostVelocity: args.ghost_velocity } : {}),
+      ...(args.pitch_gestures !== undefined ? { pitchGestures: args.pitch_gestures } : {}),
+      ...(args.mono_voice !== undefined ? { monoVoice: args.mono_voice } : {}),
+      ...(args.slide_semitones !== undefined ? { slideSemitones: args.slide_semitones } : {}),
       ...artOpts,
     });
     const msig = `${m.signature[0]}/${m.signature[1]}`;
@@ -845,6 +1058,19 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
     }
     base.window = { section: m.window.section, from_measure: m.window.fromMeasure, from_beat: m.window.fromBeat, beats: m.window.beats, bpm: m.bpm, steps: m.step_count, signature: msig };
     base.voices = { [voiceName]: m.notation };
+    if (pickup !== undefined && m.window.fromBeat === 0) {
+      // This window covers the song's head: surface the pad as data + a
+      // paste-ready padded row ('~' is the melodic rest token). Never applied
+      // in place — `cells` keeps describing the UNPADDED row.
+      base.pickup = {
+        ...pickup,
+        padded_voices: { [voiceName]: [...Array<string>(pickup.pad_steps).fill('~'), m.notation].join(' ') },
+      };
+      mwarnings.push(
+        `${pickupWarning(true)} The padded head is ${m.step_count + pickup.pad_steps} steps (use that as its section `
+        + 'steps); `melodic.cells` describes the UNPADDED row.',
+      );
+    }
     base.melodic = {
       voice: voiceName,
       tuning: [...(fetched.part.tuning ?? [])],
@@ -862,6 +1088,8 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
       note_lengths: args.note_lengths !== false,
       articulations: m.articulations,
       articulation_applied: m.articulation,
+      ...(m.mono_dropped > 0 ? { mono_dropped: m.mono_dropped } : {}),
+      ...(m.pitch_gestures !== undefined ? { pitch_gestures: m.pitch_gestures } : {}),
     };
     base.dropped_fidelity = m.dropped_fidelity;
     base.warnings = mwarnings.length ? mwarnings : undefined;
@@ -880,7 +1108,8 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
       `\`${voiceName}\` is a PITCH ROW${m.range ? ` spanning ${m.range.low_name}..${m.range.high_name}` : ''}, so route it to a melodic track ` +
       '(Circuit Tracks: synth1 / synth2 / midi1 / midi2) and rename the key with voice_name if the target calls it something else. ' +
       `${lengthNote} ` +
-      'Import the song\'s other parts the same way with track:<partId> and stack them into one apply_pattern call.';
+      'Import the song\'s other parts the same way with track:<partId> and stack them into one apply_pattern call.' +
+      tempoHint(tempoSetup);
     return base;
   }
 
@@ -896,6 +1125,7 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
     ...(drumMap !== undefined ? { drumMap } : {}),
     ...(args.ghost_velocity !== undefined ? { ghostVelocity: args.ghost_velocity } : {}),
     ...(args.articulations !== undefined ? { articulations: args.articulations } : {}),
+    ...(args.straight_feel === true ? { straightFeel: true } : {}),
   });
   const sig = `${q.signature[0]}/${q.signature[1]}`;
   const warnings = [...q.warnings];
@@ -917,8 +1147,21 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
 
   base.window = { section: q.window.section, from_measure: q.window.fromMeasure, from_beat: q.window.fromBeat, beats: q.window.beats, bpm: q.bpm, steps: q.steps, signature: sig };
   base.voices = quantizedToGrids(q);
+  if (pickup !== undefined && q.window.fromBeat === 0) {
+    // Head window: paste-ready padded grids ('.' is the drum rest char).
+    base.pickup = {
+      ...pickup,
+      padded_voices: Object.fromEntries(
+        Object.entries(base.voices).map(([k, row]) => [k, '.'.repeat(pickup.pad_steps) + row]),
+      ),
+    };
+    warnings.push(
+      `${pickupWarning(true)} The padded head is ${q.steps + pickup.pad_steps} steps (use that as its section steps).`,
+    );
+  }
   base.dropped_fidelity = q.dropped_fidelity;
   base.warnings = warnings.length ? warnings : undefined;
-  base.next_step = `Pass these voices to apply_pattern (port:<device>, voices:<above>, bpm:${q.bpm ?? '?'}). Choose mode by intent: live_stream to audition, ncs_upload (+ ncs_slot/ncs_template) to store on a Circuit Tracks slot. Drum voices map via the target voice_map.`;
+  base.next_step = `Pass these voices to apply_pattern (port:<device>, voices:<above>, bpm:${q.bpm ?? '?'}). Choose mode by intent: live_stream to audition, ncs_upload (+ ncs_slot/ncs_template) to store on a Circuit Tracks slot. Drum voices map via the target voice_map.`
+    + tempoHint(tempoSetup);
   return base;
 }

@@ -5,7 +5,8 @@
  *    on hardware (`fm9-receive-preset-from-device-harp-2026-06-04`):
  *      f0 00 01 74 12 01 2e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 38 f7
  * 2. parseGen3GridLayout round-trips a hand-packed synthetic grid (the
- *    MSB-first 7-bit packing must invert exactly).
+ *    MSB-first 7-bit packing must invert exactly). Cell = u16 id + u16 mask
+ *    from bit 45 (the preset-body cell word; corrected 2026-10-23).
  * 3. FM3 goldens: two real checksum-valid frames from
  *    `samples/captured/fm3-community-2026-06-12/fm3-probe-output.json`
  *    (job3; block-targeted sub=0x2E replies, 590 + 606 bytes) decode to the
@@ -36,7 +37,7 @@ function parseHex(s: string): number[] {
 
 const FM9 = 0x12;
 const GRID_REGION_OFFSET = 361;
-const GRID_BASE_BIT = 46;
+const GRID_CELL_BIT = 45;
 const GRID_COL_STRIDE = 192;
 const GRID_ROW_STRIDE = 32;
 
@@ -51,16 +52,15 @@ function writeBitsMsb(region: number[], bit: number, value: number, n: number): 
   }
 }
 
-/** Pack a list of {col,row,id,type,cable} cells into a full grid frame. */
-function buildSyntheticFrame(
-  cells: { col: number; row: number; id: number; type: number; cable: number }[],
-): number[] {
+/** Pack a list of {col,row,id,mask} cells (preset-body cell words) into a full grid frame. */
+function buildSyntheticFrame(cells: { col: number; row: number; id: number; mask: number }[]): number[] {
   const region = new Array(391).fill(0);
   for (const c of cells) {
-    const base = GRID_BASE_BIT + c.col * GRID_COL_STRIDE + c.row * GRID_ROW_STRIDE;
-    writeBitsMsb(region, base + 0, c.id << 1, 8); // bits 0-7: id<<1
-    writeBitsMsb(region, base + 8, c.type, 8); // bits 8-15: block type
-    writeBitsMsb(region, base + 16, c.cable, 8); // bits 16-23: cable mask
+    const base = GRID_CELL_BIT + c.col * GRID_COL_STRIDE + c.row * GRID_ROW_STRIDE;
+    writeBitsMsb(region, base + 0, c.id & 0xff, 8); // id low byte
+    writeBitsMsb(region, base + 8, c.id >> 8, 8); // id high byte
+    writeBitsMsb(region, base + 16, c.mask & 0xff, 8); // mask low byte
+    writeBitsMsb(region, base + 24, c.mask >> 8, 8); // mask high byte
   }
   const filler = new Array(GRID_REGION_OFFSET).fill(0);
   // Trailing 0x00 stands in for the checksum byte: the parser tail-anchors
@@ -93,9 +93,9 @@ cases.push(() => {
 // 3. Parse round-trips a hand-packed grid (real block, shunt, cable mask).
 cases.push(() => {
   const frame = buildSyntheticFrame([
-    { col: 0, row: 0, id: 58, type: 0x00, cable: 0 }, // Amp
-    { col: 1, row: 0, id: 3, type: 0x08, cable: 0b00000010 }, // shunt #3
-    { col: 2, row: 1, id: 46, type: 0x00, cable: 0b00000100 }, // Comp
+    { col: 0, row: 0, id: 58, mask: 0 }, // Amp
+    { col: 1, row: 0, id: 1024 + 3, mask: 0b00000001 }, // shunt #3, fed from row 0
+    { col: 2, row: 1, id: 186, mask: 0b00000001 }, // Return (id > 127), fed from row 0
   ]);
   const cells = parseGen3GridLayout(frame, FM9);
   assert(cells.length === 3, `expected 3 placed cells, got ${cells.length}`);
@@ -105,10 +105,10 @@ cases.push(() => {
 
   const shunt = cells.find((c) => c.col === 1 && c.row === 0)!;
   assert(shunt.isShunt && shunt.shuntIndex === 3 && shunt.effectId === undefined, 'col1row0 should be shunt #3');
-  assert(shunt.cableInputMask === 0b00000010, 'shunt cable mask round-trip');
+  assert(shunt.cableInputMask === 0b00000001 && shunt.fromRows.join() === '0', 'shunt cable mask round-trip');
 
-  const comp = cells.find((c) => c.col === 2 && c.row === 1)!;
-  assert(comp.effectId === 46 && comp.cableInputMask === 0b00000100, 'col2row1 should be Comp with cable mask 4');
+  const ret = cells.find((c) => c.col === 2 && c.row === 1)!;
+  assert(ret.effectId === 186 && ret.fromRows.join() === '0', 'col2row1 should be Return (186) fed from row 0');
 });
 
 // 4. Empty cells are omitted.
@@ -182,8 +182,8 @@ function assertFm3OracleGrid(cells: ReturnType<typeof parseGen3GridLayout>, labe
   const amp = at(1, 1)!;
   const output = at(1, 2)!;
   assert(input?.effectId === 37 && !input.isShunt && input.cableInputMask === 0, `${label}: r1c0 must be Input1 (37)`);
-  assert(amp?.effectId === 58 && amp.cableInputMask === 0x04, `${label}: r1c1 must be Amp1 (58) cable 0x04`);
-  assert(output?.effectId === 42 && output.cableInputMask === 0x04, `${label}: r1c2 must be Output1 (42) cable 0x04`);
+  assert(amp?.effectId === 58 && amp.cableInputMask === 0x02 && amp.fromRows.join() === '1', `${label}: r1c1 must be Amp1 (58) fed from row 1`);
+  assert(output?.effectId === 42 && output.cableInputMask === 0x02 && output.fromRows.join() === '1', `${label}: r1c2 must be Output1 (42) fed from row 1`);
 }
 
 cases.push(() => {
@@ -194,6 +194,71 @@ cases.push(() => {
   // The 16-byte-longer variant tail-anchors to region offset 377 (not 361)
   // and MUST decode identically — this is the length-variant rule golden.
   assertFm3OracleGrid(parseGen3GridLayout(parseHex(FM3_FRAME_AMP_606), FM3), 'FM3 606B');
+});
+
+// 7. FM3 hardware goldens (2026-10-23, mcp-midi-control grid check): replies to
+//    the empty-target request after loading generated presets G04/G05 into the
+//    edit buffer. Every cell must equal the cell words the generator wrote,
+//    including ids > 127 (Multiplexer 191, Send 182, Return 186, Synth 130),
+//    shunts 1024+n, and multi-row inputs (masks 6 and 10).
+const FM3_G04_MULTIPLEXER =
+  'F0 00 01 74 11 01 2E 00 00 00 00 00 00 00 00 00 00 00 00 70 03 59 40 20 00 00 04 00 00 00 ' +
+  '00 00 00 00 01 15 28 38 10 48 75 12 25 08 20 23 4C 06 42 02 35 2A 4C 2A 12 2A 04 62 15 30 ' +
+  '45 29 00 00 00 00 00 00 00 00 00 00 00 00 00 00 43 36 19 2C 16 71 00 40 20 10 08 04 02 01 ' +
+  '00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 00 05 13 21 72 74 34 1B 24 ' +
+  '04 33 05 68 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 00 26 ' +
+  '19 2C 16 21 01 04 72 34 59 6D 07 21 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 ' +
+  '20 10 08 04 00 02 35 52 64 10 11 6C 16 4B 38 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 ' +
+  '00 40 20 10 08 04 02 01 00 40 20 00 10 6D 46 2B 05 5C 20 21 5B 6D 57 01 01 06 68 37 5C 4E ' +
+  '57 19 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 00 01 14 42 10 14 69 74 62 3C 40 20 10 ' +
+  '08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 00 08 47 13 25 6C ' +
+  '65 10 13 0C 56 0B 10 40 42 39 1D 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 ' +
+  '00 00 4C 32 58 2C 42 02 35 52 64 10 11 4B 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 ' +
+  '02 01 00 40 20 10 08 00 00 00 00 00 00 12 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 05 60 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 08 02 00 00 60 40 10 00 00 ' +
+  '00 00 00 00 00 00 00 00 76 00 00 40 07 38 00 08 00 00 00 00 00 00 00 00 00 00 00 20 40 10 ' +
+  '00 08 04 02 00 00 00 00 00 00 00 00 00 00 0B 78 00 0C 00 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 74 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 1F 00 00 20 00 00 00 00 00 ' +
+  '00 00 00 00 00 00 00 00 00 08 60 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 08 00 ' +
+  '02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 02 00 40 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 00 00 00 0A 40 00 10 00 00 00 00 00 00 00 00 00 00 40 F7';
+const FM3_G05_SYNTH_SOURCE =
+  'F0 00 01 74 11 01 2E 00 00 00 00 00 46 00 00 00 00 00 00 70 03 59 40 20 00 00 04 00 00 00 ' +
+  '00 00 00 00 02 70 3B 3C 10 48 75 12 25 08 20 23 4C 06 52 02 4D 32 4E 2A 12 04 05 1A 3D 2A ' +
+  '52 21 51 20 00 00 00 00 00 00 00 00 00 00 00 00 43 36 19 2C 16 71 00 40 20 10 08 04 02 01 ' +
+  '00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 00 05 13 21 72 74 34 1B 24 ' +
+  '04 33 05 68 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 00 26 ' +
+  '19 2C 16 21 01 04 72 34 59 6D 07 21 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 ' +
+  '20 10 08 04 00 02 35 52 64 10 11 6C 16 4B 38 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 ' +
+  '00 40 20 10 08 04 02 01 00 40 20 00 10 6D 46 2B 05 5C 20 21 5B 6D 57 01 01 06 68 37 5C 4E ' +
+  '57 19 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 00 01 14 42 10 14 69 74 62 3C 40 20 10 ' +
+  '08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 00 08 47 13 25 6C ' +
+  '65 10 13 0C 56 0B 10 40 42 39 1D 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 ' +
+  '00 00 4C 32 58 2C 42 02 35 52 64 10 11 4B 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 ' +
+  '02 01 00 40 20 10 08 00 00 00 00 00 00 12 40 00 00 05 68 00 00 00 00 00 00 00 00 00 00 00 ' +
+  '00 05 60 00 08 00 05 02 01 00 00 00 00 00 00 00 00 00 00 03 58 00 02 00 01 40 40 20 00 00 ' +
+  '00 00 00 00 00 00 00 00 3A 00 00 40 00 38 10 08 00 00 00 00 00 00 00 00 00 00 0F 40 00 10 ' +
+  '00 10 04 02 00 00 00 00 00 00 00 00 00 00 00 00 10 04 00 04 41 00 40 04 08 00 00 00 00 00 ' +
+  '00 00 00 02 04 01 00 01 20 20 10 00 0D 02 02 00 00 00 00 00 00 3F 00 01 20 00 2C 08 04 00 ' +
+  '00 00 00 00 00 00 00 00 00 00 20 20 08 00 46 00 01 00 00 00 00 00 00 00 00 00 00 00 0C 08 ' +
+  '02 00 10 40 00 20 00 00 00 00 00 00 00 00 00 00 04 02 00 40 00 60 10 08 00 00 00 00 00 00 ' +
+  '00 00 00 00 2D 40 00 10 00 54 00 02 00 00 00 00 00 00 18 F7';
+const FM3_G04_EXPECTED: number[][] = [[1, 0, 37, 0], [1, 1, 46, 2], [1, 2, 1024, 2], [1, 3, 118, 2], [1, 4, 1025, 2], [1, 5, 191, 6], [1, 6, 58, 2], [1, 7, 62, 2], [1, 8, 70, 2], [1, 9, 66, 2], [1, 10, 1026, 2], [1, 11, 42, 2], [2, 2, 1027, 2], [2, 3, 119, 4], [2, 4, 1028, 4]];
+const FM3_G05_EXPECTED: number[][] = [[1, 0, 37, 0], [1, 1, 46, 2], [1, 2, 118, 2], [1, 3, 58, 2], [1, 4, 62, 2], [1, 5, 1024, 2], [1, 6, 1025, 2], [1, 7, 126, 10], [1, 8, 1026, 2], [1, 9, 1027, 2], [1, 10, 1028, 2], [1, 11, 182, 2], [2, 0, 186, 0], [2, 1, 1029, 4], [2, 2, 1030, 4], [2, 3, 1031, 4], [2, 4, 1032, 4], [2, 5, 1033, 4], [2, 6, 1034, 4], [2, 7, 1035, 4], [2, 8, 70, 4], [2, 9, 66, 4], [2, 10, 1036, 4], [2, 11, 42, 4], [3, 5, 130, 0], [3, 6, 1037, 8]];
+
+function assertGrid(frameHex: string, expected: number[][], label: string): void {
+  const got = parseGen3GridLayout(parseHex(frameHex), FM3).map((c) => [c.row, c.col, c.isShunt ? 1024 + (c.shuntIndex ?? 0) : (c.effectId ?? 0), c.cableInputMask]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  assert(JSON.stringify(got) === JSON.stringify(expected), `${label}: grid mismatch\n  exp ${JSON.stringify(expected)}\n  got ${JSON.stringify(got)}`);
+}
+
+cases.push(() => assertGrid(FM3_G04_MULTIPLEXER, FM3_G04_EXPECTED, 'FM3 G04'));
+cases.push(() => {
+  assertGrid(FM3_G05_SYNTH_SOURCE, FM3_G05_EXPECTED, 'FM3 G05');
+  const cells = parseGen3GridLayout(parseHex(FM3_G05_SYNTH_SOURCE), FM3);
+  const mixer = cells.find((c) => c.row === 1 && c.col === 7)!;
+  assert(mixer.effectId === 126 && mixer.fromRows.join() === '1,3', 'G05 Mixer merges rows 1 and 3');
+  const synth = cells.find((c) => c.row === 3 && c.col === 5)!;
+  assert(synth.effectId === 130 && synth.fromRows.length === 0, 'G05 Synth (130) has no input');
 });
 
 export function runGen3GridLayoutTests(): void {

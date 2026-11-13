@@ -2,17 +2,19 @@
  * Stored-content tools: putting content INTO a device's stored slots, and (for
  * the one device that can) taking it back out. Dispatch by `port`.
  *
- *   - upload_sample , write one WAV to a drum-sample slot (1..64).
- *   - upload_kit    , write a folder of WAVs to consecutive slots in one batch.
+ *   - upload_sample , write one WAV to a drum-sample slot (1..64), or a
+ *     folder of WAVs to consecutive slots in one batch.
  *   - author_kit    , build a sampler kit and write it to a kit location.
- *   - upload_project, send a whole prepared project to a project slot.
- *   - delete_project, ERASE stored projects. The inverse verb, and the only
- *     tool here that leaves a slot with nothing in it.
+ *   - delete_project, ERASE stored projects. The only tool here that leaves a
+ *     slot with nothing in it.
  *
- * `delete_project` lives beside `upload_project` on purpose: they are inverse
- * verbs on the same unit, and an agent reading one should see the other. Its
- * gates are stricter than every upload's, because an upload replaces content
- * while a delete removes it, on hardware with no undo. See
+ * A prepared whole-project file goes back through `import_preset`
+ * (tools/preset.ts), the same verb as every other byte-exact backup; until the
+ * transfer-verb consolidation it was `upload_project`, and a folder of samples
+ * was `upload_kit`.
+ *
+ * `delete_project`'s gates are stricter than every upload's, because an upload
+ * replaces content while a delete removes it, on hardware with no undo. See
  * `dispatcher/deleteProject.ts` and `docs/SAFE-EDIT-WORKFLOW.md`.
  *
  * The 64 sample slots are the shared DRUM pool the 4 drum tracks pick from
@@ -22,10 +24,10 @@
  * web-app workflow.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
-import { executeAuthorKit, executeUploadSample, executeUploadKit, executeUploadProject } from '../dispatcher/uploads.js';
+import { executeAuthorKit, executeUploadSample } from '../dispatcher/uploads.js';
 import { executeDeleteProject, MAX_DELETES_PER_CALL } from '../dispatcher/deleteProject.js';
 import { PACK_DESC, PORT_DESC, asError, asText } from './shared.js';
 
@@ -51,7 +53,7 @@ const deleteProjectResultShape = z.looseObject({
   slot: z.number(),
   ok: z.boolean(),
   name: z.string().optional().describe('What was in the slot, read before it was erased.'),
-  backup_path: z.string().optional().describe('The pre-delete backup. Feed this to upload_project to put it back.'),
+  backup_path: z.string().optional().describe('The pre-delete backup. Feed this to import_preset to put it back.'),
   gone_by_query: z.boolean().optional().describe('The device\'s own per-file query says the file is gone.'),
   gone_by_directory: z.boolean().optional().describe('A fresh read of the pack directory no longer lists the slot.'),
   matches_free_control: z.boolean().optional().describe('The slot now answers byte-for-byte like a slot the device reports as empty. Absent when the pack had no empty slot to compare against.'),
@@ -81,23 +83,24 @@ export function registerUploadTools(server: McpServer): void {
     title: 'Upload Sample',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     description: [
-      'Add a WAV to a device sample pool. Two pool styles, by device.',
-      'CIRCUIT TRACKS (slot-addressed): `slot` is REQUIRED (1..64, the shared drum pool the 4 drum tracks pick from); this OVERWRITES that slot. The WAV is normalized to 48 kHz mono 16-bit on upload.',
-      'SPD-SX (append-only, WAVE MGR storage mode): OMIT `slot`; the wave is appended at the next free index (reported in the result), referenced later from author_kit by that index or name. Any uncompressed PCM/float WAV is accepted and normalized to 44.1 kHz / 16-bit on import (resampled + requantized, mono/stereo preserved); pre-convert tonal material with `bouncer spdsx` for higher quality.',
-      'OVERWRITE GATE (slot-addressed pools): the slot cannot be read to check occupancy, so the tool REFUSES by default. Pass `confirm_overwrite: true` ONLY on user save/overwrite/replace language. Append-only pools never overwrite, so the gate does not apply.',
-      'Takes several seconds. No readback: confirm by ear; power-cycle SPD-SX to pick up new files.',
+      'Add a WAV (`file`) or a folder of WAVs (`folder`) to a device sample pool. Two pool styles, by device.',
+      'CIRCUIT TRACKS, slot-addressed: `slot` 1..64 is the shared drum pool the 4 drum tracks pick from, and the write OVERWRITES it. A slot cannot be read for occupancy, so the tool REFUSES until `confirm_overwrite: true`; pass it ONLY on user save/overwrite/replace language.',
+      'SPD-SX, append-only (WAVE MGR storage mode): OMIT `slot`; the wave lands at the next free index, reported in the result and used by author_kit by index or name. Nothing is overwritten, so no gate applies.',
+      'WAVs are normalized to the device format. Several seconds per sample, no readback: confirm by ear; power-cycle the SPD-SX to load new files.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
-      file: z.string().describe('Path to a .wav file on the machine running this server (a local disk path, not a chat-sandbox file). Any rate/channels; normalized on upload (Circuit -> 48k mono 16-bit; SPD-SX -> 44.1k 16-bit, channels preserved).'),
-      slot: z.number().int().min(1).max(64).optional().describe('Destination sample slot, 1..64 (Circuit Tracks: REQUIRED, overwrites that slot). OMIT on SPD-SX (append-only: lands at the next free index).'),
+      file: z.string().optional().describe('Path to a .wav file on the machine running this server (a local disk path, not a chat-sandbox file). Any rate/channels; normalized on upload (Circuit -> 48k mono 16-bit; SPD-SX -> 44.1k 16-bit, channels preserved).'),
+      folder: z.string().optional().describe('Instead of `file`: a folder of .wav files, natural-sorted (2_x before 10_x) onto consecutive slots from `slot`; files past slot 64 are SKIPPED and reported. Circuit Tracks sends it as ONE session, all-or-nothing, about 1 s per sample: tell the user the cost first.'),
+      kit: z.string().optional().describe('With `folder`: keep only files carrying this token as a delimited segment ("k1" matches 03_k1_snr.wav, not k10).'),
+      slot: z.number().int().min(1).max(64).optional().describe('Destination sample slot, 1..64 (Circuit Tracks: REQUIRED for one file, overwrites that slot; with `folder` it is the FIRST slot, default 1). OMIT on SPD-SX (append-only: lands at the next free index).'),
       name: z.string().optional().describe('Name shown on the device. Default: the file\'s basename. (SPD-SX names are <=12 chars; longer ones truncate with a warning.)'),
       pack: z.number().int().min(1).max(32).optional().describe(`Which pack to write to. Write the SAME pack the project that binds this slot targets, or the project resolves its drum bindings against a different pool. ${PACK_DESC}`),
       confirm_overwrite: z.boolean().optional().describe('Overwrite gate (slot-addressed pools only). Pass true ONLY when the user authorized overwriting the slot. Ignored on append-only pools.'),
     },
-  }, async ({ port, file, slot, name, pack, confirm_overwrite }) => {
+  }, async ({ port, file, folder, kit, slot, name, pack, confirm_overwrite }) => {
     try {
-      return asText(await executeUploadSample({ port, file, slot, name, pack, confirm_overwrite }));
+      return asText(await executeUploadSample({ port, file, folder, kit, slot, name, pack, confirm_overwrite }));
     } catch (err) {
       return asError(err);
     }
@@ -145,59 +148,6 @@ export function registerUploadTools(server: McpServer): void {
     }
   });
 
-  server.registerTool('upload_kit', {
-    title: 'Upload Kit',
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-    description: [
-      'Upload a folder of WAVs to consecutive Circuit Tracks drum-sample slots in one batch.',
-      'Pass `folder`; optionally `kit` to filter to files named like NN_k1_role.wav (the kit token matches as a delimited segment, so "k1" does not catch "k10"), and `start_slot` (1..64, default 1).',
-      'Files are natural-sorted (so 2_x precedes 10_x) and mapped to slots from start_slot upward. Only 64 slots exist, so files past the ceiling are SKIPPED and reported (never silently dropped).',
-      'Each WAV is normalized to 48 kHz mono 16-bit; each OVERWRITES its target slot. Stops on the first failure (earlier samples persist).',
-      'OVERWRITE GATE, DESTRUCTIVE: a kit fills a RANGE of slots that cannot be read to check occupancy, so the tool REFUSES by default. Pass `confirm_overwrite: true` ONLY when the user authorized replacing those slots (loading a kit is usually overwrite-intent; confirm the range first).',
-      'About 1 s per sample, so a 16-sample kit is about 15 s: tell the user the cost before a big batch. Confirm by ear.',
-    ].join(' '),
-    inputSchema: {
-      port: z.string().describe(PORT_DESC),
-      folder: z.string().describe('Path to a folder containing .wav files.'),
-      kit: z.string().optional().describe('Optional kit token to filter on (e.g. "k1" → files like 03_k1_snr.wav). Omit to take every WAV in the folder.'),
-      start_slot: z.number().int().min(1).max(64).optional().describe('First device slot to fill, 1..64. Default 1.'),
-      pack: z.number().int().min(1).max(32).optional().describe('Circuit Tracks: which microSD PACK to write to, numbered as the device shows it (pack:5 = "Pack 5"). Default 1. Write the SAME pack the project that binds these slots targets, or the project resolves its drum bindings against a different pool. The device does not report the selected pack, so choose it. Writing to a nonzero pack is hardware-confirmed. Verifying with list_samples IMMEDIATELY afterwards is not: the device flushes the pack manifest ~6-8 s after the session closes, so re-read after ~10 s before concluding a slot is empty.'),
-      confirm_overwrite: z.boolean().optional().describe('Overwrite gate. Pass true ONLY when the user authorized overwriting the slot range (the sample slots can\'t be read to check occupancy). Omitted/false refuses.'),
-    },
-  }, async ({ port, folder, kit, start_slot, pack, confirm_overwrite }) => {
-    try {
-      return asText(await executeUploadKit({ port, folder, kit, start_slot, pack, confirm_overwrite }));
-    } catch (err) {
-      return asError(err);
-    }
-  });
-
-  server.registerTool('upload_project', {
-    title: 'Upload Project',
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-    description: [
-      'Upload a prepared whole-project Circuit Tracks .ncs to a project slot, sent VERBATIM over the file-transfer transport.',
-      'Use this for a ready-made project (e.g. a swappable groove set) that already contains its patterns. To AUTHOR a pattern into a template instead, use apply_pattern mode:ncs_upload.',
-      '`slot` is the project number 1..64, exactly as the device shows it. DESTRUCTIVE: this OVERWRITES that project.',
-      'OVERWRITE GATE: without `confirm_overwrite` the tool reads the slot first, writes through if EMPTY, else REFUSES and names the project it would replace (re-call to confirm). Pass `confirm_overwrite: true` ONLY on user save/replace language. Backup-before-overwrite is on by default (the clobbered project is first saved to ~/mcp-midi-backups, reversible via another upload_project; `backup_first: false` skips it).',
-      'Drum tracks play whatever samples are assigned on the device, so load the matching kit first (upload_sample / upload_kit). ACK-gated, no readback, so confirm by ear.',
-    ].join(' '),
-    inputSchema: {
-      port: z.string().describe(PORT_DESC),
-      file: z.string().describe('Path to a prepared .ncs project file (160,780 bytes).'),
-      slot: z.number().int().min(1).max(64).describe('Destination PROJECT, 1..64, numbered exactly as the device shows it (Project 35 = 35). OVERWRITES that project.'),
-      pack: z.number().int().min(1).max(32).optional().describe('Circuit Tracks: which microSD PACK to write to, numbered as the device shows it, so pack:5 is the front panel\'s "Pack 5". Both `pack` and `slot` are 1-based, exactly as the device shows them (Pack 5, Project 35). Default pack 1. A card holds up to 32 packs, each a COMPLETE separate world of 64 projects, so the same slot number exists in every pack and the pack decides which project gets overwritten. Call list_packs first to see the card\'s packs by name. The overwrite gate, the pre-write backup, and the write all target this pack together. IMPORTANT: the server CANNOT detect which pack the device currently has selected (no wire command reports it), so if the user is working in a specific pack, pass it explicitly; otherwise this writes to Pack 1 no matter what the front panel shows.'),
-      confirm_overwrite: z.boolean().optional().describe('Overwrite gate. Omitted/false reads the slot first and refuses only if it is occupied. Pass true to overwrite an occupied slot (skips the read), only when the user authorized it.'),
-      backup_first: z.boolean().optional().describe('Backup-before-overwrite. Default true: when confirm_overwrite overwrites an occupied slot, save its current project to a .ncs backup (~/mcp-midi-backups, findable later via list_backups) first so the change is reversible. Pass false to skip the pre-write backup read. It applies to the OVERWRITE path only, because that is the only path that can destroy anything: without confirm_overwrite this tool refuses rather than overwrites. To take a backup on its own, use backup_device.'),
-    },
-  }, async ({ port, file, slot, pack, confirm_overwrite, backup_first }) => {
-    try {
-      return asText(await executeUploadProject({ port, file, slot, pack, confirm_overwrite, backup_first }));
-    } catch (err) {
-      return asError(err);
-    }
-  });
-
   server.registerTool('delete_project', {
     title: 'Delete Project',
     annotations: {
@@ -218,7 +168,7 @@ export function registerUploadTools(server: McpServer): void {
       `Max ${MAX_DELETES_PER_CALL} per call, refused above that, never trimmed.`,
       'REFUSES BY DEFAULT and returns what would be lost, naming every project. Relay that list, get an explicit yes for those specific projects, then re-call with confirm_delete: true. "Tidy up the pack" is not a yes.',
       'Also refuses if any named slot reads empty or unreadable, rather than erasing its neighbours on a wrong picture of the card.',
-      'Every project is backed up CRC-verified to disk first, always, with no flag to skip it: that backup is the only undo (restore with upload_project). Each erase is then confirmed gone by the device\'s own file query AND a fresh directory read.',
+      'Every project is backed up CRC-verified to disk first, always, with no flag to skip it: that backup is the only undo (restore with import_preset). Each erase is then confirmed gone by the device\'s own file query AND a fresh directory read.',
       'About 8 s per project; tell the user the wait first.',
     ].join(' '),
     inputSchema: {

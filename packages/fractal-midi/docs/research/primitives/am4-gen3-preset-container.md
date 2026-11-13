@@ -13,7 +13,7 @@ consumed_in:
   - fractal-midi/src/shared/presetContainer.ts
   - fractal-midi/src/am4/presetContainer.ts
   - fractal-midi/src/am4/bodyChain.ts (body block-record chain walker + amp param-value decode)
-  - mcp-midi-control/packages/am4/src/descriptor/reader.ts (stored get_preset surfaces whole_preset.amp)
+  - mcp-midi-control/packages/am4/src/descriptor/reader.ts (stored get_preset: name, scene names, and the body decode in slots[])
   - mcp-midi-control/packages/fractal-gen3/src/presetHuffman.ts (re-export shim; gen-3 byte-identity preserved)
 ---
 
@@ -120,12 +120,12 @@ variable-length block-record chain**. The AMP block is byte-exactly decoded:
   additionally needs all four channel TYPE ordinals in `[0, 247]`
   (a valid `AMP_TYPES` index). This is why only the amp block is decoded:
   it is the one block with an ordinal-bounded type enum to gate on.
-- **stride / pidHigh+7 verified on AMP only.** Cab (`0x003E`) and FX blocks
-  share the chain structure but their per-block stride + param formula are
-  UNVERIFIED (no isolated one-variable capture yet). Don't extrapolate the
-  amp formula to them; that's the pending capture (see captured-artifacts
-  UNMINED `2026-07-02`), and shipping a guessed non-amp value would be a
-  WEAK-evidence leak under the same "untested" banner as the amp anchors.
+- **Superseded 2026-11-12: the two bullets above describe the marker scan,
+  which the whole-chain walk replaces.** Every record states its own effect id
+  and table size, so walking from body `0x0144` needs no scan and no shape
+  heuristics, and the amp formula is the general one. See
+  [[am4-body-block-record-chain]]. The volatile word is PATCH-record word
+  `0x0E`, at body `0x140E` only in presets whose chain happens to put it there.
 
 ## Consumers / goldens
 
@@ -154,3 +154,7 @@ is absent).
   now surfaces `whole_preset.amp` (community-beta; four fields
   hardware-anchored, the rest formula-extrapolated on the same geometry).
   Non-amp blocks remain an honest omission pending per-block captures.
+- 2026-11-12: the rest of the body decoded, no new captures needed: the chain
+  is self-describing. Filed as its own primitive,
+  [[am4-body-block-record-chain]]; the stored `get_preset` now fills `slots[]`
+  for every placed block and no longer emits `whole_preset.amp`.

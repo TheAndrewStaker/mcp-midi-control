@@ -31,8 +31,8 @@
  * but doesn't act on them.
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
 import { registerHydrasynthDiscoveryTools } from './tools/discovery.js';
 import { registerHydrasynthNavigationTools } from './tools/navigation.js';
@@ -64,17 +64,22 @@ const isDirectInvocation =
   fileURLToPath(import.meta.url) === process.argv[1];
 
 if (isDirectInvocation) {
-  const standaloneServer = new McpServer({
-    name: 'hydrasynth-standalone',
-    version: '0.1.0',
+  // v2 lifecycle: serveStdio owns the transport and pins one instance from
+  // the factory per connection. The factory MUST mint a fresh McpServer per
+  // call (v2 clients spawn a short-lived probe process, and a shared
+  // instance leaks across successive connections).
+  serveStdio(() => {
+    const standaloneServer = new McpServer({
+      name: 'hydrasynth-standalone',
+      version: '0.1.0',
+    });
+    registerHydrasynthTools(standaloneServer);
+    return standaloneServer;
+  }, {
+    onerror: (err) => {
+      console.error('Hydrasynth server error:', err);
+    },
   });
-  registerHydrasynthTools(standaloneServer);
-  const transport = new StdioServerTransport();
-  standaloneServer.connect(transport).then(() => {
-    console.error('Hydrasynth Explorer MCP server (standalone) running on stdio.');
-    console.error(`Startup port scan: ${describeHydrasynthPortStatus()}.`);
-  }).catch((err) => {
-    console.error('Fatal Hydrasynth server error:', err);
-    process.exit(1);
-  });
+  console.error('Hydrasynth Explorer MCP server (standalone) running on stdio.');
+  console.error(`Startup port scan: ${describeHydrasynthPortStatus()}.`);
 }

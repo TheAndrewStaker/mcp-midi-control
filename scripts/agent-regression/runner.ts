@@ -20,8 +20,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 import { buildKit } from '@mcp-midi-control/spd-sx/codec/kitXml.js';
 import { encodeWavePrm, nameToNm } from '@mcp-midi-control/spd-sx/codec/wavePrm.js';
@@ -209,7 +209,7 @@ async function applyCaseSetup(testCase: AgentRegressionCase, childEnv: NodeJS.Pr
     stderr: 'pipe',
     env: childEnv as Record<string, string>,
   });
-  const client = new Client({ name: 'agent-regression-setup', version: '0.1.0' });
+  const client = new Client({ name: 'agent-regression-setup', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   try {
     await client.connect(transport);
     const args = {
@@ -338,6 +338,21 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
   };
   if (testCase.mockFixture !== undefined) {
     childEnv.MOCK_FIXTURE = testCase.mockFixture;
+  }
+  // Declared rig + song book: pinned per case, and cleared when the case has
+  // none, so a personal manifest in the shell never changes a sweep's answers.
+  delete childEnv.MCP_RIG_MANIFEST;
+  delete childEnv.MCP_RIG_REPERTOIRE;
+  if (testCase.rigFixture !== undefined) {
+    const dir = path.resolve('scripts', 'agent-regression', 'fixtures', testCase.rigFixture);
+    childEnv.MCP_RIG_MANIFEST = path.join(dir, 'rig.json');
+    childEnv.MCP_RIG_REPERTOIRE = path.join(dir, 'repertoire.json');
+  }
+  // MPC card: the server finds a card in any reader by scanning drives, so a
+  // card that happens to be mounted on this machine would change what the MPC
+  // reports. Name a root that is not a card, which resolves to "not mounted".
+  if (process.env.AGENT_REGRESSION_REAL_HARDWARE !== '1') {
+    childEnv.MCP_MPC_CARD_ROOT = path.resolve('scripts', 'agent-regression', 'fixtures');
   }
   // Sampler archetype (SPD-SX, storage transport): point the server at a
   // deterministic on-disk fixture instead of a real mounted drive.

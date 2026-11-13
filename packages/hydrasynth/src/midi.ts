@@ -23,7 +23,12 @@
 import type { Input, Output } from '@julusian/midi';
 import { createRequire } from 'node:module';
 
-import { createSysExAssembler } from '@mcp-midi-control/core/midi/transport.js';
+import {
+  createSysExAssembler,
+  makeSysExReceiver,
+  type MidiConnection,
+} from '@mcp-midi-control/core/midi/transport.js';
+import { registerConnector } from '@mcp-midi-control/core/server-shared/connections.js';
 
 /**
  * node-midi is loaded LAZILY (and synchronously via createRequire — the
@@ -55,33 +60,21 @@ function loadMidi(): typeof import('@julusian/midi') {
 
 const HYDRA_PORT_NEEDLES = ['hydrasynth', 'asm hydra'];
 
-export interface HydrasynthConnection {
-  send: (bytes: number[]) => void;
-  /**
-   * Last error thrown by the underlying `out.sendMessage` call, or
-   * `undefined` if the most recent send succeeded. node-midi's WinMM
-   * backend prints `MidiOutWinMM::sendMessage: error sending sysex
-   * message` to stderr and previously silently failed on a stale
-   * handle. Multi-chunk dumps (apply_patch's 22-chunk SysEx
-   * sequence) read this after each send so they bail loudly on the
-   * first failed write instead of looping through 22 broken writes
-   * and reporting "success" (yungatita test, 2026-05-12).
-   */
-  lastSendError?: Error;
-  /**
-   * Subscribe to inbound MIDI from the Hydrasynth. Returns an
-   * unsubscribe function. When `hasInput` is false (no input port
-   * found), the handler is registered but will never fire.
-   *
-   * Active-sensing (0xFE) and MIDI timing clock (0xF8) are filtered
-   * by `ignoreTypes(false, true, true)` so the handler only sees
-   * meaningful messages (SysEx, CC, PC, notes).
-   */
-  onMessage: (handler: (bytes: number[]) => void) => () => void;
-  /** True when an input port was successfully opened. */
-  hasInput: boolean;
-  close: () => void;
-}
+/**
+ * The Hydrasynth connection IS the core `MidiConnection` since BK-110
+ * (stored-content reads). Historically this was a narrower device-local
+ * interface with its own handle, while the unified dispatcher held a
+ * SECOND handle to the same exclusive Windows port via
+ * `ensureConnection('hydrasynth')` — two handles to one port is the
+ * port-contention bug class this project keeps re-hitting, and it also
+ * meant `reconnect_midi` reset only the dispatcher's handle, never the
+ * one apply_patch actually used. Now `connectHydrasynth` is registered
+ * as the connector FACTORY for the 'hydrasynth' label (see the
+ * `registerConnector` call at the bottom), so the registry owns the one
+ * true handle and both the legacy patch tools (`ensureMidi`) and the
+ * dispatcher (`withEndpoint` → `ctx.conn`) share it.
+ */
+export type HydrasynthConnection = MidiConnection;
 
 export interface HydrasynthPortInfo {
   index: number;
@@ -228,6 +221,7 @@ export function connectHydrasynth(): HydrasynthConnection {
   // expose live state via a getter without TS forward-reference
   // issues. See AM4 midi.ts for the same pattern.
   const sendErrCell: { value?: Error } = {};
+  let closed = false;
   return {
     send: (bytes) => {
       try {
@@ -239,12 +233,27 @@ export function connectHydrasynth(): HydrasynthConnection {
       }
     },
     get lastSendError(): Error | undefined { return sendErrCell.value; },
+    receiveSysEx: (timeoutMs = 1000) =>
+      makeSysExReceiver(handlers, () => true, timeoutMs, 'Timeout waiting for SysEx response'),
+    receiveSysExMatching: (predicate, timeoutMs = 1000) =>
+      makeSysExReceiver(handlers, predicate, timeoutMs, 'Timeout waiting for matching SysEx'),
     onMessage: (handler) => {
       handlers.add(handler);
       return () => { handlers.delete(handler); };
     },
     hasInput: inputOpen,
+    isPortOpen: () => {
+      try {
+        return out.isPortOpen() && (!inputOpen || input.isPortOpen());
+      } catch {
+        return false;
+      }
+    },
     close: () => {
+      // Idempotent: the registry's stale-handle path and the process-exit
+      // hook can both close; a second native close is a double-free.
+      if (closed) return;
+      closed = true;
       handlers.clear();
       try { out.closePort(); } catch { /* already closed */ }
       if (inputOpen) {
@@ -274,8 +283,35 @@ function mockHydrasynthConnection(): HydrasynthConnection {
   return {
     send: (_bytes) => { /* no-op — writes accepted, no wire traffic */ },
     lastSendError: undefined,
+    // No responder: receivers time out, mirroring hasInput:false hardware.
+    receiveSysEx: (timeoutMs = 1000) =>
+      new Promise((_, reject) => setTimeout(
+        () => reject(new Error(`Timeout waiting for SysEx response after ${timeoutMs}ms (mock transport has no input)`)),
+        timeoutMs,
+      )),
+    receiveSysExMatching: (_predicate, timeoutMs = 1000) =>
+      new Promise((_, reject) => setTimeout(
+        () => reject(new Error(`Timeout waiting for matching SysEx after ${timeoutMs}ms (mock transport has no input)`)),
+        timeoutMs,
+      )),
     onMessage: (_handler) => () => { /* no-op unsubscribe */ },
     hasInput: false,
+    isPortOpen: () => true,
     close: () => { /* no-op */ },
   };
 }
+
+/**
+ * Register this module's factory as the ONE connection source for the
+ * 'hydrasynth' label (= the descriptor's `connection_label`). Both the
+ * dispatcher's `withEndpoint` ctx build and the legacy patch tools'
+ * `ensureMidi()` resolve through `ensureConnection('hydrasynth')`, so
+ * they share a single handle to the exclusive Windows port, and
+ * `reconnect_midi` (which force-reopens under this label) actually
+ * resets the handle every Hydrasynth code path uses.
+ *
+ * Module-load side effect by design (see connections.ts): any code
+ * importing this module — the descriptor, the tools, or a script —
+ * gets the factory registered before the first `ensureConnection`.
+ */
+registerConnector('hydrasynth', connectHydrasynth);

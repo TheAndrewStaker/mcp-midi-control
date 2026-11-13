@@ -58,6 +58,9 @@ export function decode3to16(payload: Uint8Array): Uint8Array {
   return out;
 }
 
+/** 256 leaf symbols give a tree at most 255 levels deep. */
+const MAX_TREE_DEPTH = 256;
+
 interface HuffNode {
   value: number; // >= 0 for a leaf symbol; -1 for an internal node
   left?: HuffNode;
@@ -85,10 +88,16 @@ class BitReader {
 
 /** Tree serialization: bit 1 = leaf followed by an 8-bit symbol; bit 0 = an
  *  internal node followed by its left subtree then its right subtree. */
-function buildTree(r: BitReader): HuffNode {
+function buildTree(r: BitReader, depth = 0): HuffNode {
+  // The reader returns 0 past the end of its data, and 0 means "internal
+  // node", so a body with no tree in it (an empty preset location: all zeros,
+  // comp size 0) used to recurse until the stack overflowed. A tree over byte
+  // symbols is at most 255 levels deep; anything deeper is not a tree.
+  if (r.exhausted) throw new Error('the Huffman tree runs past the end of the compressed data');
+  if (depth > MAX_TREE_DEPTH) throw new Error('the compressed data does not start with a Huffman tree');
   if (r.readBit() === 1) return { value: r.readByteValue() };
-  const left = buildTree(r);
-  const right = buildTree(r);
+  const left = buildTree(r, depth + 1);
+  const right = buildTree(r, depth + 1);
   return { value: -1, left, right };
 }
 
@@ -161,6 +170,12 @@ export interface DecodedRawPatch {
   compSize: number;
   /** The decompressed patch body (decompSize bytes). */
   body: Uint8Array;
+  /**
+   * True when the container holds no compressed body at all (comp size 0):
+   * what an empty or never-written preset location dumps as. `body` is then
+   * zero-length. A caller should report the location as empty, not decode it.
+   */
+  empty: boolean;
 }
 
 /** Concatenate a parsed dump's chunk payloads, unpack to the raw_patch, verify
@@ -180,9 +195,10 @@ export function decodeRawPatch(chunkPayloads: readonly Uint8Array[]): DecodedRaw
   const decompSize = u16le(rawPatch, RAW_PATCH_DECOMP_SIZE_OFFSET);
   const compSize = u16le(rawPatch, RAW_PATCH_COMP_SIZE_OFFSET);
   const compData = rawPatch.subarray(RAW_PATCH_BODY_OFFSET, RAW_PATCH_BODY_OFFSET + compSize);
-  const body = huffmanUncompress(compData, decompSize);
+  const empty = compSize === 0;
+  const body = empty ? new Uint8Array(0) : huffmanUncompress(compData, decompSize);
 
-  return { rawPatch, storedCrc, computedCrc, crcValid: storedCrc === computedCrc, decompSize, compSize, body };
+  return { rawPatch, storedCrc, computedCrc, crcValid: storedCrc === computedCrc, decompSize, compSize, body, empty };
 }
 
 // ── Encode side (authoring / write-back) ───────────────────────────

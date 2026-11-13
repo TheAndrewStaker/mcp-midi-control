@@ -39,6 +39,9 @@ const FALLBACK_CDN = 'https://d3d3l6a6rcgkaf.cloudfront.net';
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
   Accept: 'application/json',
+  // Node's fetch defaults to `Accept-Language: *`, which songsterr.com's nginx answers with a 403
+  // (2026-11-08: curl with the same UA got 200; the 403 appeared only once `Accept-Language: *` was added).
+  'Accept-Language': 'en-US,en;q=0.9',
 };
 
 export interface MetaTrack { instrumentId: number; instrument: string; name?: string; hash: string; isEmpty?: boolean; views?: number }
@@ -121,8 +124,8 @@ export interface SongsterrFetched {
 // ── Pure helpers (unit-testable, no network) ─────────────────────────
 
 /**
- * Parse a Songsterr URL (…-s1467797t11) or bare id (1467797 / 1467797t11 /
- * s1467797 / s1467797t11). The s-prefixed bare form is accepted because it is
+ * Parse a Songsterr URL (…-s1234567t11) or bare id (1234567 / 1234567t11 /
+ * s1234567 / s1234567t11). The s-prefixed bare form is accepted because it is
  * how Songsterr's own URLs spell the id and therefore how every doc in this
  * repo records one ("source: s6700"); rejecting it made the docs' canonical
  * spelling fail at the CLI (2026-07-29).
@@ -130,7 +133,7 @@ export interface SongsterrFetched {
 export function parseSongRef(input: string): { songId: number; trackId?: number } {
   const m = input.match(/-s(\d+)(?:t(\d+))?\b/)
     ?? input.match(/^s?(\d+)(?:t(\d+))?$/i);
-  if (!m) throw new Error(`Could not extract a song id from "${input}" (expected a …-s12345 URL or a bare id like 1467797 / s1467797 / 1467797t11).`);
+  if (!m) throw new Error(`Could not extract a song id from "${input}" (expected a …-s12345 URL or a bare id like 1234567 / s1234567 / 1234567t11).`);
   return { songId: Number(m[1]), trackId: m[2] !== undefined ? Number(m[2]) : undefined };
 }
 
@@ -222,18 +225,29 @@ async function fetchMeta(songId: number): Promise<SongMeta> {
  *  magic-byte check is a fallback for non-fetch callers / future runtimes.) */
 async function fetchPart(songId: number, revisionId: number, image: string, partId: number): Promise<SongsterrPart> {
   const path = `/${songId}/${revisionId}/${image}/${partId}.json`;
-  let lastErr: unknown;
-  for (const cdn of [PRIMARY_CDN, FALLBACK_CDN]) {
+  const errors: string[] = [];
+  // The primary CDN is sometimes slow rather than down (2026-10-29: curl got a 200 while
+  // fetch failed), so it gets a second try after the fallback.
+  for (const cdn of [PRIMARY_CDN, FALLBACK_CDN, PRIMARY_CDN]) {
     try {
       const res = await fetch(cdn + path, { headers: BROWSER_HEADERS });
-      if (!res.ok) { lastErr = new Error(`${res.status} from ${cdn}`); continue; }
+      if (!res.ok) { errors.push(`${cdn}: HTTP ${res.status}`); continue; }
       const buf = new Uint8Array(await res.arrayBuffer());
       const isGzip = buf[0] === 0x1f && buf[1] === 0x8b;
       const text = isGzip ? gunzipSync(buf).toString('utf8') : Buffer.from(buf).toString('utf8');
       return JSON.parse(text) as SongsterrPart;
-    } catch (e) { lastErr = e; }
+    } catch (e) { errors.push(`${cdn}: ${describeFetchError(e)}`); }
   }
-  throw new Error(`part ${partId} fetch failed on both CDNs: ${String(lastErr)}`);
+  throw new Error(`part ${partId} fetch failed on every CDN attempt: ${errors.join('; ')}`);
+}
+
+/** Node's fetch reports every network fault as a bare "fetch failed" and keeps the real
+ *  reason (connect timeout, DNS, reset) on `cause`; surface it so a failure names a cause. */
+function describeFetchError(e: unknown): string {
+  if (!(e instanceof Error)) return String(e);
+  const cause = (e as Error & { cause?: { code?: string; message?: string } }).cause;
+  if (!cause) return e.message;
+  return `${e.message} (${[cause.code, cause.message].filter(Boolean).join(': ')})`;
 }
 
 /**

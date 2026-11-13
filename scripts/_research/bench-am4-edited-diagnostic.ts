@@ -12,8 +12,8 @@
  *   6. final: switch_preset A01 'discard' to leave a clean buffer either way
  */
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER = path.resolve('C:/dev/mcp-midi-tools', 'packages', 'server-all', 'dist', 'server', 'index.js');
 
@@ -31,7 +31,7 @@ function verdict(step: string, text: string): boolean {
 
 async function main(): Promise<void> {
   const t = new StdioClientTransport({ command: process.execPath, args: [SERVER], stderr: 'pipe' });
-  const c = new Client({ name: 'bench-am4-edited-diag', version: '1' }, { capabilities: {} });
+  const c = new Client({ name: 'bench-am4-edited-diag', version: '1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await c.connect(t);
   const call = async (name: string, args: Record<string, unknown>) =>
     ext(await c.callTool({ name, arguments: args }));

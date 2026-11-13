@@ -54,7 +54,7 @@ downloading (`scripts/circuit-download-slot.ts`), and diffing vs a baseline.
 - `scripts/circuit-bake-scenes.ts` (2026-06-23) replicates the 4-scene block from a
   scene-baked REFERENCE project into every `full4bar` project, so each song ships
   with Scene 1–4 = its four grooves (tap-to-switch, each a looping 2-pattern chain).
-  It diffs the reference (slot 42 / Project 43, the_summoning full + scenes) against
+  It diffs the reference (slot 42 / Project 43, one full4bar groove set + scenes) against
   the song's own length+chain-processed baseline → the **scene delta**, and transplants
   that delta into each song. Because the scene block references chains by PATTERN
   INDEX (1-2/3-4/5-6/7-8, identical across every full4bar) and the header + state
@@ -70,8 +70,43 @@ downloading (`scripts/circuit-download-slot.ts`), and diffing vs a baseline.
   `@0x26fbc`=08, `@0x26fd2`=05 (transplanted verbatim, they set the initial
   selected scene/pattern and are song-independent).
 
+## REVERB (engine + per-lane sends)
+
+Decoded 2026-09-12. Accessors: `ncs/format.ts` (`getReverbEngine` / `setReverbPreset` /
+`getReverbSends` / `setReverbSend`).
+
+| Offset | Field | Notes |
+|---|---|---|
+| `0x26d0f` | active FX-View pad, 0-based | Row 3 pad 1..8 → 0..7. Drives the pad LED only |
+| `0x26ff0` | reverb type | 0..5, same enum as NRPN 1:18. Default 2 (Large Room) |
+| `0x26ff1` | reverb decay | 0..127 |
+| `0x26ff2` | reverb damping | 0..127 |
+| `0x26ff8`..`0x26fff` | **reverb sends**, one byte per lane | `synth1, synth2, drum1..4, audio1, audio2` |
+| `0x26fe8`..`0x26fef` | the same eight sends, **write-only mirror** | device writes it, never reads it |
+
+A send stored here both applies and repaints its Macro LED **on project load**, hardware-confirmed.
+This is the opposite of a MIDI-received send, which is documented not to repaint the FX-View LEDs.
+
+The front panel offers **eight** reverb presets (Row 3) over only **six** engine types, so two presets
+are a repeat type with the decay pushed up ("long reflection"). Pad and type must both be stored or
+the lit pad disagrees with the sound. Only pad 6 (Large Hall → type 4, decay 105, damping 105) is
+byte-confirmed; `setReverbPreset` refuses the rest rather than guessing a decay.
+
+### The decoy, and the lesson
+
+`0x26fe8` was decoded FIRST and wrongly. A controlled differential with eight distinct live CC values
+landed there and looked airtight, but a project written with `0x26fee=127` played completely dry: a
+device save merely mirrors the live CCs there and never reads them back. The real block surfaced only
+when the owner dialled a send in on the front panel and saved.
+
+**A differential driven by values we sent proves only that the device stored a copy of our input. To
+prove a field is read back, the value must ORIGINATE on the device.**
+
 ## Open
 
+- **Reverb presets 1-5, 7, 8**: decay/damping unconfirmed. Each needs one front-panel select + save,
+  then a diff. Pad 6 is the worked example.
+- **Delay**: send block and engine undecoded; likely the same shape one block earlier.
 - **Scene-CHAIN** region (song-arrangement auto-progression): next decode.
 - **Drum-track → sample-slot pointer**: a Drum-3 sample reassign did NOT appear in
   the project diff, so the drum→sample binding likely lives outside the `.ncs`

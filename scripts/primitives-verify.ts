@@ -1606,38 +1606,28 @@ function caseGen3Fn01GridRouting(): string | null {
   // Gen-3 routing write (fn=0x01 sub=0x35): connects two adjacent-column cells.
   // 26-byte frame; only bytes 12/21/22/23 vary.
   //
-  // Two formula variants (see primitives gen3-fn01-grid-routing):
-  //   6-row (III/FM9): b22 uses scaled colTerm + destSign; b23 uses |destRow-3| mod-4 wrap.
-  //   4-row (FM3):     b22 uses colTerm=srcCol, no destSign; b23=(destRow-1)*32 linear.
+  // One law for every grid (see primitives gen3-fn01-grid-routing), from the
+  // source and destination gridPos:
+  //   from = (srcCol-1)*rows + (srcRow-1); to = srcCol*rows + (destRow-1)
+  //   b21 = from>>1; b22 = ((from&1)<<6) | (to>>2); b23 = (to&3)<<5
   const xor7 = (b: number[]): number => b.reduce((a, x) => a ^ x, 0) & 0x7f;
 
-  const build6row = (model: number, srcRow: number, srcCol: number, destRow: number): number[] => {
-    const srcGp = (srcCol - 1) * 6 + (srcRow - 1);
-    const b21 = Math.floor(srcGp / 2);
-    const colTerm = Math.floor((3 * (srcCol - 1)) / 2) + 1;
-    const destSign = destRow >= 3 ? 1 : 0;
-    const b22 = ((srcGp & 1) << 6) | (colTerm + destSign);
-    const b23 = ((Math.abs(destRow - 3) + (srcCol % 2 === 0 ? 2 : 0)) % 4) << 5;
+  const build = (model: number, rows: number, srcRow: number, srcCol: number, destRow: number): number[] => {
+    const from = (srcCol - 1) * rows + (srcRow - 1);
+    const to = srcCol * rows + (destRow - 1);
     const body = [0xf0, 0x00, 0x01, 0x74, model, 0x01, 0x35, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00,
-      b21, b22, b23];
+      from >> 1, ((from & 1) << 6) | (to >> 2), (to & 3) << 5];
     return [...body, xor7(body), 0xf7];
   };
-
-  const build4row = (srcRow: number, srcCol: number, destRow: number): number[] => {
-    const srcGp = (srcCol - 1) * 4 + (srcRow - 1);
-    const b21 = Math.floor(srcGp / 2);
-    const b22 = ((srcGp & 1) << 6) | srcCol;
-    const b23 = (destRow - 1) << 5;
-    const body = [0xf0, 0x00, 0x01, 0x74, 0x11, 0x01, 0x35, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00,
-      b21, b22, b23];
-    return [...body, xor7(body), 0xf7];
-  };
+  const build6row = (model: number, srcRow: number, srcCol: number, destRow: number): number[] =>
+    build(model, 6, srcRow, srcCol, destRow);
+  const build4row = (srcRow: number, srcCol: number, destRow: number): number[] =>
+    build(0x11, 4, srcRow, srcCol, destRow);
 
   const h2 = (b: number): string => b.toString(16).padStart(2, '0');
 
-  // 6-row fixtures: FM9-Edit loopMIDI, 2026-06-05 (10 of 26 corpus cables)
+  // 6-row fixtures: FM9-Edit loopMIDI captures (14 of the 42 distinct frames)
   const fixtures6: [string, number, number, number, string][] = [
     ['A r2c3->r3c4', 2,3,3, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 06 45 00 63 f7'],
     ['C r3c3->r3c4', 3,3,3, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 07 05 00 22 f7'],
@@ -1649,6 +1639,11 @@ function caseGen3Fn01GridRouting(): string | null {
     ['r1c3->r1c4',  1,3,1, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 06 04 40 62 f7'],
     ['r4c3->r1c4',  4,3,1, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 07 44 40 23 f7'],
     ['r6c3->r6c4',  6,3,6, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 08 45 60 0d f7'],
+    // Discriminators: the earlier colTerm/destSign law could not produce these.
+    ['r1c2->r1c3 (row-1 even col)', 1,2,1, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 03 03 00 20 f7'],
+    ['r1c4->r5c5 (row-1 even col)', 1,4,5, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 09 07 00 2e f7'],
+    ['r2c4->r2c5', 2,4,2, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 09 46 20 4f f7'],
+    ['r2c2->r2c3', 2,2,2, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 03 43 20 40 f7'],
   ];
 
   // 4-row fixtures: FM3-Edit loopMIDI, 2026-06-05 (7 of 10 corpus cables)

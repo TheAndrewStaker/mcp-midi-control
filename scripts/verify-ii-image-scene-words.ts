@@ -130,11 +130,26 @@ if (corpus.length > 0) {
 }
 
 // ── 2b: paired-capture replay ──
+// Gate on the SPECIFIC bk070-*-baseline.syx fixtures this golden needs,
+// not on samples/captured/ merely existing. That directory is a shared
+// gitignored scratch space every probe script writes its own
+// subdirectories into (e.g. bk084-hw-mech-*, bk084-dispatcher-stress-*),
+// so its presence says nothing about whether THESE historical bk070
+// pairs are on this machine. Pre-2026-07-17 this golden reported a false
+// FAIL ("0 scene pairs replayed ... expected >= 25") on any checkout
+// where samples/captured/ existed but held zero bk070 files (e.g. a
+// fresh worktree after other probes had already created the directory)
+// instead of a clean skip, matching the exact pattern the bank-corpus
+// check just above already uses (`corpus.length > 0` before asserting).
 const CAPTURE_DIR = 'samples/captured';
 if (existsSync(CAPTURE_DIR)) {
   const baselines = readdirSync(CAPTURE_DIR)
     .filter((f) => f.startsWith('bk070-') && f.endsWith('-baseline.syx'))
     .sort();
+  if (baselines.length === 0) {
+    console.log(`  skip  no bk070-*-baseline.syx captures present under ${CAPTURE_DIR}`);
+    skipped++;
+  } else {
   let replayed = 0;
   let noops = 0;
   let nonScene = 0;
@@ -206,6 +221,7 @@ if (existsSync(CAPTURE_DIR)) {
     failures.length === 0 && replayed >= 25,
     failures.join('; '),
   );
+  }
 } else {
   console.log(`  skip  ${CAPTURE_DIR} (not present)`);
   skipped++;

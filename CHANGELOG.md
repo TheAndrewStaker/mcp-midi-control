@@ -8,7 +8,68 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
-## [0.8.0]
+## [0.9.0] - 2026-11-13
+
+**One new device, and much deeper reads on the rest of a live rig.** Each
+item below is described by what was read off or confirmed on real hardware.
+
+- **Akai MPC One G2 (new).** `switch_preset` selects a sequence of the loaded
+  project over USB with the unit running standalone, confirmed on MPC OS 3.9.1.
+  The MPC is a two-mode device and the server tells the mode from the port
+  list: standalone answers Program Change, Controller Mode mounts the SD card
+  and the internal storage and ignores it. In Controller Mode `scan_locations`
+  lists the projects on both volumes and `get_preset` reads a project's
+  sequences. Nothing is written to the card.
+- **Boss RC-505mk2.** With the unit in storage mode, `scan_locations` says
+  which memories actually hold loops, and `get_preset` returns the tempo, each
+  track's loop length and settings, the ASSIGN table, and the unit's MIDI
+  menu, including the channel it listens on for a memory recall.
+- **Boss VE-500.** Reads user memories, and a recall is confirmed by reading
+  the unit back.
+- **Arturia MicroFreak.** A byte-exact stored-preset write (`import_preset`),
+  confirmed across a 512-slot send, with the preset name and category carried
+  as explicit arguments. MIDI Control Center project archives are a preset
+  source.
+
+**A rig's songs are data the agent can read.** `describe_rig` now returns the
+setlist with a plan per song beside the devices and their cabling,
+`edit_rig` takes more operations, and a read-only Rig Console renders the
+same data as a page. Song import fetches any part of a tab, not only drums.
+
+**The Fractal AM4 reads a stored preset in full without loading it:** every
+placed block's values on all four channels, the slot order, and each scene's
+channel and bypass. The live read now returns the preset name, keeps a second
+instance of a block (two drives) instead of dropping it, no longer reports a
+bypass state for the amp, which has none, and reads a named channel without
+switching to it. `switch_preset` reads the loaded location back, so a switch
+the unit echoed but did not perform is reported as not changed.
+
+**Gen-3 Fractal fixes from community reports (Axe-Fx III, FM3, FM9).**
+`set_block` sends the cell-select before every grid insert, not only on the
+FM3, so a block lands where it was asked for instead of on the cursor cell.
+`set_param` honours `channel`; `apply_preset` applies `scenes[]` and scene
+names. Type selectors are read through the bulk read. The tempo-division
+table is complete and in the right order, delay model names and cab IR names
+are device-true, and grid cables follow one position law on every grid. A
+stored read no longer overflows the stack, stored blocks are named from the
+grid, the dirty gate no longer fires on every read, and short block names
+("vol_pan", "ring_mod") resolve. `switch_preset` no longer drops the bank
+above 127, and the Axe-Fx II detector no longer claims an Axe-Fx III. The
+FM3's Windows serial path and `save_preset` across a power cycle are now
+confirmed by an owner on firmware 12.
+
+**Hydrasynth** gains stored-patch reads, saves whose receipt is read back from
+the unit, and a byte-exact preset import. **Axe-Fx II** `apply_preset` places
+only what differs and can retune an existing preset atomically.
+**Circuit Tracks** reads its per-project reverb and fixes the pattern pool
+read.
+
+**Connections.** A device whose port could not be opened no longer holds its
+lock, which had blocked a second MCP host for hours. The generic send tools
+accept an exact output port name, including a port with no matching input.
+The server runs on version 2 of the MCP SDK.
+
+## [0.8.0] - 2026-08-03
 
 **A tool result over 50,000 characters is not delivered to the model at all.**
 The host substitutes a stub pointing at a sidecar file an MCP-only client has

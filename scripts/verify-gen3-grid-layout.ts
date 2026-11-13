@@ -59,8 +59,8 @@ function writeBitsMsb(region: number[], bit: number, value: number, n: number): 
 }
 {
   const region = new Array(391).fill(0);
-  const base = 46 + 0 * 192 + 0 * 32;
-  writeBitsMsb(region, base, 58 << 1, 8);
+  const base = 45 + 0 * 192 + 0 * 32; // cell = u16 id + u16 mask from bit 45
+  writeBitsMsb(region, base, 58, 8);
   writeBitsMsb(region, base + 8, 0x00, 8);
   // trailing 0x00 = checksum placeholder (the parser tail-anchors on [cksum, F7])
   const frame = [0xf0, ...new Array(361).fill(0), ...region, 0x00, 0xf7];
@@ -71,11 +71,10 @@ function writeBitsMsb(region: number[], bit: number, value: number, n: number): 
 // ── liveGridView converter (reader glue → Gen3GridCellView) ────────
 {
   const region = new Array(391).fill(0);
-  const cell = (col: number, row: number) => 46 + col * 192 + row * 32;
-  writeBitsMsb(region, cell(0, 0), 58 << 1, 8); // Amp 1 (real block)
-  writeBitsMsb(region, cell(0, 0) + 8, 0x00, 8);
-  writeBitsMsb(region, cell(1, 0), 3 << 1, 8); // shunt #3
-  writeBitsMsb(region, cell(1, 0) + 8, 0x08, 8);
+  const cell = (col: number, row: number) => 45 + col * 192 + row * 32;
+  writeBitsMsb(region, cell(0, 0), 58, 8); // Amp 1 (real block), id low byte
+  writeBitsMsb(region, cell(1, 0), 3, 8); // shunt #3 = id 1024 + 3
+  writeBitsMsb(region, cell(1, 0) + 8, 0x04, 8); // id high byte (1024 >> 8)
   writeBitsMsb(region, cell(1, 0) + 16, 0b10, 8); // cable mask
   const frame = [0xf0, ...new Array(361).fill(0), ...region, 0x00, 0xf7];
   const view = liveGridView(frame, FM9);
@@ -83,7 +82,17 @@ function writeBitsMsb(region: number[], bit: number, value: number, n: number): 
   const shunt = view.find((c) => c.col === 1 && c.row === 0);
   check('liveGridView: real block → effect_id + display name', amp?.effect_id === 58 && amp?.name === 'Amp 1' && !amp?.is_shunt);
   check('liveGridView: shunt → is_shunt + "Shunt N" name + raw route_flag', shunt?.is_shunt === true && shunt?.name === 'Shunt 3' && shunt?.route_flag === 0b10);
-  check('liveGridView: from_rows omitted (cable direction not asserted)', amp !== undefined && !('from_rows' in amp));
+  check('liveGridView: FM9 from_rows decodes the mask (bit 1 = row 1)', JSON.stringify(shunt?.from_rows) === '[1]' && JSON.stringify(amp?.from_rows) === '[]');
+  // FM3 (4 x 12, 226-byte region): same edge decode on the 4-row geometry.
+  const r3 = new Array(226).fill(0);
+  const c3 = (col: number, row: number) => 45 + col * 128 + row * 32;
+  writeBitsMsb(r3, c3(0, 1), 37, 8); // In 1 @ r1c0
+  writeBitsMsb(r3, c3(1, 1), 58, 8); // Amp @ r1c1 ...
+  writeBitsMsb(r3, c3(1, 1) + 16, 0b10, 8); // ... fed from row 1
+  const f3 = [0xf0, ...new Array(361).fill(0), ...r3, 0x00, 0xf7];
+  const v3 = liveGridView(f3, 0x11);
+  const amp3 = v3.find((c) => c.col === 1 && c.row === 1);
+  check('liveGridView: FM3 cells carry from_rows', amp3?.effect_id === 58 && JSON.stringify(amp3?.from_rows) === '[1]');
 }
 
 // ── Real-capture cross-validation (when present) ───────────────────
@@ -198,8 +207,8 @@ if (existsSync(FM3_CAP)) {
   check('fm3 capture: 3-cell fn=0x13 oracle grid', grid.length === 3, `got ${grid.length}`);
   const byPos = (row: number, col: number) => grid.find((c) => c.row === row && c.col === col);
   check('fm3 capture: Input1 (37) @ r1c0', byPos(1, 0)?.effectId === 37);
-  check('fm3 capture: Amp1 (58) @ r1c1 cable 0x04', byPos(1, 1)?.effectId === 58 && byPos(1, 1)?.cableInputMask === 0x04);
-  check('fm3 capture: Output1 (42) @ r1c2 cable 0x04', byPos(1, 2)?.effectId === 42 && byPos(1, 2)?.cableInputMask === 0x04);
+  check('fm3 capture: Amp1 (58) @ r1c1 fed from row 1 (mask 0x02)', byPos(1, 1)?.effectId === 58 && byPos(1, 1)?.cableInputMask === 0x02);
+  check('fm3 capture: Output1 (42) @ r1c2 fed from row 1 (mask 0x02)', byPos(1, 2)?.effectId === 42 && byPos(1, 2)?.cableInputMask === 0x02);
 } else {
   console.log(`  (capture ${FM3_CAP} absent — skipped FM3 cross-validation)`);
 }

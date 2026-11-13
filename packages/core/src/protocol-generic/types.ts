@@ -141,7 +141,7 @@ export interface DeviceCapabilities {
   /**
    * Whether the device's storage is divided into independent PACKS, each a
    * complete world of stored content addressable by the `pack` arg on
-   * apply_pattern / upload_project / get_preset / export_preset. Novation
+   * apply_pattern / import_preset / get_preset / export_preset. Novation
    * Circuit Tracks (microSD, up to 32 packs) sets this true; every other
    * device omits it.
    *
@@ -351,7 +351,7 @@ export interface BackupPolicy {
   seconds_per_unit?: number;
   /**
    * The tool that puts one of these files BACK on the device, by name
-   * (`'import_preset'`, `'upload_project'`). Absent ⇒ this device has no
+   * (`'import_preset'`, `'import_preset'`). Absent ⇒ this device has no
    * restore path through this server and the receipt says so plainly rather
    * than implying one exists.
    */
@@ -531,6 +531,37 @@ export interface RealizePlan {
     drum_levels?: number[];
     drum_binding?: number[];
     /**
+     * Role → pool-slot map read off the DESTINATION pack's own sample pool, so
+     * a per-step flip to a role that is not one of the four bound track roles
+     * ("tom", "open hat") resolves to the slot that actually holds it instead
+     * of being dropped. Filled by {@link DeviceWriter.prepareRealize}; never
+     * set by the caller.
+     */
+    drum_role_slots?: Record<string, number>;
+    /**
+     * Receipt sentence for a binding resolved by {@link
+     * DeviceWriter.prepareRealize} (it names each Drum N = Sample M "name"
+     * resolution). Carried on the plan so the realizer can report the
+     * resolution it did not perform itself. Presence is also how the realizer
+     * tells a PRE-RESOLVED `drum_binding` from a CALLER-DECLARED one, which
+     * read differently in the receipt. Never set by the caller.
+     */
+    drum_binding_note?: string;
+    /**
+     * SOUNDING-PITCH compensation for melodic note tracks (Circuit Tracks).
+     * The device transmits a stored note-track note 12 semitones BELOW its
+     * stored value, on both synth and MIDI tracks (measured on hardware,
+     * HW-SPDSX-008 closed 2026-07-28), so a pattern authored at face value
+     * lands an octave below where it was written. `true` stores every melodic
+     * note +12 at authoring time so the AUTHORED pitch is the SOUNDING pitch.
+     * Default absent/false: notes are stored at face value (the historical
+     * behavior; every existing project was authored that way). A note that
+     * would exceed the MIDI range after the shift REFUSES rather than clamps.
+     * Do not combine with an external_targets `note_offset` that carries the
+     * same +12 (the shift would apply twice).
+     */
+    sounding_pitch?: boolean;
+    /**
      * The project's STORED tempo in BPM (40..240, whole numbers only), the value
      * the device adopts when the project is loaded.
      *
@@ -586,7 +617,7 @@ export interface RealizePlan {
     /**
      * Safe-edit overwrite gate (cf. `docs/SAFE-EDIT-WORKFLOW.md`): authored
      * `ncs_upload` writes a stored project slot, so it honors the same gate as
-     * `upload_project` — it refuses to clobber an occupied slot unless the user
+     * `import_preset` — it refuses to clobber an occupied slot unless the user
      * authorized the overwrite. An empty target slot is written without it.
      */
     confirm_overwrite?: boolean;
@@ -983,6 +1014,19 @@ export interface WriteResult {
    *  callers (and agents) can tell a successful navigation's normal
    *  footnote apart from a genuine "something is off" warning. */
   info?: string;
+  /**
+   * What stands behind `acked` for this write, so a caller reports it the same
+   * way every time: 'device_ack' = the device echoed the write; 'device_ack+
+   * read_back' = it also read back holding the new value; 'read_back' = the
+   * device does not echo this write, but read back in the new state. Absent on ops that
+   * do not state it.
+   */
+  confirmed_by?: 'device_ack' | 'device_ack+read_back' | 'read_back';
+  /**
+   * switch_scene only: each placed block's channel + bypass on the scene just
+   * selected, read back from the device after the switch.
+   */
+  scene_state?: ReadonlyArray<{ slot: number; block: string; channel: string; bypassed?: boolean }>;
   // ── Param-write specific (only populated by set_param / set_params) ──
   block?: string;
   name?: string;
@@ -1021,6 +1065,36 @@ export interface BatchWriteResult {
    * write). Absent on the happy path.
    */
   validation_info?: readonly ValidationInfo[];
+  /**
+   * BK-084 mode-collapse (II-only): which write path served this batch.
+   * 'preset-image' = the internal atomic dump/patch/push/verify path (one
+   * coherent image load, chosen automatically once the batch of eligible
+   * continuous knobs is large enough); 'per-param-stream' = individual
+   * per-param writes (small batches, or a batch the image path can't
+   * serve). Absent on devices without the internal atomic path (every
+   * device but the Axe-Fx II XL+ today) and when the batch was too small
+   * to consider it. Formerly `ApplyResult.apply_path` (mode:'retune');
+   * moved here because the atomic-vs-individual choice is now `set_params`'
+   * internal heuristic, not a caller-visible apply_preset mode.
+   */
+  apply_path?: 'preset-image' | 'per-param-stream';
+  /** Why the image path was not used, when apply_path==='per-param-stream'. Formerly `ApplyResult.image_apply_fallback_reason`. */
+  image_apply_fallback_reason?: string;
+  /**
+   * Verification receipt for the atomic image path. 'word-exact' = the
+   * post-push full-image read-back verify matched every one of the 4096
+   * words; 'none' = no image verify ran (individual per-param writes;
+   * fire-and-forget SET semantics, same as set_param). Absent outside
+   * the image path. Formerly `ApplyResult.receipt`.
+   */
+  receipt?: 'word-exact' | 'none';
+  /**
+   * Image pushes attempted on the atomic path. 1 = clean single push;
+   * 2 = a push-NACK / verify-mismatch recovery push of the pristine
+   * pre-patch dump fired. Absent outside the image path. Formerly
+   * `ApplyResult.push_attempts`.
+   */
+  push_attempts?: number;
 }
 
 export interface BlockChange {
@@ -1436,7 +1510,37 @@ export interface ApplyPresetOptions {
  */
 export interface PresetSnapshot {
   name?: string;
+  /**
+   * Device-native patch CATEGORY tag, for devices whose preset carries
+   * one (Hydrasynth byte 8: "Bass", "Pad", …, the tag its category
+   * browser filters on). Absent on devices without a category concept.
+   */
+  category?: string;
   slots: readonly PresetSnapshotSlot[];
+  /**
+   * Loop stations only: the memory tempo and, per track, whether a loop is
+   * recorded and how long it is. Read from the stored memory, not the audio.
+   */
+  looper?: {
+    tempo_bpm?: number;
+    /** The MIDI channel the unit takes memory recall and control on, read from its system settings. */
+    control_channel?: number;
+    /** The unit-wide MIDI menu (channels, sync, thru), as the panel words it. */
+    midi?: Readonly<Record<string, string | number>>;
+    tracks: readonly {
+      track: number;
+      recorded: boolean;
+      measures?: number;
+      seconds?: number;
+      level?: number;
+      pan?: string;
+      reverse?: boolean;
+      one_shot?: boolean;
+      loop_sync?: boolean;
+      tempo_sync?: boolean;
+      measure?: string | number;
+    }[];
+  };
   scenes?: readonly SceneSpec[];
   active_scene?: number;
   routing?: readonly RoutingEdge[];
@@ -1498,9 +1602,10 @@ export interface PresetSnapshot {
    * being edited, which the fn=0x1F poll inventory (`slots`) cannot.
    *
    * Block POSITIONS + IDENTITIES are cross-validated against our FM9 capture
-   * (every effect id resolves; Input→…→Output coherent). The cable bitmask is
-   * surfaced raw; edge-direction decode is community-beta and NOT asserted as
-   * `from_rows` here. Present only when the live grid read succeeded; absent on
+   * (every effect id resolves; Input→…→Output coherent). The cable bitmask
+   * (bit k = input from row k of the previous column) is surfaced raw and
+   * decoded into `from_rows` (FM3 hardware-confirmed 2026-10-23, FM9 field
+   * report #23). Present only when the live grid read succeeded; absent on
    * II/AM4/Hydra, on stored-by-location gen-3 reads (use `whole_preset.grid`),
    * and when the grid read returned nothing (then `slots` is the poll inventory).
    */
@@ -1523,8 +1628,9 @@ export interface PresetSnapshot {
 
 /** gen-3 live telemetry (CPU + stereo output meters) from a sub=0x2E read. */
 export interface Gen3LiveMeters {
-  /** DSP/CPU utilization, percent (32.0..95.5). Steady for a given preset. */
-  cpu_percent: number;
+  /** DSP/CPU utilization, percent. Steady for a given preset. Absent on the
+   *  Axe-Fx III, where the decode is hardware-falsified (no figure beats a wrong one). */
+  cpu_percent?: number;
   /** Output meter, LEFT channel, normalized 0..1 (momentary). */
   output_left: number;
   /** Output meter, RIGHT channel, normalized 0..1 (momentary). */
@@ -1546,6 +1652,17 @@ export interface PresetSnapshotSlot extends PresetSlotSpec {
    * apply (flat params are always correct).
    */
   channel_status?: 'active' | 'all_channels' | 'unknown';
+  /**
+   * The channel this block is on right now (the active scene's selection),
+   * when the device exposes it. Lets a caller read the live tone out of
+   * `params_by_channel` without guessing. Absent on a stored-location read,
+   * which has no "now": use `scene_channels` there.
+   */
+  active_channel?: string;
+  /** Per scene (index 0 = scene 1): the channel that scene selects for this block. */
+  scene_channels?: readonly string[];
+  /** Per scene (index 0 = scene 1): whether that scene bypasses this block. Absent for a block with no bypass. */
+  scene_bypass?: readonly boolean[];
 }
 
 export interface PresetSnapshotMeta {
@@ -1710,6 +1827,12 @@ export interface Gen3WholePresetView {
   preset_name: string;
   /** True when the patch CRC validated (the device's own validity gate). */
   crc_valid: boolean;
+  /**
+   * AM4 stored reads: a hash of the decoded body with its non-content words
+   * masked. Equal between two stored presets exactly when their content is
+   * identical.
+   */
+  content_fingerprint?: string;
   scene_names?: readonly string[];
   grid?: readonly Gen3GridCellView[];
   blocks?: readonly Gen3BlockView[];
@@ -1773,6 +1896,8 @@ export interface ScannedLocation {
   location: string;
   name: string;
   is_empty: boolean;
+  /** One short line of what the location holds, when the device can say (a looper: "3 loops, 122 BPM"). */
+  summary?: string;
 }
 
 export interface LineageQuery {
@@ -1847,6 +1972,14 @@ export interface PresetBinaryDump {
   format: string;
   /** Preset name read from the device when cheaply available; best-effort, may be absent. */
   name?: string;
+  /**
+   * Category ordinal read alongside the name, where the device carries one
+   * OUT OF BAND of the dump bytes (MicroFreak). Feed it straight back to
+   * `import_preset`'s `preset_type` to round-trip the category; without it a
+   * byte-exact restore files the preset under no category. Absent on devices
+   * whose dump carries the category in-band, or that have none.
+   */
+  category?: number;
   /** Human-readable note on what was dumped (e.g. 'active working buffer'). */
   source?: string;
   /**
@@ -1909,6 +2042,14 @@ export interface RestorePresetResult {
   saved_to_location?: string | number;
   /** Wire-shape identifier (matches `PresetBinaryDump.format`). */
   format: string;
+  /** Human receipt, where the device has more to say than the counts (a project file restore). */
+  info?: string;
+  /**
+   * Surfaced caveat the caller MUST relay to the user (e.g. the Hydrasynth's
+   * flash receipt never arrived and the post-write name read-back could not
+   * confirm persistence, so Protect ON is suspected). Absent when unambiguous.
+   */
+  warning?: string;
 }
 
 /** One entry in a device's named sample/sound directory. */
@@ -1930,7 +2071,7 @@ export interface SampleDirectoryEntry {
 export interface PackDirectoryEntry {
   /**
    * 1-based pack number as the device's front panel shows it, and EXACTLY the
-   * value the `pack` arg on apply_pattern / upload_project / get_preset /
+   * value the `pack` arg on apply_pattern / import_preset / get_preset /
    * export_preset takes. Same name as that arg on purpose: an agent that reads
    * `pack: 5` here and passes `pack: 5` there is correct with no arithmetic.
    */
@@ -2190,7 +2331,7 @@ export interface ProjectUploadOutcome {
 
 // ── Stored-project deletion (delete_project) ────────────────────────
 //
-// The inverse of `upload_project`, and the only operation in this server that
+// The inverse of `import_preset`, and the only operation in this server that
 // makes stored content stop existing rather than be replaced. First (and today
 // only) device: the Novation Circuit Tracks, whose file-transport exposes a
 // per-slot delete opcode. Full safety contract: `docs/SAFE-EDIT-WORKFLOW.md`.
@@ -2459,6 +2600,38 @@ export interface DeviceWriter {
   realizePattern?(ctx: DispatchCtx, plan: RealizePlan): Promise<RealizeResult>;
 
   /**
+   * OPTIONAL read-only pre-step for `apply_pattern` ncs_upload, run by the
+   * dispatcher as the FIRST wire operation of the realize — ahead of the
+   * backup-before-overwrite read, and therefore ahead of every file-transfer
+   * session the call makes.
+   *
+   * ORDERING IS THE WHOLE POINT, not a convenience. The Circuit's sample-pool
+   * directory read (which resolves the drum-track binding by NAME) is reliable
+   * on an idle device and NOT reliable immediately behind another transfer
+   * session on the same port: with `backup_first` taking a full project
+   * download first, the pool listing came back incomplete 10/10 on hardware
+   * (2026-09-12, Pack 3 slot 55) and the same write succeeded first try with
+   * `backup_first:false`, while `list_samples` — the identical listing call,
+   * issued standalone seconds either side — succeeded every time. Hoisting the
+   * device's read-only prep in front of the backup restores the ordering every
+   * working path already had, instead of hardening a read against a window it
+   * should not be inside.
+   *
+   * Contract: read-only (no writes, no gates, no transfers), idempotent, and
+   * it may MUTATE `upload` to carry what it resolved (the plan is the realizer's
+   * input, so the realizer consumes it without re-reading). `plans` is every
+   * compiled plan the realize will author — one for a single pattern, one per
+   * section for an arrangement — so the writer can decide whether it needs the
+   * read at all. Devices that need no prep omit it; the dispatcher then goes
+   * straight to the backup.
+   */
+  prepareRealize?(
+    ctx: DispatchCtx,
+    upload: NonNullable<RealizePlan['upload']>,
+    plans: readonly RealizePlan[],
+  ): Promise<void>;
+
+  /**
    * OPTIONAL. Realize a multi-section song ARRANGEMENT (apply_pattern
    * `arrangement`): each section is one compiled RealizePlan; `order` lists
    * section indices in play order (repeats allowed). The device writer owns
@@ -2578,17 +2751,50 @@ export interface DeviceWriter {
    * path, not this one.) Backs the `import_preset` tool.
    *
    * Default (no `target_location`): push to the WORKING BUFFER only, reversible
-   * by switching presets. With `target_location` AND `save_authorized: true`
-   * (the dispatcher enforces the gate), also persist to that stored location.
+   * by switching presets. With `target_location` AND `save_authorized: true`,
+   * also persist to that stored location.
+   *
+   * Each implementation OWNS its persist semantics: the dispatcher does not
+   * pre-gate on `capabilities.supports_save`, because that capability speaks
+   * about the guitar-shaped `save_preset` surface, not about whether restored
+   * bytes can persist (the Hydrasynth declares `supports_save: false` by
+   * design yet its restore path IS a stored-slot flash write). AM4 refuses
+   * `target_location` (stored-header encoding undecoded); Axe-Fx II STOREs;
+   * Hydrasynth REQUIRES `target_location` + `save_authorized` +
+   * `confirm_overwrite` (every slot is occupied, so a restore always
+   * overwrites; there is no reversible working-buffer restore on it).
    *
    * Optional. Implemented on devices with a verified push path (AM4, Axe-Fx
-   * II). Devices without it omit the method and the dispatcher returns
-   * capability_not_supported for import_preset.
+   * II, Hydrasynth, MicroFreak). Devices without it omit the method and the
+   * dispatcher returns capability_not_supported for import_preset.
    */
   restorePresetBinary?(
     ctx: DispatchCtx,
     bytes: Uint8Array,
-    options?: { target_location?: LocationRef; save_authorized?: boolean },
+    options?: {
+      target_location?: LocationRef;
+      save_authorized?: boolean;
+      confirm_overwrite?: boolean;
+      /**
+       * MicroFreak only: the preset name to write into the destination
+       * slot. Its write protocol pushes an explicit ASCII name frame
+       * ahead of the payload, and a byte-exact `bytes` dump (146 payload
+       * frames) does not carry the name anywhere inside it -- confirmed
+       * by searching the payload for the source name's bytes and finding
+       * none, so this cannot be derived from `bytes` alone. Ignored by
+       * every other device (their dumps carry the name in-band).
+       */
+      name?: string;
+      /**
+       * MicroFreak only: the preset's category ("Type" in MIDI Control
+       * Center) as a 0..11 ordinal. Like `name`, it rides an out-of-band
+       * frame and is NOT recoverable from `bytes`. Omitted ⇒ the preset
+       * files with no category, which is what an empty slot reads as.
+       * Round-trip it from the source rather than choosing one: the value
+       * is copied through without this server interpreting it.
+       */
+      preset_type?: number;
+    },
   ): Promise<RestorePresetResult>;
 }
 
@@ -2664,6 +2870,16 @@ export interface DeviceTransport {
    * message is used when absent.
    */
   notMountedHint?: string;
+  /**
+   * Hybrid only. True when the two surfaces are NOT exclusive: the storage is
+   * a card that can sit in a reader while the device itself stays on USB MIDI
+   * (Akai MPC). With the drive mounted the ctx then carries the storage root
+   * AND a MIDI connection that is opened on first use, so a MIDI verb still
+   * reaches the device. Leave it unset for a device whose USB mode selects one
+   * surface (SPD-SX, Boss RC): there a MIDI call with the drive mounted is a
+   * miswire and must keep failing loudly.
+   */
+  concurrent?: boolean;
 }
 
 export interface DeviceDescriptor {
@@ -2865,6 +3081,7 @@ export type ErrorCode =
   | 'no_ack'
   | 'stale_handle'
   | 'device_not_mounted'          // storage-transport device is not mounted as a drive (e.g. SPD-SX not in WAVE MGR mode)
+  | 'device_busy'                 // per-endpoint lock contention: another op holds this device's connection; the waiter timed out rather than risk interleaving (connection-arbiter Phase B R1)
   | 'save_authorization_required' // gate refusal: apply-at-slot called without save_authorized=true
   | 'buffer_dirty'                // gate refusal: nav/save-at-slot while active buffer has unsaved edits
   | 'overwrite_confirmation_required' // gate refusal: destructive slot transfer to an occupied/unverifiable slot without confirm_overwrite=true

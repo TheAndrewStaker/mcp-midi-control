@@ -124,13 +124,63 @@ function writeUshortAt(payload: Uint8Array, ushortIdx: number, value: number): v
   payload[off + 2] = (payload[off + 2] & 0x7c) | ((value >> 14) & 0x03);
 }
 
-function isContinuousCalibrated(param: AxeFxIIParam): { ok: true } | { ok: false; reason: string } {
-  if (param.controlType !== 'knob') {
+/**
+ * BK-084 (wiring-judge graft 3): the STATIC image-patch eligibility
+ * predicate, exported as the single source of truth for the retune
+ * preflight classification and its refusal messages. A param is
+ * image-patch-eligible iff (a) it is not enum-like (`controlType ===
+ * 'select'` or a registered `enumValues` table) and (b) it has a known
+ * calibration (both `encodeDisplay` and `decodeWire` registered) — the
+ * exact set `set_param` already drives audibly today.
+ *
+ * BUG FIX (2026-07-17, hardware stress-test session): this predicate
+ * used to hard-refuse anything whose RAW catalog `controlType` wasn't
+ * exactly `'knob'`, including `controlType: 'unknown'` params that DO
+ * carry a working calibration via the suffix-rule overlay (e.g.
+ * `gateexpander.mix`: raw catalog controlType is `'unknown'`, but
+ * `getCalibration` resolves it to a real 0..100% knob via the bare-
+ * "mix" suffix rule, and `writer.setParam` happily drives it live
+ * today). `writer.setParam`'s own enum gate is `controlType ===
+ * 'select' || 'enumValues' in param` — it does NOT require
+ * `controlType === 'knob'` — so the old image-patch gate was STRICTER
+ * than the live write surface it claims to mirror, contradicting this
+ * docstring's own "the exact set set_param already drives audibly
+ * today" claim. Caught live on hardware: a 37-param retune batch on
+ * "Boston Tone" spanning 9 block families refused ALL-OR-NOTHING
+ * because `gateexpander.mix` alone tripped the old `controlType !==
+ * 'knob'` check, even though the other 36 params (and gateexpander.mix
+ * itself via set_param) were all individually fine.
+ *
+ * `controlType === 'switch'` (boolean toggles, e.g. `amp.bright_switch`)
+ * is EXCLUDED EXPLICITLY rather than folded into the "not enum, so
+ * accept" branch: `resolveParamKind` gives switches a working
+ * `encodeDisplay`/`decodeWire` pair too (bool-coerced), so a purely
+ * calibration-based gate would silently accept them, but this codebase
+ * has no capture-cited evidence for how a boolean is PACKED inside the
+ * preset image word (a dedicated ushort per switch, vs a bitfield
+ * shared with neighboring flags) — unlike the continuous knobs, whose
+ * one-ushort-per-param layout is captured and byte-verified. Refusing
+ * switches defensively (not silently, not folded into the generic
+ * "no calibration" message) keeps the "no guessed wire paths" line:
+ * `set_param`'s live fn=0x2e/fn=0x02 path is untouched by this gate.
+ */
+export function isImagePatchEligibleParam(param: AxeFxIIParam): { ok: true } | { ok: false; reason: string } {
+  const isEnumLike = param.controlType === 'select' || 'enumValues' in param;
+  if (isEnumLike) {
     return {
       ok: false,
       reason:
-        `${param.block}.${param.name} is controlType="${param.controlType}" (enum/type/switch/bypass), ` +
+        `${param.block}.${param.name} is an enum/type value (controlType="${param.controlType}"), ` +
         `not a continuous knob. Atomic image-patch v1 only writes registered continuous knobs; use set_param instead.`,
+    };
+  }
+  if (param.controlType === 'switch') {
+    return {
+      ok: false,
+      reason:
+        `${param.block}.${param.name} is a boolean toggle (controlType="switch"). Its packing inside the preset ` +
+        `image word is not confirmed against a hardware capture (unlike one-ushort-per-param continuous knobs), so ` +
+        `atomic image-patch v1 refuses it defensively; use set_param instead (the live write path is unaffected).`,
     };
   }
   const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
@@ -204,7 +254,7 @@ export function applyContinuousParamsToImage(
       refused.push({ input, reason: `block "${block.name}" has no param matching "${input.paramName}".` });
       continue;
     }
-    const scopeCheck = isContinuousCalibrated(param);
+    const scopeCheck = isImagePatchEligibleParam(param);
     if (!scopeCheck.ok) {
       refused.push({ input, reason: scopeCheck.reason });
       continue;
@@ -227,7 +277,7 @@ export function applyContinuousParamsToImage(
     const kind = resolveParamKind('axe-fx-ii', param.block, param.name);
     let wireValueRaw: number;
     try {
-      // encodeDisplay presence already confirmed by isContinuousCalibrated.
+      // encodeDisplay presence already confirmed by isImagePatchEligibleParam.
       wireValueRaw = kind.encodeDisplay!(input.displayValue);
     } catch (err) {
       refused.push({ input, reason: `display value encode failed: ${err instanceof Error ? err.message : String(err)}` });

@@ -85,3 +85,16 @@ single-pattern upload and a multi-section `arrangement`. New goldens: the
 `compileToPlan` passthrough check that golden-locks the plumbing itself.
 See `docs/design/groove-instrument-mapping.md` item 3: the "done" note there
 covered only the writer half; the tool-surface half is what closed today.
+
+**POSITIONAL DEFAULT REMOVED FROM THE PRODUCT PATH (2026-08-11, BK-CIRCUIT-DRUMBIND).**
+The `[0,1,2,3]` default above bound WRONG on the factory-shaped pool (Novation
+ships a `00_PCM.wav` placeholder at slot 0, shifting the whole kit up one) and
+the failure was silent because condensed levels store at 0. The realizers now
+resolve an omitted `drum_binding` by sample NAME against the destination pack's
+own pool at write time (`ncs/sampleRoles.ts resolveDrumBindingByName`, wired in
+`descriptor/writer.ts`), refusing when a role has no name match; a numbered
+variant (`kick2`) stands in and is reported. Per-step flip ROLES also resolve
+against the real pool. An explicit `drum_binding` still declares the layout and
+skips the read; `authorPlanIntoProject`'s own `[0,1,2,3]` fallback survives only
+for direct codec callers/goldens, never for a tool call. A dry run defers the
+resolution (reads nothing) and says so in the receipt.

@@ -140,8 +140,8 @@ export async function backupProjectSlot(
   });
   const where = ctx.pack !== undefined && ctx.pack !== 0 ? ` on Pack ${ctx.pack + 1}` : '';
   const restoreHint = ctx.pack !== undefined && ctx.pack !== 0
-    ? `restore it with upload_project (slot ${slot}, pack ${ctx.pack + 1}) if needed.`
-    : 'restore it with upload_project if needed.';
+    ? `restore it with import_preset (target_location ${slot}, pack ${ctx.pack + 1}) if needed.`
+    : 'restore it with import_preset if needed.';
   // A dump that passed its transfer check and FAILED its structural one is a
   // saved file that is not a usable undo. Saying "to undo, restore it" there
   // would be the worst sentence in the receipt, so the note says the opposite

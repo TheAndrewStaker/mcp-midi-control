@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/core",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Shared MCP dispatcher, param-kind resolver, and protocol-generic types.",
   "private": true,
   "license": "Apache-2.0",
@@ -9,8 +9,9 @@
     "./*": "./dist/*"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
     "@julusian/midi": "^3.6.1",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "async-mutex": "^0.5.0",
     "openrig": "*",
     "serialport": "^13.0.0",
     "zod": "^4.4.2"

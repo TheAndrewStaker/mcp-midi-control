@@ -6,7 +6,9 @@
       "args": ["packages/server-all/dist/server/index.js"],
       "env": {
         "MCP_MOCK_TRANSPORT": "${MCP_MOCK_TRANSPORT:-0}",
-        "MCP_RIG_MANIFEST": "${MCP_RIG_MANIFEST:-docs/_private/rig/rig.json}"
+        "MCP_RIG_MANIFEST": "${MCP_RIG_MANIFEST:-docs/_private/rig/rig-mpc.json}",
+        "MCP_RIG_REPERTOIRE": "${MCP_RIG_REPERTOIRE:-docs/_private/rig/repertoire-mpc.json}",
+        "MCP_MICROFREAK_CHANNEL": "${MCP_MICROFREAK_CHANNEL:-3}"
       },
       "timeout": 360000
     }

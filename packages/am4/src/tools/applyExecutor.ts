@@ -717,7 +717,7 @@ export function prepareApplyPresetWrites(
         });
     }
 
-    // FRESH-BUILD CLEARING - unlisted scenes (Session 52, Stranglehold H03 fix):
+    // FRESH-BUILD CLEARING - unlisted scenes (Session 52 fix):
     for (const sceneNum of [1, 2, 3, 4] as const) {
         if (userListedScenes.has(sceneNum)) continue;
         preparedScenes.push({

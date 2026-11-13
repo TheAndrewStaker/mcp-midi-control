@@ -1,0 +1,44 @@
+{
+  "_note": "Inputs for the drum .xpm writer goldens. Each program was built from this spec by the reference Python writer the TypeScript codec was ported from; its sha256 and byte length are recorded here, and scripts/verify-akai-mpc.ts builds the same program in TypeScript and compares. Every sampled pad states a role or a colour, because the TypeScript writer does not guess a colour from a sample name. Layers are [sample, frames, [velocity low, high], volume?].",
+  "programs": [
+    {
+      "id": "velocity-basic",
+      "name": "Test Kit Velocity",
+      "pads": {
+        "1": { "role": "kick", "layers": [["TK_Kick_v1", 22050, [0, 63]], ["TK_Kick_v2", 24000, [64, 127]]] },
+        "2": { "role": "snare", "layers": [["TK_Snare_v1", 18000, [0, 40]], ["TK_Snare_v2", 18100, [41, 90]], ["TK_Snare_v3", 18200, [91, 127]]] },
+        "3": { "role": "hat", "mute_group": 1, "layers": [["TK_HatClosed", 4000, [0, 127]]] },
+        "4": { "role": "hat_open", "mute_group": 1, "layers": [["TK_HatOpen", 30000, [0, 127]]] },
+        "5": { "role": "tom", "pan": 0.35, "layers": [["TK_Tom & Rim <A>", 26000, [0, 127], 0.8]] },
+        "16": { "role": "cymbal", "volume": 0.5, "layers": [["TK_Crash", 96000, [0, 127]]] }
+      }
+    },
+    {
+      "id": "cycle-notes-colours",
+      "name": "R&B <Kit> RR",
+      "platform": "Windows",
+      "pads": {
+        "1": { "note": 36, "role": "kick", "zone_play": 0, "mono": true, "layers": [["K_rr1", 1000, [0, 127]], ["K_rr2", 1001, [0, 127]], ["K_rr3", 1002, [0, 127]], ["K_rr4", 1003, [0, 127]], ["K_rr5", 1004, [0, 127]], ["K_rr6", 1005, [0, 127]], ["K_rr7", 1006, [0, 127]], ["K_rr8", 1007, [0, 127]]] },
+        "2": { "note": 40, "role": "snare", "zone_play": 0, "polyphony": 2, "velocity_sensitivity": 0.75, "layers": [["S_rr1", 2000, [0, 127]], ["S_rr2", 2001, [0, 127]]] },
+        "3": { "note": 37, "colour": 1193046, "layers": [["Stick", 500, [0, 127]]] },
+        "9": { "note": 38, "role": "808", "layers": [["Sub808", 44100, [0, 127], 1.2]] },
+        "64": { "note": 0, "role": "fx", "layers": [["Riser", 88200, [0, 127]]] },
+        "128": { "note": 127, "role": "vocal", "layers": [["Hey", 9000, [0, 127]]] },
+        "100": { "note": 39 }
+      }
+    },
+    {
+      "id": "articulation",
+      "name": "Flurry Kit",
+      "pads": {
+        "1": { "role": "snare", "layers": [["Snare", 12000, [0, 127]]] },
+        "2": { "role": "snare", "articulation": { "type": 22, "speed": 0.5, "dynamics": 0.6, "stereo": 0.0, "scaling": 1 }, "layers": [["Snare", 12000, [0, 127]]] },
+        "3": { "role": "hat", "articulation": { "type": 2 }, "layers": [["Hat", 3000, [0, 127]]] },
+        "4": { "role": "melodic", "layers": [["Chord Cm7", 50000, [0, 127]]] },
+        "5": { "role": "perc", "layers": [["Shaker", 7000, [0, 127]]] },
+        "6": { "role": "bass", "layers": [["Bass C1", 60000, [0, 127]]] },
+        "7": { "role": "clap", "layers": [["Clap", 8000, [0, 127]]] }
+      }
+    }
+  ]
+}

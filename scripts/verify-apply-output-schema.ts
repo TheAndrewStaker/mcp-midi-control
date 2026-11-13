@@ -17,12 +17,18 @@
 //      true.
 //
 // Why the safety half exists (2026-07-16 incident, then the 2026-08-02 audit):
-// apply_preset is an outputSchema-declared tool. The SDK renders a declared
+// apply_preset is an outputSchema-declared tool. The v1 SDK rendered a declared
 // `z.object` to JSON Schema with `"additionalProperties": false` at EVERY
-// nesting level (`server/mcp.js` -> `toJsonSchemaCompat(obj, { pipeStrategy:
+// nesting level (v1 `server/mcp.js` -> `toJsonSchemaCompat(obj, { pipeStrategy:
 // 'output' })`), and the MCP *client* compiles that into an Ajv validator and
-// THROWS `McpError(InvalidParams)` on a mismatch (`client/index.js`,
-// `callTool` -> `getToolOutputValidator`). When BK-103b added `auto_applied`
+// THROWS `McpError(InvalidParams)` on a mismatch (v1 `client/index.js`,
+// `callTool` -> `getToolOutputValidator`). The v2 SDK keeps both halves of that
+// contract: the server renders `outputSchema` for `tools/list` via its internal
+// `standardSchemaToJsonSchema(schema, 'output')` (which delegates to zod's own
+// `~standard.jsonSchema.output`), and `Client.callTool` still validates
+// `structuredContent` against the advertised schema with the runtime-selected
+// AJV validator (`@modelcontextprotocol/client/validators/ajv` on Node), so the
+// hazard this gate closes is unchanged. When BK-103b added `auto_applied`
 // to `ApplyResult` without adding it to the schema, EVERY apply_preset
 // response was rejected client-side by Claude Desktop with a generic "Tool
 // execution failed" AFTER the wire writes had landed: a false-negative failure
@@ -51,8 +57,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import * as z from 'zod/v4';
-import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
-import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
+import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/client/validators/ajv';
 
 // Source imports, not the published `@mcp-midi-control/*` subpaths (which
 // resolve to `dist/`). This gate has to see the shape a developer just edited,
@@ -170,7 +176,7 @@ const maximalDeleteOutcome: Required<ProjectDeleteOutcome> = {
   deleted: [{
     slot: 61,
     ok: true,
-    name: 'AFTER DARK',
+    name: 'DEMO SONG',
     backup_path: 'C:/Users/x/mcp-midi-backups/pack5-project61.ncs',
     gone_by_query: true,
     gone_by_directory: true,
@@ -227,20 +233,45 @@ const DECLARED: readonly DeclaredOutputSchema[] = [
 ];
 
 /**
- * Render a declared outputSchema exactly the way the SDK does when it answers
- * `tools/list`. Kept byte-for-byte identical to `server/mcp.js`:
+ * Render a declared outputSchema exactly the way the v2 SDK does when it
+ * answers `tools/list`. The v2 server's `convertOutputSchemaJson` calls its
+ * internal `standardSchemaToJsonSchema(schema, 'output')`
+ * (@modelcontextprotocol/server dist src chunk), which for zod >= 4.2 is:
  *
- *   toJsonSchemaCompat(normalizeObjectSchema(tool.outputSchema),
- *                      { strictUnions: true, pipeStrategy: 'output' })
+ *   schema['~standard'].jsonSchema.output({ target: 'draft-2020-12' })
  *
- * If that call ever changes shape in a new SDK, this gate must change with it,
- * or it starts testing something the client never sees.
+ * followed by an object-shaped-root default for `type`. That function is not
+ * exported from the v2 server package, so this is a faithful replica through
+ * the PUBLIC Standard Schema surface (StandardSchemaWithJSON, the exact type
+ * `registerTool` accepts), including the root-stamping branch. If the SDK's
+ * conversion ever changes shape, this gate must change with it, or it starts
+ * testing something the client never sees.
  */
 function renderJsonSchema(schema: unknown): Record<string, unknown> {
-  return toJsonSchemaCompat(schema as never, {
-    strictUnions: true,
-    pipeStrategy: 'output',
-  }) as Record<string, unknown>;
+  const std = (schema as StandardSchemaWithJSON)['~standard'];
+  const result = std.jsonSchema.output({ target: 'draft-2020-12' });
+  if (result.type !== undefined) return result;
+  return isProvablyObjectShapedRoot(result) ? { type: 'object', ...result } : result;
+}
+
+/**
+ * Replica of the v2 SDK's `isProvablyObjectShapedRoot` (same dist chunk as
+ * `standardSchemaToJsonSchema`): a typeless root is provably object-shaped
+ * when it carries object keywords directly, or every member of a oneOf /
+ * anyOf / allOf composition is itself (recursively) object-shaped.
+ */
+function isProvablyObjectShapedRoot(schema: Record<string, unknown>): boolean {
+  if ('properties' in schema || 'patternProperties' in schema
+    || 'additionalProperties' in schema || 'required' in schema) return true;
+  for (const key of ['oneOf', 'anyOf', 'allOf']) {
+    const members = schema[key];
+    if (Array.isArray(members) && members.length > 0) {
+      return members.every((m) => m !== null && typeof m === 'object'
+        && ((m as Record<string, unknown>).type === 'object'
+          || isProvablyObjectShapedRoot(m as Record<string, unknown>)));
+    }
+  }
+  return false;
 }
 
 /** Every JSON-pointer-ish path in `node` where `additionalProperties` is literally false. */

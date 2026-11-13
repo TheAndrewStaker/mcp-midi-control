@@ -7,6 +7,7 @@
 //   discretePatch.ts  rostered-select ordinal word patch
 //   sceneWords.ts     per-scene bypass / channel-Y state words
 //   structure.ts      chain splice: PLACE / REMOVE a block
+//   compose.ts        atomic chain REBUILD to a target (wireId, cell) set
 //   defaultRecords.ts generated corpus data (modal records, len census)
 //   dumpOps.ts        dump-level wrappers (round-trip gate + footer)
 //
@@ -19,5 +20,6 @@ export * from './grid.js';
 export * from './discretePatch.js';
 export * from './sceneWords.js';
 export * from './structure.js';
+export * from './compose.js';
 export * from './defaultRecords.js';
 export * from './dumpOps.js';

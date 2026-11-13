@@ -5,15 +5,15 @@
  *
  *   npx tsx scripts/_research/probe-am4-get-preset.ts
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({
     command: 'node',
     args: ['packages/server-all/dist/server/index.js'],
   });
-  const client = new Client({ name: 'probe', version: '0.1.0' });
+  const client = new Client({ name: 'probe', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   // Default mode (chunk-only, channel_state_omitted=true).

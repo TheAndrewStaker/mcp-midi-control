@@ -50,8 +50,28 @@ export const GM_DRUM_TO_VOICE: Readonly<Record<number, string>> = {
   80: 'triangle', 81: 'triangle',          // mute / open triangle
 };
 
-/** Map a GM percussion note to a neutral voice (undefined = unknown, caller decides). */
-export function gmDrumToVoice(note: number): string | undefined {
+/**
+ * The six GM tom numbers → one distinct lane each, in descending-pitch order
+ * (floor-low 41 → high 50). OPT-IN only, never exported: the default
+ * `GM_DRUM_TO_VOICE` folds all six toms onto a single `tom`, so two toms struck
+ * together collapse to one voice. When `splitToms` is on (the song-projects
+ * planner's path), each GM tom keeps its own lane so a stacked pair — the
+ * breakdown's dominant 45+47 — survives as separate voices. The lanes are
+ * self-canonical `DRUM_ROLES` and fold back to `tom`/`snare`/`perc` at resolve
+ * time (`drumFold.ts`), so a single-tom device still plays them.
+ */
+const GM_TOM_TO_LANE: Readonly<Record<number, string>> = {
+  41: 'tom_flo', 43: 'tom_fhi', 45: 'tom_lo', 47: 'tom_lm', 48: 'tom_hm', 50: 'tom_hi',
+};
+
+/**
+ * Map a GM percussion note to a neutral voice (undefined = unknown, caller
+ * decides). With `splitToms`, the six toms resolve to distinct lanes instead of
+ * the single `tom` voice; default false keeps the historical all-toms-to-`tom`
+ * mapping byte-identical.
+ */
+export function gmDrumToVoice(note: number, splitToms = false): string | undefined {
+  if (splitToms && GM_TOM_TO_LANE[note] !== undefined) return GM_TOM_TO_LANE[note];
   return GM_DRUM_TO_VOICE[note];
 }
 
@@ -84,6 +104,11 @@ export interface DrumEvent {
   velocity?: number;
   /** Micro roll: 2..6 evenly-spaced sub-hits (6 = buzz; positional mask HW-confirmed 2026-07-03). */
   roll?: number;
+  /**
+   * The source's own GM percussion number, when the importer knows it. `voice` folds pieces
+   * together (every tom is "tom" unless split); a MIDI export plays this exact note instead.
+   */
+  gm?: number;
 }
 
 export interface QuantizeOptions {

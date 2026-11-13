@@ -22,7 +22,7 @@
  *
  * Then: upload_project(circuit-tracks, <file>, <page-1 slot>), run
  * scripts/b0-capture-delay-onsets.ts, select the project via PC ch16 and
- * send_clock_start. Companion: gethsemane_electronic_HANDOFF.md (B0 gate).
+ * send_clock_start. Companion: the local B0-gate handoff note.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 

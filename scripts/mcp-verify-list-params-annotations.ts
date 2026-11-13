@@ -19,8 +19,8 @@
  * host's delivery cliff. Delete this file when convenient.
  */
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 function extractText(r: unknown): string {
@@ -32,7 +32,7 @@ function extractText(r: unknown): string {
 async function main(): Promise<void> {
   const t = new StdioClientTransport({ command: process.execPath, args: [SERVER], stderr: 'pipe' });
   if (t.stderr) t.stderr.on('data', () => {});
-  const c = new Client({ name: 'v', version: '1' }, { capabilities: {} });
+  const c = new Client({ name: 'v', version: '1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await c.connect(t);
   let pass = true;
   try {

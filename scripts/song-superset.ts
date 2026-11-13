@@ -5,7 +5,7 @@
  * WHY THIS EXISTS
  * ---------------
  * `songChop.ts` answers "how many projects does this song need if every section
- * gets one?". On a long song that number is brutal: Pneuma is 400 bars and chops
+ * gets one?". On a long song that number is brutal: one song is 400 bars and chops
  * to ~31 projects, half a 64-slot Circuit pack for one song. The compression the
  * maintainer asked for is not a smarter chop, it is a different question:
  *
@@ -16,8 +16,8 @@
  * mixer is per-track. Two windows merge when every part that SOUNDS in A plays
  * exactly the same thing in B; B's extra parts are silenced with a fader.
  *
- * WHY EXACT SECTION HASHING FOUND NOTHING (2026-07-27, Schism / The Pot / Pneuma)
- * ------------------------------------------------------------------------------
+ * WHY EXACT SECTION HASHING FOUND NOTHING (2026-07-27, three long songs)
+ * ---------------------------------------------------------------------
  * The earlier pass hashed each section over bass + guitars + drums AS ONE STRING
  * and found zero identical pairs in three songs. That result is correct and it is
  * also the wrong test, twice over:
@@ -94,189 +94,21 @@
  */
 
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { type SongsterrPart } from '@mcp-midi-control/core/protocol-generic/patterns/songsterr.js';
 import {
-  flattenSongsterrDrums, flattenSongsterrMelodic, isMelodicPart, pitchToken,
-  type SongsterrPart, type MeasureInfo,
-} from '@mcp-midi-control/core/protocol-generic/patterns/songsterr.js';
-import {
-  planSongChop, toChopPart, type ChopPartFlat, type SongChopPlan, type ChopProject,
+  planSongChop, toChopPart, type ChopPartFlat,
 } from '@mcp-midi-control/core/protocol-generic/patterns/songChop.js';
 import {
   fetchSongsterrTracks, fetchSongsterrPart,
 } from '@mcp-midi-control/core/protocol-generic/patterns/songsterrFetch.js';
-
-// ── canonical content ────────────────────────────────────────────────
-
-/**
- * One bar of one part, as the AUTHORED IMAGE would look at the target grid.
- *
- * The signature is part of the token so that in mixed metre two bars of
- * different length can never compare equal by accident: a 5/8 bar and a 7/8 bar
- * holding the same first ten steps are not the same bar.
- *
- * Melodic: `step:pitch:gate` per note, sorted. Gate is the quantised sounding
- * length in steps (ties already folded in by the flattener), clamped to at least
- * one step. Drum: `step:voice` per hit, sorted and de-duplicated.
- */
-interface BarToken { sig: string; body: string }
-
-interface PartWindow {
-  partId: number;
-  label: string;
-  melodic: boolean;
-  /** Bar tokens, one per measure of the song, index-aligned to the measure walk. */
-  bars: BarToken[];
-  /** Onsets whose quantised step moved by more than half a step. */
-  quantMoved: number;
-  /** Notes carrying a dynamic the authored image cannot express. */
-  velocityBlind: number;
-}
-
-const sigOf = (m: MeasureInfo): string => `${m.signature[0]}/${m.signature[1]}`;
-
-function measureSteps(m: MeasureInfo, spb: number): number {
-  return Math.max(1, Math.round(((m.signature[0] * 4) / m.signature[1]) * spb));
-}
-
-/** Index of the measure containing `beat`. */
-function measureOf(measures: readonly MeasureInfo[], beat: number): number {
-  let lo = 0; let hi = measures.length - 1; let ans = 0;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (measures[mid].startBeat <= beat + 1e-6) { ans = mid; lo = mid + 1; } else hi = mid - 1;
-  }
-  return ans;
-}
-
-function buildPartWindow(
-  partId: number, label: string, part: SongsterrPart, measures: readonly MeasureInfo[], spb: number,
-): PartWindow {
-  const melodic = isMelodicPart(part);
-  const cells: string[][] = measures.map(() => []);
-  let quantMoved = 0;
-  let velocityBlind = 0;
-
-  const place = (beat: number, make: (step: number) => string): void => {
-    const mi = measureOf(measures, beat);
-    if (mi < 0 || mi >= measures.length) return;
-    const raw = (beat - measures[mi].startBeat) * spb;
-    const step = Math.round(raw);
-    if (Math.abs(raw - step) > 0.001) quantMoved++;
-    const cap = measureSteps(measures[mi], spb);
-    cells[mi].push(make(Math.min(Math.max(step, 0), cap - 1)));
-  };
-
-  if (melodic) {
-    const flat = flattenSongsterrMelodic(part);
-    for (const n of flat.notes) {
-      if (n.velocity !== undefined) velocityBlind++;
-      const gate = Math.max(1, Math.round(n.durationBeats * spb));
-      place(n.beat, (s) => `${s}:${n.pitch}:${gate}`);
-    }
-  } else {
-    const flat = flattenSongsterrDrums(part);
-    for (const e of flat.events) place(e.beat, (s) => `${s}:${e.voice}`);
-  }
-
-  return {
-    partId, label, melodic, quantMoved, velocityBlind,
-    bars: measures.map((m, i) => ({ sig: sigOf(m), body: [...new Set(cells[i])].sort().join(' ') })),
-  };
-}
-
-/** Same token with every pitch shifted down to a zero-based root: the transpose-blind form. */
-function transposeBlindBar(t: BarToken): string {
-  const notes = t.body.split(' ').filter(Boolean);
-  const pitches = notes.map((n) => Number(n.split(':')[1])).filter((p) => Number.isFinite(p));
-  if (pitches.length === 0) return t.body;
-  const base = Math.min(...pitches);
-  return notes.map((n) => {
-    const [s, p, g] = n.split(':');
-    return g === undefined ? n : `${s}:${Number(p) - base}:${g}`;
-  }).sort().join(' ');
-}
-
-// ── window comparison ────────────────────────────────────────────────
-
-interface Window {
-  /** 1-based project number from the chop. */
-  project: number;
-  name: string;
-  section: string;
-  /** 0-based inclusive measure indices. */
-  from: number;
-  to: number;
-  bars: number;
-  steps: number;
-  /** partId → joined bar tokens over this window (empty string when silent). */
-  content: Map<number, string>;
-  /** partId → transpose-blind joined bar tokens. */
-  shape: Map<number, string>;
-  /** Parts that SOUND here. */
-  sounding: number[];
-  /** Metre sequence, so two windows of equal bar count but different metre never match. */
-  metre: string;
-  /** Smallest bar-period the whole window repeats on, or undefined when it does not. */
-  period?: number;
-  /** Bars of DISTINCT content: the period when the window loops, else its full length. */
-  cellBars: number;
-  /** partId → bar tokens over the CELL only. */
-  cell: Map<number, string>;
-  /** Metre sequence of the cell. */
-  cellMetre: string;
-  /** The window is not a whole number of cells, so the last cycle is cut short. */
-  partialCycle: boolean;
-}
-
-type Verdict = 'IDENTICAL' | 'EXACT' | 'PREFIX' | 'NEAR' | 'TRANSPOSE';
-
-interface Pair {
-  /** The window that could be DROPPED. */
-  subject: number;
-  /** The window that would be AUTHORED and reached by muting. */
-  cover: number;
-  verdict: Verdict;
-  /** Parts to mute on `cover` to hear `subject`. */
-  mute: string[];
-  /** For NEAR: the parts that do not match. */
-  differs: string[];
-  /** For TRANSPOSE: semitone offset, when one constant explains every part. */
-  semitones?: number;
-  /** For PREFIX: cover's surplus bars are silent on every part subject uses. */
-  tail_clear?: boolean;
-  /** Set when the merge holds on the CELL but the two windows run for different bar counts. */
-  loop_lengths?: [number, number];
-  saves: boolean;
-}
-
-function joinBars(w: { from: number; to: number }, bars: readonly BarToken[]): string {
-  const out: string[] = [];
-  for (let i = w.from; i <= w.to; i++) out.push(`${bars[i].sig}|${bars[i].body}`);
-  return out.join('||');
-}
-
-const barRow = (i: number, parts: readonly PartWindow[]): string =>
-  parts.map((p) => `${p.bars[i].sig}|${p.bars[i].body}`).join('#');
-
-/**
- * Smallest bar-period the window repeats on, allowing a PARTIAL final cycle.
- *
- * Requiring `n % p === 0` was too strict and it hid the thing worth finding: a
- * 10-bar Intro that is a 4-bar loop played twice and cut off at bar 2 is still a
- * 4-bar loop, and the section markers on a real tab almost never land on a
- * multiple of the loop. A partial final cycle is allowed; every bar still has to
- * match its counterpart exactly, so this loosens the WINDOW, never the content.
- */
-function detectPeriod(from: number, to: number, parts: readonly PartWindow[]): number | undefined {
-  const n = to - from + 1;
-  const rows = Array.from({ length: n }, (_, i) => barRow(from + i, parts));
-  for (let p = 1; p < n; p++) {
-    let ok = true;
-    for (let i = p; i < n && ok; i++) if (rows[i] !== rows[i % p]) ok = false;
-    if (ok) return p;
-  }
-  return undefined;
-}
+// The post-quantization per-part per-bar comparison (BarToken / PartWindow /
+// buildPartWindow / classify / buildWindows / barRow / sigOf) lives in core now,
+// shared with `songPlanner.ts`. This script keeps only its own census / cover /
+// interview reporting on top of it.
+import {
+  buildPartWindow, buildWindows, classify, barRow, sigOf,
+  type PartWindow, type Window, type Verdict, type Pair,
+} from '@mcp-midi-control/core/protocol-generic/patterns/songPlanner.js';
 
 /**
  * How much DISTINCT content the song actually holds, at bar granularity.
@@ -303,123 +135,6 @@ function census(parts: readonly PartWindow[], measureCount: number): {
       return { label: p.label, distinct: s.size, sounding };
     }),
   };
-}
-
-function buildWindows(plan: SongChopPlan, parts: readonly PartWindow[]): Window[] {
-  return plan.projects.map((proj: ChopProject) => {
-    const from = proj.from_measure - 1;
-    const to = proj.to_measure - 1;
-    const content = new Map<number, string>();
-    const shape = new Map<number, string>();
-    const sounding: number[] = [];
-    for (const p of parts) {
-      const c = joinBars({ from, to }, p.bars);
-      content.set(p.partId, c);
-      const sh: string[] = [];
-      for (let i = from; i <= to; i++) sh.push(`${p.bars[i].sig}|${transposeBlindBar(p.bars[i])}`);
-      shape.set(p.partId, sh.join('||'));
-      let any = false;
-      for (let i = from; i <= to && !any; i++) if (p.bars[i].body !== '') any = true;
-      if (any) sounding.push(p.partId);
-    }
-    const metre: string[] = [];
-    for (let i = from; i <= to; i++) metre.push(parts[0]?.bars[i].sig ?? '?');
-    const period = detectPeriod(from, to, parts);
-    const cellBars = period ?? proj.bars;
-    const cellTo = from + cellBars - 1;
-    const cell = new Map<number, string>();
-    for (const p of parts) cell.set(p.partId, joinBars({ from, to: cellTo }, p.bars));
-    return {
-      project: proj.project, name: proj.name, section: proj.section,
-      from, to, bars: proj.bars, steps: proj.steps,
-      content, shape, sounding, metre: metre.join(','),
-      ...(period !== undefined ? { period } : {}),
-      cellBars, cell, cellMetre: metre.slice(0, cellBars).join(','),
-      partialCycle: proj.bars % cellBars !== 0,
-    };
-  });
-}
-
-/** Constant semitone offset that turns `a`'s pitches into `b`'s, or undefined. */
-function constantOffset(a: string, b: string): number | undefined {
-  const pa = [...a.matchAll(/\d+:(-?\d+):\d+/g)].map((m) => Number(m[1]));
-  const pb = [...b.matchAll(/\d+:(-?\d+):\d+/g)].map((m) => Number(m[1]));
-  if (pa.length === 0 || pa.length !== pb.length) return undefined;
-  const k = pb[0] - pa[0];
-  for (let i = 1; i < pa.length; i++) if (pb[i] - pa[i] !== k) return undefined;
-  return k;
-}
-
-function classify(subject: Window, cover: Window, parts: readonly PartWindow[], label: (id: number) => string): Pair | undefined {
-  if (subject.project === cover.project) return undefined;
-
-  // Compare CELLS, not raw windows. A window that repeats on a bar-period is
-  // reproduced exactly by authoring one period and letting the project loop, so
-  // the cell IS the content and a 12-bar window that is a 6-bar cell x2 is the
-  // same project as a 36-bar window that is the same 6-bar cell x6. The only
-  // thing that differs is when the performer switches out of it, which is
-  // already how the rig plays (`project-select-midi`, queued to the boundary).
-  const mismatched = subject.sounding.filter((p) => subject.cell.get(p) !== cover.cell.get(p));
-  const sameShape = subject.cellBars === cover.cellBars && subject.cellMetre === cover.cellMetre;
-
-  if (sameShape && mismatched.length === 0) {
-    const mute = cover.sounding.filter((p) => !subject.sounding.includes(p)).map(label);
-    const identical = mute.length === 0 && cover.sounding.length === subject.sounding.length;
-    return {
-      subject: subject.project, cover: cover.project,
-      verdict: identical ? 'IDENTICAL' : 'EXACT',
-      mute, differs: [], saves: true,
-      ...(subject.bars !== cover.bars ? { loop_lengths: [subject.bars, cover.bars] as [number, number] } : {}),
-    };
-  }
-
-  // PREFIX: subject's bars equal cover's opening bars, part for part.
-  if (subject.bars < cover.bars) {
-    const head = { from: cover.from, to: cover.from + subject.bars - 1 };
-    let ok = true;
-    for (const p of subject.sounding) {
-      const part = parts.find((x) => x.partId === p);
-      if (part === undefined) { ok = false; break; }
-      if (subject.content.get(p) !== joinBars(head, part.bars)) { ok = false; break; }
-    }
-    const metreOk = subject.metre === cover.metre.split(',').slice(0, subject.bars).join(',');
-    if (ok && metreOk) {
-      let tailClear = true;
-      for (const p of subject.sounding) {
-        const part = parts.find((x) => x.partId === p);
-        if (part === undefined) continue;
-        for (let i = head.to + 1; i <= cover.to && tailClear; i++) if (part.bars[i].body !== '') tailClear = false;
-      }
-      return {
-        subject: subject.project, cover: cover.project, verdict: 'PREFIX',
-        mute: cover.sounding.filter((p) => !subject.sounding.includes(p)).map(label),
-        differs: [], tail_clear: tailClear, saves: tailClear,
-      };
-    }
-  }
-
-  if (!sameShape) return undefined;
-
-  // TRANSPOSE: identical shape, one constant semitone offset across every part.
-  if (mismatched.length > 0) {
-    const offsets = subject.sounding.map((p) => constantOffset(subject.cell.get(p) ?? '', cover.cell.get(p) ?? ''));
-    const shapesMatch = subject.bars === cover.bars && subject.sounding.every((p) => subject.shape.get(p) === cover.shape.get(p));
-    if (shapesMatch && offsets.every((o) => o !== undefined && o === offsets[0]) && offsets[0] !== 0) {
-      return {
-        subject: subject.project, cover: cover.project, verdict: 'TRANSPOSE',
-        mute: [], differs: [], semitones: offsets[0], saves: false,
-      };
-    }
-  }
-
-  if (mismatched.length > 0 && mismatched.length <= 2) {
-    return {
-      subject: subject.project, cover: cover.project, verdict: 'NEAR',
-      mute: cover.sounding.filter((p) => !subject.sounding.includes(p)).map(label),
-      differs: mismatched.map(label), saves: false,
-    };
-  }
-  return undefined;
 }
 
 /**

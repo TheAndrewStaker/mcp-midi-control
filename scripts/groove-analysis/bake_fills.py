@@ -22,7 +22,7 @@ first 8 fills baked pre-fix came out at peak=0.0000 (dead silence). Fixed by
 translating each of the 5 confirmed semantic keys to the real, screenshot-
 confirmed instrument note bouncer's own `examples/local/libraries.py` already
 uses (kick 36, snare 38, hat 73, ride 51 — hat 73 is the same note the
-HW-confirmed Gethsemane hatline bake used) before bouncing. Any OTHER note
+HW-confirmed hatline bake used) before bouncing. Any OTHER note
 ("the secondary tail" — 11/7/9/13/32/23/19/... , not in the 4-role sidecar
 per the same doc) is DROPPED, same policy `groove_to_pattern.py` already uses
 for Circuit patterns (NOTE_TO_TRACK.get() -> None -> skipped) — counted and
@@ -56,8 +56,10 @@ PY = sys.executable
 
 # Groove-pack semantic key (MIXWAVE_ST2_GROOVES) -> real instrument note
 # (bouncer/examples/local/libraries.py "sleeptoken" pieces; hat=73 is the
-# same note the HW-confirmed Gethsemane hatline bake used).
-NOTE_REMAP = {1: 36, 2: 73, 3: 38, 14: 73, 41: 51}
+# same note the HW-confirmed hatline bake used). Key 2 is the
+# ghost-snare lane (re-mapped from hat 2026-11-07, see drumMapPresets.ts):
+# fills baked before that date played their ghost notes on the hat.
+NOTE_REMAP = {1: 36, 2: 38, 3: 38, 14: 73, 41: 51}
 
 
 def prepare_for_bounce(midi_path, real_bpm, tmp_dir):

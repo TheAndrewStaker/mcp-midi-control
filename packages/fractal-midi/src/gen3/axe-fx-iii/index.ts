@@ -24,6 +24,20 @@ export type { Unit, Param } from './params.js';
 // routed DISCRETE instead of continuous so the device stores the right ordinal.
 export { III_ROUNDTRIP_DISCRETE } from './roundtripDiscrete.generated.js';
 
+// Device-true display ranges mined from the Axe-Edit III effectDefinitions
+// cache (community capture 2026-07-02; 1909 rows / 43 families). Cache bounds
+// override the AM4-overlay-inferred displayMin/displayMax at the catalog
+// layer. CONFLICT RULE: where the cache and the 2026-06-18 SET->GET roundtrip
+// oracle disagree, the roundtrip (device behavior) wins at the catalog layer.
+// Community-beta; gate: scripts/verify-iii-ranges.ts.
+export {
+  III_RANGES,
+  III_RANGE_SECTIONS,
+  III_UNMAPPED_SECTIONS,
+  type AxeFxIIIParamRange,
+  type AxeFxIIIRangeFamilyMeta,
+} from './ranges.generated.js';
+
 // Enum vocabulary overlay — universal Fractal conventions + AM4-
 // verified shared symbols + III-specific direct overrides. See
 // `enumOverlay.ts` for evidence chain and provenance tagging.
@@ -82,6 +96,7 @@ export {
   SUB_ACTION_CLEAR_BLOCK_COMPANION,
   buildClearBlock,
   buildClearBlockCompanion,
+  buildSelectCell,
   SUB_ACTION_SET_PRESET_NAME,
   SUB_ACTION_SET_SCENE_NAME,
   buildRenamePreset,
@@ -175,3 +190,30 @@ export {
   AMP_ALL_PARAMS,
   ampOrdinalsExposingParams,
 } from './ampTypeValidParams.generated.js';
+
+// Editor block-editor UI layouts (pages/tabs + labels + param mapping),
+// keyed by catalog family. Powers editor-authentic block-editor tabs incl.
+// Setup (Global) / Controllers / Modifier. See `layouts.generated.ts`.
+export {
+  AXE3_LAYOUTS,
+  type Axe3BlockLayout,
+  type Axe3LayoutPage,
+  type Axe3LayoutControl,
+} from './layouts.generated.js';
+
+// Block & parameter help — shared gen-3 catalog + III-specific overrides.
+export { AXE_FX_III_HELP_OVERRIDES } from './help.js';
+export {
+  GEN3_HELP,
+  GEN3_COMMON_PARAM_HELP,
+  blockHelpFor,
+} from '../help.js';
+export {
+  resolveHelp,
+  type BlockHelp,
+  type ParamHelp,
+  type BlockHelpEntry,
+  type HelpCatalog,
+  type BlockHelpOverride,
+  type HelpOverrides,
+} from '../helpTypes.js';

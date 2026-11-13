@@ -96,8 +96,8 @@
  */
 import path from 'node:path';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 // Imported, not restated: a gate that hardcodes the number it is checking
 // stops checking anything the moment the number moves.
@@ -190,9 +190,9 @@ const DYNACAB_SOURCE = { blockType: 'dynacab', block: 'amp', param: 'dynacab_1_c
  *   find_compatible_types  Worst measured 6,109 (axe-fx-iii amp). Bounded by
  *                    the type roster, which is a few hundred short strings.
  *                    Measured so a future roster explosion is visible.
- *   import_songsterr OVER (72,927 on Michael Jackson "Billie Jean", songsterr
- *                    10586, 17 parts, `{whole_song:true, parts:"all"}`; 42,883
- *                    on 311 "Amber", 24430, 11 parts). NOT gated here because
+ *   import_songsterr OVER (72,927 on one 17-part tab,
+ *                    `{whole_song:true, parts:"all"}`; 42,883
+ *                    on an 11-part tab). NOT gated here because
  *                    it is a live network fetch: a gate that hits songsterr.com
  *                    is flaky by construction and fails on a plane. It needs a
  *                    recorded fixture before it can be gated, and it should be:
@@ -207,6 +207,13 @@ const DYNACAB_SOURCE = { blockType: 'dynacab', block: 'amp', param: 'dynacab_1_c
  *                    64 there anyway.
  */
 const MEASURED_NOT_GATED = true;
+
+/**
+ * Devices that expose no parameters at all, so there is no get_params batch to
+ * size. Each must still REFUSE a get_params call (checked in LEG 3); a device
+ * that lists no blocks and is not named here fails the gate.
+ */
+const NO_PARAMETER_SURFACE = new Set(['mpc-one-g2']);
 void MEASURED_NOT_GATED;
 
 interface Finding { where: string; message: string }
@@ -232,7 +239,7 @@ const compact = (text: string): number => {
 
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER_ENTRY], stderr: 'pipe' });
-  const client = new Client({ name: 'response-budget', version: '0.1.0' });
+  const client = new Client({ name: 'response-budget', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   const failures: Finding[] = [];
@@ -243,7 +250,7 @@ async function main(): Promise<void> {
 
   const call = async (name: string, args: Record<string, unknown>): Promise<{ text: string; json: any; threw: boolean }> => {
     try {
-      const res = await client.callTool({ name, arguments: args }, undefined, { timeout: 300_000 });
+      const res = await client.callTool({ name, arguments: args }, { timeout: 300_000 });
       const text = (res as { content?: { text?: string }[] }).content?.[0]?.text ?? '';
       let json: any; try { json = JSON.parse(text); } catch { /* size still counts */ }
       return { text, json, threw: false };
@@ -551,7 +558,29 @@ async function main(): Promise<void> {
       const census = await call('list_params', { port: d.id });
       const blocks: string[] = (census.json?.block_summary ?? []).map((b: { block: string }) => b.block);
       if (blocks.length === 0) {
-        failures.push({ where: `get_params/${d.id}`, message: 'the list_params census listed no blocks, so no get_params batch could be built and this device was not size-checked at all.' });
+        // A device with no parameter surface (the MPC: connected here only
+        // because its card is in a reader) has no get_params batch to size.
+        // That is acceptable ONLY if get_params refuses outright; an empty
+        // census on a device that then answers a read is the silent skip this
+        // gate exists to catch.
+        const probe = await call('get_params', { port: d.id, queries: [{ block: 'x', name: 'y' }] });
+        const refused = probe.threw || probe.json?.ok === false || /no parameters|not valid|unknown/i.test(probe.text);
+        if (refused && NO_PARAMETER_SURFACE.has(d.id)) {
+          rows.push({ tool: 'get_params', shape: `${d.id}: no parameter surface by design; get_params refuses (verified)`, chars: probe.text.length, gated: true });
+          // Its reads are the card: the project list at the widest range a
+          // call may ask for, and the first project's sequences.
+          const scanShape = `scan_locations({port:"${d.id}", from:1, to:200 = the per-call cap})`;
+          const scan = await call('scan_locations', { port: d.id, from: 1, to: 200 });
+          checkCliff('scan_locations', scanShape, size('scan_locations', scanShape, scan, true),
+            'The project list is capped per call so a full card cannot pass the cliff; if this no longer fits, the cap has to come down.');
+          const first = (scan.json?.scanned ?? [])[0]?.location;
+          if (typeof first === 'string') {
+            const pShape = `get_preset({port:"${d.id}", location: first project on the card})`;
+            size('get_preset', pShape, await call('get_preset', { port: d.id, location: first }), false);
+          }
+        } else {
+          failures.push({ where: `get_params/${d.id}`, message: 'the list_params census listed no blocks, so no get_params batch could be built and this device was not size-checked at all.' });
+        }
         continue;
       }
       const all = await everyParam(d.id, blocks);

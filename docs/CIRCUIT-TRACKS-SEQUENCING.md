@@ -35,7 +35,7 @@ agent realise them. Concretely:
 ## Standout feature idea: Drum Tabs → drum patterns
 
 The ultimate use case the maintainer wants: ask an agent for a song, e.g.
-"Tom Petty: Breakdown", and have it author the real drum groove onto the
+"Artist: Song Title", and have it author the real drum groove onto the
 Circuit. **Drum tab notation is a near-perfect source of truth and maps almost
 1:1 onto the Circuit's drum grid.** A drum tab is an ASCII grid, one row per
 drum across fixed-width time columns:

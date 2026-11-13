@@ -1,5 +1,5 @@
 """
-build_groove_sets.py — one swappable-pattern .ncs per Sleep Token song.
+build_groove_sets.py — one swappable-pattern .ncs per groove-pack song.
 
 For each song folder, picks up to 8 grooves spanning simple->complex (by hit
 count), reduces each to a 4-voice/32-step Circuit pattern (groove_to_pattern),

@@ -2,7 +2,7 @@
  * Dispatcher: `delete_project`, the only operation in this server that makes
  * stored content stop existing.
  *
- * Every other destructive path here REPLACES: `upload_project` puts a different
+ * Every other destructive path here REPLACES: `import_preset` puts a different
  * project where one was, `save_preset` puts a different preset where one was.
  * The old thing is gone either way, but the slot is still a slot with something
  * in it, and the user gets a receipt naming what they now have. A delete leaves
@@ -16,7 +16,7 @@
  *    either way. Here the read is unconditional. It is the only thing separating
  *    "erase this project" from "erase the wrong project", and it is also the only
  *    evidence that the file we backed up is the file we destroyed.
- *  - `upload_project`'s backup is a FLAG (`backup_first`), defaulting true. Here
+ *  - `apply_pattern`'s pre-write backup is a FLAG (`backup_first`), defaulting true. Here
  *    there is no flag. See `backup` below.
  *
  * Shape of a call, in order, cheapest gate first:
@@ -51,7 +51,7 @@
  * means they have SEEN what is in it before they name it.
  */
 
-import { openCtx, requireDevice, toWirePack } from './core.js';
+import { requireDevice, toWirePack, withEndpoint } from './core.js';
 import { backupProjectSlot } from './backup.js';
 import {
   DispatchError,
@@ -139,7 +139,7 @@ function requireDeletableDevice(port: string): DeviceDescriptor {
       `capability: its file transport has a per-slot delete opcode. Most gear has no erase at all, including every ` +
       `Fractal device, where a preset location always holds something and the way to "remove" a preset is to write a ` +
       `different one over it.`,
-      { retry_action: 'To replace what is stored instead of erasing it, use apply_preset + save_preset (preset devices) or upload_project (Circuit Tracks).' },
+      { retry_action: 'To replace what is stored instead of erasing it, use apply_preset + save_preset (preset devices) or import_preset (Circuit Tracks).' },
     );
   }
   return descriptor;
@@ -235,7 +235,7 @@ function requireDeleteAuthorized(
 
 /**
  * Mandatory pre-delete backup. Deliberately NOT a flag, unlike
- * `upload_project`'s `backup_first`, for three reasons:
+ * `import_preset`'s `backup_first`, for three reasons:
  *
  *  1. `backup_first` was found (2026-07-29) to be a silent no-op unless
  *     `confirm_overwrite` was passed too: a caller could ask for a backup, be
@@ -288,9 +288,9 @@ async function backupBeforeDelete(
         `it delivered is not a valid project, so restoring it would not bring the project back. Erasing the slot would ` +
         `therefore destroy the only usable copy. ${backup.note} ` +
         `${earlier}no delete was sent for any project. Read the slot with get_preset to see what is actually stored there, ` +
-        `and if the stored project is itself corrupt, overwrite it with upload_project instead of erasing it.`
+        `and if the stored project is itself corrupt, overwrite it with import_preset instead of erasing it.`
           .replace(/\s+/g, ' ').trim(),
-        { retry_action: 'Inspect the slot with get_preset. If the backup cannot be made restorable, do not erase: overwrite the slot with upload_project instead.' });
+        { retry_action: 'Inspect the slot with get_preset. If the backup cannot be made restorable, do not erase: overwrite the slot with import_preset instead.' });
     }
     paths.set(p.slot, backup.file_path);
   }
@@ -309,7 +309,22 @@ export async function executeDeleteProject(args: DeleteProjectArgs): Promise<Pro
   // cleared Pack 1 while the delete landed on Pack 5 would green-light the exact
   // destruction it exists to prevent, and the "backup" on disk would be of a
   // project that was never touched.
-  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
+  //
+  // Phase B: the read, the backup, the erase, and the verification ride ONE
+  // exclusive per-endpoint visit — on a destructive pipeline the gap between
+  // "read as occupied + backed up" and "erased" is precisely where an
+  // interleaved write must be impossible.
+  return withEndpoint(descriptor, (ctx) => deleteProjectLocked(descriptor, ctx, args, slots),
+    { pack: toWirePack(args.pack), opName: 'delete_project' });
+}
+
+/** The locked pipeline of {@link executeDeleteProject}: steps 4-8. */
+async function deleteProjectLocked(
+  descriptor: DeviceDescriptor,
+  ctx: DispatchCtx,
+  args: DeleteProjectArgs,
+  slots: readonly number[],
+): Promise<ProjectDeleteOutcome> {
   const devicePack = (ctx.pack ?? 0) + 1;
 
   // 4: read before delete, both oracles, unconditional.
@@ -403,7 +418,7 @@ export async function executeDeleteProject(args: DeleteProjectArgs): Promise<Pro
       `INDEPENDENT checks: the device's own per-file query, which is computed from the file rather than read out of the ` +
       `directory, and a fresh read of the pack directory taken after the device's manifest flush. The directory alone would ` +
       `be circular, since it is the table a delete edits. ${controlNote} ` +
-      `To put one back, use upload_project with its backup file and the same pack; list_backups finds them by name.`,
+      `To put one back, use import_preset with its backup file and the same pack; list_backups finds them by name.`,
     warning: kept.length > 0
       ? `${kept.length} project(s) were NOT confirmed erased: ` +
         kept.map((d) => `Project ${d.slot} (${d.error})`).join('; ') +

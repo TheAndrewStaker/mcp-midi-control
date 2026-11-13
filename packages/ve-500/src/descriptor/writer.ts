@@ -50,7 +50,10 @@ import {
   findParam,
   paramReplyMatcher,
   saveAckMatcher,
+  CURRENT_PATCH_ADDR,
+  VE500_TARGET,
 } from 'roland-midi/ve-500';
+import { buildRQ1, decodeWire, parseDT1, Size } from 'roland-midi/shared';
 
 const LABEL = 'Boss VE-500';
 const BETA_NOTE =
@@ -155,7 +158,7 @@ function pad2(n: number): string {
 }
 
 /** A resolved VE-500 patch recall target. */
-interface PatchTarget {
+export interface PatchTarget {
   /** 0-based recall index: 0..98 = user U01..U99; 99..148 = preset P01..P50. */
   n: number;
   label: string;
@@ -181,7 +184,7 @@ interface PatchTarget {
  * works. Keep that asymmetry: it is the difference between the two mechanisms,
  * not a policy choice.
  */
-function resolvePatchTarget(location: LocationRef): PatchTarget {
+export function resolvePatchTarget(location: LocationRef): PatchTarget {
   if (typeof location === 'number') {
     if (location >= 1 && location <= 99) {
       return { n: location - 1, label: `U${pad2(location)}`, kind: 'user' };
@@ -208,6 +211,66 @@ function resolvePatchTarget(location: LocationRef): PatchTarget {
     LABEL,
     `Invalid VE-500 memory '${location}'. Use a user memory U01–U99 (or 1–99) or a preset P01–P50.`,
   );
+}
+
+/** How long the unit takes to report a recalled memory in its register. */
+const RECALL_SETTLE_MS = 150;
+const RECALL_READ_ATTEMPTS = 4;
+
+/**
+ * The loaded memory's 0-based recall index (0..98 = U01..U99, 99..148 =
+ * P01..P50), read from the "Current Patch Number" register `switch_preset`
+ * writes. Undefined when the unit does not answer. Hardware-confirmed
+ * 2026-11-12.
+ */
+export async function readCurrentPatchIndex(ctx: DispatchCtx): Promise<number | undefined> {
+  const respPromise = ctx.conn.receiveSysExMatching(
+    (m) => parseDT1(VE500_TARGET, m)?.addr === CURRENT_PATCH_ADDR,
+    PC_IN_READ_TIMEOUT_MS,
+  );
+  ctx.conn.send(buildRQ1(VE500_TARGET, CURRENT_PATCH_ADDR, 2));
+  try {
+    const parsed = parseDT1(VE500_TARGET, await respPromise);
+    if (!parsed || parsed.data.length < 2) return undefined;
+    const idx = decodeWire(Size.INTEGER2x4, parsed.data, 0);
+    return typeof idx === 'number' && idx >= 0 && idx <= 148 ? idx : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Neither recall path is echoed, so read the loaded memory number back and
+ * state on the receipt whether the unit actually moved.
+ */
+async function confirmRecall(ctx: DispatchCtx, target: PatchTarget, sent: WriteResult): Promise<WriteResult> {
+  // The unit is briefly deaf while it loads a memory, so poll rather than read once.
+  let loaded: number | undefined;
+  for (let attempt = 0; attempt < RECALL_READ_ATTEMPTS && loaded !== target.n; attempt++) {
+    await new Promise((r) => setTimeout(r, RECALL_SETTLE_MS));
+    loaded = (await readCurrentPatchIndex(ctx)) ?? loaded;
+  }
+  if (loaded === undefined) {
+    return {
+      ...sent,
+      warning: `${target.label} was sent, but the unit did not answer the read-back, so the recall is unconfirmed. Check the front panel.`,
+    };
+  }
+  if (loaded === target.n) {
+    return {
+      ...sent,
+      confirmed_by: 'read_back',
+      info: `${target.label} is loaded: the unit reports it as the current memory on read-back. ${sent.info ?? ''}`.trim(),
+    };
+  }
+  const now = loaded <= 98 ? `U${pad2(loaded + 1)}` : `P${pad2(loaded - 98)}`;
+  return {
+    ...sent,
+    acked: false,
+    warning:
+      `The recall was sent but the unit still reports ${now} as the loaded memory, not ${target.label}. ` +
+      `Try again; if it repeats, check the unit's MIDI receive channel (OMNI or channel 1).`,
+  };
 }
 
 export const writer: DeviceWriter = {
@@ -282,64 +345,63 @@ export const writer: DeviceWriter = {
 
   async switchPreset(ctx, location): Promise<WriteResult> {
     const target = resolvePatchTarget(location);
-
+    const sent = await (async (): Promise<WriteResult> => {
     if (target.kind === 'user') {
       // PRE-FLIGHT: the whole recall depends on a device setting that can be off,
       // and a Program Change is never echoed, so without this read a recall onto
       // a unit with PC IN off reports success and does nothing. See readPcIn.
       const pcIn = await readPcIn(ctx);
-      if (pcIn === 'off') {
-        throw new DispatchError(
-          'capability_not_supported',
-          LABEL,
-          `Cannot recall ${target.label} over MIDI: this ${LABEL} has MIDI Program Change IN switched ` +
-            `OFF (system_midi.midi_program_change_in = 0). User memories U01-U99 recall by a bare ` +
-            `Program Change, and the unit ignores one while that setting is off, so sending it would ` +
-            `report success and change nothing on the device. Two ways forward, and which one is right ` +
-            `is your call: (1) select ${target.label} on the VE-500's front panel, which always works ` +
-            `and changes no settings; or (2) set system_midi.midi_program_change_in to 1 first, which ` +
-            `re-enables MIDI recall and also re-exposes the unit to any stray Program Change on the bus ` +
-            `recalling a patch mid-song, which is usually why it was turned off. This server will not ` +
-            `flip that setting for you. Factory presets P01-P50 are unaffected either way: they recall ` +
-            `by a SysEx register write, not a Program Change.`,
-          {
-            retry_action:
-              `Select ${target.label} on the front panel, or, if you accept stray Program Changes on ` +
-              `the bus recalling patches, call set_param({port, block:"system_midi", ` +
-              `name:"midi_program_change_in", value:1}) and then retry the recall.`,
-          },
-        );
+      if (pcIn !== 'on') {
+        // PC IN is off, so a bare Program Change would be ignored silently. Do NOT refuse and do NOT
+        // ask the owner to touch the front panel: fall back to the register write the EDITOR ITSELF
+        // uses for user memories. `preset_patch.js` lines 106-142 call the same
+        // `Parameter.setValue("Setup%SetupCommon%0", INTEGER2x4, 0, nextPatch)` from its
+        // '#user-preset-button' handler, with `nextPatch = lastUserPatch` (0..98) — the identical
+        // 0-based index a Program Change uses. One register, min 0 max 148, spans BOTH banks, so the
+        // user half needs no separate decode (see roland-midi/ve-500/patch.ts for the citation trail).
+        //
+        // This path deliberately does not depend on PC IN and does not re-expose the unit to stray
+        // Program Changes on the bus, which is the whole reason PC IN is off on a rig where a
+        // sequencer is broadcasting (the maintainer's Circuit does, on a bus this unit sits on with
+        // RX OMNI = ON).
+        //
+        // HARDWARE-CONFIRMED 2026-09-30 for USER memories, on the maintainer's unit with PC IN off:
+        // recalled U95, read back its own distinguishing content (fx1 DELAY, time 2009, duck 40,
+        // reverb 44, fx2 OFF), then recalled U94 and U95 again and read the round trip. So this leg
+        // is confirmed, not beta, and it is what makes "save then verify from flash" possible at all
+        // on a unit that ignores Program Change. The PC path below stays the preferred leg when PC IN
+        // is on, because it is the older confirmed mechanism and costs one fewer decode assumption.
+        //
+        // 'unknown' (the PC IN read got no answer) takes this leg too. Found on hardware
+        // 2026-11-12: the unit is briefly deaf right after a recall, so a second recall in
+        // quick succession read PC IN as unknown, sent a Program Change, and a unit with PC IN
+        // off ignored it. The register write works whatever PC IN is set to.
+        ctx.conn.send(buildSwitchPatch(target.n));
+        return {
+          op: 'switch_preset',
+          target: target.label,
+          acked: true,
+          info:
+            `Recalled ${target.label} on ${LABEL} by writing its "Current Patch Number" register, not a ` +
+            `Program Change: ` +
+            (pcIn === 'off'
+              ? `this unit has MIDI Program Change IN switched off, so a Program Change would have been ignored. `
+              : `the unit did not answer the Program Change IN read, and this write works whichever way it is set. `) +
+            `Nothing was changed in the unit's MIDI settings.`,
+        };
       }
 
       // BARE Program Change, NO Bank Select. Hardware-confirmed (2026-06-28):
       // the VE-500 ignores the recall if a Bank Select precedes the PC.
       const rx = rxChannel();
       ctx.conn.send([0xc0 | rx, target.n]);
-      // 'unknown' means the pre-flight read got no answer. Send anyway rather
-      // than refuse: a read timeout is not evidence the setting is off, and
-      // turning an unrelated transport hiccup into a hard block would break a
-      // recall path that works. Say plainly that it went out unverified.
-      const unverified = pcIn === 'unknown';
       return {
         op: 'switch_preset',
         target: target.label,
         acked: true,
-        ...(unverified
-          ? {
-              warning:
-                `PC IN could not be read before sending (no reply within ${PC_IN_READ_TIMEOUT_MS}ms), ` +
-                `so ${target.label} was recalled UNVERIFIED. If this unit has MIDI Program Change IN ` +
-                `switched off it ignored the recall silently. Confirm on the front panel.`,
-            }
-          : {}),
         info:
           `Recalled ${target.label} on ${LABEL} (Program Change ${target.n} on MIDI ch ${rx + 1}; ` +
-          `requires PC IN = ON and RX CH = OMNI/Ch.1 on the device). ` +
-          (unverified
-            ? ''
-            : 'PC IN was read as ON before sending, so the precondition is confirmed for this call. ') +
-          `User-memory recall is hardware-confirmed; ` +
-          `PC is not echoed, so the front panel is ground truth. ${BETA_NOTE}`,
+          `PC IN was read as ON before sending).`,
       };
     }
 
@@ -364,6 +426,8 @@ export const writer: DeviceWriter = {
         `(decoded from the VE-500 Editor's own patch-switch handler; NOT a Program Change). Not echoed, ` +
         `so the front panel is ground truth. Community-beta: hardware-unverified. ${BETA_NOTE}`,
     };
+    })();
+    return confirmRecall(ctx, target, sent);
   },
 
   /**

@@ -302,7 +302,12 @@ const blocks = buildBlocks();
   // header region is passed through in general and that byte 17 alone is the
   // casualty, so a future fix has a same-file control to compare against.
   check('savePreset PRESERVES body[16]=Patch_Category (ram had 10 → frame[27] = 10)', !!flash && flash[27] === 0x0a, flash ? `frame[27]=${flash[27]}` : 'no frame');
-  check('savePreset result acked, target "patch slot 5"', res.acked && res.target === 'patch slot 5', JSON.stringify({ acked: res.acked, target: res.target }));
+  // Receipt numbering is front-panel-first (BK-CIRCUIT-RECEIPT-NUMBERING):
+  // the target names the device's Patch 6, and the info echoes the 0-based
+  // argument slot exactly once so the caller can re-issue the call.
+  check('savePreset result acked, target "Patch 6" (front-panel numbering)', res.acked && res.target === 'Patch 6', JSON.stringify({ acked: res.acked, target: res.target }));
+  check('savePreset receipt: verify-by-ear only, and NO get_preset("patch:N") claim (refuted read)',
+    /VERIFY BY EAR/.test(res.info ?? '') && !/get_preset\("patch:/.test(res.info ?? ''), res.info);
 
   let threw = false;
   try {
@@ -317,8 +322,8 @@ const blocks = buildBlocks();
   const res2 = await writer.savePreset!(ctx, 9, undefined, 2);
   const dumpReq = sent.find((m) => m.length === 9 && m[6] === 0x40);
   check('savePreset instance 2 sends a Dump Request for Synth 2 (loc 1)', !!dumpReq && dumpReq[7] === 1, JSON.stringify(dumpReq));
-  check('savePreset instance 2 receipt names Synth 2 + slot 9',
-    res2.target === 'patch slot 9' && /Synth 2/.test(res2.info ?? ''), res2.info);
+  check('savePreset instance 2 receipt names Synth 2 + Patch 10 (front-panel numbering)',
+    res2.target === 'Patch 10' && /Synth 2/.test(res2.info ?? '') && /patch slot 9/.test(res2.info ?? ''), res2.info);
   let threw2 = false;
   try { await writer.savePreset!(ctx, 9, undefined, 3); } catch { threw2 = true; }
   check('savePreset rejects instance 3 (only two synth engines)', threw2);
@@ -420,33 +425,37 @@ const blocks = buildBlocks();
   check('get_params: only ONE dump issued for two same-part (Synth 1) queries', dumps === 1, `dumps=${dumps}`);
 }
 
-// 24. get_preset("patch:N") — stored bank-patch read via PC-load + dump (the
-// store save_preset writes to), through the REAL reader with a mock dump reply.
+// 24. get_preset("patch:N") REFUSES (BK-CIRCUIT-PATCHN). The PC-load read was
+// REFUTED on hardware 2026-07-27: a Program Change REVERTS the live edit and
+// IGNORES its program number (PC 0/40/63 all returned the same patch), so the
+// old path returned the CURRENT patch for every N while claiming to read slot
+// N. The refusal is pinned here: structured, sends NOTHING, names the
+// refutation and the honest alternatives (verify by ear / power-cycle; a
+// project .ncs carries both synth patch bodies byte-exactly).
 {
-  const patchName = 'StoredTest';
-  const body = initPatchBody();
-  for (let i = 0; i < patchName.length; i++) body[i] = patchName.charCodeAt(i);
-  body.fill(0x20, patchName.length, 16); // space-pad the name region (real device behavior)
-  let h: ((b: number[]) => void) | undefined;
+  const sent: number[][] = [];
   const conn = {
     hasInput: true,
     isPortOpen: () => true,
-    onMessage: (fn: (b: number[]) => void) => { h = fn; return () => { h = undefined; }; },
-    // Reply to every Dump Request (cmd 0x40) with the stored patch body (PC-load +
-    // restore Replace-Current are ignored — the mock always returns `body`).
-    send: (b: number[]) => { if (b.length === 9 && b[6] === 0x40) h?.(buildReplaceCurrentPatch(body, b[7] as 0 | 1)); },
+    onMessage: () => () => { /* no replies needed; the refusal must not touch the wire */ },
+    send: (b: number[]) => { sent.push([...b]); },
   };
   type GetPCtx = Parameters<NonNullable<typeof reader.getPreset>>[0];
   const ctx = { conn, descriptor: CIRCUIT_TRACKS_DESCRIPTOR } as unknown as GetPCtx;
 
-  const snap = await reader.getPreset!(ctx, { location: 'patch:5' });
-  check('get_preset("patch:5") returns the loaded bank-patch name', snap.name === patchName, snap.name);
-  check('get_preset patch snapshot: patch_name + decoded synth params present',
-    snap.slots[0]?.params?.patch_name === patchName && 'filter.frequency' in (snap.slots[0]?.params ?? {}),
-    JSON.stringify(Object.keys(snap.slots[0]?.params ?? {}).slice(0, 4)));
-  let threw = false;
-  try { await reader.getPreset!(ctx, { location: 'patch:99' }); } catch { threw = true; }
-  check('get_preset("patch:99") rejects out-of-range slot', threw);
+  const refusalOf = async (location: string): Promise<unknown> => {
+    try { await reader.getPreset!(ctx, { location }); return undefined; } catch (e) { return e; }
+  };
+  const err = await refusalOf('patch:5') as { code?: string; message?: string } | undefined;
+  check('get_preset("patch:5") REFUSES as capability_not_supported', err?.code === 'capability_not_supported', JSON.stringify(err?.code));
+  check('the refusal names the refutation (PC reverts + ignores its number)',
+    /REFUTED on hardware \(2026-07-27\)/.test(err?.message ?? '') && /REVERTS the live edit/.test(err?.message ?? '')
+    && /IGNORES its program number/.test(err?.message ?? ''), err?.message);
+  check('the refusal names the honest alternatives (by ear / power-cycle; .ncs embeds both patch bodies)',
+    /power-cycle/.test(err?.message ?? '') && /embeds both synth patch bodies byte-exactly/.test(err?.message ?? ''), err?.message);
+  const err2 = await refusalOf('patch:99') as { code?: string } | undefined;
+  check('every N refuses identically (there is no valid N)', err2?.code === 'capability_not_supported', JSON.stringify(err2?.code));
+  check('the refusal sent NOTHING on the wire', sent.length === 0, `sent ${sent.length} frame(s)`);
 }
 
 console.log('');

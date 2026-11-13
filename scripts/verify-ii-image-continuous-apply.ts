@@ -71,7 +71,19 @@ import {
   type ContinuousParamPatchInput,
 } from '@mcp-midi-control/fractal-gen2/presetImageContinuousPatch.js';
 import { readPresetImageSnapshot } from '@mcp-midi-control/fractal-gen2/descriptor/presetImageRead.js';
-import { applyContinuousParamsAtomicII } from '@mcp-midi-control/fractal-gen2/descriptor/imageApply.js';
+import { createAtomicImageApply } from '@mcp-midi-control/fractal-gen2/descriptor/imageApply.js';
+import { writer as xlPlusWriter } from '@mcp-midi-control/fractal-gen2/descriptor/writer.js';
+
+// BK-084 wiring: the pipeline is now a config-parameterized factory
+// (createAtomicImageApply); bind the XL+ shape the old singleton had so
+// the Section 3 orchestration goldens keep exercising the same path
+// writer.setParams' internal atomic batch heuristic uses (see
+// setParamsAtomic.ts; the mode-collapse only changed the ENTRY POINT,
+// this dump/patch/push/verify mechanism itself is unchanged).
+const applyContinuousParamsAtomicII = createAtomicImageApply(
+  { modelByte: 0x07, deviceLabel: 'Fractal Axe-Fx II XL+' },
+  (ctx, location) => xlPlusWriter.savePreset!(ctx, location),
+);
 
 let pass = 0;
 let fail = 0;
@@ -89,8 +101,10 @@ function check(label: string, condition: boolean, detail = ''): void {
 
 const AMP_WIRE_ID = 106;
 const CAB_WIRE_ID = 108;
+const GATE_EXPANDER_WIRE_ID = 150;
 const AMP_BASS_PARAM_ID = 2;
 const AMP_MASTER_VOLUME_PARAM_ID = 5;
+const GATE_EXPANDER_MIX_PARAM_ID = 8;
 
 // ═════════════════════════════════════════════════════════════════════
 // Synthetic image builder (mirrors verify-ii-preset-image-tlv.ts, plus
@@ -118,6 +132,13 @@ function buildSyntheticWords(): Uint16Array {
   w[i] = 139; w[i + 1] = 8; i += 2 + 8;
   w[i] = 140; w[i + 1] = 20; i += 2 + 20;
   w[i] = 141; w[i + 1] = 96; i += 2 + 96;
+  // Gate Expander 1 (channel-bearing, even payload): reproduces the
+  // 2026-07-17 hardware finding — `controlType: "unknown"` in the raw
+  // catalog, but `mix` is suffix-rule-calibrated (bare "mix" -> 0..100%),
+  // so it must be image-patch ELIGIBLE post-fix (was wrongly refused pre-fix).
+  w[i] = GATE_EXPANDER_WIRE_ID; w[i + 1] = 24;
+  w[i + 2 + GATE_EXPANDER_MIX_PARAM_ID] = 10000; // gateexpander.mix X, arbitrary pre-patch wire value
+  i += 2 + 24;
   return w;
 }
 
@@ -239,6 +260,44 @@ console.log('Section 1: synthetic round-trip + continuous-patch goldens');
     !enumResult.ok ? enumResult.reason + ' / ' + JSON.stringify(enumResult.refused) : 'unexpectedly succeeded',
   );
 
+  // BUG FIX regression (2026-07-17, hardware stress-test session):
+  // controlType:"unknown"-but-calibrated params (suffix-rule overlay,
+  // e.g. bare "mix" -> percent) must be ELIGIBLE, matching set_param's
+  // actual coverage (its enum gate is controlType==='select', not a
+  // controlType==='knob' allowlist). Caught live: a 37-param retune
+  // batch on real hardware refused all-or-nothing over gateexpander.mix
+  // alone.
+  const unknownCalibratedResult = applyContinuousParamsToImage(dumpBytes, [
+    { block: GATE_EXPANDER_WIRE_ID, paramName: 'mix', channel: 'X', displayValue: 42 },
+  ]);
+  check(
+    'patch: ACCEPTS a controlType="unknown"-but-calibrated param (gateexpander.mix, suffix-rule percent)',
+    unknownCalibratedResult.ok && unknownCalibratedResult.applied.length === 1,
+    !unknownCalibratedResult.ok ? unknownCalibratedResult.reason : JSON.stringify(unknownCalibratedResult.refused),
+  );
+  if (unknownCalibratedResult.ok) {
+    const kind = resolveParamKind('axe-fx-ii', 'gateexpander', 'mix');
+    const expectedWire = Math.round(kind.encodeDisplay!(42));
+    check(
+      'patch: gateexpander.mix applied wire matches encodeDisplay(42)',
+      unknownCalibratedResult.applied[0]?.afterWire === expectedWire,
+      `got ${unknownCalibratedResult.applied[0]?.afterWire}, expected ${expectedWire}`,
+    );
+  }
+
+  // Switches stay explicitly refused (unverified word-packing), even
+  // though they too get a working encodeDisplay/decodeWire pair from
+  // resolveParamKind — this is a deliberate, evidence-driven exclusion,
+  // not an oversight the "unknown-but-calibrated" fix should have swept in.
+  const switchResult = applyContinuousParamsToImage(dumpBytes, [
+    { block: AMP_WIRE_ID, paramName: 'bright_switch', channel: 'X', displayValue: 'on' },
+  ]);
+  check(
+    'patch: refuses a controlType="switch" param (unverified image word packing)',
+    !switchResult.ok && (switchResult.refused?.[0]?.reason.includes('controlType="switch"') ?? false),
+    !switchResult.ok ? JSON.stringify(switchResult.refused) : 'unexpectedly succeeded',
+  );
+
   const unplacedResult = applyContinuousParamsToImage(dumpBytes, [
     { block: 'Reverb 1', paramName: 'mix', channel: 'X', displayValue: 5 },
   ]);
@@ -259,6 +318,24 @@ console.log('Section 1: synthetic round-trip + continuous-patch goldens');
 
   const emptyResult = applyContinuousParamsToImage(dumpBytes, []);
   check('patch: refuses when no patches are given', !emptyResult.ok && emptyResult.reason.includes('no patches given'));
+
+  // ── BK-084 wiring graft 8: duplicate-patch semantics ──
+  // The same block+param+channel appearing twice resolves last-write-wins
+  // in the image patch, pinned equal to streamed semantics (sequential
+  // live writes: the last one is what the device holds).
+  const dupResult = applyContinuousParamsToImage(dumpBytes, [
+    { block: AMP_WIRE_ID, paramName: 'bass', channel: 'X', displayValue: 7.25 },
+    { block: AMP_WIRE_ID, paramName: 'bass', channel: 'X', displayValue: 3.5 },
+  ]);
+  check('duplicate-patch: both entries apply (last-write-wins, streamed parity)', dupResult.ok && dupResult.applied.length === 2, !dupResult.ok ? dupResult.reason : '');
+  if (dupResult.ok) {
+    const kind = resolveParamKind('axe-fx-ii', 'amp', 'bass');
+    const lastWire = Math.round(kind.encodeDisplay!(3.5));
+    const wordIdx = dupResult.applied[1].wordIndex;
+    const dupWords = deframePresetImage(parsePresetDump(dupResult.patchedBytes));
+    check('duplicate-patch: the final word holds the LAST value', dupWords[wordIdx] === lastWire, `got ${dupWords[wordIdx]}, expected ${lastWire}`);
+    check('duplicate-patch: both entries target the same word', dupResult.applied[0].wordIndex === wordIdx);
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -346,6 +423,328 @@ const LOCAL_DUMPS = [
   } else {
     console.log(`  skip  ${anchorPath} (not present)`);
     skipped++;
+  }
+
+  // ── BK-084 wiring golden 1: retune-shaped corpus patch ──
+  // A retune-shaped patch of a REAL factory preset touching amp + cab +
+  // delay knobs + one CPR knob + output.scene_1_main: exact word-diff
+  // count, footer XOR-fold recompute, per-word round-trip. This is the
+  // recon-gap closer: scene_N_main had never been image-patched in a
+  // golden, and CPR words ride the image even though their live path is
+  // fn=0x02-only (the stored word is a plain param word).
+  {
+    const OUTPUT_WIRE_ID = 140;
+    const DELAY_WIRE_ID = 112;
+    const CPR_WIRE_ID = 100;
+    const bankPath = BANK_PATHS.find((p) => existsSync(p));
+    if (bankPath === undefined) {
+      console.log('  skip  retune-shaped corpus patch (no factory bank present)');
+      skipped++;
+    } else {
+      const presets = parsePresetBank(new Uint8Array(readFileSync(bankPath)));
+      let host: { parsed: ParsedPresetDump; words: Uint16Array } | undefined;
+      for (const d of presets) {
+        const r = verifyRoundTripIdentity(d);
+        if (!r.ok) continue;
+        const img = parsePresetImage(r.words);
+        const ids = new Set([...img.blocks, ...img.systemTail].map((b) => b.wireId));
+        if (ids.has(AMP_WIRE_ID) && ids.has(CAB_WIRE_ID) && ids.has(DELAY_WIRE_ID) && ids.has(CPR_WIRE_ID) && ids.has(OUTPUT_WIRE_ID)) {
+          host = { parsed: d, words: r.words };
+          break;
+        }
+      }
+      check('retune-corpus: a factory preset hosts amp+cab+delay+compressor+output', host !== undefined);
+      if (host !== undefined) {
+        const hostBytes = serializePresetDump(host.parsed);
+        const patches: ContinuousParamPatchInput[] = [
+          { block: AMP_WIRE_ID, paramName: 'bass', channel: 'X', displayValue: 6.5 },
+          { block: CAB_WIRE_ID, paramName: 'level', channel: 'X', displayValue: -3.0 },
+          { block: DELAY_WIRE_ID, paramName: 'mix', channel: 'X', displayValue: 22 },
+          { block: CPR_WIRE_ID, paramName: 'threshold', channel: 'X', displayValue: -30 },
+          { block: OUTPUT_WIRE_ID, paramName: 'scene_1_main', channel: 'X', displayValue: 3.0 },
+        ];
+        const result = applyContinuousParamsToImage(hostBytes, patches);
+        check('retune-corpus: 5-knob retune-shaped patch succeeds (incl. CPR + output.scene_1_main)', result.ok, !result.ok ? result.reason + ' ' + JSON.stringify((result as { refused?: unknown }).refused) : '');
+        if (result.ok) {
+          check('retune-corpus: 5 applied, 0 refused', result.applied.length === 5 && result.refused.length === 0, JSON.stringify(result.refused));
+          const patchedParsed = parsePresetDump(result.patchedBytes);
+          const patchedWords = deframePresetImage(patchedParsed);
+          const expectedIdx = new Set(result.applied.map((a) => a.wordIndex));
+          let diffCount = 0;
+          let allExpected = true;
+          for (let idx = 0; idx < PRESET_IMAGE_WORDS; idx++) {
+            if (host.words[idx] !== patchedWords[idx]) {
+              diffCount++;
+              if (!expectedIdx.has(idx)) allExpected = false;
+            }
+          }
+          // Duplicate word indexes can't occur here (5 distinct params),
+          // so the diff count must be exactly the applied count minus any
+          // patch whose target word already held the encoded value.
+          const noOpPatches = result.applied.filter((a) => a.beforeWire === a.afterWire).length;
+          check(
+            `retune-corpus: full-image diff touches EXACTLY the intended words (${diffCount} diffs, ${noOpPatches} already-at-value)`,
+            allExpected && diffCount === result.applied.length - noOpPatches,
+            `diffCount=${diffCount}, applied=${result.applied.length}, noOp=${noOpPatches}`,
+          );
+          check('retune-corpus: patched dump passes its own round-trip-identity (footer XOR-fold recomputed)', verifyRoundTripIdentity(patchedParsed).ok);
+          let expectedHash = 0;
+          for (const wv of patchedWords) expectedHash ^= (wv & 0xffff);
+          expectedHash &= 0xffff;
+          check('retune-corpus: newFooterHash matches the XOR-fold of the patched words', result.newFooterHash === expectedHash);
+        }
+      }
+    }
+  }
+
+  // ── BK-084 wiring golden 1b: Output scene_N_main bounds, corpus-wide ──
+  // Every factory preset's Output TLV must expose paramIds 8..15
+  // (scene_1_main..scene_8_main) inside its own payload bounds — the
+  // words the retune path patches for scene trims. 384/384 expected.
+  {
+    const OUTPUT_WIRE_ID = 140;
+    const corpus: ParsedPresetDump[] = [];
+    for (const p of BANK_PATHS) {
+      if (existsSync(p)) corpus.push(...parsePresetBank(new Uint8Array(readFileSync(p))));
+    }
+    if (corpus.length === 0) {
+      console.log('  skip  output scene_N_main bounds sweep (no factory banks present)');
+      skipped++;
+    } else {
+      let okCount = 0;
+      let firstFail = '';
+      for (let pi = 0; pi < corpus.length; pi++) {
+        const r = verifyRoundTripIdentity(corpus[pi]);
+        if (!r.ok) { if (!firstFail) firstFail = `preset ${pi}: ${r.reason}`; continue; }
+        const img = parsePresetImage(r.words);
+        const out = [...img.blocks, ...img.systemTail].find((b) => b.wireId === OUTPUT_WIRE_ID);
+        if (out === undefined) { if (!firstFail) firstFail = `preset ${pi}: no Output TLV`; continue; }
+        let allInBounds = true;
+        for (let pid = 8; pid <= 15; pid++) {
+          try {
+            const w = paramWordIndex(out, pid, 'X');
+            if (w < 0 || w >= PRESET_IMAGE_WORDS) { allInBounds = false; break; }
+          } catch (err) {
+            allInBounds = false;
+            if (!firstFail) firstFail = `preset ${pi} pid ${pid}: ${err instanceof Error ? err.message : String(err)}`;
+            break;
+          }
+        }
+        if (allInBounds) okCount++;
+      }
+      check(`output-bounds: scene_1..8_main (paramIds 8..15) addressable in ${okCount}/${corpus.length} factory presets`, okCount === corpus.length, firstFail);
+    }
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// Section 2c (capture-gated): fn 0x1F reply == image TLV payload,
+// byte-for-byte. Pins the 2026-07-16 re-mine decode that REFUTED the
+// 2026-06-07 "vector match 0/6" negative (BK-070-DECODE-NOTES.md): the
+// Session-103 fn1f-sweep triples were taken with unmodified factory
+// A003 "Deluxe Verb" loaded, and every triple's value vector equals
+// A003's image TLV payload; the Amp triple equals the factory 234-word
+// record + one 32767 appended per 117-word half (the pinned 234→236
+// live-layout conversion). This byte-identity is what makes fn 0x1F a
+// read oracle for stored block records (the fresh-default capture path).
+// ═════════════════════════════════════════════════════════════════════
+
+console.log('\nSection 2c: fn 0x1F byte-identity vs factory A003 (capture-gated)');
+
+{
+  const SWEEP_DIR = 'samples/captured/fn1f-sweep';
+  const BANK_A = 'samples/factory/Axe-Fx-II_XL+_Bank-A_Q8p02.syx';
+  if (!existsSync(SWEEP_DIR) || !existsSync(BANK_A)) {
+    console.log('  skip  fn1f-sweep captures or Bank A not present');
+    skipped++;
+  } else {
+    const { readdirSync } = await import('node:fs');
+    const d14 = (lo: number, hi: number) => (lo & 0x7f) | ((hi & 0x7f) << 7);
+    const d16 = (b0: number, b1: number, b2: number) => (b0 & 0x7f) | ((b1 & 0x7f) << 7) | ((b2 & 0x03) << 14);
+    const isFn = (f: number[], fn: number) =>
+      f.length >= 7 && f[0] === 0xf0 && f[1] === 0x00 && f[2] === 0x01 && f[3] === 0x74 && f[4] === 0x07 && f[5] === fn;
+    interface Triple { targetId: number; itemCount: number; values: number[] }
+    // Local splitter: Section 3's splitFrames closes over consts that are
+    // still TDZ when this capture-gated section runs at module top level.
+    function splitFrames2c(bytes: Uint8Array): number[][] {
+      const out: number[][] = [];
+      let i = 0;
+      while (i < bytes.length) {
+        if (bytes[i] !== 0xf0) { i++; continue; }
+        let j = i + 1;
+        while (j < bytes.length && bytes[j] !== 0xf7) j++;
+        out.push(Array.from(bytes.slice(i, j + 1)));
+        i = j + 1;
+      }
+      return out;
+    }
+    function parseTriples(bytes: Uint8Array): Triple[] {
+      const out: Triple[] = [];
+      let cur: Triple | undefined;
+      for (const f of splitFrames2c(bytes)) {
+        if (isFn(f, 0x74)) { cur = { targetId: d14(f[6], f[7]), itemCount: d14(f[8], f[9]), values: [] }; out.push(cur); }
+        else if (isFn(f, 0x75) && cur) {
+          const n = d14(f[6], f[7]);
+          for (let i = 0; i < n; i++) {
+            const off = 8 + i * 3;
+            if (off + 2 >= f.length - 2) break;
+            cur.values.push(d16(f[off], f[off + 1], f[off + 2]));
+          }
+        } else if (isFn(f, 0x76)) cur = undefined;
+      }
+      return out;
+    }
+    const sweep = new Map<number, Triple>();
+    for (const name of readdirSync(SWEEP_DIR)) {
+      if (!name.endsWith('.syx')) continue;
+      for (const t of parseTriples(new Uint8Array(readFileSync(`${SWEEP_DIR}/${name}`)))) sweep.set(t.targetId, t);
+    }
+    const a003 = parsePresetBank(new Uint8Array(readFileSync(BANK_A)))[3];
+    const rtA = verifyRoundTripIdentity(a003);
+    if (!rtA.ok) {
+      console.log(`  skip  factory A003 failed round-trip identity: ${rtA.reason}`);
+      skipped++;
+    } else {
+      const img = parsePresetImage(rtA.words);
+      const AMP = 106;
+      let compared = 0;
+      let identical = 0;
+      let ampChecked = false;
+      let ampOk = false;
+      for (const b of [...img.blocks, ...img.systemTail]) {
+        const t = sweep.get(b.wireId);
+        if (t === undefined || t.values.length === 0) continue;
+        const payload = Array.from(rtA.words.slice(b.baseWord, b.baseWord + b.payloadLen));
+        if (b.wireId === AMP) {
+          // 234→236: one 32767 appended at the end of each 117-word half.
+          ampChecked = true;
+          const half = payload.length / 2;
+          const expected = [...payload.slice(0, half), 32767, ...payload.slice(half), 32767];
+          ampOk = t.values.length === expected.length && expected.every((v, i) => v === t.values[i]);
+          continue;
+        }
+        compared++;
+        if (t.values.length === payload.length && payload.every((v, i) => v === t.values[i])) identical++;
+      }
+      check(`fn1f-identity: ${identical}/${compared} non-amp triples byte-identical to factory A003 TLV payloads`, compared > 0 && identical === compared);
+      check('fn1f-identity: amp triple == factory record + 32767 appended per half (234→236 pinned)', ampChecked && ampOk);
+    }
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// Section 2d (capture-gated): FRESH_DEFAULT_RECORDS matches the raw
+// 2026-07-16 hardware captures byte-exactly, independent of the
+// hand-transcribed literals in defaultRecords.ts (catches transcription
+// drift), plus the Amp 1/Amp 2 instance-independence finding (differ at
+// exactly paramId 9 xformer_grind, mirrored X/Y) and an end-to-end
+// insertBlockIntoImage using each record, re-parsed from the resulting
+// image bytes back to the source capture.
+// ═════════════════════════════════════════════════════════════════════
+
+console.log('\nSection 2d: FRESH_DEFAULT_RECORDS vs raw hardware captures (capture-gated)');
+
+{
+  const { insertBlockIntoImage, parseIIImageTlv, findIIImageBlock, parseIIGrid, FRESH_DEFAULT_RECORDS } =
+    await import('fractal-midi/gen2/axe-fx-ii');
+  const CAPTURES: Array<{ wireId: number; dir: string; file: string }> = [
+    { wireId: 106, dir: 'fresh-defaults-r2-2026-07-17-02-12-34', file: 'fresh-106-amp-1.syx' },
+    { wireId: 107, dir: 'bk084-hw-mech-2026-07-17-02-07-16', file: 'fresh-107-amp-2.syx' },
+    { wireId: 108, dir: 'fresh-defaults-r2-2026-07-17-02-12-34', file: 'fresh-108-cab-1.syx' },
+    { wireId: 110, dir: 'fresh-defaults-r2-2026-07-17-02-12-34', file: 'fresh-110-reverb-1.syx' },
+    { wireId: 112, dir: 'fresh-defaults-r2-2026-07-17-02-12-34', file: 'fresh-112-delay-1.syx' },
+    { wireId: 114, dir: 'fresh-defaults-r2-2026-07-17-02-12-34', file: 'fresh-114-multi-delay-1.syx' },
+    { wireId: 130, dir: 'bk084-hw-mech-2026-07-17-02-07-16', file: 'fresh-130-pitch-1.syx' },
+    { wireId: 133, dir: 'fresh-defaults-r2-2026-07-17-02-12-34', file: 'fresh-133-drive-1.syx' },
+  ];
+  const paths = CAPTURES.map((c) => `samples/captured/${c.dir}/${c.file}`);
+  if (!paths.every((p) => existsSync(p))) {
+    console.log('  skip  one or more bk084-hw-mech / fresh-defaults-r2 captures not present');
+    skipped++;
+  } else {
+    const d14 = (lo: number, hi: number) => (lo & 0x7f) | ((hi & 0x7f) << 7);
+    const d16 = (b0: number, b1: number, b2: number) => (b0 & 0x7f) | ((b1 & 0x7f) << 7) | ((b2 & 0x03) << 14);
+    function decodeFn1fCapture(bytes: Uint8Array): number[] {
+      const frames: number[][] = [];
+      let cur: number[] | undefined;
+      for (const b of bytes) {
+        if (b === 0xf0) cur = [b];
+        else if (cur !== undefined) { cur.push(b); if (b === 0xf7) { frames.push(cur); cur = undefined; } }
+      }
+      const values: number[] = [];
+      let seenHeader = false;
+      for (const f of frames) {
+        if (f[5] === 0x74) seenHeader = true;
+        else if (f[5] === 0x75 && seenHeader) {
+          const n = d14(f[6], f[7]);
+          for (let i = 0; i < n; i++) {
+            const off = 8 + i * 3;
+            if (off + 2 >= f.length - 2) break;
+            values.push(d16(f[off], f[off + 1], f[off + 2]));
+          }
+        }
+      }
+      return values;
+    }
+
+    let identical = 0;
+    const decoded = new Map<number, number[]>();
+    for (const c of CAPTURES) {
+      const raw = decodeFn1fCapture(new Uint8Array(readFileSync(`samples/captured/${c.dir}/${c.file}`)));
+      decoded.set(c.wireId, raw);
+      const table = FRESH_DEFAULT_RECORDS[c.wireId];
+      const matches = table !== undefined && table.payload.length === raw.length && table.payload.every((v: number, i: number) => v === raw[i]);
+      if (matches) identical++;
+      else console.log(`  FAIL  wireId ${c.wireId}: table/capture mismatch (table len ${table?.payload.length}, capture len ${raw.length})`);
+    }
+    check(`FRESH_DEFAULT_RECORDS: ${identical}/${CAPTURES.length} entries byte-identical to their raw capture`, identical === CAPTURES.length);
+
+    const amp1 = decoded.get(106)!;
+    const amp2 = decoded.get(107)!;
+    const diffIdx = amp1.map((v, i) => (v !== amp2[i] ? i : -1)).filter((i) => i >= 0);
+    check(
+      'Amp instance-independence: fresh Amp 1 vs Amp 2 differ at exactly paramId 9 (indices 9 and 127, mirrored X/Y)',
+      diffIdx.length === 2 && diffIdx[0] === 9 && diffIdx[1] === 127,
+      `diff indices: ${JSON.stringify(diffIdx)}`,
+    );
+
+    // End-to-end: insertBlockIntoImage using the registered default for
+    // each family re-parses back to the exact captured payload.
+    const { II_IMAGE_FORMAT_TAG, gridCellWordIndex, validateIIGridInvariants } =
+      await import('fractal-midi/gen2/axe-fx-ii');
+    let insertOk = 0;
+    let gridOk = 0;
+    const TLV_CHAIN_START = 130; // II_TLV_CHAIN_START
+    for (const c of CAPTURES) {
+      // Build a minimal image: format tag set, one shunt cell at (1,1)
+      // for the insert target, and a single system-tail anchor block
+      // (140 Output, off-grid) so insertBlockIntoImage's alphabetical-
+      // position search has a tail word to fall back to (an image with
+      // zero blocks anywhere has no anchor and is not a real preset shape).
+      const words = new Uint16Array(4096);
+      const reserved = new Uint8Array(4096);
+      words[0] = II_IMAGE_FORMAT_TAG;
+      words[gridCellWordIndex(1, 1)] = 200; // shunt id
+      words[TLV_CHAIN_START] = 140; // Output (system tail, not on the grid)
+      words[TLV_CHAIN_START + 1] = 20; // payloadLen (factory/live census)
+      // terminator at TLV_CHAIN_START + 2 + 20 = 152, already zero
+      const image = { words, reserved };
+      const result = insertBlockIntoImage(image, { wireId: c.wireId, gridCell: { col: 1, row: 1 } });
+      if (!result.ok) { console.log(`  FAIL  wireId ${c.wireId}: insertBlockIntoImage refused: ${result.reason}`); continue; }
+      const tlv = parseIIImageTlv(result.image.words);
+      const block = findIIImageBlock(tlv, c.wireId);
+      if (block === undefined) { console.log(`  FAIL  wireId ${c.wireId}: not found post-insert`); continue; }
+      const payload = Array.from(result.image.words.slice(block.baseWord, block.baseWord + block.payloadLen));
+      const raw = decoded.get(c.wireId)!;
+      if (payload.length === raw.length && payload.every((v, i) => v === raw[i])) insertOk++;
+      else console.log(`  FAIL  wireId ${c.wireId}: post-insert payload diverges from capture`);
+      const cells = parseIIGrid(result.image.words);
+      const violations = validateIIGridInvariants(cells, tlv.blocks.map((b: { wireId: number }) => b.wireId));
+      if (violations.length === 0) gridOk++;
+      else console.log(`  FAIL  wireId ${c.wireId}: grid violations post-insert: ${violations.join('; ')}`);
+    }
+    check(`insertBlockIntoImage: ${insertOk}/${CAPTURES.length} FRESH_DEFAULT_RECORDS inserts round-trip to the exact capture`, insertOk === CAPTURES.length);
+    check(`insertBlockIntoImage: ${gridOk}/${CAPTURES.length} inserts leave the grid invariant-clean`, gridOk === CAPTURES.length);
   }
 }
 

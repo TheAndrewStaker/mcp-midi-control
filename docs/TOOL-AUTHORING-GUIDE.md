@@ -1126,7 +1126,8 @@ npm run preflight
 ```
 
 Chains:
-- `npm run typecheck` (per-package strict typecheck)
+- `npm run build` (each package's strict `tsc`, which is its typecheck)
+- `npm run typecheck:scripts` (root tsconfig: scripts + tests)
 - `npm test` (verify-pack + verify-msg + verify-transpile + many
   per-device suites)
 - `npm run verify-no-internal-refs`

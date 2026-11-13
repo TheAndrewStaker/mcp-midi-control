@@ -10,11 +10,11 @@
 | Metric | Value |
 |---|---|
 | Total tools | 55 |
-| Read (read-only) | 18 |
+| Read (read-only) | 20 |
 | Write (reversible) | 26 |
-| Write (destructive) | 11 |
-| Average description length | 825 chars |
-| Tools over 600 chars | 33 |
+| Write (destructive) | 9 |
+| Average description length | 791 chars |
+| Tools over 600 chars | 32 |
 | Tools over 1000 chars | 8 |
 
 ## All tools
@@ -29,21 +29,23 @@ No device state changes. `readOnlyHint: true`. Hosts group these as read tools.
 |---|---|---|---|
 | `backup_device` | Back Up Device | 992 ⚠ | Save a device's content to byte-exact files on disk so a later change can be undone. |
 | `describe_device` | Describe Device | 1259 ⚠️ over 1000 | REQUIRED first call for any device question or apply_preset call. |
-| `describe_rig` | Describe Rig | 1510 ⚠️ over 1000 | Whole-rig overview: every device this server can drive, which are connected right now, and what each one is. |
+| `describe_rig` | Describe Rig | 1296 ⚠️ over 1000 | Whole-rig overview: every device this server can drive, which are connected right now, and what each one is. |
 | `find_compatible_types` | Find Compatible Types | 613 ⚠ | Returns the subset of block.type values that expose EVERY knob you list (AND-semantics). |
 | `get_param` | Read Parameter | 761 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | Read Parameters | 434 | Batch-read parameters from a device. |
-| `get_preset` | Read Preset | 1449 ⚠️ over 1000 | Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. |
+| `get_preset` | Read Preset | 1457 ⚠️ over 1000 | Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. |
 | `import_songsterr` | Import Song | 1851 ⚠️ over 1000 | Fetch a part of a song from Songsterr, ready for apply_pattern. |
-| `list_backups` | List Backups | 732 ⚠ | List the backup files this server has saved, newest first, so a user can find one without knowing where we put them. |
-| `list_midi_ports` | List MIDI Ports | 579 | List every MIDI input + output port the OS exposes. |
+| `list_backups` | List Backups | 731 ⚠ | List the backup files this server has saved, newest first, so a user can find one without knowing where we put them. |
+| `list_midi_ports` | List MIDI Ports | 659 ⚠ | List every MIDI input + output port the OS exposes. |
 | `list_packs` | List Packs | 978 ⚠ | List the storage PACKS a device holds, by name. |
 | `list_params` | List Parameters | 975 ⚠ | Enumerate a device's params with units and display ranges. |
 | `list_pattern_recipes` | List Pattern Recipes | 253 | List the named drum-pattern library (four_on_the_floor, boom_bap, half_time, two_step, amen, trap_hats, …) for use with apply_pattern. |
 | `list_samples` | List Samples | 999 ⚠ | Read a device's named sample pool and return each slot's stored name (the sampler-archetype "what's in the pool" read; the names author_kit / the packer refe... |
 | `lookup_lineage` | Look Up Gear Lineage | 900 ⚠ | Look up authored lineage for a block type: real hardware modeled, manufacturer notes, developer/forum quotes. |
 | `measure_loudness` | Measure Loudness | 899 ⚠ | Measure real loudness (BS.1770 LUFS + true peak) from any OS audio input: a modeler's USB audio (the AM4 is a 4x4 interface), a mic, an interface bus. |
+| `open_rig_editor` | Open Rig Console | 222 | Starts the local Rig Console (read-only web page: the rig, its cabling and checks) and returns its one-launch URL for THIS machine only. |
 | `scan_locations` | Scan Preset Locations | 659 ⚠ | Bulk-read stored preset names across a location range. |
+| `show_rig_console` | Show Rig Console | 329 | Opens a live rig panel in hosts that support MCP Apps: registered vs connected devices, read-only. |
 | `translate_preset` | Translate Preset | 980 ⚠ | Translate a preset between layout-class devices (AM4 / Axe-Fx II / III / FM3 / FM9). |
 
 ### Write (reversible)
@@ -52,7 +54,7 @@ Working-buffer edits and navigation, reversible by switching presets. Not destru
 
 | Tool | Title | Description length | First sentence |
 |---|---|---|---|
-| `edit_rig` | Edit Rig | 886 ⚠ | Edit the OpenRig manifest (MCP_RIG_MANIFEST): add/remove a DEVICE, or add/remove/enable/disable a CABLE. |
+| `edit_rig` | Edit Rig | 768 ⚠ | Edit the OpenRig manifest (MCP_RIG_MANIFEST): add/remove a DEVICE, or add/remove/enable/disable a CABLE. |
 | `export_preset` | Export Preset | 986 ⚠ | Back up a preset to a byte-exact file on disk. |
 | `init_patch` | Initialise Patch | 412 | Reset the active patch to factory INIT state. |
 | `reconnect_midi` | Reconnect MIDI | 812 ⚠ | You almost never need this. |
@@ -74,7 +76,7 @@ Working-buffer edits and navigation, reversible by switching presets. Not destru
 | `set_macro_route` | Set Macro Route | 998 ⚠ | Assign one of a performance Macro's (1-8) destinations by NAME on the Hydrasynth macro page (up to 8 each); allocates a free slot and writes target + depth +... |
 | `set_mod_route` | Set Modulation Route | 737 ⚠ | Wire one modulation-matrix route by NAME on a synth with a mod matrix (e.g. |
 | `set_param` | Set Parameter | 977 ⚠ | Write one parameter by (block, name) in display units (knob 0..10, dB, ms, %, enum name or wire index). |
-| `set_params` | Set Parameters | 559 | Batch-write parameters on a device. |
+| `set_params` | Set Parameters | 660 ⚠ | Batch-write parameters. |
 | `set_system_param` | Set System Setting | 374 | Set a device-level system CC (master volume, sustain pedal, expression, mod wheel, all-notes-off). |
 | `switch_preset` | Switch Preset | 433 | Load a stored preset into the working buffer. |
 | `switch_scene` | Switch Scene | 344 | Change the active scene within the current preset. |
@@ -85,17 +87,15 @@ Persists, overwrites a stored location, or sends raw bytes. `destructiveHint: tr
 
 | Tool | Title | Description length | First sentence |
 |---|---|---|---|
-| `apply_patch` | Build Patch | 3776 ⚠️ over 1000 | Build a Hydrasynth patch atomically: apply a sparse override map (or recipe_id) on top of the factory INIT buffer and dump via SysEx to the named slot. |
+| `apply_patch` | Build Patch | 3832 ⚠️ over 1000 | Build a Hydrasynth patch atomically: apply a sparse override map (or recipe_id) on top of the factory INIT buffer and dump via SysEx to the named slot. |
 | `apply_pattern` | Apply Pattern | 3050 ⚠️ over 1000 | Realize a drum / step pattern on a sequencer target (Circuit Tracks drums, Roland SPD-SX, or any voice device with a voice_map). |
-| `apply_preset` | Build Preset | 1084 ⚠️ over 1000 | Build or replace the entire working-buffer preset in one call. |
+| `apply_preset` | Build Preset | 1117 ⚠️ over 1000 | Build or replace the entire working-buffer preset in one call. |
 | `author_kit` | Author Kit | 2198 ⚠️ over 1000 | Author a sampler KIT (a pad-to-wave map) and write it to a stored kit location. |
-| `delete_project` | Delete Project | 977 ⚠ | Permanently ERASE stored projects from a Circuit Tracks pack. |
-| `import_preset` | Restore Preset | 694 ⚠ | Re-apply a byte-exact preset backup (a `.syx` written by export_preset) to the device. |
+| `delete_project` | Delete Project | 976 ⚠ | Permanently ERASE stored projects from a Circuit Tracks pack. |
+| `import_preset` | Restore Preset | 597 | Put a byte-exact, device-native file back on the device: a `.syx` preset or a Circuit Tracks `.ncs` project (formerly upload_project), as export_preset / bac... |
 | `save_preset` | Save Preset | 974 ⚠ | DESTRUCTIVE: persist the working buffer to a stored location, optionally renaming first. |
 | `send_sysex` | Send SysEx | 316 | Send a raw SysEx frame. |
-| `upload_kit` | Upload Kit | 998 ⚠ | Upload a folder of WAVs to consecutive Circuit Tracks drum-sample slots in one batch. |
-| `upload_project` | Upload Project | 990 ⚠ | Upload a prepared whole-project Circuit Tracks .ncs to a project slot, sent VERBATIM over the file-transfer transport. |
-| `upload_sample` | Upload Sample | 994 ⚠ | Add a WAV to a device sample pool. |
+| `upload_sample` | Upload Sample | 719 ⚠ | Add a WAV (`file`) or a folder of WAVs (`folder`) to a device sample pool. |
 
 ## Description budget outliers
 
@@ -103,11 +103,11 @@ Tools with descriptions over 1000 chars. Migration to structured response fields
 
 | Tool | Description length |
 |---|---|
-| `apply_patch` | 3776 chars |
+| `apply_patch` | 3832 chars |
 | `apply_pattern` | 3050 chars |
 | `author_kit` | 2198 chars |
 | `import_songsterr` | 1851 chars |
-| `describe_rig` | 1510 chars |
-| `get_preset` | 1449 chars |
+| `get_preset` | 1457 chars |
+| `describe_rig` | 1296 chars |
 | `describe_device` | 1259 chars |
-| `apply_preset` | 1084 chars |
+| `apply_preset` | 1117 chars |

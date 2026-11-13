@@ -112,6 +112,19 @@ export interface FreakConfig {
   sysex?: FreakSysexSupport;
   /** Highest preset reachable by plain Program Change (no Bank Select decoded). */
   pc_max_preset: number;
+  /**
+   * Bank Select CC number that selects a 128-preset bank ahead of a Program
+   * Change, confirmed BY HARDWARE READ-BACK on this exact model (front-panel
+   * preset number read after send). Present only when confirmed; absent
+   * devices keep refusing above `pc_max_preset` rather than sending an
+   * untested bank-select message that could silently load the wrong preset.
+   * MicroFreak (fw 5.0.0): `0` (Bank Select MSB) confirmed 2026-08-14 --
+   * `scripts/probe-microfreak-bank-select.ts`, 3 landings incl. a sticky-MSB
+   * cross-check (bank left at 1 from a prior step, LSB sent-and-ignored,
+   * still landed at bank*128+PC+1). CC 32 (LSB) was sent and had no effect
+   * in every step; do not also send it.
+   */
+  bank_select_msb_cc?: number;
   /** Total preset slots, for location validation and messaging. */
   preset_count: number;
   /**

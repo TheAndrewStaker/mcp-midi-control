@@ -52,6 +52,7 @@ import {
   TREMOLO_TYPES_VALUES,
   ENHANCER_TYPES_VALUES,
   GATE_TYPES_VALUES,
+  TEMPO_DIVISIONS,
 } from '../../am4/cacheEnums.js';
 
 /** Provenance tag for each overlay entry. */
@@ -151,22 +152,21 @@ const LFO_WAVEFORMS: EnumOverlayEntry = {
 };
 
 /**
- * Tempo divisions — 79-entry table (0..78) shared across every Fractal
- * tempo-sync widget. AM4-verified.
+ * Tempo divisions: the full 79-entry table (0..78) shared across Fractal
+ * tempo-sync widgets, in AM4 `TEMPO_DIVISIONS` order (0 NONE, 1 1/64 TRIP,
+ * ... 11 1/8, 12 1/8 DOT, ...). FM9 fw 12 hardware: `delay.tempo = 12` shows
+ * "1/8 Dot" on the panel (issue #23), and the FM3 editor-cache DELAY_TEMPO
+ * roster matches this table entry for entry. Labels use the panel's casing.
  */
-const TEMPO_DIVISIONS_PARTIAL: EnumOverlayEntry = {
-  values: {
-    0: 'None',
-    1: '4x Whole', 2: '2x Whole', 3: 'Whole', 4: 'Whole Triplet',
-    5: 'Half Dotted', 6: 'Half', 7: 'Half Triplet',
-    8: 'Quarter Dotted', 9: 'Quarter', 10: 'Quarter Triplet',
-    11: '8th Dotted', 12: '8th', 13: '8th Triplet',
-    14: '16th Dotted', 15: '16th', 16: '16th Triplet',
-    17: '32nd Dotted', 18: '32nd', 19: '32nd Triplet',
-    20: '64th Dotted', 21: '64th', 22: '64th Triplet',
-  },
+const TEMPO_DIVISIONS_FULL: EnumOverlayEntry = {
+  values: Object.fromEntries(
+    TEMPO_DIVISIONS.map((label, ordinal) => [
+      ordinal,
+      label.trim().replace(/\bNONE\b/, 'None').replace(/\bDOT\b/, 'Dot').replace(/\bTRIP\b/, 'Trip'),
+    ]),
+  ),
   provenance: 'am4-shared',
-  note: 'Top 23 entries from AM4 TEMPO_DIVISIONS_VALUES; full 79-entry table available via AM4 import.',
+  note: 'AM4 TEMPO_DIVISIONS (79 entries); FM9 fw 12 panel-confirmed at ordinal 12; FM3 cache-identical.',
 };
 
 // ── Suffix → vocabulary map ─────────────────────────────────────
@@ -193,7 +193,7 @@ const SUFFIX_RULES: Array<readonly [string, EnumOverlayEntry]> = [
   ['_LFO_TYPE', LFO_WAVEFORMS],
   ['_LFOTYPE', LFO_WAVEFORMS],
 
-  ['_TEMPO', TEMPO_DIVISIONS_PARTIAL],
+  ['_TEMPO', TEMPO_DIVISIONS_FULL],
 
   ['_SLOPE', FILTER_SLOPE],
 
@@ -252,7 +252,9 @@ function effectType(values: Readonly<Record<number, string>>): EnumOverlayEntry 
 
 const EFFECT_TYPE_OVERRIDES: Record<string, EnumOverlayEntry> = {
   REVERB_TYPE: effectType(REVERB_TYPES_VALUES), // byte-anchored: ordinal 16 == 'Spring, Medium'
-  DELAY_TYPE: effectType(DELAY_TYPES_VALUES),
+  // The AM4 delay 'type' list is the gen-3 delay MODEL list (DELAY_TYPE is
+  // the 8-value stereo mode there; see gen3ReadRosters).
+  DELAY_MODEL: effectType(DELAY_TYPES_VALUES),
   CHORUS_TYPE: effectType(CHORUS_TYPES_VALUES),
   FLANGER_TYPE: effectType(FLANGER_TYPES_VALUES),
   PHASER_TYPE: effectType(PHASER_TYPES_VALUES),

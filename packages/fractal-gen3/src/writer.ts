@@ -189,6 +189,34 @@ export function makeWriter(opts: {
     }
   }
 
+  async function readActiveChannel(ctx: DispatchCtx, effectId: number): Promise<number> {
+    const reply = ctx.conn.receiveSysExMatching(
+      (bytes) => codec.isStatusDumpResponse(bytes),
+      getResponseTimeoutMs,
+    );
+    ctx.conn.send(codec.buildStatusDump());
+    let entries: ReturnType<ModernFractalCodec['parseStatusDumpResponse']>;
+    try {
+      entries = codec.parseStatusDumpResponse(await reply);
+    } catch (error) {
+      throw new DispatchError(
+        'no_ack',
+        deviceLabel,
+        `${shape.id} set_param: could not read the active block channel before a targeted write: ` +
+          `${error instanceof Error ? error.message : String(error)}. No parameter write was sent.`,
+      );
+    }
+    const entry = entries.find((candidate) => candidate.effectId === effectId);
+    if (entry === undefined) {
+      throw new DispatchError(
+        'capability_not_supported',
+        deviceLabel,
+        `${shape.id} set_param: effect ${effectId} is absent from the live status dump. No parameter write was sent.`,
+      );
+    }
+    return entry.channel;
+  }
+
   /**
    * Send a SET frame and, within a short window, watch for EITHER:
    *   - a 0x64 MULTIPURPOSE_RESPONSE rejection, or
@@ -203,6 +231,75 @@ export function makeWriter(opts: {
    * so a missing echo is the expected case and resolves as a plain accept.
    * Parsing inbound bytes emits nothing on the wire.
    */
+  /** fn=0x0D: the active preset's number + name, or a stored preset's name by
+   *  number (answered from flash, nothing loads). Undefined when the unit is silent. */
+  async function queryPatchName(
+    ctx: DispatchCtx,
+    preset: number | 'current',
+    timeoutMs = 400,
+  ): Promise<{ presetNumber: number; name: string } | undefined> {
+    if (shape.id === 'vp4') return undefined;
+    try {
+      const p = ctx.conn.receiveSysExMatching((b) => codec.isQueryPatchNameResponse(b), timeoutMs);
+      p.catch(() => {});
+      ctx.conn.send(codec.buildQueryPatchName(preset));
+      return codec.parseQueryPatchNameResponse(await p);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Read back which preset is active after a switch. A gen-3 unit does not
+   * ack a preset switch, so "sent" used to be reported as "acked": a location
+   * the unit refused (past a Mark I's 512, or a PC landing in the wrong bank)
+   * read as success. Returns a WriteResult patch.
+   */
+  async function confirmSwitch(
+    ctx: DispatchCtx,
+    n: number,
+    how: string,
+  ): Promise<{ acked: boolean; warning: string; display_value: string }> {
+    // The unit needs a moment to load before fn=0x0D reports the new number.
+    let active: { presetNumber: number; name: string } | undefined;
+    for (const waitMs of [60, 150, 300]) {
+      await new Promise((r) => setTimeout(r, waitMs));
+      active = await queryPatchName(ctx, 'current');
+      if (active === undefined || active.presetNumber === n) break;
+    }
+    const offsetNote =
+      `Preset numbers here are the 0-based wire number; the unit's screen shows ${n} or ${n + 1} ` +
+      `depending on its Display Offset setting.`;
+    if (active === undefined) {
+      return {
+        acked: true,
+        display_value: String(n),
+        warning:
+          `${shape.id} switch_preset: ${how}. ${deviceLabel} did not answer the active-preset query, ` +
+          `so the switch is UNCONFIRMED; check the front panel. ${offsetNote}`,
+      };
+    }
+    const nm = active.name.trim();
+    if (active.presetNumber !== n) {
+      return {
+        acked: false,
+        display_value: String(active.presetNumber),
+        warning:
+          `${shape.id} switch_preset: ${how}, but ${deviceLabel} reports preset ` +
+          `${active.presetNumber}${nm ? ` ("${nm}")` : ''} is active, NOT ${n}. The switch did not land ` +
+          `(a location past the unit's last preset is ignored: a Mark I Axe-Fx III holds 0..511). ` +
+          `Any unsaved edits on the previous preset may already be gone. ${offsetNote}`,
+      };
+    }
+    return {
+      acked: true,
+      display_value: String(n),
+      warning:
+        `${shape.id} switch_preset: ${how}; ${deviceLabel} confirms preset ${n}` +
+        `${nm ? ` ("${nm}")` : ''} is now active. ${offsetNote}`,
+    };
+  }
+
   async function sendAndWatchSetResponse(
     ctx: DispatchCtx,
     bytes: number[],
@@ -310,6 +407,14 @@ export function makeWriter(opts: {
     kind: 'discrete' | 'continuous' | undefined,
   ): number[] {
     if (kind === 'discrete') {
+      // Ordinal 0 cannot ride the discrete form: sub 09 00 with value 0 is
+      // byte-identical to the zeroed GET, so the device treats it as a read
+      // and nothing changes (ToneCommand replay testing, FM9). A continuous
+      // 0.0 lands the first entry instead. Grid devices only: the VP4 has no
+      // decoded discrete SET and must keep refusing.
+      if (wireValue === 0 && shape.grid !== undefined) {
+        return codec.buildSetParameterContinuous(effectId, paramId, 0);
+      }
       return codec.buildSetParameter(effectId, paramId, wireValue);
     }
     const normalized = Math.min(1, Math.max(0, wireValue / 65534));
@@ -338,86 +443,137 @@ export function makeWriter(opts: {
       blockSlugIn: string,
       name: string,
       wireValue: number,
-      _channel?: number,
+      channel?: number,
       instance?: number,
     ): Promise<WriteResult> {
       gateWrite('set_param');
       const { effectId } = resolveBlockOrThrow(blockSlugIn, deviceLabel, instance);
       const { param } = resolveParamOrThrow(blockSlugIn, name, deviceLabel);
       const kind = catalog.blocks[blockSlugIn]?.params[name]?.wire_kind;
-      let bytes: number[];
+      // The channel arg used to be dropped here, so `set_param(channel: "B")`
+      // wrote whichever channel the active scene happened to be on. Capture the
+      // original channel, select and verify the requested channel, then restore
+      // and verify the original channel in `finally`, including rejected/failed
+      // parameter writes. fn=0x0B targets the ACTIVE scene only.
+      const channelName = channel !== undefined ? shape.channel_names[channel] : undefined;
+      let originalChannel: number | undefined;
+      let targetSelected = false;
+      if (channel !== undefined) {
+        if (channelName === undefined) {
+          throw new DispatchError(
+            'bad_channel',
+            deviceLabel,
+            `${shape.id} set_param: channel index ${channel} is out of range ` +
+              `(valid: 0..${shape.channel_names.length - 1} / ${shape.channel_names.join('/')}).`,
+          );
+        }
+        originalChannel = await readActiveChannel(ctx, effectId);
+      }
+      const channelField = channelName !== undefined ? { channel: channelName } : {};
       try {
-        bytes = buildSetForKind(effectId, param.paramId, wireValue, kind);
-      } catch (err) {
-        // A device-specific builder may refuse a wire form it has no captured
-        // evidence for (e.g. VP4 has no discrete-param SET) — surface it as a
-        // clean capability refusal, not an internal error.
-        throw new DispatchError(
-          'capability_not_supported',
-          deviceLabel,
-          `${shape.id} set_param ${blockSlugIn}.${name}: ${err instanceof Error ? err.message : String(err)} ${BETA_WARNING}`,
-        );
-      }
-      const response = await sendAndWatchSetResponse(ctx, bytes, effectId, param.paramId);
-      // fn=0x01 is dual-purpose with no byte-level SET/GET discriminator,
-      // so SET handlers mark dirty explicitly; GET handlers don't.
-      markDirty(connectionLabel);
-      if (response.kind === 'reject') {
-        const desc = response.description
-          ? `${response.description} (code 0x${response.resultCode.toString(16).padStart(2, '0')})`
-          : `unknown result code 0x${response.resultCode.toString(16).padStart(2, '0')}`;
+        if (channel !== undefined && originalChannel !== channel) {
+          const channelError = await sendAndWatchForError(
+            ctx,
+            codec.buildSetChannel(effectId, channel as 0 | 1 | 2 | 3),
+          );
+          if (channelError !== undefined) {
+            return {
+              op: 'set_param',
+              target: `${blockSlugIn}.${name}`,
+              block: blockSlugIn,
+              name,
+              wire_value: wireValue,
+              acked: false,
+              channel: channelName,
+              warning:
+                `${deviceLabel} rejected the channel ${channelName} select ahead of set_param via 0x64 ` +
+                `MULTIPURPOSE_RESPONSE: ${formatErrorCode(channelError)}. Nothing was written. ` +
+                BETA_WARNING,
+            };
+          }
+          targetSelected = true;
+          markDirty(connectionLabel);
+          const selected = await readActiveChannel(ctx, effectId);
+          if (selected !== channel) {
+            throw new DispatchError(
+              'no_ack',
+              deviceLabel,
+              `${shape.id} set_param: requested channel ${channelName}, but fresh status reported ` +
+                `${shape.channel_names[selected] ?? selected}. No parameter write was sent.`,
+            );
+          }
+        }
+
+        let bytes: number[];
+        try {
+          bytes = buildSetForKind(effectId, param.paramId, wireValue, kind);
+        } catch (err) {
+          throw new DispatchError(
+            'capability_not_supported',
+            deviceLabel,
+            `${shape.id} set_param ${blockSlugIn}.${name}: ${err instanceof Error ? err.message : String(err)} ${BETA_WARNING}`,
+          );
+        }
+        const response = await sendAndWatchSetResponse(ctx, bytes, effectId, param.paramId);
+        markDirty(connectionLabel);
+        if (response.kind === 'reject') {
+          const desc = response.description
+            ? `${response.description} (code 0x${response.resultCode.toString(16).padStart(2, '0')})`
+            : `unknown result code 0x${response.resultCode.toString(16).padStart(2, '0')}`;
+          return {
+            op: 'set_param', target: `${blockSlugIn}.${name}`, block: blockSlugIn, name,
+            wire_value: wireValue, display_value: sentToDisplay(blockSlugIn, name, wireValue),
+            acked: false, ...channelField,
+            warning: `${deviceLabel} rejected set_param via 0x64 MULTIPURPOSE_RESPONSE: ${desc}. ${BETA_WARNING}`,
+          };
+        }
+        if (response.kind === 'echo') {
+          const echoDisplay = echoToDisplay(blockSlugIn, name, response.normalizedValue);
+          return {
+            op: 'set_param', target: `${blockSlugIn}.${name}`, block: blockSlugIn, name,
+            wire_value: echoDisplay?.wire ?? wireValue,
+            display_value: echoDisplay?.display ?? sentToDisplay(blockSlugIn, name, wireValue),
+            acked: true, ...channelField, warning: BETA_WARNING,
+          };
+        }
         return {
-          op: 'set_param',
-          target: `${blockSlugIn}.${name}`,
-          block: blockSlugIn,
-          name,
-          wire_value: wireValue,
-          display_value: sentToDisplay(blockSlugIn, name, wireValue),
-          acked: false,
+          op: 'set_param', target: `${blockSlugIn}.${name}`, block: blockSlugIn, name,
+          wire_value: wireValue, display_value: sentToDisplay(blockSlugIn, name, wireValue),
+          acked: false, unconfirmed: true, ...channelField,
           warning:
-            `${deviceLabel} rejected set_param via 0x64 MULTIPURPOSE_RESPONSE: ${desc}. ` +
-            BETA_WARNING,
+            `${deviceLabel} did not confirm set_param ${blockSlugIn}.${name}: the write was sent ` +
+            `and not rejected, but no device value-echo returned, so it is UNVERIFIED (it may have ` +
+            `landed). Confirm on the front panel. The gen-3 SET wire is byte-confirmed against device ` +
+            `captures; the server-issued frame drawing an echo is not yet hardware-confirmed end to end. ` +
+            `${BETA_WARNING}`,
         };
+      } finally {
+        if (targetSelected && originalChannel !== undefined) {
+          const restoreError = await sendAndWatchForError(
+            ctx,
+            codec.buildSetChannel(effectId, originalChannel as 0 | 1 | 2 | 3),
+          );
+          if (restoreError !== undefined) {
+            throw new DispatchError(
+              'no_ack',
+              deviceLabel,
+              `${shape.id} set_param may have written ${blockSlugIn}.${name}, but restoring channel ` +
+                `${shape.channel_names[originalChannel] ?? originalChannel} was rejected: ` +
+                `${formatErrorCode(restoreError)}. Recovery is required before continuing.`,
+            );
+          }
+          const restored = await readActiveChannel(ctx, effectId);
+          if (restored !== originalChannel) {
+            throw new DispatchError(
+              'no_ack',
+              deviceLabel,
+              `${shape.id} set_param may have written ${blockSlugIn}.${name}, but channel restoration ` +
+                `failed: expected ${shape.channel_names[originalChannel] ?? originalChannel}, got ` +
+                `${shape.channel_names[restored] ?? restored}. Recovery is required before continuing.`,
+            );
+          }
+        }
       }
-      // A device value-echo is a real acknowledgement: report acked + the
-      // device's own quantized value in display units.
-      if (response.kind === 'echo') {
-        const echoDisplay = echoToDisplay(blockSlugIn, name, response.normalizedValue);
-        return {
-          op: 'set_param',
-          target: `${blockSlugIn}.${name}`,
-          block: blockSlugIn,
-          name,
-          wire_value: echoDisplay?.wire ?? wireValue,
-          display_value: echoDisplay?.display ?? sentToDisplay(blockSlugIn, name, wireValue),
-          acked: true,
-          warning: BETA_WARNING,
-        };
-      }
-      // response.kind === 'accept' — SILENT timeout: the write was sent and not
-      // rejected, but no value-echo came back, so we have NOT confirmed it. We
-      // now emit the device-true wire (discrete sub 09 00 = float32(ordinal);
-      // continuous sub 52 00 = float32(normalized)), confirmed byte-exact against
-      // FM3/FM9 captures; but our SERVER-issued frame drawing a device echo is
-      // not yet hardware-confirmed end to end. Reporting this as acked would be a
-      // wire-ack-not-audible false success, so we report it honestly as
-      // sent-but-unconfirmed (acked:false), distinct from a 0x64 rejection.
-      return {
-        op: 'set_param',
-        target: `${blockSlugIn}.${name}`,
-        block: blockSlugIn,
-        name,
-        wire_value: wireValue,
-        display_value: sentToDisplay(blockSlugIn, name, wireValue),
-        acked: false,
-        unconfirmed: true,
-        warning:
-          `${deviceLabel} did not confirm set_param ${blockSlugIn}.${name}: the write was sent ` +
-          `and not rejected, but no device value-echo returned, so it is UNVERIFIED (it may have ` +
-          `landed). Confirm on the front panel. The gen-3 SET wire is byte-confirmed against device ` +
-          `captures; the server-issued frame drawing an echo is not yet hardware-confirmed end to end. ` +
-          `${BETA_WARNING}`,
-      };
     },
 
     async setParams(ctx: DispatchCtx, ops: readonly WriteOp[]): Promise<BatchWriteResult> {
@@ -539,16 +695,15 @@ export function makeWriter(opts: {
         }
       }
       const bytes = codec.buildSetGridCell({ row: slot.row, col: slot.col, blockId, rows: grid.rows });
-      // FM3 (4-row grid) ignores the insert's target cell unless a sub=0x30
-      // cell-select moves the edit cursor there first — an FM3 owner live-
-      // confirmed this on hardware 2026-06-27 (ForgeFX). The Axe-Fx III and FM9
-      // (6-row) place correctly from the insert alone (FM9 fn=0x13 read-back,
-      // 2026-06-19), so the confirmed single-frame path is left untouched and
-      // only the 4-row FM3 path pairs select → ~15 ms → insert.
-      if (grid.rows === 4) {
-        ctx.conn.send(codec.buildSelectCell({ row: slot.row, col: slot.col, rows: grid.rows }));
-        await new Promise<void>((resolve) => setTimeout(resolve, 15));
-      }
+      // The insert lands at the edit cursor, not at its own target cell, unless
+      // a sub=0x30 cell-select moves the cursor there first. Hardware-confirmed
+      // on the FM3 (2026-06-27) and on the FM9 fw 12 (issue #23: every insert
+      // landed at r1c1 until select → insert). The FM9 fw 11 single-frame
+      // result of 2026-06-19 placed correctly only because the cursor was
+      // already there; FM9-Edit always sends the select too. Sent on every
+      // grid device: select → ~15 ms → insert.
+      ctx.conn.send(codec.buildSelectCell({ row: slot.row, col: slot.col, rows: grid.rows }));
+      await new Promise<void>((resolve) => setTimeout(resolve, 15));
       const errorReport = await sendAndWatchForError(ctx, bytes);
       // The block insert rides the dual-purpose fn=0x01 (sub=0x32), so the
       // connection-level edit classifier can't flag it by function byte alone;
@@ -668,6 +823,13 @@ export function makeWriter(opts: {
       // single structured abort write the first time the ceiling is crossed and
       // returns true thereafter so the remaining phases skip cleanly.
       const applyStartMs = Date.now();
+      // BK-108: AM4-parity stderr breadcrumbs (start/done) so server logs
+      // can tell a wire failure from a Desktop host-side failure envelope
+      // (the 2026-07-16 forensics gap).
+      console.error(
+        `apply_preset start: device=${shape.id} mode=build slots=${spec.slots.length}` +
+        `${target !== undefined ? ` target=${String(target)}` : ''} save=${options?.save === true}`,
+      );
       let budgetExceeded = false;
       const overBudget = (): boolean => {
         if (budgetExceeded) return true;
@@ -729,10 +891,9 @@ export function makeWriter(opts: {
 
       // 1.5. Emit cable edges (routing[]).
       // Each RoutingEdge {from, to, connect?} is resolved to grid coords via
-      // the slot id map, then emitted as fn=0x01 sub=0x35. Row-1 even-col
-      // sources are refused by the builder (not yet decoded); all others are
-      // validated for 6-row grids (FM9/III source rows 2-6 + row-1 odd-col) and
-      // 4-row grids (FM3, byte-confirmed from FM3-Edit loopMIDI captures AND
+      // the slot id map, then emitted as fn=0x01 sub=0x35 (one from/to gridPos
+      // law: 42/42 captured FM9-Edit frames, FM9 fw 12 hardware, and the
+      // 4-row FM3 form, byte-confirmed from FM3-Edit loopMIDI captures AND
       // hardware-confirmed on a real FM3, 2026-06-27 ForgeFX field test:
       // connect/disconnect land, same-column moves keep cables, cross-column
       // moves drop them, matching the device's own behavior).
@@ -788,9 +949,8 @@ export function makeWriter(opts: {
               anyFailed = true;
               continue;
             }
-            // Routing is the path with the known residual (the b23 6-row
-            // formula and the refused row-1 even-col corner), so a device-side
-            // rejection here is more likely than for a plain param write. Watch
+            // A cable can still be refused on the device (no block at an end,
+            // DSP budget). Watch
             // for a 0x64 rejection like every other structural op instead of
             // reporting the cable as unconditionally applied, and carry the
             // beta caveat on the success path.
@@ -954,6 +1114,155 @@ export function makeWriter(opts: {
         }
       }
 
+      // 2.5. Scenes. This step used to be missing entirely: scenes[] and
+      //      landingScene were accepted by preflight and then never sent, so a
+      //      multi-scene build left every scene on whatever channel/bypass the
+      //      last param write happened to leave. Channel (fn=0x0B) and bypass
+      //      (fn=0x0A) both target the ACTIVE scene, so each authored scene is
+      //      selected first. Hardware-confirmed on FM3 fw 12 (2026-09-14): state
+      //      written this way survives a store and decodes back per scene from
+      //      the stored preset. Scene names go out through rename('scene:N').
+      const sceneNamesNotWritten: number[] = [];
+      if (spec.scenes && spec.scenes.length > 0) {
+        // Scene-map keys follow the routing[] id rules: a slot's explicit `id`,
+        // the bare block slug (instance 1), or `<slug>_<instance>`.
+        const slotsById = new Map<string, { block: string; instance?: number }>();
+        for (const s of spec.slots) {
+          const block = s.block_type.trim().toLowerCase();
+          const derived = `${block}${s.instance !== undefined && s.instance !== 1 ? `_${s.instance}` : ''}`;
+          slotsById.set(s.id ?? derived, { block, instance: s.instance });
+        }
+        const resolveSceneBlock = (key: string): { block: string; instance?: number } => {
+          const bySlot = slotsById.get(key);
+          if (bySlot !== undefined) return bySlot;
+          const suffixed = /^(.+?)_(\d+)$/.exec(key.trim());
+          if (suffixed) return { block: suffixed[1].toLowerCase(), instance: Number(suffixed[2]) };
+          return { block: key.trim().toLowerCase() };
+        };
+
+        for (const sc of spec.scenes) {
+          if (overBudget()) break;
+          let sceneSwitch: WriteResult;
+          try {
+            sceneSwitch = await writer.switchScene!(ctx, sc.scene);
+          } catch (err) {
+            sceneSwitch = {
+              op: 'switch_scene',
+              target: String(sc.scene),
+              acked: false,
+              warning: `switch_scene failed: ${err instanceof Error ? err.message : String(err)}`,
+            };
+          }
+          writes.push(sceneSwitch);
+          if (!sceneSwitch.acked) {
+            // Writing channels/bypass now would land on the wrong scene.
+            anyFailed = true;
+            continue;
+          }
+
+          for (const [key, channelIn] of Object.entries(sc.channels ?? {})) {
+            if (overBudget()) break;
+            const upper = typeof channelIn === 'number'
+              ? shape.channel_names[channelIn]
+              : String(channelIn).trim().toUpperCase();
+            const wireChannel = upper !== undefined ? channelValues[upper] : undefined;
+            const target = `scene ${sc.scene} ${key} (channel ${upper ?? String(channelIn)})`;
+            if (wireChannel === undefined) {
+              writes.push({
+                op: 'set_channel',
+                target,
+                acked: false,
+                warning:
+                  `${shape.id} apply_preset: unknown channel "${String(channelIn)}" for ${key} on scene ` +
+                  `${sc.scene}. Valid channels: ${shape.channel_names.join(', ')}.`,
+              });
+              anyFailed = true;
+              continue;
+            }
+            try {
+              const { block, instance } = resolveSceneBlock(key);
+              const { effectId } = resolveBlockOrThrow(block, deviceLabel, instance);
+              const channelError = await sendAndWatchForError(
+                ctx,
+                codec.buildSetChannel(effectId, wireChannel as 0 | 1 | 2 | 3),
+              );
+              if (channelError !== undefined) {
+                writes.push({
+                  op: 'set_channel',
+                  target,
+                  acked: false,
+                  warning:
+                    `${deviceLabel} rejected set_channel via 0x64 MULTIPURPOSE_RESPONSE: ` +
+                    `${formatErrorCode(channelError)}. ${BETA_WARNING}`,
+                });
+                anyFailed = true;
+                continue;
+              }
+              markDirty(connectionLabel);
+              writes.push({ op: 'set_channel', target, acked: true, display_value: upper, warning: BETA_WARNING });
+            } catch (err) {
+              writes.push({
+                op: 'set_channel',
+                target,
+                acked: false,
+                warning: `set_channel failed: ${err instanceof Error ? err.message : String(err)}`,
+              });
+              anyFailed = true;
+            }
+          }
+
+          for (const [key, bypassed] of Object.entries(sc.bypassed ?? {})) {
+            if (overBudget()) break;
+            const target = `scene ${sc.scene} ${key}`;
+            try {
+              const { block, instance } = resolveSceneBlock(key);
+              const result = await writer.setBypass!(ctx, block, bypassed, instance);
+              writes.push({ ...result, target });
+              if (!result.acked) anyFailed = true;
+            } catch (err) {
+              writes.push({
+                op: 'set_bypass',
+                target,
+                acked: false,
+                warning: `set_bypass failed: ${err instanceof Error ? err.message : String(err)}`,
+              });
+              anyFailed = true;
+            }
+          }
+
+          // Scene names ride rename('scene:N') (fn=0x01 sub=0x2b, indexed by
+          // scene, so it does not depend on the active scene). A refusal (a
+          // device that gates rename) falls back to the not-written note.
+          if (sc.name !== undefined && !overBudget()) {
+            try {
+              const result = await writer.rename!(ctx, `scene:${sc.scene}`, sc.name);
+              writes.push({ ...result, target: `scene ${sc.scene} name` });
+              if (!result.acked) anyFailed = true;
+            } catch {
+              sceneNamesNotWritten.push(sc.scene);
+            }
+          }
+        }
+      }
+      // Land on the requested scene (default 1) whenever scenes were authored,
+      // so the device is not left on the last scene the walk above selected.
+      if (!budgetExceeded && (spec.landingScene !== undefined || (spec.scenes?.length ?? 0) > 0)) {
+        const landing = Math.min(shape.scene_count, Math.max(1, Math.trunc(spec.landingScene ?? 1)));
+        try {
+          const result = await writer.switchScene!(ctx, landing);
+          writes.push({ ...result, target: `landing scene ${landing}` });
+          if (!result.acked) anyFailed = true;
+        } catch (err) {
+          writes.push({
+            op: 'switch_scene',
+            target: `landing scene ${landing}`,
+            acked: false,
+            warning: `switch_scene failed: ${err instanceof Error ? err.message : String(err)}`,
+          });
+          anyFailed = true;
+        }
+      }
+
       // 3. Optional rename + save (only if caller asked to persist).
       //    Skipped when the burst aborted on budget — a half-applied buffer
       //    must not be persisted, and the rename ack would itself wait a window.
@@ -993,7 +1302,7 @@ export function makeWriter(opts: {
           anyFailed = true;
         }
       }
-      // landingScene / no_save_on_done not yet wired (options.save handled above).
+      // no_save_on_done not yet wired (options.save handled above).
 
       // A failed step is a REAL failure (rejection/error), not a merely-
       // unconfirmed write — so `failed_step` points the agent at something that
@@ -1004,9 +1313,15 @@ export function makeWriter(opts: {
       // not abort on budget; advertising it on a non-saving audition apply
       // would tell a tester a save envelope went out when none did.
       const envelopes = ['block-insert (fn=0x01 sub=0x32)', 'SET_PARAMETER', 'SET_PRESET_NAME'];
+      if ((spec.scenes?.length ?? 0) > 0) envelopes.push('SET_SCENE / SET_CHANNEL / SET_BYPASS (fn=0x0C / 0x0B / 0x0A)');
       if (!budgetExceeded && shouldSave) envelopes.push('store (fn=0x01 sub=0x26)');
       const ackedCount = writes.filter((w) => w.acked).length;
       const unconfirmedCount = writes.filter((w) => !w.acked && w.unconfirmed).length;
+      // BK-108: done breadcrumb (see start above).
+      console.error(
+        `apply_preset done: device=${shape.id} mode=build ok=${!anyFailed} steps=${writes.length} ` +
+        `acked=${ackedCount} unconfirmed=${unconfirmedCount} elapsed=${Date.now() - applyStartMs} ms`,
+      );
       // `ok` and `saved` reflect REAL failures only. Unconfirmed writes do not
       // fail the apply (the preset likely applied); they add a "verify" note.
       return {
@@ -1029,7 +1344,11 @@ export function makeWriter(opts: {
           (anyUnconfirmed && !anyFailed
             ? 'Treat this as applied-pending-verification, not a failure: confirm the audible / ' +
               'visible result on the device.'
-            : 'Confirm the audible / visible result on the device.'),
+            : 'Confirm the audible / visible result on the device.') +
+          (sceneNamesNotWritten.length > 0
+            ? ` Scene names were NOT written for scene(s) ${sceneNamesNotWritten.join(', ')}: ` +
+              `scene rename is not available on ${deviceLabel}; name them on the device.`
+            : ''),
         saved: shouldSave ? !anyFailed : undefined,
       };
     },
@@ -1047,12 +1366,7 @@ export function makeWriter(opts: {
         return {
           op: 'switch_preset',
           target: String(n),
-          acked: true,
-          display_value: String(n),
-          warning:
-            `${shape.id} switch_preset: sent the gen-3 SysEx preset switch (fn=0x01 sub=0x27, ` +
-            `hardware-confirmed on this device family). ${deviceLabel} does not ack preset ` +
-            `switches; confirm by reading the new active preset name or by checking the front panel.`,
+          ...(await confirmSwitch(ctx, n, 'sent the gen-3 SysEx preset switch (fn=0x01 sub=0x27)')),
         };
       }
       const bytes = codec.buildSwitchPresetPC(n);
@@ -1069,30 +1383,51 @@ export function makeWriter(opts: {
         ctx.conn.send(bytes.slice(i, j));
         i = j;
       }
+      if (shape.id === 'vp4') {
+        return {
+          op: 'switch_preset',
+          target: String(n),
+          acked: true,
+          display_value: String(n),
+          warning:
+            `${shape.id} switch_preset: sent MIDI Program Change + Bank Select on channel 1. ` +
+            `${deviceLabel} does not ack PC writes; confirm on the front panel.`,
+        };
+      }
+      const confirmed = await confirmSwitch(
+        ctx, n, 'sent MIDI Program Change + Bank Select on channel 1 (the factory-default MIDI channel)',
+      );
       return {
         op: 'switch_preset',
         target: String(n),
-        acked: true,
-        display_value: String(n),
-        warning:
-          `${shape.id} switch_preset: sent standard MIDI Program Change + Bank Select on ` +
-          `channel 1 (the factory-default MIDI channel). ${deviceLabel} does not ack PC ` +
-          `writes; confirm by reading the new active preset name or by checking the front ` +
-          `panel. If the device listens on a different MIDI channel, the switch silently ` +
-          `no-ops; set it back to channel 1 in the Global → MIDI menu.`,
+        ...confirmed,
+        warning: confirmed.acked
+          ? confirmed.warning
+          : confirmed.warning +
+            ` If the unit listens on another MIDI channel, has Program Change off, or has PC Mapping on, ` +
+            `a Program Change lands elsewhere or nowhere; check Setup > MIDI/Remote.`,
       };
     },
 
     async savePreset(ctx: DispatchCtx, location: LocationRef, name?: string): Promise<WriteResult> {
       gateWrite('save_preset');
       const n = parseLocation(location);
+      let renameNote = '';
       if (name !== undefined) {
+        // The name is written to the working buffer first; a refused or
+        // failed rename must be REPORTED, not swallowed (a save with `name`
+        // used to ack while the stored name stayed unchanged).
         try {
-          await writer.rename!(ctx, 'preset', name);
-        } catch {
-          // Continue to save attempt anyway.
+          const r = await writer.rename!(ctx, 'preset', name);
+          if (!r.acked) renameNote = ` The rename to "${name}" was REJECTED by the unit, so the stored name is unchanged.`;
+        } catch (err) {
+          renameNote = ` The rename to "${name}" failed (${err instanceof Error ? err.message : String(err)}), so the stored name is unchanged.`;
         }
       }
+      // Where is the unit, before the store? One report (FM3) has the store
+      // ignoring its destination and writing the LOADED preset instead, so the
+      // receipt below compares what landed against what was asked.
+      const before = await queryPatchName(ctx, 'current');
       const bytes = codec.buildStorePreset(n);
       const errorReport = await sendAndWatchForError(ctx, bytes, 200);
       if (errorReport !== undefined) {
@@ -1107,12 +1442,53 @@ export function makeWriter(opts: {
             `state (e.g. an unsaved-edit guard). For now, save on the device front panel. ` + BETA_WARNING,
         };
       }
+      // Read-back receipt (grid devices): the stored name AT THE TARGET, read
+      // from flash without loading it. Proves the destination now holds this
+      // preset's name; when it does not, say so instead of acking.
+      if (shape.id !== 'vp4' && before !== undefined) {
+        await new Promise((r) => setTimeout(r, 150));
+        const stored = await queryPatchName(ctx, n);
+        const expect = (name !== undefined && renameNote === '' ? name : before.name).trim();
+        if (stored !== undefined) {
+          const got = stored.name.trim();
+          const elsewhere = before.presetNumber !== n;
+          if (got === expect) {
+            return {
+              op: 'save_preset',
+              target: String(n),
+              acked: true,
+              display_value: String(n),
+              warning:
+                `${shape.id} save_preset: stored to preset ${n}; read back from flash, it now holds "${got}".` +
+                (elsewhere ? ` (The loaded preset is ${before.presetNumber}; this was a save to a different location.)` : '') +
+                renameNote +
+                ` Preset numbers are 0-based wire numbers; the unit's screen shows ${n} or ${n + 1} per its Display Offset. ` +
+                `The name read-back does not prove every parameter persisted; a power cycle is the full test.`,
+            };
+          }
+          return {
+            op: 'save_preset',
+            target: String(n),
+            acked: false,
+            display_value: String(n),
+            warning:
+              `${shape.id} save_preset: the store was sent with no rejection, but preset ${n} reads back as ` +
+              `"${got}", not "${expect}".` +
+              (elsewhere
+                ? ` The loaded preset is ${before.presetNumber}: this unit may have stored the loaded preset in place ` +
+                  `instead of writing to ${n} (reported on the FM3). Switch to ${n} first, or save from the front panel.`
+                : ` The save may not have landed; check the front panel.`) +
+              renameNote + ' ' + BETA_WARNING,
+          };
+        }
+      }
       return {
         op: 'save_preset',
         target: String(n),
         acked: true,
         display_value: String(n),
         warning:
+          renameNote +
           (shape.id === 'vp4'
             ? `🟡 vp4 save_preset: sent the VP4 store command (fn=0x01 tc=0x1b), byte-identical to ` +
               `the captured save. Saves the ACTIVE preset in place (no destination arg; VP4 ` +
@@ -1158,43 +1534,62 @@ export function makeWriter(opts: {
 
     async rename(ctx: DispatchCtx, target: RenameTarget, name: string): Promise<WriteResult> {
       gateWrite('rename');
-      if (target !== 'preset') {
-        throw new DispatchError(
-          'capability_not_supported',
-          deviceLabel,
-          `${shape.id} rename: only target='preset' is wired (tried target='${target}'). ` +
-            'Scene rename would need SET_SCENE_NAME which has no envelope to port from.',
-        );
-      }
+      // Preset rename rides the gen-3 editor's OWN name write (fn=0x01
+      // sub=0x28, Ghidra FACT tier), superseding the earlier fn=0x09 II-port
+      // hypothesis. Scene rename rides the editor's indexed name write
+      // (fn=0x01 sub=0x2b, scene index in the paramId14 field), the same op
+      // its "Clear All Names" loop emits. Both are editor-decoded and
+      // hardware-unverified (community-beta); the 0x64 error watch below
+      // catches an on-device rejection either way.
+      const sceneMatch = /^scene:(\d+)$/.exec(target);
       let bytes: number[];
+      let what: string;
       try {
-        bytes = codec.buildSetPresetName(name);
+        if (target === 'preset') {
+          bytes = codec.buildRenamePreset(name);
+          what = 'preset';
+        } else if (sceneMatch !== null) {
+          const scene = Number(sceneMatch[1]); // 1-indexed (dispatcher-validated vs scene_count)
+          bytes = codec.buildSetSceneName(scene - 1, name);
+          what = `scene ${scene}`;
+        } else {
+          throw new DispatchError(
+            'capability_not_supported',
+            deviceLabel,
+            `${shape.id} rename: unrecognized target '${target}' (valid: 'preset' or 'scene:N').`,
+          );
+        }
       } catch (err) {
+        if (err instanceof DispatchError) throw err;
         throw new DispatchError(
           'value_out_of_range',
           deviceLabel,
           err instanceof Error ? err.message : String(err),
         );
       }
+      const envelope = target === 'preset'
+        ? 'fn=0x01 sub=0x28 RENAME_PRESET'
+        : 'fn=0x01 sub=0x2b SET_SCENE_NAME';
       const errorReport = await sendAndWatchForError(ctx, bytes, 100);
       if (errorReport !== undefined) {
         return {
           op: 'rename',
-          target: 'preset',
+          target,
           acked: false,
           warning:
-            `${deviceLabel} rejected rename (0x09 SET_PRESET_NAME envelope) via 0x64 ` +
+            `${deviceLabel} rejected rename (${envelope} envelope) via 0x64 ` +
             `MULTIPURPOSE_RESPONSE: ${formatErrorCode(errorReport)}. ` + BETA_WARNING,
         };
       }
       return {
         op: 'rename',
-        target: 'preset',
+        target,
         acked: true,
         display_value: name,
         warning:
-          `🟡 ${shape.id} rename: sent the 0x09 SET_PRESET_NAME envelope. Device emitted no ` +
-          `rejection but may have ignored the write; confirm via the front-panel preset title. ` +
+          `🟡 ${shape.id} rename: sent the ${envelope} envelope (the gen-3 editor's own ` +
+          `name-write op, editor-decoded, hardware-unverified). Device emitted no rejection ` +
+          `but may have ignored the write; confirm the ${what} title on the front panel. ` +
           `Working-buffer scope only; persist with save_preset. ` + BETA_WARNING,
       };
     },

@@ -22,8 +22,8 @@
  * (meta → CDN part JSON, gzip) is an I/O front-end and lives in the script
  * `scripts/songsterr-drum-import.ts`, not here.
  *
- * Source shape (only the fields we read), per live captures of songs 23527 +
- * 1467797 (Sleep Token "Gethsemane") and 501859 (Mr.Kitty "After Dark"):
+ * Source shape (only the fields we read), per live captures of three
+ * songs:
  *   { tuning?:[64,59,55,50,45,40],              // MELODIC parts only (see below)
  *     tuningFlat?:true,                          // DRUM parts only
  *     measures:[ { signature?:[n,d],            // emitted only when it changes
@@ -56,6 +56,7 @@
 
 import type { Step } from './types.js';
 import { GATE_SIXTHS_PER_STEP, MAX_GATE_SIXTHS, MIN_GATE_SIXTHS } from './types.js';
+import { reduceToMonoVoice, renderGlideGestures, describeGlideGestures, type GlideGestureReport } from './pitchGestures.js';
 import {
   gmDrumToVoice,
   quantizeDrumEvents,
@@ -79,19 +80,22 @@ import {
   type LengthArticulationReport,
 } from './songsterrArticulation.js';
 
+/** The legato connections a SOURCE marking can ask for; `glide` is only ever inserted by the renderer. */
+type SourceLegatoCause = Exclude<LegatoCause, 'glide'>;
+
 /** Songsterr dynamics string → accent (loud) / ghost (soft) flags. */
 const ACCENT = new Set(['ff', 'fff', 'ffff', 'sf', 'sfz']);
 const GHOST = new Set(['pp', 'ppp', 'pppp']);
 
 /** What the accent/ghost flags alone compile to (mirrors `compile.ts`). */
-const PLAIN_HIT_VELOCITY = 100;
-const ACCENT_HIT_VELOCITY = 120;
+export const PLAIN_HIT_VELOCITY = 100;
+export const ACCENT_HIT_VELOCITY = 120;
 
 /**
  * Songsterr dynamic marking → MIDI velocity: the FULL ladder, not the
  * accent / plain / ghost triple.
  *
- * Why this exists (2026-07-27, Tom Petty "Breakdown" s23527 part 6). That tab's
+ * Why this exists (2026-07-27, one classic-rock tab's drum part). That tab's
  * drum part carries no per-note `ghost` flag at all; its dynamics are entirely in
  * the sticky beat marking, `fff`×112, `f`×101, `p`×24, `mf`×8, `mp`×2. The
  * measure-1 tail snare the maintainer describes as a "light snare tail hit" is
@@ -134,7 +138,7 @@ export interface SsNote {
    * fractional staff position (-1.5, -0.5, … 3.5), which is why a fractional
    * value here is a second, independent signal that a part is percussion.
    *
-   * The direction is decoded, not assumed. On song 501859 part 5
+   * The direction is decoded, not assumed. On one song's melodic part
    * (`tuning=[64,59,55,50,45,40]`), `{"fret":6,"string":4}` reads as
    * `tuning[4]=45 + 6 = 51 = d#3`, and taking the whole song that way yields a
    * union of exactly 6 pitch classes across its four melodic parts (a coherent
@@ -151,8 +155,8 @@ export interface SsNote {
   ghost?: boolean;
   /**
    * Tie-continuation: this note is held from the previous one, not re-struck.
-   * MELODIC parts only in every tab censused (Sugar's bassoon part carries 34,
-   * After Dark's pad 144; its drum part and Gethsemane's carry none), which is
+   * MELODIC parts only in every tab censused (one song's bassoon part carries 34,
+   * another's pad 144; the drum parts censused carry none), which is
    * expected, since a drum hit has no sustain to tie into. The DRUM flattener
    * still does not read it; `flattenSongsterrMelodic` does, folding the
    * continuation into the length of the onset it is held from and recording the
@@ -164,17 +168,17 @@ export interface SsNote {
    * not distinguish ascent from descent because the adjacent pitches already do.
    *
    * It sits on the note the transition STARTS from, decoded rather than assumed:
-   * Schism's bass m3 writes the riff `38[hp] 48[hp] 50`: three notes, two
+   * one song's bass m3 writes the riff `38[hp] 48[hp] 50`: three notes, two
    * transitions, and the flag on the two notes that LAUNCH one, never on the 50
    * that ends the run. Read as "hammered INTO from the previous note" it would
    * have had to be on 48 and 50, which the source does not do.
    *
-   * 673 notes across the audit corpus, 274 of them Schism's opening bass riff.
+   * 673 notes across the audit corpus, 274 of them one song's opening bass riff.
    */
   hp?: boolean;
   /**
    * Per-note ACCENT level, `1` (accent) or `2` (the rarer heavy accent). A
-   * SECOND, independent dynamics channel from the sticky beat `velocity`: Schism
+   * SECOND, independent dynamics channel from the sticky beat `velocity`: one tab
    * carries 471 of these and only 5 sticky marks on its drums, so for that tab
    * this is the ONLY dynamic information in the score. Composes with the ladder
    * rather than replacing it; see `songsterrArticulation.ts`.
@@ -223,12 +227,12 @@ export interface SsBeat {
   duration: [number, number];
   /**
    * This beat is a GRACE ornament attached to the next one. A STRING in the
-   * source, not a boolean: `"onBeat"` (Sugar) or `"beforeBeat"` (Gethsemane),
+   * source, not a boolean: `"onBeat"` or `"beforeBeat"`,
    * Guitar Pro's two grace placements. Both fold to the same place at step
    * resolution, so the value is read for presence only.
    *
    * Its `duration` is an engraving hint, NOT time the measure spends: censusing
-   * Sugar + Gethsemane (2026-07-27), every voice's durations sum to exactly the
+   * two tabs (2026-07-27), every voice's durations sum to exactly the
    * measure length once the grace beats are subtracted, and over it by exactly
    * the grace duration when they are not. So it must not advance the cursor.
    */
@@ -237,7 +241,7 @@ export interface SsBeat {
    * Guitar Pro's LET-RING: the note sustains past its written length, until the
    * same string is struck again. Acted on since 2026-07-27 (it used to reach
    * `MelodicCell.letRing` and stop there, with no warning that it went no
-   * further, which is what silently dried out After Dark's whole 18-bar intro
+   * further, which is what silently dried out one song's whole 18-bar intro
    * piano, all 86 of whose onsets are marked). Now a GATE EXTENSION, bounded by
    * the next strike of the same pitch, the end of the source's own let-ring run,
    * and `letRingMaxBeats`; see `songsterrArticulation.ts`.
@@ -249,7 +253,7 @@ export interface SsBeat {
   /**
    * PALM MUTE: the picking hand damps the strings, so the note is both SHORTER
    * and DARKER. The most frequent articulation in the audit corpus by a wide
-   * margin (1,149 beats; 756 on Schism's lead guitar alone, continuously from
+   * margin (1,149 beats; 756 on one song's lead guitar alone, continuously from
    * m11 to m237), and the riffs of the songs that use it ARE the contrast between
    * muted chugs and open ringing notes.
    *
@@ -290,6 +294,11 @@ export interface SsMeasure {
   marker?: { text?: string };
   /** The whole measure rests. Unread: its voices' beats carry `rest` too. */
   rest?: boolean;
+  /**
+   * Swing ("triplet feel"): `"8th"` / `"16th"` say the written straight 8ths / 16ths are PLAYED as
+   * long-short triplet pairs; `"off"` ends it. Present only when it changes, so it is sticky.
+   */
+  tripletFeel?: string;
 }
 /**
  * One Songsterr part, drum or melodic.
@@ -341,6 +350,37 @@ export interface MeasureInfo {
   bpm?: number;
   /** Section marker text, if this measure begins one (Songsterr is sticky). */
   marker?: string;
+  /** The swing in force (the source's sticky `tripletFeel`), when it is on and applied. */
+  swing?: SwingFeel;
+}
+
+/** A triplet feel the importer plays: which written straight note value is swung. */
+export type SwingFeel = '8th' | '16th';
+
+/** The span (quarter beats) one long-short pair covers: an 8th feel swings each quarter, a 16th feel each 8th. */
+const SWING_SPAN: Readonly<Record<SwingFeel, number>> = { '8th': 1, '16th': 0.5 };
+
+/**
+ * Where a WRITTEN position actually sounds under the measure's triplet feel. Each pair of straight notes
+ * becomes a triplet long-short: the first half of every span stretches to 2/3 of it and the second half
+ * squeezes into the last 1/3. Piecewise linear, so a note that ends where the next starts still does.
+ */
+export function swingBeat(measures: readonly MeasureInfo[], beat: number): number {
+  let lo = 0;
+  let hi = measures.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (measures[mid].startBeat <= beat + 1e-9) lo = mid; else hi = mid - 1;
+  }
+  const m = measures[lo];
+  if (m === undefined || m.swing === undefined) return beat;
+  const span = SWING_SPAN[m.swing];
+  const rel = beat - m.startBeat;
+  const k = Math.floor(rel / span + 1e-9);
+  const f = Math.max(0, rel - k * span);
+  const half = span / 2;
+  const g = f <= half ? f * (4 / 3) : (2 / 3) * span + (f - half) * (2 / 3);
+  return m.startBeat + k * span + g;
 }
 
 /** A tempo mark, with its measure resolved to a quarter-note beat offset. */
@@ -348,6 +388,60 @@ export interface TempoMark {
   measure: number;
   beat: number;
   bpm: number;
+}
+
+/**
+ * A detected pickup (anacrusis) bar: the song's FIRST measure is shorter than
+ * the prevailing bar, so from MIDI Start every later barline sits `pad_steps`
+ * off the 4-beat grid a clock-slaved device counts (a measure-quantized
+ * looper record-start then NEVER lands on the song's one, and a chain whose
+ * cycle is a non-whole-bar total compounds the offset every wrap — the
+ * 2026-08-08 RC-505mk2 finding on two pickup-bar song builds).
+ */
+export interface PickupBarInfo {
+  /** Steps in the partial first bar, at the import's step grid. */
+  pickup_steps: number;
+  /** Steps in the prevailing full bar (measure 2's signature). */
+  prevailing_bar_steps: number;
+  /** Rest steps to prepend so the head fills one whole prevailing bar. */
+  pad_steps: number;
+  /** e.g. "2/4". */
+  pickup_signature: string;
+  /** e.g. "4/4". */
+  prevailing_signature: string;
+}
+
+/**
+ * Detect a leading pickup bar. Deliberately conservative: fires only when m1
+ * is SHORTER than m2's bar AND m1's signature occurs nowhere else in the song
+ * — a signature that recurs is alternating/odd metre, not an anacrusis, and
+ * padding it would corrupt the music. Returns undefined when either bar's
+ * width is not a whole number of steps at this grid (nothing honest to say).
+ */
+export function detectPickupBar(
+  measures: readonly MeasureInfo[],
+  stepsPerBeat: number,
+): PickupBarInfo | undefined {
+  if (measures.length < 2) return undefined;
+  const beatsOf = (m: MeasureInfo): number => (m.signature[0] * 4) / m.signature[1];
+  const sigOf = (m: MeasureInfo): string => `${m.signature[0]}/${m.signature[1]}`;
+  const b1 = beatsOf(measures[0]);
+  const b2 = beatsOf(measures[1]);
+  if (!(b1 < b2)) return undefined;
+  const k1 = sigOf(measures[0]);
+  for (let i = 1; i < measures.length; i++) {
+    if (sigOf(measures[i]) === k1) return undefined;
+  }
+  const pickupSteps = b1 * stepsPerBeat;
+  const barSteps = b2 * stepsPerBeat;
+  if (!Number.isInteger(pickupSteps) || !Number.isInteger(barSteps)) return undefined;
+  return {
+    pickup_steps: pickupSteps,
+    prevailing_bar_steps: barSteps,
+    pad_steps: barSteps - pickupSteps,
+    pickup_signature: k1,
+    prevailing_signature: sigOf(measures[1]),
+  };
 }
 
 /** A named section: the marker text + the measure/beat it begins at. */
@@ -358,6 +452,9 @@ export interface SectionInfo {
 }
 
 export interface SongsterrFlat {
+  /** Onsets moved by the source's triplet feel (swing), and how many measures it covers. */
+  swung_onsets: number;
+  swung_measures: number;
   events: DrumEvent[];
   /** Total length of the track in quarter-note beats. */
   totalBeats: number;
@@ -405,7 +502,7 @@ export interface SongsterrFlat {
   /**
    * Hits carrying the source's own per-note `accentuated` mark, imported as a
    * velocity BUMP on top of whatever the sticky dynamic already said. A second
-   * dynamics channel: Redbone's drum part writes 28 heavy accents and NO sticky
+   * dynamics channel: one drum part writes 28 heavy accents and NO sticky
    * marks at all, so before this was read its groove imported dead flat.
    */
   accents: number;
@@ -415,11 +512,21 @@ export interface SongsterrFlat {
   fields_applied: AppliedFields;
 }
 
-export interface FlattenOptions {
+/** The swing switch, shared by every flatten and import option set. */
+export interface FeelOptions {
+  /**
+   * Read a swung tab STRAIGHT. Default false: a measure the source marks with a triplet feel
+   * (`tripletFeel: "8th"` / `"16th"`) plays its written straight pairs as triplet long-short, which is
+   * what the marking means and what Songsterr's own player does. True keeps the written grid.
+   */
+  straightFeel?: boolean;
+}
+
+export interface FlattenOptions extends FeelOptions {
   /**
    * Per-source percussion remap: source number → neutral voice name ("clap")
    * or GM number (39). Applied BEFORE the GM lookup, so numbers outside (or
-   * wrongly inside) GM import correctly. Example: Like That writes its clap
+   * wrongly inside) GM import correctly. Example: one tab writes its clap
    * layer on number 0 → `{0: 'clap'}`.
    */
   drumMap?: Readonly<Record<number, string | number>>;
@@ -440,7 +547,17 @@ export interface FlattenOptions {
 }
 
 /** Drum flatten options, plus the articulation knobs a drum hit can use (accent only). */
-export interface DrumFlattenOptions extends FlattenOptions, ArticulationOptions {}
+export interface DrumFlattenOptions extends FlattenOptions, ArticulationOptions {
+  /**
+   * OPT-IN: split the six GM toms (41/43/45/47/48/50) into distinct lanes
+   * (`tom_flo`/`tom_fhi`/`tom_lo`/`tom_lm`/`tom_hm`/`tom_hi`) so two toms struck
+   * together survive as separate voices instead of collapsing onto one `tom`.
+   * Default **false** → byte-identical output (all toms → `tom`). Threaded only
+   * to the GM lookup; the lanes fold back to `tom`/`snare`/`perc` on any device
+   * that lacks them (`drumFold.ts`), so a single-tom kit still plays them.
+   */
+  splitToms?: boolean;
+}
 
 /**
  * Songsterr's OWN percussion numbering beyond GM — a DECODE, not a guess:
@@ -456,12 +573,12 @@ export interface DrumFlattenOptions extends FlattenOptions, ArticulationOptions 
  *
  * **`DrumLegend` is a NOTATION legend, not a voice map, so 27-34 are
  * deliberately absent (2026-07-27).** The legend says what glyph and label to
- * DRAW for a number; using it as a sounding map was the Sugar china defect.
+ * DRAW for a number; using it as a sounding map was the silent-china defect.
  * Numbers 27-34 are the GM2/GS *effect* block (High Q, Slap, Scratch Push,
  * Scratch Pull, Sticks, Square Click, Metronome Click, Metronome Bell): studio
  * and engraving artefacts, not kit voices anyone plays, and a metronome click is
- * emphatically not part of the song. Sleep Token "Sugar" (s560358 rev 3001145,
- * part 10) writes 103 of its 964 notes as `{fret:30, string:-1.5, ghost:true}`
+ * emphatically not part of the song. One tab's drum part
+ * writes 103 of its 964 notes as `{fret:30, string:-1.5, ghost:true}`
  * and Songsterr's own player does not sound one of them; we folded all 103 to
  * `perc` → GM 56 → an SPD-SX china pad, audibly wrong. Dropping the entries
  * routes those hits to `unmapped_numbers`, so the import REPORTS "103 hits on
@@ -517,19 +634,30 @@ interface MeasureIndex {
  * `position` on a tempo mark is a sub-measure offset in the source; it is 0 in
  * every sample seen, so it is left unapplied.
  */
-function indexMeasures(part: SongsterrPart, applied?: AppliedFields): MeasureIndex {
+function indexMeasures(part: SongsterrPart, applied?: AppliedFields, straightFeel = false): MeasureIndex {
   const measures: MeasureInfo[] = [];
   const sections: SectionInfo[] = [];
   const apply = (key: string): void => { if (applied !== undefined) applied[key] = (applied[key] ?? 0) + 1; };
   let start = 0;
   let sig: [number, number] = [4, 4];
+  // Sticky like the signature. An unrecognised value turns swing off rather than being guessed at, and
+  // stays unapplied, so the dropped-fidelity report names it as parsed-not-authored.
+  let swing: SwingFeel | undefined;
   if ((part.automations?.tempo ?? []).length > 0) apply('part.automations');
   for (let mi = 0; mi < part.measures.length; mi++) {
     const measure = part.measures[mi];
     if (measure.signature) { sig = measure.signature; apply('measure.signature'); }
+    if (typeof measure.tripletFeel === 'string') {
+      const feel = measure.tripletFeel;
+      swing = !straightFeel && (feel === '8th' || feel === '16th') ? feel : undefined;
+      if (swing !== undefined || (!straightFeel && feel === 'off')) apply('measure.tripletFeel');
+    }
     const markerText = measure.marker?.text;
     if (markerText !== undefined) apply('measure.marker');
-    measures.push({ index: mi, startBeat: start, signature: [sig[0], sig[1]], marker: markerText });
+    measures.push({
+      index: mi, startBeat: start, signature: [sig[0], sig[1]], marker: markerText,
+      ...(swing !== undefined ? { swing } : {}),
+    });
     if (markerText) sections.push({ name: markerText, startMeasure: mi, startBeat: start });
     start += (sig[0] * 4) / sig[1];
   }
@@ -553,11 +681,11 @@ function indexMeasures(part: SongsterrPart, applied?: AppliedFields): MeasureInd
  * quiet hit, not a silent one; it becomes velocity 40 (`GHOST_HIT_VELOCITY`),
  * overridable per import via `ghostVelocity`. There is deliberately no setting
  * that silences it. It is tempting to drop ghosts, since Songsterr's playback of
- * Sugar's ghosted number-30 notes is silent, but that reads the wrong cause:
+ * one tab's ghosted number-30 notes is silent, but that reads the wrong cause:
  * those 103 notes were inaudible because number 30 is a non-kit effect number,
- * now unmapped, NOT because they were ghosted. The same Sugar part ghosts 3 of
+ * now unmapped, NOT because they were ghosted. The same drum part ghosts 3 of
  * its 61 snare hits, 2 electric snares, a tom and all 3 pedal-hat hits: real
- * groove that a blanket drop would silently delete, and Tom Petty's "Breakdown"
+ * groove that a blanket drop would silently delete, and one classic-rock groove
  * turns on exactly such a soft tail snare. The count is surfaced as `ghosts` so
  * the policy is inspectable, and a caller who wants a ghosted layer routed
  * elsewhere still has `drumMap`.
@@ -570,7 +698,7 @@ function indexMeasures(part: SongsterrPart, applied?: AppliedFields): MeasureInd
  *
  * **And the ladder is only ONE of the two dynamics channels.** The source's own
  * per-note `accentuated` mark is independent of it, and on some tabs it is the
- * only one present: Redbone's drum part carries 28 heavy accents and no sticky
+ * only one present: one drum part carries 28 heavy accents and no sticky
  * marks whatsoever. It resolves as a BUMP on top of the ladder, never as a
  * replacement for it, so an accent inside a `p` passage is louder than its
  * neighbours without becoming louder than the `f` passage next door.
@@ -593,7 +721,7 @@ export function flattenSongsterrDrums(part: SongsterrPart, opts: DrumFlattenOpti
   const art = resolveArticulationOptions(opts);
   const applied: AppliedFields = {};
   const apply = (key: string): void => { applied[key] = (applied[key] ?? 0) + 1; };
-  const idx = indexMeasures(part, applied);
+  const idx = indexMeasures(part, applied, opts.straightFeel === true);
   const dynVelocity = opts.dynamicVelocity !== undefined
     ? { ...SONGSTERR_DYNAMIC_VELOCITY, ...opts.dynamicVelocity }
     : SONGSTERR_DYNAMIC_VELOCITY;
@@ -609,7 +737,7 @@ export function flattenSongsterrDrums(part: SongsterrPart, opts: DrumFlattenOpti
         // A grace beat is an ORNAMENT: its notes belong on the following onset
         // and its duration is engraving, not elapsed time. Emitting it and then
         // advancing pushed the whole rest of the measure late by up to 0.375
-        // quarter beats (1.5 sixteenth steps in Sugar m89), so the notes land
+        // quarter beats (1.5 sixteenth steps in one tab's m89), so the notes land
         // at the current position, ghosted, and the cursor stays put. Same-voice
         // grace + main then share a step and the quantizer keeps the loud one,
         // which is the existing flam policy; a grace on a DIFFERENT voice keeps
@@ -642,7 +770,7 @@ export function flattenSongsterrDrums(part: SongsterrPart, opts: DrumFlattenOpti
             // caller can see what to remap instead of a blind total.
             const remap = opts.drumMap?.[fret];
             const target = typeof remap === 'number' ? remap : fret;
-            const v = typeof remap === 'string' ? remap : (gmDrumToVoice(target) ?? SONGSTERR_DRUM_EXTENSIONS[target]);
+            const v = typeof remap === 'string' ? remap : (gmDrumToVoice(target, opts.splitToms) ?? SONGSTERR_DRUM_EXTENSIONS[target]);
             if (v === undefined) {
               unmapped += group.length;
               unmappedNumbers[fret] = (unmappedNumbers[fret] ?? 0) + group.length;
@@ -678,6 +806,9 @@ export function flattenSongsterrDrums(part: SongsterrPart, opts: DrumFlattenOpti
             const velocity = resolveArticulatedVelocity(ladder, PLAIN_HIT_VELOCITY, level, {}, art) ?? ladder;
             events.push({
               voice: v, beat: pos,
+              // The source number is the MIDI piece unless the caller remapped it to a voice
+              // NAME: then the voice decides ({38: 'clap'} must not still play a snare).
+              ...(typeof remap !== 'string' && target >= 27 && target <= 87 ? { gm: target } : {}),
               ...(accent ? { accent } : {}),
               ...(ghost ? { ghost } : {}),
               ...(velocity !== flagVelocity ? { velocity } : {}),
@@ -689,8 +820,16 @@ export function flattenSongsterrDrums(part: SongsterrPart, opts: DrumFlattenOpti
     }
   }
 
+  // Swing moves where a written onset SOUNDS, so it runs after the walk: every position above is the
+  // written one, which is what the voice cursor and the grace fold reason about.
+  let swungOnsets = 0;
+  for (const e of events) {
+    const at = swingBeat(idx.measures, e.beat);
+    if (Math.abs(at - e.beat) > 1e-9) { e.beat = at; swungOnsets++; }
+  }
   events.sort((a, b) => a.beat - b.beat);
   return {
+    swung_onsets: swungOnsets, swung_measures: idx.measures.filter((m) => m.swing !== undefined).length,
     events, totalBeats: idx.totalBeats, bpm: idx.tempos[0]?.bpm, tempos: idx.tempos,
     signature: idx.signature, measures: idx.measures, sections: idx.sections, unmapped,
     unmapped_numbers: unmappedNumbers, flams_collapsed: flamsCollapsed,
@@ -707,7 +846,7 @@ export function unmappedSummary(flat: Pick<SongsterrFlat, 'unmapped_numbers'>): 
     .join(', ');
 }
 
-export interface SongsterrImportOptions extends ArticulationOptions {
+export interface SongsterrImportOptions extends ArticulationOptions, FeelOptions {
   /** First quarter-note beat of the window (0-based). Default 0. Overridden by fromMeasure/section. */
   fromBeat?: number;
   /** Window length in quarter-note beats. Default: to the next section/measure boundary, else the whole track. */
@@ -726,6 +865,12 @@ export interface SongsterrImportOptions extends ArticulationOptions {
   ghostVelocity?: number;
   /** Dynamic-ladder overrides (see FlattenOptions.dynamicVelocity), merged over SONGSTERR_DYNAMIC_VELOCITY. */
   dynamicVelocity?: Readonly<Record<string, number>>;
+  /**
+   * DRUM parts only: split the GM toms into distinct lanes (see `DrumFlattenOptions.splitToms`).
+   * Declared here because `importSongsterrDrums` used to drop it: callers passed it through an
+   * `as never` cast, the flattener never saw it, and every tom still collapsed onto one lane.
+   */
+  splitToms?: boolean;
 }
 
 export interface SongsterrDrumImport extends QuantizedDrums {
@@ -798,6 +943,8 @@ export function importSongsterrDrums(part: SongsterrPart, opts: SongsterrImportO
     ...(opts.dynamicVelocity !== undefined ? { dynamicVelocity: opts.dynamicVelocity } : {}),
     ...(opts.articulations !== undefined ? { articulations: opts.articulations } : {}),
     ...(opts.accentBump !== undefined ? { accentBump: opts.accentBump } : {}),
+    ...(opts.splitToms === true ? { splitToms: true } : {}),
+    ...(opts.straightFeel === true ? { straightFeel: true } : {}),
   });
   const stepsPerBeat = opts.stepsPerBeat ?? 4;
   const window = resolveWindow(flat, opts);
@@ -914,9 +1061,38 @@ export interface MelodicNote {
    * an anonymous "slide". A targeted slide sets `legato` instead.
    */
   slideUnauthored?: string;
+  /** The note is slid INTO from an unwritten pitch (`below` / `above`). Rendered only by `pitchGestures`. */
+  slideIn?: 'below' | 'above';
+  /** The note slides OUT to an unwritten pitch (`up` / `down`). Rendered only by `pitchGestures`. */
+  slideOut?: 'up' | 'down';
+  /** The raw source `slide` string whenever `slideIn` / `slideOut` is set, for the applied-field count. */
+  slideKind?: string;
+  /**
+   * The source's bend envelope, verbatim: `position` 0..60 across the note, `tone` in hundredths of a
+   * whole tone. Carried, not authored, unless `pitchGestures: 'glide'` renders it.
+   */
+  bend?: readonly { position: number; tone: number }[];
+  /**
+   * The length the bend envelope spans, in quarter beats: the struck beat's OWN duration. A tie folds
+   * more length into `durationBeats`, and the envelope must not stretch over it; a tie that carries
+   * its own bend extends the envelope (and this span) through the tie instead (`foldTieBend`).
+   */
+  bendBeats?: number;
+  /**
+   * Vibrato, from the source's note-level `vibrato` / `wideVibrato` or beat-level `vibrato` (the
+   * beat-level whammy `vibratoWithTremoloBar` is not read). Carried, not authored, unless the
+   * pitch-bend path renders it (songMidi.ts `vibrato`). `from` / `to` are quarter beats after the
+   * onset: the struck beat's own span, moved or grown by a tied continuation that carries it.
+   */
+  vibrato?: { kind: 'normal' | 'wide'; from: number; to: number };
+  /** Set on a note the pitch-gesture renderer INSERTED: what it stands for. */
+  gesture?: 'scoop' | 'fall' | 'bend';
 }
 
 export interface SongsterrMelodicFlat {
+  /** Onsets moved by the source's triplet feel (swing), and how many measures it covers. */
+  swung_onsets: number;
+  swung_measures: number;
   notes: MelodicNote[];
   /** The open-string tuning the decode used (the part's own, or the caller override). */
   tuning: number[];
@@ -957,7 +1133,7 @@ export interface SongsterrMelodicFlat {
   /** Notes let-ring: their gate is extended at the grid boundary, where step positions are known. */
   let_rings: number;
   /** Notes legato-connected to the next onset, by marking: `hp` / a legato slide / a shift slide. */
-  legato: Record<LegatoCause, number>;
+  legato: Record<SourceLegatoCause, number>;
   /** Slide values with NO written destination (or unknown to this importer), by value. */
   slides_unauthored: Record<string, number>;
   /** Every source field this part carries, keyed `"<level>.<field>"`. */
@@ -966,7 +1142,7 @@ export interface SongsterrMelodicFlat {
   fields_applied: AppliedFields;
 }
 
-export interface MelodicFlattenOptions extends ArticulationOptions {
+export interface MelodicFlattenOptions extends ArticulationOptions, FeelOptions {
   /** Override the part's own open-string tuning (index = `SsNote.string`). */
   tuning?: readonly number[];
   /** Semitones added after `tuning[string] + fret`, e.g. -12 to drop a bass an octave. */
@@ -975,6 +1151,31 @@ export interface MelodicFlattenOptions extends ArticulationOptions {
   ghostVelocity?: number;
   /** Dynamic-ladder overrides, merged over `SONGSTERR_DYNAMIC_VELOCITY`. */
   dynamicVelocity?: Readonly<Record<string, number>>;
+}
+
+/** A note's vibrato mark: `wideVibrato` is the wide one; note- or beat-level `vibrato` the normal one. */
+function vibratoKind(note: { vibrato?: boolean; wideVibrato?: boolean }, beat: { vibrato?: boolean }): 'normal' | 'wide' | undefined {
+  if (note.wideVibrato === true) return 'wide';
+  if (note.vibrato === true || beat.vibrato === true) return 'normal';
+  return undefined;
+}
+
+/**
+ * Append a tied continuation's bend to the note it is held from. The envelope's 0..60 then covers
+ * the note's start through the end of the tie (`bendBeats` grows to match): the earlier points are
+ * rescaled, the pitch holds at their last tone up to the tie, and the tie's own points follow.
+ * `offset` is where the tie starts, in beats from the note's onset; `length` is its duration.
+ */
+function foldTieBend(n: MelodicNote, offset: number, length: number, points: readonly { position: number; tone: number }[]): void {
+  const span = offset + length;
+  const head = n.bend !== undefined && n.bendBeats !== undefined
+    ? n.bend.map((p) => ({ position: (p.position * n.bendBeats!) / span, tone: p.tone }))
+    : [{ position: 0, tone: 0 }];
+  const held = head[head.length - 1].tone;
+  const tail = points.map((p) => ({ position: ((offset + (p.position / 60) * length) / span) * 60, tone: p.tone }));
+  n.bend = [...head, { position: (offset / span) * 60, tone: held }, ...tail]
+    .filter((p, i, all) => i === 0 || p.position !== all[i - 1].position || p.tone !== all[i - 1].tone);
+  n.bendBeats = span;
 }
 
 /**
@@ -990,7 +1191,7 @@ export interface MelodicFlattenOptions extends ArticulationOptions {
  * of the note it is held from, so it extends that onset's `durationBeats` and
  * sets `tie` / `tiedBeats` on it rather than emitting a new `MelodicNote`. The
  * hold is tracked per VOICE INDEX across barlines (a pad holding a whole note
- * into the next measure is the normal case: After Dark's Pad 2 part carries 144
+ * into the next measure is the normal case: one song's pad part carries 144
  * ties). A tie whose pitch has no abutting onset in that voice cannot be held
  * from anything, so it imports as a fresh attack and is counted `ties_orphaned`
  * rather than silently vanishing.
@@ -1024,7 +1225,7 @@ export function flattenSongsterrMelodic(part: SongsterrPart, opts: MelodicFlatte
   const applied: AppliedFields = {};
   const apply = (key: string): void => { applied[key] = (applied[key] ?? 0) + 1; };
   if (opts.tuning === undefined && Array.isArray(part.tuning) && part.tuning.length > 0) apply('part.tuning');
-  const idx = indexMeasures(part, applied);
+  const idx = indexMeasures(part, applied, opts.straightFeel === true);
   const transpose = opts.transpose ?? 0;
   const ghostVel = opts.ghostVelocity ?? GHOST_HIT_VELOCITY;
   const art = resolveArticulationOptions(opts);
@@ -1046,7 +1247,7 @@ export function flattenSongsterrMelodic(part: SongsterrPart, opts: MelodicFlatte
   let deadNotes = 0;
   let staccatos = 0;
   let letRings = 0;
-  const legato: Record<LegatoCause, number> = { hp: 0, slide_legato: 0, slide_shift: 0 };
+  const legato: Record<SourceLegatoCause, number> = { hp: 0, slide_legato: 0, slide_shift: 0 };
   const slidesUnauthored: Record<string, number> = {};
   /** Per VOICE INDEX (positional, stable across measures): the last onset of each pitch. */
   const heldByVoice = new Map<number, Map<number, MelodicNote>>();
@@ -1100,6 +1301,18 @@ export function flattenSongsterrMelodic(part: SongsterrPart, opts: MelodicFlatte
               // unrelated earlier note of the same pitch.
               const prev = held.get(pitch);
               if (note.tie === true && prev !== undefined && Math.abs(prev.beat + prev.durationBeats - pos) < 1e-6) {
+                // A tie's own bend (a hold, a release, a further rise) continues the held note's
+                // envelope; its unwritten slide out (a fall off the release) ends the held note.
+                if (Array.isArray(note.bend?.points) && note.bend.points.length > 0) foldTieBend(prev, pos - prev.beat, durBeats, note.bend.points);
+                const tieSlide = typeof note.slide === 'string' ? SONGSTERR_SLIDE_KINDS[note.slide] : undefined;
+                if (tieSlide?.out !== undefined) { prev.slideOut = tieSlide.out; prev.slideKind = note.slide; }
+                // Vibrato on the tie: it starts there, or carries on a vibrato that runs up to it.
+                const tieVib = vibratoKind(note, beat);
+                const at = pos - prev.beat;
+                if (tieVib !== undefined) {
+                  if (prev.vibrato === undefined) prev.vibrato = { kind: tieVib, from: at, to: at + durBeats };
+                  else if (Math.abs(prev.vibrato.to - at) < 1e-6) prev.vibrato = { ...prev.vibrato, to: at + durBeats };
+                }
                 prev.durationBeats += durBeats;
                 prev.tie = true;
                 prev.tiedBeats = (prev.tiedBeats ?? 0) + 1;
@@ -1118,15 +1331,17 @@ export function flattenSongsterrMelodic(part: SongsterrPart, opts: MelodicFlatte
               // five glide into or out of a pitch the score never states, and an
               // unrecognised string is neither, so both are recorded by value for
               // the report rather than guessed at.
-              let cause: LegatoCause | undefined;
+              let cause: SourceLegatoCause | undefined;
               let slideUnauthored: string | undefined;
+              let slideFact: (typeof SONGSTERR_SLIDE_KINDS)[string] | undefined;
               if (typeof note.slide === 'string' && note.slide !== '') {
                 const fact = SONGSTERR_SLIDE_KINDS[note.slide];
+                slideFact = fact;
                 // CLASSIFY first, then gate. A slide with a destination is a
                 // legato connection whether or not we act on it; one without is
                 // unauthorable either way, and so is a value we do not recognise.
                 if (fact?.connects === true) {
-                  if (art.on) cause = note.slide === 'legato' ? 'slide_legato' : 'slide_shift';
+                  if (art.on) cause = note.slide === 'shift' ? 'slide_shift' : 'slide_legato';
                 } else {
                   slideUnauthored = note.slide;
                 }
@@ -1166,6 +1381,17 @@ export function flattenSongsterrMelodic(part: SongsterrPart, opts: MelodicFlatte
                 out.slideUnauthored = slideUnauthored;
                 slidesUnauthored[slideUnauthored] = (slidesUnauthored[slideUnauthored] ?? 0) + 1;
               }
+              // The unwritten half of a slide (in from below/above, out up/down) and the bend envelope
+              // are CARRIED on the note for the opt-in glide renderer; nothing here authors them.
+              if (slideFact?.in !== undefined) out.slideIn = slideFact.in;
+              if (slideFact?.out !== undefined) out.slideOut = slideFact.out;
+              if (out.slideIn !== undefined || out.slideOut !== undefined) out.slideKind = note.slide;
+              if (Array.isArray(note.bend?.points) && note.bend.points.length > 0) {
+                out.bend = note.bend.points.map((p) => ({ position: p.position, tone: p.tone }));
+                out.bendBeats = durBeats;
+              }
+              const vib = vibratoKind(note, beat);
+              if (vib !== undefined) out.vibrato = { kind: vib, from: 0, to: durBeats };
               notes.push(out);
               held.set(pitch, out);
               newOnsets++;
@@ -1178,6 +1404,20 @@ export function flattenSongsterrMelodic(part: SongsterrPart, opts: MelodicFlatte
     }
   }
 
+  // Swing, after the walk (ties abut on WRITTEN positions). The end moves with the start, so a note that
+  // ran up to the next one still does; envelopes measured in beats scale with the note.
+  let swungOnsets = 0;
+  for (const n of notes) {
+    const start = swingBeat(idx.measures, n.beat);
+    const end = swingBeat(idx.measures, n.beat + n.durationBeats);
+    if (Math.abs(start - n.beat) < 1e-9 && Math.abs(end - start - n.durationBeats) < 1e-9) continue;
+    const scale = n.durationBeats > 0 ? (end - start) / n.durationBeats : 1;
+    if (Math.abs(start - n.beat) > 1e-9) swungOnsets++;
+    n.beat = start;
+    n.durationBeats = end - start;
+    if (n.bendBeats !== undefined) n.bendBeats *= scale;
+    if (n.vibrato !== undefined) n.vibrato = { ...n.vibrato, from: n.vibrato.from * scale, to: n.vibrato.to * scale };
+  }
   notes.sort((a, b) => a.beat - b.beat || a.pitch - b.pitch);
   const classes = new Set<number>();
   let low: number | undefined;
@@ -1188,6 +1428,7 @@ export function flattenSongsterrMelodic(part: SongsterrPart, opts: MelodicFlatte
     if (high === undefined || n.pitch > high) high = n.pitch;
   }
   return {
+    swung_onsets: swungOnsets, swung_measures: idx.measures.filter((m) => m.swing !== undefined).length,
     notes, tuning, totalBeats: idx.totalBeats, bpm: idx.tempos[0]?.bpm, tempos: idx.tempos,
     signature: idx.signature, measures: idx.measures, sections: idx.sections,
     unresolved, unresolved_strings: unresolvedStrings,
@@ -1206,7 +1447,7 @@ export function flattenSongsterrMelodic(part: SongsterrPart, opts: MelodicFlatte
  * wrote at this step, before the gate ceiling is applied.
  *
  * `duration_steps` here is the note's REAL length and may exceed the 16-step
- * gate ceiling (After Dark's pad chords run 24 and 32 steps). The `notation`
+ * gate ceiling (one song's pad chords run 24 and 32 steps). The `notation`
  * row splits such a note into a tied chain; this cell keeps the un-split truth,
  * so a caller comparing the two can see exactly what the ceiling cost.
  * Velocity, length and tie all reach `notation` as `:len` / `_` suffixes.
@@ -1485,6 +1726,13 @@ export interface SongsterrMelodicImport {
   out_of_window: number;
   /** Notes past the 6-note chord limit; dropped. */
   chord_overflow: number;
+  /**
+   * Consecutive same-pitch onsets FOLDED into the held note before them by the
+   * opt-in `sustainRepeats` pass (a sustained pad/synth held once, not
+   * re-picked). 0 unless the option is on. Only true-adjacent, same-strike cells
+   * are merged; see `collapseSustainedRepeats`.
+   */
+  sustain_collapsed: number;
   /** Notes whose string/fret did not resolve to a MIDI pitch; skipped. */
   unresolved: number;
   /** Tie continuations folded into the onset they are held from. */
@@ -1517,7 +1765,7 @@ export interface SongsterrMelodicImport {
     dead_notes: number;
     staccatos: number;
     let_rings: number;
-    legato: Record<LegatoCause, number>;
+    legato: Record<SourceLegatoCause, number>;
     /** Slide values with no written destination (or unknown to us), by value. */
     slides_unauthored: Record<string, number>;
   };
@@ -1529,6 +1777,10 @@ export interface SongsterrMelodicImport {
    * with nobody updating a list.
    */
   dropped_fidelity: DroppedFidelity;
+  /** TRACK-WIDE: chord notes dropped by `monoVoice` (0 when the option is off). */
+  mono_dropped: number;
+  /** TRACK-WIDE: what `pitchGestures: 'glide'` rendered; absent when the option is off. */
+  pitch_gestures?: GlideGestureReport;
 }
 
 export interface MelodicImportOptions extends SongsterrImportOptions, MelodicFlattenOptions {
@@ -1545,6 +1797,109 @@ export interface MelodicImportOptions extends SongsterrImportOptions, MelodicFla
    * `cells[]` either way.
    */
   noteLengths?: boolean;
+  /**
+   * OPT-IN: collapse consecutive same-pitch onsets into ONE held note, for a
+   * SUSTAINED voice (a pad or synth held on a real synth) rather than a guitar
+   * that re-picks. A pad the tab writes as `d#5:2` eight times is ONE note the
+   * player holds for a bar; a guitar's eight down-picks are eight attacks, and
+   * the source cannot tell the two apart — so the caller says which.
+   *
+   * **Default OFF**, because a guitar's repeats are real re-strikes and eating
+   * them would be wrong. Turn it on for a pad/synth line. Only TRUE-adjacent
+   * cells with an identical pitch set, velocity and articulation are merged; a
+   * rest between (a gap), a pitch change, or a staccato / dead / accent / tie /
+   * let-ring / legato / palm-mute / velocity change ends the hold and stays a
+   * separate attack. The merged note keeps the first onset's velocity and
+   * articulation and sums the durations. The count of onsets folded is reported
+   * on `sustain_collapsed` and in a warning. See `collapseSustainedRepeats`.
+   */
+  sustainRepeats?: boolean;
+  /**
+   * OPT-IN: keep ONE voice of every chord onset, for a line a MONO synth plays. Counts from the
+   * bottom (0 = lowest, 1 = the next up); negative counts from the top (-1 = highest). A chord with
+   * fewer notes clamps to its nearest end, so `1` takes the upper note of an octave pair and the
+   * middle of a triad. Default off (chords stay chords). See `reduceToMonoVoice`.
+   */
+  monoVoice?: number;
+  /**
+   * OPT-IN: render the source's BENDS and its slides into / out of unwritten pitches as overlapping
+   * GLIDE notes, for a mono synth set to glide (MicroFreak: Envelope Legato ON, glide via ENV→Glide in
+   * the Matrix). A stored step cannot carry pitch bend, so this is the approximation a sequencer can
+   * store: a scoop is a grace note a step early, a fall is the note's last step, a bend is the note
+   * then its bent pitch(es) on the nearest steps. Default off. See `pitchGestures.ts`.
+   */
+  pitchGestures?: 'glide';
+  /** Semitones an unwritten slide starts from / falls to, for `pitchGestures`. Default 2. */
+  slideSemitones?: number;
+}
+
+/** Two pitch sets are equal iff same length and same members in order (both ascending). */
+function samePitchSet(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * Two cells strike the SAME way iff their velocity and every articulation flag
+ * match. Any difference (a louder repeat, a staccato'd repeat, a newly dead or
+ * accented or tied note) is a real re-articulation, not a continued hold, so it
+ * is NOT a collapse candidate. `undefined === undefined` for the absent flags.
+ */
+function sameStrikeArticulation(a: MelodicCell, b: MelodicCell): boolean {
+  return a.velocity === b.velocity
+    && a.tie === b.tie
+    && a.letRing === b.letRing
+    && a.legato === b.legato
+    && a.accent === b.accent
+    && a.palmMute === b.palmMute
+    && a.dead === b.dead
+    && a.staccato === b.staccato;
+}
+
+/**
+ * OPT-IN collapse of consecutive same-pitch onsets into ONE held note, for a
+ * SUSTAINED voice (a pad / synth held on a real synth) rather than a guitar that
+ * re-picks. One song's pad part writes m3-4 as `d#5:2`
+ * eight times then `c5:2` eight times; the player holds ONE note per bar, which
+ * this folds to `d#5:16` + `c5:16` (matching m1-2's own single held notes).
+ *
+ * Merges `cell[n+1]` into `cell[n]` ONLY on TRUE adjacency, and never across a
+ * re-strike:
+ *   - `cell[n+1].step === cell[n].step + cell[n].duration_steps` — abutting, so
+ *     NO rest sits between them and they do not overlap (a gap is a re-strike),
+ *   - identical pitch set (a pitch change ends the hold),
+ *   - identical velocity and articulation (`sameStrikeArticulation`: a louder or
+ *     staccato'd or accented repeat is a genuine second attack, left alone).
+ * The merged note keeps the FIRST onset's velocity and articulation and SUMS the
+ * `duration_steps`. Because a merge grows the head's duration, the next
+ * adjacency test is against the grown length, so a whole run chains into one.
+ *
+ * The first cell of each run is CLONED before its duration is grown, so the
+ * input array (still referenced elsewhere as the sparse cell grid) is untouched.
+ * Runs BEFORE `applyLengthArticulations` so the gate / let-ring / damping stage
+ * sees one long note, not eight short ones — a collapsed 32-step hold then splits
+ * into a tied chain by the same ceiling logic any long note does. Returns the
+ * merged-onset count for the receipt.
+ */
+export function collapseSustainedRepeats(cells: readonly MelodicCell[]): { cells: MelodicCell[]; merged: number } {
+  const out: MelodicCell[] = [];
+  let merged = 0;
+  for (const cell of cells) {
+    const prev = out[out.length - 1];
+    if (
+      prev !== undefined
+      && cell.step === prev.step + prev.duration_steps
+      && samePitchSet(prev.pitches, cell.pitches)
+      && sameStrikeArticulation(prev, cell)
+    ) {
+      out[out.length - 1] = { ...prev, duration_steps: prev.duration_steps + cell.duration_steps };
+      merged++;
+      continue;
+    }
+    out.push(cell);
+  }
+  return { cells: out, merged };
 }
 
 /**
@@ -1589,11 +1944,29 @@ export function importSongsterrMelodic(part: SongsterrPart, opts: MelodicImportO
     ...(opts.accentBump !== undefined ? { accentBump: opts.accentBump } : {}),
     ...(opts.palmMuteVelocityScale !== undefined ? { palmMuteVelocityScale: opts.palmMuteVelocityScale } : {}),
     ...(opts.deadVelocityScale !== undefined ? { deadVelocityScale: opts.deadVelocityScale } : {}),
+    ...(opts.straightFeel === true ? { straightFeel: true } : {}),
   });
   const art = resolveArticulationOptions(opts);
   const spb = opts.stepsPerBeat ?? 4;
   const window = resolveWindow(flat, opts);
   const stepCount = Math.max(1, Math.round(window.beats * spb));
+
+  // Mono reduction, then pitch gestures: both TRACK-WIDE, in beat time, before the window is taken,
+  // so a scoop whose grace lands in the previous window still belongs to the note it leads into.
+  let trackNotes: MelodicNote[] = flat.notes;
+  let monoDropped = 0;
+  if (opts.monoVoice !== undefined) {
+    const mono = reduceToMonoVoice(trackNotes, opts.monoVoice);
+    trackNotes = mono.notes;
+    monoDropped = mono.dropped;
+  }
+  let gestures: GlideGestureReport | undefined;
+  if (opts.pitchGestures === 'glide') {
+    const g = renderGlideGestures(trackNotes, { stepBeats: 1 / spb, slideSemitones: opts.slideSemitones });
+    trackNotes = g.notes;
+    gestures = g.report;
+    for (const [k, v] of Object.entries(g.applied)) flat.fields_applied[k] = (flat.fields_applied[k] ?? 0) + v;
+  }
 
   const cells: (MelodicCell | undefined)[] = Array.from({ length: stepCount }, () => undefined);
   /** The source beat that first claimed each step, so a chord is not miscounted as a merge. */
@@ -1606,7 +1979,7 @@ export function importSongsterrMelodic(part: SongsterrPart, opts: MelodicImportO
   // Take the window FIRST (as the drum path does), so `out_of_window` means
   // "this onset ROUNDED off the end of the grid", not "the other 133 measures of
   // the song are not in these two bars", which is not a fidelity problem at all.
-  const inWindow = flat.notes.filter((n) => n.beat >= window.fromBeat - 1e-3 && n.beat < window.fromBeat + window.beats);
+  const inWindow = trackNotes.filter((n) => n.beat >= window.fromBeat - 1e-3 && n.beat < window.fromBeat + window.beats);
   for (const n of inWindow) {
     const exact = (n.beat - window.fromBeat) * spb;
     const step = Math.round(exact);
@@ -1657,6 +2030,21 @@ export function importSongsterrMelodic(part: SongsterrPart, opts: MelodicImportO
     if (c === undefined) continue;
     c.token = chordToken(c.pitches);
     filled.push(c);
+  }
+
+  // OPT-IN sustained-voice collapse (a pad/synth held once, not re-picked). Runs
+  // on `filled` BEFORE the length stage, so let-ring / damping / the gate ceiling
+  // see the held note, not the eight short ones the tab re-wrote it as. Default
+  // OFF — a guitar's repeats are real attacks. Rebuild `filled` in place so every
+  // downstream reader (length stage, layout, `cells` return, range) sees the
+  // collapsed set without a rename; `collapseSustainedRepeats` clones, so the
+  // sparse `cells` grid the noteLengths:false path reads is left untouched.
+  let sustainCollapsed = 0;
+  if (opts.sustainRepeats === true) {
+    const collapsed = collapseSustainedRepeats(filled);
+    sustainCollapsed = collapsed.merged;
+    filled.length = 0;
+    filled.push(...collapsed.cells);
   }
 
   // STAGES 2 and 3: lengthen (let-ring, legato) then damp (palm mute, dead,
@@ -1752,6 +2140,14 @@ export function importSongsterrMelodic(part: SongsterrPart, opts: MelodicImportO
   }
   if (chordOverflow > 0) warnings.push(`${chordOverflow} note(s) dropped past the ${MAX_CHORD_NOTES}-note chord limit.`);
   if (outOfWindow > 0) warnings.push(`${outOfWindow} note(s) rounded past the end of the ${stepCount}-step window and were dropped.`);
+  if (sustainCollapsed > 0) {
+    warnings.push(
+      `sustainRepeats: ${sustainCollapsed} consecutive same-pitch onset(s) were COLLAPSED into the held note before them `
+      + '(a sustained voice held once, not re-struck). Only TRUE adjacency with an identical pitch set, velocity and '
+      + 'articulation was merged; a rest between, a pitch change, or a staccato / accent / velocity change ends the hold '
+      + 'and stays a separate attack. Turn the option off for a re-picking voice (a guitar).',
+    );
+  }
 
   // ── ARTICULATION receipts. Each names the count, what it became, and the knob
   // that changes it, so nothing here is magic and nothing here is unarguable.
@@ -1789,13 +2185,21 @@ export function importSongsterrMelodic(part: SongsterrPart, opts: MelodicImportO
         + (artReport.let_ring_capped > 0 ? ` ${artReport.let_ring_capped} hit that cap rather than reaching their own next strike.` : ''),
       );
     }
+    if (monoDropped > 0) {
+      warnings.push(
+        `TRACK-WIDE: monoVoice ${opts.monoVoice} kept one note of every chord onset for a mono synth and dropped ${monoDropped} `
+        + 'chord note(s). Pick another index (0 = lowest, -1 = highest) if the wrong line survived.',
+      );
+    }
+    if (gestures !== undefined) warnings.push(`TRACK-WIDE: ${describeGlideGestures(gestures, opts.slideSemitones ?? 2)}`);
     const slideValues = Object.entries(flat.slides_unauthored);
-    if (slideValues.length > 0) {
+    if (slideValues.length > 0 && gestures === undefined) {
       warnings.push(
         `TRACK-WIDE: ${slideValues.reduce((a, [, c]) => a + c, 0)} slide(s) have NO written destination note `
         + `[${slideValues.map(([v, c]) => `${v}×${c}`).join(', ')}], so there is nothing to connect a gate to: they glide into or out `
-        + 'of a pitch the score never states. A targeted slide (legato / shift) IS carried, as gate overlap. These need a '
-        + 'continuous-controller path, the same one a bend needs; see `dropped_fidelity.parsed_not_authored`.',
+        + 'of a pitch the score never states. A targeted slide (legato / shift) IS carried, as gate overlap. For a mono synth '
+        + 'that glides, pitchGestures:"glide" renders the scoops and falls (and any bends) as overlapping glide notes; '
+        + 'see `dropped_fidelity.parsed_not_authored`.',
       );
     }
   } else if (flat.palm_mutes + flat.let_rings + flat.accents + flat.dead_notes + flat.staccatos > 0) {
@@ -1818,6 +2222,7 @@ export function importSongsterrMelodic(part: SongsterrPart, opts: MelodicImportO
     notation, steps, step_count: stepCount, cells: filled, warnings,
     total_beats: flat.totalBeats, bpm: tempoAtBeat(flat, window.fromBeat), signature, window,
     off_grid: offGrid, merged, out_of_window: outOfWindow, chord_overflow: chordOverflow,
+    sustain_collapsed: sustainCollapsed,
     unresolved: flat.unresolved, ties_folded: flat.ties_folded,
     gate_splits: laid?.splits ?? 0, gate_clamps: laid?.clamps ?? 0, ties_emitted: laid?.ties ?? 0,
     ...(low !== undefined && high !== undefined
@@ -1830,5 +2235,7 @@ export function importSongsterrMelodic(part: SongsterrPart, opts: MelodicImportO
       legato: flat.legato, slides_unauthored: flat.slides_unauthored,
     },
     dropped_fidelity: dropped,
+    mono_dropped: monoDropped,
+    ...(gestures !== undefined ? { pitch_gestures: gestures } : {}),
   };
 }

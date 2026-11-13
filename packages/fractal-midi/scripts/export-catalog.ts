@@ -54,11 +54,13 @@ import {
   PARAMS as AXEFX3_PARAMS,
   AXE_FX_III_BLOCKS,
   GEN3_READ_ROSTERS,
+  III_RANGES,
 } from '../src/gen3/axe-fx-iii/index.js';
 import {
   FM3_PARAMS,
   FM3_FAMILY_JOIN_DISCRETE,
   FM3_FAMILY_JOIN_PROVENANCE,
+  FM3_RANGES,
 } from '../src/gen3/fm3/index.js';
 import {
   FM9_PARAMS,
@@ -160,11 +162,17 @@ const CATALOGS: DeviceCatalog[] = [
       'AXE_FX_III_BLOCKS (effect IDs) is shared across the gen-3 family (III/FM3/FM9).',
       'GEN3_READ_ROSTERS maps enum ordinals to display names for set-by-name; the ' +
         'ordinal IS the wire set value (float32(ordinal)).',
+      'III_RANGES carries device-true display ranges (display = value * scale) mined ' +
+        'from the Axe-Edit III effectDefinitions cache (community capture 2026-07-02). ' +
+        'CONFLICT RULE: where the cache and the 2026-06-18 SET->GET hardware roundtrip ' +
+        'disagree, the roundtrip (device behavior) wins; consumers should route the ' +
+        'roundtrip-discrete params as ordinals even where III_RANGES has a float row.',
     ],
     data: {
       PARAMS: AXEFX3_PARAMS,
       AXE_FX_III_BLOCKS,
       GEN3_READ_ROSTERS,
+      III_RANGES,
     },
   },
   {
@@ -179,10 +187,9 @@ const CATALOGS: DeviceCatalog[] = [
       'NOT reused from the Axe-Fx III',
     notes: [
       GEN3_BLOCK_NOTE,
-      'NO ranges/scaling table yet: unlike fm9.json (FM9_RANGES), no FM3-Edit ' +
-        'effectDefinitions cache has been contributed, so per-param display ranges ' +
-        'are limited to what FM3_PARAMS carries. The FM3-Edit cache file (one file, ' +
-        'no capture tools) generates the full table — see the capture guides.',
+      'FM3_RANGES carries device-true display ranges (display = value * scale) mined ' +
+        'from the FM3-Edit effectDefinitions cache (community capture 2026-06-27, ' +
+        'fw 12.0, GitHub issues #7/#8; 1831 rows / 39 families).',
       'Enum display names: resolve via axe-fx-iii.json GEN3_READ_ROSTERS ' +
         '(family-shared); no FM3-specific overrides exist yet.',
       'FM3_FAMILY_JOIN_DISCRETE routes type/count selectors as DISCRETE ordinals ' +
@@ -196,6 +203,7 @@ const CATALOGS: DeviceCatalog[] = [
       FM3_PARAMS,
       FM3_FAMILY_JOIN_DISCRETE,
       FM3_FAMILY_JOIN_PROVENANCE,
+      FM3_RANGES,
     },
   },
   {

@@ -185,10 +185,16 @@ cascade; the ceiling is specific to large unscoped runs starting dirty.
      boundary regression, etc.). Default omitted = `clean-scratch`. The
      env-var side door (`MOCK_FIXTURE=...`) still works for ad-hoc runs;
      case-spec wins when both are present.
+   - `rigFixture`: the name of a folder under `fixtures/` holding a
+     `rig.json` and a `repertoire.json`. The runner points
+     `MCP_RIG_MANIFEST` and `MCP_RIG_REPERTOIRE` at them, so a case can ask
+     `describe_rig({song})` for a plan and be checked on how it carries the
+     plan out. A case without one runs with both variables unset, whatever
+     the shell holds, so a personal rig never changes a sweep's answers.
    - `requiresHardware`: set true for a case that needs a real device
      RESPONSE the mock can't synthesize: a SysEx readback (e.g.
      `get_preset` on a device with no mock responder) or an ack-gated
-     transfer (`upload_sample`/`upload_project` on Circuit). These are
+     transfer (`upload_sample`/`import_preset` on Circuit). These are
      SKIPPED under the mock (default sweep) and run only under
      `--real-hardware`. Distinct from `disabled` (which removes the case
      from every sweep): a requiresHardware case is live, just gated to the

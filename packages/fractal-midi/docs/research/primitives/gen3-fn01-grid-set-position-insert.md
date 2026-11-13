@@ -181,3 +181,13 @@ and the septet effect-id field.
   placement path (`buildSelectCell` + the gen-3 `setBlock` writer, gated on
   `grid.rows === 4`); the confirmed 6-row single-frame path is unchanged.
   Community-beta on FM3.
+- 2026-10-24: the select is required on the 6-row devices too. An FM9 fw 12
+  field report (issue #23) saw every insert land at r1c1 (the cursor) until
+  `select → insert` was sent; with the pair, seven blocks landed at r2c1-r2c7
+  and removal (select, then insert id 0) worked the same way. The 2026-06-19
+  FM9 fw 11 single-frame result placed correctly because the cursor was
+  already on the target cell. FM9-Edit always sends the select. `setBlock` now
+  pairs select + insert on every gen-3 grid device. Golden (FM9, r2c2):
+  `F0 00 01 74 12 01 30 00 00 00 00 00 07 00 00 00 00 00 00 00 00 21 F7`
+  then `F0 00 01 74 12 01 32 00 76 00 00 00 07 00 00 00 00 00 00 00 00 55 F7`
+  (`test/gen3/axe-fx-iii/subactions.test.ts`).

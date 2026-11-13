@@ -14,8 +14,8 @@
  */
 import readline from 'node:readline';
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER = path.resolve('C:/dev/mcp-midi-tools', 'packages', 'server-all', 'dist', 'server', 'index.js');
 
@@ -29,7 +29,7 @@ const ask = (q: string) => new Promise<string>((r) => rl.question(q, r));
 
 async function main(): Promise<void> {
   const t = new StdioClientTransport({ command: process.execPath, args: [SERVER], stderr: 'pipe' });
-  const c = new Client({ name: 'bench-circuit-selfheal', version: '1' }, { capabilities: {} });
+  const c = new Client({ name: 'bench-circuit-selfheal', version: '1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await c.connect(t);
   const summarize = (label: string, text: string) => {
     let p: { occupied?: number; total?: number } = {};

@@ -14,7 +14,7 @@
  * SAFEST-EVIDENCE design: rather than AUTHOR scene bytes from the field decode
  * (the decode doc's standing guidance is "replicate the captured scene bytes
  * verbatim, do not over-derive"), we TEMPLATE off a project that already carries
- * the device-captured 4-scene block (the_summoning, slot 42, hardware-confirmed).
+ * the device-captured 4-scene block (a groove set at slot 42, hardware-confirmed).
  * Its scenes select pattern-pairs (0,1)/(2,3)/(4,5)/(6,7). We overwrite ONLY the
  * drum step data of slots 0-5 with the song's grooves, set every pattern's length
  * to 32, then add the scene-chain (Scene 1→3 auto-advance) on top. No scene byte
@@ -60,7 +60,7 @@ import {
   applyProjectColour, projectColourName, resolveProjectColour, DISTINCT_COLOURS,
 } from '@mcp-midi-control/circuit-tracks/ncs/format.js';
 
-const DEFAULT_TEMPLATE = 'samples/circuit-tracks/grooves/packed/scened/the_summoning__full4bar__scenes.ncs';
+const DEFAULT_TEMPLATE = 'samples/circuit-tracks/grooves/packed/scened/scene_template__full4bar__scenes.ncs';
 
 // Merge the decomposition's up-to-9 neutral voices onto the Circuit's 4 drum
 // pads. Covers every voice gmDrumToVoice emits (kick/snare/hat/openhat/crash/

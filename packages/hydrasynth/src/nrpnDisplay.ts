@@ -493,7 +493,15 @@ export const NRPN_DISPLAY: Record<string, NrpnDisplayFormula> = {
   env3delaysyncoff:   ENV_DELAY_TABLE,
   env4delaysyncoff:   ENV_DELAY_TABLE,
   env5delaysyncoff:   ENV_DELAY_TABLE,
+  // All five lfoNdelaysyncoff notes in nrpn.ts carry the identical
+  // 128-step 0..32s bucket schedule (diffed 2026-08-22, BK-HYDRA-
+  // DISPLAY-GAPS P1); lfo1 alone was mapped and lfo2..5 fell through
+  // to raw wire, which is what bit the Elm St Bells vibrato recipe.
   lfo1delaysyncoff:   ENV_DELAY_TABLE,
+  lfo2delaysyncoff:   ENV_DELAY_TABLE,
+  lfo3delaysyncoff:   ENV_DELAY_TABLE,
+  lfo4delaysyncoff:   ENV_DELAY_TABLE,
+  lfo5delaysyncoff:   ENV_DELAY_TABLE,
 
   // FX wet/feedback (percent)
   prefxwet:    percent(),

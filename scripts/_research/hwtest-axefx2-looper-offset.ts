@@ -6,8 +6,8 @@
  *
  * Read-only. Drives the live MCP server exactly as the agent would.
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -32,7 +32,7 @@ function textOf(res: unknown): string {
 
 async function main() {
   const transport = new StdioClientTransport({ command: 'node', args: [SERVER], env: { ...process.env } });
-  const client = new Client({ name: 'looper-offset-hwtest', version: '0.0.1' }, { capabilities: { tools: {} } });
+  const client = new Client({ name: 'looper-offset-hwtest', version: '0.0.1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
   console.log('=== connected ===\n');
 

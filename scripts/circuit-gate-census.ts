@@ -358,7 +358,7 @@ console.log();
   console.log();
 }
 
-// Per-SONG (name prefix) gate sets, to check the handoff's Sugar / Clint claims.
+// Per-SONG (name prefix) gate sets, to check the handoff's per-song claims.
 {
   const songs = new Map<string, Map<number, number>>();
   for (const { rel, name, steps } of allSteps) {

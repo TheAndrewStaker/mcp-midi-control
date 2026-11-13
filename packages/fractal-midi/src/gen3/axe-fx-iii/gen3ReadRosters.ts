@@ -570,8 +570,13 @@ export const GEN3_READ_ROSTERS: Readonly<Record<string, Readonly<Record<number, 
     77: "Lush Spring",
     78: "Vibrato-King Custom Spring",
   },
-  // delay block type selector (24 models)
-  DELAY_TYPE: {
+  // delay block MODEL selector (24 models). Keyed DELAY_MODEL, not
+  // DELAY_TYPE: on every gen-3 grid device DELAY_TYPE is the 8-value stereo
+  // mode (below) and DELAY_MODEL carries the model names (III pid 0 / FM9 pid
+  // 10 enumCount 29, FM3 pid 6 enumCount 27). FM9 fw 12 hardware: model 11 =
+  // Vintage Digital, 13 = Ambient Stereo, 8 = Reverse Delay (issue #23); as
+  // DELAY_TYPE, ordinal 11 clamped to 7.
+  DELAY_MODEL: {
     0: "Digital Mono",
     1: "Digital Stereo",
     2: "Analog Mono",
@@ -596,6 +601,18 @@ export const GEN3_READ_ROSTERS: Readonly<Record<string, Readonly<Record<number, 
     24: "Wandering Delays",
     25: "Dual Head Tape",
     26: "Surround Delay",
+  },
+  // delay block stereo-mode selector (8 values, every grid device's enumCount
+  // is 8). Labels from the FM3 fw 12 editor cache (DELAY paramId 7).
+  DELAY_TYPE: {
+    0: "MONO",
+    1: "STEREO",
+    2: "PING-PONG",
+    3: "DUAL",
+    4: "REVERSE",
+    5: "SWEEP",
+    6: "TAPE",
+    7: "SURROUND",
   },
   // chorus block type selector (27 models, +10 III cache)
   CHORUS_TYPE: {

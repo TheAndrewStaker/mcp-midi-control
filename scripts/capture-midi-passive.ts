@@ -171,7 +171,14 @@ const start = Date.now();
 // device transmitting" question). Channels reported 1..16 (musician convention).
 const noteOnsByChannel = new Map<number, Map<number, number>>(); // ch -> note -> count
 const ccByChannel = new Map<number, Set<number>>();              // ch -> set of CC#
+// PROGRAM CHANGE, in arrival ORDER per channel. Order matters and a set would destroy it:
+// the question these captures answer is "what did the device send, in what sequence, as I
+// changed things by hand" (Circuit project/scene changes broadcast on ch16). Added
+// 2026-09-12 — the script was PC-blind, which is the one message class a project- or
+// scene-change probe is actually looking for.
+const pcByChannel = new Map<number, number[]>();                 // ch -> program numbers, in order
 let lastNote: { ch: number; note: number; vel: number } | undefined; // most-recent note-on, for the live line
+let lastPc: { ch: number; program: number; t: number } | undefined;  // most-recent program change
 function noteName(n: number): string {
   const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   return `${names[n % 12]}${Math.floor(n / 12) - 1}`;
@@ -191,12 +198,20 @@ function decode(bytes: number[]): void {
     const set = ccByChannel.get(ch) ?? new Set<number>();
     set.add(bytes[1]);
     ccByChannel.set(ch, set);
+  } else if (type === 0xc0) { // program change — 2 bytes, no data2
+    const seq = pcByChannel.get(ch) ?? [];
+    seq.push(bytes[1]);
+    pcByChannel.set(ch, seq);
+    lastPc = { ch, program: bytes[1], t: Date.now() - start };
   }
 }
 function printSummary(): void {
   console.error('\n── decoded channel-voice summary ───────────────────────');
-  if (noteOnsByChannel.size === 0 && ccByChannel.size === 0) {
-    console.error('  (no note-on or CC channel messages seen — only SysEx/clock, or nothing arrived)');
+  // pcByChannel MUST be in this test. A program-change-only capture is the exact case the PC
+  // decoder exists to serve (a project/scene-change probe sends no notes), and without it this
+  // branch printed "nothing arrived" and then listed the program changes underneath.
+  if (noteOnsByChannel.size === 0 && ccByChannel.size === 0 && pcByChannel.size === 0) {
+    console.error('  (no note-on, CC or program-change messages seen — only SysEx/clock, or nothing arrived)');
   }
   for (const ch of [...noteOnsByChannel.keys()].sort((a, b) => a - b)) {
     const notes = [...noteOnsByChannel.get(ch)!.entries()].sort((a, b) => a[0] - b[0]);
@@ -205,6 +220,11 @@ function printSummary(): void {
   }
   for (const ch of [...ccByChannel.keys()].sort((a, b) => a - b)) {
     console.error(`  CCs on MIDI ch ${ch}:  ${[...ccByChannel.get(ch)!].sort((a, b) => a - b).join(', ')}`);
+  }
+  // In ORDER, not sorted: the sequence is the finding (e.g. a Circuit project change
+  // broadcasts PC = project-1 on ch16, and 64-127 is its queued form).
+  for (const ch of [...pcByChannel.keys()].sort((a, b) => a - b)) {
+    console.error(`  PROGRAM CHANGEs on MIDI ch ${ch}, in order:  ${pcByChannel.get(ch)!.join(' → ')}`);
   }
   console.error('────────────────────────────────────────────────────────');
 }
@@ -223,6 +243,12 @@ input.on('message', (_dt, bytes) => {
     if (bytes.length >= 3 && (bytes[0] & 0xf0) === 0x90 && bytes[2] > 0) {
         eventsStream.write(JSON.stringify({ t_ms: Date.now() - start, ch: (bytes[0] & 0x0f) + 1, note: bytes[1], vel: bytes[2] }) + '\n');
     }
+    // Program changes go to the sidecar too, TIMESTAMPED. Without this the jsonl stays PC-blind and
+    // a project/scene-change probe survives only in the raw .syx plus a console summary that scrolls
+    // away — so "when did that PC arrive relative to the press" becomes unanswerable after the run.
+    if (bytes.length >= 2 && (bytes[0] & 0xf0) === 0xc0) {
+        eventsStream.write(JSON.stringify({ t_ms: Date.now() - start, ch: (bytes[0] & 0x0f) + 1, program: bytes[1] }) + '\n');
+    }
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
     // Live per-channel note list (the "what notes is it actually sending" answer,
     // without waiting for the Ctrl+C summary). Distinct notes per channel, capped.
@@ -236,8 +262,11 @@ input.on('message', (_dt, bytes) => {
     const last = lastNote
         ? ` last:${lastNote.note}(${noteName(lastNote.note)}) ch${lastNote.ch} v${lastNote.vel}`
         : '';
+    // PC is the headline for a project/scene-change probe, so it gets its own live field
+    // with the arrival time — that is what lets a press be correlated with a message.
+    const pc = lastPc ? ` | PC ch${lastPc.ch}=${lastPc.program} @${(lastPc.t / 1000).toFixed(1)}s` : '';
     process.stderr.write(
-        `\r[${elapsed}s] ${messageCount} msgs ${byteCount}B${noteSummary ? ` | notes ${noteSummary}` : ''}${last} → ${path.basename(absOut)}     `,
+        `\r[${elapsed}s] ${messageCount} msgs ${byteCount}B${noteSummary ? ` | notes ${noteSummary}` : ''}${last}${pc} → ${path.basename(absOut)}     `,
     );
 });
 
@@ -261,7 +290,7 @@ process.on('SIGINT', () => {
         const elapsed = ((Date.now() - start) / 1000).toFixed(1);
         console.error(`✓ Saved ${messageCount} messages (${byteCount} bytes) over ${elapsed}s to:`);
         console.error(`  ${absOut}`);
-        console.error(`  ${eventsPath}  (timestamped note-ons; measure_loop.ts reads this)`);
+        console.error(`  ${eventsPath}  (timestamped note-ons AND program changes; measure_loop.ts reads this and skips the non-note rows)`);
         printSummary();
         process.exit(0);
     });

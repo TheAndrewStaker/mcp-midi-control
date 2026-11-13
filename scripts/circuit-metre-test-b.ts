@@ -28,7 +28,7 @@
  * at the same time?
  * Drums 1 runs 24, 24, 30, 18 while Synth 1 runs 18, 30, 24, 24 — the same four
  * numbers reversed, so both tracks total 96 steps and must re-meet at the top of
- * every 24 s cycle if they are independent. Schism needs this the moment a 4/4
+ * every 24 s cycle if they are independent. An odd-metre song needs this the moment a 4/4
  * part sits under a 7/8 part.
  *
  * THE TIMELINE at 60 bpm (a step is 250 ms, a quarter is 1.000 s, so the
@@ -290,9 +290,9 @@ function listeningInstructions(drum1: string): string {
     '',
     '─── WHAT THE ANSWER MEANS FOR SCHISM ─────────────────────────────────────',
     'PASS: the two tracks hold different bar lengths at the same time, so a 4/4',
-    '   part can sit under a 7/8 part. Schism is authorable exactly as designed —',
+    '   part can sit under a 7/8 part. The odd-metre song is authorable exactly as designed —',
     '   all 19 sections, including the 11 that need genuinely mixed chains across',
-    '   150 bars — and the same unlocks Pneuma and the metre-aware splitter.',
+    '   150 bars — and the same unlocks the metre-aware splitter.',
     'FAIL 1 or FAIL 3: mixed chains ACROSS tracks are not available. The fallback',
     '   is to force every track in a project onto ONE common length per pattern',
     '   slot (which is what the shipped arrangement writer already does), so a',

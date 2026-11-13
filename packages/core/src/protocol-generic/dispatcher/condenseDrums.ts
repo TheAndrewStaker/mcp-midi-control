@@ -75,11 +75,16 @@ export interface CondensedDrums {
  *
  * `externalOverrides` is the already-built `external_targets` map; a drum voice
  * present there keeps exactly its external destinations.
+ *
+ * `drumLevelsNamed`: the caller's `mixer_levels` names at least one drum track,
+ * which the writer applies after condensation, so the hint must not claim the
+ * kit is stored silent.
  */
 export function buildCondensedDrums(
   pattern: NeutralPattern,
   caps: DeviceCapabilities,
   externalOverrides?: Readonly<Record<string, readonly VoiceTarget[]>>,
+  drumLevelsNamed = false,
 ): CondensedDrums | undefined {
   const roster = caps.drum_track_roles;
   if (roster === undefined || roster.length === 0) {
@@ -134,8 +139,10 @@ export function buildCondensedDrums(
   }
 
   const hints = [
-    `Condensed the drum part onto the ${kit.length} internal drum tracks (${kit.join(' / ')}) at level ${CONDENSED_DRUM_LEVEL}, ` +
-    'so it is stored silently under the routed kit and the player dials it up from the mixer. ' +
+    `Condensed the drum part onto the ${kit.length} internal drum tracks (${kit.join(' / ')}) ` +
+    (drumLevelsNamed
+      ? 'at the drum levels mixer_levels stores (see MIXER). '
+      : `at level ${CONDENSED_DRUM_LEVEL}, so it is stored silently under the routed kit and the player dials it up from the mixer. `) +
     `${describeCondense(condensed).join(' ')}`,
   ];
   if (condensed.collisions.length > 0) {

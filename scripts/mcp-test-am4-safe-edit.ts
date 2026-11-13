@@ -17,8 +17,8 @@
  */
 
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'dist', 'server', 'index.js');
 const writeMode = process.argv.includes('--write');
@@ -43,7 +43,7 @@ async function main(): Promise<void> {
     stderr: 'pipe',
   });
   if (transport.stderr) transport.stderr.on('data', (b: Buffer) => process.stderr.write(`[server] ${b.toString()}`));
-  const client = new Client({ name: 'mcp-test-am4-safe-edit', version: '1.0.0' }, { capabilities: {} });
+  const client = new Client({ name: 'mcp-test-am4-safe-edit', version: '1.0.0' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
 
   let pass = true;
   try {

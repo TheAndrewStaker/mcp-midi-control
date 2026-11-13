@@ -22,15 +22,16 @@
  * unconditional): the gen-3 continuous SET wire carries
  * float32(wire16/65534), so a display value like "80 Hz" is only
  * expressible when the param carries a calibrated display range in the
- * device's own catalog. Today that is TRUE on the FM9 (device-true
- * ranges mined from its own FM9-Edit editor cache: CABINET_LOCUT
- * 20..2000 Hz, CABINET_HICUT 200..20000 Hz, CABINET_ROOMMIX 0..100) and
- * FALSE on the III and FM3 (their cab cut/room params are registered
- * but uncalibrated raw-wire passthrough), so the III and FM3 inject
- * NOTHING until their own range evidence lands; guessing the normalized
- * wire for 80 Hz would violate the no-guessed-wire-values rule. The
- * probe below reads the catalog schema, so a future device-true range
- * table lights injection up without touching this module.
+ * device's own catalog. Since BK-GEN3-RANGES (2026-08-11) that is TRUE
+ * on all three grid devices: FM9, Axe-Fx III, and FM3 each carry
+ * device-true ranges mined from their own editor effectDefinitions
+ * cache (CABINET_LOCUT 20..2000 Hz, CABINET_HICUT 200..20000 Hz,
+ * CABINET_ROOMMIX 0..100; wired via `deviceRanges` in factory.ts), so
+ * injection is live family-wide, exactly as this probe was designed to
+ * allow: the range tables landed and injection lit up with no change to
+ * this module. The cut encodes are LOG10 per BK-096 (FM3 field point +
+ * II precedent; see HZ_CUT_LOG10_PARAMS in catalog.ts). VP4 has no cab
+ * block and no cache, so nothing fires there.
  *
  * The filter-slope selector (CABINET_ORDER, stripped key `order`) is
  * deliberately NEVER injected on gen-3: no device catalog carries a name

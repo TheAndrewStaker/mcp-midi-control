@@ -1,0 +1,321 @@
+{
+ "song": "test-song-a",
+ "pack": 2,
+ "authors": [
+  {
+   "ncs_slot": 1,
+   "input": {
+    "port": "circuit",
+    "mode": "ncs_upload",
+    "pack": 2,
+    "ncs_slot": 1,
+    "ncs_template": "samples/circuit-tracks/blank_slot20.ncs",
+    "confirm_overwrite": true,
+    "backup_first": false,
+    "project_name": "SongA Intro",
+    "bpm": 120,
+    "colour": "Blue",
+    "sounding_pitch": true,
+    "mixer_levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "condense_drums": true,
+    "external_targets": [
+     {
+      "device": "spd-sx",
+      "track": "midi2"
+     }
+    ],
+    "arrangement": {
+     "sections": [
+      {
+       "name": "IntroA",
+       "steps": 32,
+       "voices": {
+        "kick": "X.......X.X.....X.......X.X.....",
+        "snare": "....X.......X.......X.......X...",
+        "hat": "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.",
+        "synth1": "e1:8@110 ~ ~ ~ ~ ~ ~ ~ e1:2@110 ~ g1:6@110 ~ ~ ~ ~ ~ e1:8@110 ~ ~ ~ ~ ~ ~ ~ e1:2@110 ~ g1:6@110 ~ ~ ~ ~ ~"
+       }
+      },
+      {
+       "name": "IntroB",
+       "steps": 32,
+       "voices": {
+        "kick": "X.......X.X.....X.......X.......",
+        "snare": "....X.......X.......X.X.........",
+        "hat": "x.x.x.x.x.x.x.x.................",
+        "tom": "........................X.X.X.XX",
+        "synth1": "e1:8@110 ~ ~ ~ ~ ~ ~ ~ e1:2@110 ~ g1:6@110 ~ ~ ~ ~ ~ e1:8@110 ~ ~ ~ ~ ~ ~ ~ e1:2@110 ~ g1:6@110 ~ ~ ~ ~ ~"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "ncs_slot": 2,
+   "input": {
+    "port": "circuit",
+    "mode": "ncs_upload",
+    "pack": 2,
+    "ncs_slot": 2,
+    "ncs_template": "samples/circuit-tracks/blank_slot20.ncs",
+    "confirm_overwrite": true,
+    "backup_first": false,
+    "project_name": "SongA Verse",
+    "bpm": 120,
+    "colour": "Blue",
+    "sounding_pitch": true,
+    "mixer_levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "condense_drums": true,
+    "external_targets": [
+     {
+      "device": "spd-sx",
+      "track": "midi2"
+     }
+    ],
+    "steps": 32,
+    "voices": {
+     "crash": "X...............................",
+     "kick": "X.....X...X.....X.....X...X.....",
+     "snare": "....X.......X.......X.......X...",
+     "hat": "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.",
+     "synth1": "a1:6@110 ~ ~ ~ ~ ~ a1:2@110 ~ ~ ~ g1:2@110 ~ a1:4@110 ~ ~ ~ a1:6@110 ~ ~ ~ ~ ~ a1:2@110 ~ ~ ~ g1:2@110 ~ a1:4@110 ~ ~ ~"
+    }
+   }
+  },
+  {
+   "ncs_slot": 3,
+   "input": {
+    "port": "circuit",
+    "mode": "ncs_upload",
+    "pack": 2,
+    "ncs_slot": 3,
+    "ncs_template": "samples/circuit-tracks/blank_slot20.ncs",
+    "confirm_overwrite": true,
+    "backup_first": false,
+    "project_name": "SongA Chorus",
+    "bpm": 120,
+    "colour": "Blue",
+    "sounding_pitch": true,
+    "mixer_levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "condense_drums": true,
+    "external_targets": [
+     {
+      "device": "spd-sx",
+      "track": "midi2"
+     }
+    ],
+    "arrangement": {
+     "sections": [
+      {
+       "name": "ChorusA",
+       "steps": 32,
+       "voices": {
+        "crash": "X...............................",
+        "kick": "X...X...X...X...X...X...X...X...",
+        "snare": "....X.......X.......X.......X...",
+        "openhat": "..x...x...x...x...x...x...x...x.",
+        "synth1": "g1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~"
+       }
+      },
+      {
+       "name": "ChorusB",
+       "steps": 32,
+       "voices": {
+        "kick": "X...X...X...X...X...X...........",
+        "snare": "....X.......X.......X...........",
+        "openhat": "..x...x...x...x...x...x.........",
+        "tom": "........................X.X.X.X.",
+        "synth1": "g1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ b1:8@120 ~ ~ ~ ~ ~ ~ ~"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "ncs_slot": 4,
+   "input": {
+    "port": "circuit",
+    "mode": "ncs_upload",
+    "pack": 2,
+    "ncs_slot": 4,
+    "ncs_template": "samples/circuit-tracks/blank_slot20.ncs",
+    "confirm_overwrite": true,
+    "backup_first": false,
+    "project_name": "SongA Bridge",
+    "bpm": 120,
+    "colour": "Blue",
+    "sounding_pitch": true,
+    "mixer_levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "condense_drums": true,
+    "external_targets": [
+     {
+      "device": "spd-sx",
+      "track": "midi2"
+     }
+    ],
+    "steps": 32,
+    "voices": {
+     "kick": "X.......X.......X.......X.......",
+     "snare": "........X...............X.......",
+     "hat": "x...x...x...x...x...x...x...x...",
+     "synth1": "b1:16@100 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ b1:16@100 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~"
+    }
+   }
+  },
+  {
+   "ncs_slot": 5,
+   "input": {
+    "port": "circuit",
+    "mode": "ncs_upload",
+    "pack": 2,
+    "ncs_slot": 5,
+    "ncs_template": "samples/circuit-tracks/blank_slot20.ncs",
+    "confirm_overwrite": true,
+    "backup_first": false,
+    "project_name": "SongA Breakdown",
+    "bpm": 120,
+    "colour": "Blue",
+    "sounding_pitch": true,
+    "mixer_levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "drum_binding": [
+     0,
+     20,
+     22,
+     13
+    ],
+    "arrangement": {
+     "sections": [
+      {
+       "name": "BreakDrive",
+       "steps": 32,
+       "voices": {
+        "kick": "X..X..X...X..X..X..X..X...X..X..",
+        "snare": "X.X...X.X...X.X.X.X...X.X...X.X.",
+        "hat": "..X.X...X.X...X...X.X...X.X...X.",
+        "synth1": "e1:2@120 ~ ~ e1:2@120 ~ ~ f1:2@120 ~ ~ ~ e1:2@120 ~ ~ e1:2@120 ~ ~ e1:2@120 ~ ~ e1:2@120 ~ ~ f1:2@120 ~ ~ ~ e1:2@120 ~ ~ e1:2@120 ~ ~"
+       }
+      },
+      {
+       "name": "BreakFill",
+       "steps": 32,
+       "voices": {
+        "kick": "X..X..X...X..X..................",
+        "snare": "X.X...X.X...X.X.................",
+        "hat": "..X.X...X.X...X.................",
+        "ride": "....................X...........",
+        "synth1": "e1:2@120 ~ ~ e1:2@120 ~ ~ f1:2@120 ~ ~ ~ e1:2@120 ~ ~ e1:2@120 ~ ~ e1:4@120 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "ncs_slot": 6,
+   "input": {
+    "port": "circuit",
+    "mode": "ncs_upload",
+    "pack": 2,
+    "ncs_slot": 6,
+    "ncs_template": "samples/circuit-tracks/blank_slot20.ncs",
+    "confirm_overwrite": true,
+    "backup_first": false,
+    "project_name": "SongA Solo",
+    "bpm": 120,
+    "colour": "Blue",
+    "sounding_pitch": true,
+    "mixer_levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "condense_drums": true,
+    "external_targets": [
+     {
+      "device": "spd-sx",
+      "track": "midi2"
+     }
+    ],
+    "arrangement": {
+     "sections": [
+      {
+       "name": "SoloA",
+       "steps": 32,
+       "voices": {
+        "crash": "X...............................",
+        "kick": "X..X..X...X.....X..X..X...X.....",
+        "snare": "....X.......X.......X.......X...",
+        "ride": "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.",
+        "synth1": "a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ b1:2@120 ~ b1:2@120 ~ g1:2@120 ~ g1:2@120 ~ a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ b1:2@120 ~ b1:2@120 ~ g1:2@120 ~ g1:2@120 ~"
+       }
+      },
+      {
+       "name": "SoloB",
+       "steps": 32,
+       "voices": {
+        "kick": "X..X..X...X.....X..X............",
+        "snare": "....X.......X.......X.X.........",
+        "ride": "x.x.x.x.x.x.x.x.x.x.............",
+        "tom": "........................XXXX.X.X",
+        "synth1": "a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ b1:2@120 ~ b1:2@120 ~ g1:2@120 ~ g1:2@120 ~ a1:8@120 ~ ~ ~ ~ ~ ~ ~ b1:8@120 ~ ~ ~ ~ ~ ~ ~"
+       }
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "clears": [
+  {
+   "input": {
+    "port": "circuit",
+    "pack": 2,
+    "slots": [
+     9,
+     10
+    ],
+    "confirm_delete": true
+   }
+  }
+ ],
+ "samples": [
+  {
+   "input": {
+    "port": "circuit",
+    "pack": 2,
+    "slot": 14,
+    "file": "samples/circuit-tracks/baked-fills/13_songa_m42.wav",
+    "name": "13_songa_m42",
+    "confirm_overwrite": true
+   }
+  }
+ ]
+}

@@ -141,9 +141,8 @@ export function assertNcsStructure(buf: Uint8Array, what = '.ncs project'): void
  * terminator (the pad IS the terminator).
  *
  * HARDWARE-PROVEN WRITE CLASS. This exact edit (space-padded ASCII into
- * 0x10..0x2F, nothing else touched) is the rename surgery the After Dark
- * rebuild shipped on real slots (`scripts/circuit-after-dark-rename.ts`,
- * verified on-device 2026-07-28): the renamed projects load, play, and list
+ * 0x10..0x2F, nothing else touched) is the rename surgery a song
+ * rebuild shipped on real slots (verified on-device 2026-07-28): the renamed projects load, play, and list
  * under their new names. The field width is corroborated by the blank template,
  * which is space-filled through 0x2F, and by every project in the 2026-07-29
  * card backup.
@@ -695,6 +694,187 @@ export function setDrumLevel(buf: Uint8Array, track: number, level: number): num
  * template held, which is the silent-until-it-isn't failure the level-0 policy
  * exists to prevent.
  */
+/**
+ * REVERB SENDS — CORRECTED 2026-09-12 after a first decode landed on a decoy (see below).
+ *
+ * METHOD THAT WORKED: the owner turned ONE send (audio 1) fully up on the front panel and saved.
+ * Diffing that against a file we had just written ourselves, exactly ONE byte differed: 0x26ffe
+ * 0 -> 127. That is the device writing its own stored value, which is the only evidence that proves
+ * a field is READ BACK rather than merely captured.
+ *
+ *   0x26ff8 synth1 · 0x26ff9 synth2 · 0x26ffa..0x26ffd drum1..4 · 0x26ffe audio1 · 0x26fff audio2
+ *
+ * METHOD THAT FAILED, and why: eight live send CCs were set to eight DISTINCT values and the project
+ * saved. Eight consecutive bytes moved to exactly those values, in lane order — which looks airtight
+ * and is how the drum levels were correctly decoded. But those bytes were at 0x26fe8, a live-state
+ * MIRROR the device writes and never reads. Authoring into it produced a project that played dry.
+ * The lesson: a differential driven by values WE sent can only prove the device stored a copy of our
+ * input; it cannot distinguish a field the device uses from one it merely records. To prove the
+ * former, the value has to originate ON THE DEVICE.
+ *
+ * The lane ORDER here (synths, then drums, then the two audio/MIDI lanes) is NOT the order of the
+ * `MIXER_*` level block, which interleaves differently — do not derive one from the other; each was
+ * decoded on its own evidence.
+ *
+ * WHY IT MATTERS: a reverb send sent as a live CC is global and momentary — loading any project
+ * overwrites it — so "reverb on this song's lead" could not survive a song-part switch. The stored
+ * byte is per project, which is what makes reverb travel with a part.
+ *
+ * ⚠ UNVERIFIED, deliberately: whether the device APPLIES a stored send on project load, and whether
+ * its FX-View LEDs then repaint. A MIDI-received send is documented NOT to repaint them
+ * (`circuit-tracks-midi-handoff.md`); a value loaded FROM THE FILE is a different path and DOES
+ * both apply and repaint, hardware-confirmed 2026-09-12 (a stored audio1 send was audible on load
+ * and lit its Macro ring without the knob being touched).
+ *
+ * ⚠ A DEVICE-SIDE SAVE RECAPTURES LIVE STATE, exactly as it does for the mixer levels: the same
+ * differential that decoded these also showed a save writing the CC values that were live at the
+ * time. So a hand-Save on the device overwrites file-authored sends. Re-apply after any manual save.
+ *
+ * ⚠ SAVE WRITES THE WORKING BUFFER, not the project you believe is selected (learned the hard way,
+ * 2026-09-12: a double-Save wrote a stale buffered project over an unrelated slot). Load the target
+ * project FIRST if a save is part of any procedure.
+ */
+export const REVERB_SEND_BASE = 0x26ff8;
+/**
+ * ⚠ 0x26fe8..0x26fef is a WRITE-ONLY MIRROR, and it cost a wrong decode on 2026-09-12. A save
+ * performed while live reverb-send CCs were set mirrors those eight values there, so a controlled
+ * differential driven by live CCs lands on it and looks conclusive. The device does NOT read it
+ * back: a project written with 0x26fee=127 played completely dry. The authoritative block is the one
+ * the DEVICE ITSELF writes when a send is dialled in on the front panel and saved, which is
+ * 0x26ff8..0x26fff, sixteen bytes later, same eight-lane order. Decode a field from what the device
+ * WRITES FOR ITSELF, not from what it captures of what you sent.
+ *
+ * {@link setReverbSend} writes both blocks, so an authored file is byte-shaped like a device save.
+ * That is fidelity, not necessity: only 0x26ff8 is read back.
+ */
+export const REVERB_SEND_MIRROR = 0x26fe8;
+/** Lane order of the eight stored FX sends, as the file lays them out. */
+export const FX_SEND_LANES = ['synth1', 'synth2', 'drum1', 'drum2', 'drum3', 'drum4', 'audio1', 'audio2'] as const;
+export type FxSendLane = typeof FX_SEND_LANES[number];
+
+/** Byte offset of one lane's stored reverb send. */
+export function reverbSendOffset(lane: FxSendLane): number {
+  const i = FX_SEND_LANES.indexOf(lane);
+  if (i < 0) throw new RangeError(`unknown FX send lane ${JSON.stringify(lane)}; expected one of ${FX_SEND_LANES.join(', ')}`);
+  return REVERB_SEND_BASE + i;
+}
+/** Read one lane's stored reverb send (0..127). */
+export function getReverbSend(buf: Uint8Array, lane: FxSendLane): number {
+  assertNcsBuffer(buf);
+  return buf[reverbSendOffset(lane)];
+}
+/**
+ * Write one lane's stored reverb send in place; returns the previous value. Refuses out of range
+ * rather than clamping, for the same reason the levels do: a send stored at the wrong amount with
+ * nothing in the receipt to say so is the failure this surface exists to prevent.
+ */
+export function setReverbSend(buf: Uint8Array, lane: FxSendLane, value: number): number {
+  assertNcsBuffer(buf);
+  assertMixerLevel(value, `${lane} reverb send`);
+  const off = reverbSendOffset(lane);
+  const prev = buf[off];
+  buf[off] = value;
+  buf[REVERB_SEND_MIRROR + (off - REVERB_SEND_BASE)] = value;
+  return prev;
+}
+/** Read all eight stored reverb sends, in {@link FX_SEND_LANES} order. */
+export function getReverbSends(buf: Uint8Array): Record<FxSendLane, number> {
+  assertNcsBuffer(buf);
+  return Object.fromEntries(FX_SEND_LANES.map((l) => [l, getReverbSend(buf, l)])) as Record<FxSendLane, number>;
+}
+
+/**
+ * The reverb ENGINE, stored immediately ahead of the sends: type, decay, damping.
+ *
+ * Decoded 2026-09-12 from a device-originated save (the owner pressed FX-View reverb pad 6 and
+ * saved; exactly these three bytes plus {@link REVERB_PRESET_OFFSET} moved).
+ *
+ * `type` is the same 0..5 enum as NRPN 1:18 on the channel-16 project surface. Default 2.
+ */
+export const REVERB_TYPE_OFFSET = 0x26ff0;
+export const REVERB_DECAY_OFFSET = 0x26ff1;
+export const REVERB_DAMPING_OFFSET = 0x26ff2;
+
+/** The six reverb ENGINE types, indexed by the stored byte / NRPN 1:18 value. */
+export const REVERB_TYPES = ['Chamber', 'Small Room', 'Large Room', 'Small Hall', 'Large Hall', 'Great Hall'] as const;
+export type ReverbType = typeof REVERB_TYPES[number];
+
+/**
+ * Which FX-View pad is lit, 0-based (pad 1 on Row 3 is 0). Distinct from {@link REVERB_TYPE_OFFSET}:
+ * the front panel offers EIGHT reverb presets on Row 3 but the engine has only SIX types, so two
+ * presets are a repeat type with the decay pushed up. Store both or the pad LED disagrees with the
+ * sound. Mapping is {@link REVERB_PRESETS}.
+ */
+export const REVERB_PRESET_OFFSET = 0x26d0f;
+
+/**
+ * The eight FX-View reverb presets in Row 3 order, as the Circuit Tracks User Guide names them,
+ * with the engine settings each one selects. Only pad 6 (Large Hall) is byte-confirmed so far
+ * (type 4, decay 105, damping 105); the rest carry the type the name implies and are marked
+ * unconfirmed until a save exercises them. Do NOT write an unconfirmed preset's decay/damping.
+ */
+export const REVERB_PRESETS = [
+  { pad: 1, name: 'Small Chamber', type: 0, confirmed: false },
+  { pad: 2, name: 'Small Room 1', type: 1, confirmed: false },
+  { pad: 3, name: 'Small Room 2', type: 1, confirmed: false },
+  { pad: 4, name: 'Large Room', type: 2, confirmed: false },
+  { pad: 5, name: 'Hall', type: 3, confirmed: false },
+  { pad: 6, name: 'Large Hall', type: 4, decay: 105, damping: 105, confirmed: true },
+  { pad: 7, name: 'Hall, long reflection', type: 3, confirmed: false },
+  { pad: 8, name: 'Large Hall, long reflection', type: 5, confirmed: false },
+] as const;
+
+export interface ReverbEngine {
+  type: number;
+  type_name: ReverbType | undefined;
+  decay: number;
+  damping: number;
+  /** 0-based FX-View pad index; `pad` is the 1..8 the front panel shows. */
+  preset: number;
+  pad: number;
+}
+
+/** Read the stored reverb engine. */
+export function getReverbEngine(buf: Uint8Array): ReverbEngine {
+  assertNcsBuffer(buf);
+  const type = buf[REVERB_TYPE_OFFSET];
+  const preset = buf[REVERB_PRESET_OFFSET];
+  return {
+    type,
+    type_name: REVERB_TYPES[type],
+    decay: buf[REVERB_DECAY_OFFSET],
+    damping: buf[REVERB_DAMPING_OFFSET],
+    preset,
+    pad: preset + 1,
+  };
+}
+
+/**
+ * Write the stored reverb engine in place; returns the previous state. Takes the FX-View pad 1..8,
+ * because that is what the owner reads off the front panel, and derives the engine bytes from
+ * {@link REVERB_PRESETS}. Refuses a pad whose engine settings are not byte-confirmed rather than
+ * guessing a decay: a wrong reverb that still sounds like a reverb is the failure mode that is
+ * hardest to notice.
+ */
+export function setReverbPreset(buf: Uint8Array, pad: number): ReverbEngine {
+  assertNcsBuffer(buf);
+  const preset = REVERB_PRESETS.find((p) => p.pad === pad);
+  if (!preset) {
+    throw new RangeError(`reverb pad out of range [1..8]: ${pad}`);
+  }
+  if (!preset.confirmed) {
+    throw new RangeError(
+      `reverb pad ${pad} (${preset.name}) has no byte-confirmed decay/damping yet. Select it in FX View on the device, save, and diff the export to capture them. Confirmed: ${REVERB_PRESETS.filter((p) => p.confirmed).map((p) => `${p.pad} ${p.name}`).join(', ')}`,
+    );
+  }
+  const prev = getReverbEngine(buf);
+  buf[REVERB_TYPE_OFFSET] = preset.type;
+  buf[REVERB_DECAY_OFFSET] = preset.decay;
+  buf[REVERB_DAMPING_OFFSET] = preset.damping;
+  buf[REVERB_PRESET_OFFSET] = pad - 1;
+  return prev;
+}
+
 export function setDrumLevels(buf: Uint8Array, levels: readonly number[]): readonly number[] {
   assertNcsBuffer(buf);
   if (levels.length !== NUM_DRUM_TRACKS) {

@@ -25,8 +25,8 @@ jobs:
       - name: Build all packages
         run: npm run build
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Typecheck scripts (packages are type-checked by the build)
+        run: npm run typecheck:scripts
 
       - name: Test suite
         run: npm test
@@ -60,3 +60,11 @@ jobs:
 
       - name: FM9 catalog verify (rosters + ranges + end-to-end)
         run: npm run verify-fm9-rosters && npm run verify-fm9-ranges && npm run verify-fm9-end-to-end
+
+      - name: Install Playwright chromium (console flow gate)
+        run: npx playwright install chromium
+
+      # Flow specs only in CI: the screenshot baseline is pinned to the
+      # design-review machine's renderer and self-skips under CI.
+      - name: Rig Console flow gate
+        run: npm run verify-console-flows

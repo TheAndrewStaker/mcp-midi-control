@@ -1,5 +1,15 @@
 # OpenRig visual UI: capability research + recommendation
 
+> **Superseded in part, 2026-08-03.** Options 1 and 2 are built (the view
+> prototypes exist, `edit_rig` ships), so "do not build the local-web editor
+> first" (option 3, and the "What NOT to do" bullet below) no longer applies:
+> local-web is now the active direction. The security checklist at
+> "Local-web (option 3) security checklist" is carried forward verbatim as
+> requirements. The design boundary at "generic primitives + agent-composed UX"
+> still holds, restated as: the app is a second client of the same executors and
+> gets no capability the agent lacks. See
+> [`RIG-CONSOLE-DESIGN.md`](RIG-CONSOLE-DESIGN.md).
+
 > Status: **research complete (2026-07-12)**, no code yet. Question posed by the
 > maintainer: "what very simple but still attractive UI, possibly local web, or
 > something inside Claude Desktop, where we can move cable connections (audio and

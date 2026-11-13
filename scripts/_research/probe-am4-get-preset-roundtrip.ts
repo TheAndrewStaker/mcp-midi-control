@@ -8,8 +8,8 @@
  *
  *   npx tsx scripts/_research/probe-am4-get-preset-roundtrip.ts
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 async function callTool(client: Client, name: string, args: Record<string, unknown>): Promise<unknown> {
   const result = await client.callTool({ name, arguments: args });
@@ -26,7 +26,7 @@ async function main(): Promise<void> {
     command: 'node',
     args: ['packages/server-all/dist/server/index.js'],
   });
-  const client = new Client({ name: 'probe', version: '0.1.0' });
+  const client = new Client({ name: 'probe', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   const snapshotT0 = Date.now();

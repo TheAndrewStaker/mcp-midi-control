@@ -1,0 +1,334 @@
+{
+ "globals": {
+  "pack": 2,
+  "template": "samples/circuit-tracks/blank_slot20.ncs",
+  "tempo": 120,
+  "colour": "Blue",
+  "soundingPitch": true
+ },
+ "pool": [
+  {
+   "name": "kick",
+   "wireSlot": 0,
+   "source": "kit"
+  },
+  {
+   "name": "snare",
+   "wireSlot": 1,
+   "source": "kit"
+  },
+  {
+   "name": "closed_hat",
+   "wireSlot": 2,
+   "source": "kit"
+  },
+  {
+   "name": "ride",
+   "wireSlot": 3,
+   "source": "kit"
+  },
+  {
+   "name": "open_hat",
+   "wireSlot": 4,
+   "source": "kit"
+  },
+  {
+   "name": "busy_hat",
+   "wireSlot": 5,
+   "source": "kit"
+  },
+  {
+   "name": "snare_roll",
+   "wireSlot": 6,
+   "source": "kit"
+  },
+  {
+   "name": "crash",
+   "wireSlot": 7,
+   "source": "kit"
+  },
+  {
+   "name": "tom",
+   "wireSlot": 8,
+   "source": "kit"
+  },
+  {
+   "name": "ride_bell",
+   "wireSlot": 9,
+   "source": "kit"
+  },
+  {
+   "name": "sticks",
+   "wireSlot": 10,
+   "source": "kit"
+  },
+  {
+   "name": "china",
+   "wireSlot": 11,
+   "source": "kit"
+  },
+  {
+   "name": "perc",
+   "wireSlot": 12,
+   "source": "kit"
+  },
+  {
+   "name": "songa_m42",
+   "wireSlot": 13,
+   "source": {
+    "bakedFrom": "samples/circuit-tracks/baked-fills/13_songa_m42.wav"
+   }
+  },
+  {
+   "name": "tom_mid",
+   "wireSlot": 20,
+   "source": "kit"
+  },
+  {
+   "name": "tom_floor",
+   "wireSlot": 22,
+   "source": "kit"
+  }
+ ],
+ "sections": [
+  {
+   "section": "Intro",
+   "role": "author",
+   "slot": 1,
+   "projectName": "SongA Intro",
+   "drums": {
+    "layout": "condense+external",
+    "levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "external": {
+     "device": "spd-sx",
+     "track": "midi2"
+    }
+   },
+   "patterns": [
+    {
+     "name": "IntroA",
+     "steps": 32,
+     "drumVoices": {
+      "kick": "X.......X.X.....X.......X.X.....",
+      "snare": "....X.......X.......X.......X...",
+      "hat": "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x."
+     },
+     "bassVoice": "e1:8@110 ~ ~ ~ ~ ~ ~ ~ e1:2@110 ~ g1:6@110 ~ ~ ~ ~ ~ e1:8@110 ~ ~ ~ ~ ~ ~ ~ e1:2@110 ~ g1:6@110 ~ ~ ~ ~ ~"
+    },
+    {
+     "name": "IntroB",
+     "steps": 32,
+     "drumVoices": {
+      "kick": "X.......X.X.....X.......X.......",
+      "snare": "....X.......X.......X.X.........",
+      "hat": "x.x.x.x.x.x.x.x.................",
+      "tom": "........................X.X.X.XX"
+     },
+     "bassVoice": "e1:8@110 ~ ~ ~ ~ ~ ~ ~ e1:2@110 ~ g1:6@110 ~ ~ ~ ~ ~ e1:8@110 ~ ~ ~ ~ ~ ~ ~ e1:2@110 ~ g1:6@110 ~ ~ ~ ~ ~"
+    }
+   ]
+  },
+  {
+   "section": "Verse",
+   "role": "author",
+   "slot": 2,
+   "projectName": "SongA Verse",
+   "drums": {
+    "layout": "condense+external",
+    "levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "external": {
+     "device": "spd-sx",
+     "track": "midi2"
+    }
+   },
+   "patterns": [
+    {
+     "name": "Verse",
+     "steps": 32,
+     "drumVoices": {
+      "crash": "X...............................",
+      "kick": "X.....X...X.....X.....X...X.....",
+      "snare": "....X.......X.......X.......X...",
+      "hat": "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x."
+     },
+     "bassVoice": "a1:6@110 ~ ~ ~ ~ ~ a1:2@110 ~ ~ ~ g1:2@110 ~ a1:4@110 ~ ~ ~ a1:6@110 ~ ~ ~ ~ ~ a1:2@110 ~ ~ ~ g1:2@110 ~ a1:4@110 ~ ~ ~"
+    }
+   ]
+  },
+  {
+   "section": "Chorus",
+   "role": "author",
+   "slot": 3,
+   "projectName": "SongA Chorus",
+   "drums": {
+    "layout": "condense+external",
+    "levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "external": {
+     "device": "spd-sx",
+     "track": "midi2"
+    }
+   },
+   "patterns": [
+    {
+     "name": "ChorusA",
+     "steps": 32,
+     "drumVoices": {
+      "crash": "X...............................",
+      "kick": "X...X...X...X...X...X...X...X...",
+      "snare": "....X.......X.......X.......X...",
+      "openhat": "..x...x...x...x...x...x...x...x."
+     },
+     "bassVoice": "g1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~"
+    },
+    {
+     "name": "ChorusB",
+     "steps": 32,
+     "drumVoices": {
+      "kick": "X...X...X...X...X...X...........",
+      "snare": "....X.......X.......X...........",
+      "openhat": "..x...x...x...x...x...x.........",
+      "tom": "........................X.X.X.X."
+     },
+     "bassVoice": "g1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~ a1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ g1:4@120 ~ ~ ~ b1:8@120 ~ ~ ~ ~ ~ ~ ~"
+    }
+   ]
+  },
+  {
+   "section": "Bridge",
+   "role": "author",
+   "slot": 4,
+   "projectName": "SongA Bridge",
+   "drums": {
+    "layout": "condense+external",
+    "levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "external": {
+     "device": "spd-sx",
+     "track": "midi2"
+    }
+   },
+   "patterns": [
+    {
+     "name": "Bridge",
+     "steps": 32,
+     "drumVoices": {
+      "kick": "X.......X.......X.......X.......",
+      "snare": "........X...............X.......",
+      "hat": "x...x...x...x...x...x...x...x..."
+     },
+     "bassVoice": "b1:16@100 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ b1:16@100 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~"
+    }
+   ]
+  },
+  {
+   "section": "Breakdown",
+   "role": "author",
+   "slot": 5,
+   "projectName": "SongA Breakdown",
+   "drums": {
+    "layout": "explicit-binding",
+    "levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "binding": [
+     "kick",
+     "tom_mid",
+     "tom_floor",
+     "songa_m42"
+    ]
+   },
+   "patterns": [
+    {
+     "name": "BreakDrive",
+     "steps": 32,
+     "drumVoices": {
+      "kick": "X..X..X...X..X..X..X..X...X..X..",
+      "snare": "X.X...X.X...X.X.X.X...X.X...X.X.",
+      "hat": "..X.X...X.X...X...X.X...X.X...X."
+     },
+     "bassVoice": "e1:2@120 ~ ~ e1:2@120 ~ ~ f1:2@120 ~ ~ ~ e1:2@120 ~ ~ e1:2@120 ~ ~ e1:2@120 ~ ~ e1:2@120 ~ ~ f1:2@120 ~ ~ ~ e1:2@120 ~ ~ e1:2@120 ~ ~"
+    },
+    {
+     "name": "BreakFill",
+     "steps": 32,
+     "drumVoices": {
+      "kick": "X..X..X...X..X..................",
+      "snare": "X.X...X.X...X.X.................",
+      "hat": "..X.X...X.X...X.................",
+      "ride": "....................X..........."
+     },
+     "bassVoice": "e1:2@120 ~ ~ e1:2@120 ~ ~ f1:2@120 ~ ~ ~ e1:2@120 ~ ~ e1:2@120 ~ ~ e1:4@120 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~"
+    }
+   ]
+  },
+  {
+   "section": "Solo",
+   "role": "author",
+   "slot": 6,
+   "projectName": "SongA Solo",
+   "drums": {
+    "layout": "condense+external",
+    "levels": {
+     "drum1": 100,
+     "drum2": 100,
+     "drum3": 100,
+     "drum4": 100
+    },
+    "external": {
+     "device": "spd-sx",
+     "track": "midi2"
+    }
+   },
+   "patterns": [
+    {
+     "name": "SoloA",
+     "steps": 32,
+     "drumVoices": {
+      "crash": "X...............................",
+      "kick": "X..X..X...X.....X..X..X...X.....",
+      "snare": "....X.......X.......X.......X...",
+      "ride": "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x."
+     },
+     "bassVoice": "a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ b1:2@120 ~ b1:2@120 ~ g1:2@120 ~ g1:2@120 ~ a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ b1:2@120 ~ b1:2@120 ~ g1:2@120 ~ g1:2@120 ~"
+    },
+    {
+     "name": "SoloB",
+     "steps": 32,
+     "drumVoices": {
+      "kick": "X..X..X...X.....X..X............",
+      "snare": "....X.......X.......X.X.........",
+      "ride": "x.x.x.x.x.x.x.x.x.x.............",
+      "tom": "........................XXXX.X.X"
+     },
+     "bassVoice": "a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ a1:2@120 ~ b1:2@120 ~ b1:2@120 ~ g1:2@120 ~ g1:2@120 ~ a1:8@120 ~ ~ ~ ~ ~ ~ ~ b1:8@120 ~ ~ ~ ~ ~ ~ ~"
+    }
+   ]
+  }
+ ],
+ "clearSlots": [
+  9,
+  10
+ ]
+}

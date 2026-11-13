@@ -54,8 +54,8 @@ The 60 values between are unconfirmed, so the writer authors only roll `{1,6}`
 (`drumPattern.ts`: `micro_hits === 6 → 0x3f`, else `0x01`). A prior `roll 3 →
 0x07` was a **guess** and was un-shipped.
 
-This caps faithful import of fast parts. Worked example: Sleep Token
-"Gethsemane" bridge hat (measures 128-139, track `t11`): of 216 hat hits, 69%
+This caps faithful import of fast parts. Worked example: one song's
+bridge hat (measures 128-139, track `t11`): of 216 hat hits, 69%
 are plain 16ths (micro-tick 0), but **27 are 32nd notes (need micro-tick 3)** and
 **12 are 16th-note triplets (need micro-ticks 2 & 4)**. Authoring those micro
 positions takes the import from **~69% → ~87%** faithful. (The remaining ~12% are
@@ -107,6 +107,6 @@ no-ack), a scratch slot you don't mind overwriting.
    route currently rounds and counts `micro_rounded_internal`). The mask for
    micro list `[0,3]` would be `0x09` (additive), etc.
 3. `verify-circuit-ncs.ts`: golden for each captured mask (cite byte offset).
-4. Re-run the Gethsemane import and re-measure fidelity (target ~87%).
+4. Re-run the worked-example import and re-measure fidelity (target ~87%).
 5. Update `docs/design/songsterr-drum-import.md` (the micro-step row) + this file
    (move masks from "to confirm" → "confirmed", cite the capture).

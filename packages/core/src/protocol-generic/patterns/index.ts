@@ -77,6 +77,52 @@ export {
 } from './midiFile.js';
 
 export {
+  writeMidiFile,
+  untangleNotes,
+  DEFAULT_TICKS_PER_BEAT,
+  type SmfNote,
+  type SmfTrack,
+  type SmfTempo,
+  type SmfMeter,
+  type SmfMarker,
+  type SmfSong,
+} from './midiFileWrite.js';
+
+export {
+  buildSongMidi,
+  splitPercussion,
+  partTracks,
+  drumEventNote,
+  GM_KIT_NOTES,
+  PERCUSSION_TRACK,
+  pitchBendCurve,
+  VIBRATO_DEPTH,
+  VIBRATO_HZ,
+  GLIDE_OVERLAP_TICKS,
+  DEFAULT_BEND_RANGE,
+  filterMelodicPart,
+  type MelodicPartFilter,
+  type SongMidiTrack,
+  type PercussionSplit,
+  type SongMidiPart,
+  type SongMidiSection,
+  type SongMidiSequence,
+  type SongMidiBuild,
+  type SongMidiChart,
+  type SongMidiOptions,
+} from './songMidi.js';
+
+export {
+  planRebar,
+  rebarDrums,
+  rebarMelodic,
+  translateRange,
+  translateBorrow,
+  type RebarRange,
+  type RebarMap,
+} from './rebar.js';
+
+export {
   DRUM_MAP_PRESETS,
   MIXWAVE_ST2_GROOVES,
   resolveDrumMapPreset,
@@ -191,6 +237,77 @@ export {
   type PieceEntry,
   type PieceCompressionReport,
 } from './pieceCompression.js';
+
+export {
+  planSongChop,
+  toChopPart,
+  packPatternsOnBarLines,
+  PATTERN_SLOTS_PER_TRACK,
+  STEPS_PER_PATTERN,
+  MAX_PROJECT_STEPS,
+  type ChopPartFlat,
+  type ChopProject,
+  type ChopProjectPart,
+  type ChopPatternWindow,
+  type ChopSection,
+  type ChopOptions,
+  type SongChopPlan,
+} from './songChop.js';
+
+export {
+  planSongProjects,
+  formatSongProjectPlan,
+  buildPartWindow,
+  buildWindows,
+  classify,
+  barRow,
+  sigOf,
+  rawDrumHits,
+  GM_TOMS,
+  type SongProjectPlan,
+  type SongProject,
+  type ProjectRelation,
+  type FillWorkItem,
+  type FillEvent,
+  type PlanOptions,
+  type RawHit,
+  type BarToken,
+  type PartWindow,
+  type Window,
+  type Verdict,
+  type Pair,
+} from './songPlanner.js';
+
+// Authoring engine (BK-AUTHORING-ENGINE + BK-SONG-AUTHOR-2): contract, engine, relations, seeder,
+// content-merge, variants.
+export * from './songAuthorTypes.js';
+export { buildProjectOps, resolveVariants, SongAuthorError } from './songAuthor.js';
+export { computePartRelations, findRelation } from './songPartRelations.js';
+export { seedAuthoringFromPlan } from './songAuthorSeed.js';
+export { mergeContent, DEFAULT_ROUTING, MergeError } from './songAuthorMerge.js';
+export {
+  buildSectionsFromSpec,
+  formatSectionReport,
+  buildStompMap,
+  formatStompMap,
+  SectionSpecError,
+  type StompMap,
+  type SectionSpecRow,
+  type MelodicRoute,
+  type RouteImportOptions,
+  type DrumImportOptions,
+  type SongRouting,
+  type SectionSpecOptions,
+  type SectionBuildReport,
+} from './songSectionSpec.js';
+export {
+  reduceToMonoVoice,
+  renderGlideGestures,
+  roundBendSemitones,
+  describeGlideGestures,
+  type GlideGestureOptions,
+  type GlideGestureReport,
+} from './pitchGestures.js';
 
 export {
   selectRealizer,

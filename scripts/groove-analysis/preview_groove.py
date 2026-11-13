@@ -1,7 +1,7 @@
 """
-preview_groove.py — render an audible preview of each Sleep Token song's groove.
+preview_groove.py — render an audible preview of each groove-pack song's groove.
 
-Maps each groove MIDI's notes to the bounced Sleep Token samples (Default kit)
+Maps each groove MIDI's notes to the bounced Mixwave samples (Default kit)
 and mixes them at the folder's real BPM into a WAV you can play in any media
 player (no MIDI player needed) — to identify which song each anonymized folder is.
 

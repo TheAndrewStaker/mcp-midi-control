@@ -1,7 +1,7 @@
 /**
  * circuit-metre-test-a.ts — MIXED-LENGTH PATTERN CHAIN, hardware test A.
  *
- * THE QUESTION (docs/_private/rig/songs/schism-interview.md §3, and the gate on
+ * THE QUESTION (one song's private interview notes, §3, and the gate on
  * every mixed-metre song): a Circuit pattern's LENGTH is per track per pattern
  * slot, 1..32 steps, and is hardware-confirmed as a stored byte. What has never
  * been tested is whether a CHAINED pattern advances when its OWN length elapses,
@@ -9,7 +9,7 @@
  * doing it. Every song shipped so far used a uniform 32.
  *
  * THE TEST. One throwaway project. Drums 1 and Synth 1, four patterns each at
- * lengths 24, 24, 30, 18 (Schism's own numbers: a 5/8+7/8 pair, a 3/4+6/8 pair,
+ * lengths 24, 24, 30, 18 (one odd-metre song's own numbers: a 5/8+7/8 pair, a 3/4+6/8 pair,
  * a 9/8 bar). One hit on step 0 of every pattern, nothing else. Chain 0..3 on
  * both tracks. Played at 60 bpm a step is 250 ms, so the four gaps are 6.0 s,
  * 6.0 s, 7.5 s and 4.5 s — countable against the device's own quarter-note
@@ -25,7 +25,7 @@
  * the field is steps-1), which is what separates "we failed to write the
  * lengths" from "the device ignores them". Those are different problems.
  *
- * WHY A STANDALONE SCRIPT. Same reason as circuit-after-dark-author.ts: it calls
+ * WHY A STANDALONE SCRIPT. It calls
  * `executeApplyPattern` directly, so the compile, the arrangement writer, the
  * length-byte write, the chain write and the overwrite gate are all the SHIPPED
  * ones rather than a reimplementation — only the process is different, so the
@@ -83,7 +83,7 @@ const devicePack = Number(flag('--pack') ?? '3');
 const SLOT = Number(flag('--slot') ?? '1');           // DEVICE numbering, Project 1..64
 const wirePack = devicePack - 1;
 
-/** Schism's own numbers. A 5/8+7/8 pair, again, a 3/4+6/8 pair, a 9/8 bar. */
+/** One odd-metre song's own numbers. A 5/8+7/8 pair, again, a 3/4+6/8 pair, a 9/8 bar. */
 const LENGTHS = [24, 24, 30, 18] as const;
 /** steps-1 is what the metadata byte stores. This is the read-back assertion. */
 const EXPECT_LENGTH_BYTES = LENGTHS.map((s) => s - 1);

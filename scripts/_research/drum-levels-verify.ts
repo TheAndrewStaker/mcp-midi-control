@@ -6,8 +6,8 @@
  *     staged file that was uploaded. Not "the four bytes are 0" — the whole
  *     160,780 bytes, so nothing else moved on the round trip.
  *  2. Each still passes checkNcsStructure and reads back drum levels 0/0/0/0.
- *  3. The four neighbour witnesses from two untouched songs (Clint 27-28,
- *     Sugar 46-47) are byte-identical pre vs post.
+ *  3. The four neighbour witnesses from two untouched songs (slots 27-28
+ *     and 46-47) are byte-identical pre vs post.
  *
  * OFFLINE ONLY.
  */

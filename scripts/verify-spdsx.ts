@@ -18,6 +18,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Offline gate: isolate the cross-process instance lease from any LIVE server
+// (see verify-circuit-delete, 2026-08-08 port_held_elsewhere collision).
+process.env.MCP_INSTANCE_LOCK_DIR = mkdtempSync(join(tmpdir(), 'spdsx-gate-locks-'));
+
 import {
   buildKit, buildFullKit, editKitNotes, encodeMinimalKit, encodeFullKit, DEFAULT_FXOFF_HEADER,
   isMinimalKit, nameToCodes, parseMinimalKit, parseFullKit, parseFullKitBase, parseKitHeader,
@@ -31,7 +35,7 @@ import { padsFromKit, readKit, readWaveNames } from '@mcp-midi-control/spd-sx/st
 import { normalizeToSpdsx } from '@mcp-midi-control/spd-sx/codec/wav.js';
 import { SPD_SX_DESCRIPTOR } from '@mcp-midi-control/spd-sx/descriptor.js';
 import { createNullMidiConnection } from '@mcp-midi-control/core/midi/transport.js';
-import { openCtx } from '@mcp-midi-control/core/protocol-generic/dispatcher/core.js';
+import { withEndpoint } from '@mcp-midi-control/core/protocol-generic/dispatcher/core.js';
 import { DispatchError, type DeviceDescriptor, type DispatchCtx } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -675,12 +679,14 @@ await (async () => {
   }
 }
 
-// ── openCtx: hybrid device connected on NEITHER surface ──────────────────────
+// ── ctx build: hybrid device connected on NEITHER surface ────────────────────
 // A hybrid device with no mounted drive AND no MIDI port must error with a
 // message naming BOTH surfaces (not a bare MIDI port-not-found that mis-directs
-// a storage op). Synthetic descriptor → deterministic regardless of env.
+// a storage op). Synthetic descriptor → deterministic regardless of env. The
+// build now runs inside `withEndpoint` (the ctx is only obtainable under the
+// per-endpoint lock), so the same failure shape is exercised through the seam.
 {
-  console.log('\nopenCtx hybrid (neither surface connected):');
+  console.log('\nwithEndpoint ctx build, hybrid (neither surface connected):');
   const fakeHybrid = {
     id: 'fake-hybrid',
     display_name: 'Fake Hybrid',
@@ -689,7 +695,7 @@ await (async () => {
   } as unknown as DeviceDescriptor;
 
   let err: unknown;
-  try { openCtx(fakeHybrid); } catch (e) { err = e; }
+  try { await withEndpoint(fakeHybrid, async () => undefined); } catch (e) { err = e; }
   const msg = err instanceof Error ? err.message : String(err);
   assert(err instanceof DispatchError && err.code === 'device_not_mounted',
     `hybrid + disconnected → DispatchError device_not_mounted (got ${err instanceof DispatchError ? err.code : typeof err})`);

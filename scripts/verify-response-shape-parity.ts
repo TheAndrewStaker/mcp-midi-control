@@ -24,13 +24,17 @@
 //      response MUST declare, plus an EXPLICIT per-device allowlist of
 //      intentional omissions (documented inline with the reason).
 //
-// AM4, Axe-Fx II, and the gen-3 Axe-Fx III all get RUNTIME shape
-// assertions (their mock responders synthesize enough wire shapes to run
-// getPreset and getParam against the mock). The gen-3 mock synthesizes the
-// device's 0x74/0x75/0x76 state-broadcast burst in answer to the reader's
-// fn=0x1F bulk-read poll (see packages/fractal-gen3/src/parityMock.ts).
-// Hydrasynth does not implement the slot/scene getPreset contract and is
-// reported as not-applicable, not silently skipped.
+// AM4, Axe-Fx II, the gen-3 Axe-Fx III, and the Hydrasynth all get
+// RUNTIME shape assertions (their mock responders synthesize enough wire
+// shapes to run getPreset — and getParam where it exists — against the
+// mock). The gen-3 mock synthesizes the device's 0x74/0x75/0x76
+// state-broadcast burst in answer to the reader's fn=0x1F bulk-read poll
+// (see packages/fractal-gen3/src/parityMock.ts). The Hydrasynth mock
+// serves the 22-chunk stored-patch Request flow (BK-110; see
+// packages/hydrasynth/src/parityMock.ts); its getPreset REQUIRES a
+// location (the device has no working-buffer read), so its rig passes
+// one, and its getParam contract is a documented REFUSAL, which the gate
+// asserts rather than skipping.
 //
 // Run:  npx tsx scripts/verify-response-shape-parity.ts
 //
@@ -59,6 +63,8 @@ import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js'
 import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
 import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/descriptor.js';
 import { connectAxeFxIIIParityMock, connectAxeFxIIIParityMockWith } from '@mcp-midi-control/fractal-gen3/midi.js';
+import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
+import { connectHydrasynthParityMock } from '@mcp-midi-control/hydrasynth/parityMock.js';
 
 let failures = 0;
 let passes = 0;
@@ -95,6 +101,9 @@ const PRESET_SNAPSHOT_CONTRACT: ShapeContract = {
   required: ['slots', '_meta'],
   optional: [
     'name',
+    // BK-110 (2026-08-09): device-native patch category tag. Voice-class
+    // (Hydrasynth byte 8, "Bass"/"Pad"/…); Fractal presets carry none.
+    'category',
     'active_scene',
     'scenes',
     'routing',
@@ -163,12 +172,14 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       live_grid: 'AM4 is a linear 4-slot device with no routing grid; the gen-3 live_grid read does not apply.',
       // live_meters rides the gen-3 sub=0x2E frame; AM4 has no such frame.
       live_meters: 'AM4 has no gen-3 sub=0x2E telemetry frame; live CPU/output meters do not apply.',
-      // The preset name field is only populated when present; the AM4
-      // reader omits the key entirely on the working-buffer snapshot.
-      name: 'AM4 working-buffer snapshot does not read the preset name into the envelope.',
-      // read_warnings is conditional on BOTH devices: present only when a
-      // partial read fails. On a clean read neither device emits it.
-      read_warnings: 'Conditional field, present only on a partial-read failure; absent on a clean read.',
+      // The AM4 reads the name stored at the loaded location (best-effort).
+      // The parity mock does not answer the location read, so it is absent here.
+      name: 'Read from the loaded location on hardware; the parity mock answers no location read, so the key is absent in this run.',
+      // read_warnings is NOT on this list: the parity mock does not answer the
+      // working-buffer dump that carries the per-scene channel table, so the
+      // AM4 reader emits its "active channel was not read" warning here and
+      // the field is declared. On hardware a clean read still omits it.
+      category: 'Voice-class patch tag (Hydrasynth byte 8); AM4 presets carry no category byte.',
     },
     presetSnapshotMeta: {
       // BUG-1 (2026-07-04): AM4 get_preset now always returns all four
@@ -198,6 +209,7 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // read_warnings is conditional on BOTH devices: present only when a
       // partial read fails. On a clean read neither device emits it.
       read_warnings: 'Conditional field, present only on a partial-read failure; absent on a clean read.',
+      category: 'Voice-class patch tag (Hydrasynth byte 8); Axe-Fx II presets carry no category byte.',
     },
     presetSnapshotMeta: {
       // channel_state_hint is emitted ONLY when channel state was omitted
@@ -234,6 +246,7 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       active_scene: 'Gen-3 get_preset issues a fn=0x0C scene query, but the parity mock does not answer it, so active_scene is omitted here (present on hardware).',
       // read_warnings IS declared by the gen-3 reader (it always attaches the
       // block-inventory caveat), so it is NOT allow-listed here.
+      category: 'Voice-class patch tag (Hydrasynth byte 8); gen-3 presets carry no category byte.',
     },
     presetSnapshotMeta: {
       // The gen-3 reader has no second-channel read leg, so both_channels_read
@@ -259,6 +272,33 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // include. The wire value is already surfaced as `wire_value`.
       raw_response: 'Gen-3 projectParam reports wire_value out of the bulk-read burst without attaching the raw device frame; the wire value is surfaced via wire_value.',
     },
+  },
+  hydrasynth: {
+    presetSnapshot: {
+      // Voice-class synth (BK-110 stored-patch read): no scenes, no grid,
+      // no routing edges — the snapshot is per-module param groups.
+      active_scene: 'Hydrasynth has no scene model (has_scenes: false).',
+      scenes: 'Hydrasynth has no scene model (has_scenes: false).',
+      routing: 'Hydrasynth is a voice synth; there is no signal-routing grid to serialize (mod-matrix routing is params, not edges).',
+      chain_integrity: 'Hydrasynth has no routing grid; no chain-integrity check applies.',
+      live_grid: 'Gen-3-only live grid read (fn=0x01 sub=0x2E); the Hydrasynth has no grid.',
+      live_meters: 'Gen-3-only telemetry frame; the Hydrasynth has none.',
+      // name, category, read_warnings are DECLARED (read_warnings always
+      // carries the flash-copy caveat), so none of them are listed here.
+    },
+    presetSnapshotMeta: {
+      channel_state_omitted: 'Fractal per-block channel concept; the Hydrasynth has no channels (has_channels: false).',
+      both_channels_read: 'Fractal per-block channel concept; the Hydrasynth has no channels.',
+      channel_state_hint: 'Fractal per-block channel concept; the Hydrasynth has no channels.',
+      current_location: 'The Hydrasynth has no active-location register readable over MIDI; the read IS location-addressed instead.',
+      is_dirty: 'The Hydrasynth emits no dirty signal and the working buffer has no read; nothing to report.',
+      read_path: 'BK-081 atomic-image read-path field is Axe-Fx-II-specific.',
+      image_read_fallback_reason: 'BK-081 atomic-image read-path field is Axe-Fx-II-specific.',
+    },
+    // getParam is a DOCUMENTED refusal on this device (no single-param
+    // query primitive); the rig asserts the refusal, so no ReadResult
+    // shape is ever produced and nothing can be omitted from it.
+    readResult: {},
   },
 };
 
@@ -329,8 +369,19 @@ interface DeviceRig {
   id: string;
   descriptor: DeviceDescriptor;
   connect: () => { send: (b: number[]) => void; close: () => void } & DispatchCtx['conn'];
-  // A known (block, param) pair the mock responder can answer for getParam.
-  getParamProbe: { block: string; name: string };
+  /**
+   * A known (block, param) pair the mock responder can answer for getParam
+   * — or null when the device's getParam contract is a DOCUMENTED refusal
+   * (Hydrasynth: no single-param query primitive). A null probe makes the
+   * gate assert the refusal fires, instead of skipping the surface.
+   */
+  getParamProbe: { block: string; name: string } | null;
+  /**
+   * Options for the getPreset drive. Devices whose getPreset requires a
+   * stored location (Hydrasynth: the working buffer has no read) name one
+   * here; active-buffer devices omit it.
+   */
+  getPresetOptions?: { location?: string | number };
 }
 
 const RIGS: DeviceRig[] = [
@@ -360,6 +411,17 @@ const RIGS: DeviceRig[] = [
     connect: connectAxeFxIIIParityMock,
     getParamProbe: { block: 'reverb', name: 'mix' },
   },
+  {
+    // Hydrasynth (BK-110): getPreset reads a STORED patch via the 22-chunk
+    // Request flow (the parity mock serves INIT + name "Parity Mock" +
+    // category Pad); the working buffer has no read, so a location is
+    // required. getParam is a documented refusal (no single-param query).
+    id: 'hydrasynth',
+    descriptor: HYDRASYNTH_DESCRIPTOR,
+    connect: connectHydrasynthParityMock,
+    getParamProbe: null,
+    getPresetOptions: { location: 'A001' },
+  },
 ];
 
 // Register descriptors so resolveDevice-style lookups (and the param-kind
@@ -367,11 +429,12 @@ const RIGS: DeviceRig[] = [
 registerDevice(AXEFX2_DESCRIPTOR);
 registerDevice(AM4_DESCRIPTOR);
 registerDevice(AXEFX3_DESCRIPTOR);
+registerDevice(HYDRASYNTH_DESCRIPTOR);
 
 const registeredIds = new Set(listRegisteredDevices().map((d) => d.id));
 check(
-  'AM4, Axe-Fx II, and Axe-Fx III descriptors registered',
-  registeredIds.has('am4') && registeredIds.has('axe-fx-ii') && registeredIds.has('axe-fx-iii'),
+  'AM4, Axe-Fx II, Axe-Fx III, and Hydrasynth descriptors registered',
+  registeredIds.has('am4') && registeredIds.has('axe-fx-ii') && registeredIds.has('axe-fx-iii') && registeredIds.has('hydrasynth'),
   `registered: [${[...registeredIds].join(', ')}]`,
 );
 
@@ -427,7 +490,7 @@ async function driveDevice(rig: DeviceRig): Promise<void> {
     } else {
       let snapshot: PresetSnapshot | undefined;
       try {
-        snapshot = await rig.descriptor.reader.getPreset(ctx);
+        snapshot = await rig.descriptor.reader.getPreset(ctx, rig.getPresetOptions);
       } catch (err) {
         if (isMockCoverageGap(err)) {
           note(
@@ -471,7 +534,24 @@ async function driveDevice(rig: DeviceRig): Promise<void> {
     }
 
     // ── get_param (ReadResult) ───────────────────────────────────────
-    if (rig.descriptor.reader.getParam === undefined) {
+    if (rig.getParamProbe === null) {
+      // Documented-refusal contract (Hydrasynth): getParam must exist and
+      // must throw capability_not_supported — a device that silently
+      // starts ANSWERING would be a shape change this gate should see.
+      let refusalOk = false;
+      let refusalDetail = 'getParam resolved instead of refusing';
+      try {
+        await rig.descriptor.reader.getParam(ctx, 'osc1', 'type');
+      } catch (err) {
+        refusalDetail = err instanceof Error ? err.message : String(err);
+        refusalOk = /not supported/i.test(refusalDetail);
+      }
+      check(
+        `${rig.id}: getParam refuses with the documented capability_not_supported contract`,
+        refusalOk,
+        refusalDetail,
+      );
+    } else if (rig.descriptor.reader.getParam === undefined) {
       check(`${rig.id}: reader implements getParam`, false, 'no getParam on reader');
     } else {
       let read: ReadResult | undefined;
@@ -559,6 +639,7 @@ const PRESET_MOCK_HINT: Record<string, string> = {
   am4: 'am4MockResponder fn 0x1F triple',
   'axe-fx-ii': 'mockAxeFxIIConnection fn 0x20/0x0f',
   'axe-fx-iii': 'parityMock fn 0x1F → 0x74/0x75/0x76 broadcast burst',
+  hydrasynth: 'hydrasynth parityMock 22-chunk stored-patch Request flow',
 };
 const READ_MOCK_HINT: Record<string, string> = {
   am4: 'am4MockResponder fn 0x01 short-read',
@@ -567,18 +648,22 @@ const READ_MOCK_HINT: Record<string, string> = {
 };
 
 function assertRuntimeFloor(): void {
-  const expected = RIGS.map((r) => r.id);
-  for (const id of expected) {
+  for (const rig of RIGS) {
+    const id = rig.id;
     check(
       `${id} produced a runtime PresetSnapshot for shape assertion`,
       runtimeCoverage.presetSnapshot.includes(id),
       `runtime PresetSnapshot coverage: [${runtimeCoverage.presetSnapshot.join(', ') || 'none'}]. ${id} did not produce a snapshot — its getPreset mock responder regressed (see ${PRESET_MOCK_HINT[id] ?? `${id} mock responder`}); the shape contract is no longer exercised on ${id} live data.`,
     );
-    check(
-      `${id} produced a runtime ReadResult for shape assertion`,
-      runtimeCoverage.readResult.includes(id),
-      `runtime ReadResult coverage: [${runtimeCoverage.readResult.join(', ') || 'none'}]. ${id} did not produce a ReadResult — its getParam mock responder regressed (see ${READ_MOCK_HINT[id] ?? `${id} mock responder`}); the shape contract is no longer exercised on ${id} live data.`,
-    );
+    // Rigs with a null probe have a documented-refusal getParam contract
+    // (asserted in driveDevice); no ReadResult can exist for them.
+    if (rig.getParamProbe !== null) {
+      check(
+        `${id} produced a runtime ReadResult for shape assertion`,
+        runtimeCoverage.readResult.includes(id),
+        `runtime ReadResult coverage: [${runtimeCoverage.readResult.join(', ') || 'none'}]. ${id} did not produce a ReadResult — its getParam mock responder regressed (see ${READ_MOCK_HINT[id] ?? `${id} mock responder`}); the shape contract is no longer exercised on ${id} live data.`,
+      );
+    }
   }
 }
 
@@ -636,16 +721,10 @@ async function assertGen3ChannelStride(): Promise<void> {
 // ── Main ─────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  // Register the not-applicable devices too so reportNotApplicable() can
-  // confirm they have NOT silently grown a getPreset that would need
-  // parity coverage. Dynamic import keeps the static import list focused
-  // on the runtime-driven rigs.
-  try {
-    const { HYDRASYNTH_DESCRIPTOR } = await import('@mcp-midi-control/hydrasynth/descriptor.js');
-    registerDevice(HYDRASYNTH_DESCRIPTOR);
-  } catch (err) {
-    note('hydrasynth', `descriptor not registered: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  // (The Hydrasynth graduated from the not-applicable list to a full rig
+  // with BK-110; its descriptor is now statically imported + registered
+  // above like the others. reportNotApplicable() still guards any FUTURE
+  // registered device that grows a getPreset without a rig.)
 
   for (const rig of RIGS) {
     await driveDevice(rig);

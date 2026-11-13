@@ -289,10 +289,65 @@ export interface DeviceParamRange {
    * type/mode selectors the overlay missed were stored wrong as continuous).
    */
   readonly enumCount?: number;
+  /** Display scale of the cache row (1 = display units equal the stored value). */
+  readonly scale?: number;
 }
 
 /** Device-true ranges keyed family → paramId → range (e.g. `FM9_RANGES`). */
 export type DeviceRangeTable = Readonly<Record<string, Readonly<Record<number, DeviceParamRange>>>>;
+
+/**
+ * Gen-3 Hz-taper log10 reclassification (BK-096): low/high-cut params whose
+ * wire image is LOG10 across their display window, not linear.
+ *
+ * Evidence (decode-grade, community-beta):
+ *   1. FM3 field point (2026-06-12 field test, capture
+ *      `samples/captured/fm3-community-2026-06-12/fm3-probe-output.json`):
+ *      a server-issued float32(45.0) SET on REVERB_LOWCUT read back wire
+ *      11540, which is EXACTLY 45.0 Hz under `20 * 100^(w/65534)` (the log10
+ *      resolver over [20, 2000]); a linear decode gives ~369 Hz.
+ *   2. Axe-Fx II precedent: the same-symbol low/high-cut family is
+ *      hardware-confirmed log10 on the II at the same windows (low cut
+ *      20..2000, high cut 200..20000; `fractal-gen2/src/calibration.ts`,
+ *      am4-shared provenance).
+ *
+ * Membership rule (kept deliberately narrow): a cut-suffix firmware symbol
+ * (LOWCUT / LOCUT / HIGHCUT / HICUT) whose device-cache window is exactly one
+ * of the family-canonical decade windows [20..2000] or [200..20000] Hz, i.e.
+ * the windows the II confirms log10 on hardware, consistent across the
+ * FM9/FM3/III caches. Cut params on OTHER windows are NOT reclassified yet
+ * (GATE_LOWCUT 10..1000, per-IR CABINET_LOCUTn 20..200 / CABINET_HICUTn
+ * 2000..20000, CONTROLLERS_* detector/LFO cuts): no gen-3 field point or II
+ * precedent pins their taper, so they stay linear-calibrated pending a sweep.
+ *
+ * CAVEAT (honest label): the log10 CURVE is evidence-backed as above, but a
+ * full endpoint sweep (CAPTURE-1: several panel readings per param across the
+ * window) is still pending, so the value-space-vs-knob-position question for
+ * the family stays open. Until that lands this classification is
+ * community-beta: exact at the FM3 field point and at the window endpoints,
+ * interpolated log10 in between.
+ */
+export const HZ_CUT_LOG10_PARAMS: ReadonlySet<string> = new Set([
+  'CABINET_LOCUT', 'CABINET_HICUT',
+  'CHORUS_LOWCUT', 'CHORUS_HICUT',
+  'COMP_LOWCUT', 'COMP_HIGHCUT',
+  'DELAY_LOCUT', 'DELAY_HICUT',
+  'DISTORT_HICUT',
+  'ENHANCER_LOWCUT', 'ENHANCER_HICUT',
+  'FILTER_LOWCUT', 'FILTER_HICUT',
+  'FUZZ_LOCUT', 'FUZZ_HICUT',
+  'GATE_HICUT',
+  'IRPLAYER_LOCUT', 'IRPLAYER_HICUT',
+  'LOOPER_LOWCUT', 'LOOPER_HICUT',
+  'MEGATAP_LOWCUT', 'MEGATAP_HICUT',
+  'MULTITAP_LOWCUT', 'MULTITAP_HIGHCUT',
+  'OLD_FLANGER_LOWCUT', 'OLD_FLANGER_HICUT',
+  'PLEX_LOWCUT', 'PLEX_HIGHCUT',
+  'REVERB_LOWCUT', 'REVERB_HICUT',
+  'RINGMOD_HICUT',
+  'SYNTH_HICUT1', 'SYNTH_HICUT2', 'SYNTH_HICUT3',
+  'TENTAP_LOWCUT', 'TENTAP_HIGHCUT',
+]);
 
 /**
  * Decide whether a param's catalog range yields a usable display↔wire
@@ -343,7 +398,11 @@ function resolveCalibration(
   if (displayMin === undefined || displayMax === undefined) return undefined;
   if (!Number.isFinite(displayMin) || !Number.isFinite(displayMax)) return undefined;
   if (displayMin >= displayMax) return undefined;
-  const displayScale: 'linear' | 'log10' = scaling === 'log10' ? 'log10' : 'linear';
+  // Taper: the catalog's own scaling tag, plus the BK-096 Hz-cut log10
+  // reclassification (evidence-backed by the FM3 REVERB_LOWCUT field point +
+  // the II hardware-confirmed low/high-cut precedent; see HZ_CUT_LOG10_PARAMS).
+  const displayScale: 'linear' | 'log10' =
+    scaling === 'log10' || HZ_CUT_LOG10_PARAMS.has(param.name) ? 'log10' : 'linear';
   if (displayScale === 'log10' && (displayMin <= 0 || displayMax <= 0)) return undefined;
   return { displayMin, displayMax, displayScale };
 }
@@ -427,6 +486,7 @@ function buildParamSchema(
   sharedEnumRosters?: Readonly<Record<string, Readonly<Record<number, string>>>>,
   deviceRange?: DeviceParamRange,
   roundtripDiscreteOrdinals?: Readonly<Record<string, number>>,
+  roundtripIsDeviceOracle?: boolean,
 ): {
   key: string;
   schema: ParamSchema;
@@ -463,9 +523,34 @@ function buildParamSchema(
   // spellings. Layered precedence (later spread wins):
   //   shared roster < family overlay < device-captured (hardware truth).
   const sharedRoster = sharedEnumRosters?.[param.name];
-  const enumValues =
-    deviceOverlayValues !== undefined || overlay?.values !== undefined || sharedRoster !== undefined
-      ? { ...(sharedRoster ?? {}), ...(overlay?.values ?? {}), ...(deviceOverlayValues ?? {}) }
+  // EXCEPTION to that order: an overlay entry that is only AM4-INFERRED
+  // ('am4-shared': "the AM4's list, assumed to line up") yields entirely to a
+  // gen-3 read roster for the same symbol. The roster is gen-3 evidence; the
+  // AM4 list is a cross-device guess, and it is wrong more often than its
+  // two spot-checked ordinals suggested: 43 of 78 drive types name a
+  // different pedal from ordinal 31 up, so "Klone Chiron" set DS1 Distortion
+  // Mod on an Axe-Fx III (fw 32.06, confirmed in Axe-Edit) while the read
+  // path, which already used the roster, named it correctly. Replacing rather
+  // than merging also stops the AM4 list leaking tail ordinals gen-3 lacks
+  // (a 32nd flanger type). Old spellings still resolve where they are the
+  // same model in another word order ("Room, Small" = "Small Room"): the
+  // encoder matches word-order variants.
+  const overlayValues =
+    sharedRoster !== undefined && overlay?.provenance === 'am4-shared' ? undefined : overlay?.values;
+  // A device override that names every ordinal of the device cache's own
+  // enumCount IS the whole device roster: it replaces the lower layers rather
+  // than merging over them, so a longer shared list cannot leak phantom tail
+  // ordinals the device does not have (the FM3's 27 delay models vs the
+  // family's 29).
+  const deviceRosterComplete =
+    deviceOverlayValues !== undefined &&
+    deviceRange?.kind === 'enum' &&
+    typeof deviceRange.enumCount === 'number' &&
+    Array.from({ length: deviceRange.enumCount }, (_, i) => i).every((i) => deviceOverlayValues[i] !== undefined);
+  const enumValues = deviceRosterComplete
+    ? { ...deviceOverlayValues }
+    : deviceOverlayValues !== undefined || overlayValues !== undefined || sharedRoster !== undefined
+      ? { ...(sharedRoster ?? {}), ...(overlayValues ?? {}), ...(deviceOverlayValues ?? {}) }
       : undefined;
 
   // Device-cache enum WITHOUT a correlated name table: the editor cache marks
@@ -509,10 +594,15 @@ function buildParamSchema(
     : undefined;
 
   // Surface the device-true bounds (not the inherited inference) on the schema
-  // so list_params / describe_device report the FM9's real range. Only a
-  // float-kind cache row overrides; otherwise the catalog value stands.
-  const displayMin = deviceRange?.kind === 'float' ? roundDisplay(deviceRange.displayMin) : param.displayMin;
-  const displayMax = deviceRange?.kind === 'float' ? roundDisplay(deviceRange.displayMax) : param.displayMax;
+  // so list_params / describe_device report the device's real range. Only a
+  // float-kind cache row overrides, and only when the param is actually ROUTED
+  // as a continuous knob: a param the roundtrip oracle (or an enum table)
+  // routes DISCRETE must not advertise the cache's float window as its display
+  // range (the cache float row is exactly what the oracle contradicted).
+  const routedDiscrete = enumValues !== undefined || deviceEnumNoNames || roundtripDiscrete;
+  const useCacheFloatBounds = deviceRange?.kind === 'float' && !routedDiscrete;
+  const displayMin = useCacheFloatBounds ? roundDisplay(deviceRange!.displayMin) : param.displayMin;
+  const displayMax = useCacheFloatBounds ? roundDisplay(deviceRange!.displayMax) : param.displayMax;
 
   let encode: ParamSchema['encode'];
   let decode: ParamSchema['decode'];
@@ -523,13 +613,36 @@ function buildParamSchema(
     decode = (wire: number): number | string => enumValues[wire] ?? wire;
   } else if (deviceEnumNoNames) {
     // Count-known device-cache enum, no names yet: discrete numeric-ordinal
-    // wire (the ordinal passes straight through on decode).
-    encode = makeOrdinalEncode(family, key, deviceRange!.enumCount! - 1);
+    // wire (the ordinal passes straight through on decode). CONFLICT RULE:
+    // when the device's OWN roundtrip oracle also observed this param and its
+    // maxOrdinal disagrees with the cache's enumCount, the ROUNDTRIP (device
+    // behavior) wins the encode bound (III DELAY_SVFTYPE: cache enumCount 3
+    // vs roundtrip maxOrdinal 3, i.e. 4 options the device itself stores).
+    // Applies only when the overlay IS a device oracle (III/FM9 roundtrips);
+    // the FM3's family-join overlay is sibling-pattern evidence and never
+    // outranks the FM3's own cache.
+    const cacheBound = deviceRange!.enumCount! - 1;
+    const oracleBound = roundtripIsDeviceOracle === true ? roundtripDiscreteOrdinals?.[param.name] : undefined;
+    encode = makeOrdinalEncode(family, key, oracleBound ?? cacheBound);
     decode = (wire: number): number => wire;
   } else if (roundtripDiscrete) {
     // Roundtrip-derived discrete selector, no names yet: discrete numeric-ordinal
-    // wire bounded by the observed maxOrdinal (the ordinal passes through on decode).
-    encode = makeOrdinalEncode(family, key, roundtripDiscreteOrdinals![param.name]);
+    // wire (the ordinal passes through on decode). The roundtrip settles the KIND
+    // but its maxOrdinal is only the highest value the sweep happened to visit.
+    // When the device cache declares an integer window starting at 0 with unit
+    // scale, that window IS the ordinal space and sets the bound: the cab IR
+    // index (CABINET_TYPE1/2, cache 0..1023; the sweeps visited only 15 / 188,
+    // and an FM9 fw 12 owner set 315 = Factory 2 #316 on hardware, issue #23).
+    // Offset or scaled windows (PITCH_NOTE*, CHORUS_VOICES) are not ordinals.
+    const observed = roundtripDiscreteOrdinals![param.name]!;
+    const cacheOrdinalMax =
+      deviceRange?.kind === 'float' &&
+      deviceRange.displayMin === 0 &&
+      deviceRange.scale === 1 &&
+      Number.isInteger(deviceRange.displayMax)
+        ? deviceRange.displayMax
+        : undefined;
+    encode = makeOrdinalEncode(family, key, Math.max(observed, cacheOrdinalMax ?? observed));
     decode = (wire: number): number => wire;
   } else if (cal !== undefined) {
     encode = makeCalibratedEncode(family, key, cal);
@@ -642,8 +755,16 @@ export function createModernCatalog(opts: {
    * win; this only fills params currently routed continuous.
    */
   roundtripDiscreteOrdinals?: Readonly<Record<string, number>>;
+  /**
+   * True when `roundtripDiscreteOrdinals` came from THIS device's own hardware
+   * SET->GET roundtrip sweep (III/FM9). A device oracle outranks the editor
+   * cache where the two disagree on an ordinal bound. False/omitted for
+   * sibling-pattern overlays (the FM3 family-join), which never outrank the
+   * device's own cache.
+   */
+  roundtripIsDeviceOracle?: boolean;
 }): ModernCatalog {
-  const { blocks, paramsByFamily, resolveEffectId, dropEmptyMappedBlocks = false, deviceEnumOverrides, sharedEnumRosters, excludeBlocks, deviceRanges, roundtripDiscreteOrdinals } = opts;
+  const { blocks, paramsByFamily, resolveEffectId, dropEmptyMappedBlocks = false, deviceEnumOverrides, sharedEnumRosters, excludeBlocks, deviceRanges, roundtripDiscreteOrdinals, roundtripIsDeviceOracle } = opts;
   const excluded = new Set((excludeBlocks ?? []).map((s) => s.toLowerCase()));
 
   const slugToFamily: Record<string, string> = {};
@@ -673,7 +794,7 @@ export function createModernCatalog(opts: {
         // device's editor-cache range table; a float row overrides the
         // AM4-overlay inference inside buildParamSchema.
         const deviceRange = deviceRanges?.[family]?.[p.paramId];
-        const { key, schema } = buildParamSchema(family, p, deviceEnumOverrides, sharedEnumRosters, deviceRange, roundtripDiscreteOrdinals);
+        const { key, schema } = buildParamSchema(family, p, deviceEnumOverrides, sharedEnumRosters, deviceRange, roundtripDiscreteOrdinals, roundtripIsDeviceOracle);
         // First wins on key collision (e.g. FLANGER_TYPE vs FLANGER_OLD_TYPE).
         if (!(key in params)) {
           params[key] = schema;

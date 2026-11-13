@@ -45,6 +45,17 @@ not published until the spec graduates (spec §9).
   derive from it (§4). This is what makes change-propagation real.
 - `roles` is a **fixed core enum** (comparison keys on it); `extra_roles` is the
   advisory escape hatch that never keys diff (§3).
+- **A cable runs from a jack that sends to a jack that receives, and a jack
+  takes one plug.** Direction and occupancy live in `portRules.ts`, never
+  re-derived. `validateRig` ERRORS on `edge-direction` and
+  `port-direction-contradicts-kind`, and WARNS on `port-double-booked`;
+  `applyRigEdit` refuses to create either (implicit jack selection takes the
+  first FREE jack facing the right way and refuses rather than guess). Two
+  exceptions, both spec'd: an `audio_in` on a `mixer`/`monitor` node sums N
+  cables, and a duplex link (two directed edges, same `physical_link_id`, same
+  two jacks) is one plug. `expression` and `footswitch` accept each other
+  (dual-mode TRS control jacks). Found 2026-09-16: `add_cable` double-booked a
+  thru box output and accepted a cable between two expression INPUTS.
 - **Output is first-class.** An audio output port may carry an `output_role`
   (`main`/`monitor`/`sub`/`stem`/`cue`); the rig's output DESTINATION is an
   abstract OUT / front-of-house node (roles `["monitor"]`, `server_device_id:
@@ -68,10 +79,13 @@ packages/openrig/
     validate.ts         # validateRig: referential integrity + graph checks (§6)
     compat.ts           # checkRigCompatibility: cross-device BINDING + CABLE agreement + capability-legality (§4)
     audio.ts            # checkAudioOutput: "will I hear this instrument?" reachability to a monitor node
+    portRules.ts        # port DIRECTION (kind default, declared `direction` wins) + OCCUPANCY (one plug per jack; summing inputs + duplex links excepted)
     capacity.ts         # checkRigCapacity: "where is there room to plug something in?" free/used/reserved ports
     attach.ts           # rankAttachments: "where should THIS new device plug in, and why there?" (planner, not a check)
     bootstrap.ts        # bootstrapRig(seeds): seed nodes from a generic DeviceSeed[]
-    cytoscape.ts        # toCytoscapeElements: view-only render projection
+    cytoscape.ts        # toCytoscapeElements: view-only render projection (for a Cytoscape.js renderer)
+    view.ts             # buildRigView + renderRigText: the topology JOINED to all four checks
+    repertoire.ts       # L2/L3 (§7): Song / Repertoire / Performance types, validateRepertoire, planSong (a plan is data: verbs to replay, never a save; a section_map `container` is a by-hand load)
     examples/looperHub.ts  # the §10 worked example, typed fixture + golden
     index.ts            # public surface
   schema/rig.schema.json # normative JSON Schema (draft 2020-12); hand-kept in sync with types.ts
@@ -92,6 +106,22 @@ manifest recorded a sequencer's second DIN out as `"MIDI Out (unused)"` and the
 recommendation was still to daisy-chain around a full thru box. Consult
 `free_by_kind` before ever proposing a chain, a thru box, or a splitter. Do not
 fold them together: each answers a distinct question and the `§10` example must stay
+
+**`buildRigView` (view.ts) is the RENDER model, and it runs all four checks
+itself.** Every renderer wanted so far (a flow diagram, a text list, a chat
+artifact) needs the check results joined onto the topology, and each was
+re-deriving that join by hand; `toCytoscapeElements` drops them entirely. A
+caller that ran three of four checks would produce a view quietly missing a
+verdict, so the join owns the calls. `renderRigText` lives beside it because a
+text rendering that answers the same questions as the diagram is an
+accessibility ship gate (`docs/design/accessibility-blind-support.md`), and a
+ship gate belongs where the golden tests are. Two traps this found on its first
+real manifest, both now covered by negative cases: an audio edge may reach the
+renderer with **no `channels`** (the type forbids it, JSON on disk does not), and
+a binding is named on a **`MidiSignal`** as often as on the `Edge`, because one
+DIN cable carries clock plus transport plus three note streams and only one of
+them is the governed contract. Read only `Edge.binding` and a fully governed rig
+reports as fully ungoverned.
 
 **`rankAttachments` (attach.ts) is a PLANNER, not a fifth check.** Checks judge a
 rig you already have; this one chooses between rigs you could have. Two rules it

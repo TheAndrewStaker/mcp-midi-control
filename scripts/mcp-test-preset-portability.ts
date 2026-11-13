@@ -26,8 +26,8 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
     env: { ...(process.env as Record<string, string>), MCP_MOCK_TRANSPORT: '1' },
     stderr: 'ignore',
   });
-  const client = new Client({ name: 'preset-portability', version: '1.0.0' }, { capabilities: {} });
+  const client = new Client({ name: 'preset-portability', version: '1.0.0' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   const tools = (await client.listTools()).tools as ToolDef[];

@@ -11,8 +11,8 @@
  */
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const ROOT = 'C:/dev/mcp-midi-tools';
 const SERVER = path.resolve(ROOT, 'packages', 'server-all', 'dist', 'server', 'index.js');
@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   console.log(`Uploading ${manifest.length} staged projects.\n`);
 
   const t = new StdioClientTransport({ command: process.execPath, args: [SERVER], stderr: 'pipe' });
-  const c = new Client({ name: 'binding-upload', version: '1' }, { capabilities: {} });
+  const c = new Client({ name: 'binding-upload', version: '1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await c.connect(t);
 
   let ok = 0;
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
             confirm_overwrite: true,
             backup_first: true,
           },
-        }, undefined, { timeout: 120000 });
+        }, { timeout: 120000 });
         text = ext(r);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

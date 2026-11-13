@@ -49,8 +49,8 @@
  */
 import path from 'node:path';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 const REPORT_ONLY = process.argv.includes('--report');
@@ -115,15 +115,19 @@ const TOOL_CEILINGS: Readonly<Record<string, number>> = {
   author_kit: 5_800,
   delete_project: 5_100,
   edit_rig: 4_300,
+  // The Rig Console launcher (RIG-CONSOLE-DESIGN.md "The agent surface"):
+  // capped at the design's 700 chars, two sentences and no arguments, paid
+  // out of the post-v2 headroom. Growth here is a design decision, not drift.
+  open_rig_editor: 700,
   list_params: 3_800,
-  upload_project: 3_500,
   get_preset: 3_300,
   describe_device: 3_200,
   backup_device: 3_200,
   export_preset: 3_000,
   set_block: 3_000,
-  upload_sample: 3_000,
-  upload_kit: 2_800,
+  // Raised from 3,000: it absorbed upload_kit (a 2,800-char tool) as the
+  // `folder` / `kit` arguments. Net tools/list change for the pair: about -2,700.
+  upload_sample: 3_200,
   set_macro_route: 2_500,
   save_preset: 2_400,
   set_param: 2_400,
@@ -131,12 +135,18 @@ const TOOL_CEILINGS: Readonly<Record<string, number>> = {
   scan_locations: 2_200,
   get_param: 2_100,
   list_samples: 2_100,
-  import_preset: 2_100,
+  // Raised from 2,100: it absorbed upload_project (a 3,500-char tool) as the
+  // Circuit Tracks .ncs path plus the `pack` argument. Net for the pair: -2,800.
+  import_preset: 2_800,
   set_mod_route: 2_000,
   measure_loudness: 2_000,
   list_backups: 2_000,
   switch_preset: 1_900,
-  describe_rig: 1_800,
+  // Raised from 1,800 for a new capability, not for prose: the `song` and
+  // `section` arguments that return one song's setup plan from the song book
+  // (MCP_RIG_REPERTOIRE). Paid for in part by cutting the three-checks
+  // sentence, whose detail the response note already carries.
+  describe_rig: 2_000,
   send_sequence: 1_700,
   set_macro: 1_600,
   find_compatible_types: 1_600,
@@ -201,7 +211,7 @@ function schemaDescriptionChars(node: unknown): number {
 
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER_ENTRY], stderr: 'pipe' });
-  const client = new Client({ name: 'tools-list-budget', version: '0.1.0' });
+  const client = new Client({ name: 'tools-list-budget', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   const failures: string[] = [];

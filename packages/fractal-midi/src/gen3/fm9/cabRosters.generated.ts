@@ -13,9 +13,10 @@
 // (see the generator header); the LEGACY table's length-1 = 188 matches the
 // III hardware roundtrip's CABINET_TYPE1 quantization max (length anchor).
 //
-// Community-beta, index-0 caveat: no hardware anchor yet pins name[0] <->
-// within-bank ordinal 0 (verify: first Factory 1 cab on the panel should read
-// CABINET_TYPE1 ordinal 0 = "1x4 Pig 57"). Re-run the script to regenerate.
+// Index anchor, FM9 fw 12 hardware (issue #23): FACTORY 1 ordinal 0 reads
+// "1x4 Pig 57" on the panel and FACTORY 2 ordinal 315 reads
+// "4x12 1960A 300W 57", so name[i] is within-bank ordinal i. Re-run the
+// script to regenerate.
 /* eslint-disable */
 
 /** CABINET bank selector ordinals (CABINET_BANK1/2 cache enum, in order). */

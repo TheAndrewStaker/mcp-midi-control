@@ -187,3 +187,14 @@ on `samples/factory/` + `samples/captured/`.
   scripts/verify-ii-image-{discrete-encode,scene-words,structural-splice}.ts.
   Modifier 15-word layout stays OPEN (payload[8] is a block-id-shaped
   target field, WEAK; preserve verbatim, warn on dangling targets).
+- 2026-07-16 (late night, live XL+): the PUSH side is now
+  hardware-confirmed for spliced novel compositions: 5/5 images with a
+  block removed via `presetImage/structure.ts` accepted with 0 NACKs
+  AND round-tripped byte-identical from the device
+  (`samples/captured/fresh-defaults-r2-2026-07-17-*`). Also decoded:
+  the device REMEMBERS a removed block's record within the working
+  buffer (live remove → re-place restores the old record, 6/6
+  families), so fresh-default instantiation requires splice-then-place;
+  fresh default records captured for all 8 always-tweaked families.
+  Related refinement: [[ii-fn1f-atomic-read]] (fn 0x1F == image TLV
+  payload byte-for-byte, live 14/14).

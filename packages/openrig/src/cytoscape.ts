@@ -88,10 +88,21 @@ function summarizeMidiSignal(sig: MidiSignal): string {
   }
 }
 
-/** Human-readable one-line summary of an edge's signal payload. */
+/**
+ * Human-readable one-line summary of an edge's signal payload.
+ *
+ * Never throws on a malformed payload. A manifest can carry an audio edge with
+ * no `channels` (the type forbids it; JSON on disk does not), and this function
+ * is on the render path for every renderer there is, so throwing here blanks
+ * the whole view over one bad edge. It reports the defect in words instead and
+ * lets `validateRig`'s `audio-signal-no-channels` error be the thing that
+ * actually flags it.
+ */
 export function summarizeSignal(signal: EdgeSignal): string {
   if (signal.kind === 'audio') {
-    return `audio ${(signal.channels as AudioChannel[]).join('/')}`;
+    const channels = signal.channels as AudioChannel[] | undefined;
+    if (channels === undefined || channels.length === 0) return 'audio (channels not declared)';
+    return `audio ${channels.join('/')}`;
   }
   if (signal.kind === 'midi') {
     return signal.signals.map(summarizeMidiSignal).join(', ');

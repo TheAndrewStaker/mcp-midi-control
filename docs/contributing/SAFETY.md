@@ -26,6 +26,16 @@ not prohibit it. See the sourcing rules in
 holds that port nothing else can have it.** That includes the vendor editor and,
 critically, the vendor firmware updater.
 
+It also includes a **second copy of this server**. Two sessions (Claude Desktop
+plus a terminal, or two Claude Code windows) each spawn their own server
+process, and only one can hold a device. The server arbitrates that itself: the
+second instance cannot read or write the held device and says who has it
+(`port_held_elsewhere`, naming the other MCP client and pid), the holder gives
+the port back 15 seconds after its last operation on the device (the Axe-Fx II
+excepted: it keeps its port so its edit-buffer-dirty signal is never missed),
+and `list_midi_ports` shows every lease from either session. If a device stays
+held, the other session is mid-operation: let it finish, or quit it.
+
 Contributors hit this. It is the single most common reason "nothing happens"
 during a test.
 

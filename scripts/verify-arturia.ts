@@ -22,25 +22,42 @@ import {
   NAME_OFFSET,
   OUTPUT_DEST_DIN_ALIVE,
   OUTPUT_DEST_USB_ALIVE,
+  PRESET_NAME_FIELD_LENGTH,
+  buildBulkBegin,
   buildDumpNext,
   buildDumpStart,
   buildGlobalRead,
   buildGlobalWrite,
   buildNameRequest,
+  buildPresetConfirm,
+  buildPresetDataFrame,
+  buildPresetMetadata,
   ccEvidenceNote,
   decodeGlobalReply,
   decodePresetName,
+  decodePresetType,
   downstreamMidiConsumersIn,
+  dumpAckMatcher,
+  dumpPacketMatcher,
+  dumpPacketPayload,
+  isLastDumpPacket,
   findCc,
   findGlobal,
   globalReplyMatcher,
   isArturia,
   nameReplyMatcher,
+  presetWriteAckMatcher,
   toBankIndex,
   MICROFREAK,
+  MICROFREAK_CATEGORIES,
   MICROFREAK_CCS,
+  MICROFREAK_PAYLOAD_BYTES,
   MINIFREAK,
   MINIFREAK_CCS,
+  parseLibrary,
+  parseMbp,
+  presetPayloadToDumpBytes,
+  slotOrder,
   createFreakDescriptor,
   type FreakConfig,
   type RigTopology,
@@ -754,6 +771,657 @@ function check(label: string, ok: boolean, detail = '') {
   else process.env[RIG_MANIFEST_ENV] = savedEnv;
   clearRigManifestCache();
   rmSync(dir, { recursive: true, force: true });
+}
+
+// ── 17. Stored-preset dump (export_preset / backup_device wiring) ──────────
+// EVIDENCE BASE, stated plainly: the REQUEST-side goldens in section 1
+// (buildDumpStart / buildDumpNext) are byte-exact against captured MCC
+// traffic. No raw REPLY frames from the 2026-07-25 hardware dump run were
+// filed on disk (the probe saved only the DE-FRAMED 4672-byte payload), so
+// the reply frames below are built from the reply TEMPLATE recorded in
+// STATE-MICROFREAK.md "FULL PRESET DUMP" after that hardware run. They pin
+// the documented shape and the matcher discipline, not a verbatim capture;
+// the wire truth rides scripts/probe-microfreak-dump.ts, which terminated on
+// the 0x17 marker end to end on firmware 5.0.0.
+{
+  const ack = parseHex('F0 00 20 6B 07 01 10 00 15 F7');
+  check('dumpAckMatcher accepts the documented dump-start ack', dumpAckMatcher(0x10)(ack));
+  check('dumpAckMatcher rejects a wrong seq', !dumpAckMatcher(0x11)(ack));
+  check('dumpAckMatcher rejects another device code', !dumpAckMatcher(0x10, 0x04)(ack));
+  // THE ECHO GUARD on this flow is the COMMAND byte, not the direction byte
+  // (dump replies carry 0x01 in byte 5 like the requests do): every
+  // host-originated frame carries 0x19/0x18 in byte 8, every reply
+  // 0x15/0x16/0x17, so a looped-back request can never satisfy a matcher.
+  check('dumpAckMatcher REJECTS our own dump-start frame (cmd-byte echo guard)',
+    !dumpAckMatcher(0x10)(buildDumpStart(0x10, 0)));
+
+  const more = parseHex('F0 00 20 6B 07 01 22 08 16 23 56 43 4F 20 01 02 03 F7');
+  const last = parseHex('F0 00 20 6B 07 01 23 04 17 7E 00 01 00 F7');
+  check('dumpPacketMatcher accepts a 0x16 more-follow packet', dumpPacketMatcher(0x22)(more));
+  check('dumpPacketMatcher accepts the 0x17 LAST packet', dumpPacketMatcher(0x23)(last));
+  check('dumpPacketMatcher rejects a wrong seq', !dumpPacketMatcher(0x23)(more));
+  check('dumpPacketMatcher REJECTS our own data request (cmd-byte echo guard)',
+    !dumpPacketMatcher(0x22)(buildDumpNext(0x22)));
+  check('isLastDumpPacket: 0x16 is not last, 0x17 is', !isLastDumpPacket(more) && isLastDumpPacket(last));
+  check('dumpPacketPayload slices after the 9-byte header, before F7 (the probe-proven slice)',
+    hex(dumpPacketPayload(more)) === '23 56 43 4F 20 01 02 03',
+    hex(dumpPacketPayload(more)));
+
+  // Capability shape around the dump.
+  check('MicroFreak reader advertises dumpStoredPresetBinary',
+    MICROFREAK_DESCRIPTOR.reader.dumpStoredPresetBinary !== undefined);
+  check('MiniFreak reader does NOT (no SysEx device code, no dump)',
+    MINIFREAK_DESCRIPTOR.reader.dumpStoredPresetBinary === undefined);
+  const backup = MICROFREAK_DESCRIPTOR.capabilities.backup;
+  check('MicroFreak declares BackupPolicy: unit preset, locations 1..512',
+    backup !== undefined && backup.unit_label === 'preset'
+    && backup.first_location === 1 && backup.last_location === 512,
+    JSON.stringify(backup));
+  check('MicroFreak names NO restore tool (preset WRITE undecoded)',
+    backup?.restore_tool === undefined);
+  check('MiniFreak declares NO backup policy', MINIFREAK_DESCRIPTOR.capabilities.backup === undefined);
+}
+
+// ── 18. The dump collect flow end-to-end against a scripted device ─────────
+// Drives the real reader method through a mock connection that answers with
+// template-shaped frames (see the section-17 note on evidence base). Proves
+// the flow logic: waiter-before-send ordering, seq threading, verbatim frame
+// storage, clean 0x17 termination, and that a stalled stream THROWS instead
+// of returning a truncated backup.
+{
+  function scriptedConn(dataScript: readonly (readonly number[])[]) {
+    const pending: Array<{
+      match: (b: readonly number[]) => boolean;
+      resolve: (b: number[]) => void;
+      reject: (e: Error) => void;
+    }> = [];
+    const delivered: number[][] = [];
+    const deliver = (reply: number[]): void => {
+      for (let i = 0; i < pending.length; i++) {
+        if (pending[i]!.match(reply)) {
+          const w = pending.splice(i, 1)[0]!;
+          delivered.push(reply);
+          w.resolve(reply);
+          return;
+        }
+      }
+    };
+    let dataIdx = 0;
+    const conn = {
+      lastSendError: undefined,
+      hasInput: true,
+      isPortOpen: () => true,
+      onMessage: () => () => undefined,
+      close: () => undefined,
+      receiveSysEx: async () => [],
+      receiveSysExMatching: (match: (b: readonly number[]) => boolean) =>
+        new Promise<number[]>((resolve, reject) => { pending.push({ match, resolve, reject }); }),
+      send: (frame: number[]) => {
+        const seq = frame[6]!;
+        const cmd = frame[8];
+        if (cmd === CMD.READ_PRESET && frame[11] === 0x00) {
+          // Name request → name reply, seq echoed, name at offset 21.
+          deliver([
+            0xf0, ...ARTURIA_ID, DEVICE_MICROFREAK, DIR_TO_DEVICE, seq, 0x23, CMD.NAME_REPLY,
+            frame[9]!, frame[10]!, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ...'Bass Tst'.split('').map((c) => c.charCodeAt(0)), 0x00, 0xf7,
+          ]);
+        } else if (cmd === CMD.READ_PRESET && frame[11] === 0x01) {
+          deliver([0xf0, ...ARTURIA_ID, DEVICE_MICROFREAK, DIR_TO_DEVICE, seq, 0x00, CMD.DUMP_ACK, 0xf7]);
+        } else if (cmd === CMD.DUMP_NEXT) {
+          const d = dataScript[dataIdx++];
+          if (d === undefined) {
+            // Stalled stream: the waiter times out (the reader maps the
+            // rejection to undefined and must throw, never return bytes).
+            pending.shift()?.reject(new Error('timeout'));
+            return;
+          }
+          const reply = [...d];
+          reply[6] = seq;
+          deliver(reply);
+        }
+      },
+    };
+    return { conn, delivered };
+  }
+
+  const DATA = [
+    parseHex('F0 00 20 6B 07 01 00 06 16 23 56 43 4F 20 41 F7'),
+    parseHex('F0 00 20 6B 07 01 00 06 16 44 54 79 70 65 20 F7'),
+    parseHex('F0 00 20 6B 07 01 00 04 17 7E 00 01 00 F7'),
+  ];
+
+  {
+    const { conn, delivered } = scriptedConn(DATA);
+    const dump = await MICROFREAK_DESCRIPTOR.reader.dumpStoredPresetBinary!(
+      3, { conn, descriptor: MICROFREAK_DESCRIPTOR } as never,
+    );
+    const expectedFrames = delivered.filter((f) => f[8] === CMD.DUMP_MORE || f[8] === CMD.DUMP_LAST);
+    check('dump stores the device frames VERBATIM, concatenated',
+      hex([...dump.bytes]) === expectedFrames.map((f) => hex(f)).join(' '),
+      hex([...dump.bytes]));
+    check('dump counts data frames only (ack + name reply excluded)', dump.frame_count === 3);
+    check('dump byte_length matches bytes', dump.byte_length === dump.bytes.length);
+    check('dump carries the preset name from the name-read leg', dump.name === 'Bass Tst', String(dump.name));
+    check('dump declares the microfreak format id', dump.format === 'microfreak-preset-dump');
+    check('dump writes a .syx', dump.file_extension === 'syx');
+    check('dump warning says hardware-confirmed and points at the import_preset restore path',
+      /hardware-confirmed/i.test(dump.warning ?? '') && /import_preset/i.test(dump.warning ?? ''),
+      dump.warning);
+  }
+
+  {
+    // A stream that stalls mid-dump must THROW with nothing returned; a
+    // truncated file recorded as a backup would fail at restore time instead.
+    const { conn } = scriptedConn(DATA.slice(0, 1));
+    let threw: unknown;
+    try {
+      await MICROFREAK_DESCRIPTOR.reader.dumpStoredPresetBinary!(
+        3, { conn, descriptor: MICROFREAK_DESCRIPTOR } as never,
+      );
+    } catch (e) { threw = e; }
+    check('a stalled dump THROWS instead of returning partial bytes', threw !== undefined);
+    check('the stall error says the partial read was discarded',
+      threw instanceof Error && /DISCARDED/.test(threw.message),
+      threw instanceof Error ? threw.message : String(threw));
+  }
+
+  {
+    // Location validation happens before any wire traffic.
+    const { conn } = scriptedConn([]);
+    for (const bad of [0, 513]) {
+      let threw = false;
+      try {
+        await MICROFREAK_DESCRIPTOR.reader.dumpStoredPresetBinary!(
+          bad, { conn, descriptor: MICROFREAK_DESCRIPTOR } as never,
+        );
+      } catch { threw = true; }
+      check(`dump location ${bad} is refused (device numbering is 1..512)`, threw);
+    }
+  }
+}
+
+// ── 19. Preset WRITE builders: byte-exact against a real MCC capture ───────
+// Source: `samples/captured/microfreak-mcc-preset-copy.pcapng`, 2026-08-13/14
+// (gitignored per `samples/`; frames transcribed here as literals, the same
+// convention section 4's `nameReply`/`maxName` already use). Per-event de-
+// framed dumps at `samples/_scratch/microfreak-write-decode/event{1,2,3}-
+// {out,in}.syx`, produced by `analyze.mjs` in that directory. Event 1: the
+// "Revert to Iron" preset dragged onto device slot 505 (slot0 504, bank 3
+// index 0x78). Every hex string below is `event1-out.syx` (or `-in.syx`)
+// frame index N as printed by `node samples/_scratch/microfreak-write-decode/
+// analyze.mjs`, verified independently rather than transcribed from prose.
+{
+  // event1-out.syx frame 1 (the metadata push).
+  check(
+    'buildPresetMetadata(seq=0x61, slot0=504, "Revert to Iron", type=0x09) matches the captured metadata push',
+    hex(buildPresetMetadata(0x61, 504, 'Revert to Iron', 0x09))
+      === 'F0 00 20 6B 07 01 61 23 52 03 78 00 00 00 00 00 00 78 06 09 33 '
+        + '52 65 76 65 72 74 20 74 6F 20 49 72 6F 6E 00 00 00 00 00 00 00 00 00 F7',
+    `got ${hex(buildPresetMetadata(0x61, 504, 'Revert to Iron', 0x09))}`,
+  );
+  // event3-out.syx frame 1: a DIFFERENT preset ("Yggdrasil") to the SAME
+  // destination (slot0 505, bank 3 index 0x79) as event2, isolating content
+  // from address; also the second, independent Type-byte data point (0x05).
+  check(
+    'buildPresetMetadata(seq=0x15, slot0=505, "Yggdrasil", type=0x05) matches the captured metadata push',
+    hex(buildPresetMetadata(0x15, 505, 'Yggdrasil', 0x05))
+      === 'F0 00 20 6B 07 01 15 23 52 03 79 00 00 00 00 00 00 79 06 05 33 '
+        + '59 67 67 64 72 61 73 69 6C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 F7',
+    `got ${hex(buildPresetMetadata(0x15, 505, 'Yggdrasil', 0x05))}`,
+  );
+  check(
+    'buildPresetMetadata defaults presetType to 0x00 (the value an empty "Init" slot answers with), at offset 19',
+    buildPresetMetadata(0, 0, 'X')[19] === 0x00 && buildPresetMetadata(0, 0, 'X')[20] === 0x33,
+  );
+  check(
+    'buildPresetMetadata refuses a name longer than the 23-byte field',
+    (() => { try { buildPresetMetadata(0, 0, 'X'.repeat(24)); return false; } catch { return true; } })(),
+  );
+  check('PRESET_NAME_FIELD_LENGTH is 23 (bytes 21..43 of the 45-byte frame)', PRESET_NAME_FIELD_LENGTH === 23);
+
+  // event1-out.syx frame 2 (the confirm).
+  check(
+    'buildPresetConfirm(seq=0x62, slot0=504) matches the captured confirm',
+    hex(buildPresetConfirm(0x62, 504)) === 'F0 00 20 6B 07 01 62 03 52 03 78 01 F7',
+    `got ${hex(buildPresetConfirm(0x62, 504))}`,
+  );
+  check(
+    'buildPresetConfirm differs from buildNameRequest ONLY in cmd byte and trailing flag',
+    buildPresetConfirm(0x62, 504)[8] === CMD.NAME_REPLY && buildPresetConfirm(0x62, 504).at(-2) === 0x01
+    && buildNameRequest(0x62, 504)[8] === CMD.READ_PRESET && buildNameRequest(0x62, 504).at(-2) === 0x00,
+  );
+
+  // event1-out.syx frame 3 (the begin-bulk marker). Captured seq is ALWAYS
+  // 0x00 across all three drags -- a deliberate reset from whatever the
+  // running counter held moments before (0x60,0x61,0x62 in event 1).
+  check(
+    'buildBulkBegin(seq=0x00) matches the captured begin-bulk marker',
+    hex(buildBulkBegin(0x00)) === 'F0 00 20 6B 07 01 00 00 15 F7',
+    `got ${hex(buildBulkBegin(0x00))}`,
+  );
+
+  // event1-out.syx frame 4: the FIRST of 146 data frames (class 0x16).
+  const firstChunk = [
+    0x00, 0x23, 0x56, 0x43, 0x4f, 0x44, 0x54, 0x79, 0x10, 0x70, 0x65, 0x63, 0x16, 0x0b, 0x6e, 0x46,
+    0x00, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x31, 0x63, 0x03, 0x6e, 0x3f, 0x4d, 0x46, 0x50, 0x61, 0x72,
+  ];
+  check(
+    'buildPresetDataFrame(seq=0x01, firstChunk, isLast=false) matches the captured first data frame',
+    hex(buildPresetDataFrame(0x01, firstChunk, false))
+      === 'F0 00 20 6B 07 01 01 20 16 00 23 56 43 4F 44 54 79 10 70 65 63 16 0B 6E 46 '
+        + '00 50 61 72 61 6D 31 63 03 6E 3F 4D 46 50 61 72 F7',
+    `got ${hex(buildPresetDataFrame(0x01, firstChunk, false))}`,
+  );
+  // event1-out.syx frame 149: the LAST (146th) data frame (class 0x17).
+  const lastChunk = [
+    0x04, 0x00, 0x00, 0x25, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ];
+  check(
+    'buildPresetDataFrame(seq=0x12, lastChunk, isLast=true) matches the captured LAST data frame',
+    hex(buildPresetDataFrame(0x12, lastChunk, true))
+      === 'F0 00 20 6B 07 01 12 20 17 04 00 00 25 00 00 00 00 00 00 00 00 00 00 00 00 '
+        + '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 F7',
+    `got ${hex(buildPresetDataFrame(0x12, lastChunk, true))}`,
+  );
+  check(
+    'buildPresetDataFrame refuses a chunk that is not exactly 32 bytes',
+    (() => { try { buildPresetDataFrame(0, [1, 2, 3], false); return false; } catch { return true; } })(),
+  );
+
+  // event1-in.syx frame 1: the device's per-frame ACK to the metadata push
+  // (seq echoed, class 0x18 reused device->host, no trailing flag byte).
+  const deviceAck = parseHex('F0 00 20 6B 07 01 61 00 18 F7');
+  check('presetWriteAckMatcher accepts the captured per-frame ACK', presetWriteAckMatcher(0x61)(deviceAck));
+  check('presetWriteAckMatcher rejects a wrong seq', !presetWriteAckMatcher(0x62)(deviceAck));
+  check('presetWriteAckMatcher rejects another device code', !presetWriteAckMatcher(0x61, 0x04)(deviceAck));
+  // THE ECHO GUARD on this reused class byte: buildDumpNext's own
+  // host->device request shares cmd 0x18 but is 11 bytes with a trailing
+  // flag, so it must never satisfy the device-ACK matcher.
+  check(
+    'presetWriteAckMatcher REJECTS our own buildDumpNext request (shape guard, not just direction)',
+    !presetWriteAckMatcher(0x61)(buildDumpNext(0x61)),
+  );
+
+  // event3-out.syx frame 0 (destination pre-read query, slot0 505) IN reply:
+  // slot 506 still held "Revert to Iron" from event 2 at that point, and its
+  // Type byte (offset 19) reads 0x09 -- the SAME value event 1/2's metadata
+  // push used for that exact preset. Independent cross-check of the Type
+  // byte's offset and round-trippability, not just the two raw values.
+  const occupiedReply = parseHex(
+    'F0 00 20 6B 07 01 14 23 52 03 79 00 10 00 00 00 00 79 01 09 33 '
+    + '52 65 76 65 72 74 20 74 6F 20 49 72 6F 6E 00 00 00 00 00 00 00 00 00 F7',
+  );
+  check('decodePresetType reads 0x09 from a reply naming an occupied "Revert to Iron" slot',
+    decodePresetType(occupiedReply) === 0x09, `got ${decodePresetType(occupiedReply)}`);
+  const emptyReply = parseHex(
+    'F0 00 20 6B 07 01 60 23 52 03 78 00 18 00 00 00 00 78 01 00 33 '
+    + '49 6E 69 74 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 F7',
+  );
+  check('decodePresetType reads 0x00 from a reply naming an empty "Init" slot',
+    decodePresetType(emptyReply) === 0x00, `got ${decodePresetType(emptyReply)}`);
+}
+
+// ── 20. Direction + capability shape around the write path ─────────────────
+{
+  for (const [name, frame] of [
+    ['buildPresetMetadata', buildPresetMetadata(0x00, 0, 'X')],
+    ['buildPresetConfirm', buildPresetConfirm(0x00, 0)],
+    ['buildBulkBegin', buildBulkBegin(0x00)],
+    ['buildPresetDataFrame', buildPresetDataFrame(0x00, new Array(32).fill(0), false)],
+  ] as const) {
+    check(`${name} sets byte5 = DIR_TO_DEVICE (matches the read-side dump packets, not the globals path)`,
+      frame[5] === DIR_TO_DEVICE, `got 0x${frame[5]!.toString(16)}`);
+    check(`${name} is a well-formed SysEx frame`, frame[0] === 0xf0 && frame.at(-1) === 0xf7);
+    check(`${name} has no byte above 0x7F between the delimiters`,
+      frame.slice(1, -1).every((b) => b >= 0 && b <= 0x7f), hex(frame));
+  }
+
+  check('MicroFreak writer advertises restorePresetBinary',
+    MICROFREAK_DESCRIPTOR.writer.restorePresetBinary !== undefined);
+  check('MiniFreak writer does NOT (no SysEx device code, no write protocol)',
+    MINIFREAK_DESCRIPTOR.writer.restorePresetBinary === undefined);
+}
+
+// ── 21. write-payload-equals-read-payload, re-proved structurally ──────────
+// Not re-trusting the prose claim. `readFirstFrame`/`readLastFrame` below are
+// the ACTUAL first and last frames of the CONFIRMED live read-back file
+// (`Arturia_MicroFreak-Revert_to_Iron-2026-08-14_00-03-34.syx`, taken via
+// export_preset immediately after the capture), transcribed byte-for-byte
+// (own seq counter, 0x42/0x53, since a read and a write in the same session
+// do not share one seq stream). Their PAYLOAD (via the same `dumpPacketPayload`
+// the reader uses) is compared against the write-side first/last chunk
+// goldened in section 19, itself transcribed from `event1-out.syx`. A full
+// 146-frame programmatic diff of the two files
+// (`node samples/_scratch/microfreak-write-decode/compare.mjs`) found 0/146
+// frames differing and 0 total bytes differing; these two frames are the
+// checked-in evidence of that finding, re-run independently this session.
+{
+  const readFirstFrame = parseHex(
+    'F0 00 20 6B 07 01 42 20 16 00 23 56 43 4F 44 54 79 10 70 65 63 16 0B 6E 46 '
+    + '00 50 61 72 61 6D 31 63 03 6E 3F 4D 46 50 61 72 F7',
+  );
+  check('read-back first data-frame PAYLOAD matches the WRITE first data-frame payload, byte-exact',
+    hex(dumpPacketPayload(readFirstFrame)) === hex([0x00, 0x23, 0x56, 0x43, 0x4f, 0x44, 0x54, 0x79, 0x10, 0x70,
+      0x65, 0x63, 0x16, 0x0b, 0x6e, 0x46, 0x00, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x31, 0x63, 0x03, 0x6e, 0x3f, 0x4d,
+      0x46, 0x50, 0x61, 0x72]),
+    hex(dumpPacketPayload(readFirstFrame)));
+
+  const readLastFrame = parseHex(
+    'F0 00 20 6B 07 01 53 20 17 04 00 00 25 00 00 00 00 00 00 00 00 00 00 00 00 '
+    + '00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 F7',
+  );
+  check('read-back LAST data-frame PAYLOAD matches the WRITE last data-frame payload, byte-exact',
+    hex(dumpPacketPayload(readLastFrame)) === hex([0x04, 0x00, 0x00, 0x25, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00]),
+    hex(dumpPacketPayload(readLastFrame)));
+}
+
+// ── 22. Write orchestration end-to-end against a scripted device ───────────
+// Mirrors section 18's `dumpStoredPresetBinary` drive: a mock connection that
+// answers each frame class per the capture's own shape, proving the flow
+// logic (gate order, waiter-before-send pacing, the seq reset at the begin
+// marker, receipt-true verification) rather than re-trusting the prose.
+{
+  function scriptedWriteConn(opts: { occupant?: string; ackAll?: boolean; failAt?: number; readbackName?: string } = {}) {
+    const { occupant = 'Init', ackAll = true, failAt, readbackName } = opts;
+    let dataFramesSeen = 0;
+    const sent: number[][] = [];
+    const pending: Array<{ match: (b: readonly number[]) => boolean; resolve: (b: number[]) => void; reject: (e: Error) => void }> = [];
+    const deliver = (reply: number[]): void => {
+      for (let i = 0; i < pending.length; i++) {
+        if (pending[i]!.match(reply)) { pending.splice(i, 1)[0]!.resolve(reply); return; }
+      }
+    };
+    const conn = {
+      lastSendError: undefined as Error | undefined,
+      hasInput: true,
+      isPortOpen: () => true,
+      onMessage: () => () => undefined,
+      close: () => undefined,
+      receiveSysEx: async () => [],
+      // `pending` (never a timer): every branch below either resolves or
+      // explicitly rejects synchronously in `send`, so a bug in `match`
+      // would surface as an unresolved promise -- caught by the test run
+      // simply never completing -- rather than as a silent false pass.
+      receiveSysExMatching: (match: (b: readonly number[]) => boolean) =>
+        new Promise<number[]>((resolve, reject) => { pending.push({ match, resolve, reject }); }),
+      send: (frame: number[]) => {
+        sent.push(frame);
+        const seq = frame[6]!;
+        const cmd = frame[8];
+        const ackReply = [0xf0, ...ARTURIA_ID, DEVICE_MICROFREAK, DIR_TO_DEVICE, seq, 0x00, CMD.DUMP_NEXT, 0xf7];
+        if (cmd === CMD.READ_PRESET) {
+          // Name-request query: the destination pre-read (before any data
+          // frame is sent) answers with `occupant`; the closing query
+          // (after all 146 data frames) answers with `readbackName`.
+          const answerName = dataFramesSeen >= 146 ? (readbackName ?? occupant) : occupant;
+          const nameBytes = [...answerName].map((c) => c.charCodeAt(0));
+          deliver([
+            0xf0, ...ARTURIA_ID, DEVICE_MICROFREAK, DIR_TO_DEVICE, seq, 0x23, CMD.NAME_REPLY,
+            frame[9]!, frame[10]!, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ...nameBytes, ...new Array(23 - nameBytes.length).fill(0), 0xf7,
+          ]);
+        } else if (cmd === CMD.DUMP_MORE || cmd === CMD.DUMP_LAST) {
+          dataFramesSeen++;
+          if (failAt !== undefined && dataFramesSeen === failAt) {
+            // Simulate a stall: reject rather than never settle, so a
+            // mismatch here fails loud (`no_ack`) instead of hanging the
+            // test run forever.
+            pending.pop()?.reject(new Error('mock stall'));
+            return;
+          }
+          if (ackAll) deliver(ackReply);
+        } else if (cmd === CMD.NAME_REPLY || cmd === CMD.DUMP_ACK) {
+          // Metadata push (45B, NAME_REPLY), confirm (13B, NAME_REPLY), or
+          // begin marker (10B, DUMP_ACK) -- all get the same 10B device ACK.
+          if (ackAll) deliver(ackReply);
+        }
+      },
+    };
+    return { conn, sent };
+  }
+
+  const chunks: number[][] = [];
+  for (let i = 0; i < 146; i++) chunks.push(new Array(32).fill(i & 0x7f));
+  function frameBytes(): Uint8Array {
+    const frames = chunks.map((c, i) => buildPresetDataFrame(i & 0x7f, c, i === chunks.length - 1));
+    const total = frames.reduce((n, f) => n + f.length, 0);
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const f of frames) { out.set(f, off); off += f.length; }
+    return out;
+  }
+  const validBytes = frameBytes();
+
+  // ── shape validation, before any wire byte ──
+  {
+    const { conn, sent } = scriptedWriteConn();
+    let threw: unknown;
+    try {
+      await MICROFREAK_DESCRIPTOR.writer.restorePresetBinary!(
+        { conn } as never, new Uint8Array([0xf0, 0xf7]), { target_location: 1, save_authorized: true, name: 'X' },
+      );
+    } catch (e) { threw = e; }
+    check('a malformed (non-146-frame) byte stream is refused before any wire byte',
+      threw !== undefined && sent.length === 0, String(threw));
+  }
+
+  // ── name is required ──
+  {
+    let threw: unknown;
+    try {
+      await MICROFREAK_DESCRIPTOR.writer.restorePresetBinary!(
+        { conn: scriptedWriteConn().conn } as never, validBytes, { target_location: 1, save_authorized: true },
+      );
+    } catch (e) { threw = e; }
+    check('import_preset without `name` is refused',
+      threw instanceof Error && /requires `name`/.test(threw.message), String(threw));
+  }
+
+  // ── target_location is required ──
+  {
+    let threw: unknown;
+    try {
+      await MICROFREAK_DESCRIPTOR.writer.restorePresetBinary!(
+        { conn: scriptedWriteConn().conn } as never, validBytes, { save_authorized: true, name: 'X' },
+      );
+    } catch (e) { threw = e; }
+    check('import_preset without target_location is refused (no working-buffer restore on this device)',
+      threw instanceof Error && /STORED preset slot only/.test(threw.message), String(threw));
+  }
+
+  // ── bad target_location ──
+  {
+    let threw: unknown;
+    try {
+      await MICROFREAK_DESCRIPTOR.writer.restorePresetBinary!(
+        { conn: scriptedWriteConn().conn } as never, validBytes, { target_location: 513, save_authorized: true, name: 'X' },
+      );
+    } catch (e) { threw = e; }
+    check('import_preset target_location beyond the preset ceiling is refused',
+      threw instanceof Error && /1\.\.512/.test(threw.message), String(threw));
+  }
+
+  // ── save_authorized is required ──
+  {
+    let threw: unknown;
+    try {
+      await MICROFREAK_DESCRIPTOR.writer.restorePresetBinary!(
+        { conn: scriptedWriteConn().conn } as never, validBytes, { target_location: 1, name: 'X' },
+      );
+    } catch (e) { threw = e; }
+    check('import_preset without save_authorized is refused (a stored-slot write here IS the persist)',
+      threw instanceof Error && /persists immediately/.test(threw.message), String(threw));
+  }
+
+  // ── occupied destination without confirm_overwrite ──
+  {
+    let threw: unknown;
+    try {
+      await MICROFREAK_DESCRIPTOR.writer.restorePresetBinary!(
+        { conn: scriptedWriteConn({ occupant: 'Bass Tst' }).conn } as never,
+        validBytes, { target_location: 1, save_authorized: true, name: 'X' },
+      );
+    } catch (e) { threw = e; }
+    check('import_preset onto an occupied slot without confirm_overwrite is refused, naming the occupant',
+      threw instanceof Error && /REFUSING TO OVERWRITE/.test(threw.message) && /Bass Tst/.test(threw.message),
+      String(threw));
+  }
+
+  // ── empty destination needs no confirm_overwrite; full success path ──
+  {
+    const { conn, sent } = scriptedWriteConn({ occupant: 'Init', readbackName: 'New Name' });
+    const result = await MICROFREAK_DESCRIPTOR.writer.restorePresetBinary!(
+      { conn } as never, validBytes, { target_location: 1, save_authorized: true, name: 'New Name' },
+    );
+    check('a write to an empty ("Init") destination needs no confirm_overwrite', result.ok === true, JSON.stringify(result));
+    check('every frame is sent and acked (1 dest query + push + confirm + begin + 146 data + 1 closing query = 151 wire frames)',
+      sent.length === 151, `sent ${sent.length}`);
+    check('frames_sent/acks_received count the ACK-gated leg (push+confirm+begin+146 data = 149)',
+      result.frames_sent === 149 && result.acks_received === 149, JSON.stringify(result));
+    check('a successful restore reports saved_to_location', result.saved_to_location === '1', JSON.stringify(result));
+    check('a successful restore carries no warning', result.warning === undefined, JSON.stringify(result));
+    // Data frames are sent in order and ACK-gated: the send of frame N+1
+    // never happens before frame N's ack round-trips through the mock.
+    const dataSends = sent.filter((f) => f[8] === CMD.DUMP_MORE || f[8] === CMD.DUMP_LAST);
+    check('all 146 data frames were sent, in order, last one is DUMP_LAST',
+      dataSends.length === 146 && dataSends.at(-1)![8] === CMD.DUMP_LAST, `${dataSends.length} sent`);
+  }
+
+  // ── occupied destination WITH confirm_overwrite proceeds ──
+  {
+    const { conn } = scriptedWriteConn({ occupant: 'Bass Tst', readbackName: 'New Name' });
+    const result = await MICROFREAK_DESCRIPTOR.writer.restorePresetBinary!(
+      { conn } as never, validBytes, { target_location: 1, save_authorized: true, confirm_overwrite: true, name: 'New Name' },
+    );
+    check('confirm_overwrite unlocks a write onto an occupied slot', result.ok === true, JSON.stringify(result));
+  }
+
+  // ── read-back mismatch: acked frames but a mismatched closing name FAILS ──
+  {
+    const { conn } = scriptedWriteConn({ occupant: 'Init', readbackName: 'Something Else' });
+    const result = await MICROFREAK_DESCRIPTOR.writer.restorePresetBinary!(
+      { conn } as never, validBytes, { target_location: 1, save_authorized: true, name: 'New Name' },
+    );
+    check('a closing read-back that does NOT match the written name reports ok:false (acks are not proof of persistence)',
+      result.ok === false, JSON.stringify(result));
+    check('the mismatch is surfaced as a warning naming both names',
+      (result.warning ?? '').includes('Something Else') && (result.warning ?? '').includes('New Name'), result.warning);
+    check('a failed restore does NOT report saved_to_location', result.saved_to_location === undefined, JSON.stringify(result));
+  }
+
+  // ── a stalled data frame throws instead of reporting a false success ──
+  {
+    const { conn } = scriptedWriteConn({ occupant: 'Init', failAt: 50 });
+    let threw: unknown;
+    try {
+      await MICROFREAK_DESCRIPTOR.writer.restorePresetBinary!(
+        { conn } as never, validBytes, { target_location: 1, save_authorized: true, name: 'New Name' },
+      );
+    } catch (e) { threw = e; }
+    check('a data frame that never gets ACKed throws, naming the incomplete state',
+      threw instanceof Error && /INCOMPLETE/.test(threw.message), String(threw));
+  }
+}
+
+// ── 23. `.mfprojz` / `.mbp` library parsing ────────────────────────────────
+//
+// The fixtures are synthesised from the SHAPE of real MCC output (recorded in
+// `mfprojz.ts`), because the archives themselves are gitignored downloads. The
+// byte-identity claim they encode was proved separately against hardware: a
+// live `export_preset` of slot 196 matched that slot's `.mbp` payload at all
+// 4672 bytes (2026-08-15).
+{
+  const mbp = (name: string, category: number, payload?: readonly number[]): Uint8Array => {
+    const head = `22 serialization::archive 10 0 4 3 134 ${name.length} ${name} ${category} 0 0 18 000000000000000000`;
+    const tail = payload === undefined ? ' 1 0 51 0\n' : ` 0 0 16 ${payload.length} ${payload.join(' ')}`;
+    return Uint8Array.from([...`${head}${tail}`].map((c) => c.charCodeAt(0)));
+  };
+  const payload = Array.from({ length: MICROFREAK_PAYLOAD_BYTES }, (_, i) => i % 128);
+
+  // A name with spaces must survive: it is read by its length prefix, not by
+  // whitespace tokenising, which is exactly where a naive split breaks.
+  const spaced = parseMbp(mbp('Glass Organ', 4, payload));
+  check('parseMbp reads a spaced name, its category, and 4672 payload bytes',
+    spaced?.name === 'Glass Organ' && spaced?.category === 4 && spaced?.payload?.length === MICROFREAK_PAYLOAD_BYTES,
+    JSON.stringify({ name: spaced?.name, category: spaced?.category, len: spaced?.payload?.length }));
+  check('parseMbp round-trips payload bytes exactly',
+    spaced!.payload!.every((v, i) => v === payload[i]));
+
+  const init = parseMbp(mbp('Init', 0));
+  check('an empty ("Init") slot parses with NO payload rather than a zero-filled one',
+    init !== undefined && init.payload === undefined, JSON.stringify(init?.payload?.length));
+
+  // REGRESSION: the trailing-vector scan used to sweep every token for the
+  // largest N where tokens[len-1-N] === String(N), so a header token could
+  // outrank the real count. An empty slot's count is 0 at distance 0, the
+  // weakest position, so category 8 (sitting 8 tokens from the end) beat it
+  // and the file was rejected as corrupt -- which the send script escalates
+  // into refusing an entire 512-slot library. Check EVERY category.
+  for (let cat = 0; cat < 12; cat++) {
+    const parsed = parseMbp(mbp('Init', cat));
+    check(`an empty slot in category ${cat} parses (self-collision regression)`,
+      parsed !== undefined && parsed.payload === undefined && parsed.category === cat,
+      JSON.stringify(parsed));
+  }
+  check('a category outside the 7-bit wire range is refused, not silently masked',
+    parseMbp(mbp('Bad', 200, payload)) === undefined && parseMbp(mbp('Neg', -1, payload)) === undefined);
+
+  check('a payload byte above 7 bits is rejected (it could not go on the wire)',
+    parseMbp(mbp('Bad', 0, [...payload.slice(0, -1), 200])) === undefined);
+  check('a non-Boost file is rejected outright',
+    parseMbp(Uint8Array.from([...'not an archive'].map((c) => c.charCodeAt(0)))) === undefined);
+
+  // THE lex-rank trap: MCC consumes labels in lexicographic order, so rank 11
+  // is label "100" and rank 21 is label "11". Reading the number as a slot
+  // scrambles everything from slot 11 on.
+  const labels = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '100', '101', '11', '12'];
+  const ordered = slotOrder(labels.map((l) => ({ path: `proj/01-proj-A/${l}-proj-A${l}.mbp` })));
+  check('slotOrder puts label "100" at rank 11 and "11" at rank 13, not at 100 and 11',
+    ordered[10]?.path.includes('/100-') === true && ordered[12]?.path.includes('/11-') === true,
+    ordered.slice(9, 14).map((o) => o.path.split('/').pop()).join(', '));
+
+  let dupThrew = false;
+  try { slotOrder([{ path: 'a/01-x.mbp' }, { path: 'a/01-y.mbp' }]); } catch { dupThrew = true; }
+  check('slotOrder refuses duplicate labels instead of silently misplacing a preset', dupThrew);
+
+  // The framed stream must be exactly what the write path already consumes.
+  const framed = presetPayloadToDumpBytes(payload);
+  const frames: number[][] = [];
+  for (let i = 0; i < framed.length; i += 42) frames.push(Array.from(framed.slice(i, i + 42)));
+  check(`framing yields 146 x 42-byte frames (got ${frames.length} x ${frames[0]?.length})`,
+    frames.length === 146 && frames.every((f) => f.length === 42));
+  check('frames carry DUMP_MORE except the last, which carries DUMP_LAST',
+    frames.slice(0, -1).every((f) => f[8] === CMD.DUMP_MORE) && frames.at(-1)![8] === CMD.DUMP_LAST);
+  check('every frame is a well-formed Arturia MicroFreak message',
+    frames.every((f) => isArturia(f, DEVICE_MICROFREAK) && f.at(-1) === 0xf7));
+  const reassembled = frames.flatMap((f) => dumpPacketPayload(f));
+  check('dumpPacketPayload reverses the framing byte for byte',
+    reassembled.length === payload.length && reassembled.every((v, i) => v === payload[i]));
+
+  check('the category table is the 12 alphabetical MCC types',
+    MICROFREAK_CATEGORIES.length === 12
+    && MICROFREAK_CATEGORIES[0] === 'Bass' && MICROFREAK_CATEGORIES[4] === 'Organ'
+    && MICROFREAK_CATEGORIES[11] === 'Vocoder');
+
+  // Slot numbers come from LEX POSITION, so a bad entry leaves a hole rather
+  // than shifting every later preset up one slot.
+  const lib = parseLibrary([
+    { path: 'p/02-p-A2.mbp', bytes: mbp('Second', 5, payload) },
+    { path: 'p/03-p-A3.mbp', bytes: mbp('Broken', 0, [1, 2, 3]) },
+    { path: 'p/01-p-A1.mbp', bytes: mbp('First', 2, payload) },
+    { path: 'p/04-p-A4.mbp', bytes: mbp('Fourth', 9, payload) },
+  ]);
+  check('parseLibrary numbers slots by lex position, reports unparsed, and does not shift later slots up',
+    lib.slots.length === 3
+    && lib.slots[0]?.slot === 1 && lib.slots[0]?.name === 'First'
+    && lib.slots[1]?.slot === 2 && lib.slots[1]?.name === 'Second'
+    && lib.slots[2]?.slot === 4 && lib.slots[2]?.name === 'Fourth'
+    && lib.unparsed.length === 1,
+    JSON.stringify({ slots: lib.slots.map((s) => [s.slot, s.name]), unparsed: lib.unparsed }));
 }
 
 console.log(failures === 0

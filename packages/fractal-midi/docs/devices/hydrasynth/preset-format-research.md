@@ -86,8 +86,9 @@ The **Save** side of this flow is already implemented in current
 main as `hydra_apply_patch` (see
 `src/hydrasynth/sysexEnvelope.ts` +
 `patchEncoder.ts`). The **Request** side (device → host patch dump)
-is specified in `references/SysexEncoding.txt` but not yet wired
-into a tool.
+shipped 2026-08-09 (BK-110): `patchRead.ts` implements the ack-driven
+stored-patch and bank-name transactions, surfaced as `get_preset`
+(location), `scan_locations`, and `export_preset(location)`.
 
 **For "load patch from disk and push", that means:**
 

@@ -4,8 +4,8 @@
  * scene switching post-fix.
  */
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER = path.resolve('C:/dev/mcp-midi-tools', 'packages', 'server-all', 'dist', 'server', 'index.js');
 
@@ -17,7 +17,7 @@ function ext(r: unknown): string {
 
 async function main(): Promise<void> {
   const t = new StdioClientTransport({ command: process.execPath, args: [SERVER], stderr: 'pipe' });
-  const c = new Client({ name: 'bench-am4-clean-a01', version: '1' }, { capabilities: {} });
+  const c = new Client({ name: 'bench-am4-clean-a01', version: '1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await c.connect(t);
   try {
     console.log('1) switch_preset -> A01 (discard unsaved edits)');

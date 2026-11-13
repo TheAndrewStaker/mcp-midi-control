@@ -46,7 +46,7 @@ export interface DecomposeOptions {
    *
    * Without this, two windows with identical drums but DIFFERENT melodic/synth
    * content dedupe as "the same section" — the drum grid was the whole identity.
-   * Amber (2026-07-29) survived that only because its pad happened to alternate
+   * One build (2026-07-29) survived that only because its pad happened to alternate
    * in lockstep with the drums; a build whose layers do not move in lockstep
    * loses scene compression or collapses genuinely different sections silently.
    * A layer contributes IDENTITY, not bank content: the bank patterns stay drum
@@ -247,7 +247,7 @@ export function patternLabel(n: number): string {
 //
 // A real song does not fit one Circuit project: the device caps a project at 8
 // pattern slots per track, while an ordinary track decomposes to 25 patterns
-// over 33 plays (Blindside "Caught a Glimpse", 2026-07-16). So a song import
+// over 33 plays (one imported song, 2026-07-16). So a song import
 // always ends in the same manual chore: chunk the play order into projects
 // that fit, keep them in song order, and hand each one to apply_pattern.
 //
@@ -268,7 +268,7 @@ export function patternLabel(n: number): string {
 // explicit override with its old play-budget meaning.
 //
 // Section names are NOT used, deliberately. They are the obvious way to split a
-// song, but Songsterr tabs frequently ship with `sections: []` (the Blindside tab
+// song, but Songsterr tabs frequently ship with `sections: []` (that song's tab
 // has none at all), so a section-based split works on some songs and silently has
 // nothing to work with on others. Chunking the ORDER always works.
 
@@ -286,8 +286,8 @@ export interface ProjectPlanEntry {
    *
    * Load-bearing for verification, not cosmetic: a stored-project read decodes only
    * pattern 1, so a project whose chain legitimately starts silent reads back as
-   * "no content" and is indistinguishable from a failed write. Both the Stranglehold
-   * intro and The Darkness project 1 hit this on 2026-07-16. Check this before
+   * "no content" and is indistinguishable from a failed write. Two song
+   * builds (an intro and a project 1) hit this on 2026-07-16. Check this before
    * concluding an upload did not land.
    *
    * (It previously meant "every pattern is silent", which could never be true: such a
@@ -309,7 +309,7 @@ export interface ProjectPlan {
    * Run-length summaries of the PROJECTS dropped for holding nothing but silence.
    *
    * Deliberately not a list of labels: the same silent pattern can be BOTH kept and
-   * dropped (Blindside "Caught a Glimpse" plays its silent J inside project 2, which
+   * dropped (one song plays its silent J inside project 2, which
    * has content, and again alone at the end, which is dropped). Reporting "J" as a
    * dropped label would claim J never plays, which is false.
    */
@@ -466,7 +466,7 @@ function runLength(labels: readonly string[]): string {
 //
 // Exact dedup barely collapses a human-played track: a ghost note or a fill
 // makes each "same" 2-bar groove a distinct grid (39 windows → 31 unique on the
-// Tom Petty test). Fuzzy coalesce merges windows that are ALMOST identical so
+// classic-rock test). Fuzzy coalesce merges windows that are ALMOST identical so
 // the bank shrinks toward the handful of real grooves — the size that has to fit
 // the 8 pattern slots. The tradeoff: members of a cluster lose their individual
 // fills (we play the cluster's representative bar everywhere), which is exactly
@@ -552,7 +552,7 @@ export function layerDistance(a: readonly string[], b: readonly string[]): numbe
  * when EVERY layer of the build is within `maxDistance`, never on the drums
  * alone. The weakest layer governs — drums within threshold but a synth layer
  * far apart is NO merge (the drum-only test silently flattened exactly that,
- * the 2026-07-29 Amber-plan defect).
+ * the 2026-07-29 plan defect).
  */
 export function coalescePatterns(decomp: SongDecomposition, opts: CoalesceOptions = {}): CoalescedSong {
   const maxDistance = opts.maxDistance ?? 0.10;

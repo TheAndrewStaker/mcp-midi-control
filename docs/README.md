@@ -10,13 +10,14 @@ amp modeler or on a synthesizer, and adding a device is a descriptor, not
 a new set of tools.
 
 Any USB MIDI device works today via generic-MIDI primitives (CC, NRPN,
-SysEx, program change, notes, clock). Hardware-verified depth (whole-preset
-and whole-patch authoring, lineage, cross-device translation) currently
-covers the Fractal AM4, Axe-Fx II XL+, and ASM Hydrasynth Explorer. In
-community beta: the modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4),
-the original Axe-Fx Standard/Ultra, and three non-guitar devices: the
-Novation Circuit Tracks (sequencer), the Roland SPD-SX (sample pad), and
-the Boss VE-500 (vocal processor).
+SysEx, program change, notes, clock). Deeper per-device support is
+tiered: hardware-verified (tested on a real unit; the deepest surfaces
+add whole-preset and whole-patch authoring, lineage, and cross-device
+translation), community beta (evidence-backed, awaiting hardware
+confirmation), and generic-only CC/PC maps. The registered roster and
+each device's status live in the repo-root [`README.md`](../README.md)
+and the device table in
+[`contributing/README.md`](./contributing/README.md).
 
 This folder holds the documentation for contributors and Claude Code
 agents working in this repo. End-user install and usage docs live in the
@@ -25,7 +26,7 @@ repo root [`README.md`](../README.md).
 ## Start here
 
 - [`PROJECT-VISION.md`](./PROJECT-VISION.md): one-page strategic narrative
-  (problem, solution, target user, what-it-is-not, phases).
+  (problem, solution, target user, what-it-is-not).
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md): how the codebase is organized
   (workspace packages, device descriptors, unified tool surface).
 - [`GETTING-STARTED.md`](./GETTING-STARTED.md): on-ramp for new

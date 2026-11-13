@@ -9,8 +9,8 @@
  * Run: npm run build && npx tsx scripts/mcp-hwtest-am4-stored-export.ts
  */
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 
@@ -29,7 +29,7 @@ function check(label: string, ok: boolean, detail?: string): void {
 
 async function main(): Promise<void> {
   const t = new StdioClientTransport({ command: process.execPath, args: [SERVER], stderr: 'pipe' });
-  const c = new Client({ name: 'am4-stored-export-verify', version: '1' }, { capabilities: {} });
+  const c = new Client({ name: 'am4-stored-export-verify', version: '1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await c.connect(t);
   try {
     for (const [loc, code] of [[0, 'A01'], [103, 'Z04']] as const) {

@@ -5,7 +5,7 @@
  * (`patterns/songsterr.ts` + `patterns/songStructure.ts`); this script owns the
  * one thing core can't: the 3-hop fetch off Songsterr's own JSON.
  *
- *   1. URL `…-s23527`            → songId 23527
+ *   1. URL `…-s12345`            → songId 12345
  *   2. GET api/meta/{songId}     → revisionId, image (CDN hash), tracks[]
  *      (drum track = instrumentId 1024; its partId = its index in tracks[])
  *   3. GET {cdn}/{songId}/{revisionId}/{image}/{partId}.json  (gzip JSON)
@@ -160,7 +160,7 @@ async function main() {
   }
 
   // Single-window mode — address by beat, DISPLAYED measure, or section name.
-  // Disambiguate a repeated section name (Gethsemane has TWO "Bridge"s) — the
+  // Disambiguate a repeated section name (a song can have TWO "Bridge"s) — the
   // resolver picks the first; tell the user how to reach the others.
   const sectionArg = argVal('--section');
   if (sectionArg !== undefined) {

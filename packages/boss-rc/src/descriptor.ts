@@ -73,12 +73,15 @@ import {
   clearAssign as mk2ClearAssign,
   sourceOrdinalFromDisplay,
   targetOrdinalFromDisplay,
+  midiCcFromTargetOrdinal,
   modeOrdinalFromDisplay,
   SOURCE_ENUM_VALUES,
   TARGET_ENUM_VALUES,
   MODE_ENUM_VALUES,
   type DecodedAssign,
 } from './codec/mk2.js';
+import { readLoopSummary, loopSummaryLine } from './codec/loops.js';
+import { readSystemSettings } from './storage/systemSettings.js';
 import {
   readAllAssigns as rc600ReadAllAssigns,
   clearAssign as rc600ClearAssign,
@@ -138,6 +141,17 @@ export interface BossRcConfig {
   ctl_channel_env: string;
   /** Track count: mk2 = 5, RC-600 = 6. Surfaced in agent guidance / docs. */
   track_count: number;
+  /**
+   * True when the memory file's tempo and per-track loop fields are decoded for
+   * this model (see `codec/loops.ts`). mk2: yes, cross-checked against the
+   * unit's own audio files. RC-600: not checked, so reads stay name + assigns.
+   */
+  loop_summary_decoded?: boolean;
+  /**
+   * True when the unit's system file is decoded for this model, so a storage
+   * read reports the RX CTL channel (see `storage/systemSettings.ts`).
+   */
+  system_settings_decoded?: boolean;
   /** ASSIGN block schema + read/author bindings (see `BossRcAssignBinding`). */
   assign: BossRcAssignBinding;
   /** Whether `apply_preset` can author a POPULATED assign slot (mk2: yes, hardware-confirmed; RC-600: no, ordinal map undecoded, rename-only). */
@@ -162,14 +176,18 @@ export interface BossRcConfig {
   support_tier: SupportTier;
 }
 
-/** Resolve the RX CTL channel: env override (1..16) wins, else the config default. */
-function resolveCtlChannel(config: BossRcConfig): number {
+/** Resolve the RX CTL channel and say where it came from: the env override (1..16) wins, else the config default. */
+function resolveCtlChannelWithSource(config: BossRcConfig): { channel: number; source: 'env' | 'default' } {
   const raw = process.env[config.ctl_channel_env];
   if (raw && raw.trim() !== '') {
     const n = Number.parseInt(raw, 10);
-    if (Number.isInteger(n) && n >= 1 && n <= 16) return n;
+    if (Number.isInteger(n) && n >= 1 && n <= 16) return { channel: n, source: 'env' };
   }
-  return config.default_ctl_channel;
+  return { channel: config.default_ctl_channel, source: 'default' };
+}
+
+function resolveCtlChannel(config: BossRcConfig): number {
+  return resolveCtlChannelWithSource(config).channel;
 }
 
 const MOUNT_STEPS =
@@ -258,15 +276,17 @@ const MK2_ASSIGN_BINDING: BossRcAssignBinding = {
     for (const slot of enabledSlots) {
       const sIdx = slot.slot as number;
       const p = (slot.params ?? {}) as Record<string, string | number>;
+      const targetOrd = targetOrdinalFromDisplay(p.target);
       authorAssignRaw(doc, memId, sIdx, {
         sw: 1,
         mode: p.mode !== undefined ? modeOrdinalFromDisplay(p.mode) : 0,
         sourceOrd: sourceOrdinalFromDisplay(p.source),
         actLo: p.act_lo !== undefined ? Number(p.act_lo) : 0,
         actHi: p.act_hi !== undefined ? Number(p.act_hi) : 127,
-        targetOrd: targetOrdinalFromDisplay(p.target),
+        targetOrd,
         targetMin: p.target_min !== undefined ? Number(p.target_min) : 0,
-        targetMax: p.target_max !== undefined ? Number(p.target_max) : 1,
+        // A MIDI CC target sends 0..127 (panel default); an on/off track function is 0/1.
+        targetMax: p.target_max !== undefined ? Number(p.target_max) : midiCcFromTargetOrdinal(targetOrd) !== undefined ? 127 : 1,
       });
     }
   },
@@ -334,7 +354,8 @@ function deriveControlSources(config: BossRcConfig): DeviceCapabilities['control
     if (m) assignable_cc.push(Number(m[1]));
   }
   if (assignable_cc.length === 0) return undefined;
-  const targets = Object.values(config.assign.block.params.target?.enum_values ?? {});
+  // Looper functions a control can drive; the "MIDI CC#n" transmit targets are outputs, not control targets.
+  const targets = Object.values(config.assign.block.params.target?.enum_values ?? {}).filter((t) => !t.startsWith('MIDI CC#'));
   return { assignable_cc, ...(targets.length > 0 ? { targets } : {}) };
 }
 
@@ -365,7 +386,7 @@ function bossRcAgentGuidance(config: BossRcConfig): Readonly<Record<string, stri
       'what the file-surface author path writes; live CC control is only as reliable as the loaded memory\'s Assigns.',
     live_control:
       `Memory recall: switch_preset(location = memory 1..99) sends Program Change memory-1 on the RX CTL channel ` +
-      `(default ch${ch}; set ${config.ctl_channel_env} to the unit's actual RX CTL channel). Looper/track functions: ` +
+      `(default ch${config.default_ctl_channel}; the unit's own is looper.control_channel in a storage read). Looper/track functions: ` +
       'send_cc(channel = RX CTL channel, cc = the number a memory Assign listens on) with a momentary pulse for ' +
       'transport targets (REC/PLY, STOP, ALL START/STOP) or a 0..127 value for a level target. The device NEVER ' +
       'echoes state over MIDI, so nothing can be read back or confirmed on the wire; confirm by ear / front panel.' +
@@ -376,13 +397,14 @@ function bossRcAgentGuidance(config: BossRcConfig): Readonly<Record<string, stri
       'and/or rhythm only if its SYNC START is ALL or RHYTHM. As a master it transmits clock (SYNC OUT = ON) and a ' +
       'Program Change on memory change (PC OUT = ON).',
     file_surface: config.assign_authoring_supported
-      ? 'In STORAGE mode: scan_locations(from, to as memory numbers) lists memory names; get_preset(location = memory) ' +
+      ? 'In STORAGE mode: scan_locations(from, to as memory numbers) lists each memory\'s name, a summary ("3 loops, ' +
+        '122 BPM") and is_empty (no loop, no assign, default name). get_preset(location = memory) reads `looper` ' +
+        '(tempo, each track\'s loop and settings, unit MIDI menu) and ' +
         'decodes that memory\'s ASSIGN table (each slot: source -> target, e.g. "CC#81 -> TRK2 PLY/STP"); ' +
         'among per-track TARGET labels only REC/PLY, PLY/STP, and STOP are device-confirmed, so a decoded label outside ' +
         'those three is inferred from the parameter-guide order and may be off by a position until hardware-confirmed. ' +
         'export_preset(location = memory) backs up the live .RC0 file. There is no active working buffer over storage, ' +
-        'so get_preset always needs a memory number. A memory is stored as a redundant A/B pair; the higher <count> ' +
-        'is the live copy, which the read path picks automatically.'
+        'so get_preset always needs a memory number.'
       : 'In STORAGE mode: scan_locations(from, to as memory numbers) lists memory names; get_preset(location = memory) ' +
         'decodes that memory\'s ASSIGN table STRUCTURALLY (which of the 16 slots are ON/OFF), reporting a raw ' +
         '"SOURCE#n -> TARGET#n" token per enabled slot rather than a friendly label; no ordinal-to-label map is decoded ' +
@@ -393,10 +415,10 @@ function bossRcAgentGuidance(config: BossRcConfig): Readonly<Record<string, stri
     authoring_memories: config.assign_authoring_supported
       ? 'AUTHOR a memory\'s Assign table with apply_preset(target_location = memory 1..99), the inverse of get_preset: ' +
         'each slot is { slot: 1..16, block_type: "assign", params: { source, target, mode?, act_lo?, act_hi?, ' +
-        'target_min?, target_max? } }; source is "CTL1"/"CTL2" or "CC#64".."CC#95"; target is "TRKn <FN>" (FN = REC/PLY, ' +
-        'PLY/STP, STOP, CLEAR, REVERSE, UN/RED, M.BACK, R.BACK, M.SET, M.CLEAR, LEVEL); spec.name sets the memory name. ' +
-        'LABEL CAVEAT: only REC/PLY, PLY/STP, and STOP are device-confirmed; the other 8 FN labels are inferred from the ' +
-        'parameter-guide order and unconfirmed on hardware, so verify a memory\'s assigns by ear / front panel after authoring. ' +
+        'target_min?, target_max? } }; source is "CTL1"/"CTL2"/"CTL3" or "CC#64".."CC#95"; target is "TRKn <FN>" (FN = REC/PLY, ' +
+        'PLY/STP, STOP, CLEAR, REVERSE, UN/RED, M.BACK, R.BACK, M.SET, M.CLEAR, LEVEL) or "MIDI CC#64".."MIDI CC#127" ' +
+        '(transmit that CC from MIDI OUT, value 0..127; device-confirmed; CC#01-31 not decoded); spec.name sets the memory name. ' +
+        'Verify the other 8 FN labels (see file_surface) by ear / front panel after authoring. ' +
         'It is a FRESH-BUILD: the WHOLE 16-slot table is rewritten and any slot you do not list is CLEARED, so read the ' +
         'memory with get_preset first and re-list the assigns you want to keep. Default (save_authorized off) is a PREVIEW ' +
         '(validates + reports, writes nothing); pass save_authorized to write the .RC0 (it targets the inactive A/B slot ' +
@@ -491,7 +513,17 @@ export function createBossRcDescriptor(config: BossRcConfig): DeviceDescriptor {
           try {
             const active = readActiveMemory(root, m);
             const id = memoryIdIn(active.doc) ?? '0';
-            scanned.push({ location: String(m), name: readName(active.doc, id), is_empty: false });
+            const name = readName(active.doc, id);
+            if (!config.loop_summary_decoded) {
+              scanned.push({ location: String(m), name, is_empty: false });
+              continue;
+            }
+            // Empty means nothing a user made: no loop, no assign routing, and
+            // the unit's own default name.
+            const loops = readLoopSummary(active.doc, id, config.track_count);
+            const hasAssign = config.assign.readAllAssigns(active.doc, id).some((a) => a.sw && a.source !== '(none)');
+            const is_empty = loops.recorded_count === 0 && !hasAssign && /^Memory\d\d$/.test(name);
+            scanned.push({ location: String(m), name, is_empty, summary: loopSummaryLine(loops) });
           } catch {
             // A memory whose file pair is absent reads as empty (not an error).
             scanned.push({ location: String(m), name: '', is_empty: true });
@@ -513,8 +545,19 @@ export function createBossRcDescriptor(config: BossRcConfig): DeviceDescriptor {
         }
         const id = memoryIdIn(active.doc) ?? '0';
         const assigns = config.assign.readAllAssigns(active.doc, id);
+        const loops = config.loop_summary_decoded ? readLoopSummary(active.doc, id, config.track_count) : undefined;
+        const system = config.system_settings_decoded ? readSystemSettings(root) : undefined;
         return {
           name: readName(active.doc, id),
+          ...(loops
+            ? {
+                looper: {
+                  ...(loops.tempo_bpm !== undefined ? { tempo_bpm: loops.tempo_bpm } : {}),
+                  ...(system ? { control_channel: system.rx_ctl_channel, midi: system.midi } : {}),
+                  tracks: loops.tracks,
+                },
+              }
+            : {}),
           slots: assigns.map((a) => {
             const enabled = a.sw && a.source !== '(none)';
             const params: Record<string, string | number> = enabled
@@ -532,8 +575,9 @@ export function createBossRcDescriptor(config: BossRcConfig): DeviceDescriptor {
           }),
           read_warnings: [
             config.assign_authoring_supported
-              ? 'This reads the memory\'s ASSIGN control-routing table (which external control drives which looper ' +
-                'function), not audio/track content. An enabled assign reads as "source -> target" (e.g. ' +
+              ? '`looper` is the memory tempo, each track (loop length, level, pan, sync, measure) and `midi`, the unit-wide MIDI menu. ' +
+                '`slots` is the ASSIGN control-routing table (which external control drives which looper ' +
+                'function). The audio itself is not read. An enabled assign reads as "source -> target" (e.g. ' +
                 '"CC#81 -> TRK2 PLY/STP"). Targets outside the decoded per-track set (CUR.TRK / global / FX / mixer) ' +
                 'show as a raw TARGET#n rather than a guessed label. The live copy of the A/B pair was read.'
               : `This reads the memory's ASSIGN control-routing table structurally (which slots are ON/OFF), not audio/track ` +
@@ -591,17 +635,24 @@ export function createBossRcDescriptor(config: BossRcConfig): DeviceDescriptor {
       async switchPreset(ctx, location: LocationRef): Promise<WriteResult> {
         requireMidi(config, ctx);
         const m = parseMemoryNumber(config, location);
-        const ch = resolveCtlChannel(config);
+        const { channel: ch, source } = resolveCtlChannelWithSource(config);
         ctx.conn.send([0xc0 | ((ch - 1) & 0x0f), (m - 1) & 0x7f]);
+        const why =
+          source === 'env'
+            ? `ch${ch} comes from ${config.ctl_channel_env}.`
+            : `ch${ch} is the factory default and was NOT read from this unit. If the memory did not change, the ` +
+              `unit's RX CTL channel differs (MENU -> MIDI -> RX CH -> CTL` +
+              (config.system_settings_decoded ? '; get_preset in storage mode reports it as looper.control_channel' : '') +
+              `). Resend with send_program_change(channel = that channel, program = ${m - 1}), and set ` +
+              `${config.ctl_channel_env} to make it the default.`;
         return {
           op: 'switch_preset',
           target: `memory ${m}`,
           acked: true,
           unconfirmed: true,
           info:
-            `Recalled memory ${m} via Program Change ${m - 1} on ch${ch} (the RX CTL channel). ` +
-            `Requires PC IN = ON and the unit's RX CTL channel to match (set ${config.ctl_channel_env} if it is not ` +
-            `${config.default_ctl_channel}). No readback; confirm on the device.`,
+            `Sent Program Change ${m - 1} on ch${ch} to recall memory ${m}. ${why} The unit has no setting that ` +
+            'blocks incoming Program Change, and it does not report back; confirm on its display.',
         };
       },
       // Pre-MIDI validation (runs before the drive is opened): apply_preset must
@@ -707,6 +758,8 @@ export const RC505MK2_CONFIG: BossRcConfig = {
   default_ctl_channel: 1,
   ctl_channel_env: 'MCP_RC505_CTL_CHANNEL',
   track_count: 5,
+  loop_summary_decoded: true,
+  system_settings_decoded: true,
   assign: MK2_ASSIGN_BINDING,
   assign_authoring_supported: true,
   // HYBRID device. Set from the PRIMARY authoring surface, which is the FILE

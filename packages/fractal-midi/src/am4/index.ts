@@ -127,17 +127,30 @@ export {
 } from './presetContainer.js';
 export type { ParsedAm4PresetDump, Am4DecodedPreset } from './presetContainer.js';
 
-// Decoded-body block-record chain — walk the body to the AMP block record and
-// surface its per-channel (A/B/C/D) param VALUES. Amp block only (validated
-// record shape); other blocks stay omitted pending per-block captures.
+// Decoded-body block-record chain: a self-describing record per placed block
+// (effect id + table size in its header). decodeAm4PresetBody surfaces the slot
+// order, every placed block's per-channel (A/B/C/D) param VALUES and the
+// per-scene channel + bypass state; decodeAm4AmpBlock is the older amp-only view.
 export {
   AM4_BODY_CHANNEL_STRIDE,
   AM4_BODY_BLOCK_HEADER_BYTES,
   AM4_BODY_AMP_CHANNEL_COUNT,
+  AM4_BODY_CHAIN_START,
+  AM4_BODY_CHAIN_TAIL_BYTES,
+  AM4_BODY_PATCH_RECORD_ID,
+  AM4_BODY_PATCH_SLOT_WORD,
+  AM4_BODY_PATCH_LOCATION_WORD,
+  AM4_BODY_PATCH_VOLATILE_WORD,
+  AM4_BODY_ACTIVE_SCENE_OFFSET,
+  AM4_BODY_SCENE_CHANNEL_OFFSET,
+  AM4_BODY_SCENE_BYPASS_OFFSET,
   locateAm4AmpBlock,
   decodeAm4AmpBlock,
+  walkAm4BodyChain,
+  decodeAm4PresetBody,
+  am4ComparableBody,
 } from './bodyChain.js';
-export type { Am4AmpBlockValues } from './bodyChain.js';
+export type { Am4AmpBlockValues, Am4BodyRecord, Am4BodyChain, Am4StoredBlock, Am4PresetBody } from './bodyChain.js';
 
 // Data tables — cache + type-applicability + enums.
 export { CACHE_PARAMS } from './cacheParams.js';

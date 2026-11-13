@@ -102,6 +102,9 @@ export function deriveRigLinks(rig: Rig): RigLinks {
  */
 export function resolveRigLinks(): RigLinks {
   const manifest = loadRigManifest();
+  // Positive 'loaded' gate: an absent (configured, file not created yet) or
+  // failed manifest yields no links and falls through to the env var, same as
+  // unconfigured. A missing file must not disable MCP_RIG_LINKS.
   if (manifest.status === 'loaded') {
     const derived = deriveRigLinks(manifest.rig);
     if (Object.keys(derived).length > 0) return derived;
@@ -112,6 +115,7 @@ export function resolveRigLinks(): RigLinks {
 /** Where `resolveRigLinks()` sourced its links from, for reporting. */
 export function rigLinksSource(): 'manifest' | 'env' | 'none' {
   const manifest = loadRigManifest();
+  // Same positive 'loaded' gate as resolveRigLinks: absent/error read as env/none.
   if (manifest.status === 'loaded' && Object.keys(deriveRigLinks(manifest.rig)).length > 0) return 'manifest';
   if (Object.keys(getRigLinks()).length > 0) return 'env';
   return 'none';

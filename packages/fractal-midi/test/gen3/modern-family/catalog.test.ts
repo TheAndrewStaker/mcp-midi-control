@@ -183,7 +183,8 @@ cases.push(() => {
   assert(rev!.values[16] === 'Spring, Medium', `REVERB_TYPE ord 16 = ${rev!.values[16]} (byte-anchor)`);
   assert(rev!.values[1] === 'Room, Medium', `REVERB_TYPE ord 1 = ${rev!.values[1]} (byte-anchor)`);
 });
-cases.push(() => assert(resolveEnumValues('DELAY_TYPE') !== undefined, 'DELAY_TYPE overlay present'));
+// The model names belong to DELAY_MODEL; DELAY_TYPE is the 8-value stereo mode.
+cases.push(() => assert(resolveEnumValues('DELAY_MODEL')?.values[11] === 'Vintage Digital', 'DELAY_MODEL overlay carries the model names'));
 // DISTORT_TYPE deliberately has NO overlay: on gen-3 the DISTORT family is
 // the AMP block, so DISTORT_TYPE is the amp MODEL selector, not a drive-pedal
 // picker. The AM4 DRIVE table is not a valid ordinal oracle for gen-3 amp

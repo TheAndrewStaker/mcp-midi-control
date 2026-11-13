@@ -91,17 +91,18 @@ function writeGridBits(region: number[], bit: number, value: number, n: number):
  * anchors the region from the tail, so the checksum byte is load-bearing for
  * frame shape (its value is not verified). Lays the placed effect IDs across
  * row 0 (Input at col 0), so the reader decodes a coherent live grid (used by
- * get_preset's active path). Geometry matches gridLayout.ts:
- * cell_start_bit = 46 + col*192 + row*32.
+ * get_preset's active path). Geometry matches gridLayout.ts: cell =
+ * u16 id + u16 input mask from bit 45 + col*192 + row*32.
  */
 function buildGridLayoutResponse(modelByte: number, placedEffectIds: readonly number[]): number[] {
   const region = new Array(391).fill(0);
   // Input (effect id 37) at col 0, then each placed block in its own column, row 0.
   const chain = [37, ...placedEffectIds];
   chain.forEach((eid, col) => {
-    const base = 46 + col * 192;
-    writeGridBits(region, base, eid << 1, 8); // bits 0-7: effectId<<1
-    writeGridBits(region, base + 8, 0x00, 8); // bits 8-15: 0x00 = real block
+    const base = 45 + col * 192;
+    writeGridBits(region, base, eid & 0xff, 8); // id low byte
+    writeGridBits(region, base + 8, eid >> 8, 8); // id high byte
+    writeGridBits(region, base + 16, col > 0 ? 1 : 0, 8); // input mask: row 0 of the previous column
   });
   const header = [SYSEX_START, ...MFR_PREFIX, modelByte, 0x01, 0x2e];
   const frame = [...header];

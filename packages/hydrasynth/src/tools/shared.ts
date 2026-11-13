@@ -9,26 +9,27 @@
  * core utilities the tool handlers reach for.
  */
 
-import { connectHydrasynth, type HydrasynthConnection } from '../midi.js';
+import '../midi.js'; // side effect: registers the 'hydrasynth' connector factory
+import type { HydrasynthConnection } from '../midi.js';
 import { unwrapSysex } from '../sysexEnvelope.js';
 import { findHydraNrpn, type HydrasynthNrpn } from '../nrpn.js';
 import { findMatchingNrpns, nrpnMessagesFor, resolveNrpnValue } from '../encoding.js';
+import { ensureConnection } from '@mcp-midi-control/core/server-shared/connections.js';
 
 // -- MIDI lazy-init -------------------------------------------------------
 
-let midi: HydrasynthConnection | undefined;
-let midiError: Error | undefined;
-
+/**
+ * Resolve the Hydrasynth connection through the shared per-port registry
+ * (`ensureConnection('hydrasynth')`), the SAME handle the dispatcher's
+ * `withEndpoint` builds `ctx.conn` from. Before BK-110 this module cached
+ * its own private `connectHydrasynth()` handle, so the server held TWO
+ * handles to one exclusive Windows port and `reconnect_midi` (which
+ * force-reopens under the registry label) never reset the one the patch
+ * tools used. Error caching, stale-handle detection, and the instance
+ * lock all live in the registry now.
+ */
 export function ensureMidi(): HydrasynthConnection {
-  if (midi) return midi;
-  if (midiError) throw midiError;
-  try {
-    midi = connectHydrasynth();
-    return midi;
-  } catch (err) {
-    midiError = err instanceof Error ? err : new Error(String(err));
-    throw midiError;
-  }
+  return ensureConnection('hydrasynth');
 }
 
 /**
@@ -47,33 +48,11 @@ export function recordApplyPatch(signature: string, targetSlot: string, at: numb
 
 export const APPLY_PATCH_DUP_WINDOW_MS = 30_000;
 
-/**
- * Reset cached MIDI state so the next `ensureMidi()` re-attempts connect.
- * Used by the generic `reconnect_midi` tool when the user plugs in the
- * device after the server has already cached "not connected", without
- * this, every subsequent tool call keeps throwing the same stale error
- * forever.
- *
- * Session 47 / HW-060 follow-up: founder reported the device-plugged-
- * in-mid-session case where list_midi_ports saw the device momentarily
- * but apply_patch kept failing because the cached midiError prevented
- * re-connect.
- */
-export function resetMidiHandle(): { wasConnected: boolean; previousError: string | undefined } {
-  const wasConnected = midi !== undefined;
-  const previousError = midiError?.message;
-  if (midi) {
-    try {
-      midi.close?.();
-    } catch {
-      // best-effort close, if it throws, the underlying handle is
-      // dead anyway and we want to reset on the way out.
-    }
-  }
-  midi = undefined;
-  midiError = undefined;
-  return { wasConnected, previousError };
-}
+// resetMidiHandle REMOVED with the registry unification: `reconnect_midi`
+// force-reopens via `ensureConnection('hydrasynth', true)`, which now IS
+// the handle this module uses. (The old local reset had no callers left —
+// the reconnect tool already targeted the registry label, so it reset a
+// handle the patch tools never used. Session 47 / HW-060 context in git.)
 
 // -- MIDI-byte helpers ----------------------------------------------------
 
@@ -175,7 +154,12 @@ export const WRITE_REQUEST_FLASH_PAUSE_MS = 3500;
  * acks (`SysexEncoding.txt:342-378`):
  *   - `19 00`           → Header Response
  *   - `17 00 NN 16`     → Chunk Ack #NN
- *   - `07 00 BB PP`     → Patch Saved (bank=BB, patch=PP)
+ *   - `07 00 BB PP`     → Patch Saved (bank=BB, patch=PP). Fires even on
+ *                         RAM-only dumps — it is a chunk-stream counter,
+ *                         NOT flash confirmation.
+ *   - `15 00`           → Write Request Response: the device's one TRUE
+ *                         flash receipt (BK-112), emitted after `14 00`.
+ *   - `16 00 NN TT ...` → Chunk Dump #NN (device → host, read flows)
  *   - `1B 00`           → Footer Response
  * Anything else (or non-SysEx) is shown as raw hex with a status-byte
  * label so we can still see CC/PC echoes that the device emits during
@@ -192,11 +176,17 @@ export function describeInboundMessage(bytes: number[]): string {
     }
     if (info.length === 2 && info[0] === 0x19 && info[1] === 0x00) return 'Header Response (19 00)';
     if (info.length === 2 && info[0] === 0x1b && info[1] === 0x00) return 'Footer Response (1B 00)';
+    if (info.length === 2 && info[0] === 0x15 && info[1] === 0x00) {
+      return 'Write Request Response (15 00) — flash write receipt';
+    }
     if (info.length === 4 && info[0] === 0x17 && info[1] === 0x00 && info[3] === 0x16) {
       return `Chunk Ack #${info[2]} (17 00 ${info[2]!.toString(16).padStart(2, '0').toUpperCase()} 16)`;
     }
     if (info.length === 4 && info[0] === 0x07 && info[1] === 0x00) {
       return `Patch Saved (bank=${info[2]}, patch=${info[3]})`;
+    }
+    if (info.length >= 4 && info[0] === 0x16 && info[1] === 0x00) {
+      return `Chunk Dump #${info[2]} (${info.length - 4} data bytes, type 0x${info[3]!.toString(16).padStart(2, '0').toUpperCase()})`;
     }
     const infoHex = Array.from(info)
       .map((b) => b.toString(16).padStart(2, '0').toUpperCase())

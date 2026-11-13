@@ -6,13 +6,30 @@ discovered:  (2026-05-20;  hardware-verified)
 verified_on:
   - axe-fx-ii-q8.02
 firmware_sensitive: false
-golden: scripts/verify-axe-fx-ii-getpreset-channel-walk.ts (offline fn=0x1F channel-blocked dump decode)
+golden: scripts/verify-axe-fx-ii-getpreset-channel-walk.ts (offline fn=0x1F channel-blocked dump decode); scripts/verify-ii-image-continuous-apply.ts Section 2c (capture-gated fn=0x1F ↔ image-TLV byte-identity + amp 234→236)
 relates_to: [ii-axeedit-opcode-table, septet-14bit, ii-state-broadcast-triple-write, am4-fn1f-atomic-read, ii-fn0e-query-states]
 consumed_in:
   - fractal-midi/docs/devices/axe-fx-ii/SYSEX-MAP.md
 ---
 
 # Axe-Fx II fn=0x1F SYSEX_GET_ALL_PARAMS (atomic read)
+
+**REFINED 2026-07-16 (capture re-mine): the fn=0x1F reply is BYTE-IDENTICAL
+to the preset image's TLV payload for the same block.** Evidence: the
+Session-103 `samples/captured/fn1f-sweep/` triples were taken with
+unmodified factory A003 "Deluxe Verb" loaded; all 10 non-amp triples equal
+A003's image TLV payloads word-for-word, and the Amp triple (236 values)
+equals the factory 234-word record with one 32767 (0x7FFF) appended at the
+end of each 117-word half — the pinned factory-234 → live-236 layout
+conversion (6 witnesses across fn=0x03 live dumps). 836/836 words total.
+This REFUTES the 2026-06-07 negative ("vector match 0/6", the read values
+are not the stored ushorts) recorded in the private BK-070-DECODE-NOTES:
+that probe's chunk-flatten/-1-padding contiguous byte search was the
+artifact. Consequences: fn=0x1F is a byte-exact READ ORACLE for stored
+block records (place block → one fn=0x1F read = the fresh default record,
+the missing piece for from-scratch atomic image builds), and every factory
+Amp record converts deterministically to live layout. Golden: Section 2c
+of verify-ii-image-continuous-apply.ts (capture-gated, 10/10 + amp rule).
 
 Axe-Fx II exposes a single-frame atomic-read primitive at fn=0x1F:
 one request from the host triggers the device to emit the full

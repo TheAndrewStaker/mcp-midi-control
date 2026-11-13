@@ -9,8 +9,8 @@
  *
  * The third verb, "put it back the way it was", is deliberately NOT here: a
  * restore overwrites, and this release ships the safe half first. The existing
- * per-unit restore paths (`import_preset` for Fractal `.syx`, `upload_project`
- * for a Circuit `.ncs`) already carry their own gates and remain the way back.
+ * per-unit restore paths (`import_preset`, for a Fractal `.syx` and
+ * for a Circuit `.ncs` alike) already carry their own gates and remain the way back.
  * See the design note at the bottom of this file for the shape `restore_backup`
  * should take when it lands.
  *
@@ -21,7 +21,7 @@
  * apart lets `export_preset` stay the instant one-shot it is.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import { executeBackupDevice, executeListBackups } from '../dispatcher/backupSweep.js';
@@ -66,7 +66,7 @@ export function registerBackupTools(server: McpServer): void {
       'List the backup files this server has saved, newest first, so a user can find one without knowing where we put them. Answers "what have we got saved" and "when did we last back this up".',
       'Local disk only: no device, no MIDI, instant, works with the gear unplugged.',
       'Each entry gives the source device, what the file IS (preset / project / kit / active_buffer), the location and pack it came from, the name the device gave it, size, date, and `restore_with` (the tool that puts it back).',
-      'Filter with `device` (substring, e.g. "circuit") or `unit`. Backups come from backup_device and export_preset, and are taken automatically before upload_project overwrites a slot or delete_project erases one, so an erased project is findable here.',
+      'Filter with `device` (substring, e.g. "circuit") or `unit`. Backups come from backup_device and export_preset, and are taken automatically before import_preset overwrites a slot or delete_project erases one, so an erased project is findable here.',
     ].join(' '),
     inputSchema: {
       directory: z.string().optional().describe('Folder to list. Defaults to the `mcp-midi-backups` folder under the user\'s home, which is where backups go unless a `directory` was passed when taking them.'),

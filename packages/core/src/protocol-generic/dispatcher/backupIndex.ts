@@ -63,7 +63,7 @@ export interface BackupIndexEntry {
   location?: number | string;
   /** 1-based microSD pack, on pack-addressed devices. */
   pack?: number;
-  /** Content name decoded from the bytes ("Sugar", "Plexi Lead"), when the device gave one. */
+  /** Content name decoded from the bytes ("Verse 1", "Plexi Lead"), when the device gave one. */
   name?: string;
   /** Wire-shape id from `PresetBinaryDump.format`, so a restore can validate before pushing. */
   format?: string;
@@ -298,9 +298,7 @@ export function resolveBackupPolicy(descriptor: DeviceDescriptor): ResolvedBacku
   const restoreTool = declared.restore_tool
     ?? (descriptor.writer.restorePresetBinary !== undefined
       ? 'import_preset'
-      : descriptor.writer.uploadProject !== undefined
-        ? 'upload_project'
-        : undefined);
+      : undefined);
 
   const first = declared.first_location;
   const last = declared.last_location;

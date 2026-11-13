@@ -538,15 +538,80 @@ reserved bits (no donor exists): named hardware residual.
 
 | Decoder reads | Encoder writes | Status |
 |---|---|---|
-| Continuous knob words | `presetImageContinuousPatch.ts` (fractal-gen2, shipped) | hardware-verified push (2026-05-22) |
+| Continuous knob words | `presetImageContinuousPatch.ts` (fractal-gen2, shipped) | hardware-verified push (2026-05-22); WIRED to `apply_preset` mode:'retune' 2026-07-16; retune HARDWARE-CONFIRMED all axes 2026-07-17 (founder bench: seamless under continuous playing, panel value landing, store leg persisted; II panel pinned 1-based) |
 | Rostered-select words (X, gated Y) | `presetImage/discretePatch.ts` | community-beta, hardware-unverified push |
 | Scene-state words + byte-2 mirror | `presetImage/sceneWords.ts` | community-beta; 32/32 hardware pairs replay byte-exact offline |
-| TLV chain membership (PLACE/REMOVE) | `presetImage/structure.ts` | community-beta; byte-identity + A001-synthesis oracles; push acceptance of novel compositions untested (label reads LOUDER) |
+| TLV chain membership (PLACE/REMOVE) | `presetImage/structure.ts` | HARDWARE-CONFIRMED push acceptance 2026-07-16 late night: 5/5 codec-spliced novel compositions (block removed) accepted by the XL+ with 0 NACKs AND round-tripped byte-identical from the device (`fresh-defaults-r2` captures) |
 | Grid cell ids (block <-> shunt swap) | `presetImage/grid.ts` | community-beta (rides the splice ops) |
 | Grid connector masks | NOT ENCODED (live fn 0x05/0x06 own routing) | out by design |
 | Modifier records | NOT ENCODED (preserve verbatim; dangling-target warning on remove) | out: 15-word layout undecoded (payload[8] target field is WEAK) |
 | Tone-match bulk (word 2048+) | NOT ENCODED (structural ops refuse tone-match presets) | out by design |
 | Preset name words 2..33 | NOT ENCODED here (live rename path exists) | out of scope this session |
+
+### 2026-07-16 LATE-NIGHT hardware session (founder's XL+, live)
+
+All working-buffer-only, baseline-restored byte-identically, zero STOREs.
+Artifacts: `samples/captured/bk084-hw-mech-2026-07-17-*` +
+`samples/captured/fresh-defaults-r2-2026-07-17-*` (manifests inside).
+
+- **Retune mechanical CONFIRMED on hardware**: identity push byte-identical;
+  `applyPresetRetune` end-to-end on the image path (word-exact receipt,
+  single push); `output.scene_3_main` landed AND cross-oracled (image word
+  == live fn 0x02 read == 2.5) — the scene_N_main word family (incl. the
+  previously un-anchored paramIds 10..15) is hardware-confirmed on the
+  VALUE axis. The audible axis (silent-like-a-preset-switch) still needs
+  the founder's ears (bench probe P1/P5).
+- **fn 0x1F ↔ image byte-identity holds LIVE**: 14/14 blocks on the active
+  buffer (extends the on-disk 836/836).
+- **NOVEL-COMPOSITION SPLICE PUSH ACCEPTED**: 5/5 images with a block
+  removed via `presetImage/structure.ts` pushed clean (0 NACKs) and
+  round-tripped byte-identical. The splice codec's loudest unknown is
+  closed.
+- **Device REMEMBERS removed-block records in-buffer**: live remove →
+  re-place restores the OLD record (all 6 tested families), consistent
+  with records persisting in the image after grid removal. Fresh defaults
+  therefore require splice-then-place (or an unplaced family).
+- **FRESH DEFAULT RECORDS captured for ALL 8 always-tweaked families**
+  (Amp 1, Amp 2, Cab, Reverb, Delay, Multi Delay, Pitch, Drive) — the
+  from-scratch atomic-build blocker is CLOSED pending promotion into the
+  codec. Finding: fresh Amp 1 vs Amp 2 differ ONLY at paramId 9
+  (xformer_grind: 6553 vs 0); amp defaults have X==Y halves.
+- **PROMOTED 2026-07-17**: all 8 records now ship as `FRESH_DEFAULT_RECORDS`
+  in `presetImage/defaultRecords.ts` (decoded fresh from the raw captures,
+  not hand-copied), wired into `insertBlockIntoImage` (tried before the
+  corpus-modal `DEFAULT_RECORDS`). Every previously-refusing always-tweaked
+  wireId now inserts successfully. Capture-gated golden (Section 2d,
+  `verify-ii-image-continuous-apply.ts`): independently re-decodes the 8
+  raw `.syx` files and asserts byte-identity against the embedded table
+  (catches transcription drift), re-confirms the Amp instance-independence
+  finding from the raw bytes, and round-trips an `insertBlockIntoImage`
+  call for each record back to the exact capture. 4/4 checks, 8/8 records.
+
+### 2026-07-16 wiring-session addenda
+
+- **`apply_preset` mode:'retune' WIRED** (fractal-gen2 `retuneApply.ts` +
+  `createAtomicImageApply`): the continuous-patch pipeline now ships as a
+  first-class tool mode (XL+ only, community-beta / hardware-unverified;
+  the founder bench probe flips the label). Design of record:
+  `ATOMIC-APPLY-WIRING-DESIGN-2026-07-16.md` (private).
+- **SystemTail blocks are SINGLE-CHANNEL in the TLV walker** (Noisegate
+  139 / Output 140 / Controllers 141): the even-payload = X/Y-halves
+  heuristic is corpus-REFUTED for all three (0/384 half-mirrors; Output
+  words 8..15 hold the scene_1..8_main 0 dB encoding 32767 in 339/384,
+  remainder pre-scene-firmware zeros). Pre-fix, `paramWordIndex` refused
+  Output paramIds 10..15 (scene_3..8_main). The fractal-gen2 walker now
+  matches this file's scene-word section (which already listed Output as
+  single-channel full-payload); golden: Output bounds 384/384 in
+  verify-ii-image-continuous-apply.
+- **fn 0x1F reply == image TLV payload, byte-for-byte** (836/836 words vs
+  factory A003 across 11 families) and the **Amp factory-234 → live-236
+  conversion is pinned**: append one 32767 at the end of each 117-word
+  half. Refutes the 2026-06-07 "read values are not the stored ushorts"
+  negative. fn 0x1F is therefore a byte-exact read oracle for stored
+  block records; a place-then-read session yields the missing fresh
+  default records (capture probe queued). Primitive:
+  `ii-fn1f-atomic-read` (refined); golden: Section 2c of
+  verify-ii-image-continuous-apply.
 
 ## Side findings
 

@@ -40,6 +40,7 @@ import type {
   LocationRef,
   ProjectDeleteResult,
   ProjectUploadOutcome,
+  RestorePresetResult,
   SampleUploadOutcome,
   SlotWriteOptions,
   StoredMixerLevels,
@@ -59,7 +60,7 @@ import { encodePatchName, NAME_LEN } from '../codec/blob.js';
 import { readCurrentPatch, savePatch, instanceToSynthLoc } from '../codec/patchTransfer.js';
 import { DISTINCT_COLOURS, META_OFFSETS, NCS_FILE_SIZE, NOTE_SLOTS_PER_STEP, PATTERNS_PER_TRACK, STEPS_PER_PATTERN, applyProjectColour, applyProjectName, checkNcsStructure, drumBlockIndex, getDrumLevel, getProjectTempo, ncsStructureNote, noteBlockIndex, projectColourName, setDrumLevel, setDrumLevels, setProjectTempo, setSynthLevel, type NoteTrack, type ProjectColourStamp, type ProjectNameStamp } from '../ncs/format.js';
 import { setDrumPattern } from '../ncs/drumPattern.js';
-import { setDrumSampleBinding, slotForFlipRole, DEFAULT_DRUM_BINDING, NUM_DRUM_TRACKS as DRUM_TRACK_COUNT } from '../ncs/drumBinding.js';
+import { setDrumSampleBinding, slotForFlipRole, DEFAULT_DRUM_BINDING, DRUM_TRACK_BASE_VOICES, NUM_DRUM_TRACKS as DRUM_TRACK_COUNT } from '../ncs/drumBinding.js';
 import {
   decodeNotePattern, setNotePattern, describeGate,
   DEFAULT_GATE, MAX_GATE_SIXTHS, MICROTICKS_PER_STEP, MIN_GATE_SIXTHS, type NoteSlot,
@@ -72,7 +73,9 @@ import {
 } from '../ncs/scale.js';
 import { uploadProject as uploadProjectTransport, probeProjectSlot } from '../ncs/uploadProject.js';
 import { deleteSlots, FILE_TYPE } from '../ncs/fileDelete.js';
-import { uploadSample as uploadSampleDriver, uploadSampleKit } from '../samples/uploadSample.js';
+import { uploadSample as uploadSampleDriver, uploadSampleKit, alignSampleFilename, type AlignedSampleName } from '../samples/uploadSample.js';
+import { readSampleDirectory, type SampleDirectoryResult } from '../ncs/sampleDirectory.js';
+import { resolveDrumBindingByName } from '../ncs/sampleRoles.js';
 
 /** Circuit drum trigger notes (ch10) → drum track index (Drum1..4 = 0..3). */
 const NOTE_TO_DRUM_TRACK: Readonly<Record<number, number>> = { 60: 0, 62: 1, 64: 2, 65: 3 };
@@ -110,6 +113,29 @@ export interface AuthoredTracks {
   scale_set?: ProjectScale;
   /** Distinct authored pitch-classes a chosen non-Chromatic scale will shift on playback (0 = none / Chromatic). */
   out_of_scale?: number;
+  /** Melodic notes stored +12 by the sounding-pitch compensation (absent when it was off or no note was shifted). */
+  sounding_shifted?: number;
+}
+
+/**
+ * Author-time options threaded from the realizer (NOT part of the compiled
+ * plan): device-side resolution state that only the writer can know.
+ */
+export interface AuthorOptions {
+  /**
+   * Store melodic note-track pitches +12 so the authored pitch is the SOUNDING
+   * pitch (the Circuit transmits a stored note-track note 12 semitones below
+   * its stored value, on synth AND MIDI tracks; measured, HW-SPDSX-008).
+   * A shifted note past MIDI 127 REFUSES rather than clamps.
+   */
+  soundingPitch?: boolean;
+  /**
+   * Role → pool slot map resolved by NAME against the destination pack's own
+   * pool (sampleRoles.ts). When present, per-step flip ROLES resolve against
+   * the REAL pool instead of the canonical layout assumption; a role the pool
+   * cannot locate is skipped with a warning, never guessed.
+   */
+  roleSlots?: Readonly<Record<string, number>>;
 }
 
 /**
@@ -139,8 +165,7 @@ function mergeFlipMaps(
  * corpus census found 12 distinct hand-set gate values across the maintainer's
  * pack (all exact multiples of six, i.e. pad-press granularity) plus 1,048
  * TIE-FORWARD flags that no code path here can even write. Those ties are the
- * held pads and drones in Stranglehold / I Believe / Clint Eastwood / Caught
- * Glimpse / Amber / Breakdown. Re-authoring without this turns every one of
+ * held pads and drones in six of the songs on that card. Re-authoring without this turns every one of
  * them into a one-step blip, invisibly, with no diff anyone is looking at.
  *
  * MATCHING RULE: exact (step, note number), preferring the same micro-step
@@ -261,10 +286,31 @@ function dropUnreachableTies(
  */
 export function authorPlanIntoProject(
   buf: Uint8Array, plan: RealizePlan, scale?: string, patternIndex = 0, preserveTemplateGates = true,
+  opts: AuthorOptions = {},
 ): AuthoredTracks {
   if (!Number.isInteger(patternIndex) || patternIndex < 0 || patternIndex >= PATTERNS_PER_TRACK) {
     throw new DispatchError('bad_location', DEVICE_LABEL, `pattern index must be 0..${PATTERNS_PER_TRACK - 1}, got ${patternIndex}`);
   }
+  // SOUNDING-PITCH compensation (BK-MELODIC-OCTAVE, measured): the device
+  // transmits a stored note-track note 12 semitones BELOW its stored value, on
+  // synth AND MIDI tracks, so `sounding_pitch` stores melodic notes +12 to land
+  // the authored pitch at sounding pitch. Applied at intake so the template
+  // gate match, the scale advisory, and the stored bytes all agree. A shifted
+  // note past MIDI 127 refuses: silently clamping would fold the line's top.
+  const soundingShift = (opts.soundingPitch ?? plan.upload?.sounding_pitch === true) ? 12 : 0;
+  let soundingShifted = 0;
+  const storedNote = (e: RealizePlan['events'][number], nt: NoteTrack): number => {
+    if (soundingShift === 0) return e.note;
+    const n = e.note + soundingShift;
+    if (n > 127) {
+      throw new DispatchError(
+        'value_out_of_range', DEVICE_LABEL,
+        `${nt}: authored note ${e.note} cannot take the +12 sounding-pitch compensation (stored value ${n} exceeds ` +
+        `MIDI 127). Author the line an octave lower, or drop sounding_pitch. Nothing was uploaded.`,
+      );
+    }
+    return n;
+  };
   // Fail fast: validate the scale arg BEFORE any buffer mutation, so a typo'd
   // scale name is rejected without a wasted (and discarded) grid write.
   const chosen = scale !== undefined ? resolveScaleName(scale) : undefined;
@@ -359,6 +405,8 @@ export function authorPlanIntoProject(
     // 2..6 spreads evenly — the same spacing the drum route's mask uses above.
     if (e.micro_hits !== undefined && e.micro_hits > 1) {
       const n = Math.min(e.micro_hits, NOTE_SLOTS_PER_STEP);
+      const rollNote = storedNote(e, nt);
+      if (soundingShift !== 0) soundingShifted++;
       let placed = 0;
       // A roll and a note length are contradictory instructions for the same
       // step (retrigger N times vs hold once), so say which one won rather than
@@ -375,7 +423,7 @@ export function authorPlanIntoProject(
         // velocities are the "machine-gun" tell on velocity-sensitive pads.
         // gate stays DEFAULT_GATE (one step) and untied: a roll is deliberate
         // retriggers, so lengthening or tying them would smear the bounces.
-        slots.push({ note: e.note, gate: DEFAULT_GATE, tie: false, delay, velocity: rollVelocity(e.velocity, k) });
+        slots.push({ note: rollNote, gate: DEFAULT_GATE, tie: false, delay, velocity: rollVelocity(e.velocity, k) });
         placed++;
       }
       let rolls = rollSteps.get(nt);
@@ -389,8 +437,10 @@ export function authorPlanIntoProject(
     // Dedup by (note, delay): the same note may legitimately repeat within a
     // step at DIFFERENT micro-ticks (a 16th + its 32nd "and" = delays 0 and 3
     // — the micro-placement feature, B0-confirmed); only an identical
-    // (note, tick) pair is a duplicate.
-    if (slots.some((s) => s.note === e.note && s.delay === micro)) continue;
+    // (note, tick) pair is a duplicate. Compared on the STORED note so the
+    // sounding-pitch shift cannot split one note into two slots.
+    const noteStored = storedNote(e, nt);
+    if (slots.some((s) => s.note === noteStored && s.delay === micro)) continue;
     if (slots.length >= NOTE_SLOTS_PER_STEP) { unrouted++; continue; } // chord full (6 slots); honest count
     // NOTE LENGTH. The event's `gate_sixths` is the pattern's own duration, in
     // the device's own unit (sixths of a step, 1..96), carried down from
@@ -401,8 +451,9 @@ export function authorPlanIntoProject(
     // nothing already written moves. A stored project's OTHER lengths were
     // hand-set at the device, which is what `preserveTemplateGates` keeps.
     const slot: NoteSlot = {
-      note: e.note, gate: gateOf(e), tie: e.tie === true, delay: micro, velocity: e.velocity,
+      note: noteStored, gate: gateOf(e), tie: e.tie === true, delay: micro, velocity: e.velocity,
     };
+    if (soundingShift !== 0) soundingShifted++;
     if (e.gate_sixths !== undefined) authoredGates.add(slot);
     slots.push(slot);
   }
@@ -436,14 +487,25 @@ export function authorPlanIntoProject(
     for (const [trackName, stepMap] of Object.entries(drumFlipRoles)) {
       const perStep: Record<string, number> = {};
       for (const [stepStr, role] of Object.entries(stepMap)) {
-        const slot = slotForFlipRole(String(role), flipBinding);
+        const canon = canonicalRole(String(role));
+        // Resolution order: (1) the NAME-resolved pool map (`opts.roleSlots`,
+        // read off the destination pack itself, the only source that knows
+        // where a crash/tom actually lives); (2) the caller-declared binding
+        // rule (`slotForFlipRole`); never a canonical-position guess when the
+        // pool has been read.
+        const slot = (canon !== undefined && opts.roleSlots?.[canon] !== undefined)
+          ? opts.roleSlots[canon]
+          : slotForFlipRole(String(role), flipBinding);
         if (slot === undefined) {
           flipWarnings.push(
-            flipBinding !== undefined && canonicalRole(String(role)) !== undefined
-              ? `${trackName} step ${stepStr}: the custom drum_binding does not say where "${role}" lives in this pack's pool ` +
-                `(it locates only the four track samples), so the flip was skipped and the hit keeps the track's bound sound. ` +
-                `To keep "${role}" distinct, pass drum_flips with its pool slot, or drop drum_binding for the canonical kit layout.`
-              : `${trackName} step ${stepStr}: no Circuit sample slot for drum role "${role}", flip skipped`,
+            canon !== undefined && opts.roleSlots !== undefined
+              ? `${trackName} step ${stepStr}: the destination pack's pool names no sample for "${role}", so the flip was ` +
+                `skipped and the hit keeps the track's bound sound. Upload a sample named for it, or pass drum_flips with its pool slot.`
+              : flipBinding !== undefined && canon !== undefined
+                ? `${trackName} step ${stepStr}: the custom drum_binding does not say where "${role}" lives in this pack's pool ` +
+                  `(it locates only the four track samples), so the flip was skipped and the hit keeps the track's bound sound. ` +
+                  `To keep "${role}" distinct, pass drum_flips with its pool slot, or drop drum_binding for the canonical kit layout.`
+                : `${trackName} step ${stepStr}: no Circuit sample slot for drum role "${role}", flip skipped`,
           );
           continue;
         }
@@ -566,6 +628,7 @@ export function authorPlanIntoProject(
     ...(gatesAuthored > 0 ? { gates_authored: gatesAuthored } : {}),
     ...(tiesAuthored > 0 ? { ties_authored: tiesAuthored } : {}),
     ...(gateWarnings.length > 0 ? { gate_warnings: gateWarnings } : {}),
+    ...(soundingShifted > 0 ? { sounding_shifted: soundingShifted } : {}),
   };
   // Set the scale only when a note track was written (drums are scale-immune).
   if (result.note_tracks.length > 0) {
@@ -597,10 +660,17 @@ const MAX_SCENE_STEPS = 4;
  * because the levels are the whole point of a condensed kit AND a hand-Save on
  * the device silently reverts them from the physical faders (format.ts).
  */
-function drumLevelNote(levels: readonly number[] | undefined): string {
+function drumLevelNote(levels: readonly number[] | undefined, mixer?: StoredMixerLevels): string {
   if (levels === undefined) return '';
-  const silent = levels.every((l) => l === 0);
-  return ` Drum-track levels stored at ${levels.join('/')} (Drum 1..4)` +
+  // mixer_levels is applied after condensation and wins for every drum it names, so report what is STORED,
+  // not the condensed kit's 0. With all four named, the MIXER line already reports them with the same
+  // caveat; a second line claiming "0/0/0/0, i.e. SILENT" beside it is the contradiction a 2026-09-16 dry
+  // run printed.
+  const named = levels.map((_, i) => mixer?.[`drum${i + 1}` as keyof StoredMixerLevels]);
+  if (named.every((v) => v !== undefined)) return '';
+  const effective = levels.map((l, i) => named[i] ?? l);
+  const silent = effective.every((l) => l === 0);
+  return ` Drum-track levels stored at ${effective.join('/')} (Drum 1..4)` +
     (silent
       ? ', i.e. SILENT: the condensed kit sits under the routed drums until the user raises a drum track on the mixer.'
       : '.') +
@@ -864,6 +934,7 @@ export function authorArrangementIntoProject(
   drumLevels?: readonly number[],
   preserveTemplateGates = true,
   scenePlan?: readonly (readonly number[])[],
+  opts: AuthorOptions = {},
 ): { layout: ArrangementLayout; authored: AuthoredTracks[]; union_drums: number[]; union_notes: NoteTrack[] } {
   if (sections.length === 0 || order.length === 0) {
     throw new DispatchError('bad_location', DEVICE_LABEL, 'Arrangement needs at least one section.');
@@ -966,7 +1037,7 @@ export function authorArrangementIntoProject(
   // Author every slot; collect per-slot results, then union the touched tracks.
   const authored: AuthoredTracks[] = [];
   for (let slot = 0; slot < slotPlans.length; slot++) {
-    authored.push(authorPlanIntoProject(buf, slotPlans[slot].plan, scale, slot, preserveTemplateGates));
+    authored.push(authorPlanIntoProject(buf, slotPlans[slot].plan, scale, slot, preserveTemplateGates, opts));
   }
   const unionDrums = [...new Set(authored.flatMap((a) => a.drum_tracks))].sort((a, b) => a - b);
   const unionNotes = [...new Set(authored.flatMap((a) => a.note_tracks))] as NoteTrack[];
@@ -1023,6 +1094,16 @@ export function authorArrangementIntoProject(
     // then sound duplicated (heard on hardware 2026-07-23, fixed the same day
     // as a single-byte clear per track). Tracks outside the union are left
     // alone: their template content, chains included, is deliberately kept.
+    //
+    // The 2026-09-03 "clearing to [0,0] breaks a cold load" reading was WRONG and
+    // is retracted (2026-09-12, HW-CIRCUIT-018). A purpose-built 4-scene project
+    // written by THIS path — active chains cleared exactly as below — was loaded
+    // cold and played Scene 1..4 and wrapped, owner-confirmed by ear on four
+    // deliberately countable scenes (1 kick / 2 snare / 3 hat / 4 ride). So the
+    // device DOES pick the stored scene chain up on load, and the clear here is
+    // correct: it is what stops a stale template range shadowing the scenes.
+    // Whatever made one project loop one pattern on 2026-09-03, it was not this.
+    // Rebuild the fixture with scripts/circuit-scene-diagnostic.ts.
     for (const track of unionNotes) clearNoteChain(buf, track);
     if (unionDrums.length > 0) clearDrumChains(buf);
   }
@@ -1106,7 +1187,7 @@ function parseProjectNumber(location: LocationRef): number {
  * Resolve a `save_preset` location to a Flash PATCH slot (0..63 per the v3
  * Programmer's Reference Guide: "Replace Patch" patch number is 00–3F). These
  * are PATCH slots — distinct from the 0..63 PROJECT slots that switch_preset /
- * upload_project address (the device UI shows 128 patches as four pages of 32,
+ * import_preset project address (the device UI shows 128 patches as four pages of 32,
  * but the writable Replace-Patch range is the 64-patch bank 0..63).
  */
 function parsePatchNumber(location: LocationRef): number {
@@ -1116,7 +1197,7 @@ function parsePatchNumber(location: LocationRef): number {
       'bad_location',
       DEVICE_LABEL,
       `Synth patch slot must be 0..63, got '${location}'. These are PATCH slots (the synth patch bank), ` +
-      `distinct from the PROJECT slots used by switch_preset / upload_project.`,
+      `distinct from the PROJECT slots used by switch_preset / import_preset.`,
     );
   }
   return n;
@@ -1156,20 +1237,21 @@ async function gateProjectOverwrite(
   ctx: DispatchCtx, slot: number, confirmOverwrite: boolean | undefined,
 ): Promise<string> {
   const where = packLabel(ctx.pack);
-  if (confirmOverwrite) return `Overwrite authorized by the user for project slot ${slot} on ${where}.`;
+  const shown = slot + 1;   // front-panel numbering: the ONLY numbering receipts speak
+  if (confirmOverwrite) return `Overwrite authorized by the user for Project ${shown} on ${where}.`;
   const probe = await probeProjectSlot(ctx.conn, slot, { pack: ctx.pack, reconnect: ctx.reconnect });
   if (probe.status === 'empty') {
-    return `Project slot ${slot} on ${where} was read-checked and is empty, nothing to overwrite.`;
+    return `Project ${shown} on ${where} was read-checked and is empty, nothing to overwrite.`;
   }
   if (probe.status === 'occupied') {
-    const what = probe.name || `Project ${slot + 1}`;
+    const what = probe.name || `Project ${shown}`;
     throw new DispatchError(
       'overwrite_confirmation_required',
       DEVICE_LABEL,
-      `Project slot ${slot} on ${where} already holds "${what}" (the device shows it as "Project ${slot + 1}"). ` +
+      `Project ${shown} on ${where} already holds "${what}". ` +
       `Writing here OVERWRITES that project permanently. Tell the user what is stored there and ask before ` +
-      `replacing it, then re-call with confirm_overwrite:true. To keep both, pick an empty slot instead.`,
-      { retry_action: `Re-call with confirm_overwrite:true to replace "${what}", or choose an empty slot.` },
+      `replacing it, then re-call with confirm_overwrite:true. To keep both, pick an empty Project instead.`,
+      { retry_action: `Re-call with confirm_overwrite:true to replace "${what}", or choose an empty Project.` },
     );
   }
   // status === 'unknown': the occupancy read failed, so we cannot confirm the
@@ -1177,32 +1259,160 @@ async function gateProjectOverwrite(
   throw new DispatchError(
     'overwrite_confirmation_required',
     DEVICE_LABEL,
-    `Could not read project slot ${slot} on ${where} to check whether it is occupied (${probe.error}), so the upload is held ` +
-    `rather than risk overwriting a stored project. Reconnect_midi and retry so the slot can be read first; or, ` +
-    `if the user wants to write slot ${slot} regardless, re-call with confirm_overwrite:true.`,
+    `Could not read Project ${shown} on ${where} to check whether it is occupied (${probe.error}), so the upload is held ` +
+    `rather than risk overwriting a stored project. Reconnect_midi and retry so it can be read first; or, ` +
+    `if the user wants to write Project ${shown} regardless, re-call with confirm_overwrite:true.`,
     { retry_action: `reconnect_midi and retry, or re-call with confirm_overwrite:true to write regardless.` },
   );
 }
 
 /**
- * Overwrite gate for SAMPLE slots. Unlike projects, the Circuit exposes no
- * sample-directory read yet, so occupancy can never be confirmed — the gate
- * therefore refuses by default (a slot that "may exist and can't be confirmed"
- * is treated as occupied) and asks for explicit authorization. When the
- * dir-listing decode lands this graduates to the same empty-slot-no-friction
- * behavior as projects. `slotsDesc` is device-facing (e.g. "slot 5" / "slots 1..8").
+ * Overwrite gate DECISION for SAMPLE slots, pure so it is golden-testable
+ * (the wire read happens in the calling writer method). The pool IS readable
+ * (`readSampleDirectory`, hardware-confirmed since 2026-07-10), so the gate is
+ * occupancy-driven like the project gate: EMPTY slots write through without
+ * friction, an OCCUPIED slot refuses NAMING the occupant, and an unreadable or
+ * PARTIAL listing refuses because "can't confirm" is not "empty" (a dead device
+ * must not read like an empty pack; see `FileDirectoryResult.listing_complete`).
+ * `wireSlots` are 0-based; every string speaks device numbering (sample slot
+ * N = wire + 1). Returns the receipt note when the write may proceed.
  */
-function gateSampleOverwrite(slotsDesc: string, confirmOverwrite: boolean | undefined): void {
-  if (confirmOverwrite) return;
-  throw new DispatchError(
-    'overwrite_confirmation_required',
-    DEVICE_LABEL,
-    `Uploading to sample ${slotsDesc} will OVERWRITE whatever is stored there. The Circuit offers no ` +
-    `sample-directory read yet, so the tool cannot confirm the ${slotsDesc.includes('..') ? 'slots are' : 'slot is'} empty, ` +
-    `so it holds the write rather than risk clobbering a sample the user made. Confirm with the user, then re-call with ` +
-    `confirm_overwrite:true (loading a fresh kit is usually overwrite-intent, but check the range first).`,
-    { retry_action: `Re-call with confirm_overwrite:true once the user authorizes overwriting sample ${slotsDesc}.` },
-  );
+export function decideSampleOverwrite(
+  dir: SampleDirectoryResult | undefined,
+  wireSlots: readonly number[],
+  confirmOverwrite: boolean | undefined,
+  where: string,
+): string {
+  const shown = wireSlots.map((s) => s + 1);
+  const slotsDesc = shown.length === 1 ? `slot ${shown[0]}` : `slots ${shown[0]}..${shown[shown.length - 1]}`;
+  if (confirmOverwrite) return `Overwrite authorized by the user for sample ${slotsDesc} on ${where}.`;
+  if (dir === undefined || !dir.listing_complete) {
+    throw new DispatchError(
+      'overwrite_confirmation_required',
+      DEVICE_LABEL,
+      `Could not read ${where}'s sample pool to check whether sample ${slotsDesc} ${shown.length === 1 ? 'is' : 'are'} ` +
+      `occupied (the directory listing did not complete), so the upload is held rather than risk clobbering a sample ` +
+      `the user made. reconnect_midi and retry so the pool can be read first; or, if the user authorizes overwriting ` +
+      `regardless, re-call with confirm_overwrite:true.`,
+      { retry_action: `reconnect_midi and retry, or re-call with confirm_overwrite:true once the user authorizes overwriting sample ${slotsDesc}.` },
+    );
+  }
+  const nameOf = new Map(dir.slots.filter((s) => s.name).map((s) => [s.slot, s.name!]));
+  const occupied = wireSlots.filter((s) => nameOf.has(s));
+  if (occupied.length > 0) {
+    const listed = occupied.slice(0, 6).map((s) => `slot ${s + 1} "${nameOf.get(s)}"`).join(', ');
+    throw new DispatchError(
+      'overwrite_confirmation_required',
+      DEVICE_LABEL,
+      `${where}'s pool already holds ${occupied.length === 1 ? 'a sample' : `${occupied.length} samples`} in the target ` +
+      `range: ${listed}${occupied.length > 6 ? ', and more' : ''}. Writing there OVERWRITES ${occupied.length === 1 ? 'it' : 'them'} ` +
+      `permanently (this device has no erase). Tell the user what is stored there and ask before replacing, then ` +
+      `re-call with confirm_overwrite:true; or pick empty slots (list_samples shows the pool).`,
+      { retry_action: `Re-call with confirm_overwrite:true to replace the named sample(s), or choose empty slots.` },
+    );
+  }
+  return `Sample ${slotsDesc} on ${where} ${shown.length === 1 ? 'was' : 'were'} read-checked against the pool directory ` +
+    `and ${shown.length === 1 ? 'is' : 'are'} empty, nothing to overwrite. (A slot written in the last ~10 s can still ` +
+    `read empty while the pack manifest flushes.)`;
+}
+
+/**
+ * Wire half of the sample overwrite gate: read the pool (non-confirmed path
+ * only; an authorized overwrite skips the read, mirroring the project gate),
+ * then decide. A read failure decides as "unreadable" and refuses.
+ */
+async function gateSampleOverwrite(
+  ctx: DispatchCtx, wireSlots: readonly number[], confirmOverwrite: boolean | undefined,
+): Promise<string> {
+  const where = packLabel(ctx.pack);
+  if (confirmOverwrite) return decideSampleOverwrite(undefined, wireSlots, true, where);
+  let dir: SampleDirectoryResult | undefined;
+  try {
+    dir = await readSampleDirectory(ctx.conn, ctx.pack ?? 0);
+  } catch {
+    dir = undefined;
+  }
+  return decideSampleOverwrite(dir, wireSlots, false, where);
+}
+
+/**
+ * Resolve the 4-track drum binding by NAME against the destination pack's own
+ * pool, or REFUSE (BK-CIRCUIT-DRUMBIND). Never a positional guess: the old
+ * [0,1,2,3] default bound wrong on the factory-shaped pool (placeholder at
+ * slot 0) and the failure was silent because condensed levels are stored at 0.
+ * An unreadable/partial pool refuses too: "could not read" is not a license
+ * to guess. Returns the binding, the pool's role→slot map for flip resolution,
+ * and the receipt note naming every resolution (a numbered variant standing in
+ * for a role, e.g. kick2 for kick, is reported: the honest partial).
+ */
+async function readPoolOrUndefined(ctx: DispatchCtx): Promise<SampleDirectoryResult | undefined> {
+  let dir: SampleDirectoryResult | undefined;
+  try {
+    dir = await readSampleDirectory(ctx.conn, ctx.pack ?? 0);
+  } catch {
+    return undefined;
+  }
+  return dir.listing_complete ? dir : undefined;
+}
+
+async function resolveDrumBindingOrRefuse(
+  ctx: DispatchCtx,
+): Promise<{ binding: number[]; role_slots: Record<string, number>; note: string }> {
+  const where = packLabel(ctx.pack);
+  const dir = await readPoolOrUndefined(ctx);
+  if (dir === undefined) {
+    throw new DispatchError(
+      'no_ack', DEVICE_LABEL,
+      `Could not read ${where}'s sample pool to resolve the drum-track binding by name (the directory listing did not ` +
+      `complete). The binding is resolved against the pool's own stored names, never guessed by position, so the write ` +
+      `is held. This listing is reliable on an idle port and NOT reliable immediately behind another file-transfer ` +
+      `session on the same port, so the usual cause is backup_first taking a full project download first: re-call with ` +
+      `backup_first:false (the slot is then overwritten WITHOUT a rescue copy — say so before you do it), or pass ` +
+      `drum_binding with the four 0-based pool slots (Drum 1..4) to declare the layout yourself. reconnect_midi does ` +
+      `NOT help here: the port is fine, the listing raced a transfer this same call had just finished.`,
+      { retry_action: `Re-call with backup_first:false, or with drum_binding:[kick,snare,closed hat,ride] pool slots. list_samples shows the pool.` },
+    );
+  }
+  const res = resolveDrumBindingByName(dir);
+  if (res.binding === undefined) {
+    const missing = res.unresolved.map((u) => u.role.replace('_', ' ')).join(', ');
+    const named = dir.slots.filter((s) => s.name);
+    const sample = named.slice(0, 6).map((s) => `${s.slot + 1}="${s.name}"`).join(', ');
+    throw new DispatchError(
+      'bad_request', DEVICE_LABEL,
+      `${where}'s pool names no sample for drum role(s): ${missing}. The drum-track binding is resolved by NAME ` +
+      `against the destination pool (never by position, which is how a kick once played a placeholder), so the write ` +
+      `is refused rather than guessed. Pool: ${named.length} of 64 slots named${sample ? ` (e.g. ${sample})` : ''}. ` +
+      `Upload role-named samples first (upload_sample with a folder), or pass drum_binding with the four 0-based pool slots (Drum 1..4).`,
+    );
+  }
+  const desc = res.resolved
+    .map((r) => `Drum ${r.track + 1}=Sample ${r.slot + 1} "${r.name}"${r.substituted ? ` (stands in for ${r.role.replace('_', ' ')})` : ''}`)
+    .join(', ');
+  return {
+    binding: res.binding,
+    role_slots: res.role_slots,
+    note: ` DRUM BINDING resolved by NAME against ${where}'s pool: ${desc}.`,
+  };
+}
+
+/**
+ * Receipt line for the sounding-pitch compensation, said whenever a melodic
+ * note track was authored: the +12 shift is a measured device behavior
+ * (stored notes transmit an octave low on synth AND MIDI tracks), so both the
+ * applied and the not-applied branches are stated out loud: an octave-low
+ * song with a clean-looking receipt is the failure this lever exists to end.
+ */
+function soundingPitchNote(applied: boolean, authored: readonly AuthoredTracks[]): string {
+  const anyNotes = authored.some((a) => a.note_tracks.length > 0);
+  if (!anyNotes) return '';
+  if (applied) {
+    const shifted = authored.reduce((n, a) => n + (a.sounding_shifted ?? 0), 0);
+    return ` PITCH: stored +12 on ${shifted} melodic note(s) (sounding-pitch compensation: the Circuit transmits a ` +
+      `stored note an octave below its stored value, measured), so authored pitches land at sounding pitch.`;
+  }
+  return ` PITCH: stored at face value; the Circuit transmits stored notes an octave LOW (measured on synth and MIDI ` +
+    `tracks), so pass sounding_pitch:true to land authored pitches at sounding pitch.`;
 }
 
 /**
@@ -1348,17 +1558,67 @@ export const writer: DeviceWriter = {
     }
     return {
       op: 'save_preset',
-      target: `patch slot ${patchNum}`,
+      target: `Patch ${patchNum + 1}`,
       acked: true, // "sent": the Circuit commits silently; confirmed to persist across power-cycle
       info:
-        `Saved ${synthLabel}'s current sound to patch slot ${patchNum}` +
+        `Saved ${synthLabel}'s current sound to Patch ${patchNum + 1}` +
         (renamed !== undefined ? ` as "${renamed}"` : '') +
         (name && name.length > NAME_LEN ? ` (name truncated to ${NAME_LEN} chars)` : '') +
-        `. On the device it is Patch ${patchNum + 1} (the UI numbers patches from 1). The write is fire-and-forget: ` +
+        ` (the argument's patch slot ${patchNum}; the device numbers patches from 1). The write is fire-and-forget: ` +
         `the Circuit commits to flash silently over a few seconds and keeps it across a power-cycle ` +
-        `(hardware-confirmed 2026-07-03). Load Patch ${patchNum + 1} on the synth to hear it, or read it back with ` +
-        `get_preset("patch:${patchNum}") (it reflects save_preset writes).`,
+        `(hardware-confirmed 2026-07-03). VERIFY BY EAR: load Patch ${patchNum + 1} on the synth and listen, or ` +
+        `power-cycle and reload. A stored patch slot cannot be read back over MIDI (a Program Change ignores its ` +
+        `number and reverts the live edit, measured 2026-07-27), so no read-back verification exists.`,
     };
+  },
+
+  // Read-only prep, run by the dispatcher as the FIRST wire op of an
+  // ncs_upload realize — ahead of backup_first's project download.
+  //
+  // WHY IT IS SEPARATE FROM realizePattern: the pool listing that resolves the
+  // drum binding by NAME is reliable on an idle port and NOT reliable
+  // immediately behind another transfer session. With `backup_first` on, the
+  // backup's full project download ran first and this listing then came back
+  // incomplete 10/10 on hardware (2026-09-12, Pack 3 project 55), while the
+  // SAME write with backup_first:false succeeded first try and `list_samples`
+  // — the identical listing call, standalone — succeeded seconds either side.
+  // So the read is hoisted in front of the backup rather than hardened against
+  // a window it should never have been inside. Whatever it resolves is carried
+  // on the plan, so the realizer below consumes it without re-reading.
+  async prepareRealize(ctx, up, plans): Promise<void> {
+    if (up.dry_run === true) return;                     // a dry run reads nothing
+    const authorsDrums = plans.some((p) => p.events.some(
+      (e) => e.channel === CH_DRUMS && NOTE_TO_DRUM_TRACK[e.note] !== undefined));
+    if (!authorsDrums) return;
+
+    if (up.drum_binding !== undefined) {
+      // The caller declared the four TRACK slots; that declaration is never
+      // overridden. But a per-step FLIP to a role outside those four (tom,
+      // open hat) is unlocatable from a binding alone — `slotForFlipRole`
+      // returns undefined and the flip is dropped, which is how a tom fill
+      // folds into the snare. The pool knows where those live, so read it for
+      // the FLIP map only, and only for the roles the binding cannot locate,
+      // so the caller's own four slots stay authoritative. Best-effort: an
+      // unreadable pool leaves today's behavior (flip skipped + warning)
+      // rather than refusing a write whose binding was fully declared.
+      const hasRoleFlips = up.drum_flip_roles !== undefined && Object.keys(up.drum_flip_roles).length > 0;
+      if (!hasRoleFlips) return;
+      const dir = await readPoolOrUndefined(ctx);
+      if (dir === undefined) return;
+      const trackRoles = new Set<string>(
+        DRUM_TRACK_BASE_VOICES.map((v) => canonicalRole(v) ?? v));
+      const extra: Record<string, number> = {};
+      for (const [role, slot] of Object.entries(resolveDrumBindingByName(dir).role_slots)) {
+        if (!trackRoles.has(role)) extra[role] = slot;
+      }
+      if (Object.keys(extra).length > 0) up.drum_role_slots = extra;
+      return;
+    }
+
+    const resolved = await resolveDrumBindingOrRefuse(ctx);
+    up.drum_binding = resolved.binding;
+    up.drum_role_slots = resolved.role_slots;
+    up.drum_binding_note = resolved.note;
   },
 
   // ncs_upload realizer (apply_pattern mode:ncs_upload). Template-modify a real
@@ -1411,7 +1671,44 @@ export const writer: DeviceWriter = {
     // Stored project NAME, same contract again: stamped at birth or reported
     // inherited, refused (over-long / non-ASCII) before anything else runs.
     const nameNote = applyStoredName(buf, up);
-    const authored = authorPlanIntoProject(buf, plan, up.scale, 0, up.preserve_template_gates !== false);
+
+    // DRUM-TRACK BINDING, resolved BEFORE authoring (the author writes the
+    // binding bytes). Three honest paths, no positional guess on any of them
+    // (BK-CIRCUIT-DRUMBIND): a caller-declared drum_binding is taken as the
+    // declared pool layout; otherwise the destination pack's pool is READ and
+    // the four roles resolve by sample NAME (refusing when a role has no name
+    // match); a dry run reads nothing and says the resolution happens at write
+    // time. `roleSlots` additionally lets per-step flip ROLES resolve against
+    // the REAL pool instead of the canonical-layout assumption.
+    const authorsDrums = plan.events.some((e) => e.channel === CH_DRUMS && NOTE_TO_DRUM_TRACK[e.note] !== undefined);
+    let bindingNote = '';
+    let roleSlots: Record<string, number> | undefined;
+    if (authorsDrums) {
+      if (up.drum_binding_note !== undefined) {
+        // Resolved by `prepareRealize` (ahead of the backup read); its receipt
+        // sentence and role→slot map ride the plan, so nothing is re-read.
+        bindingNote = up.drum_binding_note;
+        roleSlots = up.drum_role_slots;
+      } else if (up.drum_binding !== undefined) {
+        bindingNote = ` DRUM BINDING: caller-declared, Drum 1..4 = Sample ${up.drum_binding.map((s) => s + 1).join('/')}.`;
+        // Pool-resolved slots for the roles the declared binding cannot locate
+        // (prepareRealize fills this when the pattern has role flips), so a tom
+        // or open-hat flip is not silently folded onto a bound track's sample.
+        roleSlots = up.drum_role_slots;
+      } else if (dryRun) {
+        bindingNote = ' DRUM BINDING: resolved by sample NAME against the destination pack\'s pool at write time ' +
+          '(a dry run reads nothing); positions are never assumed.';
+      } else {
+        const resolvedBinding = await resolveDrumBindingOrRefuse(ctx);
+        up.drum_binding = resolvedBinding.binding;
+        roleSlots = resolvedBinding.role_slots;
+        bindingNote = resolvedBinding.note;
+      }
+    }
+
+    const authored = authorPlanIntoProject(buf, plan, up.scale, 0, up.preserve_template_gates !== false, {
+      soundingPitch: up.sounding_pitch === true, roleSlots,
+    });
     // Stored mixer levels (explicit keys + the stored-silent synth default),
     // AFTER the authoring pass so a named drum track overrides the condensed
     // kit's stored 0 (the more specific instruction wins), exactly as an
@@ -1440,11 +1737,13 @@ export const writer: DeviceWriter = {
         ok: true, mode: 'ncs_upload', status: 'dry_run',
         info:
           `DRY RUN: nothing was sent (no reads, no gate, no transfer). "${plan.pattern_name}" authored cleanly against the template. ` +
-          `Would write project slot ${up.slot} (shown as "Project ${up.slot + 1}") on ${packLabel(ctx.pack)} after the overwrite gate. Tracks: ${tracksDesc}.${dryScaleNote}` +
+          `Would write Project ${up.slot + 1} on ${packLabel(ctx.pack)} after the overwrite gate. Tracks: ${tracksDesc}.${dryScaleNote}` +
+          bindingNote +
+          soundingPitchNote(up.sounding_pitch === true, [authored]) +
           tempoNote +
           colourNote +
           nameNote +
-          drumLevelNote(authored.drum_levels) +
+          drumLevelNote(authored.drum_levels, up.mixer_levels) +
           mixerNote +
           gatePreserveNote([authored]) +
           ((authored.flips_applied ?? 0) > 0 ? ` Sample flips: ${authored.flips_applied}.` : '') +
@@ -1455,7 +1754,7 @@ export const writer: DeviceWriter = {
     }
 
     // Overwrite gate: ncs_upload writes a STORED project slot, so it honors the
-    // same read-before-write contract as upload_project. An empty slot writes
+    // same read-before-write contract as a project restore. An empty slot writes
     // through; an occupied one refuses unless the user authorized the overwrite.
     const gateNote = await gateProjectOverwrite(ctx, up.slot, up.confirm_overwrite);
 
@@ -1496,10 +1795,9 @@ export const writer: DeviceWriter = {
       // back is a follow-up. The INFO text states this so the receipt is honest.
       source: 'device_confirmed',
       info:
-        `Uploaded "${plan.pattern_name}" to project slot ${up.slot} on ${packLabel(ctx.pack)} (${res.blocks} blocks, all frames acked; ` +
+        `Uploaded "${plan.pattern_name}" to Project ${up.slot + 1} on ${packLabel(ctx.pack)} (${res.blocks} blocks, all frames acked; ` +
         `the device's final CRC verdict is not yet read back). ${gateNote} ` +
-        `Tracks written: ${tracksDesc}.${scaleNote}${lengthNote}${flipNote}${flipWarnNote}${tempoNote}${colourNote}${nameNote}${drumLevelNote(authored.drum_levels)}${mixerNote}${gatePreserveNote([authored])} On the device: select ${packLabel(ctx.pack)}, then Projects view, load project slot ${up.slot}, ` +
-        `shown as "Project ${up.slot + 1}" (the device numbers projects from 1).` +
+        `Tracks written: ${tracksDesc}.${bindingNote}${soundingPitchNote(up.sounding_pitch === true, [authored])}${scaleNote}${lengthNote}${flipNote}${flipWarnNote}${tempoNote}${colourNote}${nameNote}${drumLevelNote(authored.drum_levels, up.mixer_levels)}${mixerNote}${gatePreserveNote([authored])} On the device: select ${packLabel(ctx.pack)}, then Projects view, load Project ${up.slot + 1}.` +
         (authored.unrouted > 0
           ? ` Note: ${authored.unrouted} event(s) could not be placed (a ch10 note that is not a pad, or a chord past the 6-note slot limit).`
           : ''),
@@ -1545,9 +1843,37 @@ export const writer: DeviceWriter = {
     // One project, one stored NAME too. Undefined touches no byte.
     const nameNote = applyStoredName(buf, up);
 
+    // DRUM-TRACK BINDING, same three honest paths as the single-pattern
+    // realizer (caller-declared / resolved by NAME against the destination
+    // pool / deferred on a dry run); never a positional guess.
+    const arrAuthorsDrums = sections.some((s) =>
+      s.plan.events.some((e) => e.channel === CH_DRUMS && NOTE_TO_DRUM_TRACK[e.note] !== undefined));
+    let bindingNote = '';
+    let roleSlots: Record<string, number> | undefined;
+    let arrangementBinding = up.drum_binding;
+    if (arrAuthorsDrums) {
+      if (up.drum_binding_note !== undefined) {
+        // Resolved by `prepareRealize`, ahead of the backup read (see there).
+        bindingNote = up.drum_binding_note;
+        roleSlots = up.drum_role_slots;
+      } else if (arrangementBinding !== undefined) {
+        bindingNote = ` DRUM BINDING: caller-declared, Drum 1..4 = Sample ${arrangementBinding.map((s) => s + 1).join('/')}.`;
+        roleSlots = up.drum_role_slots;
+      } else if (dryRun) {
+        bindingNote = ' DRUM BINDING: resolved by sample NAME against the destination pack\'s pool at write time ' +
+          '(a dry run reads nothing); positions are never assumed.';
+      } else {
+        const resolvedBinding = await resolveDrumBindingOrRefuse(ctx);
+        arrangementBinding = resolvedBinding.binding;
+        roleSlots = resolvedBinding.role_slots;
+        bindingNote = resolvedBinding.note;
+      }
+    }
+
     const res = authorArrangementIntoProject(
-      buf, sections, order, up.scale, up.drum_binding, up.drum_levels,
+      buf, sections, order, up.scale, arrangementBinding, up.drum_levels,
       up.preserve_template_gates !== false, up.scene_plan,
+      { soundingPitch: up.sounding_pitch === true, roleSlots },
     );
     // Stored mixer levels (explicit keys + the stored-silent synth default),
     // AFTER the arrangement authoring so a named drum track overrides the
@@ -1590,9 +1916,9 @@ export const writer: DeviceWriter = {
         ok: true, mode: 'ncs_upload' as const, status: 'dry_run',
         info:
           `DRY RUN: nothing was sent (no reads, no gate, no transfer). The ${sections.length}-section arrangement authored cleanly ` +
-          `and FITS: ${slotDesc}. Advance: ${advanceDesc}. Tracks: ${tracksDesc}.${scaleNote}${flipWarnNote}${tempoNote}${colourNote}${nameNote}${drumLevelNote(up.drum_levels)}${mixerNote}${gatePreserveNote(res.authored)}` +
+          `and FITS: ${slotDesc}. Advance: ${advanceDesc}. Tracks: ${tracksDesc}.${bindingNote}${soundingPitchNote(up.sounding_pitch === true, res.authored)}${scaleNote}${flipWarnNote}${tempoNote}${colourNote}${nameNote}${drumLevelNote(up.drum_levels, up.mixer_levels)}${mixerNote}${gatePreserveNote(res.authored)}` +
           (unrouted > 0 ? ` ${unrouted} event(s) could not be placed.` : '') +
-          ` Would write project slot ${up.slot} (shown as "Project ${up.slot + 1}") on ${packLabel(ctx.pack)} after the overwrite gate. Re-call without dry_run to write it.`,
+          ` Would write Project ${up.slot + 1} on ${packLabel(ctx.pack)} after the overwrite gate. Re-call without dry_run to write it.`,
       };
     }
 
@@ -1607,10 +1933,10 @@ export const writer: DeviceWriter = {
       status: 'uploaded',
       source: 'device_confirmed',
       info:
-        `Uploaded a ${sections.length}-section arrangement to project slot ${up.slot} on ${packLabel(ctx.pack)} (${sent.blocks} blocks, all frames acked; ` +
+        `Uploaded a ${sections.length}-section arrangement to Project ${up.slot + 1} on ${packLabel(ctx.pack)} (${sent.blocks} blocks, all frames acked; ` +
         `the device's final CRC verdict is not yet read back). ${gateNote} ` +
-        `Sections: ${slotDesc}. Advance: ${advanceDesc}. Tracks written: ${tracksDesc}.${scaleNote}${flipWarnNote}${tempoNote}${colourNote}${nameNote}${drumLevelNote(up.drum_levels)}${mixerNote}${gatePreserveNote(res.authored)} ` +
-        `On the device: select ${packLabel(ctx.pack)}, then Projects view, load slot ${up.slot}, shown as "Project ${up.slot + 1}".` +
+        `Sections: ${slotDesc}. Advance: ${advanceDesc}. Tracks written: ${tracksDesc}.${bindingNote}${soundingPitchNote(up.sounding_pitch === true, res.authored)}${scaleNote}${flipWarnNote}${tempoNote}${colourNote}${nameNote}${drumLevelNote(up.drum_levels, up.mixer_levels)}${mixerNote}${gatePreserveNote(res.authored)} ` +
+        `On the device: select ${packLabel(ctx.pack)}, then Projects view, load Project ${up.slot + 1}.` +
         (unrouted > 0 ? ` Note: ${unrouted} event(s) could not be placed.` : ''),
     };
   },
@@ -1631,32 +1957,47 @@ export const writer: DeviceWriter = {
         'upload_sample needs a bidirectional MIDI connection (input + output) to read the transfer ACKs; the Circuit input port was not available.',
       );
     }
-    // Overwrite gate: sample slots can't be read to check occupancy, so refuse
-    // unless the user authorized the overwrite (see SAFE-EDIT-WORKFLOW.md).
-    gateSampleOverwrite(`slot ${slot + 1}`, opts?.confirmOverwrite);
+    // FILENAME-PREFIX alignment (BK-CIRCUIT-SAMPLENAME): the device registers a
+    // sample's directory entry at the slot the NAME's leading `NN_` prefix says,
+    // not at the addressed slot. Derive a missing prefix; REFUSE a disagreeing
+    // one (a misaligned registration is an acked, silent stranding). Before the
+    // gate: a bad name costs nothing.
+    let aligned: AlignedSampleName;
+    try {
+      aligned = alignSampleFilename(filename, slot);
+    } catch (err) {
+      throw new DispatchError('bad_location', DEVICE_LABEL, err instanceof Error ? err.message : String(err));
+    }
+    // Overwrite gate: occupancy-driven off the pool directory (like projects).
+    // Empty writes through; occupied refuses naming the occupant; unreadable
+    // refuses asking for confirm_overwrite (see SAFE-EDIT-WORKFLOW.md).
+    const gateNote = await gateSampleOverwrite(ctx, [slot], opts?.confirmOverwrite);
     // Reconnect-before-transfer (restart-research H2): refresh a possibly idle-
     // suspended handle before the burst so it self-heals instead of no-ACKing.
     const conn = ctx.reconnect ? ctx.reconnect() : ctx.conn;
-    const r = await uploadSampleDriver(conn, wav, slot, filename, { reconnect: ctx.reconnect, packIndex: ctx.pack });
+    const r = await uploadSampleDriver(conn, wav, slot, aligned.filename, { reconnect: ctx.reconnect, packIndex: ctx.pack });
     const where = packLabel(ctx.pack);
     if (!r.ok) {
       return {
-        ok: false, slot, blocks: r.blocks, converted: r.converted, filename, info: '',
+        ok: false, slot, blocks: r.blocks, converted: r.converted, filename: aligned.filename, info: '',
         warning: `Sample upload to slot ${slot + 1} on ${where} failed: ${r.error}. The device may be busy (being played) or the handle stale; reconnect_midi and retry.`,
       };
     }
     const packNote = (ctx.pack ?? 0) !== 0
       ? ` Writing samples to a NONZERO pack is hardware-confirmed (2026-07-27): 63 slots were cloned onto Pack 2 and read back off the device byte-identical (md5), and a deliberately out-of-order write landed at its own index, so the slot byte is ADDRESSED, not append-ordered.`
       : '';
+    const deriveNote = aligned.derived
+      ? ` Stored name derived as "${aligned.filename}": the device registers a sample's directory entry at the slot the name's NN_ prefix says (a measured device behavior), so the prefix was set to keep the entry at sample slot ${slot + 1}.`
+      : '';
     return {
-      ok: true, slot, blocks: r.blocks, converted: r.converted, filename,
+      ok: true, slot, blocks: r.blocks, converted: r.converted, filename: aligned.filename,
       // The wire frames are byte-identical to a real Components capture
       // (verify-circuit-ncs-transfer); the upload is acked frame-by-frame. The
       // device's final CRC verdict is not yet read back — stated honestly here.
       info:
-        `Uploaded "${filename}" to sample slot ${slot + 1} (device shows 1..64; wire slot ${slot}) on ${where}, ${r.blocks} blocks, all frames acked. ` +
-        `${r.note} ` +
-        `This OVERWROTE sample slot ${slot + 1} on ${where}; its previous sample is gone (overwrite was authorized via confirm_overwrite). ` +
+        `Uploaded "${aligned.filename}" to sample slot ${slot + 1} on ${where}, ${r.blocks} blocks, all frames acked. ` +
+        `${r.note}${deriveNote} ` +
+        `This wrote over sample slot ${slot + 1} on ${where}. ${gateNote} ` +
         `Read that pack's pool with list_samples pack:${(ctx.pack ?? 0) + 1} and target the SAME pack when you write the project, or the project's drum bindings point at a different pool.${packNote} ` +
         `On the device: select ${where}, then any Drum track, open Sample (two pages of 32), the new sample is at position ${slot + 1}. ` +
         `The device's final CRC verdict is not read back yet. ` +
@@ -1673,7 +2014,7 @@ export const writer: DeviceWriter = {
     if (!ctx.conn.hasInput) {
       throw new DispatchError(
         'no_ack', DEVICE_LABEL,
-        'upload_project needs a bidirectional MIDI connection (input + output) to read the transfer ACKs; the Circuit input port was not available.',
+        'A project restore (import_preset) needs a bidirectional MIDI connection (input + output) to read the transfer ACKs; the Circuit input port was not available.',
       );
     }
     if (project.length !== NCS_FILE_SIZE) {
@@ -1714,7 +2055,7 @@ export const writer: DeviceWriter = {
     if (!r.ok) {
       return {
         ok: false, slot, blocks: r.blocks, info: '',
-        warning: `Project upload to slot ${slot} failed: ${r.error}. The device may be busy (being played) or the handle stale; reconnect_midi and retry.`,
+        warning: `Project upload to Project ${slot + 1} failed: ${r.error}. The device may be busy (being played) or the handle stale; reconnect_midi and retry.`,
       };
     }
     return {
@@ -1722,11 +2063,47 @@ export const writer: DeviceWriter = {
       // The project file-transfer is hardware-confirmed end-to-end (2026-06-18);
       // every frame is acked. The device's final CRC verdict is not read back.
       info:
-        `Uploaded a ${NCS_FILE_SIZE}-byte project to slot ${slot} on ${packLabel(ctx.pack)} (${r.blocks} blocks, all frames acked; ` +
+        `Uploaded a ${NCS_FILE_SIZE}-byte project to Project ${slot + 1} on ${packLabel(ctx.pack)} (${r.blocks} blocks, all frames acked; ` +
         `the device's final CRC verdict is not yet read back). ${gateNote} ` +
-        `On the device: select ${packLabel(ctx.pack)}, then Projects view, load project slot ${slot}, shown as "Project ${slot + 1}" ` +
-        `(the device numbers projects from 1). Each drum track plays whatever sample is assigned in ` +
-        `Drum track > Sample, so load the matching kit (upload_sample / upload_kit) and assign D1..D4.`,
+        `On the device: select ${packLabel(ctx.pack)}, then Projects view, load Project ${slot + 1}. ` +
+        `Each drum track plays whatever sample is assigned in ` +
+        `Drum track > Sample, so load the matching kit (upload_sample) and assign D1..D4.`,
+    };
+  },
+
+  // `import_preset` for this device: a whole-project .ncs, sent verbatim by
+  // `uploadProject` above. There is no working buffer to restore into, so a
+  // project number is required; the write is a persist, so it needs
+  // save_authorized; an occupied project is refused by name until
+  // confirm_overwrite (the dispatcher backs it up first, same visit, same pack).
+  async restorePresetBinary(ctx, bytes, options): Promise<RestorePresetResult> {
+    const raw = options?.target_location;
+    const slot = typeof raw === 'string' ? Number(raw.trim()) : raw;
+    if (slot === undefined || !Number.isInteger(slot) || slot < 1 || slot > 64) {
+      throw new DispatchError(
+        'bad_location', DEVICE_LABEL,
+        `A project restore needs target_location: the project number 1..64 exactly as the device shows it${raw !== undefined ? ` (got ${String(raw)})` : ''}. There is no working buffer to restore a project into.`,
+      );
+    }
+    if (options?.save_authorized !== true) {
+      throw new DispatchError(
+        'save_authorization_required', DEVICE_LABEL,
+        `Restoring a project file writes Project ${slot} on ${packLabel(ctx.pack)}. Pass save_authorized: true only when the user asked to put it there.`,
+      );
+    }
+    // Project numbers are 1-BASED on the tool surface, as the device shows them;
+    // the wire and the on-card filename are 0-based (`34_SESSION.ncs` IS device
+    // Project 35). Convert once, here.
+    const outcome = await writer.uploadProject!(ctx, bytes, slot - 1, { confirmOverwrite: options?.confirm_overwrite });
+    return {
+      ok: outcome.ok,
+      frames_sent: outcome.blocks,
+      acks_received: outcome.ok ? outcome.blocks : 0,
+      nacks: [],
+      format: 'circuit-ncs-project',
+      ...(outcome.ok ? { saved_to_location: slot } : {}),
+      ...(outcome.info !== '' ? { info: outcome.info } : {}),
+      ...(outcome.warning !== undefined ? { warning: outcome.warning } : {}),
     };
   },
 
@@ -1734,28 +2111,51 @@ export const writer: DeviceWriter = {
     if (!ctx.conn.hasInput) {
       throw new DispatchError(
         'no_ack', DEVICE_LABEL,
-        'upload_kit needs a bidirectional MIDI connection (input + output) to read the transfer ACKs; the Circuit input port was not available.',
+        'A folder upload (upload_sample) needs a bidirectional MIDI connection (input + output) to read the transfer ACKs; the Circuit input port was not available.',
       );
     }
     if (items.length === 0) {
       return { ok: false, uploaded: [], info: '', warning: 'No samples to upload.' };
     }
-    // Overwrite gate for the whole slot range (sample slots can't be read to
-    // check occupancy, so authorize once for the batch — see SAFE-EDIT-WORKFLOW.md).
+    // FILENAME-PREFIX alignment per item (BK-CIRCUIT-SAMPLENAME). A folder upload's
+    // natural-sort mapping is the trap surface: files named for ANOTHER pack's
+    // layout re-map somewhere else entirely, so a whole batch with one
+    // misaligned prefix is REFUSED before any wire work (the session is atomic
+    // anyway). Missing prefixes are derived from each item's own target slot.
+    const alignedItems: KitUploadItem[] = [];
+    const derivedNames: string[] = [];
+    for (const it of items) {
+      let a: AlignedSampleName;
+      try {
+        a = alignSampleFilename(it.filename, it.slot);
+      } catch (err) {
+        throw new DispatchError(
+          'bad_location', DEVICE_LABEL,
+          `${err instanceof Error ? err.message : String(err)} A folder upload maps natural-sorted files onto consecutive ` +
+          `slots from start_slot, so files named for another pack layout land elsewhere entirely; set start_slot so ` +
+          `each file's NN_ prefix equals its target slot, or rename the files. Nothing was uploaded.`,
+        );
+      }
+      if (a.derived) derivedNames.push(a.filename);
+      alignedItems.push({ ...it, filename: a.filename });
+    }
+    // Overwrite gate for the whole slot range, occupancy-driven off the pool
+    // directory (see SAFE-EDIT-WORKFLOW.md): empty range writes through,
+    // occupied slots refuse naming the occupants, unreadable refuses.
     const loSlot = items[0].slot + 1;
     const hiSlot = items[items.length - 1].slot + 1;
-    gateSampleOverwrite(loSlot === hiSlot ? `slot ${loSlot}` : `slots ${loSlot}..${hiSlot}`, opts?.confirmOverwrite);
+    const gateNote = await gateSampleOverwrite(ctx, alignedItems.map((it) => it.slot), opts?.confirmOverwrite);
 
     // Per-sample sessions (known-working: lands audio). On the first failure STOP.
     // Reconnect-before-transfer (restart-research H2): refresh a possibly idle-
     // suspended handle before the batch so it self-heals instead of no-ACKing.
     const conn = ctx.reconnect ? ctx.reconnect() : ctx.conn;
-    const r = await uploadSampleKit(conn, items, { reconnect: ctx.reconnect, packIndex: ctx.pack });
+    const r = await uploadSampleKit(conn, alignedItems, { reconnect: ctx.reconnect, packIndex: ctx.pack });
     const where = packLabel(ctx.pack);
     if (!r.ok) {
       return {
         ok: false, uploaded: [],
-        failed: { slot: items[0].slot, filename: items[0].filename, error: r.error ?? 'unknown' },
+        failed: { slot: alignedItems[0].slot, filename: alignedItems[0].filename, error: r.error ?? 'unknown' },
         info: 'Kit upload session failed; the session is atomic, so treat all slots as unwritten.',
         warning: `Kit upload to ${where} failed: ${r.error}. Call reconnect_midi and retry the whole kit.`,
       };
@@ -1765,12 +2165,15 @@ export const writer: DeviceWriter = {
     const packNote = (ctx.pack ?? 0) !== 0
       ? ` Writing samples to a NONZERO pack is hardware-confirmed (2026-07-27: a 63-slot clone onto Pack 2, read back byte-identical, with the slot byte proven ADDRESSED rather than append-ordered).`
       : '';
+    const deriveNote = derivedNames.length > 0
+      ? ` Stored names derived with slot prefixes (${derivedNames.slice(0, 6).join(', ')}${derivedNames.length > 6 ? ', and more' : ''}): the device registers each directory entry at the slot the name's NN_ prefix says, so the prefixes keep the entries at the addressed slots.`
+      : '';
     return {
       ok: true, uploaded,
       info:
-        `Uploaded ${uploaded.length} sample(s) to slots ${loSlot}..${hiSlot} (device 1..64) on ${where} in one sample-directory session, all frames acked` +
+        `Uploaded ${uploaded.length} sample(s) to slots ${loSlot}..${hiSlot} on ${where} in one sample-directory session, all frames acked` +
         (converted ? `; ${converted} normalized to 48 kHz mono 16-bit` : '') + '. ' +
-        `Each OVERWROTE its slot's previous sample on ${where} (overwrite authorized via confirm_overwrite). ` +
+        `${gateNote}${deriveNote} ` +
         `Written with the capture-proven sample-directory prelude (0x05 dir + 0x0d scan) that commits the pack manifest; ` +
         `confirm by ear, and that they survive a device restart. Target the SAME pack when writing the project that binds these slots.${packNote} ` +
         `VERIFY-TOO-SOON WARNING: that manifest is flushed roughly 6-8 SECONDS AFTER the session closes, so a list_samples taken straight afterwards can report these slots empty while the write is fine. Wait ~10 s and re-read before concluding a failure; there is no erase, so a needless re-send is not free. ` +

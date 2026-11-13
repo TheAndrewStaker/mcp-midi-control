@@ -286,9 +286,10 @@ export function encode5SeptetFloat32(value: number): [number, number, number, nu
  * selector the float field is ZERO and the device's current type NAME rides as
  * a length-prefixed 8→7 packed string later in the frame — surfaced here as
  * `displayName` when present (FM9 capture 2026-06-19: a reverb-type GET returned
- * float32=0 + "Small Room"; the old code reported only the misleading 0). The
- * CALLER picks which to trust by the param's `wire_kind` (discrete → displayName,
- * continuous → normalizedValue); do NOT infer kind from "value is zero" alone
+ * float32=0 + "Small Room"). That name is the roster's FIRST entry whatever
+ * type is selected, so it does not report the current type (primitive
+ * gen3-fn01-sub1f-current-type-name); use it for continuous knobs only
+ * (normalizedValue). Do NOT infer kind from "value is zero" alone
  * (a knob legitimately at 0.0 is also zero). Read-only; emits nothing on the wire.
  */
 export function parseGen3SetValueEcho(bytes: readonly number[]): {
@@ -451,6 +452,12 @@ export function buildGetParameter(
  * reverb/amp/drive type reads returned "Small Room" / "59 Bassguy Bright" /
  * "Rat Distortion". (`buildGetParameter`'s `09 00` GET elicits the same
  * display-string reply; this `1F 00` form matches what the editor sends.)
+ *
+ * DO NOT use it to read the CURRENT type: the reply is the roster's FIRST
+ * entry whatever type is selected (all three names above are ordinal 0; two
+ * independent owners confirmed it on fw 11 and 12). Read type selectors
+ * through the fn=0x1F bulk read instead. See primitive
+ * gen3-fn01-sub1f-current-type-name.
  *
  * Wire (23 bytes): `F0 00 01 74 <model> 01 1F 00 <eid:14b LE> <pid:14b LE>
  *  00*9 <cks> F7`. Read-only; carries no value, mutates nothing.
@@ -930,39 +937,27 @@ export function buildSetGridCell(opts: {
 //   F0 00 01 74 <model> 01 35 00 00 00 00 00 <OP> 00 00 00 00 00
 //   00 02 00 <b21> <b22> <b23> <cks> F7
 //
-// Two formulas, branched by grid row count:
-//
-// ── 6-row grids (III model=0x10, FM9 model=0x12) ─────────────────
-// Decoded via FM9-Edit loopMIDI (26 cables, 2026-06-05):
-//   srcGp    = (srcCol − 1) × 6 + (srcRow − 1)
-//   b21      = floor(srcGp / 2)
-//   colTerm  = floor(3·(srcCol−1)/2) + 1
-//   destSign = destRow >= 3 ? 1 : 0
-//   b22      = ((srcGp & 1) << 6) | (colTerm + destSign)
-//   b23      = ((|destRow−3| + (srcCol even ? 2 : 0)) % 4) << 5
-// Row-1 even srcCol refused — encoding not yet captured (6-row only).
-//
-// CANDIDATE FILL (community, hardware-unconfirmed): the MIT-licensed
-// `ai-tone-assistant` project encodes cables from an explicit from/to pair:
-//   from_pos = (srcCol−1)·6 + (srcRow−1);  to_pos = (destCol−1)·6 + (destRow−1)
-//   d9 = from_pos >> 1                       ← equals our b21 = floor(srcGp/2)
-//   d10 = (to_pos >> 2) | ((from_pos & 1) << 6)
-//   d11 = (to_pos & 3) << 5
-// This is byte-IDENTICAL to ours for the captured corpus (source rows 2-3);
-// it DIVERGES at source row 1 and predicts the row-1 even-col fill we refuse.
-// Do NOT adopt into the active path: his row-1 prediction is itself
-// hardware-unconfirmed and his low-bits model differs from our colTerm/
-// destSign law, so it could regress validated cells. Close it with the R4
-// source-row-1 capture (r1c2→r1c3) before wiring; see
-// docs/_private/gen3-routing-capture-protocol.md (R4).
-//
-// ── 4-row grids (FM3 model=0x11) ──────────────────────────────────
-// Decoded via FM3-Edit loopMIDI (10 cables, 2026-06-05):
-//   srcGp    = (srcCol − 1) × 4 + (srcRow − 1)
-//   b21      = floor(srcGp / 2)
-//   b22      = ((srcGp & 1) << 6) | srcCol       ← colTerm = srcCol; no destSign
-//   b23      = (destRow − 1) << 5                 ← linear 1-indexed encoding
-// All rows 1-4 and all srcCol parity (including row-1 even-col) work.
+// One law for every grid, written as the source and destination cell
+// gridPos (`(col - 1) * rows + (row - 1)`, the same index set_block uses):
+//   from = (srcCol - 1) * rows + (srcRow - 1)
+//   to   = srcCol * rows + (destRow - 1)          (dest column = srcCol + 1)
+//   b21  = from >> 1
+//   b22  = ((from & 1) << 6) | (to >> 2)
+//   b23  = (to & 3) << 5
+// Evidence:
+//   - 6-row (III/FM9): reproduces all 40 distinct sub=0x35 frames FM9-Edit
+//     sent in our loopMIDI captures (fm9-cc-routing-*, fm9-sim-m1/m2/m2c),
+//     including the row-1 even-column cables (e.g. r1c2 -> r1c3 = 03 03 00)
+//     that the earlier colTerm/destSign law refused, and hardware-confirmed on
+//     an FM9 fw 12 (issue #23: r2c4 -> r2c5 and cross-row r3c3 -> r2c4 land;
+//     the earlier law's bytes had no effect). The earlier law agreed only on
+//     a subset of edges (it fit the first 26-cable corpus) and differed on
+//     162 of 432 possible edges.
+//   - 4-row (FM3): with rows = 4, `to >> 2` is srcCol and `to & 3` is
+//     destRow - 1, so this is the FM3-Edit-decoded law (10/10 byte-exact,
+//     2026-06-05; FM3 hardware-confirmed 2026-06-27) unchanged.
+// The same from/to form is what the MIT-licensed `ai-tone-assistant`
+// project encodes.
 
 const GRID_ROUTING_SUB_ACTION = 0x35;
 export const ROUTING_OP_CONNECT = 0x01;
@@ -975,9 +970,8 @@ export const ROUTING_OP_DISCONNECT = 0x02;
  * `op`: `ROUTING_OP_CONNECT` (0x01) or `ROUTING_OP_DISCONNECT` (0x02).
  * Defaults to connect.
  *
- * `rows`: 6 for III/FM9 (default), 4 for FM3. The formulas for b22/b23
- * differ between 6-row and 4-row grids (both byte-confirmed from
- * FM9-Edit and FM3-Edit loopMIDI captures, 2026-06-05).
+ * `rows`: 6 for III/FM9 (default), 4 for FM3. One from/to gridPos law
+ * covers both (see the section comment above).
  */
 export function buildSetGridRouting(opts: {
   srcRow: number;
@@ -1005,34 +999,11 @@ export function buildSetGridRouting(opts: {
   if (op !== ROUTING_OP_CONNECT && op !== ROUTING_OP_DISCONNECT) {
     throw new Error(`buildSetGridRouting: op must be ROUTING_OP_CONNECT (0x01) or ROUTING_OP_DISCONNECT (0x02): ${op}`);
   }
-  // Row-1 even-col is only unresolved on 6-row grids. FM3 (4-row) encodes
-  // them correctly with the 4-row formula (confirmed cable r1c2→r1c3).
-  if (rows === 6 && srcRow === 1 && srcCol % 2 === 0) {
-    throw new Error(
-      `buildSetGridRouting: source row=1 even column (col ${srcCol}) is not yet decoded ` +
-        `for 6-row grids. Capture r1c${srcCol}→r1c${srcCol + 1}, r1c${srcCol}→r3c${srcCol + 1}, ` +
-        `r1c${srcCol}→r5c${srcCol + 1} with FM9-Edit or III-Edit to close this corner.`,
-    );
-  }
-
-  const srcGp = (srcCol - 1) * rows + (srcRow - 1);
-  const b21 = Math.floor(srcGp / 2);
-  let b22: number;
-  let b23: number;
-
-  if (rows === 4) {
-    // FM3 4-row formula (10/10 byte-confirmed, FM3-Edit loopMIDI, 2026-06-05):
-    //   colTerm = srcCol (linear, no 3/2 scaling); no destSign.
-    //   b23 = (destRow-1)*32 (simple 0-indexed row, no mod-4 wrap).
-    b22 = ((srcGp & 1) << 6) | srcCol;
-    b23 = (destRow - 1) << 5;
-  } else {
-    // 6-row formula (III/FM9, 26/26 byte-confirmed, FM9-Edit loopMIDI, 2026-06-05):
-    const colTerm = Math.floor((3 * (srcCol - 1)) / 2) + 1;
-    const destSign = destRow >= 3 ? 1 : 0;
-    b22 = ((srcGp & 1) << 6) | (colTerm + destSign);
-    b23 = ((Math.abs(destRow - 3) + (srcCol % 2 === 0 ? 2 : 0)) % 4) << 5;
-  }
+  const from = (srcCol - 1) * rows + (srcRow - 1);
+  const to = srcCol * rows + (destRow - 1);
+  const b21 = from >> 1;
+  const b22 = ((from & 1) << 6) | (to >> 2);
+  const b23 = (to & 3) << 5;
 
   // Payload layout (bytes after fn=0x01):
   // [sub=0x35, 0, 0, 0, 0, 0, OP, 0, 0, 0, 0, 0, 0, 0x02, 0, b21, b22, b23]
@@ -1161,12 +1132,13 @@ export function buildClearBlockCompanion(
  * role here is a cursor move, NOT a clear — it carries no sub=0x33 companion
  * (the 0x30+0x33 pair is the clear op).
  *
- * Why it exists separately: the FM3 (4-row grid) IGNORES a block INSERT's
- * target cell unless this select is sent first — an FM3 owner live-confirmed
- * this on hardware 2026-06-27 (sKuhLight/ForgeFX), whose FM3 codec sends
- * select → ~15 ms → insert. The Axe-Fx III and FM9 (6-row) place correctly
- * from the insert alone (hardware-confirmed: FM9 fn=0x13 read-back 2026-06-19),
- * so only the FM3 placement path pairs select+insert. Community-beta on FM3.
+ * Why it exists separately: a block INSERT lands at the edit cursor, not at
+ * its own target cell, unless this select is sent first. Hardware-confirmed
+ * on the FM3 (2026-06-27, an FM3 owner's codec sends select → ~15 ms →
+ * insert) and on the FM9 fw 12 (2026-10, every insert landed at r1c1 until
+ * select → insert; FM9-Edit always sends it). Send it before every insert on
+ * every gen-3 grid device. Golden (FM9, select r2c2):
+ * `F0 00 01 74 12 01 30 00 00 00 00 00 07 00 00 00 00 00 00 00 00 21 F7`.
  */
 export function buildSelectCell(
   opts: { row: number; col: number; rows?: number },
@@ -1880,7 +1852,10 @@ function isAxeFxIIIFrame(
  * responses are 32-char ASCII fields padded with spaces.
  */
 function decodeName(bytes: readonly number[]): string {
-  let end = bytes.length;
+  // Cut at the first NUL: an empty slot reads "<EMPTY>" followed by a ghost
+  // tail of whatever name the frame buffer last held (FM9 field finding).
+  const nul = bytes.indexOf(0x00);
+  let end = nul >= 0 ? nul : bytes.length;
   while (end > 0) {
     const b = bytes[end - 1];
     if (b !== 0x00 && b !== 0x20) break;
@@ -2334,6 +2309,13 @@ export interface ModernFractalCodec {
   buildSelectCell(opts: { row: number; col: number; rows?: number }): number[];
   buildSetGridRouting(opts: { srcRow: number; srcCol: number; destRow: number; rows?: number; op?: number }): number[];
   buildSetPresetName(name: string): number[];
+  /** RENAME PRESET (fn=0x01 sub=0x28): the gen-3 editor's own working-buffer
+   *  name write (Ghidra FACT tier). Supersedes the fn=0x09 II-port
+   *  `buildSetPresetName` for gen-3 rename. Decoded, hardware-unverified. */
+  buildRenamePreset(name: string): number[];
+  /** SET SCENE NAME (fn=0x01 sub=0x2b): scene index 0..7 in the paramId14
+   *  field, 32-byte space-padded name tail. Decoded, hardware-unverified. */
+  buildSetSceneName(sceneIndex: number, name: string): number[];
   buildStorePreset(presetNumber: number): number[];
   buildSwitchPresetPC(presetNumber: number, channel?: number): number[];
   /** SysEx-native preset switch (fn=0x01 sub=0x27); alternative to buildSwitchPresetPC. */
@@ -2393,6 +2375,8 @@ export function createModernFractalCodec(
     buildSelectCell: (opts) => buildSelectCell(opts, modelByte),
     buildSetGridRouting: (opts) => buildSetGridRouting(opts, modelByte),
     buildSetPresetName: (n) => buildSetPresetName(n, modelByte),
+    buildRenamePreset: (n) => buildRenamePreset(n, modelByte),
+    buildSetSceneName: (i, n) => buildSetSceneName(i, n, modelByte),
     buildStorePreset: (n) => buildStorePreset(n, modelByte),
     buildSwitchPresetPC: (n, ch) => buildSwitchPresetPC(n, ch, bankSelect),
     buildSwitchPresetSysEx: (n) => buildSwitchPresetSysEx(n, modelByte),

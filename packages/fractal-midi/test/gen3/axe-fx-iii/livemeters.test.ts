@@ -33,6 +33,16 @@ function buildFrame(outL: number, outR: number, cpuRaw: number, len = 755): numb
 
 const cases: Array<() => void> = [];
 
+// 0. Axe-Fx III (model 0x10): no CPU figure. The formula read 72 % against a
+//    front-panel 20 % on fw 32.06, so the field is omitted; output meters stay.
+cases.push(() => {
+  const f = buildFrame(97, 7, 80);
+  f[4] = 0x10;
+  const m = parseGen3LiveMeters(f);
+  assert(m.cpu_percent === undefined, `III must not report cpu_percent, got ${m.cpu_percent}`);
+  assert(m.output_left > 0 && m.output_right > 0, 'III output meters still decode');
+});
+
 // 1. The exact FM9-capture values: [37]=66 → 65.0%, plus a representative
 //    output-meter frame ([35]=97, [36]=7 from the first captured grid read).
 cases.push(() => {
@@ -86,7 +96,7 @@ cases.push(() => {
 // 6. A BLOCK-TARGETED sub=0x2E frame (target bytes [8]/[10] populated) decodes
 //    the SAME meters: in the FM3 capture (fm3-community-2026-06-12, job3,
 //    three block-targeted reads of one static preset) f[35]/f[36] varied
-//    (output meters) while f[37]=69 held constant (66.5% CPU). The earlier
+//    (output meters) while f[37]=69 held constant. The earlier
 //    refusal's premise ("bytes 35-37 are not meters there") was never
 //    established. Parity with parseGen3GridLayout.
 cases.push(() => {
@@ -95,8 +105,23 @@ cases.push(() => {
   f[8] = 0x3a; // effectId populated → block-targeted
   f[10] = 0x0a; // paramId populated
   const m = parseGen3LiveMeters(f);
-  assert(m.cpu_percent === 66.5, `block-targeted cpu should be 66.5, got ${m.cpu_percent}`);
+  // FM3 piecewise decode (fw 13 calibration): raw 69 >= 64 reads 69 %.
+  assert(m.cpu_percent === 69, `block-targeted FM3 cpu should be 69, got ${m.cpu_percent}`);
   assert(m.output_left === Math.round((38 / 127) * 1000) / 1000, `block-targeted outL mismatch: ${m.output_left}`);
+});
+
+// 7. FM3 piecewise CPU (12 hand readings, fw 13, 2026-10-23, all within ±0.5 %):
+//    below 64 the linear formula holds, from 64 the byte is the percent. The
+//    same raw values on the FM9 model byte keep the linear formula.
+cases.push(() => {
+  const fm3 = (raw: number) => {
+    const f = buildFrame(0, 0, raw, 590);
+    f[4] = 0x11;
+    return parseGen3LiveMeters(f).cpu_percent;
+  };
+  for (const [raw, want] of [[0, 32], [41, 52.5], [60, 62], [63, 63.5], [64, 64], [67, 67], [82, 82], [127, 127]] as const)
+    assert(fm3(raw) === want, `FM3 raw ${raw} should read ${want} %, got ${fm3(raw)}`);
+  assert(parseGen3LiveMeters(buildFrame(0, 0, 82)).cpu_percent === 73, 'FM9 keeps the linear formula');
 });
 
 export function runGen3LiveMetersTests(): void {

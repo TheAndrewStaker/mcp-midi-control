@@ -14,16 +14,17 @@
  * payload — so the reply is sliced verbatim, no de-interleave.
  *
  * IMPORTANT: a Dump Request reads a synth part's CURRENT (RAM) buffer, not an
- * arbitrary stored Flash slot. There is no random-access stored-patch read on
- * Circuit Tracks: to read a Flash patch the device must first Program-Change it
- * into a part (a destructive load), which this module deliberately does NOT do.
+ * arbitrary stored Flash slot. There is NO random-access stored-BANK-patch read
+ * on Circuit Tracks at all: a Program Change on a synth channel does not load a
+ * stored slot; it REVERTS the live edit and IGNORES its program number
+ * (hardware-refuted 2026-07-27, sentinel method; PC 0/40/63 all returned the
+ * same patch). The only stored-patch read is the pack FILE store below
+ * (fileType 0x04), which does not back the synth bank.
  */
 
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
-import { buildProgramChange } from '@mcp-midi-control/core/midi/messages.js';
-import { buildDumpRequest, buildReplaceFlashPatch, buildReplaceCurrentPatch, CMD_REPLACE_CURRENT, PATCH_BODY_LEN, type SynthLocation } from './sysex.js';
-import { decodePatchName } from './blob.js';
+import { buildDumpRequest, buildReplaceFlashPatch, CMD_REPLACE_CURRENT, PATCH_BODY_LEN, type SynthLocation } from './sysex.js';
 import { makeMessage, blockAddress, msbDeinterleave, crc32, TRANSFER_CONSTANTS } from '../ncs/transfer.js';
 
 /**
@@ -61,10 +62,14 @@ const isFamily = (c: number[]) => c.length > 5 && PREFIX.every((h, i) => c[i] ==
 // ── Stored-patch READ over the file-transfer protocol (fileType 0x04) ─────────
 // Decoded 2026-07-03 from a real Components capture: reading a Flash patch slot is
 // the SAME session transport as a project download (ncs/transfer.ts), only the
-// fileId's type byte differs (project 0x03, PATCH 0x04, sample 0x05). Returns the
-// device's ~1876-byte patch FILE (a different, larger layout than the 340-byte
-// Replace-Patch body; it starts with the 16-char patch name). This is the
-// read-back path for save verification + a future patch get_preset.
+// fileId's type byte differs (project 0x03, PATCH 0x04, sample 0x05). A read
+// returns a multi-record `.cpb` patch GROUP, not a single patch file (corrected
+// 2026-07-30, pack-2 patch-upload decode): 340-byte patch bodies at a 512-byte
+// stride, gaps 0xFF-filled, last record unpadded (the ~1876-byte read observed
+// here = a 4-record group, 3x512 + 340; the on-card `NN_PATCHBANK.cpb` files are
+// 8-record, 3924 B). The payload starts with the 16-char patch name. NOTE: this
+// file store does NOT back the synth bank (a save_preset'd slot read back empty
+// from it, 2026-07-03), so it serves only `checkOverwriteTarget` occupancy.
 const XSUB = TRANSFER_CONSTANTS.SUBCMD;
 const XHDR = TRANSFER_CONSTANTS.HEADER; // [00 20 29 01 64 03] — subcmd at core[XHDR.length]
 const FILE_TYPE_PATCH = 0x04;
@@ -83,7 +88,7 @@ const nibblesToInt = (ns: number[]) => ns.reduce((a, n) => a * 16 + (n & 0xf), 0
 
 export interface StoredPatchResult {
   ok: boolean;
-  /** The de-interleaved patch FILE (~1876 bytes); name is bytes 0-15. */
+  /** The de-interleaved `.cpb` patch GROUP (340-byte records at 512-byte stride; ~1876 B = 4 records); name is bytes 0-15. */
   bytes?: Uint8Array;
   crcOk?: boolean;
   name?: string;
@@ -251,43 +256,15 @@ export async function savePatch(
   }
 }
 
-export interface StoredPatchViaLoad { ok: boolean; body?: number[]; name?: string; error?: string }
-
-/**
- * Read a STORED bank patch (slot 0..63) by LOADING it into the working buffer via
- * a Program Change on the synth channel, then dumping. Unlike readStoredPatch
- * (which reads the pack's sparse FILE store and cannot see a save_preset'd bank
- * patch), this reads the actual synth PATCH BANK — the same store save_preset
- * writes — and returns the full 340-byte body (name + all patch-dump params).
- * HARDWARE-CONFIRMED 2026-07-03: PC to an occupied slot loads it (freshly-saved
- * PROBE85 read back from slots 62/63); PC to an EMPTY slot loads nothing.
- *
- * DESTRUCTIVE to the working buffer. By default we dump the current buffer first
- * and Replace-Current it back afterward, so a live edit is preserved; pass
- * restore=false to skip (leaves the loaded patch in the buffer).
- */
-export async function readStoredPatchViaLoad(
-  conn: MidiConnection, slot: number, opts: { instance?: number; restore?: boolean } = {},
-): Promise<StoredPatchViaLoad> {
-  if (!Number.isInteger(slot) || slot < 0 || slot > 63) return { ok: false, error: `patch slot must be 0..63, got ${slot}` };
-  if (conn.isPortOpen && !conn.isPortOpen()) return { ok: false, error: 'MIDI port is not open' };
-  const loc = instanceToSynthLoc(opts.instance);
-  // Back the live buffer up so the load is non-destructive to an unsaved edit.
-  let backup: number[] | undefined;
-  if (opts.restore !== false) {
-    const cur = await readCurrentPatch(conn, loc, {});
-    if (cur.ok && cur.body) backup = Array.from(cur.body);
-  }
-  // Load the target slot into the working buffer (PC on the synth channel), dump it.
-  conn.send(buildProgramChange(loc, slot));
-  await sleep(250);
-  const read = await readCurrentPatch(conn, loc, {});
-  // Restore the prior buffer (best-effort — a failed restore just leaves the loaded patch).
-  if (backup) { try { conn.send(buildReplaceCurrentPatch(backup, loc)); await sleep(120); } catch { /* leave loaded */ } }
-  if (!read.ok || !read.body) return { ok: false, error: read.error ?? 'no reply after loading the slot' };
-  const body = Array.from(read.body);
-  return { ok: true, body, name: decodePatchName(body) };
-}
+// `readStoredPatchViaLoad` used to live here: a "read a stored bank patch by
+// Program-Changing it into the working buffer and dumping" path, shipped as
+// hardware-confirmed on 2026-07-03. REFUTED and REMOVED (2026-07-27 / 2026-08-11,
+// BK-CIRCUIT-PATCHN): a PC on a synth channel REVERTS the live edit and IGNORES
+// its program number (sentinel method; PC 0/40/63 all returned the same patch),
+// so the function returned the CURRENTLY LOADED patch for every slot. The
+// original test was fooled by PC-ing right after saving from the buffer, where
+// a revert is indistinguishable from a load. There is no stored-bank read path;
+// `get_preset("patch:N")` now refuses (descriptor/reader.ts).
 
 /** Reply core layout: [..PREFIX(5), cmd, loc, reserved, ...340 body]. */
 const BODY_OFFSET = PREFIX.length + 3; // cmd + loc + reserved

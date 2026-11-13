@@ -16,8 +16,8 @@
  *      with routing masks
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import path from 'node:path';
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -33,7 +33,8 @@ async function main() {
   });
 
   const client = new Client({ name: 'grid-state-probe', version: '0.0.1' }, {
-    capabilities: { tools: {} },
+    capabilities: {},
+    versionNegotiation: { mode: 'auto' },
   });
 
   await client.connect(transport);

@@ -67,8 +67,8 @@ jobs:
       - name: Build all packages
         run: npm run build
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Typecheck scripts (packages are type-checked by the build)
+        run: npm run typecheck:scripts
 
       # Proves the N-API prebuilt loads + enumerates on this platform/arch
       # (the thing the macOS install win hinges on), independent of the

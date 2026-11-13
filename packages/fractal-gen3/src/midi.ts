@@ -72,19 +72,28 @@ export { AXEFX3_LABEL, FM3_LABEL, FM9_LABEL, VP4_LABEL };
 // special-cased as the clean signal below; block-insert (set_block) marks dirty
 // explicitly at its call site, like set_param.
 //
-// CAVEAT (running alongside the vendor editor): a 0x74 burst is also the
-// device's RESPONSE to an fn=0x1F bulk-read poll. Our server never sends
-// fn=0x1F, but if FM9-Edit / Axe-Edit is open beside us and polling, its
-// poll-triggered broadcasts can reach our shared input and mark us dirty
-// with no real edit. That errs toward "dirty" (the safe direction: the
-// gate prompts save/discard rather than silently losing an edit), so it is
-// an accepted trade-off, not a correctness bug.
+// A 0x74 burst is ALSO the device's answer to an fn=0x1F bulk-read poll, and
+// this server sends those on every get_param / get_params / get_preset. Left
+// unfiltered, each of our own READS marked the buffer dirty, so the safe-edit
+// gate refused to navigate straight after a clean preset load (hardware-found
+// on an Axe-Fx III, fw 32.06: "unsaved edits" on re-selecting the preset just
+// loaded). The wrapper below therefore remembers which block it polled and
+// does not count the burst that answers it.
+//
+// CAVEAT (running alongside the vendor editor): if FM9-Edit / Axe-Edit is open
+// beside us and polling, ITS poll-triggered broadcasts still reach our shared
+// input and mark us dirty with no real edit. That errs toward "dirty" (the
+// safe direction: the gate prompts save/discard rather than silently losing
+// an edit), so it is an accepted trade-off, not a correctness bug.
 
 const STORE_PRESET_FN = 0x01; // store rides PARAMETER_SETGET (fn=0x01)...
 const STORE_PRESET_SUB = 0x26; // ...distinguished by this sub-action byte (wire-confirmed)
 const SWITCH_PRESET_SUB = 0x27; // SysEx preset switch (FM3-confirmed): loads from flash = buffer discarded
 const EDIT_FUNCTIONS = new Set<number>([0x09]); // SET_PRESET_NAME (set_block now rides fn=0x01 sub=0x32, marked dirty at the call site)
 const STATE_BROADCAST_HEAD = 0x74; // gen-3 device→host edit broadcast (hardware-confirmed on FM9)
+const BLOCK_BULK_READ_FN = 0x1f; // host→device whole-block poll; answered by a 0x74 burst
+/** How long a poll's answering burst is expected (a real burst lands in ~1 ms). */
+const POLL_REPLY_WINDOW_MS = 1500;
 
 function isGen3Envelope(bytes: readonly number[], modelId: number): boolean {
   return bytes.length >= 6
@@ -131,13 +140,25 @@ function isStateBroadcastInbound(bytes: readonly number[], modelId: number): boo
   return false;
 }
 
-function wrapWithDirtyClassification(
+/** Exported for the offline gate (verify-fractal-gen3-family); not a public API. */
+export function wrapWithDirtyClassification(
   conn: MidiConnection,
   modelId: number,
   label: string,
 ): MidiConnection {
+  // blockId -> deadline for the burst answering OUR OWN fn=0x1F poll of it.
+  const polled = new Map<number, number>();
   conn.onMessage((bytes) => {
-    if (isStateBroadcastInbound(bytes, modelId)) markDirty(label);
+    if (!isStateBroadcastInbound(bytes, modelId)) return;
+    if (bytes[5] === STATE_BROADCAST_HEAD && bytes.length >= 8) {
+      const blockId = (bytes[6] & 0x7f) | ((bytes[7] & 0x7f) << 7);
+      const deadline = polled.get(blockId);
+      if (deadline !== undefined) {
+        polled.delete(blockId); // one burst per poll
+        if (Date.now() <= deadline) return; // our read, not an edit
+      }
+    }
+    markDirty(label);
   });
   const originalSend = conn.send;
   return {
@@ -145,6 +166,9 @@ function wrapWithDirtyClassification(
     send: (bytes: number[]) => {
       if (isCleanOutbound(bytes, modelId)) markClean(label);
       else if (isEditOutbound(bytes, modelId)) markDirty(label);
+      else if (isGen3Envelope(bytes, modelId) && bytes[5] === BLOCK_BULK_READ_FN && bytes.length >= 8) {
+        polled.set((bytes[6] & 0x7f) | ((bytes[7] & 0x7f) << 7), Date.now() + POLL_REPLY_WINDOW_MS);
+      }
       originalSend(bytes);
     },
   };

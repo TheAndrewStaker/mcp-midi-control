@@ -6,6 +6,7 @@ discovered: 2026-06-30 (ForgeFX FM3 offsets + FM9 capture behavioral oracle)
 verified_on:
   - fm9-receive-preset-from-device-harp-2026-06-04
   - fm3-community-2026-06-12 (job3, three same-preset block-targeted sub=0x2E reads)
+  - fm3-cpu-calibration-2026-10-23 (FM3 Mk II Turbo fw 13, 12 hand readings vs FM3-Edit's CPU display)
 golden: packages/fractal-midi/test/gen3/axe-fx-iii/livemeters.test.ts
 relates_to: [gen3-sub2e-grid-region-tail-anchor, gen3-fn01-grid-routing, xor-7f-envelope-checksum]
 consumed_in:
@@ -90,6 +91,13 @@ refusal's "bytes 35-37 are not meters there" premise was never established;
 the FM3 frames falsify it).
 
 ## Refinement history
+
+- 2026-10-23: FM3 CPU decode is PIECEWISE: raw < 64 → 32 + raw/2, raw ≥ 64 →
+  raw (percent). 12 hand readings on an FM3 fw 13, all within ±0.5 %; the
+  linear ForgeFX formula reads low above 64 % (raw 82 = 82 %, not 73 %).
+  `parseGen3LiveMeters` applies it to model 0x11 only; III/FM9 keep the linear
+  formula until calibrated (mcp-midi-control
+  `references/fm3-cpu-calibration-20261023.json`).
 
 - 2026-07-01: promoted `matched-singleton` → `matched`: FM3 capture axis
   (fm3-community-2026-06-12 job3) confirms the meters signature; block-target

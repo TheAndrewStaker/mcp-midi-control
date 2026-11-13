@@ -156,6 +156,14 @@ export interface Port {
    * setup concern). See {@link OutputRole}.
    */
   output_role?: OutputRole;
+  /**
+   * Which way the jack faces, for the kinds whose direction the kind alone does
+   * not fix (`expression`, `footswitch`, `cv`, `analog_clock`, `usb_*`): `in`
+   * accepts a cable (an effects pedal's EXP jack), `out` sends one (the jack on
+   * an expression pedal). Omitted = either way. On a fixed-direction kind
+   * (`audio_in`, `midi_din_out`, ...) it must agree with the kind.
+   */
+  direction?: 'in' | 'out';
 }
 
 /**

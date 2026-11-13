@@ -747,10 +747,11 @@ collaborator session above (issue #9).
   CLEAR/RESET GRID CELL section above) moves the edit cursor to the target
   cell first; the insert then lands correctly. Add-block and remove
   confirmed across the full 4×12 grid. This server's own `set_block` write
-  path already sends select→insert for 4-row (FM3) grids and skips it for
-  6-row (III/FM9) grids, which place correctly from the insert alone
-  (`packages/fractal-gen3/src/writer.ts`); no wire builder changed, this
-  test confirms the sequencing already shipped.
+  path sends select→insert (`packages/fractal-gen3/src/writer.ts`). Since
+  2026-10-24 it does so on the 6-row grids too: an FM9 fw 12 field report
+  (issue #23) saw inserts land at the cursor (r1c1) until select→insert was
+  sent, and FM9-Edit always sends the select. Golden:
+  `test/gen3/axe-fx-iii/subactions.test.ts`.
 - **Grid routing (`buildSetGridRouting`, fn=0x01 sub=0x35) CONFIRMED**:
   connect + disconnect land on real hardware; same-column block moves keep
   their cables, cross-column moves drop them, matching the device's own
@@ -984,6 +985,25 @@ IN   F0 00 01 74 [model] 79 [3B] [cs] F7                              (11 B) DUM
   not yet wired.
 - Full decode + evidence is in the maintainer's private session notes.
 
+### Stored preset body: which chain entry is which block (2026-11-12)
+
+Inside the decompressed body the block chain (after the 25x1 modifier slots)
+carries each block's parameter-table size at header words 15 (`cols`) and 16
+(`rows`) and no effect id. The chain holds exactly the blocks placed on the
+grid, one entry each, in a fixed family order, then one system entry (350x1).
+Pairing the grid's effect ids, sorted by that order, with the chain names every
+entry. Checked on the 384 factory presets of the fw 28.06 banks
+(`Axe-Fx_III_BANK_{A,B,C}-250603-182903.syx`) with no exception, plus one FM9
+export and two FM3 fw 13 captures.
+
+Table sizes on fw 28.06, for reference only (they move with firmware, so the
+decoder does not rely on them): Amp 142x4, Cab 105x4, Delay 88x4, Reverb 71x4
+or 69x4, Drive 42x4, Input 10x4, Output 26x4, Flanger and PEQ 33x4, Comp /
+Filter / MultiComp 37x4, Enhancer and Formant 12x4, Vol/Pan 14x4.
+
+The order, the unproven pairs and the limits are in the primitive
+[`gen3-stored-block-chain-order`](../../research/primitives/gen3-stored-block-chain-order.md).
+
 ### Preset envelope spec: byte-identical to the II, footer = XOR-fold (Ghidra-decoded, 2026-06-09)
 
 Mining the Axe-Edit III binary's envelope descriptor tables and its preset
@@ -1089,37 +1109,28 @@ F0 00 01 74 <model> 01 35 00 00 00 00 00 <OP> 00 00 00 00 00 00 02 00 <b21> <b22
 
 `OP` = `0x01` connect, `0x02` disconnect.
 
-Two formula variants, selected by grid row count:
-
-**6-row grids (III 0x10, FM9 0x12), 26/26 byte-confirmed, FM9-Edit loopMIDI, 2026-06-05:**
-
-```
-srcGp    = (srcCol − 1) × 6 + (srcRow − 1)
-b21      = floor(srcGp / 2)
-colTerm  = floor(3·(srcCol−1)/2) + 1
-destSign = destRow ≥ 3 ? 1 : 0
-b22      = ((srcGp & 1) << 6) | (colTerm + destSign)
-b23      = ((|destRow−3| + (srcCol even ? 2 : 0)) mod 4) << 5
-```
-
-Constraint: srcRow=1 even srcCol is not yet captured for 6-row grids
-(pattern not closed; capture r1c2→r1c3, r1c2→r3c3 with FM9-Edit to close it).
-
-**4-row grids (FM3 0x11), 10/10 byte-confirmed, FM3-Edit loopMIDI, 2026-06-05:**
+One law for every grid (corrected 2026-10-24), from the source and destination
+cell gridPos (`(col − 1) × rows + (row − 1)`, the index `set_block` uses):
 
 ```
-srcGp = (srcCol − 1) × 4 + (srcRow − 1)
-b21   = floor(srcGp / 2)
-b22   = ((srcGp & 1) << 6) | srcCol          ← colTerm = srcCol; no destSign
-b23   = (destRow − 1) << 5                   ← linear 0-indexed encoding; no mod-4 wrap
+from = (srcCol − 1) × rows + (srcRow − 1)
+to   = srcCol × rows + (destRow − 1)         (destination column = srcCol + 1)
+b21  = from >> 1
+b22  = ((from & 1) << 6) | (to >> 2)
+b23  = (to & 3) << 5
 ```
 
-All rows 1–4 and all srcCol parity (including row-1 even-col) work on the 4-row formula.
-Row-1 even-col confirmed by capture r1c2→r1c3.
-
-Key structural differences:
-- 6-row b22 uses a `3/2`-scaled colTerm and a destRow threshold (destSign); 4-row uses srcCol directly.
-- 6-row b23 is centered at row 3 with mod-4 wrap; 4-row is a flat `(destRow−1)×32` linear map.
+- **6-row (III 0x10, FM9 0x12):** reproduces all 42 distinct sub=0x35 frames
+  FM9-Edit sent in our loopMIDI captures, connect and disconnect, including
+  row-1 even-column sources (r1c2→r1c3 = `03 03 00`). FM9 fw 12 hardware
+  (issue #23): r2c4→r2c5 and cross-row r3c3→r2c4 land with these bytes. The
+  2026-06-05 colTerm/destSign law it replaces fit the first 26 cables but
+  differed on 162 of 432 edges (r2c1→r2c2 was `00 41 20`; FM9-Edit sends
+  `00 41 60`) and refused row-1 even columns. Details in primitive
+  `gen3-fn01-grid-routing`.
+- **4-row (FM3 0x11):** with rows = 4 this is the FM3-Edit-decoded form
+  (`b22 = ((srcGp&1)<<6) | srcCol`, `b23 = (destRow−1) << 5`; 10/10 captures),
+  unchanged.
 
 Captures archived: `samples/captured/fm3-routing-probe-*.json` (gitignored).
 
@@ -1140,13 +1151,23 @@ frames arrive as both 590 (→ 361) and 606 bytes (→ 377), and the tail anchor
 decodes all of them without per-length cases. Cells are addressed by:
 
 ```
-cell_start_bit = 46 + col·(rows·32) + row·32
+cell_start_bit = 45 + col·(rows·32) + row·32      (corrected 2026-10-23)
    III/FM9: 6 rows × 14 cols (col stride 192)
    FM3:     4 rows × 12 cols (col stride 128)
-bits  0-7  = (effectId | shuntIndex) << 1
-bits  8-15 = block type   (0x08 = shunt, 0x00 = real block)
-bits 16-23 = incoming-cable bitmask
+bits  0-15 = u16 id, low byte first   (effect ID, or 1024 + n for shunt n)
+bits 16-31 = u16 input mask, low byte first (bit k = input from row k of the previous column)
 ```
+
+This is the preset-body grid cell word (body bytes 260.., `{u16 id, u16 mask}`)
+serialized MSB-first. The original community layout (`(id << 1)` at bit 46, a
+"type" byte 0x08, cable at bit 62) reads the same bits one position later: it
+agrees for ids < 128 and doubles the mask, but misreads every id > 127 (Send
+182 → 54, Return 186 → 58, Plex 178 → 50, Multiplexer 191 → 63, Synth 130 → 2).
+**FM3 hardware-confirmed 2026-10-23:** 7 generated presets (splits, merges, all
+4 rows, ids up to 1037) loaded to the edit buffer read back identical in all 48
+cells (`docs/research/evidence/fm3/fm3-grid-check-20261023.json`; goldens G04/G05
+in `test/gen3/axe-fx-iii/gridlayout.test.ts`). An FM9 fw 12 field report (issue
+#23) reads the same bit-per-row mask. The III shares the frame layout.
 
 Bits are read **MSB-first within each 7-bit byte** (`(data[bit/7] >> (6 - bit%7)) & 1`);
 an 8-bit reader yields garbage (the tell-tale `0xE8/0xD8` "block type").
@@ -1169,7 +1190,7 @@ block-targeted replies in
 `samples/captured/fm3-community-2026-06-12/fm3-probe-output.json` (job3),
 oracled by the same session's `fn=0x13` status dump: all three, including the
 606-byte length variant, decode to exactly Input1(37)@r1c0 → Amp1(58)@r1c1 →
-Output1(42)@r1c2 (cables 0x04). Goldens: the two embedded FM3 frames in
+Output1(42)@r1c2 (input masks 0x02 = row 1 under the corrected cell word). Goldens: the two embedded FM3 frames in
 `test/gen3/axe-fx-iii/gridlayout.test.ts` + the capture cross-validation in
 `scripts/verify-gen3-grid-layout.ts`.
 

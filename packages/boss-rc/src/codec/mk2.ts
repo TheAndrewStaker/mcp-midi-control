@@ -75,6 +75,31 @@ export function trackTargetOrdinal(track: TrackNumber, fn: TrackFn): number {
   return (track - 1) * 11 + TRACK_FN_OFFSET[fn];
 }
 
+/**
+ * TARGET "MIDI CC#64-127" (transmit a CC from the MIDI OUT connector, Parameter
+ * Guide p.26): `H = cc + 790`. Device-confirmed 2026-11-04 on two panel-authored
+ * slots (CC#80 = 870, CC#82 = 872), and it decodes an older real file's 854 as
+ * CC#64, the first entry of the range. The CC#01-31 block that precedes it in the
+ * guide list is UNSAMPLED (likely 823..853, not confirmed), so it is refused.
+ * Such a target sends 0..127, so its TARGET MAX defaults to 127, not 1.
+ */
+export const MIDI_CC_TARGET_BASE = 790;
+
+export function midiCcTargetOrdinal(cc: number): number {
+  if (!Number.isInteger(cc) || cc < 64 || cc > 127) {
+    throw new Error(
+      `RC-505mk2 ASSIGN TARGET MIDI CC#${cc} is not decoded. Confirmed: MIDI CC#64-127; the CC#01-31 range is unsampled.`,
+    );
+  }
+  return cc + MIDI_CC_TARGET_BASE;
+}
+
+/** Inverse of `midiCcTargetOrdinal`; undefined outside the decoded CC#64-127 block. */
+export function midiCcFromTargetOrdinal(h: number): number | undefined {
+  const cc = h - MIDI_CC_TARGET_BASE;
+  return cc >= 64 && cc <= 127 ? cc : undefined;
+}
+
 /** ASSIGN SOURCE: an onboard CTL footswitch, or an incoming MIDI CC. */
 export type AssignSource = { kind: 'ctl'; n: 1 | 2 | 3 } | { kind: 'cc'; cc: number };
 
@@ -324,6 +349,8 @@ export function decodeSource(c: number): string {
  * for one of those is provisional until confirmed on hardware.
  */
 export function decodeTarget(h: number): string {
+  const cc = midiCcFromTargetOrdinal(h);
+  if (cc !== undefined) return `MIDI CC#${cc}`;
   if (h < 0 || h > 54) return `TARGET#${h}`;
   const track = Math.floor(h / 11) + 1;
   const fn = TRACK_FN_BY_OFFSET[h % 11];
@@ -394,13 +421,14 @@ export function readAllAssigns(doc: Rc0Doc, memId: string | number): DecodedAssi
 // `blocks.assign` schema so `apply_preset` validates + round-trips the SAME
 // labels `get_preset` emits (source `CC#81` / `CTL1`, target `TRK2 PLY/STP`,
 // mode `MOMENT`/`TOGGLE`). Ordinal <-> label here is the inverse of the write
-// helpers above; only the author-LEGAL sources are listed (CTL1/2 + CC#64-95),
+// helpers above; only the author-LEGAL sources are listed (CTL1-3 + CC#64-95),
 // so an out-of-range source fails validation cleanly rather than being guessed.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** SOURCE ordinal -> label, for the author-legal sources only. */
+/** SOURCE ordinal -> label, for the author-legal sources only. CTL3=35 is
+ * device-confirmed (2026-07-19); CTL4 (~36) stays out: unsampled, never guessed. */
 export const SOURCE_ENUM_VALUES: Readonly<Record<number, string>> = (() => {
-  const t: Record<number, string> = { 33: 'CTL1', 34: 'CTL2' };
+  const t: Record<number, string> = { 33: 'CTL1', 34: 'CTL2', 35: 'CTL3' };
   for (let cc = 64; cc <= 95; cc++) t[cc + 6] = `CC#${cc}`;
   return t;
 })();
@@ -420,6 +448,7 @@ export const TARGET_ENUM_VALUES: Readonly<Record<number, string>> = (() => {
       t[trackTargetOrdinal(track as TrackNumber, fn)] = `TRK${track} ${fn}`;
     }
   }
+  for (let cc = 64; cc <= 127; cc++) t[midiCcTargetOrdinal(cc)] = `MIDI CC#${cc}`;
   return t;
 })();
 
@@ -436,22 +465,22 @@ const MODE_BY_LABEL = reverseEnum(MODE_ENUM_VALUES);
 /** Resolve a SOURCE label (`CTL1` / `CC#81`) OR a raw ordinal to the wire ordinal. */
 export function sourceOrdinalFromDisplay(display: number | string): number {
   if (typeof display === 'number') {
-    if (SOURCE_ENUM_VALUES[display] === undefined) throw new Error(`RC-505mk2 SOURCE ordinal ${display} is not an author-legal source (CTL1/CTL2 or MIDI CC#64-95).`);
+    if (SOURCE_ENUM_VALUES[display] === undefined) throw new Error(`RC-505mk2 SOURCE ordinal ${display} is not an author-legal source (CTL1-CTL3 or MIDI CC#64-95).`);
     return display;
   }
   const o = SOURCE_BY_LABEL.get(display.trim().toLowerCase());
-  if (o === undefined) throw new Error(`RC-505mk2 SOURCE '${display}' is not author-legal. Use CTL1/CTL2 or a MIDI CC in CC#64..CC#95 (CC#01-31 uses an unsampled base and is refused).`);
+  if (o === undefined) throw new Error(`RC-505mk2 SOURCE '${display}' is not author-legal. Use CTL1/CTL2/CTL3 or a MIDI CC in CC#64..CC#95 (CTL4 and CC#01-31 use unsampled ordinals and are refused).`);
   return o;
 }
 
 /** Resolve a TARGET label (`TRK2 PLY/STP`) OR a raw ordinal to the wire ordinal. */
 export function targetOrdinalFromDisplay(display: number | string): number {
   if (typeof display === 'number') {
-    if (TARGET_ENUM_VALUES[display] === undefined) throw new Error(`RC-505mk2 TARGET ordinal ${display} is outside the decoded per-track set (TRK1-5 REC/PLY..LEVEL).`);
+    if (TARGET_ENUM_VALUES[display] === undefined) throw new Error(`RC-505mk2 TARGET ordinal ${display} is outside the decoded set (TRK1-5 REC/PLY..LEVEL, MIDI CC#64-127).`);
     return display;
   }
   const o = TARGET_BY_LABEL.get(display.trim().toLowerCase());
-  if (o === undefined) throw new Error(`RC-505mk2 TARGET '${display}' is not a decoded per-track function. Use "TRKn <FN>" where FN is REC/PLY, PLY/STP, STOP, CLEAR, REVERSE, UN/RED, M.BACK, R.BACK, M.SET, M.CLEAR, or LEVEL.`);
+  if (o === undefined) throw new Error(`RC-505mk2 TARGET '${display}' is not decoded. Use "TRKn <FN>" where FN is REC/PLY, PLY/STP, STOP, CLEAR, REVERSE, UN/RED, M.BACK, R.BACK, M.SET, M.CLEAR, or LEVEL, or "MIDI CC#64".."MIDI CC#127" (send that CC from MIDI OUT; CC#01-31 is not decoded).`);
   return o;
 }
 

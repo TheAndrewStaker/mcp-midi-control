@@ -1,14 +1,20 @@
 /**
- * Hydrasynth Explorer — generate src/asm/hydrasynth-explorer/nrpn.ts
+ * Hydrasynth Explorer — generate packages/hydrasynth/src/nrpn.ts
  * from edisyn's reverse-engineered NRPN spreadsheet.
  *
+ * ⚠ DO NOT RUN CASUALLY (2026-08-22): the checked-in nrpn.ts has drifted
+ * AHEAD of this generator (hand-applied fixes the generator does not
+ * reproduce — see the guard before writeFileSync). The script refuses to
+ * overwrite a differing file without --force; re-sync the generator with
+ * every hand fix before forcing.
+ *
  * Source:
- *   docs/devices/hydrasynth-explorer/references/nrpn.csv
+ *   docs/_private/devices/hydrasynth-explorer/references/nrpn.csv
  *   (vendored from https://github.com/eclab/edisyn — Apache-2.0,
  *    © Sean Luke / GMU; see references/README.md for attribution)
  *
  * Output:
- *   src/asm/hydrasynth-explorer/nrpn.ts
+ *   packages/hydrasynth/src/nrpn.ts
  *
  * Why we need this in addition to the manual's CC chart:
  *   - The CC chart only exposes ~117 parameters. Every other engine
@@ -25,9 +31,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// The vendored CSV moved into the private docs tree when the public
+// docs/devices/ layout was retired; the generated output is unchanged.
 const CSV_PATH = path.resolve(
   __dirname,
-  '../../docs/devices/hydrasynth-explorer/references/nrpn.csv',
+  '../../docs/_private/devices/hydrasynth-explorer/references/nrpn.csv',
 );
 const OUTPUT_PATH = path.resolve(
   __dirname,
@@ -188,6 +196,12 @@ const ENUM_OVERRIDES: Record<string, { enumTable: string; enumValueScale?: numbe
   mutator4mode: { enumTable: 'MUTANT_MODES' },
   // Filter 2 type notes use inline ("LP-BP-HP", "LP-Notch-HP") form.
   filter2type: { enumTable: 'FILTER_2_TYPES' },
+  // Noise type notes use the inline list ("White Pink Brown Red Blue
+  // Violet Grey") instead of naming NOISE_TYPES, so the auto-detector
+  // misses it and noisetype:"Pink" fails to resolve (BK-HYDRA-DISPLAY-
+  // GAPS P6). The enums.ts table already exists and matches the notes
+  // order exactly.
+  noisetype: { enumTable: 'NOISE_TYPES' },
   // Mutator FM-Linear sources (inline list, names match MUTANT_SOURCES_FM_LIN).
   mutator1sourcefmlin: { enumTable: 'MUTANT_SOURCES_FM_LIN' },
   mutator2sourcefmlin: { enumTable: 'MUTANT_SOURCES_FM_LIN' },
@@ -656,6 +670,25 @@ function main(): void {
   out.push('}');
   out.push('');
 
+  // DESTRUCTIVE-REGEN GUARD (2026-08-22). The checked-in nrpn.ts carries
+  // post-gen hand fixes this generator does NOT reproduce: the findHydraNrpn
+  // normalized-lookup block (2026-05-24 alias regression), osc*keytrack
+  // displayMin/Max, osc*cents aliases, the noisetype note, and more (a trial
+  // regen measured +14/−43 lines of silent loss). Until the generator is
+  // re-synced with every hand fix, overwriting is opt-in only.
+  if (fs.existsSync(OUTPUT_PATH) && !process.argv.includes('--force')) {
+    const existing = fs.readFileSync(OUTPUT_PATH, 'utf8');
+    if (existing !== out.join('\n')) {
+      console.error(
+        `REFUSING to overwrite ${OUTPUT_PATH}: the checked-in file differs from what this\n` +
+        `generator would emit, and the difference includes hand-maintained fixes the\n` +
+        `generator does not know (see the guard comment in gen-nrpn.ts). If you REALLY\n` +
+        `mean to regenerate, re-sync the generator first, then run with --force and\n` +
+        `review the git diff line by line before keeping it.`,
+      );
+      process.exit(1);
+    }
+  }
   fs.writeFileSync(OUTPUT_PATH, out.join('\n'), 'utf8');
   console.log(`wrote ${OUTPUT_PATH}`);
   console.log(`  entries: ${entries.length}`);

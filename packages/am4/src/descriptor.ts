@@ -190,15 +190,19 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
     // live outside the chunk; emitted via per-paramId GET only when
     // `include_channel_state: true`, mirroring II's pattern.
     atomic_read: true,
-    // NOTE: this descriptor should also declare `capabilities.backup`
-    // ({ unit_label: 'preset', first_location: 0, last_location:
-    // TOTAL_LOCATIONS - 1, seconds_per_unit: 0.6, restore_tool:
-    // 'import_preset' }), which is what lets `backup_device` sweep the whole
-    // device without the caller knowing the AM4 holds 104 presets. It is
-    // withheld only because this package typechecks against the core
-    // package's BUILT `dist/*.d.ts`, and the field cannot be referenced until
-    // core is rebuilt. Until then `resolveBackupPolicy` derives a correct but
-    // bounds-less policy, so a sweep works and simply asks for from/to.
+    // Whole-device sweep bounds for `backup_device`: one backup = one stored
+    // preset, locations 0..103 in device numbering (display A01..Z04, 26
+    // banks x 4). Declaring this is what lets a sweep run with no from/to
+    // from the caller instead of the bounds-less derived policy.
+    backup: {
+      unit_label: 'preset',
+      first_location: 0,
+      last_location: TOTAL_LOCATIONS - 1,
+      // Stored-dump request + container decode land in well under this;
+      // quoted pessimistically per the BackupPolicy contract.
+      seconds_per_unit: 0.6,
+      restore_tool: 'import_preset',
+    },
   },
   canonical_terms: {
     block: 'block',

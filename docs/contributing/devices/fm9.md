@@ -28,12 +28,14 @@ could test here is already done. The remaining asks are narrow and specific.
 | `set_block` placement | confirmed for single-word blocks | A Windows verify probe placed a block and the device's own status dump listed it. That probe used a block whose slug equals its display name, which is the only kind that used to resolve at all |
 | `set_block` / `set_bypass` on the 15 multi-word blocks | **hardware-unverified, newly reachable** | These never resolved before 2026-08-03: the write path matched display names and group codes against the descriptor SLUG, so `graphic_eq`, `parametric_eq`, `gate_expander`, `volume_pan`, `pan_tremolo`, `multitap_delay`, `megatap_delay`, `ten_tap_delay`, `plex_delay`, `ring_modulator`, `multiband_compressor`, `tone_match`, `ir_capture`, `ir_player` and `real_time_analyzer` returned "unknown block" for a block the device really has. The resolver now matches the read path. **The effect IDs come from the v1.4 spec table and the frame is the same wire-confirmed insert, but no one has placed one of THESE blocks on hardware.** Treat as untested |
 | `switch_scene` | confirmed | Same probe run |
-| Reading a block's current type or model by NAME | confirmed | Wire-confirmed: the device returns its own name string, byte-exact for reverb, amp and drive examples |
+| Reading a block's current type or model | hardware-unverified | Read as the bulk read's ordinal, labeled from the roster. The fn=0x01 sub=0x1F name query this used to rely on answers with the roster's first entry whatever the real type (two independent owners, firmware 11 and 12), so it is no longer used |
 | `set_param` discrete set-by-name | hardware-unverified | The discrete wire form is byte-exact against real FM3 and FM9 captures. Type and mode selectors route as discrete ordinals, corrected using the FM9's own editor-cache enum data, which is why only the FM9 changed and the family byte-identity held (`packages/fractal-gen3/src/configs/fm9.ts`) |
-| `save_preset` | hardware-unverified | The save envelope is unconfirmed on any gen-3 device |
+| `save_preset` | hardware-unverified | Confirmed on the FM3 (a save that survived a power cycle); unrun on the FM9 |
 | `get_preset` live grid read | hardware-unverified | Decoded from the shared gen-3 grid frame and cross-validated against an FM9 capture |
+| Block list in a stored `get_preset` | hardware-unverified | Named by pairing the stored block chain with the grid. Checked offline against one editor export |
 | Live CPU and output meters inside `get_preset` | hardware-unverified | Decoded from the same grid frame, not yet front-panel confirmed |
-| `export_preset` / `import_preset` | hardware-unverified | Preset receive is confirmed on this device; the container is self-validating against the device's own CRC |
+| `export_preset` | hardware-unverified | Preset receive is confirmed on this device; the container is self-validating against the device's own CRC |
+| `import_preset` | not implemented (refuses) | The gen-3 writer has no byte-restore path yet; the unified verb returns a capability error rather than emitting an unverified push |
 
 Support tier: `community-beta`. This mirrors `capabilities.support_tier` on the
 descriptor at `packages/fractal-gen3/src/configs/fm9.ts`, and preflight fails if
@@ -46,7 +48,6 @@ the two disagree.
 - Continuous `set_param`: same test, plus a catalog-wide round-trip.
 - `set_block` placement and `switch_scene`: a Windows verify probe, with the
   placed block appearing in the device's own status dump.
-- Reading a block's current type or model by name.
 - Preset receive, the dump path used by `export_preset`.
 - Model rosters and parameter ranges are complete and device-true, from a
   community cache file. Set-by-name works across the whole amp space.

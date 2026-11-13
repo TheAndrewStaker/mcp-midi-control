@@ -55,6 +55,10 @@ export const LOOPER_HUB_RIG: Rig = {
       identity: { manufacturer: 'Novation', family: 'Circuit Tracks' },
       ports: [
         { id: 'out_lr', kind: 'audio_out', audio: 'stereo' },
+        // The clock + project PC from the thru box arrive HERE. Until the
+        // edge-direction check existed, this example fed them into `midi1`, an
+        // OUTPUT jack, and validated clean.
+        { id: 'midi_in', kind: 'midi_din_in' },
         { id: 'midi1', kind: 'midi_din_out' },
         { id: 'midi2', kind: 'midi_din_out' },
       ],
@@ -129,7 +133,7 @@ export const LOOPER_HUB_RIG: Rig = {
     {
       id: 'thru-to-circuit',
       from: { node: 'thru', port: 'out1' },
-      to: { node: 'circuit', port: 'midi1' },
+      to: { node: 'circuit', port: 'midi_in' },
       directed: true,
       physical_link_id: 'din-3',
       signal: { kind: 'midi', signals: [{ type: 'clock' }, { type: 'pc', channel: 16 }] },

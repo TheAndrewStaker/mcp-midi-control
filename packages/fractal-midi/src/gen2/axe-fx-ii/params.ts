@@ -74,6 +74,20 @@ export interface AxeFxIIParam {
      * positive displayMin/displayMax.
      */
     readonly displayScale?: 'linear' | 'log10';
+    /**
+     * OFFSET-ORDINAL wire mapping: when present, the wire value is a small
+     * ordinal `display + wireOrdinalOffset`, NOT the normalized 0..65534
+     * field that displayMin/displayMax otherwise map across. The wire
+     * domain is `[displayMin + offset .. displayMax + offset]` and
+     * `display = wire - offset`. Hardware-measured on the XL+ (5-point
+     * sweep per param, both voices, 2026-08-02, probe-ii-pitch-domain):
+     * `pitch.voice_N_shift` display -24..+24 semitones rides wire 0..48
+     * with unison at wire 24 (the wiki's min/max column for these rows is
+     * the WIRE domain, which the catalog previously copied as display).
+     * Applied by `resolveAxeFxIIParamKind` (fractal-gen2 calibration.ts
+     * ORDINAL_OFFSET) ahead of the generic range machinery.
+     */
+    readonly wireOrdinalOffset?: number;
     /** Whether a modifier can target this param. */
     readonly modifierAssignable?: boolean;
     /** Firmware version that introduced this param. */
@@ -2717,8 +2731,15 @@ export const KNOWN_PARAMS = {
     "pitch.track_mode": { groupCode: "PIT", block: "pitch", paramId: 8, wikiName: "TRACK MODE", name: "track_mode", controlType: "select", parameterName: "PITCH_MODE", xmlLabel: "Track Mode", enumValues: PITCH_TRACK_MODE_VALUES },
     "pitch.voice_1_detune": { groupCode: "PIT", block: "pitch", paramId: 9, wikiName: "VOICE 1 DETUNE", name: "voice_1_detune", controlType: "knob", parameterName: "PITCH_DETUNE1", xmlLabel: "Voice1 Detune", modifierAssignable: true },
     "pitch.voice_2_detune": { groupCode: "PIT", block: "pitch", paramId: 10, wikiName: "VOICE 2 DETUNE", name: "voice_2_detune", controlType: "knob", parameterName: "PITCH_DETUNE2", xmlLabel: "Voice2 Detune", modifierAssignable: true },
-    "pitch.voice_1_shift": { groupCode: "PIT", block: "pitch", paramId: 11, wikiName: "VOICE 1 SHIFT", name: "voice_1_shift", controlType: "unknown", parameterName: "PITCH_SHIFT1", xmlLabel: "Voice1 Shift", displayMin: 0, displayMax: 48, step: 1, modifierAssignable: true },
-    "pitch.voice_2_shift": { groupCode: "PIT", block: "pitch", paramId: 12, wikiName: "VOICE 2 SHIFT", name: "voice_2_shift", controlType: "unknown", parameterName: "PITCH_SHIFT2", xmlLabel: "Voice2 Shift", displayMin: 0, displayMax: 48, step: 1, modifierAssignable: true },
+    // hw sweep override (BK-PITCH-II codec leg): display is SIGNED semitones -24..+24, wire is the
+    // ordinal display+24 (0..48, unison 24). 5-point sweep per voice on the XL+ 2026-08-02
+    // (probe-ii-pitch-domain --sweep; the device renders its own label into the GET frame). The old
+    // displayMin 0 / displayMax 48 was the wiki min/max column, which is the WIRE domain for these
+    // rows; declaring it as display refused every downward interval. voice_N_harmony deliberately
+    // NOT converted (two conflicting offsets on record: -25 on 2026-08-02 vs -23 on 2026-05-17;
+    // a third variable, likely key/scale, is loose); stage_N_shift / multidelay.shift_N unmeasured.
+    "pitch.voice_1_shift": { groupCode: "PIT", block: "pitch", paramId: 11, wikiName: "VOICE 1 SHIFT", name: "voice_1_shift", controlType: "unknown", parameterName: "PITCH_SHIFT1", xmlLabel: "Voice1 Shift", displayMin: -24, displayMax: 24, step: 1, wireOrdinalOffset: 24, modifierAssignable: true },
+    "pitch.voice_2_shift": { groupCode: "PIT", block: "pitch", paramId: 12, wikiName: "VOICE 2 SHIFT", name: "voice_2_shift", controlType: "unknown", parameterName: "PITCH_SHIFT2", xmlLabel: "Voice2 Shift", displayMin: -24, displayMax: 24, step: 1, wireOrdinalOffset: 24, modifierAssignable: true },
     "pitch.voice_1_level": { groupCode: "PIT", block: "pitch", paramId: 13, wikiName: "VOICE 1 Level", name: "voice_1_level", controlType: "knob", parameterName: "PITCH_LEVEL1", xmlLabel: "Level 1", modifierAssignable: true },
     "pitch.voice_2_level": { groupCode: "PIT", block: "pitch", paramId: 14, wikiName: "VOICE 2 Level", name: "voice_2_level", controlType: "knob", parameterName: "PITCH_LEVEL2", xmlLabel: "Level 2", modifierAssignable: true },
     "pitch.voice_1_pan": { groupCode: "PIT", block: "pitch", paramId: 15, wikiName: "VOICE 1 Pan", name: "voice_1_pan", controlType: "knob", modifierAssignable: true, parameterName: "PITCH_PAN1", xmlLabel: "Pan 1", displayMin: -100, displayMax: 100 },

@@ -32,6 +32,13 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+// Offline gate: the mock connector opens no real port, so the cross-process
+// instance lease must not couple this run to a LIVE server that legitimately
+// holds the device (2026-08-08: a session whose server held the Circuit made
+// this gate die with port_held_elsewhere). Isolated lock dir, read per
+// acquire, same pattern as verify-endpoint-arbiter.
+process.env.MCP_INSTANCE_LOCK_DIR = mkdtempSync(join(tmpdir(), 'circuit-delete-gate-locks-'));
+
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import { DispatchError, type DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { registerDevice, unregisterDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';

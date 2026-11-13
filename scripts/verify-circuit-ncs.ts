@@ -31,7 +31,7 @@ import {
   setAllDrumLengths, setDrumChain, setNoteChain, getNoteChain, lengthByte,
 } from '@mcp-midi-control/circuit-tracks/ncs/chain.js';
 import {
-  setSceneChain, getSceneChainEnd, MAX_SCENES,
+  setSceneChain, getSceneChainEnd, MAX_SCENES, clearScenes,
   setSceneNoteChain, getSceneNoteChain,
   setSceneDrumChain, getSceneDrumChain,
 } from '@mcp-midi-control/circuit-tracks/ncs/sceneChain.js';
@@ -41,7 +41,7 @@ import {
   slotForFlipRole,
 } from '@mcp-midi-control/circuit-tracks/ncs/drumBinding.js';
 import {
-  roleOfSampleName, rolesByDirectory, bindingFromDirectory,
+  roleOfSampleName, rolesByDirectory, resolveDrumBindingByName, matchSampleName,
 } from '@mcp-midi-control/circuit-tracks/ncs/sampleRoles.js';
 import {
   readSampleDirectory, readProjectDirectory, parseDirListHeader, parseDirEntry, buildReadFileRequest, fileIdFor,
@@ -608,7 +608,7 @@ const throws = (fn: () => unknown): boolean => { try { fn(); return false; } cat
 
   // Template: MIDI1 holds a hand-made drone. C4 at step 0 with a 16-step TIED
   // gate (byte 224) running into the same C4 at step 16, which itself carries a
-  // hand-set 2-step gate (12). Exactly the shape Clint Eastwood / Amber use.
+  // hand-set 2-step gate (12). Exactly the shape two real song builds use.
   const tpl = new Uint8Array(NCS_FILE_SIZE);
   setNoteStep(tpl, 'midi1', 0, 0, [{ note: 60, gate: 96, tie: true }]);
   setNoteStep(tpl, 'midi1', 0, 16, [{ note: 60, gate: 12 }]);
@@ -864,6 +864,63 @@ const throws = (fn: () => unknown): boolean => { try { fn(); return false; } cat
   }
 }
 
+// ── sounding_pitch: the measured +12 melodic compensation (BK-MELODIC-OCTAVE) ──
+// The Circuit transmits a stored note-track note 12 semitones BELOW its stored
+// value, on synth AND MIDI tracks (measured, HW-SPDSX-008 closed 2026-07-28).
+// `sounding_pitch` stores melodic notes +12 so the authored pitch is the
+// sounding pitch; drums are untouched; a shifted note past 127 REFUSES.
+{
+  const mk = (channel: number, note: number, time_ms = 0): RealizeNoteEvent => ({ channel, note, velocity: 100, time_ms, duration_ms: 100 });
+  const plan = (events: RealizeNoteEvent[]): RealizePlan => ({ pattern_name: 'p', bpm: 120, steps: 4, bars: 1, repeat: 1, mode: 'ncs_upload', cycle_ms: 2000, events });
+
+  // Default OFF: stored bytes are byte-identical with and without the option.
+  {
+    const a = new Uint8Array(NCS_FILE_SIZE);
+    const b = new Uint8Array(NCS_FILE_SIZE);
+    authorPlanIntoProject(a, plan([mk(1, 48), mk(10, 60)]));
+    authorPlanIntoProject(b, plan([mk(1, 48), mk(10, 60)]), undefined, 0, true, { soundingPitch: false });
+    check('sounding_pitch default off: authored buffer byte-identical with an explicit false',
+      a.every((v, i) => v === b[i]));
+  }
+  // ON: the synth-track note stores +12; the DRUM hit is untouched.
+  {
+    const b = new Uint8Array(NCS_FILE_SIZE);
+    const r = authorPlanIntoProject(b, plan([mk(1, 48), mk(10, 60)]), undefined, 0, true, { soundingPitch: true });
+    const steps = decodeNotePattern(b, 'synth1', 0);
+    check('sounding_pitch on: authored c3 (48) stores as 60 on synth1',
+      steps[0].notes.length === 1 && steps[0].notes[0].note === 60, JSON.stringify(steps[0].notes));
+    check('sounding_pitch on: reports the shifted note count', r.sounding_shifted === 1, String(r.sounding_shifted));
+    const drum = decodeDrumPattern(b, 0, 0);
+    check('sounding_pitch on: the drum hit is untouched (pads are pitch-immune)', drum[0].active === true);
+  }
+  // ON via plan.upload (the realizer path's carrier) works identically.
+  {
+    const b = new Uint8Array(NCS_FILE_SIZE);
+    const p = { ...plan([mk(4, 50)]), upload: { slot: 0, sounding_pitch: true } };
+    authorPlanIntoProject(b, p);
+    const steps = decodeNotePattern(b, 'midi2', 0);
+    check('sounding_pitch via plan.upload: MIDI-track note stores +12 (50 → 62)',
+      steps[0].notes[0]?.note === 62, JSON.stringify(steps[0].notes));
+  }
+  // Range: a note that cannot take +12 REFUSES, and the buffer is untouched.
+  {
+    const b = new Uint8Array(NCS_FILE_SIZE);
+    const before = b.slice();
+    const threw = (() => {
+      try { authorPlanIntoProject(b, plan([mk(2, 120)]), undefined, 0, true, { soundingPitch: true }); return false; } catch { return true; }
+    })();
+    check('sounding_pitch: note 120 (+12 = 132 > 127) REFUSES rather than clamps', threw);
+    check('sounding_pitch refusal left the buffer untouched', b.every((v, i) => v === before[i]));
+  }
+  // Scale advisory sees the STORED pitches (post-shift), not the authored ones.
+  {
+    const b = new Uint8Array(NCS_FILE_SIZE);
+    // Authored D (62): in C minor. Stored +12 = 74, still pitch-class D → in key.
+    const r = authorPlanIntoProject(b, plan([mk(2, 62)]), 'C minor', 0, true, { soundingPitch: true });
+    check('sounding_pitch: pitch-class is preserved so scale advisories are unchanged', r.out_of_scale === 0);
+  }
+}
+
 // ── notesOutsideScale + the out-of-scale guardrail (the opt-in path) ───────
 {
   const mk = (channel: number, note: number): RealizeNoteEvent => ({ channel, note, velocity: 100, time_ms: 0, duration_ms: 100 });
@@ -913,15 +970,24 @@ const throws = (fn: () => unknown): boolean => { try { fn(); return false; } cat
     [16, 31, 47].every((bi) => buf[META_OFFSETS[bi]] === 0x1f));
 
   // Anchor: chain [0,1] must reproduce the hardware-confirmed Project-43 bytes
-  // (end byte = 1 at 0x2d5/0x2d9/0x2dd/0x2e1, tail 0x0c at 0x26fc7), now also
-  // writing start=0 (the template default) explicitly.
+  // (end byte = 1 at 0x2d5/0x2d9/0x2dd/0x2e1), now also writing start=0 (the
+  // template default) explicitly.
+  buf[0x26fc7] = 0x2a;   // sentinel: "left alone" must be a real assertion, not a zeroed-buffer freebie
   const changed = setDrumChain(buf, { start: 0, end: 1 });
   check('setDrumChain[0,1]: end byte = 1 at the 4 known track offsets',
     [0x2d5, 0x2d9, 0x2dd, 0x2e1].every((o) => buf[o] === 1), [0x2d5, 0x2d9, 0x2dd, 0x2e1].map((o) => buf[o]).join(','));
   check('setDrumChain[0,1]: start byte = 0 at 0x2d4/0x2d8/0x2dc/0x2e0',
     [0x2d4, 0x2d8, 0x2dc, 0x2e0].every((o) => buf[o] === 0));
-  check('setDrumChain: enable tail 0x0c at 0x26fc7', buf[0x26fc7] === 0x0c);
-  check('setDrumChain: returns 9 changed offsets (4×2 + tail)', changed.length === 9, String(changed.length));
+  // MIS-DECODE CORRECTED 2026-09-20. These two used to assert an "enable tail" of 0x0c at 0x26fc7
+  // and a 9-offset return. 0x26fc7 is not a chain byte at all: it is **Drum 2's `patch_select`**, the
+  // +0 field of the 11-byte per-drum record based at 0x26fbc (stride 11), whose `level` neighbour at
+  // +1 is hardware-confirmed. The 0x0c in the single capture this was built from was the user's
+  // last-selected sample (slot 12), not a constant, so every drum-chain write was silently repointing
+  // Drum 2 at whatever sample slot 12 held. Evidence: a period-11 four-fold census over 1,144
+  // byte-distinct projects, 17 factory demos carrying non-default values in these columns, and an
+  // independent in-repo parser agreeing on base, stride and field order.
+  check('setDrumChain: leaves 0x26fc7 (Drum 2 patch_select) ALONE', buf[0x26fc7] === 0x2a, String(buf[0x26fc7]));
+  check('setDrumChain: returns 8 changed offsets (4 tracks × start+end, no tail)', changed.length === 8, String(changed.length));
 
   // Wider range writes [start,end] per track (decoded-beta).
   const buf2 = new Uint8Array(NCS_FILE_SIZE);
@@ -968,6 +1034,30 @@ const throws = (fn: () => unknown): boolean => { try { fn(); return false; } cat
   check('getNoteChain on an unchained ([0,0]) track → undefined',
     getNoteChain(new Uint8Array(NCS_FILE_SIZE), 'midi2') === undefined);
 
+  // clearScenes MUST NOT REACH THE CHAIN TABLE. Added 2026-09-20 after it did: this file holds two
+  // models of the scene stack's extent (block accessors base 0x50 stride 0x28 -> 0x2d0; its own
+  // chain-end math 0x51 + 16*0x27 -> 0x2c1) and the active chain table starts at 0x2c4, INSIDE the
+  // first. Walking the block model zeroed chain slots 0/1/2, so synth1, synth2 and midi1 came back
+  // unchained and a whole song's melodic tracks either went silent or looped two bars forever.
+  {
+    const cs = new Uint8Array(NCS_FILE_SIZE);
+    // A full chain on every track, plus a scene stack to clear.
+    for (let slot = 0; slot < 8; slot++) { cs[0x2c4 + slot * 4] = 0; cs[0x2c4 + slot * 4 + 1] = 7; }
+    for (let off = 0x50; off < 0x2c1; off++) cs[off] = 0x5a;
+    cs[0x2c1] = 3;
+    const touched = clearScenes(cs);
+    check('clearScenes: the whole scene stack below the chain-end byte is zeroed',
+      Array.from(cs.slice(0x50, 0x2c1)).every((b) => b === 0));
+    check('clearScenes: the chain-end byte 0x2c1 is cleared', cs[0x2c1] === 0);
+    check('clearScenes: EVERY active chain slot survives untouched (0x2c4..0x2e3)',
+      Array.from({ length: 8 }, (_, s) => cs[0x2c4 + s * 4] === 0 && cs[0x2c4 + s * 4 + 1] === 7).every(Boolean),
+      Array.from(cs.slice(0x2c4, 0x2e4)).join(','));
+    check('clearScenes: reports no offset at or past the chain table',
+      touched.every((o) => o < 0x2c4), touched.filter((o) => o >= 0x2c4).join(','));
+    check('clearScenes: a project with no scenes is a zero-byte no-op',
+      clearScenes(new Uint8Array(NCS_FILE_SIZE)).length === 0);
+  }
+
   let nThrew = false; try { setNoteChain(buf, 'midi2', { start: 2, end: 1 }); } catch { nThrew = true; }
   check('setNoteChain: end<start throws', nThrew);
 }
@@ -975,18 +1065,27 @@ const throws = (fn: () => unknown): boolean => { try { fn(); return false; } cat
 // ── Scene chain (sceneChain.ts) ───────────────────────────────────────
 // Anchor: a Scene 1→4 chain must reproduce the hardware-confirmed Project-64
 // bytes (decoded 2026-06-24 by before/after device diff): end byte 0x03 at
-// 0x2c1 — the byte right after the 16-scene stack (0x51 + 16*0x27 = 0x2c1) —
-// plus the two scene-select state bytes the device sets for an active chain
-// (0x00 @0x26fbc, 0x07 @0x26fd2).
+// 0x2c1 — the byte right after the 16-scene stack (0x51 + 16*0x27 = 0x2c1).
+//
+// MIS-DECODE CORRECTED 2026-09-20: the same diff also moved 0x26fbc and 0x26fd2, which were read as
+// "the scene-select state bytes the device sets for an active chain". They are nothing of the kind —
+// they are **Drum 1 and Drum 3 `patch_select`**, the +0 field of the 11-byte per-drum record based at
+// 0x26fbc (stride 11, four tracks), so the diff was simply carrying the sample the user had selected
+// on those two lanes. Writing them turned every scene-chain call into a silent re-point of Drum 1 to
+// sample slot 0 and Drum 3 to slot 7. The chain end byte at 0x2c1 is the whole of the edit.
 {
   check('MAX_SCENES = 16', MAX_SCENES === 16);
   check('scene stack math: 0x51 + 16*0x27 = 0x2c1 (chain end sits after the stack)', 0x51 + 16 * 0x27 === 0x2c1);
 
   const buf = new Uint8Array(NCS_FILE_SIZE);
+  // Seed the two drum-record bytes with sentinels a zeroed buffer could never produce, so "left
+  // alone" is a real assertion rather than one a fresh buffer passes for free.
+  buf[0x26fbc] = 0x2a; buf[0x26fd2] = 0x3b;
   const changed = setSceneChain(buf, 4);
   check('setSceneChain(4): end byte 0x03 at 0x2c1 (= last scene, 0-based)', buf[0x2c1] === 0x03, `0x${buf[0x2c1].toString(16)}`);
-  check('setSceneChain(4): state bytes 0x00 @0x26fbc, 0x07 @0x26fd2', buf[0x26fbc] === 0x00 && buf[0x26fd2] === 0x07);
-  check('setSceneChain: returns 3 changed offsets', changed.length === 3, String(changed.length));
+  check('setSceneChain(4): leaves 0x26fbc / 0x26fd2 (Drum 1 + Drum 3 patch_select) ALONE',
+    buf[0x26fbc] === 0x2a && buf[0x26fd2] === 0x3b, `${buf[0x26fbc]},${buf[0x26fd2]}`);
+  check('setSceneChain: returns 1 changed offset (the chain end byte alone)', changed.length === 1, String(changed.length));
   check('getSceneChainEnd round-trips → 4 (1-based last scene)', getSceneChainEnd(buf) === 4, String(getSceneChainEnd(buf)));
 
   const buf2 = new Uint8Array(NCS_FILE_SIZE);
@@ -1242,8 +1341,16 @@ await (async () => {
     const single = await circuitWriter.realizePattern!(stubCtx, mkPlan({ template_path: template, slot: 5, dry_run: true }));
     check('dry_run (single): ok, status dry_run, zero device I/O',
       single.ok === true && single.status === 'dry_run', JSON.stringify(single));
-    check('dry_run (single): receipt names tracks + the would-be slot',
-      /Drum1/.test(single.info ?? '') && /synth1/.test(single.info ?? '') && /slot 5/.test(single.info ?? ''), single.info);
+    // Receipt numbering is front-panel-only (BK-CIRCUIT-RECEIPT-NUMBERING):
+    // wire slot 5 is the device's Project 6, and no receipt says "slot 5".
+    check('dry_run (single): receipt names tracks + the would-be Project (front-panel number)',
+      /Drum1/.test(single.info ?? '') && /synth1/.test(single.info ?? '') && /Would write Project 6 on Pack 1/.test(single.info ?? '')
+      && !/slot 5/.test(single.info ?? ''), single.info);
+    // The two never-silent accuracy notes ride every melodic dry run: the
+    // binding resolves by NAME (never position), and the octave-low transmit
+    // is stated with its lever.
+    check('dry_run (single): names the by-NAME drum binding + the sounding-pitch lever',
+      /DRUM BINDING: resolved by sample NAME/.test(single.info ?? '') && /sounding_pitch:true/.test(single.info ?? ''), single.info);
 
     const arr = await circuitWriter.realizeArrangement!(
       stubCtx,
@@ -1470,6 +1577,13 @@ await (async () => {
       sent.every((m) => !([SUB.WRITE_INIT, SUB.WRITE_DATA, SUB.WRITE_FINISH, SUB.SET_FILENAME] as number[]).includes(m[7])));
     check('readSampleDirectory (mocked): closes the session',
       sent[sent.length - 1][7] === SUB.CLOSE_SESSION);
+    // Session RESET first (2026-09-12). The hardware-confirmed transfer driver
+    // opens every session this way — "reset any half-open session left by a
+    // prior aborted transfer, else the device ignores OPEN_SESSION" — and this
+    // listing, which runs behind other transfers on the same port, did not.
+    check('readSampleDirectory (mocked): LEADS with a CLOSE_SESSION reset, then OPEN_SESSION (half-open-session guard)',
+      sent[0][7] === SUB.CLOSE_SESSION && sent[1][7] === SUB.OPEN_SESSION,
+      `first two subcmds: ${sent.slice(0, 2).map((m) => `0x${m[7].toString(16)}`).join(',')}`);
   })();
 
   // ── readSampleDirectory PACK-AWARE (2026-07-17): pack N reads pack N's pool ──
@@ -1640,9 +1754,13 @@ await (async () => {
 }
 
 // ── Name-match resolver: sample directory → roles → binding (sampleRoles.ts) ──
+// BK-CIRCUIT-DRUMBIND: the binding is resolved by NAME against the destination
+// pool, NEVER by position. The old bindingFromDirectory canonical-slot fallback
+// (the [0,1,2,3] guess that bound a kick to the factory placeholder at slot 0)
+// is GONE: an unresolvable role is reported and the binding withheld.
 {
   const dir = (names: (string | undefined)[]) => ({
-    occupied: names.filter(Boolean).length, total: 64, pack: 0,
+    occupied: names.filter(Boolean).length, total: 64, pack: 0, listing_complete: true,
     slots: names.map((name, i) => ({ slot: i, device_slot: i + 1, ...(name ? { name } : {}) })),
   });
 
@@ -1650,20 +1768,51 @@ await (async () => {
     roleOfSampleName('01_kick') === 'kick' && roleOfSampleName('closed hat') === 'closed_hat' &&
     roleOfSampleName('garbage') === undefined);
 
-  // Our role-ordered kit (01_kick..04_ride) → exact [0,1,2,3], no fallbacks.
-  const ours = bindingFromDirectory(dir(['01_kick', '02_snare', '03_closed_hat', '04_ride', '05_open_hat']));
-  check('bindingFromDirectory(role-ordered kit) → [0,1,2,3], no fallbacks',
-    JSON.stringify(ours.binding) === JSON.stringify([0, 1, 2, 3]) && ours.fallbacks.length === 0);
+  // REAL pool names (maintainer's card, 2026-07-10 listing): compound prefixes
+  // + a numbered variant. The variant is the honest partial: kick2 stands in
+  // for kick and is FLAGGED, never silently equated.
+  check('matchSampleName resolves the real compound name "01_stoken_4_02_kick2.wav" to kick, flagged variant',
+    matchSampleName('01_stoken_4_02_kick2.wav')?.role === 'kick' && matchSampleName('01_stoken_4_02_kick2.wav')?.variant === true);
+  check('matchSampleName: exact multi-token roles resolve unflagged (03_closed_hat.wav, 05_snare_roll.wav)',
+    matchSampleName('03_closed_hat.wav')?.role === 'closed_hat' && matchSampleName('03_closed_hat.wav')?.variant === false
+    && matchSampleName('05_snare_roll.wav')?.role === 'snare_roll');
+  check('matchSampleName: the factory placeholder 00_PCM.wav resolves to NO role (never force-fit)',
+    matchSampleName('00_PCM.wav') === undefined);
+
+  // Our role-ordered kit (01_kick..04_ride) → binding [0,1,2,3] BY NAME.
+  const ours = resolveDrumBindingByName(dir(['01_kick', '02_snare', '03_closed_hat', '04_ride', '05_open_hat']));
+  check('resolveDrumBindingByName(role-ordered kit) → [0,1,2,3], all resolved, none substituted',
+    JSON.stringify(ours.binding) === JSON.stringify([0, 1, 2, 3]) && ours.unresolved.length === 0
+    && ours.resolved.every((r) => !r.substituted));
 
   // Roles in a SHUFFLED layout are found by name, not position.
-  const shuffled = bindingFromDirectory(dir(['ride', 'kick', 'open hat', 'snare', 'closed_hat']));
-  check('bindingFromDirectory(shuffled) name-matches: kick@1, snare@3, closed_hat@4, ride@0',
-    JSON.stringify(shuffled.binding) === JSON.stringify([1, 3, 4, 0]) && shuffled.fallbacks.length === 0);
+  const shuffled = resolveDrumBindingByName(dir(['ride', 'kick', 'open hat', 'snare', 'closed_hat']));
+  check('resolveDrumBindingByName(shuffled) name-matches: kick@1, snare@3, closed_hat@4, ride@0',
+    JSON.stringify(shuffled.binding) === JSON.stringify([1, 3, 4, 0]) && shuffled.unresolved.length === 0);
 
-  // A missing role falls back to the canonical slot + is reported.
-  const partial = bindingFromDirectory(dir(['kick', 'snare', undefined, 'ride']));
-  check('bindingFromDirectory(missing closed_hat) falls back to canonical slot 2 + reports track 2',
-    partial.binding[2] === CIRCUIT_VOICE_SLOT.closed_hat && partial.fallbacks.includes(2));
+  // THE DEFECT SHAPE: factory placeholder at slot 0, kit shifted up one. The
+  // old positional default bound kick=placeholder / snare=kick / hat=snare;
+  // name resolution binds [1,2,3,4] and never touches slot 0.
+  const factory = resolveDrumBindingByName(dir(['00_PCM.wav', '01_kick', '02_snare', '03_closed_hat', '04_ride']));
+  check('resolveDrumBindingByName(factory-shaped pool, placeholder at slot 0) → [1,2,3,4], not [0,1,2,3]',
+    JSON.stringify(factory.binding) === JSON.stringify([1, 2, 3, 4]) && factory.unresolved.length === 0);
+
+  // A numbered variant stands in when the exact role is absent, and is reported.
+  const variant = resolveDrumBindingByName(dir(['00_PCM.wav', '01_stoken_4_02_kick2.wav', '02_snare', '03_closed_hat', '04_ride']));
+  check('resolveDrumBindingByName: kick2 stands in for a missing kick, flagged substituted',
+    variant.binding?.[0] === 1 && variant.resolved.find((r) => r.track === 0)?.substituted === true);
+
+  // A missing role WITHHOLDS the binding and reports the role; no canonical
+  // fallback exists any more (that fallback WAS the defect).
+  const partial = resolveDrumBindingByName(dir(['kick', 'snare', undefined, 'ride']));
+  check('resolveDrumBindingByName(missing closed_hat) withholds binding + reports the unresolved role',
+    partial.binding === undefined && partial.unresolved.length === 1 && partial.unresolved[0].role === 'closed_hat'
+    && partial.unresolved[0].track === 2);
+
+  // role_slots feeds flip resolution with POOL-TRUE slots (crash found by name).
+  const flips = resolveDrumBindingByName(dir(['01_kick', '02_snare', '03_closed_hat', '04_ride', undefined, '07_crash']));
+  check('resolveDrumBindingByName.role_slots locates non-track roles by name (crash@5)',
+    flips.role_slots.crash === 5 && flips.role_slots.kick === 0);
 
   check('rolesByDirectory maps name→slot (kick at slot 5)',
     rolesByDirectory(dir([undefined, undefined, undefined, undefined, undefined, 'kick'])).get('kick')?.[0] === 5);
@@ -2317,8 +2466,8 @@ await (async () => {
 
 // ── PROJECT NAME: 0x10..0x2F, 32 bytes of space-padded ASCII ────────────────
 //
-// The write class the After Dark renames shipped on hardware (2026-07-28,
-// `scripts/circuit-after-dark-rename.ts`): space-pad the whole field so no
+// The write class a set of project renames shipped on hardware (2026-07-28):
+// space-pad the whole field so no
 // stale tail survives, refuse (never truncate) anything the field cannot hold.
 {
   const diffs = (a: Uint8Array, b: Uint8Array): number[] => {
@@ -2333,9 +2482,9 @@ await (async () => {
 
   const b = blankProject();
   const control = b.slice();
-  const prev = setProjectName(b, 'AfterDark Verse');
+  const prev = setProjectName(b, 'SongAlpha Verse');
   check('name: the blank template reads as no name, returned as the displaced value', prev === '');
-  check('name: round-trips through the accessor', getProjectName(b) === 'AfterDark Verse', getProjectName(b));
+  check('name: round-trips through the accessor', getProjectName(b) === 'SongAlpha Verse', getProjectName(b));
   {
     const d = diffs(control, b);
     check('name: the write changes EXACTLY the 32 field bytes (chars + space padding), zero collateral',
@@ -2382,10 +2531,10 @@ await (async () => {
     check('name: applyProjectName with NO name is a zero-byte no-op that reports the template\'s',
       diffs(baseline, s).length === 0 && inherit.inherited === true && inherit.changed === false
       && inherit.name === 'Template 42' && inherit.previous === 'Template 42', JSON.stringify(inherit));
-    const stamp = applyProjectName(s, 'AfterDark Break');
+    const stamp = applyProjectName(s, 'SongAlpha Break');
     check('name: an asked-for name stamps and the receipt reports what it displaced',
-      stamp.inherited === false && stamp.changed === true && stamp.name === 'AfterDark Break'
-      && stamp.previous === 'Template 42' && getProjectName(s) === 'AfterDark Break', JSON.stringify(stamp));
+      stamp.inherited === false && stamp.changed === true && stamp.name === 'SongAlpha Break'
+      && stamp.previous === 'Template 42' && getProjectName(s) === 'SongAlpha Break', JSON.stringify(stamp));
   }
 }
 
@@ -2447,7 +2596,7 @@ await (async () => {
 {
   check('flip join: with NO binding, every canonical role resolves exactly as circuitSlotForVoice',
     Object.keys(CIRCUIT_VOICE_SLOT).every((r) => slotForFlipRole(r) === circuitSlotForVoice(r)));
-  const bound = [1, 2, 5, 11];   // After Dark's ear-confirmed binding (stoken_4 pool)
+  const bound = [1, 2, 5, 11];   // an ear-confirmed binding (stoken_4 pool)
   check('flip join: the four track roles resolve to the BOUND slots (kick→1, snare→2, closed_hat→5, ride→11)',
     slotForFlipRole('kick', bound) === 1 && slotForFlipRole('snare', bound) === 2
     && slotForFlipRole('closed_hat', bound) === 5 && slotForFlipRole('ride', bound) === 11);

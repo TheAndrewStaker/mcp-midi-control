@@ -145,10 +145,13 @@ export interface CalibrationEntry {
  * So display = wire - 24, unison at wire 24, and the WRITE round-trips
  * (fn=0x2e carries the display float and the device converts), which is what
  * commit cbc0453 predicted. What was wrong was only the DECLARED DOMAIN: the
- * catalog carries `displayMin: 0, displayMax: 48` copied from the Fractal
+ * catalog carried `displayMin: 0, displayMax: 48` copied from the Fractal
  * wiki's MIDI_SysEx min/max column, and that column is the WIRE domain. An
  * unsigned 0..48 is why `octave_down` (-12 semitones) was refused at the tool
  * boundary and why no downward interval was expressible on this device.
+ * The fractal-midi catalog now declares the PANEL domain for these two rows
+ * (`displayMin: -24, displayMax: 24, wireOrdinalOffset: 24`, BK-PITCH-II codec
+ * leg); this table stays the applying layer and must agree with those fields.
  *
  * DELIBERATELY NARROW. Only the two params actually measured are listed.
  *   - `voice_N_harmony` is NOT here and must not be added on today's data:

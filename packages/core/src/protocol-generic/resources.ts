@@ -32,7 +32,7 @@
  * (device, block-type) pair at server startup.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { listRegisteredDevices } from './registry.js';
 

@@ -60,7 +60,16 @@ function chainSlotOffset(globalIndex: number): number {
   return CHAIN_TABLE_BASE + globalIndex * CHAIN_SLOT_STRIDE;
 }
 
-// SUSPECT — likely a MIS-DECODE, DRUM-only. 0x26fc7 is the project's
+// CONFIRMED MIS-DECODE 2026-09-20, no longer written. This comment's own suspicion was right:
+// 0x26fc7 is **Drum 2's `patch_select`**, the +0 field of the 11-byte per-drum record based at
+// 0x26fbc (stride 11, four tracks; the field ORDER is vendor-documented in the Circuit Tracks Programmer's
+// Reference "Drum Control" table - patch select, level, pitch, decay, distortion, EQ, pan - and `level`
+// at +1 is additionally hardware-confirmed here. +7..+10 are reserved pad, never observed non-zero). Writing 0x0c
+// here repointed Drum 2 at sample slot 12 every time a drum chain was set. Evidence: a period-11
+// four-fold census over 1,144 byte-distinct projects, 17 factory demos carrying non-default values
+// in these columns, and an independent parser in-repo (pack0/ref/ncs_parser.py) agreeing on base,
+// stride and field order. Kept as a constant only so the offset stays named and greppable.
+// ORIGINAL NOTE, which reached the right conclusion and was overruled by caution: 0x26fc7 is the project's
 // "active/last-selected drum sample" UI byte (it equals Drum 2's sample slot
 // across Project 33 + 43; see docs/design/circuit-drum-binding.md). The `0x0c`
 // seen in the lone drum-chain capture was the user's last-selected sample (slot
@@ -115,8 +124,7 @@ export function setDrumChain(buf: Uint8Array, range: { start: number; end: numbe
     buf[endOff] = end;
     changed.push(startOff, endOff);
   }
-  buf[CHAIN_TAIL_OFFSET] = CHAIN_TAIL_ENABLE;
-  changed.push(CHAIN_TAIL_OFFSET);
+  // (was: buf[CHAIN_TAIL_OFFSET] = CHAIN_TAIL_ENABLE — see the CONFIRMED MIS-DECODE note above)
   return changed;
 }
 
@@ -159,7 +167,7 @@ export function setNoteChain(
  * CLEAR a note track's chain slot back to the fresh-project default `[0, 0]`
  * (unchained: plays pattern 1 only). Touches only that track's 2 slot bytes.
  *
- * Exists because of a bug heard on hardware (2026-07-23, The Offering): after a
+ * Exists because of a bug heard on hardware (2026-07-23): after a
  * project is converted to a SCENE chain, a stale plain-chain range left in this
  * table is still partly followed by the device, so scenes sound duplicated. A
  * scene-chained project must have its authored tracks' plain chains cleared;

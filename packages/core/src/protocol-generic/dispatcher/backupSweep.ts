@@ -30,7 +30,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 
-import { openCtx, requireDevice, toWirePack, withHandleRetry } from './core.js';
+import { requireDevice, toWirePack, withEndpoint, withHandleRetry } from './core.js';
 import {
   backupTimestamp,
   defaultBackupDir,
@@ -296,9 +296,11 @@ export async function executeBackupDevice(args: BackupDeviceArgs): Promise<Backu
 
   // ── active-buffer scope: exactly one item, always fast, no gate ──
   if (scope === 'active') {
-    const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
     await mkdir(baseDir, { recursive: true });
-    const item = await withHandleRetry(ctx, (c) => backupOne(descriptor, policy, c, baseDir, undefined, args.pack));
+    // Phase B: exclusive per-endpoint visit for the dump read.
+    const item = await withEndpoint(descriptor, (ctx) =>
+      withHandleRetry(ctx, (c) => backupOne(descriptor, policy, c, baseDir, undefined, args.pack)),
+    { pack: toWirePack(args.pack), opName: 'backup_device' });
     const ok = item.status === 'saved';
     return {
       ok,
@@ -347,30 +349,36 @@ export async function executeBackupDevice(args: BackupDeviceArgs): Promise<Backu
   }
   assertDurationAcknowledged(descriptor, policy, count, args.acknowledge_duration === true);
 
-  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
   await mkdir(baseDir, { recursive: true });
 
-  const items: BackupItemResult[] = [];
-  let consecutiveFailures = 0;
-  let aborted: string | undefined;
-  for (let loc = first; loc <= last; loc++) {
-    const item = await backupOne(descriptor, policy, ctx, baseDir, loc, args.pack);
-    items.push(item);
-    if (item.status === 'failed') {
-      consecutiveFailures++;
-      if (consecutiveFailures >= CONSECUTIVE_FAILURE_ABORT) {
-        // Three in a row is a dead transport, not three bad slots. Stopping
-        // keeps the partial result (which is real and useful) and stops us
-        // spending minutes producing nothing.
-        aborted = `Stopped after ${CONSECUTIVE_FAILURE_ABORT} consecutive read failures at ${policy.unit_label} ${loc}; ` +
-          `that pattern means the connection dropped rather than those ${policy.unit_label}s being bad. ` +
-          `Everything read before that point IS saved. Try reconnect_midi, then re-run from ${loc}.`;
-        break;
+  // Phase B: the whole sweep is one exclusive visit — the duration gate above
+  // already made the caller acknowledge a long hold, and a sweep interrupted
+  // by an interleaved op would be exactly the ambiguous partial result the
+  // consecutive-failure abort below exists to prevent.
+  const { items, aborted } = await withEndpoint(descriptor, async (ctx) => {
+    const swept: BackupItemResult[] = [];
+    let consecutiveFailures = 0;
+    let abortedAt: string | undefined;
+    for (let loc = first; loc <= last; loc++) {
+      const item = await backupOne(descriptor, policy, ctx, baseDir, loc, args.pack);
+      swept.push(item);
+      if (item.status === 'failed') {
+        consecutiveFailures++;
+        if (consecutiveFailures >= CONSECUTIVE_FAILURE_ABORT) {
+          // Three in a row is a dead transport, not three bad slots. Stopping
+          // keeps the partial result (which is real and useful) and stops us
+          // spending minutes producing nothing.
+          abortedAt = `Stopped after ${CONSECUTIVE_FAILURE_ABORT} consecutive read failures at ${policy.unit_label} ${loc}; ` +
+            `that pattern means the connection dropped rather than those ${policy.unit_label}s being bad. ` +
+            `Everything read before that point IS saved. Try reconnect_midi, then re-run from ${loc}.`;
+          break;
+        }
+      } else {
+        consecutiveFailures = 0;
       }
-    } else {
-      consecutiveFailures = 0;
     }
-  }
+    return { items: swept, aborted: abortedAt };
+  }, { pack: toWirePack(args.pack), opName: 'backup_device' });
 
   const saved = items.filter((i) => i.status === 'saved').length;
   const empty = items.filter((i) => i.status === 'empty').length;

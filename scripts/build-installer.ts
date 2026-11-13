@@ -137,7 +137,7 @@ async function main() {
   //   ├── node.exe
   //   ├── package.json  (lean root: NO workspaces; deps = non-workspace only)
   //   ├── node_modules/
-  //   │   ├── @modelcontextprotocol/sdk/  (npm install populates)
+  //   │   ├── @modelcontextprotocol/server/ (+core; npm install populates)
   //   │   ├── @julusian/midi/             (npm install populates, N-API prebuild)
   //   │   ├── zod/                        (npm install populates)
   //   │   ├── fractal-midi/, roland-midi/, openrig/   (bare workspace pkgs,

@@ -109,7 +109,7 @@ reverbtime) carries an `enumValueScale` (×8 for FX types) so that
 | Apply a fresh patch atomically | `apply_patch` | 🟢 ships (SysEx-from-INIT, audible by construction) |
 | Trigger notes (test patches, demo) | `send_note` | 🟢 ready |
 | List enum values for a param (e.g. all OSC waves) | `list_params({port:'hydrasynth',...})` | 🟢 ships |
-| Read patch from device | (deferred, Request flow specified in `references/SysexEncoding.txt`, not yet wired) | 🔴 |
+| Read STORED patch / bank names from device | `get_preset({location})`, `scan_locations`, `export_preset(location)` | 🟢 ships (BK-110, 2026-08-09: ack-driven Request flow per `references/SysexEncoding.txt`; flash copy only — the working buffer has no read) |
 | Static decode of `.hydra` / `.patch` file format | (deferred, see `HYDRA-FILE-FORMAT.md`) | 🔴 |
 | Multi-Hydrasynth Overflow mode | n/a, niche | (non-goal) |
 | Microtonal scale uploads | n/a, deferred | (non-goal) |

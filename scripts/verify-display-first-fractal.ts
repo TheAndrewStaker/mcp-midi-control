@@ -120,15 +120,15 @@ const PARITY_PENDING_ALLOWLIST: AllowlistEntry[] = [
     device: 'axe-fx-iii',
     pattern: /.*/,
     reason:
-      "continuous params without a calibrated display range (AM4-symbol-join overlay miss): raw 0..65534 wire passthrough by design; they cross to display-first automatically as ranges land. Encode and decode are BOTH wire-identity (no one-sided leak, enforced by the identity probe). Ceiling tightened 844→813 (2026-07-21): the signed-raw-semitone fix (issue #6) backfilled displayMin/displayMax for 31 PITCH_SHIFT/PITCH_STEP/PLEX_SHIFT/SYNTH_SHIFT params, moving them from passthrough to calibrated (routed through the new SIGNED_RAW_SEMITONE_PARAMS decode, not the standard one).",
-    max_hits: 813,
+      "III params with neither an AM4-overlay range nor a usable float-kind row in the device-true editor-cache range table (axe-fx-iii/ranges.generated.ts, community cache 2026-07-02): raw 0..65534 wire passthrough by design. Residue = families the section vote left unmapped on this cache (LOOPER, CONTROLLERS) plus all-zero placeholder cache rows and collapsed windows. Both closures are wire-identity. Ceiling tightened 813 to 53 (2026-08-11, BK-GEN3-RANGES): III_RANGES wired via deviceRanges moved 760 params from passthrough to calibrated/discrete.",
+    max_hits: 53,
   },
   {
     device: 'fm3',
     pattern: /.*/,
     reason:
-      "device-true FM3 catalog is unit:'unverified'; params without an AM4-overlay range are raw-wire passthrough by design (no device-synced range cache yet — the FM3 has no ranges.generated.ts). Both closures are wire-identity. Ceiling tightened 875→839 (2026-07-02): the FM3 family-join discrete overlay (FM3_FAMILY_JOIN_DISCRETE) moved former passthrough selectors to the discrete class. Ceiling tightened 839→808 (2026-07-21): the signed-raw-semitone fix (issue #6) backfilled the same 31 params as FM9/III.",
-    max_hits: 808,
+      "FM3 params with neither an AM4-overlay range nor a usable float-kind row in the device-true editor-cache range table (fm3/ranges.generated.ts, community cache 2026-06-27, issues #7/#8): raw 0..65534 wire passthrough by design. Residue = families with no section in the FM3 cache (VOCODER, CROSSOVER, FC) plus all-zero placeholder cache rows and collapsed windows (per-IR cab rows). Both closures are wire-identity. Ceiling tightened 808 to 145 (2026-08-11, BK-GEN3-RANGES): FM3_RANGES wired via deviceRanges moved 663 params from passthrough to calibrated/discrete.",
+    max_hits: 145,
   },
   {
     device: 'fm9',

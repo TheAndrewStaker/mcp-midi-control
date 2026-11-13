@@ -62,7 +62,7 @@
  *
  * The previous validator bounded the raw byte to 0..127. That was wrong in both
  * directions: it REJECTED the 1,048 real notes that read 224 (so a
- * read-modify-write of Stranglehold / Clint Eastwood / CaughtGlim / Amber threw
+ * read-modify-write of four existing song builds threw
  * a RangeError), and it ACCEPTED 97..127, which the device never produces.
  * Masking bit 7 away instead would silently un-tie a hand-made drone. So: split
  * the flag off, bound the MAGNITUDE 1..96, carry both through an edit, re-emit

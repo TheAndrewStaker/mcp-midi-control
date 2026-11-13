@@ -122,6 +122,7 @@ import {
 import {
   buildApplyPresetAtOps,
   buildApplyPresetOps,
+  filterCabPolishForSkippedBlocks,
   mergeAutoApplied,
   runApplyPresetAtOps,
   type ApplyPresetAtInput,
@@ -132,6 +133,13 @@ import {
 import { checkAudibility } from '../tools/audibility.js';
 import { findParamFuzzy } from 'fractal-midi/gen2/axe-fx-ii';
 import { guardActiveBufferOrSave, AXEFX_DIRTY_LABEL } from '../tools/shared.js';
+import { createAtomicImageApply, type AtomicImageApply } from './imageApply.js';
+import {
+  classifySetParamsForAtomic,
+  runSetParamsAtomicBatch,
+  SET_PARAMS_ATOMIC_THRESHOLD,
+  type ResolvedSetParamsOp,
+} from './setParamsAtomic.js';
 import { restorePresetBinaryAxeFxII } from './presetRestore.js';
 import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 
@@ -170,6 +178,13 @@ const GET_BLOCK_CHANNEL_TIMEOUT_MS = 800;
 export function createWriter(config: AxeFxIIConfig): DeviceWriter {
   const DEVICE_LABEL = config.displayName;
   const modelOpts = { modelId: config.modelByte };
+  // BK-084 mode-collapse: set_params' internal atomic image path (see
+  // setParamsAtomic.ts). Assigned below (config.supportsAtomicParamImage
+  // opt-in, XL+ only) BEFORE `createWriter` returns; `setParams` (defined
+  // in the `writer` object literal further down) only reads this at
+  // CALL time, by which point the assignment below has always run — a
+  // `let` closure capture, not a forward-reference bug.
+  let atomicImageApplyForSetParams: AtomicImageApply | undefined;
   // Build-time options for the apply pipeline (tools/applyExecutor.ts):
   // model byte on every emitted frame + this config's block-availability
   // filter (refuses e.g. AX8 "Amp 2" at build time, before any wire I/O).
@@ -472,9 +487,41 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
 
     async setParams(ctx, ops): Promise<BatchWriteResult> {
       gateWrite('set_params');
-      const writes: WriteResult[] = [];
+      const writes: (WriteResult | undefined)[] = new Array(ops.length);
       let acked_count = 0;
       let unacked_count = 0;
+
+      // BK-084 mode-collapse PRE-PASS: which ops (if the batch is large
+      // enough) get DEFERRED out of the main loop below and sent through
+      // the atomic image path afterward instead of individually. A `type`/
+      // `mode` op is NEVER deferred (the enum leg always streams live, and
+      // must land BEFORE any image dump so the dump captures it — same
+      // ordering retuneApply.ts used). Resolution failures here are
+      // swallowed (treated as "not eligible"); the main loop's own
+      // try/catch still throws/reports them normally when it reaches that
+      // op — this pre-pass only ever REMOVES ops from the immediate send
+      // path, never changes whether an op ultimately errors.
+      const deferredForAtomic = new Set<number>();
+      if (config.supportsAtomicParamImage === true && atomicImageApplyForSetParams !== undefined) {
+        const resolvable: ResolvedSetParamsOp[] = [];
+        for (let i = 0; i < ops.length; i++) {
+          const op = ops[i];
+          if (op.name === 'type' || op.name === 'mode') continue;
+          try {
+            const block = resolveBlockWithInstance(op.block, op.instance);
+            const param = findParamOrThrow(block, op.name);
+            const channel = normalizeChannel(op.channel);
+            resolvable.push({ index: i, block, param, channel, wireValue: op.value as number });
+          } catch {
+            // Not resolvable here; the main loop below reports the real error.
+          }
+        }
+        const classification = classifySetParamsForAtomic(resolvable, FN02_ONLY_GROUPS);
+        if (classification.imageEligible.length >= SET_PARAMS_ATOMIC_THRESHOLD) {
+          for (const op of classification.imageEligible) deferredForAtomic.add(op.index);
+        }
+      }
+
       // BK-071 type-knob applicability pre-flight, in-batch only. If the
       // batch contains a type write (e.g. `compressor.type=Pedal`), every
       // subsequent op against the same block is gated against the
@@ -487,7 +534,8 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
       // implementation; II ships the in-batch slice first and can grow
       // the cross-call cache later when the same surprises surface here).
       const inBatchTypes: Record<string, number> = {};
-      for (const op of ops) {
+      for (let i = 0; i < ops.length; i++) {
+        const op = ops[i];
         const isTypeOp = op.name === 'type' || op.name === 'mode';
         if (!isTypeOp) {
           const check = checkApplicability(`${op.block}.${op.name}`, {
@@ -495,7 +543,7 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
           });
           if (check.applicable === false) {
             const activeIndex = inBatchTypes[op.block];
-            writes.push({
+            writes[i] = {
               op: 'set_param',
               target: `${op.block}.${op.name}`,
               block: op.block,
@@ -507,14 +555,15 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
                 `this write; the wire address has no audible effect on this type. ` +
                 `Report as "not applied" and skip in the next iteration; call ` +
                 `list_params(${op.block}) for the knobs that apply on the current type.`,
-            });
+            };
             unacked_count++;
             continue;
           }
         }
+        if (deferredForAtomic.has(i)) continue; // handled in the atomic follow-up pass below
         try {
           const r = await writer.setParam!(ctx, op.block, op.name, op.value as number, op.channel, op.instance);
-          writes.push(r);
+          writes[i] = r;
           if (r.acked) {
             acked_count++;
             if (isTypeOp) {
@@ -524,18 +573,73 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
             unacked_count++;
           }
         } catch (err) {
-          writes.push({
+          writes[i] = {
             op: 'set_param',
             target: `${op.block}.${op.name}`,
             block: op.block,
             name: op.name,
             acked: false,
             warning: err instanceof Error ? err.message : String(err),
-          });
+          };
           unacked_count++;
         }
       }
-      return { writes, acked_count, unacked_count };
+
+      let atomicMeta: Pick<BatchWriteResult, 'apply_path' | 'receipt' | 'push_attempts' | 'image_apply_fallback_reason'> = {};
+      if (deferredForAtomic.size > 0) {
+        const resolvedDeferred: ResolvedSetParamsOp[] = [];
+        for (const i of deferredForAtomic) {
+          const op = ops[i];
+          const block = resolveBlockWithInstance(op.block, op.instance);
+          const param = findParamOrThrow(block, op.name);
+          const channel = normalizeChannel(op.channel);
+          resolvedDeferred.push({ index: i, block, param, channel, wireValue: op.value as number });
+        }
+        const atomicOutcome = await runSetParamsAtomicBatch(ctx, resolvedDeferred, config.modelByte, {
+          atomicImageApply: atomicImageApplyForSetParams!,
+        });
+        if (atomicOutcome.attempted) {
+          for (const [idx, result] of atomicOutcome.results) {
+            writes[idx] = result;
+            if (result.acked) acked_count++; else unacked_count++;
+          }
+        }
+        // Diagnostic fields are meaningful even when the atomic leg fell
+        // back to individual streaming (apply_path:'per-param-stream' +
+        // image_apply_fallback_reason) — not just on a fully-attempted
+        // atomic push (apply_path:'preset-image').
+        if (atomicOutcome.apply_path !== undefined) {
+          atomicMeta = {
+            apply_path: atomicOutcome.apply_path,
+            receipt: atomicOutcome.receipt,
+            push_attempts: atomicOutcome.push_attempts,
+            image_apply_fallback_reason: atomicOutcome.image_apply_fallback_reason,
+          };
+        }
+        // Ops the atomic attempt didn't (or couldn't) cover stream
+        // individually — proven safe to retry (nothing was sent for
+        // them), exactly the same per-op path as every non-deferred op above.
+        for (const idx of atomicOutcome.fallbackIndices) {
+          const op = ops[idx];
+          try {
+            const r = await writer.setParam!(ctx, op.block, op.name, op.value as number, op.channel, op.instance);
+            writes[idx] = r;
+            if (r.acked) acked_count++; else unacked_count++;
+          } catch (err) {
+            writes[idx] = {
+              op: 'set_param',
+              target: `${op.block}.${op.name}`,
+              block: op.block,
+              name: op.name,
+              acked: false,
+              warning: err instanceof Error ? err.message : String(err),
+            };
+            unacked_count++;
+          }
+        }
+      }
+
+      return { writes: writes as WriteResult[], acked_count, unacked_count, ...atomicMeta };
     },
 
     // ── Execute: preset navigation ────────────────────────────────────
@@ -836,7 +940,12 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
         // Reversible by switching presets. The switch_preset head op
         // still runs; that's the navigation the user asked for.
         const ops = shouldSave ? fullOps : fullOps.filter((op) => op.kind !== 'save');
+        // BK-108: AM4-parity stderr breadcrumbs, so server logs can tell a
+        // wire failure from a Desktop host-side failure envelope (the
+        // 2026-07-16 forensics gap).
+        console.error(`apply_preset start: device=${config.id} mode=build target=${presetNumber + 1} ops=${ops.length} save=${shouldSave}`);
         const result = await runApplyPresetAtOps(ctx.conn, ops, modelOpts);
+        console.error(`apply_preset done: device=${config.id} mode=build target=${presetNumber + 1} ok=${result.ok} nacks=${result.nackedSteps.length} elapsed=${result.elapsedMs} ms`);
         const slot = presetNumber + 1;
         const firstNack = result.nackedSteps[0];
         return {
@@ -844,7 +953,7 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
           steps: ops.length,
           duration_ms: result.elapsedMs,
           saved: shouldSave && result.ok,
-          auto_applied: mergeAutoApplied(cabPolish, sceneLevels),
+          auto_applied: mergeAutoApplied(filterCabPolishForSkippedBlocks(cabPolish, result.skippedInjectedParamBlocks), sceneLevels),
           failed_step: firstNack
             ? {
                 index: firstNack.index,
@@ -890,13 +999,16 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
           },
         };
       }
+      // BK-108: stderr breadcrumbs (see target-location branch).
+      console.error(`apply_preset start: device=${config.id} mode=build ops=${ops.length} save=false`);
       const result = await runApplyPresetAtOps(ctx.conn, ops, modelOpts);
+      console.error(`apply_preset done: device=${config.id} mode=build ok=${result.ok} nacks=${result.nackedSteps.length} elapsed=${result.elapsedMs} ms`);
       const firstNack = result.nackedSteps[0];
       return {
         ok: result.ok,
         steps: ops.length,
         duration_ms: result.elapsedMs,
-        auto_applied: mergeAutoApplied(cabPolish, sceneLevels),
+        auto_applied: mergeAutoApplied(filterCabPolishForSkippedBlocks(cabPolish, result.skippedInjectedParamBlocks), sceneLevels),
         failed_step: firstNack
           ? {
               index: firstNack.index,
@@ -1154,6 +1266,21 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
       return restorePresetBinaryAxeFxII(ctx, bytes, { ...options, modelId: config.modelByte, deviceLabel: DEVICE_LABEL });
     },
   };
+
+  // ── BK-084 mode-collapse: set_params' internal atomic image path ───
+  // Registered ONLY when the config opts in (`supportsAtomicParamImage`,
+  // XL+ only). Assigning the module-scope `atomicImageApplyForSetParams`
+  // (declared at the top of `createWriter`) is what `setParams` checks
+  // to decide whether the atomic-batch heuristic is even available; the
+  // AX8 stays out until an AX8 dump corpus exists to oracle its image
+  // grammar (then enabling it is a config flip). set_params never saves,
+  // so unlike the old retune wiring, no STORE path is injected here.
+  if (config.supportsAtomicParamImage === true) {
+    atomicImageApplyForSetParams = createAtomicImageApply(
+      { modelByte: config.modelByte, deviceLabel: DEVICE_LABEL },
+      (ctx, location) => writer.savePreset!(ctx, location),
+    );
+  }
 
   return writer;
 }

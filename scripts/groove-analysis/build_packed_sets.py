@@ -1,5 +1,5 @@
 """
-build_packed_sets.py — sweep ALL Sleep Token songs into PACKED groove projects
+build_packed_sets.py — sweep ALL groove-pack songs into PACKED groove projects
 (sample-flip; more pieces than the 4-voice reduction), in two variants:
 
   - <slug>__full4bar.ncs : 4 FULL 4-bar grooves (each = a chained pattern PAIR);

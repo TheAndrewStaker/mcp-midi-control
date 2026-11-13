@@ -10,7 +10,7 @@
  *
  * then set MCP_RIG_MANIFEST to that path so describe_rig reads it.
  *
- * The registration list mirrors packages/server-all/src/server/index.ts (the
+ * The registration list mirrors packages/server-all/src/server/createServer.ts (the
  * shipped roster). A new device added there must be added here too; both consume
  * the same descriptors.
  */
@@ -25,6 +25,7 @@ import { CIRCUIT_TRACKS_DESCRIPTOR } from '@mcp-midi-control/circuit-tracks/desc
 import { SPD_SX_DESCRIPTOR } from '@mcp-midi-control/spd-sx/descriptor.js';
 import { VE500_DESCRIPTOR } from '@mcp-midi-control/ve-500/descriptor.js';
 import { RC_505_MK2_DESCRIPTOR, RC_600_DESCRIPTOR } from '@mcp-midi-control/boss-rc/descriptor.js';
+import { MPC_ONE_G2_DESCRIPTOR } from '@mcp-midi-control/akai-mpc/descriptor.js';
 
 for (const descriptor of MODERN_FRACTAL_DESCRIPTORS) registerDevice(descriptor);
 registerDevice(AXEFXGEN1_DESCRIPTOR);
@@ -37,6 +38,7 @@ registerDevice(SPD_SX_DESCRIPTOR);
 registerDevice(VE500_DESCRIPTOR);
 registerDevice(RC_505_MK2_DESCRIPTOR);
 registerDevice(RC_600_DESCRIPTOR);
+registerDevice(MPC_ONE_G2_DESCRIPTOR);
 
 const rig = bootstrapRigFromRegistry({ id: 'my-rig', name: 'My rig' });
 process.stdout.write(`${JSON.stringify(rig, null, 2)}\n`);

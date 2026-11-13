@@ -13,7 +13,7 @@
 > against the entry body before spending a session on it.
 
 Family groups: gen-3 = {III, FM3, FM9, VP4}; Fractal-wide = {AM4, II, gen-3, gen-1}.
-Positive entries scanned: 58.
+Positive entries scanned: 60.
 
 ## Cross-family gaps (status: matched)
 
@@ -33,6 +33,7 @@ Positive entries scanned: 58.
 - **editor-cache-section-record-grammar**: verified AM4 / II / III / FM9 / VP4; untested on FM3 / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **iii-fn01-set-parameter-envelope**: verified III; untested on FM3 / FM9 / VP4 / AM4 / II / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **am4-gen3-preset-container**: verified AM4; untested on II / gen-3 (III/FM3/FM9/VP4) / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
+- **am4-body-block-record-chain**: verified AM4; untested on II / gen-3 (III/FM3/FM9/VP4) / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **gen3-fn01-grid-set-position-insert**: verified III / FM9; untested on FM3 / VP4 / AM4 / II / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **gen3-fn01-grid-routing**: verified III / FM9 / FM3; untested on VP4 / AM4 / II / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **gen3-fn01-store-preset**: verified III / FM9; untested on FM3 / VP4 / AM4 / II / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
@@ -77,4 +78,4 @@ Positive entries scanned: 58.
 
 ## Skipped rows (unparseable Devices column, fix the INDEX or extend the token map)
 
-(none)
+- gen3-stored-block-chain-order: unrecognized device token(s) 'Axe-Fx III', 'FM3 fw 13' in Devices column 'Axe-Fx III (fw 28.06, 384 factory presets) + FM9 + FM3 fw 13'

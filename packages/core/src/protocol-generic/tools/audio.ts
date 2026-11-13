@@ -8,7 +8,7 @@
  *     BS.1770 loudness from an OS audio input (BK-105 phase 1)
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import { executeMeasureLoudness } from '../../audio/measureLoudness.js';

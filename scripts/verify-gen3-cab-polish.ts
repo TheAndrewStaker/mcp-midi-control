@@ -10,11 +10,10 @@
 //     slot, never the amp; blocks are never auto-placed),
 //   - injection is EVIDENCE-GATED per device: it fires only where the
 //     cab cut params are display-calibrated in that device's own
-//     catalog. Today that is the FM9 (device-true ranges from its own
-//     editor cache); the Axe-Fx III and FM3 cab cuts are registered but
-//     uncalibrated raw-wire passthrough, so those devices inject
-//     NOTHING (writing "80" through their passthrough encode would be
-//     a guessed near-zero normalized wire value, not 80 Hz),
+//     catalog. Since BK-GEN3-RANGES (2026-08-11) that is ALL THREE grid
+//     devices: FM9, Axe-Fx III, and FM3 each carry device-true ranges
+//     mined from their own editor cache (deviceRanges in factory.ts),
+//     so the probe lights injection up family-wide,
 //   - the filter-slope selector (order) is NEVER injected on gen-3 (no
 //     verified value table on any device yet).
 //
@@ -176,25 +175,48 @@ console.log('Case 6: no cab block placed injects NOTHING (never auto-place)');
   check('cabPolish is undefined', cabPolish === undefined);
 }
 
-// ── Case 7: III and FM3 are evidence-gated OFF (uncalibrated cab cuts) ──
-console.log('Case 7: III + FM3 inject NOTHING (cab cuts registered but uncalibrated)');
+// ── Case 7: III and FM3 now inject too (device-true ranges landed) ──
+//
+// BK-GEN3-RANGES (2026-08-11): the III and FM3 cab cuts are now display-
+// calibrated from each device's OWN editor cache (III_RANGES / FM3_RANGES
+// wired via deviceRanges), so the evidence probe lights injection up on all
+// three grid devices with no cabPolish code change. This case previously
+// asserted the inverse (III/FM3 inject NOTHING while uncalibrated).
+console.log('Case 7: III + FM3 inject the defaults too (device-true cab ranges landed)');
 {
   const spec: PresetSlotSpec[] = [
     { slot: { row: 2, col: 4 }, block_type: 'cab' },
   ];
-  const iii = inject(spec, iiiCab);
-  check('Axe-Fx III: no injection, slots untouched', iii.cabPolish === undefined && iii.slots === spec);
-  const fm3 = inject(spec, fm3Cab);
-  check('FM3: no injection, slots untouched', fm3.cabPolish === undefined && fm3.slots === spec);
-  // Sanity-pin the gate premise so a future calibration drop flips this
-  // case loudly instead of silently: III/FM3 locut has no display range,
-  // FM9 locut does (device-true 20..2000 from its own editor cache).
-  check('gate premise: III cab locut has no calibrated display range', iiiCab?.params['locut']?.display_min === undefined);
-  check('gate premise: FM3 cab locut has no calibrated display range', fm3Cab?.params['locut']?.display_min === undefined);
+  for (const [label, blocks, cab] of [
+    ['Axe-Fx III', iiiBlocks, iiiCab],
+    ['FM3', fm3Blocks, fm3Cab],
+  ] as const) {
+    const r = inject(spec, cab);
+    const cabParams = r.slots[0]?.params as Record<string, Record<string, number>> | undefined;
+    check(`${label}: all 3 defaults injected under channel A (locut 80 / hicut 6500 / roommix 8)`,
+      cabParams?.['A']?.['locut'] === 80 && cabParams?.['A']?.['hicut'] === 6500 && cabParams?.['A']?.['roommix'] === 8,
+      JSON.stringify(cabParams));
+    check(`${label}: cabPolish report present`, r.cabPolish !== undefined);
+    void blocks;
+  }
+  // Pin the calibration premise on all three devices so a range-table drop
+  // flips this case loudly instead of silently regressing injection.
+  check('gate premise: III cab locut is display-calibrated 20..2000 Hz',
+    iiiCab?.params['locut']?.display_min === 20 && iiiCab?.params['locut']?.display_max === 2000);
+  check('gate premise: FM3 cab locut is display-calibrated 20..2000 Hz',
+    fm3Cab?.params['locut']?.display_min === 20 && fm3Cab?.params['locut']?.display_max === 2000);
   check(
     'gate premise: FM9 cab locut is display-calibrated 20..2000 Hz',
     fm9Cab?.params['locut']?.display_min === 20 && fm9Cab?.params['locut']?.display_max === 2000,
   );
+  // BK-096: the cut encode is LOG10 (evidence: FM3 REVERB_LOWCUT field point
+  // 45 Hz = wire 11540 + the II hardware-confirmed low/high-cut precedent),
+  // so 80 Hz lands at wire ~19728, not the linear ~1986.
+  for (const [label, cab] of [['III', iiiCab], ['FM3', fm3Cab], ['FM9', fm9Cab]] as const) {
+    const w = cab?.params['locut']?.encode(80);
+    check(`${label} cab locut encode(80 Hz) is log10 (wire ~19728)`,
+      typeof w === 'number' && Math.abs((w as number) - 19728) <= 2, String(w));
+  }
 }
 
 // ── Case 8: input spec is never mutated (pure pre-pass) ──

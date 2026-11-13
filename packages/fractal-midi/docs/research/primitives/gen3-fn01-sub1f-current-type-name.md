@@ -10,18 +10,27 @@ firmware_sensitive: false
 golden: packages/fractal-midi/test/gen3/axe-fx-iii/typename.test.ts
 consumed_in:
   - packages/fractal-midi/src/gen3/axe-fx-iii/setParam.ts (buildRequestCurrentTypeName / parseGetParameterResponse)
-  - packages/fractal-gen3/src/reader.ts (getParam discrete-name path)
 ---
 
-# gen-3 fn=0x01 sub=0x1F: read a block's CURRENT type/model NAME
+# gen-3 fn=0x01 sub=0x1F: the type/model NAME query (a TRAP for reading state)
 
-The modern Fractal editor reads a block's currently-selected type/model NAME with
-`fn=0x01 sub=0x1F`, targeting `(effectId, typeParamId)` with a zero value field.
-The device replies with the long fn=0x01 GET frame whose display-string region
-carries the model name. This is the authoritative source for a type selector's
-value: the positional `fn=0x1F` BULK read mis-addresses type selectors (its value
-is NOT the roster ordinal; FM9 capture 2026-06-19: a reverb whose device name was
-"Small Room"/ordinal 0 read back as positional value 5 = "Large Hall").
+> **Do not use this to read a block's current type (corrected 2026-10-24).**
+> The FRAME decode below is right, but the device answers with the roster's
+> FIRST entry whatever type is actually selected, before and after writes and
+> through seconds of settle. Two independent FM9 owners confirmed it on
+> firmware 11 and 12 (ToneCommand protocol notes, finding 5; for modifier
+> source enums it returns "NONE", for other type enums a stale constant). Our
+> own fixtures below show it too: reverb "Small Room", amp "59 Bassguy Bright"
+> and drive "Rat Distortion" are each roster ordinal 0. So the 2026-06-19
+> reading that the bulk read "mis-addressed" a reverb at ordinal 5 (Large Hall)
+> was backwards: the bulk value was the real type and the name was the trap.
+> `get_param` reads type selectors through the bulk read again (PR #24
+> hardware-confirmed the FM3 per-channel bulk projection). The builder stays
+> exported for completeness.
+
+The modern Fractal editor sends `fn=0x01 sub=0x1F`, targeting
+`(effectId, typeParamId)` with a zero value field. The device replies with the
+long fn=0x01 GET frame whose display-string region carries a model name.
 
 `buildGetParameter`'s `sub=0x09` GET elicits the same display-string reply; the
 `sub=0x1F` form is what the editor sends.
@@ -73,3 +82,6 @@ model byte. All three FM9 names are real Fractal models (self-validating decode)
 - 2026-06-12, FM3 field test: single-point decode ("Rat Distortion"), partial.
 - 2026-06-19, FM9 Windows verify: 3 blocks byte-exact + LEN-field semantics
   pinned; promoted to `matched` (FM9 + FM3 axis points). Wired into get_param.
+- 2026-10-24: unwired from get_param. Every observed reply is roster entry 0
+  (ours and two independent owners on fw 11 and 12); the name does not track
+  the selected type. Frame shape stays `matched`; the semantics are a trap.

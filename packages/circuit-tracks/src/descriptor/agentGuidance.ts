@@ -12,9 +12,9 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
   channel_model:
     'One USB endpoint multiplexed by MIDI channel: Synth 1 = ch1, Synth 2 = ch2, MIDI tracks = ' +
     'ch3/ch4 (external gear), Drums = ch10, Project/global = ch16. set_param targets SYNTH 1 by ' +
-    'default; pass instance:2 to address the SAME synth param on SYNTH 2 (e.g. set_param block:"osc1" ' +
-    'name:"semitones" value:7 instance:2). instance:2 applies only to synth blocks; drum/project ' +
-    'params (fixed channels) reject it. Per-track MIDI channel reassignment (Setup View) is a follow-on.',
+    'default; pass instance:2 to address the SAME synth param on SYNTH 2. instance:2 applies only to ' +
+    'synth blocks; drum/project params (fixed channels) reject it. Per-track MIDI channel reassignment ' +
+    '(Setup View) is a follow-on.',
 
   param_surface:
     'Beyond the synth voice (osc1/osc2/mixer/filter/env1-3/lfo1-2/fx/eq), set_param also reaches: ' +
@@ -22,8 +22,8 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     '(blocks "mod1".."mod12", each with source1/source2/depth/destination, sources+destinations by ' +
     'name); drums (blocks "drum1".."drum4": patch/level/pitch/decay/distortion/eq/pan); and the project ' +
     'mixer (block "track_mixer": synth1/synth2/audio1/audio2 _level and _pan) + reverb/delay/' +
-    'master_filter. audio1/audio2 are the two rear-panel audio INPUTS, which share the MIDI 1/2 track ' +
-    'lanes, so external gear plugged into Input 1/2 is mixed and effected exactly like an internal track. ' +
+    'master_filter. audio1/audio2 are the two rear-panel audio INPUTS (they share the MIDI 1/2 track ' +
+    'lanes), mixed and effected exactly like an internal track. ' +
     'The reverb and delay blocks carry both the effect character (reverb type/decay/' +
     'damping, delay time/feedback/width/...) AND the per-track SEND levels (synth1_send/synth2_send/' +
     'drum1_send..drum4_send/audio1_send/audio2_send); raise a send to route that track into the effect ' +
@@ -47,26 +47,23 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     'pattern 1, PLUS pattern_occupancy: which of the 8 patterns hold content in any track. Read that before ' +
     'concluding a project is empty: a project whose pattern 1 is silent by design (an intro) still reports its ' +
     'real patterns, so "starts silent" is not "nothing landed". To survey a whole pack, scan_locations({from, ' +
-    'to, pack}) lists its occupied projects by name in one round trip. get_preset({location:"patch:N"}) reads a ' +
-    'stored synth PATCH slot, returning the patch name ' +
-    'AND decoded patch-dump params (osc/filter/env/lfo/mixer/fx/eq), and reflects freshly-saved patches. ' +
-    'These read SAVED slots only; the live working buffer is not a slot, so the user must Save ' +
-    'edits to a slot first. This is the read half of read-modify-write (read slot, edit, ncs_upload).',
+    'to, pack}) lists its occupied projects by name in one round trip. STORED synth PATCH slots are NOT readable: ' +
+    'get_preset("patch:N") REFUSES (a Program Change ignores its number and reverts the live edit, measured ' +
+    '2026-07-27, so the old read returned the current patch for every N). Verify a patch save by ear or ' +
+    'power-cycle; a project .ncs embeds both synth patch bodies byte-exactly, so reading the PROJECT that uses ' +
+    'a sound is a faithful stored read. The live working buffer is not a slot, so the user must Save ' +
+    'edits on the device first. This is the read half of read-modify-write (read Project, edit, ncs_upload).',
 
   making_beats:
     'Two ways to land a beat, by intent: (1) apply_pattern mode:live_stream, Claude streams the ' +
     'beat live as a sound module (audition only; host-clocked, has timing jitter; nothing is stored). ' +
     '(2) apply_pattern mode:ncs_upload, author the pattern INTO a real .ncs project and push it to a ' +
     'stored project slot over SysEx. This is the way to PREP a project for a gig and the ONLY way to put a ' +
-    'DRUM pattern onto the device programmatically. It needs ncs_template (a path to an exported .ncs to ' +
-    'template-modify; the device cannot author one from scratch) and ncs_slot (the Project 1..64 to ' +
-    'write); it writes drums AND the note tracks (see melodic_sequencing). HARDWARE STATUS: the drum codec, ' +
-    'the note-track (melodic) authoring leg, and the SysEx transfer are all hardware-confirmed (a bassline ' +
-    'on Synth 1 + a kick on Drum 1 uploaded to a slot, loaded, and played back on the device). NOTE: ' +
-    'record_capture exists but is NOT advertised here: ' +
-    'DRUM tracks do NOT record external MIDI (manual p.38 + on-device test): external drum notes on ch10 ' +
-    'TRIGGER the pad sound but are never captured. Use ncs_upload to land a drum beat on the device, ' +
-    'live_stream to audition one.',
+    'DRUM pattern onto the device programmatically. It needs ncs_template + ncs_slot; it writes drums AND ' +
+    'the note tracks (see melodic_sequencing). HARDWARE STATUS: the drum codec, the melodic authoring leg, ' +
+    'and the SysEx transfer are all hardware-confirmed. NOTE: record_capture is NOT advertised here: DRUM ' +
+    'tracks do NOT record external MIDI (manual p.38 + on-device test); use ncs_upload to land a drum beat ' +
+    'on the device, live_stream to audition one.',
 
   melodic_sequencing:
     'apply_pattern authors MELODIES and CHORDS too, not just drums. Voices map to tracks by name: ' +
@@ -84,13 +81,15 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     'lands on the device via mode:ncs_upload (hardware-confirmed); live_stream auditions it without storing. ' +
     'IMPORTANT: see the scales guidance; the device re-quantizes notes to the project scale, so absolute ' +
     'pitches only play literally under Chromatic (which ncs_upload sets by default). ' +
-    'See note_length for how to make a pad actually HOLD.',
+    'SOUNDING PITCH (measured): stored note-track notes transmit an octave BELOW their stored value, on ' +
+    'synth AND MIDI tracks, so face-value authoring sounds an octave low; when authored pitches are targets ' +
+    'the music must hit, pass sounding_pitch:true on ncs_upload to store them +12 and land at sounding ' +
+    'pitch (the receipt reports either way). See note_length for how to make a pad actually HOLD.',
 
   note_length:
     'THE PATTERN OWNS DURATION, not the instrument. Every authored note used to get a one-step gate, so a ' +
     '"pad" was really a short trigger whose sustained quality came from the receiving synth\'s amp envelope; ' +
-    'swap the synth (a MicroFreak took over MIDI 1 from a Hydrasynth and two built songs silently changed ' +
-    'instrument) and the pad becomes a blip. So SET THE LENGTH IN THE PATTERN: suffix a hit token with ":" ' +
+    'swap the synth and the pad becomes a blip. So SET THE LENGTH IN THE PATTERN: suffix a hit token with ":" ' +
     'and a length in STEPS. "c3:4" holds four steps, "c3:16" holds a whole 16-step pattern, "c3:0.5" and ' +
     '"c3:1/6" are staccato. The range is 1/6 to 16 steps in sixths (the device\'s own Gate View unit); a ' +
     'length that is not a whole sixth is refused rather than rounded. Suffix "_" to TIE the note forward ' +
@@ -129,7 +128,8 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     'patches/projects. save_preset DOES persist a synth part\'s RAM sound to a Flash PATCH slot ' +
     '(instance 1 = Synth 1, 2 = Synth 2), hardware-confirmed 2026-07-03 to survive a power-cycle. ' +
     'It is destructive (it overwrites the slot) and needs confirm_overwrite. The device gives no save ' +
-    'ack, so verify by ear / power-cycle, or read it back with get_preset("patch:N").',
+    'ack and no stored-patch read-back (get_preset("patch:N") refuses; the PC-load read was refuted), ' +
+    'so verify by ear: load the Patch and listen, or power-cycle.',
 
   external_sequencing:
     'As an orchestrator, the Circuit can drive external gear from its MIDI tracks (ch3/ch4) and as ' +
@@ -138,35 +138,36 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     'in the loop. Transport uses the existing send_clock_* primitives.',
 
   sample_upload:
-    'Load your own WAV drum samples onto the device with upload_sample(file, slot 1..64) or ' +
-    'upload_kit(folder, kit?, start_slot?), replacing the Novation Components web app. The 64 sample ' +
+    'Load your own WAV drum samples onto the device with upload_sample(file, slot 1..64), or a whole ' +
+    'folder with upload_sample(folder, kit?, slot = first slot). The 64 sample ' +
     'slots are the SHARED DRUM POOL the four drum tracks pick from (synths use patches, not samples, so a ' +
     'sample is always a drum sound). Any-rate/-channel WAV is normalized to the device format (48 kHz mono ' +
-    '16-bit) on upload. A slot is OVERWRITTEN, and sample slots can\'t be read to check occupancy yet, so both ' +
-    'tools REFUSE by default and need confirm_overwrite:true; pass it only when the user authorized replacing ' +
-    'the slot(s) (save/overwrite/replace language; loading a fresh kit is usually overwrite-intent). ' +
-    'upload_kit natural-sorts a folder, maps files to consecutive slots, skips + reports any past ' +
-    'the 64-slot ceiling, and writes the whole kit as ONE atomic sample-directory session (all-or-nothing). ' +
-    'HARDWARE STATUS: durable, hardware-confirmed (2026-06-23): samples survive a device restart. The fix was ' +
-    'the session prelude (sample-dir 0x05 listing + the 64x 0x0d scan that commits the pack manifest); confirm ' +
-    'by ear since the device\'s final CRC verdict isn\'t read back. Writing to a NONZERO pack is hardware-confirmed ' +
-    'too (2026-07-27): 63 slots cloned onto Pack 2 and read back byte-identical, with an out-of-order write landing ' +
-    'at its own index, so the slot number is addressed rather than append-ordered. DO NOT VERIFY IMMEDIATELY: the ' +
+    '16-bit) on upload. A slot is OVERWRITTEN; the gate reads the pool directory first: an EMPTY slot writes ' +
+    'through, an OCCUPIED one refuses NAMING the occupant until confirm_overwrite:true (pass it only when the ' +
+    'user authorized replacing the slot(s); loading a fresh kit is usually overwrite-intent). ' +
+    'FILENAME PREFIX RULE (measured): the directory entry registers at the slot the name\'s leading NN_ ' +
+    'prefix says, NOT the addressed slot; a missing prefix is derived from the target slot (receipt says ' +
+    'so), a DISAGREEING one refuses (a misaligned name strands the sample data). ' +
+    'A folder upload natural-sorts the files, maps them to consecutive slots, skips + reports any past ' +
+    'the 64-slot ceiling, and writes the whole batch as ONE atomic sample-directory session (all-or-nothing). ' +
+    'HARDWARE STATUS: durable, hardware-confirmed (2026-06-23, survives a restart); nonzero-pack writes ' +
+    'hardware-confirmed too (2026-07-27, byte-identical read-back, slot byte ADDRESSED not append-ordered); ' +
+    'confirm by ear (the device\'s final CRC verdict is not read back). DO NOT VERIFY IMMEDIATELY: the ' +
     'device flushes a pack\'s manifest ~6-8 s AFTER the transfer session closes, so a list_samples taken sooner ' +
     'reports just-written slots as empty (it reported 8 false empties on 2026-07-27). Wait ~10 s and re-read before ' +
     'you conclude a write failed; this device has no erase, so a needless re-send is not free. ' +
     'Needs a bidirectional connection (ACK-gated).',
 
   project_upload:
-    'Load a prepared whole-project .ncs onto the device with upload_project(file, slot 1..64 as the device numbers it), sent verbatim ' +
-    'over the same hardware-confirmed transport (the same number the device shows). Use this for a ready- ' +
-    'made project such as a swappable groove set; to AUTHOR a pattern from scratch into a template instead, ' +
-    'use apply_pattern mode:ncs_upload. OVERWRITE GATE: without confirm_overwrite the tool reads the target slot ' +
-    'first: an EMPTY slot writes through, an OCCUPIED slot refuses and names the project it would replace; pass ' +
-    'confirm_overwrite:true (only on user save/overwrite authorization) to overwrite an occupied slot. A project ' +
+    'Load a prepared whole-project .ncs with import_preset(file_path, target_location = project 1..64 as the device ' +
+    'numbers it, pack?, save_authorized:true), sent verbatim. Use it for a ready-made project; ' +
+    'to AUTHOR a pattern into a template instead, use apply_pattern mode:ncs_upload. It is a stored ' +
+    'write, so save_authorized needs user save language. OVERWRITE GATE: the tool reads the target first; an EMPTY ' +
+    'project writes through, an OCCUPIED one refuses and names what it would replace until confirm_overwrite:true ' +
+    '(user overwrite authorization only), and the old project is then backed up to disk first. A project ' +
     'references samples by slot but does NOT contain the audio, so the drum tracks play whatever is assigned ' +
-    'in Drum track > Preset; load the matching kit (upload_sample / upload_kit) and the user assigns ' +
-    'Drum 1..4 to the sample positions on the device (per project). Needs a bidirectional connection.',
+    'in Drum track > Preset; load the matching kit (upload_sample) and the user assigns ' +
+    'Drum 1..4 to the sample positions on the device (per project).',
 
   drum_bleed_round_robin:
     'Each drum track is MONOPHONIC: a new hit retriggers (chokes) the previous hit on that SAME track, so a ' +
@@ -196,9 +197,9 @@ export const CIRCUIT_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.f
     'with the SAME groove squeezed onto Drum 1..4 (kick / snare / closed hat / ride): pieces with no track of ' +
     'their own fold to the nearest one and keep their identity through per-step sample flips, and two ' +
     'same-family pieces landing on one step are resolved by fold distance then velocity (the loser is reported, ' +
-    'never rehomed onto an unrelated track). It is stored at mixer LEVEL 0, so nothing is audible until the ' +
-    'user raises a drum track on the mixer, which is the point: it costs nothing and gives them internal drums ' +
-    'to blend under the external kit live. The level must be stored rather than sent as a CC, because loading ' +
+    'never rehomed onto an unrelated track). It is stored at mixer LEVEL 0, so it costs nothing until the ' +
+    'user raises a drum track on the mixer to blend it under the external kit live. ' +
+    'The level must be stored rather than sent as a CC, because loading ' +
     'the next project overwrites the live value. Two caveats worth saying out loud: a Save done ON the device ' +
     'recaptures the physical fader positions and reverts the stored level, and condense_drums refuses alongside ' +
     'drum_binding or external_targets.also_internal because both claim the same four tracks.',

@@ -47,12 +47,14 @@ Two shape differences matter for asks on this page:
 | `set_param` discrete set-by-name | confirmed | A community session sent frames byte-identical to this server's encoder from the tester's own rig |
 | `set_bypass` | confirmed | Same field test |
 | `switch_scene`, `switch_preset` | confirmed | Same field test |
-| Serial transport, discovery and framing | confirmed on macOS, hardware-unverified on Windows | The field tests were macOS. The Windows serial-driver path is implemented and unconfirmed |
+| Serial transport, discovery and framing | confirmed on macOS, Linux and Windows | The field tests were macOS and Linux. A community session on firmware 12.00, Windows 11, with Fractal's USB serial driver ran reads, writes, preset and scene switching and a save through the release build |
 | `set_block` placement | confirmed | An independent app built on this codec placed blocks on a real FM3 over Linux USB serial. The FM3 needs an extra cell-select frame ahead of the insert, which this server already sends automatically for four-row grids |
 | `set_block` / `set_bypass` on the 15 multi-word blocks | **hardware-unverified, newly reachable** | These never resolved before 2026-08-03: the write path matched display names and group codes against the descriptor SLUG, so `graphic_eq`, `parametric_eq`, `gate_expander`, `volume_pan`, `pan_tremolo`, `multitap_delay`, `megatap_delay`, `ten_tap_delay`, `plex_delay`, `ring_modulator`, `multiband_compressor`, `tone_match`, `ir_capture`, `ir_player` and `real_time_analyzer` returned "unknown block" for a block the device really has. The resolver now matches the read path, but none of THESE blocks has been exercised on hardware |
 | Grid routing, cable connect and disconnect | confirmed | Same independent field test |
+| Per-scene channel select (fn=0x0B) and per-scene bypass | confirmed | A 2026-09-14 macOS session on firmware 12 selected each scene, sent SET_CHANNEL and SET_BYPASS, stored, and read every scene's channel and bypass back from the stored preset. This is the sequence `apply_preset` `scenes[]` and `set_param` `channel` now send; before that fix both silently dropped the channel and the scene map |
 | `get_preset` live grid read | hardware-unverified | The four-row grid decode was pinned offline against the field-test capture. Never compared to a real panel |
-| `save_preset` | hardware-unverified | The save envelope is unconfirmed on any gen-3 device |
+| Block list in a stored `get_preset` | hardware-unverified | Named by pairing the stored block chain with the grid. Checked offline against two fw 13 captures, where the older size-based naming dropped Delay, Drive and Chorus |
+| `save_preset` | confirmed | The same Windows session saved to the loaded location; the state survived switching presets and a full power cycle. Saving to a different location than the loaded one is still unrun on the FM3 |
 
 Support tier: `community-beta`. This mirrors `capabilities.support_tier` on the
 descriptor at `packages/fractal-gen3/src/configs/fm3.ts`, and preflight fails if
@@ -69,8 +71,11 @@ surface.
 - Discrete set-by-name `set_param`, via byte-identical frames.
 - `set_block` placement and grid routing, on Linux USB serial, through an
   independent application built on the same codec.
+- The Windows serial-driver path, on firmware 12.00: reads, `set_param`, preset
+  and scene switching, and `export_preset` (24 exports re-imported cleanly).
+- `save_preset` to the loaded location, which survived a power cycle.
 
-**Please do not re-run these.** The core surface is done on macOS and Linux.
+**Please do not re-run these.** The core surface is done on macOS, Linux and Windows.
 
 ## Blocked, and on what
 
@@ -78,8 +83,8 @@ Nothing on the FM3 is refused for an undecoded wire shape.
 
 | Blocked capability | Missing evidence | Closed by |
 |---|---|---|
-| Device-true display ranges, steps, tapers and enum name lists | The FM3 cache copies on hand are small unsynced stubs | DONATE-1 |
-| The Windows serial-driver path | No Windows run has happened. Both field tests were macOS, and the third was Linux | SESSION-1 |
+| Device-true enum NAME rosters wired into the catalog | Not donation-blocked anymore. Device-true display ranges SHIPPED 2026-08-11 from the 2026-06-27 community cache (1831 rows / 39 families, gated by `npm run verify-fm3-ranges`), and that same cache carries the full enum name vocabulary (all 331 amp models named), so mining FM3-true rosters is queued offline engineering work | Engineering (roster mining); DONATE-1 adds fresher-firmware cross-validation |
+
 | Confirmation of the discrete routing classification | The FM3's type and count selectors were classified as discrete by joining sibling evidence on symbol, not on parameter id, because no FM3 catalog round-trip exists yet | SESSION-2 |
 | Named tempo divisions on any gen-3 device | The wire encoding for the TEMPO division select is undecoded | See [axe-fx-iii.md](axe-fx-iii.md) CAPTURE-2 |
 
@@ -93,6 +98,17 @@ Read [../SAFETY.md](../SAFETY.md) once. The device-specific parts:
 - **The harvest script cannot reach an FM3.** It talks MIDI ports directly and
   the FM3 is serial-only over USB. Use the conversational asks below, or send the
   cache file, which is the higher-value contribution anyway.
+- **Never sweep the Foot Controller's parameter space.** A contributor's own
+  script sent read requests to the Foot Controller block (effect id 199) for
+  parameter ids 0 to about 2000 on firmware 12.00, and the FM3 froze until it was
+  power cycled (presets were intact). This server only reads the catalogued Foot
+  Controller parameters, one at a time. Do not do this with raw SysEx.
+- **Moving a block clears the source of modifiers that target it.** Clearing a
+  grid location and placing the block elsewhere keeps its parameters, channels
+  and scene states, but every modifier pointed at it loses its source (Pedal 1
+  to Wah, for example). Reassign the modifier on the unit after a move.
+- **A new Feedback Return block is silent.** It is placed with its level at 0;
+  raise the Return level before judging the result.
 - **Firmware updates.** Never run Fractal-Bot's firmware update while the server
   or a probe holds the serial port.
 - **What we will never ask you to do.** No firmware modification, no opening the
@@ -100,42 +116,23 @@ Read [../SAFETY.md](../SAFETY.md) once. The device-specific parts:
 
 ## Asks, ranked
 
-### SESSION-1: Anything at all, on Windows
-**Tier: SESSION | ~5 minutes | reads first, then one write | unlocks: the Windows serial-driver path**
-
-The single most useful FM3 contribution right now, because it is the only gap
-that no amount of decoding can close. Both field tests were macOS and one was
-Linux. Nobody has run the Windows serial driver end to end.
-
-Install Fractal's FM3 USB Serial Driver, quit FM3-Edit, and in your MCP host:
-
-> "What can you see about my FM3?"
-
-then
-
-> "What's loaded on my FM3 right now?"
-
-then
-
-> "Set Amp 1 drive to 5.5, then read it back."
-
-Report whether the server found the device at all, what the port looked like,
-and whether the front panel moved. **A failure here is as valuable as a
-success**, and more so: it tells us the Windows driver path needs work, which is
-currently an unknown rather than a known-good.
+SESSION-1 (anything at all on Windows) and SESSION-3 (confirm a save) are closed
+by the Windows session above. The Axe-Fx III and FM9 still need a save
+confirmation; see their pages.
 
 ### DONATE-1: Send your FM3-Edit definition cache
-**Tier: DONATE | ~2 minutes | no device time | unlocks: device-true ranges, steps, tapers and every enum name list**
+**Tier: DONATE | ~2 minutes | no device time | unlocks: cross-validation of ranges and enum rosters on your firmware**
 
-The FM3 catalog still lacks device-true display ranges, and the cache is where
-they live. It needs no capture tooling and no hardware time.
+The 2026-06-27 community cache already delivered the FM3's device-true display
+ranges (shipped, gated by `npm run verify-fm3-ranges`) and carries the full enum
+name vocabulary, so the original ask is closed. A cache from YOUR install still
+helps: a second cache from a different firmware cross-validates both, which is
+exactly how the FM9's fw 11.0 and 12.0 caches caught its amp-roster growth.
 
 Full instructions: [../tools/editor-cache-file.md](../tools/editor-cache-file.md).
-For the FM3 the filename starts `effectDefinitions_11_`.
-
-The FM3 copies on hand are small unsynced stubs. Make sure your FM3-Edit has
-connected to the device at least once before you grab the file; the linked page
-explains how to tell.
+For the FM3 the filename starts `effectDefinitions_11_`. Make sure your FM3-Edit
+has connected to the device at least once before you grab the file; the linked
+page explains how to tell.
 
 ### SESSION-2: Compare the live grid read to your panel
 **Tier: SESSION | ~5 minutes | read-only | unlocks: `get_preset` live grid read**
@@ -151,17 +148,6 @@ Compare the reported block positions to the FM3-Edit grid or the front panel
 layout page. A match flips this read from `hardware-unverified` to `confirmed`.
 A mismatch, with a description of what the grid actually looks like, is more
 valuable still.
-
-### SESSION-3: Confirm a save
-**Tier: SESSION | ~5 minutes | writes and then PERSISTS | unlocks: `save_preset`**
-
-The save envelope is unconfirmed on every gen-3 device. Use a preset location
-you do not care about.
-
-> "Save this preset to location 5."
-
-Then switch away and back, and check the preset name at location 5. Report
-whether it landed.
 
 ### CAPTURE-1: Receive one preset with Fractal-Bot
 **Tier: CAPTURE | ~5 minutes | sniffer plus Fractal-Bot | unlocks: frame-count confirmation**

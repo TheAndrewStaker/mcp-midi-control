@@ -46,20 +46,22 @@ reach any USB MIDI device the operating system exposes. A Line 6 Helix, a
 Boss GT-1000, or any synth with a CC chart works from day one through
 these primitives, under the same opinions.
 
-### First-class, hardware-verified depth
-A few devices get deeper support: whole-preset and whole-patch authoring,
-real-gear lineage data, and cross-device tone translation, all verified
-against real hardware captures. That tier today is:
+### Hardware-verified depth
+Every device the maintainer owns is dogfooded and hardware-verified on a
+real unit. The current depth frontier, whole-preset and whole-patch
+authoring with real-gear lineage data and cross-device tone translation,
+is:
 
 - **Fractal AM4** (floor unit; deepest reverse-engineering,
   hardware-verified end to end)
 - **Fractal Axe-Fx II XL+**
 - **ASM Hydrasynth Explorer**
-- **Modern Fractal family: Axe-Fx III / FM3 / FM9 / VP4** in community beta (one shared gen-3 codec, per-device catalogs)
-- **Fractal Axe-Fx Standard/Ultra (gen-1)** in community beta (parameter set + read, decoded from the published gen-1 SysEx spec)
-- **Novation Circuit Tracks** in community beta (groove + melody sequencing, sample / project upload, sequencing of outboard gear)
-- **Roland SPD-SX** in community beta (kit + sample authoring over USB mass storage; pad triggering + kit recall over MIDI)
-- **Boss VE-500 Vocal Performer** in community beta (parameter set + read, decoded byte-exact from the manufacturer's editor source)
+
+The roster spans two statuses, hardware-verified (tested on a real unit)
+and community beta (evidence-backed and fully drivable, awaiting
+hardware confirmation), plus generic-only CC/PC maps; the current roster
+and each device's status live in the repo-root README and the device
+table in [docs/contributing/README.md](contributing/README.md).
 
 These are named second on purpose. They are the current depth frontier,
 not the identity of the project.
@@ -113,7 +115,7 @@ required, under the universal opinions above.
 ## Core User Experience
 
 ```
-User: "Give me a preset for Amber by 311 (4 scenes, verse through solo)"
+User: "Give me a preset for "Song Title" by Artist (4 scenes, verse through solo)"
 
 Claude: Researches the verified gear for that recording era, maps each
         block to AM4 equivalents, builds 4 scenes, confirms target
@@ -130,11 +132,9 @@ Claude: Reduces Filter sensitivity, re-sends, asks how it sounds now.
 
 ## Target User
 - Musicians who own at least one USB MIDI device. Any MIDI device works
-  through generic-MIDI primitives; the first-class depth tier today is the
-  Fractal AM4, Axe-Fx II XL+, and Hydrasynth Explorer (hardware-verified), with
-  the modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4), the original Axe-Fx
-  Standard/Ultra, the Novation Circuit Tracks, the Roland SPD-SX, and the Boss
-  VE-500 in community beta.
+  through generic-MIDI primitives; deeper support is tiered per device,
+  with the roster in the repo-root README and
+  [docs/contributing/README.md](contributing/README.md).
 - Comfortable with an MCP host such as Claude Desktop (free tier
   acceptable).
 - Want authentic tones without deep technical knowledge.
@@ -160,10 +160,10 @@ Claude: Reduces Filter sensitivity, re-sends, asks how it sounds now.
    save-authorization gate is enforced uniformly across devices (shipping;
    see [`docs/SAFE-EDIT-WORKFLOW.md`](SAFE-EDIT-WORKFLOW.md)).
 5. The same UX and the same guarantees work across multiple devices via
-   the unified tool surface (shipping: AM4, Axe-Fx II XL+, Hydrasynth
-   Explorer; Axe-Fx III / FM3 / FM9 and the gen-1 Axe-Fx Standard/Ultra in
-   community beta). See
-   [`docs/TOOLS.md`](TOOLS.md) for the full tool list.
+   the unified tool surface (shipping across the registered fleet). See
+   [`docs/TOOLS.md`](TOOLS.md) for the full tool list and the device
+   table in [docs/contributing/README.md](contributing/README.md) for
+   per-device tiers.
 
 ---
 
@@ -184,49 +184,5 @@ primitives that reach any device, and transport utilities.
 
 ## Roadmap
 
-### Feasibility (done)
-Proved a USB MIDI SysEx round-trip with the AM4 without a vendor editor.
-Early probe work confirmed the AM4 follows the published Axe-Fx III
-third-party MIDI specification with AM4-specific extensions.
-
-### Protocol layer (done)
-Decoded the editor-write surface by puppeting the device, with no
-preset-binary reverse-engineering required. The AM4 and Axe-Fx II XL+ wire
-layers ship with byte-exact goldens against real captures.
-
-### MCP server (done)
-Wired the protocol layer to MCP tools. Tone-from-description works end to
-end on the AM4 and Axe-Fx II.
-
-### Preset intelligence (done)
-Lineage data for amps, drives, cabs, delays, and reverbs. `lookup_lineage`
-surfaces real-hardware inspiration and manufacturer-authored quotes.
-Iterative refinement via single-param edits in the working buffer.
-
-### Synth voice authoring (done)
-Voice-class patch authoring on the Hydrasynth: oscillators, filter,
-envelopes, mod matrix wired by name, macros routed by name, and named
-voice recipes applied via `apply_patch`. The synth contract matches the
-guitar contract: same opinions, same response format, `recipe_id` on both
-`apply_preset` and `apply_patch`.
-
-### Multi-device and library management (in progress)
-- Unified tool surface live across registered devices, plus voice-class
-  patch authoring, mod-matrix and macro routing by name, generic-MIDI
-  primitives, and transport utilities. Four families in all; see
-  [`docs/TOOLS.md`](TOOLS.md) for the list.
-- Save-authorization, dirty-buffer, and multi-preset overwrite gates
-  enforced uniformly (see [`SAFE-EDIT-WORKFLOW.md`](SAFE-EDIT-WORKFLOW.md)).
-- Setlist authoring for AM4 and Axe-Fx II.
-- Workspace monorepo split into one package per device, with the wire
-  codec factored out into a standalone `fractal-midi` package.
-
-### Community devices and distribution (next)
-- Take the Axe-Fx III from community beta, through community-captured wire
-  decodes, to write parity with the AM4 and Axe-Fx II.
-- Add more popular gear: Line 6 Helix and other amp modelers, plus more
-  instruments and synthesizers. Adding a device is a descriptor, not a new
-  set of tools, so contributors can land a device without touching the
-  tool surface. Contributions are open.
-- The `fractal-midi` codec is already a standalone package; an equivalent
-  synth-side codec split follows as that side of the catalog grows.
+Current status, next steps, and wanted contributions live in
+[ROADMAP.md](../ROADMAP.md).

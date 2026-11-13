@@ -47,7 +47,8 @@
         "audio": { "enum": ["mono", "stereo"] },
         "group": { "type": "string" },
         "pair": { "type": "string" },
-        "output_role": { "enum": ["main", "monitor", "sub", "stem", "cue"], "description": "For an audio output port: its role in the rig's output stage (advisory guidance hook)" }
+        "output_role": { "enum": ["main", "monitor", "sub", "stem", "cue"], "description": "For an audio output port: its role in the rig's output stage (advisory guidance hook)" },
+        "direction": { "enum": ["in", "out"], "description": "Which way the jack faces, for kinds the kind alone does not fix (expression, footswitch, cv, analog_clock, usb_*): in = accepts a cable, out = sends one. Omitted = either. Must agree with a fixed-direction kind." }
       }
     },
     "routingRule": {

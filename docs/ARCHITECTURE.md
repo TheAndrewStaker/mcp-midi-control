@@ -19,15 +19,12 @@ Consistency across devices is a core value. Adding a device is a
 descriptor, not a new set of tools, and synthesizers are first-class
 targets rather than an afterthought. Any USB MIDI device works today via
 generic-MIDI primitives (CC, NRPN, SysEx, program change, notes, clock).
-Hardware-verified depth (whole-preset and whole-patch authoring, lineage,
-cross-device translation) currently covers the Fractal AM4, Axe-Fx II
-XL+, and ASM Hydrasynth Explorer. Several more devices are in community beta:
-the modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4), the original Axe-Fx
-Standard/Ultra, the Novation Circuit Tracks (a groovebox sequencer), the Roland
-SPD-SX (a sample pad on a hybrid storage/MIDI transport), the Boss VE-500 vocal
-processor, and the Boss RC-505mk2 Loop Station (a looper on a hybrid
-storage/MIDI transport whose memories are authored as `.RC0` files). Each is a
-descriptor on the same unified surface, not a new tool family.
+Deeper per-device support (whole-preset and whole-patch authoring,
+lineage, cross-device translation) is tiered per device; the registered
+roster and each device's tier live in the repo-root README and the
+device table in [docs/contributing/README.md](contributing/README.md).
+Each registered device is a descriptor on the same unified surface, not
+a new tool family.
 
 AM4 is used as the running example throughout this doc because it is the
 device with the deepest decode, not because it is the whole picture.
@@ -37,7 +34,7 @@ among several," all selected with the `port` argument on each tool call.
 ```
 ┌─────────────────────────────────────────────────────┐
 │  Claude Desktop (claude.ai)                         │
-│  User types: "Amber by 311, 4 scenes"               │
+│  User types: "a blues tone, 4 scenes"               │
 └──────────────────────┬──────────────────────────────┘
                        │ MCP protocol (stdio)
 ┌──────────────────────▼──────────────────────────────┐
@@ -50,15 +47,16 @@ among several," all selected with the `port` argument on each tool call.
 └──────────────────────┬──────────────────────────────┘
                        │ TypeScript function calls (dispatch by port)
 ┌──────────────────────▼──────────────────────────────┐
-│  Device-package layer  (one package per device)     │
+│  Device-package layer (one workspace package per    │
+│  device family; roster in the support table)        │
 │                                                     │
-│   AM4        Axe-Fx II     Hydrasynth   Axe-Fx III  │
-│  (verified) (verified)    (verified)    (beta)      │
+│   [device pkg]  [device pkg]  [device pkg]  ...     │
 │                                                     │
 │  Each package owns its descriptor (reader +         │
-│  writer adapters). Wire codec (SysEx encode/decode, │
-│  checksums, block/param tables, preset format)      │
-│  lives in the shared fractal-midi package.          │
+│  writer adapters). Wire codecs (SysEx encode/       │
+│  decode, checksums, block/param tables, preset      │
+│  format) live in the shared codec packages          │
+│  (fractal-midi, roland-midi).                       │
 └──────────────────────┬──────────────────────────────┘
                        │ @julusian/midi (shared transport)
 ┌──────────────────────▼──────────────────────────────┐
@@ -68,10 +66,9 @@ among several," all selected with the `port` argument on each tool call.
 └──────────────────────┬──────────────────────────────┘
                        │ USB cable
 ┌──────────────────────▼──────────────────────────────┐
-│  Hardware: AM4 / Axe-Fx II / III / FM3 / FM9 /      │
-│  VP4 / gen-1, ASM Hydrasynth, Circuit Tracks,       │
-│  Roland SPD-SX, Boss VE-500, or any USB MIDI        │
-│  device (via the generic-MIDI primitives)           │
+│  Hardware: any registered device (see the device    │
+│  table in docs/contributing/README.md) or any USB   │
+│  MIDI device via the generic-MIDI primitives        │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -89,11 +86,56 @@ guidance; no MIDI logic at this layer.
 packages/server-all/src/
   server/
     index.ts                  ← boot + transport + descriptor registration
+    createServer.ts           ← McpServer factory (fresh per connection)
     tools/
       midi-primitives.ts      ← send_cc / _note / _program_change /
                                    _nrpn / _sysex (any MIDI device)
       midi-control.ts         ← list_midi_ports / reconnect_midi
+    webhost/                  ← the SECOND transport: the Rig Console's
+                                   loopback HTTP host (below)
 ```
+
+**One process, two transports.** Claude Desktop drives the server over
+stdio; the Rig Console (a read-only web page: the rig, its cabling, and the
+checks) is served by the SAME process over a loopback-only `node:http`
+listener (`server/webhost/`), started lazily by the `open_rig_editor` tool
+or eagerly by `npm run rig-console:serve`. One process is what makes cache
+coherence free: an `edit_rig` from the agent invalidates the same manifest
+cache the browser reads, and a store-write event stream (SSE) refreshes an
+open page. The browser speaks REST to the dispatcher layer, never MCP
+JSON-RPC, and parity with the tool surface is enforced by an import
+allowlist (`verify-route-imports` in preflight: webhost modules may import
+only the dispatcher layer, the rig store, and the pure renderer
+`@mcp-midi-control/rig-console-render`). Security posture (loopback bind,
+per-launch fragment token, cookie-scoped constant assets, strict CSP, idle
+expiry) is asserted end-to-end by `verify-webhost-security`; stdout stays
+the exclusive protocol channel (the transport holds the sole fd-1 handle,
+`process.stdout.write` is redirected to stderr, `verify-stdout-discipline`
+guards it statically). A per-device instance lease
+(`core/server-shared/instanceLock.ts`, checked at the `ensureConnection`
+handle-open seam) refuses a second server instance every operation on a held
+device, reads included (`port_held_elsewhere`), instead of racing its exclusive
+port. The
+lease is SHORT and VISIBLE (2026-09-03): an idle handle and its lease are
+released 15 s after the instance's last operation on the device
+(`MCP_PORT_IDLE_RELEASE_MS`; the Axe-Fx II keeps its port for its unsolicited
+dirty signal), a waiting operation rides that grace out (`MCP_PORT_WAIT_MS`),
+the lock file names the holding MCP client + pid + last activity, and
+`list_midi_ports` lists every lease from any session.
+Plan of record: `docs/design/RIG-CONSOLE-DESIGN.md`.
+
+**One operation per endpoint at a time.** Two clients in one process make
+concurrent tool calls legal, and several devices correlate SysEx responses
+by ARRIVAL ORDER (no correlation id on the wire), so two in-flight reads on
+one port can swap answers. Every device I/O therefore runs inside
+`withEndpoint(descriptor, fn)` (`dispatcher/core.ts`): a per-endpoint mutex
+(key = `connection_label ?? id`, `core/server-shared/endpointArbiter.ts`)
+serializes ops on the SAME device while different devices run in parallel;
+the `DispatchCtx` is only obtainable under the lock, so a new executor that
+skips it fails to compile. A waiter behind a busy endpoint fails fast with
+`device_busy` naming the in-flight op, and `reconnect_midi` takes the lock
+rather than closing a port under a holder. Design + remaining cancellation
+work: `docs/design/connection-arbiter.md`.
 
 ### 2. Tool surface (`packages/core/src/protocol-generic/`)
 
@@ -158,26 +200,14 @@ matching tool surface, with no per-device apply tool proliferation.
 | **voice** | Sparse override on a fixed-topology synth voice or fixed-pad sampler. Every patch has the same module layout (osc / filter / env / lfo / fx on synths; pad1 / pad2 / pad3... / master FX on samplers); the agent authors a flat map of named param overrides on top of an INIT buffer. | `apply_patch` | ASM Hydrasynth, Roland SPD-SX (drum sampler, 9-pad fixed topology), future Roland synths, Prophet-X, Sub37 |
 | **effect** | Flat name/value param map. No slots, no routing, no scenes: single algorithm or single-effect-per-preset. | `apply_settings` *(planned)* | Strymon single-effect pedals (Timeline, Mobius), Eventide H9 single-algorithm presets, MXR Carbon Copy MIDI |
 
-**Why three tools, not one.** The semantic gap between layout and
-voice classes is real: `apply_preset`'s `PresetSpec` requires
-`slots[].block_type` from a cross-device union, and synth-voice modules
-(`osc1` / `filter1` / `env1`) aren't in that union because they're
-not placement-shaped on a signal chain. Forcing voice-class devices
-through `apply_preset` would mean the schema accepts free-string
-block_types (defeating the strict enum that makes apply_preset
-reliable for layout devices), and the agent would have to learn two
-different meanings of "slot" / "block_type" depending on port.
-Each class gets its own tool with its own input shape.
-
-**Why the class doesn't proliferate per-device.** Adding a Roland
-synth means writing a `DeviceDescriptor` with `preset_class:'voice'`
-and a writer that consumes the existing `apply_patch` input shape.
-`apply_patch` is class-shaped, not device-specific: it carries a sparse
-override map that any voice-class device can interpret. Voice-class
+Each class has its own apply tool with its own input shape: layout
+presets are placement-shaped (slots and a strict cross-device
+`block_type` enum) while voice patches are a sparse named-override map
+on a fixed topology, and one merged tool would blur both schemas. The
+tools are class-shaped, not device-specific: a new voice-class device
+consumes the existing `apply_patch` input shape, and voice-class
 devices also expose mod-matrix and macro routing by name
-(`set_mod_route`, `set_macro_route`), so the agent can wire an LFO to a
-filter or a macro to a destination using the names a player reads on the
-panel rather than raw matrix indices.
+(`set_mod_route`, `set_macro_route`).
 
 **Tool surface by class:**
 
@@ -217,7 +247,7 @@ packages/fractal-gen2/src/
   midi.ts             ← bidirectional MIDI handle + dirty-state classifier
   setParam.ts         ← wire-byte builders (buildSetBlockParameterValue…)
   params.ts           ← KNOWN_PARAMS registry
-  tools.ts            ← device-namespaced tools (code preserved, not registered)
+  tools.ts            ← legacy device-namespaced tools, unregistered
 
 packages/fractal-gen3/src/
   factory.ts          ← createModernFractalDescriptor (gen-3 family: III/FM3/FM9/VP4)
@@ -230,8 +260,7 @@ packages/fractal-gen3/src/
 
 packages/hydrasynth/src/
   descriptor.ts       ← Hydrasynth DeviceDescriptor
-  server.ts           ← device-namespaced tools (code preserved, not registered
-                          except Hydra-specific tools not yet on unified surface)
+  server.ts           ← tool registration (one legacy diagnostic kept unregistered)
 ```
 
 **Adding a new device.** Write a `DeviceDescriptor` (copy
@@ -294,7 +323,7 @@ a device:
   serial just carries the same MIDI bytes through a different pipe. A new
   MIDI-over-X transport is a new `MidiConnection` implementation.
 
-- **Endpoint layer: `DispatchCtx` / `openCtx`.** Some devices are not a
+- **Endpoint layer: `DispatchCtx` / `withEndpoint`.** Some devices are not a
   MIDI byte stream at all. The Roland SPD-SX in WAVE MGR mode is a mounted
   USB mass-storage volume whose kits/waves are `.spd` files, a filesystem,
   not a stream of MIDI messages. That can never be a `MidiConnection`, so
@@ -309,17 +338,18 @@ a device:
 | `'storage'` | mounted drive (`resolveRoot()`) | `storage.root` (+ a null-object `conn`) |
 | `'hybrid'` | resolved at call time | `storage.root` if mounted, else MIDI `conn` |
 
-`openCtx` (`dispatcher/core.ts`) branches on `transport.kind`. For
+The ctx build inside `withEndpoint` (`dispatcher/core.ts`) branches on
+`transport.kind`. For
 `'storage'` it requires a mounted root or throws `device_not_mounted`; the
 `conn` it returns is a null object that throws on any MIDI I/O, so a
 storage device's reader/writer methods read `ctx.storage.root` and never
-touch the wire. Existing MIDI devices omit `transport` (default `'midi'`)
-and are completely unaffected; `conn` stays required and the ~156
-`ctx.conn` call sites are untouched.
+touch the wire. MIDI devices omit `transport` (default `'midi'`) and get
+a live `conn` as always; `conn` stays required on the ctx.
 
 **Hybrid devices** (SPD-SX) expose both surfaces on one descriptor, with
-the two USB modes mutually exclusive on the hardware. `openCtx` resolves
-the live transport per call: drive mounted → the storage reader/writer
+the two USB modes mutually exclusive on the hardware. The ctx build resolves
+the live transport per call (fresh inside the endpoint lock, so a USB-mode
+flip is seen on the next acquire): drive mounted → the storage reader/writer
 methods (kit/wave authoring); else a MIDI port → the MIDI methods (kit
 recall via `switch_preset`, pad triggers). A verb that needs the other
 mode returns `capability_not_supported`. The full reasoning is in
@@ -393,21 +423,37 @@ rules are in [`docs/SAFE-EDIT-WORKFLOW.md`](SAFE-EDIT-WORKFLOW.md). In short:
 ```
 mcp-midi-control/
   packages/
-    fractal-midi/   Pure-TypeScript wire codec, published to npm. Builders,
-                       parsers, param dictionaries, block tables, checksums,
-                       calibration, lineage data. No MIDI transport, no MCP.
-                       Builds first; every device package imports from it.
-    core/           Cross-device foundation (MidiConnection transport,
-                       unified dispatcher, DeviceDescriptor types,
-                       server-shared safe-edit + connection helpers,
-                       fractal-shared loudness corpus)
-    am4/            Fractal AM4 descriptor (reader + writer adapters)
-    fractal-gen1/   Fractal Axe-Fx Standard/Ultra (gen-1) community-beta descriptor
-    fractal-gen2/   Fractal Axe-Fx II XL+ descriptor
-    fractal-gen3/   Modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4)
-                       community-beta descriptors
-    hydrasynth/     ASM Hydrasynth descriptor (Explorer / KB / Deluxe / Desktop)
-    server-all/     MCP server entry point (composes all device packages)
+    fractal-midi/         Pure-TypeScript Fractal wire codec, published to
+                            npm. Builders, parsers, param dictionaries, block
+                            tables, checksums, calibration, lineage data. No
+                            MIDI transport, no MCP. Builds first.
+    roland-midi/          Roland/Boss wire codec (address-based SysEx
+                            DT1/RQ1, param dictionaries)
+    openrig/              Portable JSON rig schema (audio + MIDI topology,
+                            cross-device bindings)
+    core/                 Cross-device foundation (transports, unified
+                            dispatcher, DeviceDescriptor types, safe-edit +
+                            connection helpers, audio sensing)
+    am4/                  Fractal AM4 descriptor
+    fractal-gen1/         Fractal Axe-Fx Standard/Ultra (gen-1) descriptor
+    fractal-gen2/         Fractal Axe-Fx II XL+ descriptor (AX8 config)
+    fractal-gen3/         Modern Fractal family (Axe-Fx III / FM3 / FM9 /
+                            VP4) descriptors
+    hydrasynth/           ASM Hydrasynth descriptor
+    arturia/              Arturia Freak family (MicroFreak / MiniFreak)
+                            descriptors + shared Arturia SysEx codec
+    circuit-tracks/       Novation Circuit Tracks descriptor (patterns,
+                            sample + project transfer)
+    spd-sx/               Roland SPD-SX descriptor (hybrid storage/MIDI)
+    ve-500/               Boss VE-500 descriptor
+    boss-rc/              Boss RC looper family (RC-505mk2 / RC-600)
+                            descriptor (hybrid storage/MIDI)
+    akai-mpc/             Akai MPC (standalone MPC OS) descriptor factory;
+                            MPC One G2 config (sequence recall, drum notes)
+    rig-console-render/   Pure renderer for the Rig Console (SVG, HTML,
+                            text views)
+    server-all/           MCP server entry point (composes all device
+                            packages)
   scripts/
     verify-*.ts     Byte-exact golden verifiers (run without hardware)
     mcp-*.ts        Hardware integration test harnesses
@@ -421,7 +467,8 @@ mcp-midi-control/
     TOOLS.md              Full registered tool surface (the authoritative count)
     BLOCK-PARAMS.md       AM4 block parameter tables (MCP contract)
     SAFE-EDIT-WORKFLOW.md Cross-device safe-edit contract
-    community/            Contributor guides (device capture workflows)
+    contributing/         Contribution funnel (per-device pages, tiers,
+                            safety, evidence vocabulary)
   CLAUDE.md         Context file for Claude Code
   CONTRIBUTING.md   Contributor guide
   package.json      npm workspace root
@@ -432,32 +479,3 @@ Protocol reverse-engineering docs (per-device SYSEX-MAP, opcode tables,
 capture guides, Ghidra mining scripts, and the encoding-primitive corpus) live in
 the `fractal-midi` package under `packages/fractal-midi/docs/`, not in this
 top-level `docs/` tree. Wire-format questions start there.
-
----
-
-## Development Stages
-
-### Feasibility scripts
-`scripts/probe.ts` proves USB MIDI communication works.
-`scripts/sniff.ts` captures AM4-Edit traffic for analysis.
-No MCP yet. Pure Node.js CLI.
-
-### Protocol layer
-Build encoder/decoder from sniffed data.
-`scripts/diff-syx.ts` and `scripts/annotate.ts` support this.
-Full unit test coverage of round-trips before moving on.
-
-### MCP server MVP
-Wire protocol layer to MCP tools.
-Test with Claude Desktop using `claude_desktop_config.json`.
-Goal: "set amp to Plexi, gain 6" works end to end.
-
-### Intelligence layer
-Add block reference knowledge to Claude project.
-Famous tone research capability.
-Iterative refinement loop.
-
-### Library management
-Backup/restore system.
-Setlist concept.
-Location safety enforcement.

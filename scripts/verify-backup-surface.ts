@@ -194,10 +194,12 @@ async function main(): Promise<void> {
 
   // ── 2. Policy derivation from generic capability signals ──────────
   {
-    const circuitish = resolveBackupPolicy(stubDescriptor({ id: 'p1', stored: () => 'empty', hasPacks: true, canUploadProject: true }));
+    const circuitish = resolveBackupPolicy(stubDescriptor({ id: 'p1', stored: () => 'empty', hasPacks: true, canUploadProject: true, canRestore: true }));
     check('policy: pack-addressed device calls its unit a "project"', circuitish.unit_label === 'project', circuitish.unit_label);
     check('policy: pack-addressed device is quoted per-file-transfer cost', circuitish.seconds_per_unit === 6, String(circuitish.seconds_per_unit));
-    check('policy: restore tool derived from uploadProject', circuitish.restore_tool === 'upload_project', String(circuitish.restore_tool));
+    check('policy: a project device restores through import_preset too', circuitish.restore_tool === 'import_preset', String(circuitish.restore_tool));
+    const noRestore = resolveBackupPolicy(stubDescriptor({ id: 'p1b', stored: () => 'empty', hasPacks: true, canUploadProject: true }));
+    check('policy: no restore route is promised without restorePresetBinary', noRestore.restore_tool === undefined, String(noRestore.restore_tool));
 
     const storageish = resolveBackupPolicy(stubDescriptor({ id: 'p2', stored: () => 'empty' }));
     check('policy: storage-transport device calls its unit a "kit"', storageish.unit_label === 'kit', storageish.unit_label);

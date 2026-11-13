@@ -73,8 +73,8 @@
  */
 import path from 'node:path';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { TYPE_APPLICABILITY, AMP_TYPES } from 'fractal-midi/am4';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
@@ -102,7 +102,7 @@ async function main(): Promise<void> {
   const wanted = (argParams ?? DEFAULT_PARAMS.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
 
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER_ENTRY], stderr: 'pipe' });
-  const client = new Client({ name: 'am4-applicability-hw', version: '0.1.0' });
+  const client = new Client({ name: 'am4-applicability-hw', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   const call = async (name: string, args: Record<string, unknown>): Promise<{ ok: boolean; json: any; text: string }> => {

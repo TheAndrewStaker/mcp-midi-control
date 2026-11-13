@@ -9,7 +9,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import { DispatchError, type RealizePlan, type RealizerMode, type StoredMixerLevels, type VoiceTarget } from '../types.js';
+import { DispatchError, type DispatchCtx, type RealizePlan, type RealizerMode, type StoredMixerLevels, type VoiceTarget } from '../types.js';
 import { buildExternalOverrides, type ExternalTarget, type ExternalVoiceResolution } from './externalRouting.js';
 import { buildCondensedDrums, type CondensedDrums } from './condenseDrums.js';
 import {
@@ -37,7 +37,7 @@ import {
   type RoundRobinSpec,
   type Step,
 } from '../patterns/index.js';
-import { openCtx, openOfflineCtx, requireDevice, toWirePack } from './core.js';
+import { openOfflineCtx, requireDevice, toWirePack, withEndpoint } from './core.js';
 import { backupProjectSlot } from './backup.js';
 
 /** Hard cap on a single blocking realize, mirroring send_sequence's 30 s budget. */
@@ -145,6 +145,14 @@ export interface ApplyPatternArgs {
   key?: string;
   /** ncs_upload only: musical scale the device constrains the pattern to (e.g. "C minor", "dorian"). Default Chromatic = literal pitches. */
   scale?: string;
+  /**
+   * ncs_upload only: store melodic note-track pitches +12 so the AUTHORED pitch
+   * is the SOUNDING pitch. The Circuit transmits a stored note 12 semitones
+   * below its stored value on both synth and MIDI tracks (measured,
+   * HW-SPDSX-008), so face-value authoring lands an octave low. Default false
+   * (face value, the historical behavior). See RealizePlan.upload.sounding_pitch.
+   */
+  sounding_pitch?: boolean;
   /** Spread a voice's hits across >=2 drum tracks so they overlap instead of choking (e.g. {"hat":["drum3","drum4"]}). */
   round_robin?: RoundRobinSpec;
   /** ncs_upload only: per-step sample flips — {"drum1": {"9": 2}} flips Drum1 step 9 to sample slot 2 (multiple pieces on one track). */
@@ -452,7 +460,7 @@ function compressionLines(
  * layer owns that join: `slotForFlipRole` in the Circuit's drumBinding.ts).
  * A flip to a piece OUTSIDE the four bound roles cannot be located in a
  * custom pool, so it is skipped with a per-step warning instead of guessed.
- * The real repertoire needs the pair: After Dark's working build carries
+ * Real builds need the pair: one song's working build carries
  * binding [1,2,5,11] AND condensed internal drums.
  */
 function assertCondensable(args: ApplyPatternArgs, mode: RealizerMode): void {
@@ -537,6 +545,8 @@ function resolveColourArg(args: ApplyPatternArgs): number | string | undefined {
 
 /** Track keys `mixer_levels` accepts, in receipt order. */
 const MIXER_LEVEL_KEYS = ['synth1', 'synth2', 'drum1', 'drum2', 'drum3', 'drum4'] as const;
+/** The drum subset: naming any of these overrides condense_drums' stored-silent 0 for that track. */
+const DRUM_LEVEL_KEYS = ['drum1', 'drum2', 'drum3', 'drum4'] as const;
 
 /**
  * Validate `mixer_levels` UP FRONT (before any compile, port, or template
@@ -622,6 +632,18 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
       `Split the section into <=32-step parts (the Circuit chains patterns on-device).`,
     );
   }
+  // Clock-grid alignment advisory (the 2026-08-08 RC-505mk2 finding): a loop
+  // whose length neither divides nor is a multiple of a 16-step bar drifts
+  // against a clock-slave's 4-beat measure grid on every cycle. 8/16/32 (and
+  // 4) are quiet: they tile the bar exactly.
+  if (mode === 'ncs_upload' && pattern.steps <= 32 && pattern.steps % 16 !== 0 && 16 % pattern.steps !== 0) {
+    extraWarnings.push(
+      `ALIGNMENT: this loop is ${pattern.steps} steps = ${pattern.steps / 16} bars of 4/4 at a 16th grid, so each cycle `
+      + 'shifts a clock-slaved device\'s measure grid (a looper\'s quantized record-start stops landing on the loop\'s '
+      + 'one). If the length includes a pickup (partial) bar, pad the head with rest steps to a whole bar; if the loop '
+      + 'is genuinely in an odd metre, set the slave\'s rhythm time signature to match instead — do NOT pad.',
+    );
+  }
 
   // ncs_upload authors a project file + pushes it; gather its bespoke inputs.
   let upload: NonNullable<RealizePlan['upload']> | undefined;
@@ -643,6 +665,7 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
       drum_flips: args.drum_flips, drum_binding: args.drum_binding,
       preserve_template_gates: args.preserve_template_gates,
       confirm_overwrite: args.confirm_overwrite, dry_run: args.dry_run,
+      ...(args.sounding_pitch === true ? { sounding_pitch: true } : {}),
       ...(storedTempo !== undefined ? { tempo: storedTempo } : {}),
       ...(storedColour !== undefined ? { colour: storedColour } : {}),
       ...(args.project_name !== undefined ? { project_name: args.project_name } : {}),
@@ -679,7 +702,7 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
   let compilePattern = pattern;
   if (args.condense_drums === true) {
     assertCondensable(args, mode);
-    const cd = buildCondensedDrums(pattern, caps, overrides);
+    const cd = buildCondensedDrums(pattern, caps, overrides, DRUM_LEVEL_KEYS.some((k) => args.mixer_levels?.[k] !== undefined));
     if (cd === undefined) {
       extraWarnings.push('condense_drums: this pattern has no drum voices, so the internal drum tracks were left alone.');
     } else {
@@ -737,39 +760,56 @@ export async function executeApplyPattern(args: ApplyPatternArgs): Promise<Apply
   // any read, gate, or transfer, so it needs no port. Opening one would fail the
   // flag's own use case — planning with the rig unplugged.
   const wirePack = toWirePack(args.pack);
-  const ctx = args.dry_run ? openOfflineCtx(descriptor, { pack: wirePack }) : openCtx(descriptor, { pack: wirePack });
-  // Backup-before-overwrite (ncs_upload only, default on). ncs_upload authors a
-  // project into the target slot; when confirm_overwrite authorizes clobbering
-  // an occupied slot, the writer's gate skips its read, so save the slot's
-  // current contents first (reversible overwrite). A read/CRC failure throws and
-  // aborts before any byte is authored onto the device. A dry run touches
-  // nothing, so it also reads nothing.
-  let backupNote = '';
-  if (mode === 'ncs_upload' && upload && args.backup_first !== false && args.confirm_overwrite && !args.dry_run) {
-    const backup = await backupProjectSlot(descriptor, ctx, upload.slot + 1);   // DEVICE numbering
-    backupNote = backup.note;
-  }
-  // ncs_upload uses the device's bespoke writer hook; live_stream / record_capture
-  // run the shared device-agnostic realizers.
-  const result = (mode === 'ncs_upload' && descriptor.writer.realizePattern)
-    ? await descriptor.writer.realizePattern(ctx, plan)
-    : await runSharedRealizer(ctx.conn, plan);
+  const realizeLocked = async (ctx: DispatchCtx) => {
+    // READ-ONLY DEVICE PREP FIRST — ahead of the backup read below, and so
+    // ahead of every file-transfer session this call makes. The Circuit's
+    // drum-binding pool listing is reliable on an idle port and NOT reliable
+    // immediately behind another transfer session; running it here restores
+    // the ordering every working path already had. See
+    // `DeviceWriter.prepareRealize` for the hardware evidence (2026-09-12).
+    if (mode === 'ncs_upload' && upload && !args.dry_run && descriptor.writer.prepareRealize) {
+      await descriptor.writer.prepareRealize(ctx, upload, [plan]);
+    }
+    // Backup-before-overwrite (ncs_upload only, default on). ncs_upload authors a
+    // project into the target slot; when confirm_overwrite authorizes clobbering
+    // an occupied slot, the writer's gate skips its read, so save the slot's
+    // current contents first (reversible overwrite). A read/CRC failure throws and
+    // aborts before any byte is authored onto the device. A dry run touches
+    // nothing, so it also reads nothing.
+    let backupNote = '';
+    if (mode === 'ncs_upload' && upload && args.backup_first !== false && args.confirm_overwrite && !args.dry_run) {
+      const backup = await backupProjectSlot(descriptor, ctx, upload.slot + 1);   // DEVICE numbering
+      backupNote = backup.note;
+    }
+    // ncs_upload uses the device's bespoke writer hook; live_stream / record_capture
+    // run the shared device-agnostic realizers.
+    const result = (mode === 'ncs_upload' && descriptor.writer.realizePattern)
+      ? await descriptor.writer.realizePattern(ctx, plan)
+      : await runSharedRealizer(ctx.conn, plan);
 
-  return {
-    device: descriptor.display_name,
-    pattern: pattern.name,
-    bpm,
-    steps: pattern.steps,
-    mode,
-    repeat,
-    cycle_ms: plan.cycle_ms,
-    ok: result.ok,
-    status: result.status,
-    ...(result.notes_sent !== undefined ? { notes_sent: result.notes_sent } : {}),
-    ...(result.source ? { source: result.source } : {}),
-    ...(result.warning ? { warning: result.warning } : {}),
-    info: [result.info, backupNote, clampNote, ...extraWarnings].filter(Boolean).join(' ') || undefined,
+    return {
+      device: descriptor.display_name,
+      pattern: pattern.name,
+      bpm,
+      steps: pattern.steps,
+      mode,
+      repeat,
+      cycle_ms: plan.cycle_ms,
+      ok: result.ok,
+      status: result.status,
+      ...(result.notes_sent !== undefined ? { notes_sent: result.notes_sent } : {}),
+      ...(result.source ? { source: result.source } : {}),
+      ...(result.warning ? { warning: result.warning } : {}),
+      info: [result.info, backupNote, clampNote, ...extraWarnings].filter(Boolean).join(' ') || undefined,
+    };
   };
+  // Phase B: a dry run opens no port, so it takes no lock; a live realize is
+  // one exclusive visit — a stream legitimately holds its device for many
+  // bars, and a same-device waiter gets `device_busy` naming it rather than
+  // interleaving into the stream.
+  return args.dry_run
+    ? realizeLocked(openOfflineCtx(descriptor, { pack: wirePack }))
+    : withEndpoint(descriptor, realizeLocked, { pack: wirePack, opName: 'apply_pattern' });
 }
 
 /**
@@ -923,6 +963,36 @@ async function executeApplyArrangement(
     for (const scene of scenePlan) for (const i of scene) order.push(i);
   }
 
+  // Clock-grid alignment advisories (the 2026-08-08 RC-505mk2 finding). A
+  // clock-slaved device counts 4-beat bars from MIDI Start, and its
+  // measure-quantized actions (a looper's record-start) land on THAT grid.
+  // Advisory only, and suppressed when NO section is a whole number of
+  // 16-step bars — a uniformly odd-metre song is correct as authored, and
+  // "fixing" it by padding would corrupt the music; there the resolution is
+  // the slave's own time-signature setting.
+  {
+    const anyWholeBar = built.some((b) => b.pattern.steps % 16 === 0);
+    const headSteps = built[order[0]].pattern.steps;
+    if (anyWholeBar && headSteps % 16 !== 0) {
+      warnings.push(
+        `HEAD ALIGNMENT: the first played section ("${built[order[0]].name}") is ${headSteps} steps — not a whole number `
+        + 'of 16-step bars while other sections are. From MIDI Start every later barline sits off the 4-beat grid a '
+        + 'clock-slaved device counts, so a looper\'s measure-quantized record-start can never land on the song\'s one. '
+        + 'If the head holds a pickup (partial) bar, prepend rest steps to fill a whole bar (import_songsterr returns '
+        + 'the padded head as `pickup.padded_voices`); if the song is genuinely in an odd metre, set the slave\'s '
+        + 'rhythm time signature to match instead — do NOT pad.',
+      );
+    }
+    const cycleSteps = order.reduce((n, i) => n + built[i].pattern.steps, 0);
+    if (anyWholeBar && cycleSteps % 16 !== 0) {
+      warnings.push(
+        `CHAIN-CYCLE ALIGNMENT: one pass of the chain totals ${cycleSteps} steps = ${cycleSteps / 16} bars of 4/4 — not `
+        + 'a whole number, so every wrap (lingering on the project past one pass) shifts a clock-slave\'s measure grid '
+        + 'further off the barlines, cumulatively. Same resolutions as the head advisory.',
+      );
+    }
+  }
+
   // External routing built once, validated against the UNION of section voices
   // (a voice routed externally applies wherever a section uses it).
   let overrides: Record<string, readonly VoiceTarget[]> | undefined;
@@ -980,8 +1050,10 @@ async function executeApplyArrangement(
       condensed === undefined
         ? 'condense_drums: no section has drum voices, so the internal drum tracks were left alone.'
         : `Condensed the drum part onto the ${condensed.kit.length} internal drum tracks (${condensed.kit.join(' / ')}) in ` +
-          `${condensedSections} of ${built.length} section(s), stored at level 0 so it lies silent under the routed kit and the ` +
-          `player dials it up from the mixer.` +
+          `${condensedSections} of ${built.length} section(s), ` +
+          (DRUM_LEVEL_KEYS.some((k) => args.mixer_levels?.[k] !== undefined)
+            ? 'at the drum levels mixer_levels stores (see MIXER).'
+            : 'stored at level 0 so it lies silent under the routed kit and the player dials it up from the mixer.') +
           (condensedCollisions > 0
             ? ` ${condensedCollisions} step(s) across the song had two same-family pieces competing for one track; the louder hit kept the step.`
             : ''),
@@ -1014,6 +1086,7 @@ async function executeApplyArrangement(
     template_path: args.ncs_template, slot: slotWire, scale: args.scale,
     drum_binding: args.drum_binding, preserve_template_gates: args.preserve_template_gates,
     confirm_overwrite: args.confirm_overwrite, dry_run: args.dry_run,
+    ...(args.sounding_pitch === true ? { sounding_pitch: true } : {}),
     ...(condensed !== undefined ? { drum_levels: condensed.levels } : {}),
     ...(arrangementTempo !== undefined ? { tempo: arrangementTempo } : {}),
     ...(arrangementColour !== undefined ? { colour: arrangementColour } : {}),
@@ -1022,33 +1095,44 @@ async function executeApplyArrangement(
     ...(scenePlan !== undefined ? { scene_plan: scenePlan } : {}),
   };
   // Same contract as the single-pattern path: a dry run authors against the
-  // local template only, so it opens no port.
+  // local template only, so it opens no port (and takes no endpoint lock);
+  // a live arrangement upload is one exclusive visit.
   const wirePack = toWirePack(args.pack);
-  const ctx = args.dry_run ? openOfflineCtx(descriptor, { pack: wirePack }) : openCtx(descriptor, { pack: wirePack });
-  // Backup-before-overwrite: same contract as the single-pattern ncs_upload.
-  // A dry run touches nothing, so it also reads nothing.
-  let backupNote = '';
-  if (args.backup_first !== false && args.confirm_overwrite && !args.dry_run) {
-    const backup = await backupProjectSlot(descriptor, ctx, upload.slot + 1);   // DEVICE numbering
-    backupNote = backup.note;
-  }
-  const result = await descriptor.writer.realizeArrangement(ctx, sections, order, upload);
-  const totalCycle = order.reduce((ms, i) => ms + sections[i].plan.cycle_ms, 0);
-  return {
-    device: descriptor.display_name,
-    pattern: `arrangement: ${built.map((b) => b.name).join(' → ')}`,
-    bpm,
-    steps: Math.max(...sections.map((s) => s.plan.steps)),
-    mode,
-    repeat: 1,
-    cycle_ms: totalCycle,
-    ok: result.ok,
-    status: result.status,
-    ...(result.notes_sent !== undefined ? { notes_sent: result.notes_sent } : {}),
-    ...(result.source ? { source: result.source } : {}),
-    ...(result.warning ? { warning: result.warning } : {}),
-    info: [result.info, backupNote, ...warnings].filter(Boolean).join(' ') || undefined,
+  const realizeArrangement = descriptor.writer.realizeArrangement;
+  const realizeLocked = async (ctx: DispatchCtx) => {
+    // Read-only device prep BEFORE the backup read, same ordering rule (and the
+    // same hardware evidence) as the single-pattern path above.
+    if (!args.dry_run && descriptor.writer.prepareRealize) {
+      await descriptor.writer.prepareRealize(ctx, upload, sections.map((s) => s.plan));
+    }
+    // Backup-before-overwrite: same contract as the single-pattern ncs_upload.
+    // A dry run touches nothing, so it also reads nothing.
+    let backupNote = '';
+    if (args.backup_first !== false && args.confirm_overwrite && !args.dry_run) {
+      const backup = await backupProjectSlot(descriptor, ctx, upload.slot + 1);   // DEVICE numbering
+      backupNote = backup.note;
+    }
+    const result = await realizeArrangement(ctx, sections, order, upload);
+    const totalCycle = order.reduce((ms, i) => ms + sections[i].plan.cycle_ms, 0);
+    return {
+      device: descriptor.display_name,
+      pattern: `arrangement: ${built.map((b) => b.name).join(' → ')}`,
+      bpm,
+      steps: Math.max(...sections.map((s) => s.plan.steps)),
+      mode,
+      repeat: 1,
+      cycle_ms: totalCycle,
+      ok: result.ok,
+      status: result.status,
+      ...(result.notes_sent !== undefined ? { notes_sent: result.notes_sent } : {}),
+      ...(result.source ? { source: result.source } : {}),
+      ...(result.warning ? { warning: result.warning } : {}),
+      info: [result.info, backupNote, ...warnings].filter(Boolean).join(' ') || undefined,
+    };
   };
+  return args.dry_run
+    ? realizeLocked(openOfflineCtx(descriptor, { pack: wirePack }))
+    : withEndpoint(descriptor, realizeLocked, { pack: wirePack, opName: 'apply_pattern' });
 }
 
 export interface ListPatternRecipesResult {

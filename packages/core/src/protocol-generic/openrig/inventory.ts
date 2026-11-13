@@ -2,11 +2,14 @@
  * OpenRig INVENTORY loader (§11): load the gear the user OWNS from an
  * `MCP_RIG_INVENTORY` rig-inventory JSON, independent of the rig manifest (a rig
  * is a wiring of a SUBSET of what you own). Mirrors the rig-manifest loader:
- * env-var-driven only, parsed once + cached, `status`-shaped so a bad file
- * degrades gracefully instead of crashing `describe_rig`.
+ * env-var-driven only, cached per path + file stamp (a hand edit reloads, same as
+ * the manifest), `status`-shaped so a bad file degrades gracefully instead of
+ * crashing `describe_rig`.
  */
 import * as fs from 'node:fs';
 import type { Inventory } from 'openrig';
+
+import { sameStamp, stampFile, type FileStamp } from './fileStamp.js';
 
 export const RIG_INVENTORY_ENV = 'MCP_RIG_INVENTORY';
 
@@ -16,6 +19,8 @@ export type LoadedInventory =
   | { status: 'unconfigured' };
 
 let cache: LoadedInventory | undefined;
+let cachedPath: string | undefined;
+let cachedStamp: FileStamp | undefined;
 
 function load(): LoadedInventory {
   const path = process.env[RIG_INVENTORY_ENV];
@@ -40,13 +45,22 @@ function load(): LoadedInventory {
   return { status: 'loaded', inventory: parsed as Inventory, source };
 }
 
-/** The configured inventory, or `unconfigured` when `MCP_RIG_INVENTORY` is unset. Cached. */
+/** The configured inventory, or `unconfigured` when `MCP_RIG_INVENTORY` is unset. Cached per path + file stamp. */
 export function loadRigInventory(): LoadedInventory {
-  if (cache === undefined) cache = load();
+  const raw = process.env[RIG_INVENTORY_ENV];
+  const path = raw === undefined || raw.trim() === '' ? undefined : raw.trim();
+  const stamp: FileStamp = path === undefined ? 'absent' : stampFile(path);
+  if (cache === undefined || cachedPath !== path || !sameStamp(cachedStamp, stamp)) {
+    cache = load();
+    cachedPath = path;
+    cachedStamp = stamp;
+  }
   return cache;
 }
 
 /** Clear the parsed-inventory cache (tests). */
 export function clearRigInventoryCache(): void {
   cache = undefined;
+  cachedPath = undefined;
+  cachedStamp = undefined;
 }

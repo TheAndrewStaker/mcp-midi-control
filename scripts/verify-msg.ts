@@ -1774,6 +1774,55 @@ for (const c of enumTableCases) {
 }
 console.log(`${enumTablePass}/${enumTableCases.length} AM4 hardware-swept enum tables registered.\n`);
 
+// BK-AM4-CACHE-ORACLE (2026-08-11): amp GHOST read-response decode goldens,
+// byte-anchored to the 2026-06-10 deep-verify capture
+// (`samples/captured/probe-am4-deep-verify-raw.syx`, pass A read frames).
+// These are the 10 HW-129 GHOST registers registered from the cache oracle
+// (AMP_GHOST_PARAMS): the frames prove each pidHigh answers a well-formed
+// read response and that the registered unit/range/enum decodes the captured
+// u32 onto the roster (enums) or into the cache range (continuous). Guards
+// the verify-msg rule for these pidHighs (case built from captured bytes,
+// not fabricated).
+const ghostReadCases: {
+  key: string;
+  resp: number[];
+  expectedPidHigh: number;
+  expectedU32: number;
+  /** enum label, or [display, tolerance] for continuous registers. */
+  expect: string | readonly [number, number];
+}[] = [
+  { key: 'amp.xfleakage',   resp: fromHex('f000017415013a0013000e0000000400000000000032f7'), expectedPidHigh: 0x0013, expectedU32: 0,     expect: [0, 1e-6] },
+  { key: 'amp.offset1',     resp: fromHex('f000017415013a001b000e0000000400192460000067f7'), expectedPidHigh: 0x001b, expectedU32: 37682, expect: [0.15, 0.001] },
+  { key: 'amp.cliptype2',   resp: fromHex('f000017415013a001c000e0000000400050000000038f7'), expectedPidHigh: 0x001c, expectedU32: 10,    expect: 'TRIODE' },
+  { key: 'amp.drivetype',   resp: fromHex('f000017415013a0025000e0000000400000000000004f7'), expectedPidHigh: 0x0025, expectedU32: 0,     expect: 'NORMAL' },
+  { key: 'amp.wshpf',       resp: fromHex('f000017415013a0027000e0000000400025b6000003ff7'), expectedPidHigh: 0x0027, expectedU32: 28421, expect: [868.5, 0.6] },
+  { key: 'amp.tonetype',    resp: fromHex('f000017415013a0029000e0000000400004000000048f7'), expectedPidHigh: 0x0029, expectedU32: 1,     expect: 'DEFAULT' },
+  { key: 'amp.fbtype',      resp: fromHex('f000017415013a002c000e000000040011000000001cf7'), expectedPidHigh: 0x002c, expectedU32: 34,    expect: 'SHIVER NEW' },
+  { key: 'amp.pi_ratio',    resp: fromHex('f000017415013a002d000e000000040029586000001df7'), expectedPidHigh: 0x002d, expectedU32: 25427, expect: [0.388, 0.001] },
+  { key: 'amp.biastype',    resp: fromHex('f000017415013a0062000e0000000400000000000043f7'), expectedPidHigh: 0x0062, expectedU32: 0,     expect: 'FIXED' },
+  { key: 'amp.precomptype', resp: fromHex('f000017415013a0076000e0000000400000000000057f7'), expectedPidHigh: 0x0076, expectedU32: 0,     expect: 'AUTHENTIC' },
+];
+let ghostReadPass = 0;
+for (const c of ghostReadCases) {
+  const param = (KNOWN_PARAMS as Record<string, Param>)[c.key];
+  const parsed = parseReadResponse(c.resp);
+  const u32 = parsed.asUInt32LE();
+  let ok = param !== undefined && parsed.pidLow === 0x003a && parsed.pidHigh === c.expectedPidHigh && u32 === c.expectedU32;
+  let decodedStr: string;
+  if (typeof c.expect === 'string') {
+    const label = param?.enumValues?.[u32];
+    decodedStr = String(label);
+    ok = ok && param?.unit === 'enum' && label === c.expect;
+  } else {
+    const display = decode(param, parsed.asInternalFloat());
+    decodedStr = String(display);
+    ok = ok && Math.abs(display - c.expect[0]) <= c.expect[1];
+  }
+  if (ok) ghostReadPass++;
+  console.log(`${ok ? '✓' : '✗'} ${c.key} GHOST read (deep-verify capture) → u32=${u32}, decoded=${decodedStr}`);
+}
+console.log(`${ghostReadPass}/${ghostReadCases.length} amp GHOST read-response decode goldens pass.\n`);
+
 // HW-070 (Session 50, 2026-05-07): READ_PRESET_NAME response decode.
 // Captured byte-exact from `samples/captured/session-46-am4edit-launch-device-connected.midi-events.txt`
 // (the 104 IN responses to AM4-Edit's at-attach name-read loop).
@@ -2639,6 +2688,7 @@ process.exit(
     decodePass === decodeCases.length &&
     decodeRulePass === decodeRuleCases.length &&
     enumTablePass === enumTableCases.length &&
+    ghostReadPass === ghostReadCases.length &&
     presetNameRespPass === presetNameRespCases.length &&
     orchestrationPass === orchestrationCases.length &&
     validationPass === validationCases.length &&

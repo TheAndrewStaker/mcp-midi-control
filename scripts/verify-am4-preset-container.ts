@@ -11,7 +11,10 @@
  *      raw_patch CRC-16/CCITT validates, the 0x79 footer XOR matches, the
  *      Huffman stream terminates at exactly decompSize, word[1] == 0xAA55,
  *      fw word == 0x0107, and known plaintext (preset 0 name "AM4 Gig Rig"
- *      + its four scene names) decodes.
+ *      + its four scene names) decodes. Every preset's body also walks as
+ *      the self-describing block-record chain to exactly decompSize - 2, and
+ *      factory presets 0 and 11 carry slot-order / per-channel / per-scene
+ *      goldens (factory content only; no owner preset is used as a fixture).
  *   2. EXTRA EXPORTS (fw 2.00 hardware captures where present):
  *      samples/factory/A01-original.syx, samples/captured/hw132/*.
  *   3. WARM PAIRS (samples/captured/am4-warm-pair-*-{before,after}.syx):
@@ -41,6 +44,10 @@ import {
 import {
   locateAm4AmpBlock,
   decodeAm4AmpBlock,
+  walkAm4BodyChain,
+  decodeAm4PresetBody,
+  am4ComparableBody,
+  type Am4PresetBody,
 } from '../packages/fractal-midi/src/am4/bodyChain.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
@@ -167,6 +174,7 @@ let firstScenes: readonly string[] = [];
 // Body block-chain walker: bucket the located amp-marker base per preset so we
 // can assert the config-dependent base distribution (0x0934 / 0x0A92 / absent).
 const ampBaseBuckets: Record<string, number> = {};
+const wholeDecodes: Am4PresetBody[] = [];
 while (cursor < bank.length) {
   const d = decodeAm4RawPatch(bank, cursor);
   assertContainerValid(`factory[${bankCount}]`, d);
@@ -184,6 +192,31 @@ while (cursor < bank.length) {
       amp !== undefined && amp.base === ampBase);
     check(`factory[${bankCount}]: amp block has 4 channels A/B/C/D`,
       amp !== undefined && ['A', 'B', 'C', 'D'].every((c) => c in amp.channels));
+  }
+  // Whole-chain decode: the walk must consume the body exactly, every slot id
+  // must name a block with a record, and the amp entry must agree with the
+  // older marker-scan amp decode on every value both carry.
+  const chain = walkAm4BodyChain(d.decompressedBody, d.decompSize);
+  check(`factory[${bankCount}]: body chain walks to exactly tail-2`, chain.complete);
+  const whole = decodeAm4PresetBody(d.decompressedBody, d.decompSize);
+  check(`factory[${bankCount}]: whole body decodes`, whole !== undefined);
+  if (whole !== undefined) {
+    check(`factory[${bankCount}]: every placed block is named and has its record`,
+      whole.blocks.every((b) => b.block !== undefined && b.rows === 4 && Object.keys(b.channels).length === 4),
+      JSON.stringify(whole.blocks.map((b) => [b.slot, b.effectId, b.rows])));
+    const wholeAmp = whole.blocks.find((b) => b.block === 'amp');
+    check(`factory[${bankCount}]: amp placed in a slot iff the amp record exists`, (wholeAmp !== undefined) === (ampBase !== undefined));
+    const oldAmp = decodeAm4AmpBlock(d.decompressedBody, d.decompSize);
+    if (wholeAmp !== undefined && oldAmp !== undefined) {
+      let same = true;
+      for (const ch of ['A', 'B', 'C', 'D']) {
+        for (const [k, v] of Object.entries(oldAmp.channels[ch])) {
+          if (k !== 'type_id' && wholeAmp.channels[ch][k] !== v) same = false;
+        }
+      }
+      check(`factory[${bankCount}]: whole-chain amp values equal the marker-scan amp values`, same);
+    }
+    wholeDecodes.push(whole);
   }
   cursor += d.byteLength;
   bankCount += 1;
@@ -203,6 +236,44 @@ check(
   firstScenes.join('|') === 'Clean Double|Pushed AC|Jumped Plexi|IIC+ Hot Lead',
   `got ${JSON.stringify(firstScenes)}`,
 );
+
+// ── 1b. Whole-chain goldens (factory presets only) ───────────────────
+// factory[0] "AM4 Gig Rig": slot order, per-channel types and per-scene state.
+// The four scene names (Clean Double / Pushed AC / Jumped Plexi / IIC+ Hot
+// Lead) line up with the amp model on channels A/B/C/D, which is the
+// independent check that scene n selects channel n here. The four reverb types
+// were also read back from hardware with get_param (2026-11-12).
+if (wholeDecodes.length === 104) {
+  const gig = wholeDecodes[0];
+  const bySlot = (n: number) => gig.blocks.find((b) => b.slot === n);
+  check('factory[0] whole: slot order drive, amp, delay, reverb',
+    gig.blocks.map((b) => b.block).join() === 'drive,amp,delay,reverb', gig.blocks.map((b) => b.block).join());
+  const types = (n: number) => ['A', 'B', 'C', 'D'].map((c) => bySlot(n)?.channels[c]?.type).join(' | ');
+  check('factory[0] whole: amp types per channel',
+    types(2) === 'Double Verb Vibrato | Class-A 30W Brilliant | Plexi 50W 6CA7 Jumped | USA JP IIC+ Red', types(2));
+  check('factory[0] whole: drive types per channel',
+    types(1) === 'Gauss Drive | SDD Preamp | Bosom Boost | T808 OD', types(1));
+  check('factory[0] whole: delay types per channel',
+    types(3) === 'Analog Stereo | 2290 w/ Modulation | Worn Tape | Digital Stereo', types(3));
+  check('factory[0] whole: reverb types per channel',
+    types(4) === "Spring, Medium | Room, Recording Studio C | Hall, Mechanic's | Hall, Large", types(4));
+  check('factory[0] whole: knob values (drive 2.5, amp gain 3, delay mix 27, reverb mix 20 on channel A)',
+    bySlot(1)?.channels.A.drive === 2.5 && bySlot(2)?.channels.A.gain === 3 &&
+      bySlot(3)?.channels.A.mix === 27 && bySlot(4)?.channels.A.mix === 20);
+  check('factory[0] whole: every block is on channel A/B/C/D in scenes 1..4',
+    gig.blocks.every((b) => b.sceneChannels.join('') === 'ABCD'));
+  check('factory[0] whole: drive bypassed in scenes 1-3, active in scene 4; the rest never bypassed',
+    bySlot(1)?.sceneBypass.map(Number).join('') === '1110' &&
+      [2, 3, 4].every((n) => bySlot(n)?.sceneBypass.map(Number).join('') === '0000'));
+  // factory[11] 'Bass NoAmp DI' places two drives: the second is effect id 0x77.
+  const di = wholeDecodes[11];
+  check("factory[11] whole: slot order compressor, drive (instance 2), chorus, drive",
+    di.blocks.map((b) => `${b.block}#${b.instance}`).join() === 'compressor#1,drive#2,chorus#1,drive#1',
+    di.blocks.map((b) => `${b.block}#${b.instance}`).join());
+  // The 16 empty presets place nothing.
+  check('factory whole: 16 presets place no block', wholeDecodes.filter((w) => w.blocks.length === 0).length === 16,
+    `got ${wholeDecodes.filter((w) => w.blocks.length === 0).length}`);
+}
 
 // ── 2. Extra hardware exports (present-file-gated per file) ──────────
 
@@ -247,6 +318,24 @@ for (const tag of WARM_PAIR_TAGS) {
       diffs.every((o) => allowed.has(o)),
       `diff offsets: ${diffs.slice(0, 8).map((o) => '0x' + o.toString(16)).join(' ')}${diffs.length > 8 ? ' …' : ''}`,
     );
+    // That volatile u16 is PATCH-record word 0x0E, which the comparable body
+    // masks: a no-op redump must compare identical.
+    const ca = am4ComparableBody(before.decompressedBody, before.decompSize);
+    const cb = am4ComparableBody(after.decompressedBody, after.decompSize);
+    check('no-op redump: comparable bodies are identical',
+      ca !== undefined && cb !== undefined && diffOffsets(ca, cb).length === 0);
+  }
+  if (tag === '2-amp-gain-channel-A' || tag === '3-amp-gain-channel-B') {
+    // The same anchors through the whole-chain decode, plus: one edited knob
+    // must make the comparable bodies differ.
+    const ch = tag === '2-amp-gain-channel-A' ? 'A' : 'B';
+    const whole = decodeAm4PresetBody(after.decompressedBody, after.decompSize);
+    check(`amp.gain ch${ch} pair: whole-chain decode reads 5.1`,
+      whole?.blocks.find((b) => b.block === 'amp')?.channels[ch].gain === 5.1);
+    const ca = am4ComparableBody(before.decompressedBody, before.decompSize);
+    const cb = am4ComparableBody(after.decompressedBody, after.decompSize);
+    check(`amp.gain ch${ch} pair: comparable bodies differ`,
+      ca !== undefined && cb !== undefined && diffOffsets(ca, cb).length > 0);
   }
   if (tag === '2-amp-gain-channel-A') {
     // Oracle: amp.gain chA 5.0 → 5.1 lands 0x828E = round(5.1/10×65534) @0x0958.
@@ -322,24 +411,52 @@ if (reader.getPreset !== undefined && bank.length >= PRESET_DUMP_LEN) {
       (snap.whole_preset?.scene_names ?? []).join('|') === 'Clean Double|Pushed AC|Jumped Plexi|IIC+ Hot Lead',
       `got ${JSON.stringify(snap.whole_preset?.scene_names)}`,
     );
-    check('get_preset(A01): slots empty (slot-assignment field map pending)', snap.slots.length === 0, `got ${snap.slots.length} slots`);
+    check('get_preset(A01): four slots in chain order drive, amp, delay, reverb',
+      snap.slots.map((s) => `${s.slot}:${s.block_type}`).join() === '1:drive,2:amp,3:delay,4:reverb',
+      snap.slots.map((s) => `${s.slot}:${s.block_type}`).join());
     check(
-      'get_preset(A01): read_warnings label amp VALUES surfaced + community-beta status',
-      (snap.read_warnings ?? []).some((w) => /AMP param VALUES are surfaced/i.test(w)) &&
+      'get_preset(A01): read_warnings say what is decoded, what is not, + community-beta status',
+      (snap.read_warnings ?? []).some((w) => /Decoded from the stored body/.test(w) && /NOT decoded/.test(w)) &&
         (snap.read_warnings ?? []).some((w) => /community-beta/i.test(w)),
       `warnings=${JSON.stringify(snap.read_warnings)}`,
     );
-    // The first factory preset ("AM4 Gig Rig") has an amp — its per-channel
-    // VALUES must ride on whole_preset.amp (all 4 channels, with amp.type).
-    const amp = snap.whole_preset?.amp as Record<string, Record<string, number | string>> | undefined;
-    check('get_preset(A01): whole_preset.amp present', amp !== undefined);
-    check('get_preset(A01): whole_preset.amp has channels A/B/C/D',
-      amp !== undefined && ['A', 'B', 'C', 'D'].every((ch) => ch in amp),
-      `got ${JSON.stringify(amp === undefined ? undefined : Object.keys(amp))}`);
-    check('get_preset(A01): whole_preset.amp.A carries a type + gain',
-      amp?.A?.type !== undefined && typeof amp?.A?.gain === 'number',
-      `A=${JSON.stringify(amp?.A && { type: amp.A.type, gain: amp.A.gain })}`);
+    check('get_preset(A01): every slot carries all four channels',
+      snap.slots.every((s) => s.channel_status === 'all_channels' &&
+        ['A', 'B', 'C', 'D'].every((ch) => s.params_by_channel?.[ch] !== undefined)));
+    const amp = snap.slots.find((s) => s.block_type === 'amp');
+    check('get_preset(A01): amp channel D is the IIC+ and carries its cab section',
+      amp?.params_by_channel?.D?.type === 'USA JP IIC+ Red' && amp.params_by_channel.D.cab_1_blend !== undefined,
+      JSON.stringify(amp?.params_by_channel?.D?.type));
+    check('get_preset(A01): amp has scene channels and no scene_bypass (no amp bypass on the AM4)',
+      amp?.scene_channels?.join('') === 'ABCD' && amp.scene_bypass === undefined);
+    const drive = snap.slots.find((s) => s.block_type === 'drive');
+    check('get_preset(A01): drive scene_bypass is true,true,true,false',
+      drive?.scene_bypass?.map(Number).join('') === '1110', JSON.stringify(drive?.scene_bypass));
+    check('get_preset(A01): whole_preset.content_fingerprint present (16 hex)',
+      /^[0-9a-f]{16}$/.test(String(snap.whole_preset?.content_fingerprint)));
+    check('get_preset(A01): whole_preset.amp is gone (amp values ride on slots)', snap.whole_preset?.amp === undefined);
   }
+
+  // Response size: a stored read's length is driven by what the location
+  // holds, so measure it at every factory preset. Past 50,000 characters the
+  // host does not deliver the result at all.
+  let maxChars = 0;
+  let maxName = '';
+  const fingerprints = new Set<string>();
+  for (let i = 0; i < 104; i++) {
+    const dump = bank.subarray(i * PRESET_DUMP_LEN, (i + 1) * PRESET_DUMP_LEN);
+    const c: DispatchCtx = { conn: makeStoredDumpConn(dump), descriptor: AM4_DESCRIPTOR };
+    const s = await reader.getPreset(c, { location: i });
+    const chars = JSON.stringify(s).length;
+    if (chars > maxChars) { maxChars = chars; maxName = s.name ?? ''; }
+    fingerprints.add(String(s.whole_preset?.content_fingerprint));
+  }
+  check('stored get_preset: every factory preset stays under 40,000 characters',
+    maxChars < 40_000, `largest is ${maxChars} chars ("${maxName.trim()}")`);
+  // 88 presets with blocks are all distinct; the 16 empty presets are identical.
+  check('stored get_preset: fingerprints separate distinct presets and match identical ones',
+    fingerprints.size === 89, `got ${fingerprints.size} distinct fingerprints`);
+  console.log(`  stored get_preset largest response: ${maxChars} chars ("${maxName.trim()}")`);
 }
 
 const total = bankCount + extraCount + pairCount * 2;

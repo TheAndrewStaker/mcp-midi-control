@@ -55,7 +55,7 @@ Follow-up (not built): usage-ranked slot allocation for the Circuit-internal
 case only).
 
 **Idle-pad recovery (`voice_notes`, shipped 2026-07-02).** The compression
-report often shows a fold NEXT TO an idle pad (the Sleep Token pack folds
+report often shows a fold NEXT TO an idle pad (the Mixwave groove pack folds
 busy_hat/ride_bell while its songs never touch the SPD-SX clap/crash pads).
 `external_targets[].voice_notes` pins a voice to an explicit note per call
 (`{"busy_hat": 39, "ride_bell": 49}`), bypassing the voice_map + fold layer;
@@ -118,11 +118,16 @@ A role only sounds right if the matching sample is actually present. Two paths:
    *(done 2026-06-27)*. Remaining sub-item: graduate `pack_groove.py`'s note→role
    guesses (open_hat/tom/perc) into the typed table with provenance.
 3. ✅ **Wire binding into authoring**: `apply_pattern mode:ncs_upload` writes the
-   Circuit drum binding (default `[0,1,2,3]`, overridable). *(done 2026-06-27)*
-4. ✅ **Name-match resolver**: `sampleRoles.ts` `bindingFromDirectory`: role →
-   slot via `read_sample_directory` name matching (shuffled/partial kits handled,
-   fallbacks reported). *(done 2026-06-27)*. Needs a live `read_sample_directory`
-   to exercise end-to-end on hardware.
+   Circuit drum binding. *(done 2026-06-27; reworked 2026-08-11, BK-CIRCUIT-DRUMBIND:
+   the default is now resolved by NAME against the destination pack's own pool at
+   write time, refusing when a role has no name match; the positional `[0,1,2,3]`
+   default is gone from the product path. An explicit `drum_binding` still declares
+   the layout.)*
+4. ✅ **Name-match resolver**: `sampleRoles.ts` `resolveDrumBindingByName` (formerly
+   `bindingFromDirectory`, whose canonical-slot fallback was removed as the defect):
+   role → slot via `read_sample_directory` name matching (compound real names,
+   numbered variants reported as substitutions, unresolved roles withheld rather
+   than guessed). *(done 2026-06-27; strict rework 2026-08-11, wired into authoring.)*
 5. ✅ **SPD-SX target map + external-instrument routing** *(done 2026-06-28)*:
    role→note via the SPD-SX `voice_map` (canonical-keyed, laid out in pad order
    60..68 to match `author_kit`'s default NoteNum), sequenced from the Circuit

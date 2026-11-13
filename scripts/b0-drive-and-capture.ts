@@ -1,6 +1,6 @@
 /**
  * b0-drive-and-capture — fully automated B0 GATE run (see
- * scripts/b0-author-delay-test.ts and the Gethsemane HANDOFF).
+ * scripts/b0-author-delay-test.ts and its local handoff note).
  *
  * The Circuit switches to external sync on MIDI Start (0xFA) and will not
  * advance without a 0xF8 clock stream (confirmed empirically: bare Start from

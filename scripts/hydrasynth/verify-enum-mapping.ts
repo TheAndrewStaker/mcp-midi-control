@@ -32,6 +32,7 @@ import {
   encodePatch,
   findPatchOffset,
   readPatchValue,
+  resolveApplyPatchValue,
 } from '@mcp-midi-control/hydrasynth/patchEncoder.js';
 
 interface Case {
@@ -91,27 +92,27 @@ check('prefxtype patch buffer: "Chorus" lands as raw index 1 at byte 352', () =>
   // the device decoded byte=8 as Compressor. Lock the post-fix
   // behavior: byte 352 stores the index (1 for Chorus) regardless of
   // the wire scaling used on NRPN.
-  const r = resolveNrpnValue(entryFor('prefxtype'), 'Chorus');
+  const r = resolveApplyPatchValue(entryFor('prefxtype'), 'Chorus');
   const buf = encodePatch(new Map([['prefxtype', r.wire]]));
   return buf[352] === 1 && buf[353] === 0
     ? true : `bytes 352=${buf[352]}, 353=${buf[353]}`;
 });
 
 check('prefxtype patch buffer: "Compressor" lands as raw index 8 at byte 352', () => {
-  const r = resolveNrpnValue(entryFor('prefxtype'), 'Compressor');
+  const r = resolveApplyPatchValue(entryFor('prefxtype'), 'Compressor');
   const buf = encodePatch(new Map([['prefxtype', r.wire]]));
   return buf[352] === 8 && buf[353] === 0
     ? true : `bytes 352=${buf[352]}, 353=${buf[353]}`;
 });
 
 check('postfxtype patch buffer: "Lo-Fi" lands as raw index 5 at byte 400', () => {
-  const r = resolveNrpnValue(entryFor('postfxtype'), 'Lo-Fi');
+  const r = resolveApplyPatchValue(entryFor('postfxtype'), 'Lo-Fi');
   const buf = encodePatch(new Map([['postfxtype', r.wire]]));
   return buf[400] === 5 ? true : `byte 400=${buf[400]}`;
 });
 
 check('decode round-trip: "Chorus" → encodePatch → readPatchValue is the index 1', () => {
-  const r = resolveNrpnValue(entryFor('prefxtype'), 'Chorus');
+  const r = resolveApplyPatchValue(entryFor('prefxtype'), 'Chorus');
   const buf = encodePatch(new Map([['prefxtype', r.wire]]));
   const back = readPatchValue(buf, findPatchOffset('prefxtype')!);
   return back === 1 ? true : `back=${back}`;
@@ -131,13 +132,13 @@ check('delaytype patch buffer: "Basic Stereo" lands as index 1 at byte 368', () 
   // The bug pre-fix: "Basic Stereo" → wire 8 → byte 368 = 8, device
   // decoded as out-of-range and showed BasicMo (Basic Mono — index 0).
   // Now: byte 368 = 1 → device shows Basic Stereo.
-  const r = resolveNrpnValue(entryFor('delaytype'), 'Basic Stereo');
+  const r = resolveApplyPatchValue(entryFor('delaytype'), 'Basic Stereo');
   const buf = encodePatch(new Map([['delaytype', r.wire]]));
   return buf[368] === 1 ? true : `byte 368=${buf[368]}`;
 });
 
 check('delaytype patch buffer: "Reverse" lands as index 4 at byte 368', () => {
-  const r = resolveNrpnValue(entryFor('delaytype'), 'Reverse');
+  const r = resolveApplyPatchValue(entryFor('delaytype'), 'Reverse');
   const buf = encodePatch(new Map([['delaytype', r.wire]]));
   return buf[368] === 4 ? true : `byte 368=${buf[368]}`;
 });
@@ -158,7 +159,7 @@ check('reverbtype: "Hall" string → NRPN wire 0 (idx 0 × 8)', () => {
 });
 
 check('reverbtype patch buffer: "Cloud" lands as index 3 at byte 384', () => {
-  const r = resolveNrpnValue(entryFor('reverbtype'), 'Cloud');
+  const r = resolveApplyPatchValue(entryFor('reverbtype'), 'Cloud');
   const buf = encodePatch(new Map([['reverbtype', r.wire]]));
   return buf[384] === 3 ? true : `byte 384=${buf[384]}`;
 });

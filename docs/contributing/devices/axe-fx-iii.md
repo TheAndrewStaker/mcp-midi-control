@@ -30,11 +30,16 @@ device.
 | `set_param` continuous knobs | confirmed | The same owner test set amp gain on channel A with a device echo. A later community round-trip then exercised SET then GET across the entire III catalog on hardware |
 | `set_param` discrete set-by-name | hardware-unverified | The discrete wire form is byte-exact against real captures and rides a different sub-action from the continuous drag. Type and model selectors were routed to that discrete form using the catalog round-trip as the oracle (`packages/fractal-gen3/src/configs/axe-fx-iii.ts`) |
 | `get_preset`, including the live grid read | hardware-unverified | Decoded from the shared gen-3 grid frame |
+| Block list in a stored `get_preset` | hardware-unverified | Blocks are named by pairing the stored block chain with the grid, which holds for all 384 factory presets (fw 28). A fw 32 report had Input shown as Vol/Pan, Output as PEQ and several blocks missing, because the old method named blocks by parameter-table size and those sizes move with firmware. Not yet re-run on a fw 32 unit; if the pairing ever fails the response says so and falls back |
 | `set_block` placement | hardware-unverified | Placement is hardware-confirmed on the sibling FM9 and FM3. Not yet on the III |
 | `set_block` / `set_bypass` on the 15 multi-word blocks | **hardware-unverified, newly reachable** | These never resolved before 2026-08-03: the write path matched display names and group codes against the descriptor SLUG, so `graphic_eq`, `parametric_eq`, `gate_expander`, `volume_pan`, `pan_tremolo`, `multitap_delay`, `megatap_delay`, `ten_tap_delay`, `plex_delay`, `ring_modulator`, `multiband_compressor`, `tone_match`, `ir_capture`, `ir_player` and `real_time_analyzer` returned "unknown block" for a block the device really has. Effect IDs come from the v1.4 spec table and the frame is unchanged, but none of THESE blocks has been placed or bypassed on hardware |
-| `switch_scene`, `switch_preset` | hardware-unverified | Shared gen-3 wire, confirmed on siblings |
-| `save_preset` | hardware-unverified | The save envelope is unconfirmed on any gen-3 device |
-| `export_preset` / `import_preset` | hardware-unverified | The preset container is self-validating against the device's own CRC |
+| `switch_scene` | hardware-unverified | Shared gen-3 wire, confirmed on siblings |
+| `switch_preset` | hardware-unverified, self-checking | A community sweep on a Mk I (firmware 32.06) showed the III honours bank select on CC0 and ignores CC32, so the old Program Change path could land on the wrong bank and still report success. The switch now goes by SysEx, and the tool reads the current preset number back and reports the switch as not acknowledged when the unit did not move |
+| `scan_locations`, preset names in `get_preset` | hardware-unverified | The stored-name query answers from flash without loading the preset. Same sweep: names used to come back with trailing padding, now cut at the first NUL |
+| `save_preset` | hardware-unverified, self-checking | The tool reads the stored name at the target location after the save and reports the save as not acknowledged on a mismatch. A community owner confirmed the save persists on the sibling FM3 |
+| Live meters in `get_preset` | output meters only | The CPU figure is omitted on the III: the same sweep read 72 % where the front panel showed 20.0 %, so the sibling formula is falsified here and one reading cannot pin a new one |
+| `export_preset` | hardware-unverified | The preset container is self-validating against the device's own CRC |
+| `import_preset` | not implemented (refuses) | The gen-3 writer has no byte-restore path yet; the unified verb returns a capability error rather than emitting an unverified push |
 
 Support tier: `community-beta`. This mirrors `capabilities.support_tier` on the
 descriptor at `packages/fractal-gen3/src/configs/axe-fx-iii.ts`, and preflight
@@ -61,7 +66,7 @@ One genuine data gap remains, and it is not a wire shape:
 
 | Blocked capability | Missing evidence | Closed by |
 |---|---|---|
-| Device-true display ranges, steps, tapers and enum name lists | The III cache copies on hand are unsynced placeholder stubs: one has around 1737 records and zero enum vocabulary entries | DONATE-1 |
+| Device-true enum NAME rosters wired into the catalog | Not donation-blocked anymore. Device-true display ranges SHIPPED 2026-08-11 from the 2026-07-02 community cache (1909 rows / 43 families, gated by `npm run verify-iii-ranges`; where the cache and the 2026-06-18 round-trip oracle disagree, the round-trip wins). That same cache carries the full enum name vocabulary (all 336 amp models named), so mining III-true rosters is queued offline engineering work | Engineering (roster mining); DONATE-1 adds fresher-firmware cross-validation |
 | Exact `ms` and `Hz` landing for log-taper knobs | Whether the normalized float a continuous SET carries is normalized in value space or in knob-position space. The two readings differ a lot mid-range | CAPTURE-1 |
 
 ## Before you start
@@ -80,20 +85,19 @@ Read [../SAFETY.md](../SAFETY.md) once. The device-specific parts:
 ## Asks, ranked
 
 ### DONATE-1: Send your Axe-Edit III definition cache
-**Tier: DONATE | ~2 minutes | no device time | unlocks: device-true ranges, steps, tapers and every enum name list**
+**Tier: DONATE | ~2 minutes | no device time | unlocks: cross-validation of ranges and enum rosters on your firmware**
 
-The single biggest III unlock, and it needs zero tooling and no hardware time.
+The 2026-07-02 community cache already delivered the III's device-true display
+ranges (shipped, gated by `npm run verify-iii-ranges`) and carries the full enum
+name vocabulary, so the original ask is closed. A cache from YOUR install still
+helps: a second cache from a different firmware cross-validates the ranges and
+the rosters, exactly how the FM9's fw 11.0 and 12.0 caches caught its amp-roster
+growth, and mechanically double-checks the discrete routing correction that
+rests on the 2026-06-18 round-trip oracle.
 
 Full instructions, including where the file lives and how to tell a real cache
 from a placeholder: [../tools/editor-cache-file.md](../tools/editor-cache-file.md).
 For the III the filename starts `effectDefinitions_10_`.
-
-Why it matters here specifically: the III copies on hand are unsynced stubs with
-no enum vocabulary at all. A cache from an install that has **synced to your
-device** is the device's own dictionary. It mechanically confirms the discrete
-routing correction that currently rests on an indirect oracle, adds every enum's
-name list, and pins device-true display ranges. The same kind of file corrected
-around 351 parameters on the FM9.
 
 ### SESSION-1: Run the write-verify probe
 **Tier: SESSION | ~5 minutes | writes to the working buffer, self-restoring | unlocks: discrete set-by-name, `set_bypass`, `switch_scene`, `set_block`**
@@ -137,7 +141,7 @@ the most valuable outcome.
 ### SESSION-3: Confirm a save
 **Tier: SESSION | ~5 minutes | writes and then PERSISTS | unlocks: `save_preset`**
 
-The save envelope is unconfirmed on every gen-3 device. Use a preset location
+The save envelope is confirmed on the FM3 (a save that survived a power cycle) and unconfirmed on the Axe-Fx III. Use a preset location
 you do not care about.
 
 > "Save this preset to location 5."

@@ -11,7 +11,7 @@
  *   - set_macro         (was hydra_set_macro) , Macros 1-8 (CCs 16-23)
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import { HYDRASYNTH_PARAMS, HYDRASYNTH_PARAMS_BY_ID } from '../params.js';
@@ -24,7 +24,9 @@ import {
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
 import { ensureConnection } from '@mcp-midi-control/core/server-shared/connections.js';
+import { runExclusiveOnEndpoint } from '@mcp-midi-control/core/server-shared/endpointArbiter.js';
 import { resolveDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
+import { withEndpoint, withHandleRetry } from '@mcp-midi-control/core/protocol-generic/dispatcher/core.js';
 
 // ── Declared output shapes ──────────────────────────────────────────
 //
@@ -153,9 +155,35 @@ server.registerTool('set_macro', {
   const cc = 15 + macro; // Macro 1 = CC 16, Macro 8 = CC 23
   const targetPort = port ?? 'hydrasynth';
   const descriptor = resolveDevice(targetPort);
-  const label = descriptor?.connection_label ?? descriptor?.id ?? targetPort;
-  const conn = ensureConnection(label);
-  conn.send(ccBytes(DEFAULT_CHANNEL, cc, value));
+  try {
+    if (descriptor !== undefined) {
+      // Endpoint-arbiter fold-in (the set_macro tail of BK-ARBITER-R3):
+      // this send used to call ensureConnection directly, bypassing the
+      // per-endpoint lock every dispatched verb holds, so a set_macro could
+      // interleave into a live-stream or patch dump mid-flight on the same
+      // port. Route it through the SAME seam dispatched verbs use:
+      // withEndpoint (lock + fresh ctx + device_busy mapping) around
+      // withHandleRetry (reconnect-and-retry-once on a stale handle).
+      // set_macro is never called from inside another execute*, so this
+      // acquisition never nests; the arbiter's reentrancy tripwire would
+      // throw loudly if that ever changed.
+      await withEndpoint(descriptor, (ctx) =>
+        withHandleRetry(ctx, async (c) => {
+          c.conn.send(ccBytes(DEFAULT_CHANNEL, cc, value));
+        }),
+      { opName: 'set_macro' });
+    } else {
+      // No registered descriptor for this port string, so there is nothing
+      // to hand withEndpoint. Still serialize on the same key the connection
+      // registry uses (the raw port label), so even this escape hatch cannot
+      // interleave with itself.
+      await runExclusiveOnEndpoint(targetPort, 'set_macro', async () => {
+        ensureConnection(targetPort).send(ccBytes(DEFAULT_CHANNEL, cc, value));
+      });
+    }
+  } catch (err) {
+    return asError(err);
+  }
   return {
     content: [{
       type: 'text',

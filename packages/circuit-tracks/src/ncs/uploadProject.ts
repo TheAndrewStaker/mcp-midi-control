@@ -15,7 +15,7 @@
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import { isHandleHealthy, withReconnectRetry } from '@mcp-midi-control/core/server-shared/handleHealth.js';
 import { recordAckOutcome } from '@mcp-midi-control/core/server-shared/connections.js';
-import { NCS_FILE_SIZE, assertNcsStructure, checkNcsStructure } from './format.js';
+import { NCS_FILE_SIZE, PROJECT_NAME_LEN, PROJECT_NAME_OFFSET, assertNcsStructure, checkNcsStructure } from './format.js';
 import {
   blockAddress, buildUploadFrames, crc32, fileId, makeMessage, msbDeinterleave, TRANSFER_CONSTANTS,
   type UploadFrame,
@@ -394,10 +394,14 @@ export type SlotProbe =
   | { status: 'occupied'; name: string }
   | { status: 'unknown'; error: string };
 
-/** Project name lives at offset 0x10, 16 ASCII bytes, space-padded (matches reader.ts). */
+/**
+ * Project name: the whole 32-byte stored field (`format.ts`, matches reader.ts). It read 16 bytes
+ * until 2026-09-11, which cut every longer name off in the overwrite gate's occupant report.
+ */
 function decodeProjectName(buf: Uint8Array): string {
   let s = '';
-  for (let i = 0x10; i < 0x20; i++) s += String.fromCharCode(buf[i] & 0x7f);
+  const end = Math.min(buf.length, PROJECT_NAME_OFFSET + PROJECT_NAME_LEN);
+  for (let i = PROJECT_NAME_OFFSET; i < end; i++) s += String.fromCharCode(buf[i] & 0x7f);
   return s.replace(/[^\x20-\x7e]/g, '').trimEnd();
 }
 

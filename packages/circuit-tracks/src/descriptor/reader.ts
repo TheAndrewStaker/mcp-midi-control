@@ -11,21 +11,25 @@
  *    so those refuse honestly (handoff §0: never invent a value) — to see them,
  *    save the project and read it back via get_preset(location).
  *
- *  - `get_preset(location)`: AVAILABLE, two kinds. A NUMBER (0..63) reads a
- *    STORED project off a Flash slot over the `.ncs` SysEx transfer protocol
+ *  - `get_preset(location)`: a NUMBER (Project 1..64) reads a STORED project
+ *    off a Flash slot over the `.ncs` SysEx transfer protocol
  *    (`downloadProject`, hardware-confirmed byte-exact 2026-06-18) and decodes
  *    its sequencer content: four note tracks (Synth1/2, MIDI1/2) + four drum
- *    tracks, pattern 1. `"patch:N"` (N = 0..63) loads the slot into Synth 1's
- *    working buffer (PC-load), dumps it, DECODES all patch-dump params
- *    (osc/filter/env/lfo/mixer/fx/eq), and restores the prior buffer
- *    (non-destructive); it reflects patches saved with save_preset
- *    (hardware-confirmed 2026-07-03). The file-transfer read (`readStoredPatch`)
- *    now backs only `checkOverwriteTarget`. Both read SAVED slots only; the live
- *    working buffer is not a slot, so unsaved edits must be saved on the device first.
+ *    tracks, pattern 1. `"patch:N"` REFUSES: a stored synth PATCH slot is not
+ *    addressable for reading on this device. The old PC-load read was REFUTED
+ *    on hardware 2026-07-27 (a Program Change REVERTS the live edit and
+ *    IGNORES its program number: PC 0/40/63 all returned the same patch), so
+ *    that path returned the CURRENTLY LOADED patch for every N. The refusal
+ *    names the honest alternatives; a project `.ncs` embeds both synth patch
+ *    bodies byte-exactly, so reading the PROJECT that uses a sound is a
+ *    faithful stored read. The live working buffer is not a slot; unsaved
+ *    edits must be saved on the device first.
  *
  *  - `checkOverwriteTarget`: the save_preset overwrite gate. Reads the target
- *    Flash PATCH slot (fileType 0x04): empty → writes through; occupied → the
- *    dispatcher names the occupying patch and refuses until confirm_overwrite.
+ *    Flash PATCH slot via the file-transfer read (fileType 0x04,
+ *    `readStoredPatch`, a real stored read, unrelated to the refuted PC
+ *    path): empty → writes through; occupied → the dispatcher names the
+ *    occupying patch and refuses until confirm_overwrite.
  */
 
 import type {
@@ -48,7 +52,7 @@ import type {
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 import { decodeParamWire, findParam } from '../params.js';
-import { readCurrentPatch, readStoredPatch, readStoredPatchViaLoad, instanceToSynthLoc } from '../codec/patchTransfer.js';
+import { readCurrentPatch, readStoredPatch, instanceToSynthLoc } from '../codec/patchTransfer.js';
 import { isPatchDumpParam, OFFSET_BY_PARAM } from '../codec/patchLayout.js';
 import { downloadProject } from '../ncs/uploadProject.js';
 import { readSampleDirectory, readProjectDirectory } from '../ncs/sampleDirectory.js';
@@ -57,7 +61,10 @@ import { readPackDirectory } from '../ncs/packDirectory.js';
 import { TRANSFER_CONSTANTS } from '../ncs/transfer.js';
 import { decodeNotePattern, describeGate, DEFAULT_GATE, type NoteStep } from '../ncs/notePattern.js';
 import { decodeDrumPattern, drumPatternToString, DEFAULT_DRUM_CHOICE } from '../ncs/drumPattern.js';
-import { NOTE_TRACKS, NUM_DRUM_TRACKS, PATTERNS_PER_TRACK, checkNcsStructure, ncsStructureNote, type NoteTrack } from '../ncs/format.js';
+import {
+  NOTE_TRACKS, NUM_DRUM_TRACKS, PATTERNS_PER_TRACK, PROJECT_NAME_OFFSET, PROJECT_NAME_LEN,
+  checkNcsStructure, ncsStructureNote, type NoteTrack,
+} from '../ncs/format.js';
 
 const DEVICE_LABEL = 'Novation Circuit Tracks';
 
@@ -68,10 +75,18 @@ function noteName(n: number): string {
   return `${NOTE_NAMES[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1}`;
 }
 
-/** Project name lives at offset 0x10, 16 ASCII bytes, space-padded. */
+/**
+ * Project name: the WHOLE stored field, `PROJECT_NAME_LEN` (32) space-padded ASCII bytes from
+ * `PROJECT_NAME_OFFSET` (0x10), the same field `setProjectName` writes. This used to read only 16
+ * bytes, so every name longer than 16 read back cut off, and that reading was taken for device
+ * truncation (2026-09-06). Pack 3 Project 5's raw bytes settled it 2026-09-11: the card holds
+ * an 18-character name such as "Example1 Breakdown" in full (0x20-0x21 = "wn"), and only this
+ * reader showed it cut to 16 ("Example1 Breakdo").
+ */
 function decodeProjectName(buf: Uint8Array): string {
   let s = '';
-  for (let i = 0x10; i < 0x20; i++) s += String.fromCharCode(buf[i] & 0x7f);
+  const end = Math.min(buf.length, PROJECT_NAME_OFFSET + PROJECT_NAME_LEN);
+  for (let i = PROJECT_NAME_OFFSET; i < end; i++) s += String.fromCharCode(buf[i] & 0x7f);
   return s.replace(/[^\x20-\x7e]/g, '').trimEnd();
 }
 
@@ -151,51 +166,29 @@ async function dumpSynthBody(ctx: DispatchCtx, instance?: number): Promise<Uint8
 }
 
 /**
- * get_preset for a STORED synth PATCH slot (`location: "patch:N"`). Reads the
- * actual synth PATCH BANK by loading the slot into the working buffer (Program
- * Change on the synth channel) and dumping it — this is the store save_preset
- * writes to, so it reflects freshly-saved patches (HW-confirmed 2026-07-03),
- * unlike the pack's file store. Returns the NAME + all decoded patch-dump params.
- * The load is non-destructive: the prior working buffer is restored afterward.
+ * `get_preset("patch:N")` REFUSAL. A stored synth PATCH slot cannot be
+ * addressed for reading on Circuit Tracks. The shipped PC-load read was
+ * REFUTED on hardware (2026-07-27, sentinel method): a Program Change on a
+ * synth channel REVERTS the live edit and IGNORES its program number (PC 0,
+ * PC 40 and PC 63 all returned the same patch on both parts), so the read
+ * returned the CURRENTLY LOADED patch for every N while claiming to read
+ * slot N. A read that silently returns the wrong data is the worst defect
+ * class on a verified-tier device (an agent verifying a save "confirms"
+ * against the wrong bytes), so the tool now refuses and names the honest
+ * alternatives instead. Evidence: docs/design/circuit-patch-capture.md
+ * "CORRECTION 2026-07-27"; scripts/circuit-survey-pack-patches.ts --diagnose.
  */
-async function readStoredPatchSnapshot(ctx: DispatchCtx, loc: string): Promise<PresetSnapshot> {
-  const m = /^patch[:\s]?(\d+)$/i.exec(loc.trim());
-  if (!m) {
-    throw new DispatchError('bad_location', DEVICE_LABEL, `Patch location must be "patch:N" (N = 0..63), got ${JSON.stringify(loc)}.`);
-  }
-  const slot = Number(m[1]);
-  if (!Number.isInteger(slot) || slot < 0 || slot > 63) {
-    throw new DispatchError('bad_location', DEVICE_LABEL, `Patch slot must be 0..63, got ${slot}.`);
-  }
-  if (!ctx.conn.hasInput) {
-    throw new DispatchError('no_ack', DEVICE_LABEL, 'get_preset needs a bidirectional MIDI connection (input + output) to read the patch back.');
-  }
-  const started = Date.now();
-  const meta = () => ({
-    device: DEVICE_LABEL, read_at_ms: Date.now(), active_scene_only: true,
-    routing_omitted: true, read_duration_ms: Date.now() - started,
-  });
-  const r = await readStoredPatchViaLoad(ctx.conn, slot, {});
-  if (!r.ok || !r.body) {
-    throw new DispatchError('no_ack', DEVICE_LABEL, `Could not read patch slot ${slot}: ${r.error ?? 'no data returned'}.`);
-  }
-  // Decode every patch-dump param from the 340-byte working-buffer body (same
-  // layout + schema get_param uses), so the snapshot carries real display values.
-  const params: Record<string, string | number> = { patch_name: r.name ?? '' };
-  for (const [key, offset] of OFFSET_BY_PARAM) {
-    const dot = key.indexOf('.');
-    const cp = findParam(key.slice(0, dot), key.slice(dot + 1));
-    if (cp) params[key] = decodeParamWire(cp, r.body[offset] & 0x7f);
-  }
-  return {
-    name: r.name || `Patch ${slot + 1}`,
-    slots: [{ slot: 0, block_type: 'patch', params }],
-    read_warnings: [
-      `Read patch slot ${slot} (device shows Patch ${slot + 1}) by loading it into Synth 1's working buffer and ` +
-      `dumping it; this reflects patches saved with save_preset. The prior working buffer was restored afterward.`,
-    ],
-    _meta: meta(),
-  };
+function refuseStoredPatchRead(loc: string): never {
+  throw new DispatchError(
+    'capability_not_supported', DEVICE_LABEL,
+    `get_preset(${JSON.stringify(loc)}) is refused: the Circuit cannot address a stored synth PATCH slot for ` +
+    `reading. The old PC-load read was REFUTED on hardware (2026-07-27): a Program Change REVERTS the live edit ` +
+    `and IGNORES its program number (PC 0, 40 and 63 all returned the same patch), so it returned the CURRENTLY ` +
+    `LOADED patch for every N. Honest alternatives: verify a save by ear (load Patch N on the device, listen, or ` +
+    `power-cycle and reload); read the LIVE buffer with get_param/get_params (Synth 1/2); or read a PROJECT that ` +
+    `uses the sound: a project .ncs embeds both synth patch bodies byte-exactly, so ` +
+    `get_preset({location: <Project 1..64>}) is a faithful stored read.`,
+  );
 }
 
 export const reader: DeviceReader = {
@@ -296,8 +289,8 @@ export const reader: DeviceReader = {
     if (!ctx.conn.hasInput) return undefined;
     try {
       const r = await readStoredPatch(ctx.conn, slot, {});
-      if (r.empty) return { target_display: `patch slot ${slot}`, is_active_location: false };
-      if (r.ok) return { target_display: `patch slot ${slot}`, occupant_name: r.name || `patch ${slot + 1}`, is_active_location: false };
+      if (r.empty) return { target_display: `Patch ${slot + 1} (save_preset slot ${slot})`, is_active_location: false };
+      if (r.ok) return { target_display: `Patch ${slot + 1} (save_preset slot ${slot})`, occupant_name: r.name || `Patch ${slot + 1}`, is_active_location: false };
       return undefined; // read failed → degrade
     } catch {
       return undefined;
@@ -357,7 +350,7 @@ export const reader: DeviceReader = {
     if (!dl.crcOk) {
       throw new DispatchError(
         'no_ack', DEVICE_LABEL,
-        `Read of slot ${location} on ${packDesc} failed its device CRC check; the transfer was partial or corrupt. ` +
+        `Read of Project ${location} on ${packDesc} failed its device CRC check; the transfer was partial or corrupt. ` +
         `Not returning a backup from unverified bytes; reconnect and retry.`,
       );
     }
@@ -380,11 +373,13 @@ export const reader: DeviceReader = {
       frame_count: Math.ceil(bytes.length / TRANSFER_CONSTANTS.BLOCK_SIZE),
       format: 'circuit-ncs-project',
       file_extension: 'ncs',
-      name: name || `Project ${location + 1}`,
+      // `location` IS the front-panel number (1..64); the old `location + 1`
+      // here was off by one (BK-CIRCUIT-RECEIPT-NUMBERING).
+      name: name || `Project ${location}`,
       structurally_valid: structure.ok,
       source: structure.ok
-        ? `stored Project ${location} on ${packDesc} (device shows "Project ${location + 1}"; CRC-verified and structurally valid)`
-        : `stored Project ${location} on ${packDesc} (device shows "Project ${location + 1}"; CRC-verified transfer of a STRUCTURALLY INVALID file)`,
+        ? `stored Project ${location} on ${packDesc} (CRC-verified and structurally valid)`
+        : `stored Project ${location} on ${packDesc} (CRC-verified transfer of a STRUCTURALLY INVALID file)`,
       warning: structure.ok
         ? undefined
         : `Project ${location} on ${packDesc}: ${ncsStructureNote(structure.faults, { crcVerified: true })} ` +
@@ -564,30 +559,16 @@ export const reader: DeviceReader = {
       throw new DispatchError(
         'capability_not_supported',
         DEVICE_LABEL,
-        'Circuit Tracks get_preset reads STORED content. Pass location as a number 1..64 for a PROJECT ' +
-        '(sequencer content), numbered as the device shows it, or "patch:N" (N = 0..63) for a stored synth PATCH ' +
-        '(name + decoded params). The live working buffer has no MIDI readback, so SAVE your edits on the device ' +
-        'first, then read that Project.',
+        'Circuit Tracks get_preset reads STORED projects. Pass location as a number 1..64 for a PROJECT ' +
+        '(sequencer content), numbered as the device shows it. Stored synth PATCH slots are NOT readable on this ' +
+        'device (a "patch:N" location refuses and names the alternatives). The live working buffer has no MIDI ' +
+        'readback, so SAVE your edits on the device first, then read that Project.',
       );
     }
-    // "patch:N" → read a stored synth PATCH via the file-transfer READ (fileType
-    // 0x04), distinct from the default numeric location which reads a PROJECT.
+    // "patch:N" → REFUSE. Stored patch slots are not addressable for reading
+    // (the PC-load path was hardware-refuted 2026-07-27; see the helper).
     if (typeof loc === 'string' && /^patch\b/i.test(loc.trim())) {
-      // A patch read goes through the device's WORKING BUFFER (Program Change +
-      // dump), which always follows the pack selected on the front panel. There
-      // is no pack field to set, so an explicit `pack` cannot be honored: refuse
-      // rather than hand back the front panel's pack as if the arg had applied.
-      if (ctx.pack !== undefined && ctx.pack !== 0) {
-        throw new DispatchError(
-          'capability_not_supported',
-          DEVICE_LABEL,
-          `A "patch:N" read is served from the device's working buffer, which always follows the pack selected on the ` +
-          `front panel, so it cannot be pointed at Pack ${ctx.pack + 1} over the wire. Drop the pack arg to read the ` +
-          `patch from whichever pack the device currently has loaded, or select Pack ${ctx.pack + 1} on the device first. ` +
-          `(A numeric project location DOES honor pack.)`,
-        );
-      }
-      return readStoredPatchSnapshot(ctx, loc);
+      refuseStoredPatchRead(loc.trim());
     }
     const shownProject = typeof loc === 'number' ? loc : Number.parseInt(String(loc), 10);
     if (!Number.isInteger(shownProject) || shownProject < 1 || shownProject > 64) {
@@ -616,9 +597,9 @@ export const reader: DeviceReader = {
     // without a scary failure. The transfer layer has already closed the session.
     if (dl.empty) {
       return {
-        name: `(empty slot ${slot} on ${packDesc})`,
+        name: `(empty Project ${shownProject} on ${packDesc})`,
         slots: [],
-        read_warnings: [`Slot ${slot} on ${packDesc} holds no stored project; it is empty. Safe to write (nothing to overwrite).`],
+        read_warnings: [`Project ${shownProject} on ${packDesc} holds no stored project; it is empty. Safe to write (nothing to overwrite).`],
         _meta: {
           device: DEVICE_LABEL,
           read_at_ms: Date.now(),
@@ -629,7 +610,7 @@ export const reader: DeviceReader = {
       };
     }
     if (!dl.ok || !dl.bytes) {
-      throw new DispatchError('no_ack', DEVICE_LABEL, `Could not read project slot ${slot}: ${dl.error ?? 'no data returned'}.`);
+      throw new DispatchError('no_ack', DEVICE_LABEL, `Could not read Project ${shownProject}: ${dl.error ?? 'no data returned'}.`);
     }
     // CRC mismatch = a partial / corrupt read (missing WRITE_FINISH, dropped
     // frames). Refuse to decode unverified bytes into a snapshot — a wrong tail
@@ -637,7 +618,7 @@ export const reader: DeviceReader = {
     if (!dl.crcOk) {
       throw new DispatchError(
         'no_ack', DEVICE_LABEL,
-        `Read of slot ${slot} failed its device CRC check; the transfer was partial or corrupt. ` +
+        `Read of Project ${shownProject} failed its device CRC check; the transfer was partial or corrupt. ` +
         `Not returning a snapshot from unverified bytes; reconnect and retry.`,
       );
     }
@@ -701,11 +682,11 @@ export const reader: DeviceReader = {
         // project_plan `starts_silent` layout). Say so loudly so this reads as
         // success, not "nothing landed".
         read_warnings.push(
-          `Slot ${slot} ("${name || 'unnamed'}") pattern 1 is empty, but the project HOLDS content in pattern(s) ` +
+          `Project ${shownProject} ("${name || 'unnamed'}") pattern 1 is empty, but the project HOLDS content in pattern(s) ` +
           `${otherPatterns.join(', ')} (of 8) — the project is NOT empty; get_preset decodes pattern 1 only. ` +
           `This is the expected shape for a project that starts silent.`);
       } else {
-        read_warnings.push(`Slot ${slot} ("${name || 'unnamed'}") has no content in ANY of its 8 patterns — the project is empty.`);
+        read_warnings.push(`Project ${shownProject} ("${name || 'unnamed'}") has no content in ANY of its 8 patterns; the project is empty.`);
       }
     } else if (otherPatterns.length > 0) {
       read_warnings.push(`Additional content in pattern(s) ${otherPatterns.join(', ')} (of 8) is not shown; get_preset decodes pattern 1.`);
@@ -715,7 +696,7 @@ export const reader: DeviceReader = {
     if (!dl.crcOk) read_warnings.push('Device CRC did not match the received bytes; the read may be partial.');
 
     return {
-      name: name || `Project ${slot + 1}`,
+      name: name || `Project ${shownProject}`,
       slots,
       read_warnings,
       pattern_occupancy: { total: occ.total, decoded: 1, occupied: occ.occupied, by_track: occ.by_track },

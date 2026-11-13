@@ -1,0 +1,32 @@
+{
+  "name": "@mcp-midi-control/rig-console-render",
+  "version": "0.9.0",
+  "description": "Pure renderer for the Rig Console: signal-flow SVG diagram, self-contained HTML page, and the text peer views. No file I/O, no MIDI, no server: callers load the sources and pass the model in.",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": "./dist/*"
+  },
+  "dependencies": {
+    "openrig": "*",
+    "@mcp-midi-control/circuit-tracks": "*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -789,4 +789,45 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 240,
     },
   },
+
+  // BK-084 mode-collapse: adjust-the-existing-tone language → set_params ──
+  {
+    id: 'axefx2-bk084-retune-mode-choice',
+    device: 'axe-fx-ii',
+
+    description: "BK-084 mode-collapse tool choice. 'Warm up my current preset' is adjust/re-voice language about the tone ALREADY on the device: the agent must batch the knob changes via set_params (per-param set_param calls are also acceptable for a small batch) rather than reach for apply_preset with a full re-authored spec — set_params is the documented path for a knob-only tweak (apply_preset is for describing the complete chain). Axe-Fx II's set_params internally decides atomic-vs-individual delivery; the agent has no mode to pick anymore.",
+    prompt: "On the Axe-Fx II, warm up the preset I'm currently on: a bit more amp bass, take the treble down a touch, and add a little more delay mix. Keep everything else exactly as it is. Don't save.",
+    expectations: {
+      must_call_any: [['set_params'], ['set_param']],
+      must_not_call: ['apply_preset'],
+      max_tools: 10,
+      max_wall_seconds: 240,
+    },
+  },
+
+  // BK-084 mode-collapse negative: fresh-build language still needs apply_preset ──
+  {
+    id: 'axefx2-bk084-build-mode-choice',
+    device: 'axe-fx-ii',
+
+    description: "BK-084 mode-collapse negative control: 'build me a fresh Plexi rig' is fresh-build (structural placement) language — the agent must call apply_preset with a full spec, not just a batch of set_params knob writes (set_params cannot place blocks). apply_preset no longer takes a mode argument at all; there is nothing left to mis-select on the build side.",
+    prompt: "Build me a fresh Plexi rig on the Axe-Fx II working buffer: amp into cab with a touch of spring reverb. Replace whatever is there. Don't save.",
+    expectations: {
+      must_call: ['apply_preset'],
+      max_tools: 10,
+      tool_call_validators: [
+        {
+          tool: 'apply_preset',
+          check: (args) => {
+            const a = args as { mode?: string };
+            if (a.mode !== undefined) {
+              return `apply_preset was called with a 'mode' argument (${JSON.stringify(a.mode)}), but apply_preset no longer accepts one (BK-084 mode-collapse) — the agent is inventing a removed parameter.`;
+            }
+            return true;
+          },
+        },
+      ],
+      max_wall_seconds: 240,
+    },
+  },
 ];

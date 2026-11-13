@@ -44,6 +44,7 @@ import {
   GEN3_READ_ROSTERS,
   ampOrdinalsExposingParams,
   III_ROUNDTRIP_DISCRETE,
+  III_RANGES,
 } from 'fractal-midi/gen3/axe-fx-iii';
 import {
   VP4_MODEL_ID,
@@ -52,8 +53,8 @@ import {
   buildVp4SetParam,
 } from 'fractal-midi/gen3/vp4';
 import { FM9_RANGES, FM9_ROUNDTRIP_DISCRETE } from 'fractal-midi/gen3/fm9';
-import { FM3_FAMILY_JOIN_DISCRETE } from 'fractal-midi/gen3/fm3';
-import { createModernCatalog, type AxeFxIIIParam } from './catalog.js';
+import { FM3_FAMILY_JOIN_DISCRETE, FM3_RANGES } from 'fractal-midi/gen3/fm3';
+import { createModernCatalog, type AxeFxIIIParam, type DeviceRangeTable } from './catalog.js';
 
 /** FM9 SysEx model byte: its device-true editor-cache ranges (FM9_RANGES) take
  *  precedence over the AM4-overlay-inferred catalog bounds. */
@@ -79,6 +80,23 @@ const ROUNDTRIP_DISCRETE_BY_MODEL: Readonly<Record<number, Readonly<Record<strin
   [III_MODEL_ID]: III_ROUNDTRIP_DISCRETE,
   [FM9_MODEL_ID]: FM9_ROUNDTRIP_DISCRETE,
   [FM3_MODEL_ID]: FM3_FAMILY_JOIN_DISCRETE,
+};
+
+/**
+ * Device-true display-range tables, keyed by SysEx model byte. Each is mined
+ * from THAT device's own editor effectDefinitions cache (record ids are
+ * device-true paramIds, so tables are never cross-wired): FM9 fw 12.0
+ * (community capture 2026-07-18), FM3 fw 12.0 (2026-06-27, issues #7/#8),
+ * Axe-Fx III (2026-07-02). Cache bounds override the AM4-overlay-inferred
+ * displayMin/displayMax inside the catalog (see `deviceRanges` in catalog.ts);
+ * on the III, the 2026-06-18 roundtrip oracle outranks the cache where the two
+ * disagree. VP4 has no cache donation yet and stays on catalog inference.
+ * Gates: verify-fm9-ranges / verify-fm3-ranges / verify-iii-ranges.
+ */
+const DEVICE_RANGES_BY_MODEL: Readonly<Record<number, DeviceRangeTable>> = {
+  [III_MODEL_ID]: III_RANGES,
+  [FM9_MODEL_ID]: FM9_RANGES,
+  [FM3_MODEL_ID]: FM3_RANGES,
 };
 import { makeReader } from './reader.js';
 import { makeWriter } from './writer.js';
@@ -217,6 +235,15 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
             'only continuous knob writes have a captured wire shape.',
         );
       },
+      // The gen-3 fn=0x01 name frames (sub=0x28 preset rename, sub=0x2b scene
+      // name) are decoded from the editor's model gate for 0x10/0x11/0x12
+      // ONLY; the VP4 fn=0x01 frame has its own shape with no decoded name op.
+      buildRenamePreset: () => {
+        throw new Error('vp4: preset rename wire shape is not decoded (the sub=0x28 name frame is a grid-family op).');
+      },
+      buildSetSceneName: () => {
+        throw new Error('vp4: scene-name wire shape is not decoded (the sub=0x2b name frame is a grid-family op).');
+      },
     };
   }
   const deviceLabel = config.display_name;
@@ -240,18 +267,24 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
     deviceEnumOverrides: config.enum_overrides,
     sharedEnumRosters: config.grid !== undefined ? GEN3_READ_ROSTERS : undefined,
     excludeBlocks: config.exclude_blocks,
-    // FM9: device-true display ranges from the FM9-Edit effectDefinitions cache
-    // (community capture, fw 11.0) override the AM4-overlay-inferred bounds for
-    // calibration, correcting the float params whose inherited range contradicts
-    // the real front panel (DELAY_TIME, REVERB_PREDELAY, etc.). The III/FM3/VP4
-    // have no device-true range table yet, so they keep the catalog inference.
-    deviceRanges: config.model_byte === FM9_MODEL_ID ? FM9_RANGES : undefined,
+    // Device-true display ranges from each device's OWN editor
+    // effectDefinitions cache (III / FM3 / FM9) override the AM4-overlay-
+    // inferred bounds for calibration, correcting the float params whose
+    // inherited range contradicts the real front panel (DELAY_TIME,
+    // REVERB_PREDELAY, etc.). VP4 has no cache yet and keeps the catalog
+    // inference. See DEVICE_RANGES_BY_MODEL.
+    deviceRanges: DEVICE_RANGES_BY_MODEL[config.model_byte],
     // Discrete-ordinal overlay: params the enum paths missed but oracle
     // evidence proves are ordinals (the device quantizes a continuous SET), so
     // they must route DISCRETE. III and FM9 each get their OWN roundtrip-derived
     // overlay (never cross-wired); the FM3 gets the family-join overlay
     // (sibling-evidence classification, community-beta); VP4 has no oracle data.
     roundtripDiscreteOrdinals: ROUNDTRIP_DISCRETE_BY_MODEL[config.model_byte],
+    // The III and FM9 overlays are DEVICE ORACLES (that device's own hardware
+    // SET->GET roundtrip), so they outrank the editor cache on ordinal-bound
+    // disagreements; the FM3's family-join overlay is sibling-pattern evidence
+    // and never outranks the FM3's own cache.
+    roundtripIsDeviceOracle: config.model_byte === III_MODEL_ID || config.model_byte === FM9_MODEL_ID,
   });
 
   // Grid devices (III/FM3/FM9) advertise a 2-D grid + multi-instance blocks;
@@ -360,6 +393,7 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
     },
     canonical_terms: config.canonical_terms,
     blocks: catalog.blocks,
+    block_aliases: shortBlockNames(catalog.blocks),
     reader: makeReader({
       codec, catalog, deviceLabel,
       getResponseTimeoutMs: GET_RESPONSE_TIMEOUT_MS,
@@ -395,4 +429,40 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
     block_params_summary: config.block_params_summary,
     concept_keys: Object.keys(conceptKeys).length > 0 ? Object.freeze(conceptKeys) : undefined,
   };
+}
+
+/**
+ * Short names people and agents reach for, mapped to the block's catalog name.
+ * Each is the block's own abbreviation on the unit or in Fractal's docs (the
+ * grid shows "VOL", "MTD", "RNG"), or the catalog name minus its last word.
+ * None is a second meaning: a short name that could mean two blocks is left
+ * out, so the caller gets the refusal and the block list instead of a guess.
+ */
+const SHORT_BLOCK_NAMES: Readonly<Record<string, string>> = {
+  vol_pan: 'volume_pan',
+  volpan: 'volume_pan',
+  volume: 'volume_pan',
+  pan_trem: 'pan_tremolo',
+  tremolo: 'pan_tremolo',
+  megatap: 'megatap_delay',
+  multitap: 'multitap_delay',
+  multi_delay: 'multitap_delay',
+  ten_tap: 'ten_tap_delay',
+  plex: 'plex_delay',
+  ring_mod: 'ring_modulator',
+  ringmod: 'ring_modulator',
+  multiband_comp: 'multiband_compressor',
+  multicomp: 'multiband_compressor',
+  comp: 'compressor',
+  geq: 'graphic_eq',
+  peq: 'parametric_eq',
+  gate: 'gate_expander',
+  rta: 'real_time_analyzer',
+};
+
+/** The short names whose block this device actually has. */
+function shortBlockNames(blocks: Readonly<Record<string, unknown>>): Readonly<Record<string, string>> {
+  return Object.freeze(Object.fromEntries(
+    Object.entries(SHORT_BLOCK_NAMES).filter(([short, full]) => full in blocks && !(short in blocks)),
+  ));
 }

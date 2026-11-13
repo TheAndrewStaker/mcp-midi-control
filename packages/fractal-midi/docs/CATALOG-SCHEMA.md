@@ -47,7 +47,7 @@ Every `catalog/<device>.json` is one object:
 | Device | Keys |
 |---|---|
 | `am4` | `KNOWN_PARAMS` (Record `"block.name"` → param: pidLow/pidHigh, unit, displayMin/Max, scaling, enumValues, displayLabel), `PARAM_ALIASES`, `BLOCK_TYPE_VALUES`, `BLOCK_NAMES_BY_VALUE`, `enums.*_VALUES` (ordinal → display name rosters) |
-| `axe-fx-ii` | `KNOWN_PARAMS` (Record `"block.name"` → param: paramId, controlType, enumValues, displayMin/Max, displayScale, xmlLabel…), `AXE_FX_II_BLOCKS` (effectId, name, groupCode…), `PARAM_ALIASES_AXEFX2` |
+| `axe-fx-ii` | `KNOWN_PARAMS` (Record `"block.name"` → param: paramId, controlType, enumValues, displayMin/Max, displayScale, xmlLabel…), `AXE_FX_II_BLOCKS` (effectId, name, groupCode…), `PARAM_ALIASES_AXEFX2`. A param carrying `wireOrdinalOffset` is OFFSET-ORDINAL: its wire value is the small integer `display + wireOrdinalOffset` over `[displayMin+offset .. displayMax+offset]`, NOT the normalized 0..65534 field (hardware-measured for `pitch.voice_N_shift`: display -24..+24 semitones, wire 0..48, unison at 24) |
 | `axe-fx-iii` | `PARAMS` (array: family, paramId, name, displayLabel, unit…), `AXE_FX_III_BLOCKS` (gen-3 family-shared effect IDs), `GEN3_READ_ROSTERS` (enum ordinal → display name; the ordinal IS the wire set value, sent as float32(ordinal)) |
 | `fm3` | `FM3_PARAMS` (same shape as III `PARAMS`, paramIds FM3-true) |
 | `fm9` | `FM9_PARAMS`, `FM9_RANGES` (per family+paramId: kind, displayMin/Max, scale, step), `FM9_ENUM_OVERRIDES`, `FM9_AMP_ROSTER`, `FM9_DRIVE_ROSTER`, `FM9_REVERB_TYPE_ROSTER` |

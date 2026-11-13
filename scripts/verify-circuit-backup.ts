@@ -21,7 +21,9 @@ import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import type { DeviceDescriptor, DispatchCtx, PresetBinaryDump } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { backupProjectSlot } from '@mcp-midi-control/core/protocol-generic/dispatcher/backup.js';
 import { CIRCUIT_TRACKS_DESCRIPTOR } from '@mcp-midi-control/circuit-tracks/descriptor.js';
-import { NCS_FILE_SIZE, NCS_MAGIC, NCS_TOTAL_SESSION_SIZE_OFFSET } from '@mcp-midi-control/circuit-tracks/ncs/format.js';
+import {
+  NCS_FILE_SIZE, NCS_MAGIC, NCS_TOTAL_SESSION_SIZE_OFFSET, PROJECT_NAME_LEN, PROJECT_NAME_OFFSET,
+} from '@mcp-midi-control/circuit-tracks/ncs/format.js';
 import {
   blockAddress, crc32, fileId, intToNibbles, makeMessage, msbInterleave, TRANSFER_CONSTANTS,
 } from '@mcp-midi-control/circuit-tracks/ncs/transfer.js';
@@ -51,8 +53,13 @@ function makeProject(name: string): Uint8Array {
   for (let i = 0; i < buf.length; i++) buf[i] = (i * 31 + 7) & 0xff;
   for (let i = 0; i < NCS_MAGIC.length; i++) buf[i] = NCS_MAGIC.charCodeAt(i);
   new DataView(buf.buffer).setUint32(NCS_TOTAL_SESSION_SIZE_OFFSET, NCS_FILE_SIZE, true);
-  const n = name.padEnd(16, ' ').slice(0, 16);
-  for (let i = 0; i < 16; i++) buf[0x10 + i] = n.charCodeAt(i) & 0x7f;
+  // The name field is the WHOLE 32 bytes at 0x10, space-padded, exactly as the device stores it
+  // (`ncs/format.ts`; corroborated by every project in the 2026-07-29 card backup, and by Pack 3
+  // Project 5 round-tripping an 18-character name with "wn" at 0x20-0x21). This fixture used to pad
+  // only the first 16 and leave the deterministic filler in the rest, which read back as the name
+  // plus garbage once the reader was fixed to read the full field (2026-09-11).
+  const n = name.padEnd(PROJECT_NAME_LEN, ' ').slice(0, PROJECT_NAME_LEN);
+  for (let i = 0; i < PROJECT_NAME_LEN; i++) buf[PROJECT_NAME_OFFSET + i] = n.charCodeAt(i) & 0x7f;
   return buf;
 }
 const makeValidProject = makeProject;

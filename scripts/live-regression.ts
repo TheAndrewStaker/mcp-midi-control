@@ -61,8 +61,8 @@
  */
 
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(
   process.cwd(),
@@ -142,7 +142,7 @@ async function main(): Promise<void> {
   }
   const client = new Client(
     { name: 'live-regression-session-105', version: '1.0.0' },
-    { capabilities: {} },
+    { capabilities: {}, versionNegotiation: { mode: 'auto' } },
   );
 
   try {
@@ -498,24 +498,170 @@ async function main(): Promise<void> {
         record('Circuit get_preset reads a stored project off a slot', true,
           [`slot ${occupiedSlot} → "${occupiedName}"`]);
 
-        // SELF-RESTORING overwrite-gate case: upload_project to the OCCUPIED
+        // SELF-RESTORING overwrite-gate case: import_preset (a project file) to the OCCUPIED
         // slot WITHOUT confirm_overwrite must REFUSE and write nothing (the #0
         // gate). Because it refuses, the slot is untouched (non-destructive).
         const ncs = path.resolve(process.cwd(), 'samples', 'circuit-tracks', 'grooves', 'aqua_regia.ncs');
         const r = await client.callTool({
-          name: 'upload_project',
-          arguments: { port: 'circuit', file: ncs, slot: occupiedSlot },
+          name: 'import_preset',
+          arguments: { port: 'circuit', file_path: ncs, target_location: occupiedSlot, save_authorized: true },
         });
         const t = extractText(r);
         const refused = isError(r) && /overwrit|confirm_overwrite/i.test(t);
         record('Circuit overwrite gate REFUSES an occupied slot without confirm_overwrite',
-          refused, refused ? [`refused slot ${occupiedSlot}; nothing written`] : debugOnFail('upload_project', r).concat([`text=${t.slice(0, 160)}`]));
+          refused, refused ? [`refused slot ${occupiedSlot}; nothing written`] : debugOnFail('import_preset', r).concat([`text=${t.slice(0, 160)}`]));
 
         // Confirm NON-DESTRUCTIVE: re-read the slot; the project name is unchanged.
         const after = await client.callTool({ name: 'get_preset', arguments: { port: 'circuit', location: occupiedSlot } });
         const afterName = nameOf(extractText(after));
         record('Circuit slot unchanged after the refused upload (self-restoring)',
           !isError(after) && afterName === occupiedName, [`name before="${occupiedName}" after="${afterName}"`]);
+      }
+    }
+    // ── Performance rig: MPC One G2, RC-505mk2, VE-500 ─────────────────
+    // Reads only, plus one identity write on the VE-500 (the value it already
+    // holds). Nothing here selects a sequence, recalls a memory or saves: those
+    // change what the performer hears and are confirmed by hand.
+    console.log('\nPerformance rig (MPC One G2 / RC-505mk2 / VE-500):');
+    const ports = extractText(await client.callTool({ name: 'list_midi_ports', arguments: {} }));
+    const seen = (re: RegExp): boolean => re.test(ports);
+    // structuredContent when the tool declares one, else the JSON text body.
+    const data = (r: unknown): Record<string, unknown> | undefined => {
+      const sc = structured(r);
+      if (sc) return sc;
+      try { return JSON.parse(extractText(r)) as Record<string, unknown>; } catch { return undefined; }
+    };
+
+    // MPC: the card, when it is in a reader.
+    {
+      const scan = await client.callTool({ name: 'scan_locations', arguments: { port: 'mpc-one-g2', from: 1, to: 200 } });
+      const rows = (data(scan)?.scanned as Array<{ location: string | number; name?: string }> | undefined) ?? [];
+      if (isError(scan) || rows.length === 0) {
+        record('MPC card: project list', true, ['no MPC card mounted (or no projects on it)'], true);
+      } else {
+        record('MPC card: scan_locations lists the projects', true, [`${rows.length} project(s); first: ${rows[0].name ?? rows[0].location}`]);
+        const first = await client.callTool({ name: 'get_preset', arguments: { port: 'mpc-one-g2', location: rows[0].location } });
+        const slots = (data(first)?.slots as unknown[] | undefined) ?? [];
+        record('MPC card: get_preset reads a project\'s sequences', !isError(first) && slots.length > 0,
+          isError(first) ? debugOnFail('get_preset', first) : [`${slots.length} sequence(s) in "${String(data(first)?.name ?? '')}"`]);
+        const wide = await client.callTool({ name: 'scan_locations', arguments: { port: 'mpc-one-g2', from: 1, to: 500 } });
+        record('MPC card: a range wider than 200 projects is refused up front', isError(wide) && /at most 200/.test(extractText(wide)),
+          [extractText(wide).slice(0, 120).replace(/\s+/g, ' ')]);
+      }
+      // Standalone shows the sequencer ports; Controller Mode shows "Public" and must refuse a sequence select.
+      const mpcStandalone = seen(/mpc one.*usb-c out 1/i);
+      const mpcController = seen(/mpc one.*public/i);
+      if (mpcController) {
+        const sw = await client.callTool({ name: 'switch_preset', arguments: { port: 'mpc-one-g2', location: 1 } });
+        record('MPC MIDI: a sequence select in Controller Mode is refused and names the mode',
+          isError(sw) && /Controller Mode/.test(extractText(sw)), [extractText(sw).slice(0, 140).replace(/\s+/g, ' ')]);
+      } else {
+        record('MPC MIDI: the standalone sequencer port is visible', mpcStandalone,
+          mpcStandalone ? ['present; selecting a sequence is a by-hand check (see the hardware brief)'] : ['MPC not connected over USB'], !mpcStandalone);
+      }
+    }
+
+    // The loaded song book, when the server was started with one.
+    {
+      const rig = await client.callTool({ name: 'describe_rig', arguments: {} });
+      const book = data(rig)?.repertoire as { songs?: unknown[]; setlists?: Array<{ id: string }>; error?: string } | undefined;
+      if (isError(rig) || !book || book.error !== undefined) {
+        record('Song book: describe_rig', true, ['no song book loaded (MCP_RIG_REPERTOIRE unset)'], true);
+      } else {
+        record('Song book: describe_rig reports the loaded book', true, [`${book.songs?.length ?? 0} song(s), ${book.setlists?.length ?? 0} setlist(s)`]);
+        const setlist = book.setlists?.[0]?.id;
+        if (setlist) {
+          const plan = await client.callTool({ name: 'describe_rig', arguments: { setlist } });
+          const positions = (data(plan)?.positions as unknown[] | undefined) ?? [];
+          record(`Song book: setlist "${setlist}" plans every position`, !isError(plan) && positions.length > 0,
+            isError(plan) ? debugOnFail('describe_rig', plan) : [`${positions.length} position(s)`]);
+        }
+      }
+    }
+
+    // RC-505mk2: its memories, when the unit is in STORAGE mode.
+    {
+      const scan = await client.callTool({ name: 'scan_locations', arguments: { port: 'rc-505mk2', from: 1, to: 5 } });
+      const rows = (data(scan)?.scanned as unknown[] | undefined) ?? [];
+      if (isError(scan) || rows.length === 0) {
+        const midi = seen(/rc-?505/i);
+        record('RC-505mk2: memory read', true,
+          [midi ? 'on USB-MIDI, not STORAGE mode: memory reads need STORAGE mode; recall is a by-hand check' : 'RC-505mk2 not connected'], true);
+      } else {
+        record('RC-505mk2: scan_locations reads memories 1..5 from the drive', true, [`${rows.length} row(s)`]);
+        // Every row says what the memory holds; a memory with loops reads back a tempo and a loop length.
+        const all = await client.callTool({ name: 'scan_locations', arguments: { port: 'rc-505mk2', from: 1, to: 99 } });
+        const allRows = (data(all)?.scanned as { location: string; name: string; is_empty: boolean; summary?: string }[] | undefined) ?? [];
+        const withLoops = allRows.filter((r) => /loop/.test(r.summary ?? '') && r.summary !== 'no loops');
+        const empties = allRows.filter((r) => r.is_empty);
+        record('RC-505mk2: scan_locations summarises all 99 memories', allRows.length === 99 && allRows.every((r) => typeof r.summary === 'string'),
+          [`${allRows.length} rows, ${withLoops.length} with loops, ${empties.length} empty`]);
+        record('RC-505mk2: an empty memory never reports loops', empties.every((r) => r.summary === 'no loops'), [`${empties.length} empty`]);
+        if (withLoops.length > 0) {
+          const loc = withLoops[0].location;
+          const got = await client.callTool({ name: 'get_preset', arguments: { port: 'rc-505mk2', location: loc } });
+          const unitCh = (data(got)?.looper as { control_channel?: number } | undefined)?.control_channel;
+          record('RC-505mk2: get_preset reads the unit control channel from its system settings',
+            typeof unitCh === 'number' && unitCh >= 1 && unitCh <= 16, [`channel ${unitCh}`]);
+          const looper = data(got)?.looper as { tempo_bpm?: number; tracks?: { track: number; recorded: boolean; measures?: number; seconds?: number }[] } | undefined;
+          const rec = (looper?.tracks ?? []).filter((t) => t.recorded);
+          const ok = !isError(got) && typeof looper?.tempo_bpm === 'number' && looper.tempo_bpm >= 40 && looper.tempo_bpm <= 300 &&
+            rec.length > 0 && rec.every((t) => (t.measures ?? 0) > 0 && (t.seconds ?? 0) > 0);
+          record(`RC-505mk2: get_preset reads tempo and loop lengths of memory ${loc}`, ok,
+            [`${looper?.tempo_bpm} BPM; ${rec.map((t) => `T${t.track} ${t.measures} meas ${t.seconds}s`).join(', ')}`]);
+        }
+      }
+    }
+
+    // VE-500: one read, then write the same value back and read again.
+    if (!seen(/VE-?500/i)) {
+      record('VE-500: read and identity write', true, ['VE-500 not connected'], true);
+    } else {
+      const q = { port: 've-500', block: 'reverb1', name: 'reverb_level' };
+      const before = await client.callTool({ name: 'get_param', arguments: q });
+      const v0 = data(before)?.display_value;
+      record('VE-500: get_param reads reverb level', !isError(before) && v0 !== undefined,
+        isError(before) ? debugOnFail('get_param', before) : [`value=${String(v0)}`]);
+      if (!isError(before) && v0 !== undefined) {
+        const w = await client.callTool({ name: 'set_param', arguments: { ...q, value: v0 } });
+        const after = await client.callTool({ name: 'get_param', arguments: q });
+        const v1 = data(after)?.display_value;
+        record('VE-500: writing the value it already holds leaves it unchanged', !isError(w) && v1 === v0,
+          isError(w) ? debugOnFail('set_param', w) : [`before=${String(v0)} after=${String(v1)}`]);
+      }
+      // Memory reads: none of these loads a memory or touches the edit buffer.
+      const scan = await client.callTool({ name: 'scan_locations', arguments: { port: 've-500', from: 'U01', to: 'U99' } });
+      const rows = (data(scan)?.scanned as Array<{ location: string; name: string; is_empty: boolean }> | undefined) ?? [];
+      record('VE-500: scan_locations names all 99 user memories', !isError(scan) && rows.length === 99,
+        isError(scan) ? debugOnFail('scan_locations', scan) : [`${rows.length} name(s), ${rows.filter((r) => r.is_empty).length} free`]);
+      const live = await client.callTool({ name: 'get_preset', arguments: { port: 've-500' } });
+      const liveLoc = (data(live)?._meta as { current_location?: string } | undefined)?.current_location;
+      const liveName = data(live)?.name;
+      record('VE-500: get_preset reads the loaded memory, with its number and name',
+        !isError(live) && typeof liveName === 'string' && /^[UP]\d\d$/.test(liveLoc ?? ''),
+        isError(live) ? debugOnFail('get_preset', live) : [`${String(liveLoc)} "${String(liveName)}"`]);
+      const loaded = rows.find((r) => r.location === liveLoc);
+      const other = rows.find((r) => r.location !== liveLoc);
+      if (other) {
+        const st = await client.callTool({ name: 'get_preset', arguments: { port: 've-500', location: other.location } });
+        const after = await client.callTool({ name: 'get_preset', arguments: { port: 've-500' } });
+        const stillLoc = (data(after)?._meta as { current_location?: string } | undefined)?.current_location;
+        record('VE-500: get_preset reads a stored memory without loading it',
+          !isError(st) && data(st)?.name === other.name && stillLoc === liveLoc
+            // The stored read itself must report the memory the unit is ON, not the one read.
+            && (data(st)?._meta as { current_location?: string } | undefined)?.current_location === liveLoc,
+          isError(st) ? debugOnFail('get_preset', st) : [`${other.location} "${String(data(st)?.name)}"; still on ${String(stillLoc)}`]);
+      }
+      // The scan and the live read must agree on the loaded memory's stored name
+      // only when nothing was renamed in the buffer, so this is reported, not asserted.
+      if (loaded) console.log(`      (stored name at ${loaded.location}: "${loaded.name}")`);
+      const occupied = rows.find((r) => !r.is_empty && r.location !== liveLoc);
+      if (occupied) {
+        const refused = await client.callTool({ name: 'save_preset', arguments: { port: 've-500', location: occupied.location, save_authorized: true } });
+        const body = data(refused);
+        record('VE-500: a save onto an occupied memory is refused before anything is sent',
+          body?.acked === false && /REFUSING TO OVERWRITE/.test(String(body?.warning ?? '')),
+          [String(body?.warning ?? extractText(refused)).slice(0, 110)]);
       }
     }
   } finally {

@@ -307,6 +307,44 @@ For the ASM-Manager-specific `.hydra` / `.patch` file format (different
 from the SysEx-encoded patch), see `HYDRA-FILE-FORMAT.md` in this
 folder.
 
+### 6.1 Patch-image mod-matrix + macro route regions (decoded 2026-08-22)
+
+🟢 Decoded and shipped (`packages/hydrasynth/src/patchEncoder.ts`
+`matrixPatchOffsets()`; gate `scripts/hydrasynth/verify-mod-matrix-image.ts`).
+Offsets are from `SysexPatchFormat.txt` (edisyn); the VALUE SPACES (linear
+list indices, category ids, depth scale) were established by a two-round
+census over the 1024-image flash corpus
+(`samples/_scratch/hydra-matrix-census*.ts`, 2026-08-22), then
+hardware-confirmed by an atomic `apply_patch(save:true)` of "Elm St Bells"
+to H128 whose flash read-back decoded the routes and whose byte dump
+matched exactly (3/21/6/692 + 77/11/512).
+
+All fields are little-endian u16 pairs; `i` = matrix row 0..31,
+`m` = macro 1..8 (0-based in the math), `s` = macro slot 1..8 (0-based):
+
+| Offset | Field | Value space |
+|---|---|---|
+| `838 + 2i` | Matrix row depth | NRPN depth wire ÷ 8 (512 = display 0.0) |
+| `902 + 2i` | Matrix row source | `MOD_SOURCE_NAMES` LINEAR index (NOT the NRPN category-prefixed wire) |
+| `966 + 2i` | Matrix row target | `MOD_DEST_NAMES` LINEAR index |
+| `1030 + 2i` | Matrix row target CATEGORY | `MOD_DEST_CATEGORIES` id, derived from the target |
+| `1094 + 16m + 2s` | Macro slot depth | as matrix depth |
+| `1222 + 16m + 2s` | Macro slot target | `MOD_DEST_NAMES` LINEAR index (region unlabeled in the spec; pinned dimensionally between depths and buttons + census: all values valid dest indices) |
+| `1350 + 16m + 2s` | Macro slot button value | depth-scale; image 0 decodes −128, so the encoder defaults an unset button to image 512 (display 0) |
+| `1478 + 16m + 2s` | Macro slot target CATEGORY | as matrix category, derived |
+
+The image stores routes in LINEAR list-index space (edisyn's roster order),
+while the live-edit NRPN surface (`set_mod_route`) speaks category-prefixed
+wire values — the two value spaces coincide numerically in the CC ranges.
+Since 2026-08-23 the codec declares each field's space on its offset spec
+(`space: 'image-index'`) and never selects an interpretation from a value's
+magnitude: the image pipeline resolves route LABELS to linear indices and
+refuses bare route numbers, the NRPN pipeline keeps wire, and
+`encodePatch(decodePatch(x))` is byte-identical over the route + FX-type
+regions (gated against 32 real device images). Category fields are derived
+from the target at encode time; "Off" is index 0 in both source and target
+spaces.
+
 ---
 
 ## 7. Aftertouch & per-channel data

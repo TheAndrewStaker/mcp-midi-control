@@ -41,6 +41,8 @@
 import type { Input, Output } from '@julusian/midi';
 import { createRequire } from 'node:module';
 
+import { releaseAllInstanceLocks } from '../server-shared/instanceLock.js';
+
 /**
  * The native MIDI binding (`@julusian/midi`, an API-compatible node-midi fork
  * that ships N-API prebuilds for every platform we target) is loaded LAZILY and
@@ -299,8 +301,29 @@ export function closeAllMidiConnections(): number {
 // device scripts, and the MCP server's own shutdown). `exit` DOES fire on an
 // explicit `process.exit()`, and `closePort()` is synchronous native work, so
 // the ports get a proper midiInReset/midiInClose instead of being reclaimed
-// abruptly by the OS. Registered once, at module load.
-process.on('exit', () => { closeAllMidiConnections(); });
+// abruptly by the OS. Registered once, at module load. The instance leases
+// release here TOO (both exit closers, per the workplan): a script that dies
+// between acquiring a lease and its registry teardown must not strand a lock
+// that makes the next instance read 'port_held_elsewhere'.
+process.on('exit', () => { closeAllMidiConnections(); releaseAllInstanceLocks(); });
+
+/**
+ * The input that belongs to an output whose name says "Out": the same name with
+ * "In" in its place ("MPC One USB-C Out 1" -> "MPC One USB-C In 1",
+ * "MIDIOUT2 (X)" -> "MIDIIN2 (X)"). Exact name match only, never a guess.
+ */
+export function pairedInputName(outputName: string, inputNames: readonly string[]): string | undefined {
+  const wanted = new Set(
+    [outputName.replace(/output/i, 'Input'), outputName.replace(/out/i, 'In')]
+      .filter((n) => n !== outputName)
+      .map((n) => n.toLowerCase()),
+  );
+  return inputNames.find((n) => wanted.has(n.toLowerCase()));
+}
+
+const NO_INPUT_WHY =
+  'This MIDI port was opened send-only: its name matched an output and no input pairs with it, so nothing can be '
+  + 'read from it. Sends work. To read, address the device by a name its input and output share.';
 
 function findPortByName(
   port: Input | Output,
@@ -409,6 +432,10 @@ function mockPortEntries(
     `Axe-Fx II MIDI ${dirSuffix} (mock)`,
     `Hydrasynth MIDI ${dirSuffix} (mock)`,
     `Circuit Tracks MIDI ${dirSuffix} (mock)`,
+    // Synthetic name, shaped only to satisfy the MPC port matcher (its
+    // "Public" port). Without it an agent that lists ports before writing
+    // sees no MPC and, correctly, holds back.
+    `MPC One Public ${dirSuffix} (mock)`,
   ];
   return fakeNames.map((name, i) => {
     const lower = name.toLowerCase();
@@ -466,6 +493,13 @@ export interface ConnectOptions {
    * generic callers usually leave this empty.
    */
   notFoundHints?: string[];
+  /**
+   * Open a send-only connection when the needles match an OUTPUT and no input
+   * can be paired with it. Without this, a port named only on its output side
+   * ("X Out 1" beside "X In 1") could not be addressed by its own name. Reads
+   * on such a connection fail fast (`hasInput` is false).
+   */
+  allowOutputOnly?: boolean;
 }
 
 /**
@@ -495,8 +529,12 @@ export type MockResponder = (outgoing: number[]) => number[][];
  * handler, that abandoned rejection is an unhandledRejection and Node
  * KILLS THE WHOLE SERVER PROCESS. Awaiting callers still receive the
  * rejection normally.
+ *
+ * Exported for device packages that build their own `MidiConnection`
+ * over a bespoke port-open policy (Hydrasynth: output required, input
+ * best-effort) so their receivers share this hardening.
  */
-function makeSysExReceiver(
+export function makeSysExReceiver(
   handlers: Set<(bytes: number[]) => void>,
   predicate: (bytes: number[]) => boolean,
   timeoutMs: number,
@@ -607,10 +645,18 @@ export function connect(opts: ConnectOptions): MidiConnection {
   const input = new midi.Input();
   const output = new midi.Output();
 
-  const inputPort = findPortByName(input, opts.needles);
+  let inputPort = findPortByName(input, opts.needles);
   const outputPort = findPortByName(output, opts.needles);
+  if (inputPort === -1 && outputPort !== -1) {
+    // The needle named the output side only: take the input of the same pair.
+    const inputNames: string[] = [];
+    for (let i = 0; i < input.getPortCount(); i++) inputNames.push(input.getPortName(i));
+    const paired = pairedInputName(output.getPortName(outputPort), inputNames);
+    if (paired !== undefined) inputPort = inputNames.indexOf(paired);
+  }
+  const outputOnly = inputPort === -1 && outputPort !== -1 && opts.allowOutputOnly === true;
 
-  if (inputPort === -1 || outputPort === -1) {
+  if (outputPort === -1 || (inputPort === -1 && !outputOnly)) {
     const ins: string[] = [];
     for (let i = 0; i < input.getPortCount(); i++) ins.push(`  [${i}] ${input.getPortName(i)}`);
     const outs: string[] = [];
@@ -623,15 +669,52 @@ export function connect(opts: ConnectOptions): MidiConnection {
   }
 
   const handlers = new Set<(bytes: number[]) => void>();
+  /**
+   * Fan one inbound message out to every handler, ISOLATED and over a SNAPSHOT.
+   *
+   * Both halves are load-bearing on their own merits:
+   *
+   *  - ISOLATION: a live `for (const h of handlers) h(bytes)` lets ONE handler that throws abort the
+   *    whole loop, so every handler registered after the thrower is silently starved. A receiver's
+   *    predicate is caller-supplied and can throw on an unexpected message shape; nothing about
+   *    "I registered a listener" should depend on some other subscriber's parser being total. The
+   *    throw is caught per handler so the rest still get the message.
+   *  - SNAPSHOT: `makeSysExReceiver`'s handler deletes ITSELF from this Set the moment it matches,
+   *    i.e. mid-iteration. Iterating the live Set while it is being mutated is exactly the kind of
+   *    thing that works until it doesn't; copying first makes one dispatch a stable fan-out.
+   *
+   * A handler that throws is reported once to stderr rather than swallowed, but never rethrown into
+   * the native `input.on('message')` callback, where it would escape as an uncaught exception on a
+   * listener thread.
+   *
+   * NOT THE CAUSE OF THE 2026-09-20 CIRCUIT OUTAGE, and an earlier version of this comment said it
+   * was. Recorded so the next session does not re-run that hunt: a patch-bank runner saw an
+   * `onMessage` handler receive nothing at all while `receiveSysExMatching` on the same connection
+   * worked, and it was written up here as "the two receive paths do not compose." They do. Both
+   * register on the one `handlers` Set above and this one `dispatch` fans out to all of them; neither
+   * can starve the other, and that was never in question. The device was genuinely silent: the
+   * runner replayed a generated frame plan whose every frame was one byte short (a 5-byte SysEx
+   * header instead of the Circuit's 6-byte one), so the device ignored the lot. Fixed at the
+   * generator. The lesson that DOES generalize: when a listener sees zero messages, prove the bytes
+   * going OUT are well-formed before suspecting the path coming IN.
+   */
   const dispatch = (bytes: number[]): void => {
-    for (const h of handlers) h(bytes);
+    for (const h of [...handlers]) {
+      try {
+        h(bytes);
+      } catch (e) {
+        process.stderr.write(
+          `[midi] an inbound-message handler threw and was isolated: ${e instanceof Error ? e.message : String(e)}\n`,
+        );
+      }
+    }
   };
   const assemble = createSysExAssembler(dispatch);
   input.on('message', (_dt: number, bytes: number[]) => {
     assemble(bytes);
   });
 
-  input.openPort(inputPort);
+  if (!outputOnly) input.openPort(inputPort);
   output.openPort(outputPort);
 
   // Enable SysEx (false = don't ignore SysEx); ignore timing + active-sensing.
@@ -639,7 +722,7 @@ export function connect(opts: ConnectOptions): MidiConnection {
   // defaults (SysEx ignored) when the port opens, so calling this earlier is
   // silently wiped and every inbound SysEx reply is dropped. node-midi tolerated
   // the earlier call; @julusian does not.
-  input.ignoreTypes(false, true, true);
+  if (!outputOnly) input.ignoreTypes(false, true, true);
 
   // openPort() does NOT throw on failure: RtMidi prints the error to
   // stderr ("MidiInWinMM::openPort: error creating Windows MM MIDI
@@ -648,8 +731,9 @@ export function connect(opts: ConnectOptions): MidiConnection {
   // fire-and-forget success (2026-06-10 incident: 169 writes into a
   // dead port returned ok:true). isPortOpen() is the native truth —
   // assert it and fail LOUDLY with the exclusive-hold diagnosis.
-  if (!input.isPortOpen() || !output.isPortOpen()) {
-    const failedSide = !input.isPortOpen()
+  const inputOk = outputOnly || input.isPortOpen();
+  if (!inputOk || !output.isPortOpen()) {
+    const failedSide = !inputOk
       ? (!output.isPortOpen() ? 'input + output ports' : 'input port')
       : 'output port';
     releaseNativeHandles(input, output);
@@ -709,16 +793,20 @@ export function connect(opts: ConnectOptions): MidiConnection {
     // synchronously here (output.sendMessage on a dead handle) after a
     // receiver was registered.
     receiveSysEx: (timeoutMs = 1000) =>
-      makeSysExReceiver(handlers, () => true, timeoutMs, 'Timeout waiting for SysEx response'),
+      outputOnly
+        ? Promise.reject(new Error(NO_INPUT_WHY))
+        : makeSysExReceiver(handlers, () => true, timeoutMs, 'Timeout waiting for SysEx response'),
     receiveSysExMatching: (predicate, timeoutMs = 1000) =>
-      makeSysExReceiver(handlers, predicate, timeoutMs, 'Timeout waiting for matching SysEx'),
+      outputOnly
+        ? Promise.reject(new Error(NO_INPUT_WHY))
+        : makeSysExReceiver(handlers, predicate, timeoutMs, 'Timeout waiting for matching SysEx'),
     onMessage: (handler) => {
       handlers.add(handler);
       return () => handlers.delete(handler);
     },
-    hasInput: true,
+    hasInput: !outputOnly,
     isPortOpen: () => {
-      try { return input.isPortOpen() && output.isPortOpen(); } catch { return false; }
+      try { return (outputOnly || input.isPortOpen()) && output.isPortOpen(); } catch { return false; }
     },
     close: () => {
       // Idempotent: callers double-close routinely (a script's own teardown
@@ -768,6 +856,30 @@ export function createNullMidiConnection(deviceName: string, reason?: string): M
     isPortOpen: () => false,
     close: () => { /* nothing to close */ },
   };
+}
+
+/**
+ * A MidiConnection that opens its port on first use. For a ctx that MAY need
+ * the wire (a hybrid device whose storage and MIDI surfaces are both present):
+ * a storage-only call never opens a handle, and a failure to open surfaces at
+ * the call that needed MIDI, with the opener's own error.
+ */
+export function createLazyMidiConnection(open: () => MidiConnection): MidiConnection {
+  let conn: MidiConnection | undefined;
+  const get = (): MidiConnection => (conn ??= open());
+  return new Proxy({} as MidiConnection, {
+    get(_target, prop) {
+      if (prop === 'close') return () => { conn?.close(); };
+      if (prop === 'isPortOpen') return () => conn?.isPortOpen?.() ?? false;
+      // A health check after a storage-side error reads this. An unopened
+      // port has sent nothing, so it has no send error, and asking must not
+      // open it (the open would fail and replace the real error).
+      if (prop === 'lastSendError' && conn === undefined) return undefined;
+      const real = get();
+      const value = (real as unknown as Record<string | symbol, unknown>)[prop];
+      return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(real) : value;
+    },
+  });
 }
 
 export function toHex(bytes: number[] | Uint8Array): string {

@@ -174,7 +174,7 @@ const BLOCK_TO_SYMBOL: [string, string][] = [
   ['amp', 'DISTORT_TYPE'],
   ['drive', 'FUZZ_TYPE'],
   ['reverb', 'REVERB_TYPE'],
-  ['delay', 'DELAY_TYPE'],
+  ['delay', 'DELAY_MODEL'],
   ['chorus', 'CHORUS_TYPE'],
   ['comp', 'COMP_TYPE'],
   ['flanger', 'FLANGER_TYPE'],

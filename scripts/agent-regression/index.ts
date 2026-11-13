@@ -20,8 +20,8 @@
 import path from 'node:path';
 import { execSync, spawn } from 'node:child_process';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 import { runCase } from './runner.js';
 import { ALL_CASES } from './cases-all.js';
@@ -58,7 +58,7 @@ async function detectAvailableDevices(): Promise<{ devices: Set<Device>; probeEr
     args: [SERVER_ENTRY],
     stderr: 'pipe',
   });
-  const client = new Client({ name: 'agent-regression-port-probe', version: '0.1.0' });
+  const client = new Client({ name: 'agent-regression-port-probe', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   const available = new Set<Device>();
   let probeError: string | undefined;
   try {

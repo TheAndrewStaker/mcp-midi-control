@@ -25,8 +25,9 @@ import {
   type ValidationInfo,
 } from '../types.js';
 
+import { backupProjectSlot } from './backup.js';
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
-import { openCtx, requireDevice, toWirePack, withHandleRetry } from './core.js';
+import { requireDevice, toWirePack, withEndpoint, withHandleRetry } from './core.js';
 import { collectApplyPresetPreflight } from './preflight.js';
 import { translatePresetSpec, type TranslatePresetResult } from '../port-preset.js';
 import { gen3WholePresetToSpec } from '../gen3-source.js';
@@ -376,14 +377,16 @@ export async function executeGetPreset(args: {
       `get_preset is not implemented for ${descriptor.display_name}. Fall back to get_param / get_params per block, or call describe_device to see which capabilities the device exposes.`,
     );
   }
-  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
-  // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
-  // handle-level fault — get_preset is a read, safe to restart whole on a
-  // fresh handle (no stateful multi-block transfer session).
-  return withHandleRetry(ctx, (c) => getPreset(c, {
-    include_channel_state: args.include_channel_state,
-    location: args.location,
-  }));
+  // Phase B: exclusive per-endpoint visit for the whole snapshot read.
+  return withEndpoint(descriptor, (ctx) =>
+    // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
+    // handle-level fault — get_preset is a read, safe to restart whole on a
+    // fresh handle (no stateful multi-block transfer session).
+    withHandleRetry(ctx, (c) => getPreset(c, {
+      include_channel_state: args.include_channel_state,
+      location: args.location,
+    })),
+  { pack: toWirePack(args.pack), opName: 'get_preset' });
 }
 
 /**
@@ -409,10 +412,12 @@ export async function executeExportActivePreset(args: {
       `export_preset is not implemented for ${descriptor.display_name}. Byte-exact backup of the active preset is available on Fractal AM4, Axe-Fx II, and the gen-3 family (Axe-Fx III / FM3 / FM9 / VP4); Circuit Tracks exports a stored project slot via the location argument. Other devices return capability_not_supported. Use get_preset for a structured (non-byte-exact) snapshot.`,
     );
   }
-  const ctx = openCtx(descriptor);
-  // Phase A.5: reconnect-and-retry-once on a handle-level fault (a single
-  // dump read, not a stateful multi-block transfer session).
-  const dump = await withHandleRetry(ctx, (c) => dumpActivePresetBinary(c));
+  // Phase B: exclusive per-endpoint visit.
+  const dump = await withEndpoint(descriptor, (ctx) =>
+    // Phase A.5: reconnect-and-retry-once on a handle-level fault (a single
+    // dump read, not a stateful multi-block transfer session).
+    withHandleRetry(ctx, (c) => dumpActivePresetBinary(c)),
+  { opName: 'export_preset' });
   return { ...dump, device: descriptor.display_name };
 }
 
@@ -439,9 +444,11 @@ export async function executeExportStoredPreset(args: {
       `export_preset with a location argument requires stored-preset dump support; ${descriptor.display_name} does not implement it yet. Stored-preset dump (fn=0x03) is available on the AM4 and the gen-3 devices (Axe-Fx III / FM3 / FM9 / VP4). Use export_preset without a location to dump the active preset.`,
     );
   }
-  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
-  // Phase A.5: reconnect-and-retry-once on a handle-level fault.
-  const dump = await withHandleRetry(ctx, (c) => dumpStoredPresetBinary(args.location, c));
+  // Phase B: exclusive per-endpoint visit.
+  const dump = await withEndpoint(descriptor, (ctx) =>
+    // Phase A.5: reconnect-and-retry-once on a handle-level fault.
+    withHandleRetry(ctx, (c) => dumpStoredPresetBinary(args.location, c)),
+  { pack: toWirePack(args.pack), opName: 'export_preset' });
   return { ...dump, device: descriptor.display_name };
 }
 
@@ -467,10 +474,12 @@ export async function executeReadPackDirectory(args: {
       `list_packs lists a device's storage packs; ${descriptor.display_name} does not store its content in packs. It is available on the Novation Circuit Tracks (its microSD card holds up to 32 packs).`,
     );
   }
-  const ctx = openCtx(descriptor);
-  // Phase A.5: reconnect-and-retry-once on a handle-level fault, same as the
-  // sibling list_samples read (a cached handle can die between calls).
-  const dump = await withHandleRetry(ctx, (c) => readPackDirectory(c));
+  // Phase B: exclusive per-endpoint visit.
+  const dump = await withEndpoint(descriptor, (ctx) =>
+    // Phase A.5: reconnect-and-retry-once on a handle-level fault, same as the
+    // sibling list_samples read (a cached handle can die between calls).
+    withHandleRetry(ctx, (c) => readPackDirectory(c)),
+  { opName: 'list_packs' });
   return { ...dump, device: descriptor.display_name };
 }
 
@@ -494,14 +503,16 @@ export async function executeReadSampleDirectory(args: {
       `read_sample_directory reads a named sample pool; ${descriptor.display_name} has none. It is available on the Novation Circuit Tracks (the pack's 64-slot drum-sample pool).`,
     );
   }
-  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
-  // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
-  // handle-level fault — this is the `list_samples` tool, the exact
-  // 2026-07-10 hardware repro (call 1 succeeded and cached the handle; a
-  // clean USB replug then made call 2 throw "Internal RtMidi error" instead
-  // of self-healing, since Phase A's acquire-time canary saw a
-  // still-healthy-looking cached handle).
-  const dump = await withHandleRetry(ctx, (c) => readSampleDirectory(c));
+  // Phase B: exclusive per-endpoint visit.
+  const dump = await withEndpoint(descriptor, (ctx) =>
+    // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
+    // handle-level fault — this is the `list_samples` tool, the exact
+    // 2026-07-10 hardware repro (call 1 succeeded and cached the handle; a
+    // clean USB replug then made call 2 throw "Internal RtMidi error" instead
+    // of self-healing, since Phase A's acquire-time canary saw a
+    // still-healthy-looking cached handle).
+    withHandleRetry(ctx, (c) => readSampleDirectory(c)),
+  { pack: toWirePack(args.pack), opName: 'list_samples' });
   return { ...dump, device: descriptor.display_name };
 }
 
@@ -509,37 +520,72 @@ export async function executeReadSampleDirectory(args: {
  * Backs `import_preset`: push a byte-exact preset dump (from
  * `export_preset`) back onto the device. Same-device-model only (the bytes
  * are the device's native dump frames). Default pushes to the working buffer;
- * with `target_location` + `save_authorized` (gated here) it also persists.
+ * with `target_location` + `save_authorized` it also persists.
  *
- * Devices without `writer.restorePresetBinary` (modern Fractal community-beta,
- * Hydrasynth) error with capability_not_supported.
+ * Devices without `writer.restorePresetBinary` (modern Fractal
+ * community-beta) error with capability_not_supported.
+ *
+ * There is deliberately NO `capabilities.supports_save` pre-gate here. That
+ * capability describes the guitar-shaped `save_preset` surface; whether
+ * restored BYTES can persist is a property of the device's own restore path,
+ * and the two diverge on voice-class devices (the Hydrasynth declares
+ * `supports_save: false` by design, its persistence envelope being the patch
+ * dump, yet its restore IS a stored-slot flash write, hardware-confirmed by
+ * the 2026-08-10 full-device reorg). Each `restorePresetBinary` owns its
+ * persist gates: AM4 refuses stored-location restore, Axe-Fx II STOREs,
+ * Hydrasynth requires target + save authorization + overwrite confirmation.
  */
 export async function executeRestorePreset(args: {
   port: string;
   bytes: Uint8Array;
   target_location?: string | number;
   save_authorized?: boolean;
+  confirm_overwrite?: boolean;
+  /** MicroFreak only; see `DeviceWriter.restorePresetBinary`'s `options.name`. */
+  name?: string;
+  /** MicroFreak only; see `DeviceWriter.restorePresetBinary`'s `options.preset_type`. */
+  preset_type?: number;
+  /** Pack-addressed devices: the destination pack, 1-BASED as the device numbers it. */
+  pack?: number;
 }): Promise<RestorePresetResult & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.writer.restorePresetBinary === undefined) {
+  // Captured in a local so TS narrowing survives the withEndpoint closure
+  // (same pattern as executeSetParam's `setParam` local).
+  const restorePresetBinary = descriptor.writer.restorePresetBinary;
+  if (restorePresetBinary === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
-      `apply_preset restore (restore_from) is not implemented for ${descriptor.display_name}. Byte-exact restore is available on Fractal AM4 and Axe-Fx II; for other devices build the preset structurally with apply_preset(spec) instead.`,
+      `apply_preset restore (restore_from) is not implemented for ${descriptor.display_name}. Byte-exact restore is available on Fractal AM4, Axe-Fx II, Hydrasynth, Arturia MicroFreak and Novation Circuit Tracks (a .ncs project); for other devices build the preset structurally with apply_preset(spec) instead.`,
     );
   }
-  if (args.target_location !== undefined && args.save_authorized && !descriptor.capabilities.supports_save) {
-    throw new DispatchError(
-      'capability_not_supported',
-      descriptor.display_name,
-      `apply_preset restore with save requires a device that supports save; ${descriptor.display_name} does not.`,
-    );
-  }
-  const ctx = openCtx(descriptor);
-  const result = await descriptor.writer.restorePresetBinary(ctx, args.bytes, {
-    target_location: args.target_location,
-    save_authorized: args.save_authorized,
-  });
+  // Phase B: exclusive per-endpoint visit for the whole restore push.
+  const result = await withEndpoint(descriptor, async (ctx) => {
+    // Backup-before-overwrite for a project-file device. The writer's gate
+    // SKIPS its occupancy read once confirm_overwrite is set, so this is the
+    // one path that clobbers a stored project unread: save it first, in the
+    // same exclusive visit, on the same pack. A read or CRC failure throws
+    // BEFORE any destructive byte is sent. There is no flag to skip it.
+    // (Other devices are not backed up here yet: the Axe-Fx II cannot dump a
+    // stored preset, and a MicroFreak dump is 146 frames per restore.)
+    let backupNote = '';
+    const projectSlot = Number(args.target_location);
+    if (
+      descriptor.writer.uploadProject !== undefined
+      && args.confirm_overwrite === true && args.save_authorized === true
+      && Number.isInteger(projectSlot) && projectSlot >= 1
+    ) {
+      backupNote = (await backupProjectSlot(descriptor, ctx, projectSlot)).note;
+    }
+    const r = await restorePresetBinary(ctx, args.bytes, {
+      target_location: args.target_location,
+      save_authorized: args.save_authorized,
+      confirm_overwrite: args.confirm_overwrite,
+      name: args.name,
+      preset_type: args.preset_type,
+    });
+    return backupNote === '' ? r : { ...r, info: `${r.info ?? ''} ${backupNote}`.trim() };
+  }, { opName: 'import_preset', ...(args.pack !== undefined ? { pack: toWirePack(args.pack) } : {}) });
   // The pushed bytes replace the working buffer's block layout.
   invalidateBlockLayoutCache(descriptor.id);
   return { ...result, device: descriptor.display_name };
@@ -654,7 +700,9 @@ export async function executeApplyPreset(args: {
   verify_chain?: boolean;
 }): Promise<ApplyResult & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.writer.applyPreset === undefined) {
+  // Local so TS narrowing survives the withEndpoint closure below.
+  const applyPreset = descriptor.writer.applyPreset;
+  if (applyPreset === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -744,12 +792,13 @@ export async function executeApplyPreset(args: {
   // matcher entirely.
   const preflightStart = Date.now();
   const preflight = collectApplyPresetPreflight(workingSpec, descriptor);
-  if (preflight.errors.length > 0) {
+  const structuralErrors = preflight.errors;
+  if (structuralErrors.length > 0) {
     return {
       ok: false,
       steps: 0,
       duration_ms: Date.now() - preflightStart,
-      validation_errors: preflight.errors,
+      validation_errors: structuralErrors,
       ...(args.recipe_id !== undefined ? { recipe_id: args.recipe_id } : {}),
       // Echo the materialized spec so the agent can see what the
       // recipe + overrides merge produced (useful when the failing
@@ -826,29 +875,62 @@ export async function executeApplyPreset(args: {
   // Working-buffer-only mode (no target_location) skips both gates:
   // no navigation, no save, the user's audition stays at the current
   // active location.
-  const ctx = openCtx(descriptor);
-  if (args.target_location !== undefined && descriptor.writer.guardActiveBufferOrSave) {
-    const mode = args.on_active_preset_edited ?? 'warn';
-    const guard = await descriptor.writer.guardActiveBufferOrSave(ctx, mode);
-    if (!guard.proceed) {
-      throw new DispatchError(
-        'buffer_dirty',
-        descriptor.display_name,
-        guard.warningText ?? 'Navigation refused: active buffer has unsaved edits.',
-      );
+  // Phase B: the dirty-gate read, the apply itself, and the read-after-write
+  // chain verification ride ONE exclusive visit to the device — nothing can
+  // interleave between the gate's answer and the writes it authorized, and
+  // the chain check reads the state THIS apply produced.
+  const { result, chain_integrity } = await withEndpoint(descriptor, async (ctx) => {
+    if (args.target_location !== undefined && descriptor.writer.guardActiveBufferOrSave) {
+      const mode = args.on_active_preset_edited ?? 'warn';
+      const guard = await descriptor.writer.guardActiveBufferOrSave(ctx, mode);
+      if (!guard.proceed) {
+        throw new DispatchError(
+          'buffer_dirty',
+          descriptor.display_name,
+          guard.warningText ?? 'Navigation refused: active buffer has unsaved edits.',
+        );
+      }
     }
-  }
-  const options = args.target_location !== undefined
-    ? { save: args.save_authorized === true }
-    : undefined;
-  // wireSpec === normalizedSpec when no knobs were stripped (common
-  // case); otherwise it's a deep-copy with dropped knobs removed per
-  // T-7. The writer never sees the suppressed knobs.
-  const result = await descriptor.writer.applyPreset(ctx, wireSpec, args.target_location, options);
-  // BK-075: apply_preset can change which blocks are placed in the
-  // working buffer; cached layout snapshot is now stale regardless of
-  // target_location. Invalidate so the next set_param re-reads.
-  invalidateBlockLayoutCache(descriptor.id);
+    // Always computed (not gated on target_location presence): a writer
+    // that supports save-without-navigate (resolving the active location
+    // explicitly) can honor it; one that doesn't simply ignores an unused
+    // options.save on its working-buffer-only branch. Small, independent
+    // consistency win — every writer sees the same options shape.
+    const options = { save: args.save_authorized === true };
+    // wireSpec === normalizedSpec when no knobs were stripped (common
+    // case); otherwise it's a deep-copy with dropped knobs removed per
+    // T-7. The writer never sees the suppressed knobs.
+    const applied = await applyPreset(ctx, wireSpec, args.target_location, options);
+    // BK-075: apply_preset can change which blocks are placed in the
+    // working buffer; cached layout snapshot is now stale regardless of
+    // target_location. Invalidate so the next set_param re-reads.
+    invalidateBlockLayoutCache(descriptor.id);
+
+    // BK-057: read-after-write chain integrity check. Runs when the caller
+    // opted in (verify_chain: true), OR by default when the spec carries
+    // explicit routing[] edges (a non-linear path is exactly where a broken
+    // cable is most likely; ~50-100 ms on grid devices, trivial pass
+    // elsewhere). Pass verify_chain: false to suppress. Only runs when the
+    // apply itself succeeded; a failed apply has nothing to verify.
+    const specHasRouting = (wireSpec as { routing?: readonly unknown[] }).routing !== undefined
+      && ((wireSpec as { routing?: readonly unknown[] }).routing?.length ?? 0) > 0;
+    const verifyChainRequested = args.verify_chain ?? specHasRouting;
+    let chain = undefined as ApplyResult['chain_integrity'];
+    if (verifyChainRequested && applied.ok) {
+      if (descriptor.writer.verifyChain !== undefined) {
+        chain = await descriptor.writer.verifyChain(ctx, normalizedSpec);
+      } else {
+        chain = {
+          ok: true,
+          breaks: [],
+          summary: `verify_chain: not applicable on ${descriptor.display_name} (no chain-routing semantics).`,
+          extra_round_trips: 0,
+        };
+      }
+    }
+    return { result: applied, chain_integrity: chain };
+  }, { opName: 'apply_preset' });
+
   // Surface any BK-065 alias substitutions + BK-066 case/whitespace
   // resolutions on the success path so the agent learns the canonical
   // vocabulary. BK-071: also includes type-knob applicability warnings
@@ -860,29 +942,6 @@ export async function executeApplyPreset(args: {
     ...channelInactiveWarnings,
   ];
   const validation_info = combinedInfo.length > 0 ? combinedInfo : undefined;
-
-  // BK-057: read-after-write chain integrity check. Runs when the caller
-  // opted in (verify_chain: true), OR by default when the spec carries
-  // explicit routing[] edges (a non-linear path is exactly where a broken
-  // cable is most likely; ~50-100 ms on grid devices, trivial pass
-  // elsewhere). Pass verify_chain: false to suppress. Only runs when the
-  // apply itself succeeded; a failed apply has nothing to verify.
-  const specHasRouting = (wireSpec as { routing?: readonly unknown[] }).routing !== undefined
-    && ((wireSpec as { routing?: readonly unknown[] }).routing?.length ?? 0) > 0;
-  const verifyChainRequested = args.verify_chain ?? specHasRouting;
-  let chain_integrity = undefined as ApplyResult['chain_integrity'];
-  if (verifyChainRequested && result.ok) {
-    if (descriptor.writer.verifyChain !== undefined) {
-      chain_integrity = await descriptor.writer.verifyChain(ctx, normalizedSpec);
-    } else {
-      chain_integrity = {
-        ok: true,
-        breaks: [],
-        summary: `verify_chain: not applicable on ${descriptor.display_name} (no chain-routing semantics).`,
-        extra_round_trips: 0,
-      };
-    }
-  }
 
   return {
     ...result,
@@ -910,7 +969,9 @@ export async function executeApplySetlist(args: {
   on_active_preset_edited?: 'warn' | 'discard' | 'save_active_first';
 }): Promise<ApplySetlistResult & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (descriptor.writer.applySetlist === undefined) {
+  // Local so TS narrowing survives the withEndpoint closure below.
+  const applySetlist = descriptor.writer.applySetlist;
+  if (applySetlist === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
@@ -931,23 +992,26 @@ export async function executeApplySetlist(args: {
       `apply_setlist requires at least one entry.`,
     );
   }
-  const ctx = openCtx(descriptor);
-  // Multi-preset intent implies save authorization, but the dirty
-  // gate still applies — discarding the active buffer's unsaved
-  // edits is a separate concern from "the user asked to save N
-  // new presets." Per docs/SAFE-EDIT-WORKFLOW.md scenario 5.
-  if (descriptor.writer.guardActiveBufferOrSave) {
-    const mode = args.on_active_preset_edited ?? 'warn';
-    const guard = await descriptor.writer.guardActiveBufferOrSave(ctx, mode);
-    if (!guard.proceed) {
-      throw new DispatchError(
-        'buffer_dirty',
-        descriptor.display_name,
-        guard.warningText ?? 'Setlist refused: active buffer has unsaved edits.',
-      );
+  // Phase B: the dirty-gate read and the whole N-entry setlist run as one
+  // exclusive visit — a setlist IS extended exclusive use of the device.
+  const result = await withEndpoint(descriptor, async (ctx) => {
+    // Multi-preset intent implies save authorization, but the dirty
+    // gate still applies — discarding the active buffer's unsaved
+    // edits is a separate concern from "the user asked to save N
+    // new presets." Per docs/SAFE-EDIT-WORKFLOW.md scenario 5.
+    if (descriptor.writer.guardActiveBufferOrSave) {
+      const mode = args.on_active_preset_edited ?? 'warn';
+      const guard = await descriptor.writer.guardActiveBufferOrSave(ctx, mode);
+      if (!guard.proceed) {
+        throw new DispatchError(
+          'buffer_dirty',
+          descriptor.display_name,
+          guard.warningText ?? 'Setlist refused: active buffer has unsaved edits.',
+        );
+      }
     }
-  }
-  const result = await descriptor.writer.applySetlist(ctx, args.entries, args.options);
+    return applySetlist(ctx, args.entries, args.options);
+  }, { opName: 'apply_setlist' });
   // BK-075: setlist iterated applies; cached layout reflects whatever
   // state the LAST applied entry left behind. Safest is invalidate.
   invalidateBlockLayoutCache(descriptor.id);
@@ -1073,7 +1137,9 @@ export async function executePortPreset(args: {
           'or source_location (a stored gen-3 preset number to read + decode). Neither was given.',
       );
     }
-    if (sourceDescriptor.reader.getPreset === undefined) {
+    // Local so TS narrowing survives the withEndpoint closure below.
+    const readSourcePreset = sourceDescriptor.reader.getPreset;
+    if (readSourcePreset === undefined) {
       throw new DispatchError(
         'capability_not_supported',
         sourceDescriptor.display_name,
@@ -1091,7 +1157,12 @@ export async function executePortPreset(args: {
         `translate_preset: source_location must be a non-negative integer preset number, got ${JSON.stringify(args.source_location)}.`,
       );
     }
-    const snapshot = await sourceDescriptor.reader.getPreset(openCtx(sourceDescriptor), { location: loc });
+    // Phase B: the SOURCE read takes its endpoint's lock and RELEASES it
+    // before the target apply below acquires the target's — sequential,
+    // never nested, per the arbiter's multi-endpoint rule.
+    const snapshot = await withEndpoint(sourceDescriptor,
+      (ctx) => readSourcePreset(ctx, { location: loc }),
+      { opName: 'translate_preset (source read)' });
     if (snapshot.whole_preset === undefined) {
       throw new DispatchError(
         'capability_not_supported',

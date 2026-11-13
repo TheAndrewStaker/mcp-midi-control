@@ -95,6 +95,14 @@ export interface SlideFact {
    * gesture and gate overlap can carry it.
    */
   connects: boolean;
+  /**
+   * The note is slid INTO from an unwritten pitch below or above it. Only the
+   * opt-in glide renderer (`pitchGestures: 'glide'`) authors this, as a grace
+   * note that glides into the written one; see `pitchGestures.ts`.
+   */
+  in?: 'below' | 'above';
+  /** The note slides OUT to an unwritten pitch above or below it. Same renderer. */
+  out?: 'up' | 'down';
   /** What the marking means, for the report. */
   means: string;
 }
@@ -104,15 +112,22 @@ export interface SlideFact {
  * destination. Read by VALUE: coercing this to a boolean is exactly the bug
  * that would author a slide-out-of-nowhere as a legato connection to whatever
  * note happens to follow it.
+ *
+ * The two compound values `belowdownwards` and `belowlegato` were first seen in
+ * one song's Lead Synth part (2026-09-11):
+ * a scoop in from below combined with a fall-off, and a scoop combined with a
+ * legato slide to the next written note.
  */
 export const SONGSTERR_SLIDE_KINDS: Readonly<Record<string, SlideFact>> = {
   legato: { connects: true, means: 'legato slide to the next note, not re-picked' },
   shift: { connects: true, means: 'shift slide to the next note' },
-  downwards: { connects: false, means: 'slide OUT of the note downwards, into no written pitch' },
-  upwards: { connects: false, means: 'slide OUT of the note upwards, into no written pitch' },
-  below: { connects: false, means: 'slide INTO the note from below, from no written pitch' },
-  above: { connects: false, means: 'slide INTO the note from above, from no written pitch' },
-  belowupwards: { connects: false, means: 'slide in from below AND out upwards, neither pitch written' },
+  downwards: { connects: false, out: 'down', means: 'slide OUT of the note downwards, into no written pitch' },
+  upwards: { connects: false, out: 'up', means: 'slide OUT of the note upwards, into no written pitch' },
+  below: { connects: false, in: 'below', means: 'slide INTO the note from below, from no written pitch' },
+  above: { connects: false, in: 'above', means: 'slide INTO the note from above, from no written pitch' },
+  belowupwards: { connects: false, in: 'below', out: 'up', means: 'slide in from below AND out upwards, neither pitch written' },
+  belowdownwards: { connects: false, in: 'below', out: 'down', means: 'slide in from below AND out downwards, neither pitch written' },
+  belowlegato: { connects: true, in: 'below', means: 'slide in from below, then a legato slide to the next note' },
 };
 
 // ── Velocity stage ───────────────────────────────────────────────────
@@ -123,7 +138,7 @@ export const SONGSTERR_SLIDE_KINDS: Readonly<Record<string, SlideFact>> = {
  * Anchored so nothing already shipped moves: an unmarked note is the compiler's
  * plain hit (100) and 100 + 20 lands exactly on its accent (120), which is the
  * number the sticky-`ff` path has always produced. Level 2 is the source's
- * rarer heavy-accent glyph (28 of Redbone's drum hits, 3 of Schism's guitar
+ * rarer heavy-accent glyph (28 of one song's drum hits, 3 of another's guitar
  * notes against 471 at level 1), so it reads as the stronger of the two and
  * 100 + 34 clamps to 127.
  */
@@ -255,8 +270,20 @@ export interface ArticulatedCell {
   articulations?: string[];
 }
 
-/** Which marking asked for a legato connection. Named so the report can say which. */
-export type LegatoCause = 'hp' | 'slide_legato' | 'slide_shift';
+/**
+ * Which marking asked for a legato connection. Named so the report can say which.
+ * `glide` is a connection the opt-in pitch-gesture renderer INSERTED (a scoop, a
+ * fall, or one step of a bend staircase), not one the source wrote between two
+ * notes.
+ */
+export type LegatoCause = 'hp' | 'slide_legato' | 'slide_shift' | 'glide';
+
+const LEGATO_CAUSE_WORDS: Readonly<Record<LegatoCause, string>> = {
+  hp: 'hammer-on/pull-off',
+  slide_legato: 'legato slide',
+  slide_shift: 'shift slide',
+  glide: 'rendered glide (scoop / fall / bend step)',
+};
 
 /** What the length stages did, for the receipt. */
 export interface LengthArticulationReport {
@@ -264,8 +291,13 @@ export interface LengthArticulationReport {
   let_ring_extended: number;
   /** Let-ring cells that hit `letRingMaxBeats` instead of reaching their own next strike. */
   let_ring_capped: number;
-  /** Cells whose gate grew to overlap a legato target's onset. */
+  /** Cells whose gate grew to overlap a legato target's onset, for a connection the SOURCE marked. */
   legato_connected: number;
+  /**
+   * Cells whose gate grew to overlap the next onset for a connection the pitch-gesture renderer
+   * INSERTED (`legato: 'glide'`). Counted apart so "legato-connected in the source" stays true.
+   */
+  glide_connected: number;
   /** Legato cells with no following onset in the row to connect to; left as written. */
   legato_unconnected: number;
   /** Cells shortened by palm mute / dead / staccato. */
@@ -286,7 +318,7 @@ const SIXTHS = 6;
  * and `articulations` on the cells it is given; nothing else.
  *
  * **Deliberately NOT capped at the gate field's 96-sixth ceiling.** A source note
- * can legitimately run longer than one token holds (After Dark's pad chords are
+ * can legitimately run longer than one token holds (one song's pad chords are
  * 24 and 32 steps), and the layout stage turns that into a TIED CHAIN. Clamping
  * here would silently destroy the length before the chain could be built, which
  * is the whole failure this module exists to stop; the ceiling belongs to the one
@@ -300,7 +332,7 @@ export function applyLengthArticulations(
   minGateSixths: number,
 ): LengthArticulationReport {
   const report: LengthArticulationReport = {
-    let_ring_extended: 0, let_ring_capped: 0, legato_connected: 0,
+    let_ring_extended: 0, let_ring_capped: 0, legato_connected: 0, glide_connected: 0,
     legato_unconnected: 0, damped: 0, damping_over_legato: 0,
   };
   const ordered = [...cells].sort((a, b) => a.step - b.step);
@@ -353,8 +385,9 @@ export function applyLengthArticulations(
         const target = (next.step - c.step) * SIXTHS + art.legatoOverlapSixths;
         if (target > gate) {
           gate = target;
-          report.legato_connected++;
-          note(c, `${c.legato === 'hp' ? 'hammer-on/pull-off' : c.legato === 'slide_legato' ? 'legato slide' : 'shift slide'} overlaps the next onset by ${art.legatoOverlapSixths}/6 step`);
+          if (c.legato === 'glide') report.glide_connected++;
+          else report.legato_connected++;
+          note(c, `${LEGATO_CAUSE_WORDS[c.legato]} overlaps the next onset by ${art.legatoOverlapSixths}/6 step`);
         }
       }
     }
@@ -444,6 +477,8 @@ export const SONGSTERR_FIELDS: Readonly<Record<string, FieldFact>> = {
   'part.balance': { level: 'part', disposition: 'metadata', means: 'part pan', expressible_as: 'a mixer pan on the target', needs: 'a mixer-pan input on the authoring path' },
   'part.newLyrics': { level: 'part', disposition: 'metadata', means: 'the full lyric with syllable hyphenation' },
   'part.withLyrics': { level: 'part', disposition: 'metadata', means: 'flag: this part carries the lyric' },
+  // First seen on one tab's part 5, 2026-11-09: the GM instrument name again ("Electric Piano 1").
+  'part.title': { level: 'part', disposition: 'redundant', means: 'the part\'s General MIDI instrument name; the song metadata carries it' },
   'part.name': { level: 'part', disposition: 'redundant', means: 'contributor-supplied part name; the song metadata carries it' },
   'part.partId': { level: 'part', disposition: 'redundant', means: 'part index; the fetch already knows which part it asked for' },
   'part.songId': { level: 'part', disposition: 'redundant', means: 'song id; the fetch already knows it' },
@@ -455,6 +490,7 @@ export const SONGSTERR_FIELDS: Readonly<Record<string, FieldFact>> = {
   'measure.signature': { level: 'measure', disposition: 'read', means: 'time signature, sticky' },
   'measure.marker': { level: 'measure', disposition: 'read', means: 'section name, sticky' },
   'measure.rest': { level: 'measure', disposition: 'redundant', means: 'the whole measure rests; its own beats each carry `rest` too, and those are read' },
+  'measure.tripletFeel': { level: 'measure', disposition: 'read', means: 'swing, sticky: written straight 8ths / 16ths play as triplet long-short' },
   'measure.doubleBarline': { level: 'measure', disposition: 'engraving', means: 'a double barline is drawn here' },
   // ── voice
   'voice.beats': { level: 'voice', disposition: 'structural', means: 'the beat list' },
@@ -504,11 +540,19 @@ export const SONGSTERR_FIELDS: Readonly<Record<string, FieldFact>> = {
   'note.slide': { level: 'note', disposition: 'read', means: 'a slide; the VALUE says which of seven', per_value: true },
   'note.bend': {
     level: 'note', disposition: 'no_destination', means: 'a full pitch-bend envelope (tone + point list)',
-    expressible_as: 'nothing in a note message: a stored step and the live stream are both note-only',
-    needs: 'a continuous-controller field in the neutral model, a bend message in the realizer, and a target that accepts one',
+    expressible_as: 'as a real bend, nothing in a note message; as an APPROXIMATION, overlapping glide notes '
+      + '(`pitchGestures: "glide"`) on a mono synth set to glide',
+    needs: 'for a real bend: a continuous-controller field in the neutral model, a bend message in the realizer, and a target that '
+      + 'accepts one. For the glide approximation: pass pitchGestures:"glide" (and monoVoice for a chord line)',
   },
   'note.vibrato': { level: 'note', disposition: 'no_destination', means: 'vibrato on the note', expressible_as: 'nothing in a note message', needs: 'a continuous-controller path' },
   'note.wideVibrato': { level: 'note', disposition: 'no_destination', means: 'wide vibrato on the note', expressible_as: 'nothing in a note message', needs: 'a continuous-controller path' },
+  // First seen on one song's Lead Synth part, 22 notes, 2026-09-11.
+  'note.leftHandVibrato': {
+    level: 'note', disposition: 'no_destination', means: 'left-hand (fretting-finger) vibrato on the note',
+    expressible_as: 'nothing in a note message; on a synth, an LFO-to-pitch route set on the patch',
+    needs: 'a continuous-controller path',
+  },
   'note.harmonic': { level: 'note', disposition: 'no_destination', means: 'natural / pinch / feedback / semi harmonic', expressible_as: 'the sounding harmonic pitch, if the partial were resolved', needs: 'a fret-to-partial table; the pitch we author is the fretted note, not the harmonic' },
   'note.harmonicFret': { level: 'note', disposition: 'no_destination', means: 'which fret the harmonic is touched at', needs: 'the same fret-to-partial table as harmonic' },
   'note.pickScrape': { level: 'note', disposition: 'no_destination', means: 'a pick scraped along the string', expressible_as: 'nothing pitched', needs: 'a noise voice; this is a sound effect, not a note' },
@@ -657,6 +701,9 @@ export function deriveDroppedFidelity(census: FieldCensus, applied: AppliedField
       ...(fact.expressible_as !== undefined ? { expressible_as: fact.expressible_as } : {}),
       ...(fact.needs !== undefined ? { needs: fact.needs } : {}),
     };
+    // An opt-in path (the glide renderer for `note.bend`) can author a field that has no destination
+    // by default. When it did, the field was carried, so it is not a loss this run.
+    if (fact.disposition === 'no_destination' && (applied[key] ?? 0) > 0) continue;
     if (fact.disposition !== 'read') {
       out.not_parsed[key] = {
         ...base,

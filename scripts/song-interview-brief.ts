@@ -3,7 +3,7 @@
  *
  * `docs/_private/rig/SONG-INTERVIEW-SCHEMA.md` demands that EVERY number in an
  * interview briefing be GENERATED, never estimated, yet the first three
- * briefings (Pneuma, Redbone, Schism) were hand-assembled from separate runs of
+ * briefings were hand-assembled from separate runs of
  * the fetcher, `songChop`, `song-superset.ts` and one-off passes. This script
  * generates the schema's Section 1 to Section 4 skeleton in one run, so an
  * interview costs the maintainer judgement, not table assembly.
@@ -483,7 +483,7 @@ export function buildBriefing(song: LoadedSong, args: Args): string {
   const loops = windows.filter((w) => w.period !== undefined && w.period < w.bars);
   // Per-part loop cells: the same period detection run over ONE part at a time.
   // A window that does not loop as a whole often loops on a single part (the
-  // Schism Verse 1 drums are an 8-bar cell inside a 12-bar window), and that is
+  // one song's Verse 1 drums are an 8-bar cell inside a 12-bar window), and that is
   // a pattern-slot saving plus a "loop it or write it out?" question.
   const partLoops: { w: Window; partId: number; cell: number }[] = [];
   for (const w of windows) {
@@ -496,7 +496,7 @@ export function buildBriefing(song: LoadedSong, args: Args): string {
   const winOf = (n: number): Window => windows.find((w) => w.project === n)!;
   const at = (w: Window): string => `m${w.from + 1}-${w.to + 1}`;
   // Single-bar entries: a part that sounds in exactly ONE bar of a window is a
-  // computable trim candidate with a nameable cost (the Schism P4 case: one bar
+  // computable trim candidate with a nameable cost (one song's P4 case: one bar
   // of synth entry costing a whole track's presence in the project).
   const singleBar: { w: Window; partId: number; bar: number }[] = [];
   for (const w of windows) {

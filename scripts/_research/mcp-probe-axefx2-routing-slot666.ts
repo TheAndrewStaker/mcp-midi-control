@@ -29,8 +29,8 @@
 
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -124,7 +124,7 @@ async function main(): Promise<void> {
   });
   const client = new Client(
     { name: 'mcp-probe-axefx2-routing', version: '1.0.0' },
-    { capabilities: {} },
+    { capabilities: {}, versionNegotiation: { mode: 'auto' } },
   );
 
   // Print server stderr (useful if the server fails to open MIDI)

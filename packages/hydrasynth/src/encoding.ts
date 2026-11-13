@@ -246,10 +246,14 @@ export function resolveModRoutingWire(
 ): ResolvedNrpnValue | undefined {
   const n = entry.name;
   if (MOD_SOURCE_FIELD.test(n)) {
-    // A numeric input IS already a wire value (the INIT buffer + any
-    // round-trip carry raw wire ints; 0 = the "Off"/empty slot, which is
-    // not in the name table). Pass numbers through untouched; only resolve
-    // name STRINGS through the source table.
+    // NRPN-path semantics: a numeric input is the category-prefixed wire
+    // value, passed through untouched (0 = the "Off"/empty slot, which is
+    // not in the name table); only name STRINGS resolve through the source
+    // table. NOTE: this resolver serves the NRPN tools (set_param /
+    // set_mod_route) ONLY — the apply_patch IMAGE pipeline goes through
+    // resolveApplyPatchValue (patchEncoder.ts), which resolves labels to
+    // image linear indices and REFUSES bare numbers on route fields
+    // (wire and image number spaces overlap in the CC ranges).
     if (typeof input === 'number') return { wire: input, scaled: false, bipolar: false };
     const r = resolveModSource(input);
     if (r === undefined) {
@@ -458,9 +462,12 @@ const FX_TYPE_NAMES = [
 // their display values in `notes:` prose but lack a usable `enumTable`
 // linkage. We register the missing tables in HYDRASYNTH_ENUMS at
 // module load and overlay an `enumTable` reference on the entry at
-// lookup time. The auto-generated file stays untouched (regenerating
-// from CSV is the project-discipline path to make these permanent —
-// see docs/devices/hydrasynth-explorer/references/nrpn.csv).
+// lookup time. The auto-generated file stays untouched. NOTE (2026-08-22):
+// regenerating from the CSV (docs/_private/devices/hydrasynth-explorer/
+// references/nrpn.csv) is NOT currently a safe path to make these
+// permanent — the checked-in nrpn.ts carries hand fixes the generator
+// does not reproduce, so gen-nrpn refuses to overwrite without --force.
+// Hand-edit nrpn.ts (with a re-apply note) or re-sync the generator first.
 
 /** Lo-Fi Sampling Rate, descending (per fx5param5 notes). */
 const LOFI_SAMPLING_RATES: HydrasynthEnum = {

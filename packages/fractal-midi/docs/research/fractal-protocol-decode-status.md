@@ -37,10 +37,18 @@ flag **+ the AMP block's per-channel (A/B/C/D) param VALUES** on
 `PresetSnapshot.whole_preset` (`source: 'stored-dump'`, `amp: {…}`,
 community-beta, one ~150-200 ms round-trip;
 `packages/am4/src/descriptor/reader.ts`). Amp: four fields hardware-anchored,
-the rest formula-extrapolated on the same geometry. NON-amp block VALUES stay
-LABELED-OMITTED; their per-block formula isn't capture-confirmed (5 UNMINED
-one-variable captures would close it). Reader drive + amp walk covered by
+the rest formula-extrapolated on the same geometry. Reader drive + amp walk covered by
 `verify-am4-preset-container.ts` (§1 bank 70/17/17, §3 anchors, §4 mock fn-0x03).
+**WHOLE CHAIN DECODED (2026-11-12):** the amp record is one instance of a
+uniform self-describing record (effect id, cols, rows, then `row*cols + pidHigh`
+words), the chain runs from body `0x0144` to 2 bytes before decompSize, the slot
+order is PATCH (`0xCE`) words `0x0F..0x12`, and each scene record holds a
+per-slot channel and bypass table. `decodeAm4PresetBody` surfaces every placed
+block's values on all four channels plus the per-scene state; the stored
+`get_preset` now returns them in `slots[]` (the amp values moved there from
+`whole_preset.amp`). Cross-checked on hardware against the working-buffer read
+of 15 presets: 18,687/18,737 values equal, the remainder being values the device
+changes on load. Primitive `[[am4-body-block-record-chain]]`.
 
 Same-day (2026-07-02), the sister decode on the II side: **the Axe-Fx II
 de-framed preset image is a self-describing TLV chain.** From word 130 of

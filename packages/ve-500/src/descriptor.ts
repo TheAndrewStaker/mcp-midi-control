@@ -85,19 +85,20 @@ export const VE500_DESCRIPTOR: DeviceDescriptor = {
       'instead of inferring it from what the upstream gear claims to send. It is what found the real ' +
       'fault in that chain, which was neither device. ALSO CONFIRMED 2026-07-26: a STORED user memory answers a read on every one ' +
       'of the 874 patch params at its own base address (buildGetParam with patchBase = userPatchAddr(n)), ' +
-      '874/874 first try, without recalling it and without disturbing the edit buffer. Still NOT wired: ' +
-      'whole-patch get_preset (a speed problem now, not an evidence one: 874 serial round-trips is ~40s, ' +
-      'so the decoded chunked section read is the right build). NOTE for recall: user-memory recall is a ' +
-      'bare Program Change, so it is dead whenever the unit\'s PC IN is off; factory P01-P50 recall is a ' +
-      'SysEx register write and is unaffected. switch_preset now PRE-FLIGHT READS ' +
-      'system_midi.midi_program_change_in before a user-memory recall and REFUSES when it is 0, because a ' +
-      'Program Change is never echoed and the previous behaviour was to report success while the patch had ' +
-      'not changed. The refusal names both ways out (front panel, or set the param to 1 and accept that a ' +
-      'stray Program Change on the bus can then recall a patch mid-song) and the server does not flip it. ' +
-      'If the pre-flight read gets no answer the recall is still sent, flagged unverified: a read timeout ' +
-      'is not evidence the setting is off. Factory recall is deliberately NOT gated.',
+      '874/874 first try, without recalling it and without disturbing the edit buffer. HARDWARE-CONFIRMED ' +
+      '2026-11-12: the loaded memory NUMBER reads back from the Current Patch Number register, and a ' +
+      'memory NAME reads from the edit buffer and from any stored user memory (all 99 in 2.2 s). Those ' +
+      'back scan_locations, get_preset for the loaded or a stored user memory (a summary: sections on/off ' +
+      'with type, plus the parameters of the sections that are on, about 2 s), the save_preset overwrite ' +
+      'check and its read-back receipt. Not built: a full 874-parameter read in one call (about 19 s of ' +
+      'serial round trips; one wide request answers only its first field). NOTE for recall: user-memory recall is a ' +
+      'bare Program Change while the unit\'s PC IN is on. switch_preset reads PC IN first and, when it ' +
+      'is off, recalls through the Current Patch Number register write instead (hardware-confirmed for ' +
+      'user memories 2026-09-30), which is also the only path for factory P01-P50. The server never ' +
+      'turns PC IN on.',
     has_scenes: false,
     has_channels: false,
+    atomic_read: true,
     supports_save: true,
     save_note:
       'save_preset stores the active edit buffer to a USER memory U01–U99: it sends Editor Communication ' +

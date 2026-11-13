@@ -9,7 +9,7 @@
  *   - `scan_locations(port, from, to)`, bulk-scan stored preset names
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import {

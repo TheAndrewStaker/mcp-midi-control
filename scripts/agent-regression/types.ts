@@ -10,7 +10,7 @@
  * Reference impl: scripts/agent-regression/runner.ts
  */
 
-export type Device = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'fm3' | 'fm9' | 'vp4' | 'axe-fx-gen1' | 'hydrasynth' | 'circuit' | 'spd-sx' | 've-500' | 'microfreak' | 'minifreak';
+export type Device = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'fm3' | 'fm9' | 'vp4' | 'axe-fx-gen1' | 'hydrasynth' | 'circuit' | 'spd-sx' | 've-500' | 'microfreak' | 'minifreak' | 'mpc-one-g2';
 
 /**
  * Mock-transport fixture profile, selected per case to exercise alternate
@@ -198,6 +198,14 @@ export interface AgentRegressionCase {
    * always wins when both are present. Defaults to 'clean-scratch'.
    */
   mockFixture?: MockFixture;
+  /**
+   * A declared rig and song book for the case: the name of a folder under
+   * scripts/agent-regression/fixtures/ holding rig.json and repertoire.json.
+   * The runner points MCP_RIG_MANIFEST and MCP_RIG_REPERTOIRE at them. A case
+   * without one runs with BOTH unset, whatever the shell has, so a personal
+   * rig never leaks into a sweep.
+   */
+  rigFixture?: string;
   /**
    * Optional state-seeding hook. Fires BEFORE the agent
    * prompt runs: the runner connects to the same MCP server `claude -p`

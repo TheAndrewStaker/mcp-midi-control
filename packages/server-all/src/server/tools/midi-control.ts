@@ -4,7 +4,7 @@
  * connection registry.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import { listMidiPorts } from '@mcp-midi-control/core/midi/transport.js';
@@ -15,7 +15,18 @@ import {
     AM4_LABEL,
     STALE_HANDLE_TIMEOUT_THRESHOLD,
     ensureConnection,
+    holdsPortWhileIdle,
+    portIdleReleaseMs,
 } from '@mcp-midi-control/core/server-shared/connections.js';
+import {
+    describeAgo,
+    describeHolder,
+    describeInstanceLocks,
+} from '@mcp-midi-control/core/server-shared/instanceLock.js';
+import {
+    EndpointBusyError,
+    runExclusiveOnEndpoint,
+} from '@mcp-midi-control/core/server-shared/endpointArbiter.js';
 import {
     listRegisteredDevices,
     resolveDevice,
@@ -27,10 +38,10 @@ export function registerMidiControlTools(server: McpServer): void {
         title: 'List MIDI Ports',
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         description: [
-            'List every MIDI input + output port the OS exposes. Safe any time; opens no connection.',
+            'List every MIDI input + output port the OS exposes. Safe any time; opens no connection. Also lists every device LEASE: which mcp-midi-control instance (this one or another session) holds which device.',
             'Call when the user reports a device isn\'t connected, to diagnose whether the device is visible, the driver is installed, or another app holds the port.',
             '- Default tags AM4 (needles "am4"/"fractal"). Pass `pattern` to tag a different device (e.g. "hydra", "axe-fx").',
-            '- If a port shows up here, just call the tool you want and the server binds to it on the next call. You do NOT need to call reconnect_midi first; that tool is only for recovering a handle that died after a physical USB replug.',
+            '- If a port shows up here, just call the tool you want and the server binds to it on the next call. No need to call reconnect_midi first; it only recovers a handle that died after a USB replug.',
         ].join(' '),
         inputSchema: {
             pattern: z.union([z.string(), z.array(z.string())]).optional().describe(
@@ -96,16 +107,47 @@ export function registerMidiControlTools(server: McpServer): void {
         } catch {
             // Serial enumeration is best-effort; MIDI listing stays authoritative.
         }
+        // Device leases: who holds which device, across EVERY mcp-midi-control
+        // instance on this machine (this session, another Claude session, the
+        // standalone console). Read from the lock directory; opens no port.
+        // This is the "both sides can see it is in use" half of the lease.
+        let leaseSection = '';
+        let leaseNote = '';
+        const leases = describeInstanceLocks();
+        if (leases.length > 0) {
+            const graceS = Math.round(portIdleReleaseMs() / 1000);
+            const rows = leases.map((l) => {
+                const active = describeAgo(l.lastActiveAt);
+                if (l.ours) {
+                    return `  ${l.label}: held by THIS instance${active !== undefined ? `, last device operation ${active}` : ''}`;
+                }
+                if (!l.alive) {
+                    return `  ${l.label}: stale lease left by exited pid ${l.pid}; reclaimed automatically on the next use`;
+                }
+                const until = holdsPortWhileIdle(l.label)
+                    ? 'until that instance exits (this device keeps its port for the whole session)'
+                    : graceS > 0
+                        ? `until it goes idle (ports auto-release ${graceS} s after an instance's last operation)`
+                        : 'until that instance exits (idle release is disabled)';
+                return `  ${l.label}: held by ANOTHER instance (${describeHolder(l)}); this instance cannot read or write it ${until}`;
+            });
+            leaseSection = `\n\nDevice leases (which mcp-midi-control instance holds which device):\n${rows.join('\n')}`;
+            const foreign = leases.filter((l) => !l.ours && l.alive);
+            if (foreign.length > 0) {
+                leaseNote = `\nNOTE: ${foreign.length} device lease(s) are held by another mcp-midi-control instance; see "Device leases" below.`;
+            }
+        }
         return {
             content: [{
                 type: 'text',
                 text:
-                    `${verdict}\n\n` +
+                    `${verdict}${leaseNote}\n\n` +
                     `Inputs (${inputs.length}):\n` +
                     (inputs.length ? inputs.map(format).join('\n') : '  (none)') +
                     `\n\nOutputs (${outputs.length}):\n` +
                     (outputs.length ? outputs.map(format).join('\n') : '  (none)') +
-                    serialSection,
+                    serialSection +
+                    leaseSection,
             }],
         };
     });
@@ -156,11 +198,21 @@ export function registerMidiControlTools(server: McpServer): void {
                 }
                 const label = desc.connection_label ?? desc.id;
                 try {
-                    ensureConnection(label, true);
-                    if (label === AM4_LABEL) invalidateChannelCache();
+                    // Connection-arbiter Phase B: a forced reconnect closes the
+                    // port, so it takes the endpoint lock like any other op — it
+                    // must never close a handle out from under an in-flight
+                    // holder (e.g. an agent that saw device_busy "helpfully"
+                    // reconnecting into a live stream).
+                    await runExclusiveOnEndpoint(label, 'reconnect_midi', async () => {
+                        ensureConnection(label, true);
+                        if (label === AM4_LABEL) invalidateChannelCache();
+                    });
                     attempted.push({ display: desc.display_name, label });
                 } catch (err) {
-                    const msg = err instanceof Error ? err.message : String(err);
+                    const msg = err instanceof EndpointBusyError
+                        ? `busy mid-operation (${err.holder?.opName ?? 'an in-flight operation'} is using it); ` +
+                          'NOT reconnected — forcing a reconnect would close the port under it. Retry when it finishes.'
+                        : err instanceof Error ? err.message : String(err);
                     attempted.push({ display: desc.display_name, label, error: msg });
                 }
             }
@@ -193,13 +245,17 @@ export function registerMidiControlTools(server: McpServer): void {
         const label = descriptor?.connection_label ?? descriptor?.id ?? port;
         const isAM4 = label === AM4_LABEL;
         try {
-            ensureConnection(label, true);
-            if (isAM4) {
-                // Fresh AM4 connection = we don't know anything about the hardware
-                // state, so the channel cache is no longer trustworthy. Channels
-                // are AM4-specific; non-AM4 reconnects don't touch this cache.
-                invalidateChannelCache();
-            }
+            // Connection-arbiter Phase B: reconnect takes the endpoint lock so
+            // it can never close the port under an in-flight operation.
+            await runExclusiveOnEndpoint(label, 'reconnect_midi', async () => {
+                ensureConnection(label, true);
+                if (isAM4) {
+                    // Fresh AM4 connection = we don't know anything about the hardware
+                    // state, so the channel cache is no longer trustworthy. Channels
+                    // are AM4-specific; non-AM4 reconnects don't touch this cache.
+                    invalidateChannelCache();
+                }
+            });
             const deviceName = descriptor?.display_name ?? `port matching "${port}"`;
             return {
                 content: [{
@@ -214,8 +270,20 @@ export function registerMidiControlTools(server: McpServer): void {
                 }],
             };
         } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
             const deviceName = descriptor?.display_name ?? `port matching "${port}"`;
+            if (err instanceof EndpointBusyError) {
+                // Refusal, not failure: the port is healthy and IN USE. Closing
+                // it now would cut the in-flight operation off mid-write.
+                return {
+                    content: [{
+                        type: 'text',
+                        text: `NOT reconnected: ${deviceName} is busy mid-operation ` +
+                            `(${err.holder?.opName ?? 'an in-flight operation'} is using its connection). ` +
+                            'A forced reconnect would close the port under it. Wait for that operation to finish, then retry if the handle still looks dead.',
+                    }],
+                };
+            }
+            const msg = err instanceof Error ? err.message : String(err);
             return {
                 content: [{
                     type: 'text',

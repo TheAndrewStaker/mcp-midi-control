@@ -45,6 +45,7 @@ import type {
   Gen3LiveMeters,
   OverwriteTargetInfo,
   LocationRef,
+  ScannedLocation,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import type { ModernFractalCodec, Gen3BlockBulkRead } from 'fractal-midi/gen3/axe-fx-iii';
@@ -61,8 +62,12 @@ import {
   parseVp4StructureBlob,
 } from 'fractal-midi/gen3/vp4';
 import type { Vp4StructureBlob } from 'fractal-midi/gen3/vp4';
+import { FM9_CAB_ROSTERS_BY_BANK } from 'fractal-midi/gen3/fm9';
+
+/** FM9 model byte: the only gen-3 device with mined, bank-keyed cab IR rosters. */
+const FM9_MODEL_BYTE = 0x12;
 import { parsePresetDump, extractPresetName } from './presetDump.js';
-import { decodeGen3PresetDump, effectName } from './presetBody.js';
+import { decodeGen3PresetDump, effectName, Gen3EmptyPresetError } from './presetBody.js';
 import type { Gen3DecodedPreset } from './presetBody.js';
 import type { ModernCatalog } from './catalog.js';
 
@@ -384,42 +389,6 @@ async function collectVp4StructureBlob(
 }
 
 /**
- * Read a DISCRETE (type/model) param's CURRENT name directly off the device via
- * the fn=0x01 sub=0x1F type-name GET (reply decoded by parseGetParameterResponse,
- * `.displayString`). The positional fn=0x1F BULK read mis-addresses type
- * selectors — its value is not the roster ordinal (FM9 capture 2026-06-19: a
- * reverb whose device name was "Small Room"/ordinal 0 read back as positional
- * value 5 = "Large Hall"), so for enum/type params the device's own name string
- * is authoritative. Byte-grounded on FM9 fw 11.0 (the device answered both the
- * sub=0x1F and sub=0x09 type GETs with the name). Returns the name, or undefined
- * when the device doesn't answer (caller falls back to the bulk read — older
- * firmware / III·FM3 where this GET reply isn't yet confirmed).
- */
-async function readCurrentTypeName(
-  ctx: DispatchCtx,
-  codec: ModernFractalCodec,
-  effectId: number,
-  typeParamId: number,
-  timeoutMs: number,
-): Promise<string | undefined> {
-  const respPromise = ctx.conn.receiveSysExMatching(
-    (b) => codec.isGetParameterResponse(b),
-    timeoutMs,
-  );
-  ctx.conn.send(codec.buildRequestCurrentTypeName(effectId, typeParamId));
-  try {
-    const resp = await respPromise;
-    const parsed = codec.parseGetParameterResponse(resp);
-    if (parsed.effectId === effectId && parsed.displayString.length > 0) {
-      return parsed.displayString;
-    }
-  } catch {
-    // device didn't answer the type-name GET; caller falls back to the bulk read.
-  }
-  return undefined;
-}
-
-/**
  * Best-effort read of the device's CURRENT active scene index (fn=0x0C with the
  * `7F` query sentinel → a 0x0C reply whose payload byte is the scene). The scene
  * QUERY is the spec-documented form and has NO write side-effect — unlike the
@@ -454,9 +423,12 @@ async function readActiveScene(
 /**
  * Convert a live sub=0x2E grid reply into the same `Gen3GridCellView[]` shape as
  * the stored-dump grid (`whole_preset.grid`), labeling blocks with the SAME
- * `effectName` convention. The cable bitmask is carried raw in `route_flag`;
- * `from_rows` (edge direction) is intentionally NOT emitted — its decode is
- * community-beta and unvalidated, and a wrong edge is worse than none.
+ * `effectName` convention. The cable bitmask is carried raw in `route_flag`
+ * (bit k = input from row k of the previous column), and `from_rows` lists
+ * those rows. Evidence: FM3 hardware (2026-10-23: 7 generated grids with
+ * splits/merges read back cell-exact) and an FM9 fw 12 field report (#23)
+ * whose route_flag values (row 2 -> 4, row 3 -> 8, both -> 12 under the old
+ * doubled decode) match the same bit-per-row law. III shares the frame layout.
  */
 export function liveGridView(frame: number[], modelByte: number): Gen3GridCellView[] {
   return parseGen3GridLayout(frame, modelByte).map((c) =>
@@ -466,6 +438,7 @@ export function liveGridView(frame: number[], modelByte: number): Gen3GridCellVi
           row: c.row,
           col: c.col,
           route_flag: c.cableInputMask,
+          from_rows: c.fromRows,
           name: `Shunt ${c.shuntIndex ?? 0}`,
           is_shunt: true,
         }
@@ -474,6 +447,7 @@ export function liveGridView(frame: number[], modelByte: number): Gen3GridCellVi
           row: c.row,
           col: c.col,
           route_flag: c.cableInputMask,
+          from_rows: c.fromRows,
           name: effectName(c.effectId ?? -1) ?? `eid_${c.effectId}`,
         },
   );
@@ -550,6 +524,19 @@ function snapshotFromDecoded(
       `it is NOT a positioned grid that round-trips through apply_preset by slot. Named knob VALUES ` +
       `beyond amp are not yet decoded (the body word->knob map awaits a value-scale ground truth).`,
   ];
+  if (decoded.blocks_identified_by === 'table-size') {
+    warnings.push(
+      `The block list could not be paired with the grid, so blocks were named by the size of their ` +
+        `parameter table. That method can miss blocks or name one as another (it varies with firmware). ` +
+        `Trust 'whole_preset.grid' for WHICH blocks are placed; treat 'slots' as incomplete.`,
+    );
+  }
+  if (decoded.block_order_unsettled?.length) {
+    warnings.push(
+      `Two block families in this preset have an unproven stored order (${decoded.block_order_unsettled.join('; ')}). ` +
+        `Their two entries in 'slots' may be swapped with each other; every other block is named with certainty.`,
+    );
+  }
 
   return {
     name: decoded.preset_name,
@@ -662,6 +649,19 @@ export function makeReader(opts: {
     return { stride: bulk.values.length, channels: 1 };
   }
 
+  /** fn=0x0D QUERY PATCH NAME: a stored preset's name by number (read from
+   *  flash, nothing is loaded), or the active preset's number + name. */
+  async function queryPatchName(
+    ctx: DispatchCtx,
+    preset: number | 'current',
+    timeoutMs: number = getResponseTimeoutMs,
+  ): Promise<{ presetNumber: number; name: string }> {
+    const respPromise = ctx.conn.receiveSysExMatching((b) => codec.isQueryPatchNameResponse(b), timeoutMs);
+    respPromise.catch(() => {}); // pre-observe: a sync send() throw must not orphan a rejection
+    ctx.conn.send(codec.buildQueryPatchName(preset));
+    return codec.parseQueryPatchNameResponse(await respPromise);
+  }
+
   /** Normalize a channel arg (already a 0-based index from the dispatcher, but
    *  tolerate a name string) to a channel index, or undefined if unspecified. */
   function channelArgToIndex(channel?: string | number): number | undefined {
@@ -770,34 +770,34 @@ export function makeReader(opts: {
     ): Promise<ReadResult> {
       const { effectId } = resolveBlockOrThrow(blockSlugIn, deviceLabel, instance);
       const { param } = resolveParamOrThrow(blockSlugIn, name, deviceLabel);
-      // DISCRETE type/model param: read the device's CURRENT type NAME directly.
-      // The positional bulk read mis-addresses type selectors (its value is not
-      // the roster ordinal), so the device's own name string is authoritative.
-      const schema = catalog.blocks[blockSlugIn]?.params[name];
-      if (schema?.wire_kind === 'discrete') {
-        const typeName = await readCurrentTypeName(
-          ctx, codec, effectId, param.paramId, Math.min(250, getResponseTimeoutMs),
-        );
-        if (typeName !== undefined) {
-          // Best-effort reverse-resolve the wire ordinal from the partial enum
-          // table for callers that want it; the NAME is the authoritative value.
-          let wire = 0;
-          if (schema.enum_values !== undefined) {
-            const hit = Object.entries(schema.enum_values).find(([, v]) => v === typeName);
-            if (hit !== undefined) wire = Number(hit[0]);
-          }
-          return {
-            block: blockSlugIn,
-            name,
-            wire_value: wire,
-            display_value: typeName,
-            unit: param.unit,
-          };
-        }
-        // else: device didn't answer the type-name GET — fall back to the bulk read.
-      }
+      // DISCRETE type/model params read through the bulk read like every other
+      // param: the wire value is the roster ordinal, labeled by the catalog.
+      // The fn=0x01 sub=0x1F type-name GET is NOT used: it answers with the
+      // roster's FIRST entry regardless of the real type (fw 11 and 12, two
+      // independent contributors; our own FM9 capture returned ordinal-0 names
+      // for reverb, amp and drive alike), so it reported e.g. "Small Room" for
+      // a Large Hall. PR #24 hardware-confirmed the FM3 bulk projection.
       const bulk = await collectBlockBulkRead(ctx, codec, effectId, deviceLabel, getResponseTimeoutMs);
-      return projectParam(blockSlugIn, name, param, bulk, channel);
+      const result = projectParam(blockSlugIn, name, param, bulk, channel);
+      // FM9 cab IR index: the type ordinal names a different IR per bank, so
+      // label it from the bank read in the same bulk dump (FM9 fw 12 hardware:
+      // Factory 2 #315 = "4x12 1960A 300W 57" on the panel, issue #23).
+      const cabSlot = /^type([12])$/.exec(name);
+      if (codec.modelByte === FM9_MODEL_BYTE && cabSlot !== null) {
+        const bankName = `bank${cabSlot[1]}`;
+        const bankSchema = catalog.blocks[blockSlugIn]?.params[bankName];
+        if (bankSchema !== undefined) {
+          try {
+            const { param: bankParam } = resolveParamOrThrow(blockSlugIn, bankName, deviceLabel);
+            const bank = projectParam(blockSlugIn, bankName, bankParam, bulk, channel).wire_value;
+            const label = typeof bank === 'number' ? FM9_CAB_ROSTERS_BY_BANK[bank]?.[result.wire_value] : undefined;
+            if (label !== undefined) return { ...result, display_value: label };
+          } catch {
+            // bank not readable: keep the numeric ordinal
+          }
+        }
+      }
+      return result;
     },
 
     // Structured (non-byte-exact) whole-preset snapshot via the fn=0x1F poll
@@ -848,6 +848,24 @@ export function makeReader(opts: {
         try {
           decoded = decodeGen3PresetDump(Uint8Array.from(flat), codec.modelByte);
         } catch (err) {
+          if (err instanceof Gen3EmptyPresetError) {
+            // An empty location is an answer, not a failure: say so and return
+            // a preset with nothing placed.
+            return {
+              name: '',
+              slots: [],
+              read_warnings: [
+                `Location ${loc} on ${deviceLabel} is EMPTY: its stored dump carries no preset body. Nothing is placed there.`,
+              ],
+              _meta: {
+                device: deviceLabel,
+                read_at_ms: Date.now(),
+                active_scene_only: false,
+                routing_omitted: true,
+                read_duration_ms: Date.now() - readStartedMs,
+              },
+            };
+          }
           throw new DispatchError(
             'no_ack',
             deviceLabel,
@@ -928,6 +946,21 @@ export function makeReader(opts: {
         }
       }
 
+      // Which preset is this? fn=0x0D with the 'current' sentinel answers the
+      // active preset's NUMBER and stored NAME in one frame (spec-documented;
+      // III-hardware-answered on fw 32.06). Without it an agent asked "what
+      // preset am I on?" has nothing to say and cannot reload it. Best-effort:
+      // a silent device just omits the fields. Grid devices only: the VP4's
+      // structure blob already carries its name.
+      let activeIdentity: { presetNumber: number; name: string } | undefined;
+      if (codec.modelByte !== VP4_MODEL_ID) {
+        try {
+          activeIdentity = await queryPatchName(ctx, 'current', Math.min(400, getResponseTimeoutMs));
+        } catch {
+          // no answer; identity stays absent
+        }
+      }
+
       // Short per-block cap: a real burst lands in ~1ms and an unplaced block
       // NACKs nearly as fast; this only bounds a block that neither answers.
       const POLL_TIMEOUT_MS = Math.min(250, getResponseTimeoutMs);
@@ -996,8 +1029,8 @@ export function makeReader(opts: {
           ? 'gen-3 get_preset: `live_grid` holds the positioned routing (row/col + block per cell) ' +
               'from the live fn=0x01 sub=0x2E read; `slots` carries the per-block param VALUES (a flat ' +
               'inventory; its `slot` numbers are sequential, not grid positions; match a slot to its ' +
-              'cell via block_type/effect name in live_grid). Cable directions are surfaced raw in ' +
-              'live_grid[].route_flag (edge decode is community-beta, not asserted). Per-channel params ' +
+              'cell via block_type/effect name in live_grid). Cable directions: route_flag bit k = input ' +
+              'from row k of the previous column (0-based, same as `row`), listed in from_rows. Per-channel params ' +
               'are the channel-A copy (use get_param with a channel arg); enum params read as ordinal ' +
               'labels, uncalibrated continuous as raw wire. When describing this to the user, narrate ' +
               'live_grid as a linear signal path (Input → block → block → Output), not a row/column ' +
@@ -1012,11 +1045,15 @@ export function makeReader(opts: {
       );
       if (liveMeters !== undefined) {
         warnings.push(
-          `gen-3 live_meters: cpu_percent (${liveMeters.cpu_percent}%) is the active preset's steady ` +
-            'DSP cost (the headroom answer); output_left/right are momentary peaks at read time. ' +
+          (liveMeters.cpu_percent !== undefined
+            ? `gen-3 live_meters: cpu_percent (${liveMeters.cpu_percent}%) is the active preset's steady ` +
+              'DSP cost (the headroom answer); '
+            : 'gen-3 live_meters: NO cpu_percent on this device. The CPU decode is hardware-falsified on the ' +
+              'Axe-Fx III (it read 72 % against a front-panel 20 %), so read CPU on the unit; do not estimate it. ') +
+            'output_left/right are momentary peaks at read time. ' +
             'Decoded from the same sub=0x2E frame as live_grid (no extra round-trip). Evidence: the ' +
-            'output meters are FM9-behaviorally-confirmed (they vary across reads); cpu_percent is ' +
-            'FM3(ForgeFX)-sourced and FM9-consistent. Community beta. The device input meter is not ' +
+            'output meters are FM9-behaviorally-confirmed (they vary across reads); FM3 cpu_percent is ' +
+            'calibrated on hardware (fw 13, ±0.5 %); FM9 cpu_percent is FM3(ForgeFX)-sourced and unconfirmed. The device input meter is not ' +
             'surfaced (its offset is not portable across the gen-3 family).',
         );
       }
@@ -1029,7 +1066,7 @@ export function makeReader(opts: {
         name: n,
       }));
       return {
-        name: vp4Structure?.presetName,
+        name: vp4Structure?.presetName ?? (activeIdentity?.name.trim() || undefined),
         slots,
         ...(vp4Scenes ? { scenes: vp4Scenes } : {}),
         ...(liveGrid ? { live_grid: liveGrid } : {}),
@@ -1044,8 +1081,54 @@ export function makeReader(opts: {
           routing_omitted: liveGrid === undefined && vp4Structure === undefined,
           channel_state_omitted: true,
           read_duration_ms: Date.now() - readStartedMs,
+          // 0-based WIRE preset number. The unit's own screen shows this or
+          // this + 1, depending on its Display Offset setting (Setup > Global).
+          ...(activeIdentity !== undefined ? { current_location: String(activeIdentity.presetNumber) } : {}),
         },
       };
+    },
+
+    // Stored-name scan. fn=0x0D with a preset NUMBER answers from flash
+    // without loading the preset, so the working buffer is untouched and no
+    // buffer-dirty gate is needed (unlike the Axe-Fx II, which must navigate).
+    // Spec-documented query; III-hardware-answered (fw 32.06) and the same
+    // read the save overwrite gate already uses. About 10 ms per location.
+    async scanLocations(ctx: DispatchCtx, from: string | number, to: string | number) {
+      if (codec.modelByte === VP4_MODEL_ID) {
+        throw new DispatchError(
+          'capability_not_supported',
+          deviceLabel,
+          `scan_locations is not available on ${deviceLabel}: its stored-name query is not decoded.`,
+        );
+      }
+      const a = Number(from);
+      const b = Number(to);
+      if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < a) {
+        throw new DispatchError(
+          'bad_location',
+          deviceLabel,
+          `scan_locations: from/to must be integer preset numbers with from <= to (got ` +
+            `${JSON.stringify(from)}..${JSON.stringify(to)}). These are 0-based wire numbers; ` +
+            `the unit shows them +1 when its Display Offset is 1.`,
+        );
+      }
+      const scanned: ScannedLocation[] = [];
+      for (let n = a; n <= b; n++) {
+        try {
+          const r = await queryPatchName(ctx, n, Math.min(500, getResponseTimeoutMs));
+          const name = r.name.trim();
+          scanned.push({ location: String(n), name, is_empty: name.length === 0 || /^<EMPTY>$/i.test(name) });
+        } catch (err) {
+          return {
+            scanned,
+            failed_at: String(n),
+            failed_reason:
+              `no stored-name answer at preset ${n} (${err instanceof Error ? err.message : String(err)}). ` +
+              `A Mark I Axe-Fx III holds 512 presets (0..511); past the unit's last preset it does not answer.`,
+          };
+        }
+      }
+      return { scanned };
     },
 
     // Byte-exact backup of the ACTIVE working buffer via the gen-3 edit-buffer

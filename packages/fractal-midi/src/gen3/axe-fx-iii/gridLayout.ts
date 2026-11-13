@@ -48,6 +48,22 @@
  * (`bit -> (data[bit/7] >> (6 - bit%7)) & 1`) — the classic packing for
  * 8-bit fields carried over a 7-bit SysEx channel. Reading it with an
  * 8-bit reader yields garbage (the 0xE8/0xD8 "block-type" signature).
+ *
+ * CELL WORD (corrected 2026-10-23, FM3 hardware): each 32-bit cell is the
+ * preset-body grid cell itself, starting ONE bit earlier than the original
+ * community layout: `u16 id` (low byte, high byte) + `u16 input mask`
+ * (low byte, high byte), from bit `45 + col*rows*32 + row*32`. The id is the
+ * effect ID, or `1024 + n` for shunt n; the mask's bit k = input from row k of
+ * the previous column. The earlier reading (8 bits at bit 46, `>> 1`, a
+ * "type" byte 0x08, mask at bit 62) is the same bits shifted by one: it
+ * agrees for ids < 128 but misreads every id > 127 (Send 182 -> 54,
+ * Return 186 -> 58, Plex 178 -> 50, Multiplexer 191 -> 63, Synth 130 -> 2)
+ * and reports the mask doubled (row 1 -> 0x04). Evidence: 7 generated FM3
+ * grids (splits, merges, 4 rows, ids up to 1037) loaded to the edit buffer
+ * read back identical in all 48 cells (`docs/research/evidence/fm3/fm3-grid-check-20261023.json`
+ * + `-results.jsonl`, from an FM3 owner's fork, Apache-2.0); the mask
+ * semantics match 384 FM3 factory preset grids (4801 cells) and an FM9 fw 12
+ * field report's route_flag values. The III shares the frame layout.
  */
 import { fractalChecksum } from '../../shared/checksum.js';
 import { AXE_FX_III_MODEL_ID, FN_PARAMETER_SETGET } from './setParam.js';
@@ -64,17 +80,18 @@ export const SUB_ACTION_GRID_LAYOUT = 0x2e;
 
 /** Grid columns on III/FM9 (6-row devices). FM3 is 4 x 12 — see gridColsFor. */
 export const GRID_COLS = 14;
-const GRID_BASE_BIT = 46; // bit offset of cell (col 0, row 0) within the region
+const GRID_BASE_BIT = 46; // region sizing constant (unchanged; see header)
+const GRID_CELL_BIT = 45; // first bit of cell (col 0, row 0): u16 id + u16 mask
 const GRID_ROW_STRIDE = 32; // bits per cell row
 // The region sits at the TAIL of the frame (see header): every known frame
 // puts its first byte at mido offset >= 361, the shared header length. A
 // tail-anchor below this floor means the frame cannot contain the region.
 const GRID_MIN_REGION_OFFSET = 350;
-const FIELD_BLOCK_ID = 0; // bits 0-7:  (effectId | shuntIndex) << 1
-const FIELD_BLOCK_TYPE = 8; // bits 8-15: 0x08 = shunt, 0x00 = real block
-const FIELD_CABLE_IN = 16; // bits 16-23: incoming-cable bitmask
+const FIELD_ID = 0; // bits 0-15: effect ID or 1024 + shunt index (low byte first)
+const FIELD_MASK = 16; // bits 16-31: input mask, bit k = row k of the previous column
 
-const BLOCK_TYPE_SHUNT = 0x08;
+/** Shunt ids are 1024 + sequential index, as in the preset body. */
+const SHUNT_ID_BASE = 1024;
 
 /** Grid rows for a model byte: 4 for FM3, 6 for III/FM9. */
 function gridRowsFor(modelByte: number): number {
@@ -89,9 +106,8 @@ function gridColsFor(modelByte: number): number {
 /**
  * One occupied grid cell from a live sub=0x2E decode.
  * `cableInputMask` bit `n` set means a cable enters this cell from row `n`
- * of the previous column (per wagahai850's decode; row indexing is the
- * raw mask — not yet field-validated against a known cabling, so it is
- * surfaced as the raw mask rather than a decoded edge list).
+ * of the previous column (FM3 hardware-confirmed 2026-10-23 against known
+ * generated cablings, incl. splits and 4-input merges).
  */
 export interface Gen3GridLayoutCell {
   row: number;
@@ -102,8 +118,10 @@ export interface Gen3GridLayoutCell {
   isShunt: boolean;
   /** Sequential shunt index (defined only for shunts). */
   shuntIndex?: number;
-  /** Raw incoming-cable bitmask (bits = source rows of the prior column). */
+  /** Incoming-cable bitmask: bit k = a cable from row k of the prior column. */
   cableInputMask: number;
+  /** Rows of the prior column feeding this cell (decoded from cableInputMask). */
+  fromRows: number[];
 }
 
 /**
@@ -173,20 +191,22 @@ export function parseGen3GridLayout(
   }
   const region = mido.slice(regionOffset, mido.length - 2);
   const cells: Gen3GridLayoutCell[] = [];
+  const byte = (bit: number) => readBitsMsb(region, bit, 8);
   for (let col = 0; col < cols; col++) {
     for (let row = 0; row < rows; row++) {
-      const base = GRID_BASE_BIT + col * colStride + row * GRID_ROW_STRIDE;
-      const idField = readBitsMsb(region, base + FIELD_BLOCK_ID, 8) >> 1;
-      const blockType = readBitsMsb(region, base + FIELD_BLOCK_TYPE, 8);
-      const isShunt = blockType === BLOCK_TYPE_SHUNT;
-      if (idField === 0 && !isShunt) continue; // empty cell
+      const base = GRID_CELL_BIT + col * colStride + row * GRID_ROW_STRIDE;
+      const id = byte(base + FIELD_ID) | (byte(base + FIELD_ID + 8) << 8);
+      const mask = byte(base + FIELD_MASK) | (byte(base + FIELD_MASK + 8) << 8);
+      if (id === 0) continue; // empty cell
+      const isShunt = id >= SHUNT_ID_BASE;
       cells.push({
         row,
         col,
-        effectId: isShunt ? undefined : idField,
+        effectId: isShunt ? undefined : id,
         isShunt,
-        shuntIndex: isShunt ? idField : undefined,
-        cableInputMask: readBitsMsb(region, base + FIELD_CABLE_IN, 8),
+        shuntIndex: isShunt ? id - SHUNT_ID_BASE : undefined,
+        cableInputMask: mask,
+        fromRows: Array.from({ length: rows }, (_, k) => k).filter((k) => (mask >> k) & 1),
       });
     }
   }

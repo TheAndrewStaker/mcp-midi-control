@@ -26,7 +26,7 @@ interface Packed {
 }
 
 const jsonPath = process.argv[2] ?? 'scripts/groove-analysis/_packed.json';
-const out = process.argv[3] ?? 'samples/circuit-tracks/grooves/the_summoning_packed.ncs';
+const out = process.argv[3] ?? 'samples/circuit-tracks/grooves/packed_groove.ncs';
 
 const packed = JSON.parse(readFileSync(jsonPath, 'utf8')) as Packed;
 const buf = new Uint8Array(readFileSync(TEMPLATE));

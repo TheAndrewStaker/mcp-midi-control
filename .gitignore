@@ -64,7 +64,6 @@ samples/*
 !samples/drum-sources/
 samples/drum-sources/*
 !samples/drum-sources/README.md
-!samples/drum-sources/manifest.json
 
 # Local user backups of preset dumps. Created automatically by the
 # backup_location MCP tool (and by the auto-backup path in
@@ -140,3 +139,25 @@ scripts/groove-analysis/_setsel.json
 # Circuit groove-pack intermediate artifacts (regenerable)
 scripts/groove-analysis/_packed*.json
 scripts/_cap_prep.mjs
+
+# Playwright MCP browser scratch (snapshots, console logs from UI passes)
+.playwright-mcp/
+
+# Incremental TypeScript build state, one per workspace package. Build
+# output, never source. Nine were sitting untracked and a `git add .`
+# would have swept them in.
+tsconfig.tsbuildinfo
+
+# Rig Console e2e gate: rendered fixture + playwright run artifacts
+tests/console-e2e/.out/
+tests/console-e2e/.results/
+
+# Songsterr fixture caches (scripts/fetch-songsterr-fixture.ts regenerates any of them on demand).
+# None are committed: they are third-party transcription dumps of real songs, kept as local
+# scratch for song mapping. No gate reads them; the song gates run on the invented songs of
+# scripts/syntheticSong.ts.
+scripts/fixtures/*/
+# verify-akai-mpc: the drum program specs its byte-identity goldens are built from (not a tab dump).
+!scripts/fixtures/akai-mpc/
+# verify-song-author*: the recipe + device-call golden of an invented song (not a tab dump).
+!scripts/fixtures/synthetic-song/

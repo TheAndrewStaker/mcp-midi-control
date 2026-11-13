@@ -57,6 +57,19 @@ export interface AxeFxIIConfig {
   writesGated?: boolean;
   /** Op names exempt from the gate above. Ignored when `writesGated` is falsy. */
   writeAllowlist?: readonly string[];
+  /**
+   * BK-084 mode-collapse: enable `set_params`' internal atomic dump/
+   * patch/push/verify image path (formerly reached via apply_preset
+   * mode:'retune'; the mechanism is unchanged, only its entry point —
+   * now an invisible batch-size heuristic inside set_params rather than
+   * a caller-visible mode). True ONLY on the XL+ today: the image codec
+   * is oracled against the XL+ Q8.02 corpus (388 dumps) and the XL+'s
+   * own hardware captures. The AX8 is deliberately excluded — zero AX8
+   * dumps on disk means no corpus oracle for its image grammar (the
+   * evidence bar keeps it out); once an AX8 dump corpus exists, enabling
+   * it is this config flip. Defaults false.
+   */
+  supportsAtomicParamImage?: boolean;
   /** Reason appended to a gated-write refusal. Falls back to a generic model-byte note. */
   gatedWriteReason?: string;
   /**

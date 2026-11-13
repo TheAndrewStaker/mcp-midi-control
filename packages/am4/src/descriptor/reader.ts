@@ -37,33 +37,33 @@ import { receivePresetDumpStream } from '../presetDump.js';
 
 import {
   BLOCK_NAMES_BY_VALUE,
+  BLOCK_TYPE_VALUES,
   BLOCK_SLOT_PID_HIGH_BASE,
   BLOCK_SLOT_PID_LOW,
-  BLOCK_TYPE_VALUES,
   KNOWN_PARAMS,
+  am4ComparableBody,
   buildBlockLayoutSnapshot,
-  buildReadParam,
   buildRequestActiveBufferDump,
   buildRequestStoredPresetDump,
   decodeAm4RawPatch,
-  decodeAm4AmpBlock,
+  decodeAm4PresetBody,
   formatLocationCode,
   decode as am4Decode,
   roundDisplayValue,
   isRawIntRegister,
   decodeRawIntRegister,
-  isReadResponseLong,
-  parseLongReadBypassFlag,
-  READ_TYPE_LONG,
   type BlockTypeName,
   type Param,
   type ParamKey,
 } from 'fractal-midi/am4';
 import { formatLocationDisplay } from 'fractal-midi/am4';
-import { readAllParams, READ_RESPONSE_TIMEOUT_MS, readPresetName, sendReadAndParse, sendReadAndParseRaw } from '../shared/readOps.js';
+import { createHash } from 'node:crypto';
+import { readAllParams, readPresetName, sendReadAndParse, sendReadAndParseRaw } from '../shared/readOps.js';
+import { readActiveBufferBody, readBypassState } from '../shared/bufferState.js';
 import {
   CHANNEL_BLOCKS,
   channelLetter,
+  resolveChannel,
   switchBlockChannel,
 } from '../shared/channels.js';
 import {
@@ -116,7 +116,6 @@ function pidLowsForBlock(blockType: string): readonly number[] {
 
 const SCENE_STATE_PID_LOW = 0x00ce;
 const SCENE_STATE_PID_HIGH = 0x000d;
-const BYPASS_STATE_PID_HIGH = 0x0003;
 
 /**
  * Decode a `<block>.channel` selector read into an A/B/C/D letter.
@@ -157,29 +156,6 @@ function decodeChannelSelector(
       `channel wire ${wire} (0x${wire.toString(16)}) not in enumValues ` +
       `(have ${Object.keys(enumValues ?? {}).join(',')}); float32 interpretation = ${asFloat}`,
   };
-}
-
-async function readBypassState(
-  conn: import('@mcp-midi-control/core/midi/transport.js').MidiConnection,
-  blockType: string,
-): Promise<boolean | undefined> {
-  const pidLow = BLOCK_TYPE_VALUES[blockType as BlockTypeName];
-  if (pidLow === undefined || pidLow === BLOCK_TYPE_VALUES.none) return undefined;
-  try {
-    const readBytes = buildReadParam(
-      { pidLow, pidHigh: BYPASS_STATE_PID_HIGH },
-      READ_TYPE_LONG,
-    );
-    const respPromise = conn.receiveSysExMatching(
-      (resp) => isReadResponseLong(readBytes, resp),
-      READ_RESPONSE_TIMEOUT_MS,
-    );
-    conn.send(readBytes);
-    const resp = await respPromise;
-    return parseLongReadBypassFlag(resp);
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -435,13 +411,12 @@ const AM4_MODEL_ID = 0x15;
  * (working buffer untouched), but it follows the same subscribe-before-send
  * read pattern the other readers use so the response can't outrace the listener.
  *
- * LABELED OMISSION: the decoded body's per-param word->knob VALUES are NOT
- * surfaced — the body field map is only partially pinned (preset name + the 4
- * scene names + amp.gain chA so far). Decoding every block/param value is the
- * follow-on field-map decode (a separate in-flight task), so the snapshot
- * honestly says so rather than guessing. `whole_preset` carries name + scene
- * names + the self-validating CRC flag; `paramBlockBytes` (decompressed body
- * size) is surfaced as evidence the body actually decoded.
+ * DECODED: the body is a self-describing block-record chain, so the snapshot
+ * carries the slot order, every placed block's params for all four channels,
+ * and each scene's channel + bypass per block (`decodeAm4PresetBody`). Not
+ * decoded, and said so in `read_warnings`: modifier/controller assignments, the
+ * Input/Output global records and scene MIDI. A body whose chain does not walk
+ * cleanly yields name + scene names only.
  */
 async function getStoredPresetSnapshot(
   ctx: DispatchCtx,
@@ -485,14 +460,33 @@ async function getStoredPresetSnapshot(
 
   const paramBlockBytes = decoded.decompressedBody.length;
 
-  // Walk the decoded body's block-record chain to the AMP block and surface
-  // its per-channel (A/B/C/D) param VALUES. Amp block only: it is the one block
-  // with a validated record shape + ordinal-bounded TYPE enum to reject
-  // false-positive markers (cab/FX share the chain structure but their per-block
-  // stride/formula is unverified — an honest omission until a per-block capture
-  // confirms transfer). The walker locates the config-dependent marker (0x0934
-  // vs 0x0A92 vs absent) — never a hardcoded offset. See fractal-midi bodyChain.ts.
-  const ampBlock = decodeAm4AmpBlock(decoded.decompressedBody, decoded.decompSize);
+  // Walk the decoded body's self-describing block-record chain: slot order,
+  // every placed block's params per channel, per-scene channel + bypass. See
+  // fractal-midi bodyChain.ts. `undefined` = the chain did not walk cleanly, in
+  // which case nothing below the name + scene names is surfaced.
+  const body = decodeAm4PresetBody(decoded.decompressedBody, decoded.decompSize);
+  const slots: PresetSnapshotSlot[] = [];
+  const undecodedBlocks: string[] = [];
+  for (const b of body?.blocks ?? []) {
+    const blockType = b.block ?? `effect_${b.effectId}`;
+    const hasParams = Object.keys(b.channels).length > 0;
+    if (!hasParams) undecodedBlocks.push(`slot ${b.slot} (${blockType})`);
+    slots.push({
+      slot: b.slot as 1 | 2 | 3 | 4,
+      block_type: blockType,
+      id: b.instance > 1 ? `${blockType}${b.instance}` : blockType,
+      ...(hasParams ? { params_by_channel: b.channels, channel_status: 'all_channels' as const } : {}),
+      scene_channels: b.sceneChannels,
+      // The amp has no bypass on the AM4, so its bypass word is not a state.
+      ...(b.block === 'amp' ? {} : { scene_bypass: b.sceneBypass }),
+    });
+  }
+  // Hash of the body with its two non-content words masked: equal between two
+  // stored presets exactly when they hold the same content.
+  const comparable = am4ComparableBody(decoded.decompressedBody, decoded.decompSize);
+  const contentFingerprint = comparable !== undefined
+    ? createHash('sha256').update(comparable).digest('hex').slice(0, 16)
+    : undefined;
 
   const read_warnings: string[] = [
     `Snapshot source: STORED preset at location ${code} (fn 0x03 flash dump; working buffer untouched). ` +
@@ -500,30 +494,35 @@ async function getStoredPresetSnapshot(
       `footer XOR ${decoded.footerXorValid ? 'matches' : 'MISMATCH'}, ` +
       `Huffman body ${decoded.huffmanComplete ? 'terminated cleanly' : 'did NOT terminate at decompSize'} ` +
       `(${paramBlockBytes} B decompressed, fw word 0x${decoded.fwWord.toString(16).padStart(4, '0')}).`,
-    ampBlock !== undefined
-      ? 'AMP param VALUES are surfaced (whole_preset.amp), all four channels A/B/C/D, decoded byte-exact from ' +
-        'the body block-record chain. The four warm-pair-anchored fields (amp.type, amp.gain chA/chB, amp.master chA) ' +
-        'are CONFIRMED against hardware captures; the remaining amp knobs ride the SAME confirmed record geometry ' +
-        '(marker + 0x130 channel stride + pidHigh-rule) and are formula-extrapolated from those anchors. ' +
-        'NON-amp block VALUES (cab / drive / delay / reverb / etc.) are NOT surfaced: those blocks share the chain ' +
-        'structure but their per-block param formula is not yet capture-confirmed, so they are honestly omitted ' +
-        'rather than guessed. For any live value use get_param / get_params, or read the ACTIVE buffer with ' +
-        'get_preset (no location); that path returns full per-block params from the fn 0x1F poll.'
-      : 'This preset has NO amp block (empty location or an intentional no-amp DI patch), so no amp values are ' +
-        'surfaced. NON-amp block VALUES are not decoded from the stored dump yet (field map pending); use ' +
-        'get_param / get_params or read the ACTIVE buffer with get_preset (no location) for live values.',
-    'AM4 stored get_preset is community-beta: the container decode is byte-validated offline against the ' +
-      '104-preset factory bank + hardware exports (self-validating CRC + footer XOR), and the stored-dump request ' +
-      'is hardware-confirmed (2026-06-10, no working-buffer side effect); confirm the name + scene names ' +
-      '(and amp model/knobs, if present) against the front panel and report the result.',
+    body === undefined
+      ? 'Block VALUES are NOT surfaced: the body did not walk as the known block-record chain, so only the name ' +
+        'and scene names are reported. Load the preset and read the ACTIVE buffer with get_preset (no location).'
+      : slots.length === 0
+        ? 'This location holds no placed blocks (an empty preset).'
+        : 'Decoded from the stored body: the slot order, every placed block\'s params on all four channels ' +
+          '(slots[].params_by_channel A/B/C/D; the amp entry includes its cab section), and each scene\'s channel ' +
+          'and bypass per block (slots[].scene_channels / scene_bypass, index 0 = scene 1, names in ' +
+          'whole_preset.scene_names). Values use the same param table and scaling as the active-buffer read. ' +
+          'NOT decoded, so absent rather than guessed: modifier/controller assignments, Input/Output (global ' +
+          'block) settings and scene MIDI.',
+    ...(undecodedBlocks.length > 0
+      ? [`No params surfaced for ${undecodedBlocks.join(', ')}: the block has no entry in the param table or no record in the body.`]
+      : []),
+    ...(contentFingerprint !== undefined
+      ? ['whole_preset.content_fingerprint hashes the decoded body with its two non-content words masked (the ' +
+          'location the buffer was loaded from, and one word that changes between reads of an untouched preset). ' +
+          'Two stored presets with the same fingerprint hold identical content; when they differ, compare the ' +
+          'slots to see where. A saved copy can differ from its source in the amp\'s cab_1_blend / cab_2_blend ' +
+          'alone: the AM4 was seen changing that pair in the working buffer after loading a preset.']
+      : []),
+    'AM4 stored get_preset is community-beta. The container is self-validating (CRC + footer XOR) and the ' +
+      'stored-dump request is hardware-confirmed to leave the working buffer untouched. The block values were ' +
+      'cross-checked on hardware (2026-11-12) against the active-buffer read of the same presets.',
   ];
 
   return {
     name: decoded.name,
-    // The body's slot-assignment (which block sits in slot 1..4) is not yet
-    // decoded, so no positioned `slots[]` are surfaced. The amp block's VALUES
-    // ride on whole_preset.amp (the gen-3 stored path does the same via amp1).
-    slots: [],
+    slots,
     whole_preset: {
       source: 'stored-dump',
       model: 'Fractal AM4',
@@ -531,7 +530,7 @@ async function getStoredPresetSnapshot(
       preset_name: decoded.name,
       crc_valid: decoded.crcValid,
       scene_names: decoded.sceneNames,
-      ...(ampBlock !== undefined ? { amp: ampBlock.channels } : {}),
+      ...(contentFingerprint !== undefined ? { content_fingerprint: contentFingerprint } : {}),
     },
     read_warnings,
     _meta: {
@@ -564,7 +563,24 @@ export const reader: DeviceReader = {
   ): Promise<ReadResult> {
     const key = `${block}.${name}` as ParamKey;
     const param: Param = KNOWN_PARAMS[key];
-    if (channel !== undefined && CHANNEL_BLOCKS.has(block)) {
+    if (channel !== undefined && CHANNEL_BLOCKS.has(block) && name !== 'channel') {
+      // A named channel is read from the block's channel-blocked dump (four
+      // copies, fixed A/B/C/D order), NOT by switching the block and reading
+      // the single register: that read answered with one value for all four
+      // channels, and the switch changed what the player hears.
+      const chunk = await readAllParams(ctx.conn, param.pidLow);
+      const stride = chunk.itemCount / 4;
+      const idx = resolveChannel(channel) * stride + param.pidHigh;
+      if (chunk.itemCount > 0 && chunk.itemCount % 4 === 0 && idx < chunk.values.length) {
+        const wire = chunk.values[idx];
+        return {
+          block,
+          name,
+          wire_value: param.unit === 'enum' ? wire : wire / 65534,
+          display_value: decodeChunkValue(param, wire),
+          unit: param.unit,
+        };
+      }
       await switchBlockChannel(ctx.conn, block, channel);
     }
     const { parsed, raw_response } = await sendReadAndParseRaw(ctx.conn, param.pidLow, param.pidHigh);
@@ -788,13 +804,30 @@ export const reader: DeviceReader = {
     const readStartedMs = Date.now();
 
     // 1. Block layout (4 slot reads).
+    //    A slot register holds the block's effect id. A SECOND instance of a
+    //    block (a preset with two drives) holds base id + 1 (drive 0x76 ->
+    //    0x77), and its params live at that id. Reading it as "unknown" used
+    //    to drop the slot from the snapshot.
     const layoutSlots: BlockTypeName[] = [];
+    const instanceOffsets: number[] = [];
     for (const position of [1, 2, 3, 4] as const) {
       const pidHigh = BLOCK_SLOT_PID_HIGH_BASE + (position - 1);
       const parsed = await sendReadAndParse(ctx.conn, BLOCK_SLOT_PID_LOW, pidHigh);
       const u32 = parsed.asUInt32LE();
-      layoutSlots.push(BLOCK_NAMES_BY_VALUE[u32] ?? ('none' as BlockTypeName));
+      const second = BLOCK_NAMES_BY_VALUE[u32] === undefined && u32 > 1 ? BLOCK_NAMES_BY_VALUE[u32 - 1] : undefined;
+      layoutSlots.push(BLOCK_NAMES_BY_VALUE[u32] ?? second ?? ('none' as BlockTypeName));
+      instanceOffsets.push(second !== undefined ? 1 : 0);
     }
+
+    // 1b. Scene table (one working-buffer dump, ~80 ms, best-effort): which
+    //     channel each scene selects per block, and each scene's bypass. This
+    //     is what names the ACTIVE channel; the amp's channel-selector register
+    //     cannot (it reads back derived state, BUG-1). The dump reflects
+    //     unsaved edits. `undefined` = not readable this call.
+    const bufferBody = await readActiveBufferBody(ctx.conn);
+    const sceneFromBody = bufferBody !== undefined && bufferBody.activeScene <= 3
+      ? bufferBody.activeScene
+      : undefined;
 
     // 2. Per placed slot: chunk-based read via fn 0x1F + bypass read.
     //    Performance: ~50 ms per pidLow chunk, ~50 ms per bypass read. All
@@ -815,12 +848,18 @@ export const reader: DeviceReader = {
           continue;
         }
         const chunks = new Map<number, { itemCount: number; values: number[] }>();
+        const instanceOffset = instanceOffsets[slotIdx];
         for (const pidLow of pidLows) {
-          const triple = await readAllParams(ctx.conn, pidLow);
+          // Keyed by the BASE id so the param table lookup below still matches.
+          const triple = await readAllParams(ctx.conn, pidLow + instanceOffset);
           chunks.set(pidLow, { itemCount: triple.itemCount, values: triple.values });
         }
 
-        const bypassed = await readBypassState(ctx.conn, blockType);
+        // The amp has no bypass on the AM4; the register at the bypass
+        // address is its output boost, so it is not reported as `bypassed`.
+        const bypassed = blockType === 'amp'
+          ? undefined
+          : await readBypassState(ctx.conn, blockType, instanceOffset);
 
         // Shape decision: must match II reader so the response is consistent
         // across every channel-bearing block on every device. Non-channel
@@ -843,8 +882,22 @@ export const reader: DeviceReader = {
         let params: PresetSlotSpec['params'];
         let paramsByChannel: PresetSlotSpec['params_by_channel'];
         let channelStatus: PresetSnapshotSlot['channel_status'];
+        // Scene table entry for this slot, only when the dump agrees on which
+        // block sits here (a mismatch means the dump is not this buffer state).
+        const tableEntry = bufferBody?.blocks.find((b) => b.slot === slotIdx + 1
+          && (instanceOffset === 0
+            ? b.block === blockType
+            : b.effectId === BLOCK_TYPE_VALUES[blockType] + instanceOffset));
+        const activeChannel = tableEntry !== undefined && sceneFromBody !== undefined
+          ? tableEntry.sceneChannels[sceneFromBody]
+          : undefined;
         if (!CHANNEL_BLOCKS.has(blockType)) {
-          params = decodeChannelParams(blockType, chunks, 0);
+          // Flat params = the row the active scene selects. Every block's table
+          // has four rows; a preset that points one of these blocks at B/C/D
+          // must not read row A.
+          const activeRow = Math.max(0, ['A', 'B', 'C', 'D'].indexOf(activeChannel ?? 'A'));
+          params = decodeChannelParams(blockType, chunks, activeRow);
+          if (Object.keys(params).length === 0 && activeRow !== 0) params = decodeChannelParams(blockType, chunks, 0);
         } else {
           const allChannelParams: Record<string, Record<string, number | string>> = {};
           for (let c = 0; c < 4; c++) {
@@ -858,11 +911,19 @@ export const reader: DeviceReader = {
         slots.push({
           slot: (slotIdx + 1) as 1 | 2 | 3 | 4,
           block_type: blockType,
-          id: blockType,
+          id: instanceOffset === 0 ? blockType : `${blockType}_${instanceOffset + 1}`,
+          ...(instanceOffset === 0 ? {} : { instance: instanceOffset + 1 }),
           ...(bypassed !== undefined ? { bypassed } : {}),
           ...(params !== undefined ? { params } : {}),
           ...(paramsByChannel !== undefined ? { params_by_channel: paramsByChannel } : {}),
           channel_status: channelStatus,
+          ...(activeChannel !== undefined ? { active_channel: activeChannel } : {}),
+          ...(tableEntry !== undefined
+            ? {
+                scene_channels: tableEntry.sceneChannels,
+                ...(blockType === 'amp' ? {} : { scene_bypass: tableEntry.sceneBypass }),
+              }
+            : {}),
         });
       } catch (err) {
         errors.push(`slot ${slotIdx + 1} (${blockType}): ${err instanceof Error ? err.message : String(err)}`);
@@ -893,16 +954,38 @@ export const reader: DeviceReader = {
     // server only (the AM4 emits no dirty push), so front-panel edits are
     // invisible to it.
     let currentLocation: string | undefined;
+    let presetName: string | undefined;
     try {
       const parsed = await sendReadAndParse(ctx.conn, LOCATION_STATE_PID_LOW, LOCATION_STATE_PID_HIGH);
       const idx = parsed.asUInt32LE();
-      if (idx >= 0 && idx <= 103) currentLocation = formatLocationDisplay(idx);
+      if (idx >= 0 && idx <= 103) {
+        currentLocation = formatLocationDisplay(idx);
+        // The name stored at the loaded location (one read). Best-effort: a
+        // miss leaves `name` absent, it never fails the snapshot.
+        try {
+          const named = await readPresetName(ctx.conn, idx);
+          if (!named.isEmpty) presetName = named.name?.trim() || undefined;
+        } catch {
+          presetName = undefined;
+        }
+      }
     } catch {
       currentLocation = undefined;
     }
     const dirty = isDirty(AM4_DIRTY_LABEL);
 
+    if (activeScene === undefined && sceneFromBody !== undefined) activeScene = sceneFromBody + 1;
+    // Say so when the active channel could not be read, so a caller does not
+    // assume A. (When it was read, slots[].active_channel carries it.)
+    if (slots.length > 0 && !slots.some((s) => s.active_channel !== undefined)) {
+      errors.push(
+        'Active channel per block was NOT read this call (the working-buffer dump did not decode), so ' +
+          'slots[].active_channel is absent. Do not assume channel A: re-call get_preset.',
+      );
+    }
+
     return {
+      ...(presetName !== undefined ? { name: presetName } : {}),
       slots,
       active_scene: activeScene,
       ...(errors.length > 0 ? { read_warnings: errors } : {}),

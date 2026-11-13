@@ -9,7 +9,7 @@
  *   switch_preset({ port:'hydrasynth', location })
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import {

@@ -426,13 +426,18 @@ function preflightConceptKey(
 // III: amp.power_amp_master normalizes to amp.master.
 // III's amp block has no parameter catalog mined (post-v1.13 firmware
 // addition), so we use drive.output_level for the III check instead.
+// Value updated 2026-08-11 (BK-GEN3-RANGES): drive.level is display-calibrated
+// 0..10 from the III's own editor cache now, so the old raw-wire 32767 is
+// correctly REFUSED by range validation (the exact silent-wrong-write class the
+// calibration exists to catch). The concept-key normalization under test is
+// unchanged; the value just moved to the display domain.
 {
   const spec: PresetSpec = {
     slots: [
       {
         slot: { row: 2, col: 1 },
         block_type: 'drive',
-        params: { A: { output_level: 32767 } },
+        params: { A: { output_level: 5 } },
       },
     ],
   };
@@ -440,7 +445,7 @@ function preflightConceptKey(
   const params = (r.normalized.slots[0].params as Record<string, Record<string, unknown>>).A;
   check(
     'III apply_preset: drive.output_level normalized to drive.level',
-    r.ok && params.level === 32767,
+    r.ok && params.level === 5,
     `errors=${r.errorCount} info=${r.infoCount} normalized.params=${JSON.stringify(params)}`,
   );
 }

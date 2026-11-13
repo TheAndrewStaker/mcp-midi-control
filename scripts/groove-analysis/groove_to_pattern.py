@@ -1,5 +1,5 @@
 """
-groove_to_pattern.py — reduce a Sleep Token groove MIDI to a Circuit Tracks
+groove_to_pattern.py — reduce a Mixwave groove-pack MIDI to a Circuit Tracks
 4-voice / 32-step drum pattern (2 bars @ 16th notes).
 
 Maps the groove's note roles (resolved by metric-position analysis) onto Circuit's
@@ -7,7 +7,7 @@ Maps the groove's note roles (resolved by metric-position analysis) onto Circuit
 Prints a readable grid and emits JSON for the .ncs authoring step.
 
 Role map (Sleep Token II groove pack, by metric analysis):
-  kick=14  snare=3  hat(closed)=1  ride=41   (busy-hat/rolls=2 available as alt)
+  kick=1  snare=3 (+ ghost lane 2)  hat(closed)=14  ride=41
 
   python groove_to_pattern.py "<groove.mid>" [--accent ride|hat2]
 """
@@ -19,11 +19,13 @@ from pathlib import Path
 import mido
 
 STEPS = 32          # 2 bars @ 16th
-# Sleep Token groove map (ear-confirmed via A/B preview): note 1 is the
+# Groove-pack note map (ear-confirmed via A/B preview): note 1 is the
 # double-bass KICK (the most-frequent voice), 3 = snare (beat-3 half-time),
-# 14 = closed hat, 2 = busy/roll hat (folded into hat), 41 = ride.
+# 14 = closed hat, 41 = ride. 2 = the soft/ghost SNARE lane (re-mapped from
+# "busy hat" 2026-11-07: its accents sit on the snare's beat-3/4 steps; evidence
+# in packages/core/src/protocol-generic/patterns/drumMapPresets.ts).
 # Several groove notes can feed one Circuit drum track.
-NOTE_TO_TRACK = {1: "kick", 3: "snare", 14: "hat", 2: "hat", 41: "ride"}
+NOTE_TO_TRACK = {1: "kick", 3: "snare", 14: "hat", 2: "snare", 41: "ride"}
 TRACKS = ["kick", "snare", "hat", "ride"]   # Circuit's 4 drum tracks (D1..D4)
 
 

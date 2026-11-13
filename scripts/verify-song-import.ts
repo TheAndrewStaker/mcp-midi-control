@@ -13,8 +13,8 @@
  *     `pitch = tuning[string] + fret` → a mini-notation row, with ties folded
  *     into note length, chords as `+`-joined tokens, and every lossy case
  *     (off-grid snap, step merge, unresolved string, dropped grace) counted.
- *     Its fixtures are VERBATIM measures of Mr.Kitty "After Dark" (song 501859
- *     revision 4102120), so they are real-source goldens run offline.
+ *     Its fixtures are measures in the source's own JSON shape, so they are
+ *     real-source goldens run offline.
  *   - executeImportSongsterr: the `import_songsterr` modes, driven against a
  *     STUBBED `fetch` so the tool surface is covered offline.
  *
@@ -50,6 +50,7 @@ import {
   SONGSTERR_DYNAMIC_VELOCITY,
   flattenSongsterrMelodic,
   importSongsterrMelodic,
+  collapseSustainedRepeats,
   isMelodicPart,
   pitchToken,
   layoutMelodicRow,
@@ -61,6 +62,7 @@ import {
 import {
   SONGSTERR_FIELDS,
   SONGSTERR_SLIDE_KINDS,
+  deriveDroppedFidelity,
 } from '../packages/core/src/protocol-generic/patterns/songsterrArticulation.js';
 import {
   planSongChop,
@@ -70,10 +72,19 @@ import {
   type ChopPartFlat,
 } from '../packages/core/src/protocol-generic/patterns/songChop.js';
 import type { MeasureInfo } from '../packages/core/src/protocol-generic/patterns/songsterr.js';
-import { GATE_SIXTHS_PER_STEP } from '../packages/core/src/protocol-generic/patterns/types.js';
+import { GATE_SIXTHS_PER_STEP, type NeutralPattern } from '../packages/core/src/protocol-generic/patterns/types.js';
 import { parsePitch, parseVoice } from '../packages/core/src/protocol-generic/patterns/miniNotation.js';
-import { GHOST_HIT_VELOCITY } from '../packages/core/src/protocol-generic/patterns/drumScore.js';
+import { GHOST_HIT_VELOCITY, gmDrumToVoice, quantizeDrumEvents } from '../packages/core/src/protocol-generic/patterns/drumScore.js';
 import { executeImportSongsterr } from '../packages/core/src/protocol-generic/dispatcher/songsterr.js';
+// Item A (opt-in tom-lane split): the fold / condense / resolve layer the split
+// lanes route through, plus the two REAL device descriptors they must place on.
+import { foldVoice, indexMapByRole } from '../packages/core/src/protocol-generic/patterns/drumFold.js';
+import { condenseToKit } from '../packages/core/src/protocol-generic/patterns/drumCondense.js';
+import { resolvePatternVoicesDetailed } from '../packages/core/src/protocol-generic/patterns/voiceMap.js';
+import { CIRCUIT_TRACKS_DESCRIPTOR } from '../packages/circuit-tracks/src/descriptor.js';
+import { SPD_SX_DESCRIPTOR } from '../packages/spd-sx/src/descriptor.js';
+import { roundBendSemitones } from '../packages/core/src/protocol-generic/patterns/pitchGestures.js';
+import { testSongC, TEST_SONG_C_GESTURE_NOTATION, TEST_SONG_C_GESTURE_PHRASE, TEST_SONG_C_PART } from './syntheticSong.js';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -103,7 +114,7 @@ function check(label: string, ok: boolean, detail?: string): void {
 
 // ── Percussion remap + honesty (drum_map / unmapped_numbers / ghost / flams) ──
 {
-  // A tab that hides its clap layer on non-GM number 0 (the Like That case),
+  // A tab that hides its clap layer on non-GM number 0 (a real tab does this),
   // plus a flam (same fret twice, one ghosted) and a per-note ghost.
   const part: DrumPart = {
     measures: [{ signature: [4, 4], voices: [{ beats: [
@@ -281,9 +292,9 @@ function check(label: string, ok: boolean, detail?: string): void {
 }
 
 // ── layered window identity (the multi-part dedup re-key, 2026-07-29) ────
-// The Amber rebuild plan found the whole-song dedup keyed windows BY DRUM
+// A song rebuild plan found the whole-song dedup keyed windows BY DRUM
 // CONTENT ALONE: two windows with identical drums but DIFFERENT melodic/synth
-// layers merged as "the same section" (Amber survived only because its pad
+// layers merged as "the same section" (that song survived only because its pad
 // alternated in lockstep with the drums). These pin the fix: identity is the
 // UNION of all layers, the fuzz threshold holds on EVERY layer, and a
 // layer-less call is byte-identical to the historical behaviour.
@@ -374,14 +385,14 @@ function check(label: string, ok: boolean, detail?: string): void {
 
 // ── parseSongRef + selectDrumTrack (the import_songsterr resolution logic) ──
 {
-  check('parseSongRef: full URL with t-selector', JSON.stringify(parseSongRef('https://www.songsterr.com/a/wsa/sleep-token-gethsemane-drum-tab-s1467797t11')) === '{"songId":1467797,"trackId":11}');
-  check('parseSongRef: URL without t', JSON.stringify(parseSongRef('…-s23527')) === '{"songId":23527}');
-  check('parseSongRef: bare id', parseSongRef('23527').songId === 23527 && parseSongRef('23527').trackId === undefined);
-  check('parseSongRef: bare id with track', JSON.stringify(parseSongRef('1467797t11')) === '{"songId":1467797,"trackId":11}');
+  check('parseSongRef: full URL with t-selector', JSON.stringify(parseSongRef('https://www.songsterr.com/a/wsa/test-band-test-song-drum-tab-s9000011t11')) === '{"songId":9000011,"trackId":11}');
+  check('parseSongRef: URL without t', JSON.stringify(parseSongRef('…-s90002')) === '{"songId":90002}');
+  check('parseSongRef: bare id', parseSongRef('90002').songId === 90002 && parseSongRef('90002').trackId === undefined);
+  check('parseSongRef: bare id with track', JSON.stringify(parseSongRef('9000011t11')) === '{"songId":9000011,"trackId":11}');
   let threw = false; try { parseSongRef('not-a-song'); } catch { threw = true; }
   check('parseSongRef: junk throws', threw);
 
-  // Two drum tracks (the Gethsemane shape): index 10 "II", index 11 "Programmed Drums", popular = 10.
+  // Two drum tracks (the two-drum-track shape): index 10 "II", index 11 "Programmed Drums", popular = 10.
   const meta: SongMeta = {
     songId: 1, revisionId: 1, image: 'x', title: 'T', artist: 'A', popularTrackDrum: 10,
     tracks: [
@@ -493,7 +504,7 @@ function check(label: string, ok: boolean, detail?: string): void {
       !('mode' in melodic) && melodic.all_tracks?.length === 4);
     // This fixture part carries NEITHER a percussion staff NOR a `tuning`, so
     // neither reading applies and the tool says exactly that. (A real melodic
-    // part DOES carry `tuning` and converts; see the After Dark block below.)
+    // part DOES carry `tuning` and converts; see the let-ring piano block below.)
     check('untuned non-drum track: says neither reading applies',
       !('mode' in melodic) && (melodic.warnings ?? []).some((w) => w.startsWith('PART 0 is "Electric Bass (finger)"') && w.includes('neither')),
       JSON.stringify('mode' in melodic ? undefined : melodic.warnings));
@@ -508,16 +519,16 @@ function check(label: string, ok: boolean, detail?: string): void {
   }
 }
 
-// ── The GM2/GS effect block (27-34) is NOT a voice map (Sugar china defect) ──
+// ── The GM2/GS effect block (27-34) is NOT a voice map (the effect-block china defect) ──
 // Songsterr's DrumLegend is a NOTATION legend: it says what glyph to DRAW for a
-// number. Using it as a SOUNDING map folded Sugar's 103 `{fret:30, ghost:true}`
+// number. Using it as a SOUNDING map folded one tab's 103 `{fret:30, ghost:true}`
 // engraving markers into `perc` → GM 56 → an SPD-SX china pad that the
 // maintainer heard interleaved through the clap/snare part, and that Songsterr's
 // own player does not sound. These lock the entries out.
 {
   const beat = (fret: number): DrumPart['measures'][0]['voices'][0]['beats'][0] =>
     ({ notes: [{ fret, string: -1.5, ghost: true }], duration: [1, 4] });
-  // 30 = "Scratch pull" (the Sugar case), 33 = "Metronome click", 34 = "Metronome bell".
+  // 30 = "Scratch pull" (the china-defect case), 33 = "Metronome click", 34 = "Metronome bell".
   const part: DrumPart = {
     measures: [{ signature: [4, 4], voices: [{ beats: [beat(30), beat(33), beat(34), { notes: [{ fret: 38 }], duration: [1, 4] }] }] }],
   };
@@ -554,7 +565,7 @@ function check(label: string, ok: boolean, detail?: string): void {
 }
 
 // ── Ghost policy: a ghosted hit SOUNDS, quietly; it is never dropped ─────
-// Decided 2026-07-27 against a blanket drop. Sugar's silent number-30 notes were
+// Decided 2026-07-27 against a blanket drop. That tab's silent number-30 notes were
 // inaudible because of the mapping defect above, not the ghost flag; the same
 // part ghosts 3 of its 61 snares, 2 electric snares, a tom and all 3 pedal-hat
 // hits, all real groove. The count is surfaced so the policy is inspectable.
@@ -604,8 +615,8 @@ function check(label: string, ok: boolean, detail?: string): void {
 {
   const part: DrumPart = {
     measures: [{ signature: [4, 4], voices: [{ beats: [
-      { notes: [{ fret: 30, string: -1.5, ghost: true }], duration: [1, 4] },  // effect block + ghosted (the Sugar shape)
-      { notes: [{ fret: 38, ghost: true }], duration: [1, 4] },                // ghosted SNARE (the Breakdown shape)
+      { notes: [{ fret: 30, string: -1.5, ghost: true }], duration: [1, 4] },  // effect block + ghosted (the china-defect shape)
+      { notes: [{ fret: 38, ghost: true }], duration: [1, 4] },                // ghosted SNARE (a real groove hit)
       { notes: [{ fret: 38 }], duration: [1, 4] },                             // plain snare, for contrast
       { notes: [{ fret: 36 }], duration: [1, 4] },
     ] }] }],
@@ -624,7 +635,7 @@ function check(label: string, ok: boolean, detail?: string): void {
 }
 
 // ── Dynamics are a LADDER, not accent / plain / ghost ────────────────────
-// Tom Petty "Breakdown" (s23527 part 6) carries NO per-note ghost flag at all:
+// One real drum part carries NO per-note ghost flag at all:
 // its drum dynamics are entirely sticky beat markings (fff×112, f×101, p×24,
 // mf×8, mp×2), and the measure-1 tail snare the maintainer hears as a "light
 // snare tail hit" is literally {"fret":38,"velocity":"p"}. With only an ACCENT
@@ -633,7 +644,7 @@ function check(label: string, ok: boolean, detail?: string): void {
 {
   const at = (fret: number, velocity?: string): DrumPart['measures'][0]['voices'][0]['beats'][0] =>
     ({ notes: [{ fret }], duration: [1, 4], ...(velocity ? { velocity } : {}) });
-  // The Breakdown measure-1 shape, condensed: accent kick, hat, accent snare, soft tail snare.
+  // That part's measure-1 shape, condensed: accent kick, hat, accent snare, soft tail snare.
   const part: DrumPart = {
     measures: [{ signature: [4, 4], voices: [{ beats: [at(36, 'fff'), at(42, 'f'), at(38, 'fff'), at(38, 'p')] }] }],
   };
@@ -673,13 +684,13 @@ function check(label: string, ok: boolean, detail?: string): void {
 
 // ── Grace-ornament beats take NO measure time ────────────────────────────
 // Songsterr's second flam encoding is a separate beat flagged `graceNote`. The
-// flag is a STRING ("onBeat" in Sugar, "beforeBeat" in Gethsemane), so a `===
+// flag is a STRING ("onBeat" in one tab, "beforeBeat" in another), so a `===
 // true` test matches neither, so the fixtures below use the real source values.
-// Its `duration` is an engraving hint: censusing Sugar + Gethsemane
+// Its `duration` is an engraving hint: censusing those two tabs
 // (2026-07-27), every voice's durations sum to the measure length exactly once
 // the grace beats are subtracted, and over it by exactly the grace duration when
 // they are not. Advancing on one pushed the rest of the measure late by up to
-// 0.375 quarter beats (1.5 sixteenth steps in Sugar m89).
+// 0.375 quarter beats (1.5 sixteenth steps in one measure of the first).
 {
   const part: DrumPart = {
     measures: [{ signature: [4, 4], voices: [{ beats: [
@@ -722,8 +733,8 @@ function check(label: string, ok: boolean, detail?: string): void {
 // ══ MELODIC PARTS: string + fret → pitch ════════════════════════════════
 // Songsterr stores a melodic note as {fret, string} against the part's own
 // top-level open-string `tuning`, so `pitch = tuning[string] + fret`. The
-// fixtures below are VERBATIM measures from song 501859 revision 4102120
-// (Mr.Kitty "After Dark", 140 bpm, 4/4, 135 measures, one tempo mark), so these
+// fixtures below are measures in the source's own JSON shape
+// (140 bpm, 4/4, 135 measures, one tempo mark), so these
 // are real-source goldens run offline rather than invented shapes.
 
 // ── The discriminator: `tuning` present = melodic, `tuningFlat` = drums ──
@@ -751,7 +762,7 @@ function check(label: string, ok: boolean, detail?: string): void {
     Array.from({ length: 128 }, (_, n) => n).every((n) => parsePitch(pitchToken(n)) === n));
 }
 
-// ── After Dark part 5 (Acoustic Grand Piano), measures 1-2, VERBATIM ────
+// ── Let-ring piano part (Acoustic Grand Piano), measures 1-2 ────────────
 // tuning [64,59,55,50,45,40]; measure 1's first note {"fret":6,"string":4}
 // resolves as tuning[4]=45 + 6 = 51 = d#3. The index runs DOWNWARD (0 = the
 // highest string). Reading it upward yields 10 chromatic pitch classes across
@@ -774,18 +785,18 @@ function check(label: string, ok: boolean, detail?: string): void {
     measures: [bar(true), bar(false)],
     automations: { tempo: [{ measure: 0, position: 0, bpm: 140 }] },
   };
-  check('after dark p5: the part reads as melodic', isMelodicPart(part) === true);
+  check('let-ring piano: the part reads as melodic', isMelodicPart(part) === true);
 
   const flat = flattenSongsterrMelodic(part);
-  check('after dark p5: tuning[4] + fret 6 = 51 (d#3), the worked example',
+  check('let-ring piano: tuning[4] + fret 6 = 51 (d#3), the worked example',
     flat.notes[0].pitch === 51 && pitchToken(flat.notes[0].pitch) === 'd#3', String(flat.notes[0].pitch));
-  check('after dark p5: 10 onsets over 2 bars, none unresolved',
+  check('let-ring piano: 10 onsets over 2 bars, none unresolved',
     flat.notes.length === 10 && flat.unresolved === 0, `${flat.notes.length}/${flat.unresolved}`);
-  check('after dark p5: onsets at 0, 1, 1.5, 2.5, 3 (+4 in bar 2)',
+  check('let-ring piano: onsets at 0, 1, 1.5, 2.5, 3 (+4 in bar 2)',
     JSON.stringify(flat.notes.slice(0, 5).map((n) => n.beat)) === '[0,1,1.5,2.5,3]',
     JSON.stringify(flat.notes.map((n) => n.beat)));
-  check('after dark p5: letRing carried off the beat onto the note', flat.notes.every((n) => n.letRing === true));
-  check('after dark p5: range d#3..d4, 3 pitch classes (d, d#, a#)',
+  check('let-ring piano: letRing carried off the beat onto the note', flat.notes.every((n) => n.letRing === true));
+  check('let-ring piano: range d#3..d4, 3 pitch classes (d, d#, a#)',
     flat.range?.low === 51 && flat.range?.high === 62 && JSON.stringify(flat.pitch_classes) === '[2,3,10]',
     JSON.stringify({ range: flat.range, classes: flat.pitch_classes }));
 
@@ -806,54 +817,54 @@ function check(label: string, ok: boolean, detail?: string): void {
   // and bar 2 repeats it with no later same-pitch strike inside the window, so
   // its notes take the 4-beat cap rather than reaching one.
   const EXPECTED = 'd#3:4 ~ ~ ~ d#3:12 ~ d4:4 ~ ~ ~ d4:12 ~ a#3:16 ~ ~ ~ d#3:4 ~ ~ ~ d#3:16 ~ d4:4 ~ ~ ~ d4:16 ~ a#3:16 ~ ~ ~';
-  check('after dark p5: measures 1-2 at 16ths = the known-good pitch row, with LET-RING lengths',
+  check('let-ring piano: measures 1-2 at 16ths = the known-good pitch row, with LET-RING lengths',
     m.notation === EXPECTED, m.notation);
   // The pre-articulation reading is still exactly reachable, and byte-identical
   // to what this golden held before let-ring was acted on. That pins two things
   // at once: the opt-out works, and the ONLY thing that moved is the articulation.
   const written = importSongsterrMelodic(part, { fromMeasure: 1, toMeasure: 2, stepsPerBeat: 4, articulations: false });
-  check('after dark p5: articulations:false returns the WRITTEN lengths, unchanged from before let-ring was acted on',
+  check('let-ring piano: articulations:false returns the WRITTEN lengths, unchanged from before let-ring was acted on',
     written.notation === 'd#3:4 ~ ~ ~ d#3:2 ~ d4:4 ~ ~ ~ d4:2 ~ a#3:4 ~ ~ ~ d#3:4 ~ ~ ~ d#3:2 ~ d4:4 ~ ~ ~ d4:2 ~ a#3:4 ~ ~ ~',
     written.notation);
-  check('after dark p5: and articulations:false says so, naming where the unapplied markings are',
+  check('let-ring piano: and articulations:false says so, naming where the unapplied markings are',
     written.warnings.some((w) => /articulations:false/.test(w) && /let-ring/.test(w) && /dropped_fidelity/.test(w)),
     JSON.stringify(written.warnings.filter((w) => /articulations/.test(w))));
-  check('after dark p5: let-ring is REPORTED with a count and the knob that tunes it',
+  check('let-ring piano: let-ring is REPORTED with a count and the knob that tunes it',
     m.articulation.let_ring_extended === 6 && m.articulations.let_rings === 10
     && m.warnings.some((w) => /LET-RING/.test(w) && /letRingMaxBeats/.test(w)),
     JSON.stringify({ report: m.articulation, counts: m.articulations }));
-  check('after dark p5: a let-ring cell says what happened to it, in words',
+  check('let-ring piano: a let-ring cell says what happened to it, in words',
     /let-ring to 12 step/.test(m.cells[1].articulations?.[0] ?? '') && m.cells[1].gate_sixths === 72,
     JSON.stringify(m.cells[1]));
-  check('after dark p5: the cell keeps the WRITTEN length too, so the change is inspectable',
+  check('let-ring piano: the cell keeps the WRITTEN length too, so the change is inspectable',
     m.cells[1].duration_steps === 2 && m.cells[1].gate_sixths === 72, JSON.stringify(m.cells[1]));
-  check('after dark p5: 32 steps, 140 bpm, 4/4', m.step_count === 32 && m.bpm === 140 && m.signature[0] === 4 && m.signature[1] === 4,
+  check('let-ring piano: 32 steps, 140 bpm, 4/4', m.step_count === 32 && m.bpm === 140 && m.signature[0] === 4 && m.signature[1] === 4,
     JSON.stringify({ steps: m.step_count, bpm: m.bpm, sig: m.signature }));
-  check('after dark p5: nothing off-grid, nothing merged, nothing dropped',
+  check('let-ring piano: nothing off-grid, nothing merged, nothing dropped',
     m.off_grid === 0 && m.merged === 0 && m.out_of_window === 0 && m.chord_overflow === 0 && m.unresolved === 0,
     JSON.stringify({ off: m.off_grid, merged: m.merged, oow: m.out_of_window, over: m.chord_overflow }));
-  check('after dark p5: note LENGTH survives in cells (quarter = 4 steps, eighth = 2)',
+  check('let-ring piano: note LENGTH survives in cells (quarter = 4 steps, eighth = 2)',
     m.cells[0].duration_steps === 4 && m.cells[1].duration_steps === 2, JSON.stringify(m.cells.slice(0, 2)));
-  check('after dark p5: window range comes back named', m.range?.low_name === 'd#3' && m.range?.high_name === 'd4', JSON.stringify(m.range));
+  check('let-ring piano: window range comes back named', m.range?.low_name === 'd#3' && m.range?.high_name === 'd4', JSON.stringify(m.range));
   // The row is only useful if apply_pattern's own parser reads it back.
   const reparsed = parseVoice(m.notation, 32);
-  check('after dark p5: the row re-parses through parseVoice to the same pitches',
+  check('let-ring piano: the row re-parses through parseVoice to the same pitches',
     reparsed.filter((s) => s.on).length === 10 && reparsed[0].notes === 51 && reparsed[6].notes === 62,
     JSON.stringify({ on: reparsed.filter((s) => s.on).length, s0: reparsed[0].notes, s6: reparsed[6].notes }));
 
   // Direction pin: the same fixture read with the string index REVERSED gives a
   // different set of notes. If a future change flips the index, this fails.
   const reversed = importSongsterrMelodic(part, { tuning: [...(part.tuning ?? [])].reverse(), fromMeasure: 1, toMeasure: 1, stepsPerBeat: 4 });
-  check('after dark p5: reversing the string index changes the notes (the direction is load-bearing)',
+  check('let-ring piano: reversing the string index changes the notes (the direction is load-bearing)',
     reversed.notation !== m.notation.split(' ').slice(0, 16).join(' ') && reversed.notation.startsWith('f4:4 '),
     reversed.notation);
 
   // transpose is applied after tuning+fret, for fitting a part into range.
   const down = importSongsterrMelodic(part, { fromMeasure: 1, toMeasure: 1, stepsPerBeat: 4, transpose: -12 });
-  check('after dark p5: transpose -12 drops the whole row an octave', down.notation.startsWith('d#2:4 '), down.notation);
+  check('let-ring piano: transpose -12 drops the whole row an octave', down.notation.startsWith('d#2:4 '), down.notation);
 }
 
-// ── After Dark part 2 (Pad 2 warm), measures 27-28: CHORDS + TIES ───────
+// ── Tied pad chord part (Pad 2 warm), measures 27-28: CHORDS + TIES ─────
 // Verbatim: a 3-note whole-note chord, tied across the barline into a second
 // whole note. This is the shape that proves both rules at once.
 {
@@ -866,13 +877,13 @@ function check(label: string, ok: boolean, detail?: string): void {
     automations: { tempo: [{ measure: 0, position: 0, bpm: 140 }] },
   };
   const flat = flattenSongsterrMelodic(part);
-  check('after dark pad: a tie is a CONTINUATION, so 3 onsets, not 6',
+  check('tied pad chord: a tie is a CONTINUATION, so 3 onsets, not 6',
     flat.notes.length === 3 && flat.ties_folded === 3 && flat.ties_orphaned === 0,
     JSON.stringify({ notes: flat.notes.length, folded: flat.ties_folded, orphan: flat.ties_orphaned }));
-  check('after dark pad: the tie became LENGTH (4 beats + 4 tied = 8)',
+  check('tied pad chord: the tie became LENGTH (4 beats + 4 tied = 8)',
     flat.notes.every((n) => n.durationBeats === 8) && flat.notes.every((n) => n.tie === true && n.tiedBeats === 1),
     JSON.stringify(flat.notes));
-  check('after dark pad: ONE struck chord (d#2, d#3, a#3); the tied bar is not a second one',
+  check('tied pad chord: ONE struck chord (d#2, d#3, a#3); the tied bar is not a second one',
     flat.chords === 1 && JSON.stringify(flat.notes.map((n) => n.pitch)) === '[39,51,58]',
     JSON.stringify({ chords: flat.chords, pitches: flat.notes.map((n) => n.pitch) }));
 
@@ -881,22 +892,22 @@ function check(label: string, ok: boolean, detail?: string): void {
   // landed in `cells[].velocity` and `steps[].velocity` from the start, and then
   // died here, because the row is what the documented workflow pastes into
   // apply_pattern and the row said nothing about loudness.
-  check('after dark pad: same-offset notes emit ONE +-joined chord token, carrying its velocity',
+  check('tied pad chord: same-offset notes emit ONE +-joined chord token, carrying its velocity',
     m.notation.startsWith('d#2+d#3+a#3:16@90_ ~'), m.notation.slice(0, 40));
-  check('after dark pad: and that velocity survives the round trip back through parseVoice',
+  check('tied pad chord: and that velocity survives the round trip back through parseVoice',
     parseVoice(m.notation, 32)[0].velocity === 90, JSON.stringify(parseVoice(m.notation, 32)[0]));
-  check('after dark pad: chord tokens are ascending', m.cells[0].token === 'd#2+d#3+a#3' && JSON.stringify(m.cells[0].pitches) === '[39,51,58]',
+  check('tied pad chord: chord tokens are ascending', m.cells[0].token === 'd#2+d#3+a#3' && JSON.stringify(m.cells[0].pitches) === '[39,51,58]',
     m.cells[0].token);
-  check('after dark pad: ONE source onset, re-articulated once by the gate ceiling (30 rests, not 31)',
+  check('tied pad chord: ONE source onset, re-articulated once by the gate ceiling (30 rests, not 31)',
     m.cells.length === 1 && m.notation.split(' ').filter((t) => t === '~').length === 30, String(m.cells.length));
-  check('after dark pad: the TIE survives on the cell, with its length in steps',
+  check('tied pad chord: the TIE survives on the cell, with its length in steps',
     m.cells[0].tie === true && m.cells[0].duration_steps === 32, JSON.stringify(m.cells[0]));
-  check('after dark pad: the sticky "mf" reaches the cell as velocity 90', m.cells[0].velocity === 90, String(m.cells[0].velocity));
-  check('after dark pad: the fold is REPORTED, not silent',
+  check('tied pad chord: the sticky "mf" reaches the cell as velocity 90', m.cells[0].velocity === 90, String(m.cells[0].velocity));
+  check('tied pad chord: the fold is REPORTED, not silent',
     m.warnings.some((w) => /TRACK-WIDE/.test(w) && /3 tie continuation/.test(w) && /duration_steps/.test(w)), JSON.stringify(m.warnings));
   // A chord token has to survive the round trip too.
   const reparsed = parseVoice(m.notation, 32);
-  check('after dark pad: the chord token re-parses to 3 notes',
+  check('tied pad chord: the chord token re-parses to 3 notes',
     JSON.stringify(reparsed[0].notes) === '[39,51,58]', JSON.stringify(reparsed[0].notes));
 }
 
@@ -994,7 +1005,7 @@ function check(label: string, ok: boolean, detail?: string): void {
 // ── import_songsterr routes a melodic part, over a STUBBED fetch ────────
 {
   const META = {
-    songId: 501859, revisionId: 4102120, image: 'img', title: 'After Dark', artist: 'Mr.Kitty',
+    songId: 900001, revisionId: 1, image: 'img', title: 'Test Song', artist: 'Test Band',
     popularTrackDrum: 1,
     tracks: [
       { instrumentId: 0, instrument: 'Acoustic Grand Piano', name: 'Track 1', hash: 'p' },
@@ -1030,10 +1041,10 @@ function check(label: string, ok: boolean, detail?: string): void {
   }) as unknown as typeof globalThis.fetch;
 
   try {
-    const win = await executeImportSongsterr({ url: '501859', track: 0, from_measure: 1, to_measure: 2 });
+    const win = await executeImportSongsterr({ url: '900001', track: 0, from_measure: 1, to_measure: 2 });
     // Every beat of this fixture is let-ring, so the row's lengths are the
     // SUSTAINED ones; see the same expectation derived note-by-note in the
-    // "after dark p5" block above.
+    // "let-ring piano" block above.
     const EXPECTED = 'd#3:4 ~ ~ ~ d#3:12 ~ d4:4 ~ ~ ~ d4:12 ~ a#3:16 ~ ~ ~ d#3:4 ~ ~ ~ d#3:16 ~ d4:4 ~ ~ ~ d4:16 ~ a#3:16 ~ ~ ~';
     check('import_songsterr melodic: returns the pitch row under the default voice "synth1"',
       !('mode' in win) && win.voices?.synth1 === EXPECTED, JSON.stringify('mode' in win ? win.mode : win.voices));
@@ -1056,12 +1067,12 @@ function check(label: string, ok: boolean, detail?: string): void {
     check('import_songsterr melodic: next_step routes it to a melodic track',
       !('mode' in win) && /PITCH ROW/.test(win.next_step) && /synth1/.test(win.next_step), 'mode' in win ? '' : win.next_step);
 
-    const named = await executeImportSongsterr({ url: '501859', track: 0, from_measure: 1, to_measure: 1, voice_name: 'midi1' });
+    const named = await executeImportSongsterr({ url: '900001', track: 0, from_measure: 1, to_measure: 1, voice_name: 'midi1' });
     check('import_songsterr melodic: voice_name renames the row key',
       !('mode' in named) && named.voices?.midi1 !== undefined && named.voices?.synth1 === undefined,
       JSON.stringify('mode' in named ? undefined : named.voices));
 
-    const shifted = await executeImportSongsterr({ url: '501859', track: 0, from_measure: 1, to_measure: 1, transpose: -12 });
+    const shifted = await executeImportSongsterr({ url: '900001', track: 0, from_measure: 1, to_measure: 1, transpose: -12 });
     check('import_songsterr melodic: transpose reaches the row',
       !('mode' in shifted) && (shifted.voices?.synth1 ?? '').startsWith('d#2:4 '), JSON.stringify('mode' in shifted ? undefined : shifted.voices));
 
@@ -1070,7 +1081,7 @@ function check(label: string, ok: boolean, detail?: string): void {
     // five-part song with no layout at all. It no longer refuses: a pitch row
     // needs no clustering, because the tab already carries the structure as
     // measure markers, so a melodic part is chopped on those instead.
-    const ws = await executeImportSongsterr({ url: '501859', track: 0, whole_song: true });
+    const ws = await executeImportSongsterr({ url: '900001', track: 0, whole_song: true });
     check('whole_song on a MELODIC part no longer throws; it returns a section-marker plan',
       !('mode' in ws) && ws.song_plan !== undefined && ws.song_plan.projects.length === 1
       && ws.song_plan.projects[0].section === 'Intro',
@@ -1092,7 +1103,7 @@ function check(label: string, ok: boolean, detail?: string): void {
       'mode' in ws ? '' : ws.next_step.slice(0, 80));
 
     // The multi-part call: one chop, both parts, ONE set of boundaries.
-    const both = await executeImportSongsterr({ url: '501859', whole_song: true, parts: [0, 1] });
+    const both = await executeImportSongsterr({ url: '900001', whole_song: true, parts: [0, 1] });
     check('whole_song parts:[0,1]: one plan covering both parts',
       !('mode' in both) && both.song_plan?.parts.length === 2
       && both.song_plan?.parts.map((p) => p.partId).join(',') === '0,1',
@@ -1106,22 +1117,22 @@ function check(label: string, ok: boolean, detail?: string): void {
       JSON.stringify('mode' in both ? undefined : both.song_plan?.parts));
 
     let threwParts = '';
-    try { await executeImportSongsterr({ url: '501859', track: 0, parts: [0, 1] }); } catch (e) { threwParts = String(e); }
+    try { await executeImportSongsterr({ url: '900001', track: 0, parts: [0, 1] }); } catch (e) { threwParts = String(e); }
     check('import_songsterr: `parts` without whole_song refuses instead of silently ignoring it',
       threwParts.includes('only applies to whole_song'), threwParts);
 
     let threwUnknown = '';
-    try { await executeImportSongsterr({ url: '501859', whole_song: true, parts: [0, 9] }); } catch (e) { threwUnknown = String(e); }
+    try { await executeImportSongsterr({ url: '900001', whole_song: true, parts: [0, 9] }); } catch (e) { threwUnknown = String(e); }
     check('import_songsterr: an unknown partId is named, with the roster',
       threwUnknown.includes('parts 9 are not on this tab') && threwUnknown.includes('Acoustic Grand Piano'), threwUnknown);
 
     // The drum part of the same song is untouched by all of this.
-    const drums = await executeImportSongsterr({ url: '501859', track: 1, from_measure: 1, to_measure: 1 });
+    const drums = await executeImportSongsterr({ url: '900001', track: 1, from_measure: 1, to_measure: 1 });
     check('import_songsterr: the drum part still quantizes to percussion voices',
       !('mode' in drums) && drums.voices?.kick?.startsWith('x') === true && drums.melodic === undefined,
       JSON.stringify('mode' in drums ? undefined : drums.voices));
 
-    const roster = await executeImportSongsterr({ url: '501859', list_tracks: true });
+    const roster = await executeImportSongsterr({ url: '900001', list_tracks: true });
     check('import_songsterr: the roster note now describes BOTH conversions',
       'mode' in roster && roster.notes[0].includes('PERCUSSION') && roster.notes[0].includes('pitch row')
       && roster.notes[0].includes('tuning[string] + fret'),
@@ -1213,7 +1224,7 @@ function check(label: string, ok: boolean, detail?: string): void {
 // STEP long and returned a clean receipt. A pad became a blip with nothing to
 // show for it. Every check here exists to make that failure loud.
 {
-  // After Dark's pad tuning + its worked chord: tuning[3]+9 = 58 (a#3),
+  // The tied pad's tuning + its worked chord: tuning[3]+9 = 58 (a#3),
   // tuning[4]+7 = 51 (d#3), tuning[5]+0 = 39 (d#2).
   const PAD_TUNING = [63, 58, 54, 49, 44, 39];
   const CHORD = [{ fret: 9, string: 3 }, { fret: 7, string: 4 }, { fret: 0, string: 5 }];
@@ -1266,7 +1277,7 @@ function check(label: string, ok: boolean, detail?: string): void {
     ceil.ties_folded === 3 && ceil.cells[0].tie === true && ceil.cells[0].duration_steps === 16,
     JSON.stringify({ folded: ceil.ties_folded, cell: ceil.cells[0] }));
 
-  // 3. Past the ceiling: After Dark's pad holds a whole note tied across the
+  // 3. Past the ceiling: the tied pad holds a whole note tied across the
   //    barline into a second one = 32 steps, twice what one gate byte holds.
   const pad32: SongsterrPart = {
     tuning: PAD_TUNING,
@@ -1291,7 +1302,7 @@ function check(label: string, ok: boolean, detail?: string): void {
     p32.warnings.some((w) => /TIED CHAIN/.test(w) && w.includes(`step 0 ${PAD}: 32 steps -> 16_ + 16`)),
     JSON.stringify(p32.warnings));
 
-  // 4. THE tail case. After Dark's last pad chord is 24 steps and must take
+  // 4. THE tail case. That song's last pad chord is 24 steps and must take
   //    ":16_" + ":8". Rounding the tail up to a second ":16" would invent a
   //    whole extra bar of pad the song does not have.
   const pad24: SongsterrPart = {
@@ -1335,7 +1346,7 @@ function check(label: string, ok: boolean, detail?: string): void {
       JSON.stringify({ s0: p24.steps[0], s16: p24.steps[16] }));
   }
 
-  // 5. NO ROOM. The real case is After Dark P1's last piano note: 34 steps
+  // 5. NO ROOM. The real case is a piano part's last note: 34 steps
   //    wanted from local step 30, with 2 steps of row left. There is nowhere to
   //    put a re-articulation, so it holds the ceiling and rings past the
   //    boundary — reported, not snapped in silence.
@@ -1402,10 +1413,123 @@ function check(label: string, ok: boolean, detail?: string): void {
     JSON.stringify({ bare: bare.cells[0].duration_steps, gated: p24.cells[0].duration_steps }));
 }
 
+// ── sustainRepeats: hold a re-written pad ONCE (Item A) ──────────────────
+// A SUSTAINED voice (a pad/synth) the tab writes as many same-pitch onsets is
+// ONE held note; a guitar re-picking the same note is many attacks, and the
+// source cannot tell them apart. `sustainRepeats` (opt-in) folds the held case;
+// default OFF leaves a guitar alone. The guardrail is TRUE adjacency + identical
+// strike: a rest, a pitch change, or a velocity/articulation change is a real
+// re-strike and is never eaten.
+{
+  const DSHARP5 = 75; // d#5
+  const C5 = 72;      // c5
+
+  // The re-written pad shape at the CELL level: d#5 as eight abutting eighths
+  // (2 steps each) from step 32 — a held bar, not eight attacks.
+  const eighths: MelodicCell[] = Array.from({ length: 8 }, (_, i) => ({
+    step: 32 + i * 2, pitches: [DSHARP5], token: 'd#5', duration_steps: 2,
+  }));
+  const c1 = collapseSustainedRepeats(eighths);
+  check('sustainRepeats(cells): 8 abutting d#5 eighths collapse to one d#5, 16 steps long',
+    c1.cells.length === 1 && c1.cells[0].step === 32 && c1.cells[0].duration_steps === 16 && c1.merged === 7,
+    JSON.stringify(c1));
+  check('sustainRepeats(cells): the collapse never mutates the input array',
+    eighths.length === 8 && eighths[0].duration_steps === 2, JSON.stringify(eighths.map((c) => c.duration_steps)));
+
+  // A REST between two same-pitch notes (a gap, not abutment) is a re-strike.
+  const gapped: MelodicCell[] = [
+    { step: 0, pitches: [DSHARP5], token: 'd#5', duration_steps: 2 }, // ends at step 2
+    { step: 4, pitches: [DSHARP5], token: 'd#5', duration_steps: 2 }, // step 2-3 rest → gap
+  ];
+  const c2 = collapseSustainedRepeats(gapped);
+  check('sustainRepeats(cells): a REST between same-pitch notes blocks the collapse',
+    c2.cells.length === 2 && c2.merged === 0, JSON.stringify(c2));
+
+  // A velocity change is a genuine second attack.
+  const louder: MelodicCell[] = [
+    { step: 0, pitches: [DSHARP5], token: 'd#5', duration_steps: 2, velocity: 70 },
+    { step: 2, pitches: [DSHARP5], token: 'd#5', duration_steps: 2, velocity: 100 },
+  ];
+  const c3 = collapseSustainedRepeats(louder);
+  check('sustainRepeats(cells): a velocity change is a re-strike, not a hold',
+    c3.cells.length === 2 && c3.merged === 0, JSON.stringify(c3));
+
+  // An articulation change (staccato) is a re-strike.
+  const artChange: MelodicCell[] = [
+    { step: 0, pitches: [DSHARP5], token: 'd#5', duration_steps: 2 },
+    { step: 2, pitches: [DSHARP5], token: 'd#5', duration_steps: 2, staccato: true },
+  ];
+  const c4 = collapseSustainedRepeats(artChange);
+  check('sustainRepeats(cells): a staccato difference blocks the collapse',
+    c4.cells.length === 2 && c4.merged === 0, JSON.stringify(c4));
+
+  // A pitch change ends the run.
+  const pitchChange: MelodicCell[] = [
+    { step: 0, pitches: [DSHARP5], token: 'd#5', duration_steps: 2 },
+    { step: 2, pitches: [C5], token: 'c5', duration_steps: 2 },
+  ];
+  const c5 = collapseSustainedRepeats(pitchChange);
+  check('sustainRepeats(cells): a pitch change ends the hold', c5.cells.length === 2 && c5.merged === 0, JSON.stringify(c5));
+
+  // ── End to end: the re-written pad m1-4 shape through importSongsterrMelodic.
+  // m1 g5 whole (held), m2 c5 whole, m3 d#5 ×8 eighths, m4 c5 ×8 eighths. A
+  // one-string fixture (string 0 = c5=72) so fret math is plain: g5=7, c5=0,
+  // d#5=3. This is the pad's OWN shape; the real window is not fetched
+  // offline, so this stands in for it (synthetic case, per the task).
+  const eighth = (fret: number): SongsterrPart['measures'][0]['voices'][0]['beats'][0] =>
+    ({ notes: [{ fret, string: 0 }], duration: [1, 8] });
+  const PAD: SongsterrPart = {
+    tuning: [72, 67, 63, 58, 53, 48], strings: 6,
+    measures: [
+      { signature: [4, 4], voices: [{ beats: [{ notes: [{ fret: 7, string: 0 }], duration: [1, 1] }] }] }, // m1 g5 whole
+      { voices: [{ beats: [{ notes: [{ fret: 0, string: 0 }], duration: [1, 1] }] }] },                    // m2 c5 whole
+      { voices: [{ beats: Array.from({ length: 8 }, () => eighth(3)) }] },                                  // m3 d#5 ×8
+      { voices: [{ beats: Array.from({ length: 8 }, () => eighth(0)) }] },                                  // m4 c5 ×8
+    ],
+    automations: { tempo: [{ measure: 0, position: 0, bpm: 140 }] },
+  };
+  const tokens = (s: string): string[] => s.split(' ').filter((t) => t !== '~');
+  const win = { fromMeasure: 1, toMeasure: 4, stepsPerBeat: 4 } as const;
+
+  const off = importSongsterrMelodic(PAD, win);
+  check('sustainRepeats OFF (default): the pad keeps its 8+8 re-written eighths',
+    JSON.stringify(tokens(off.notation)) === JSON.stringify(
+      ['g5:16', 'c5:16', ...Array(8).fill('d#5:2'), ...Array(8).fill('c5:2')])
+    && off.cells.length === 18 && off.sustain_collapsed === 0,
+    JSON.stringify({ tokens: tokens(off.notation), cells: off.cells.length, collapsed: off.sustain_collapsed }));
+
+  const on = importSongsterrMelodic(PAD, { ...win, sustainRepeats: true });
+  check('sustainRepeats ON: the held pad collapses to one note per bar (g5:16 c5:16 d#5:16 c5:16)',
+    JSON.stringify(tokens(on.notation)) === JSON.stringify(['g5:16', 'c5:16', 'd#5:16', 'c5:16'])
+    && on.cells.length === 4 && on.sustain_collapsed === 14,
+    JSON.stringify({ tokens: tokens(on.notation), cells: on.cells.length, collapsed: on.sustain_collapsed }));
+  check('sustainRepeats ON: the merged onset count is reported in a warning',
+    on.warnings.some((w) => /sustainRepeats/.test(w) && /\b14\b/.test(w) && /COLLAPSED/.test(w)), JSON.stringify(on.warnings));
+  check('sustainRepeats ON: the collapsed notes re-parse to the four held pitches',
+    JSON.stringify(parseVoice(on.notation, 64).filter((s) => s.on).map((s) => s.notes)) === '[79,72,75,72]',
+    JSON.stringify(parseVoice(on.notation, 64).filter((s) => s.on).map((s) => s.notes)));
+
+  // OFF is byte-identical whether the option is absent or explicitly false.
+  const explicitOff = importSongsterrMelodic(PAD, { ...win, sustainRepeats: false });
+  check('sustainRepeats: OFF is byte-identical whether the option is absent or false',
+    JSON.stringify(off) === JSON.stringify(explicitOff), 'default vs explicit-false diverged');
+
+  // A guitar re-picking the same pitch (default OFF) is untouched: the option
+  // must not change the historical output for the un-opted-in caller.
+  const GUITAR: SongsterrPart = {
+    tuning: [72, 67, 63, 58, 53, 48], strings: 6,
+    measures: [{ signature: [4, 4], voices: [{ beats: Array.from({ length: 8 }, () => eighth(0)) }] }],
+    automations: { tempo: [{ measure: 0, position: 0, bpm: 140 }] },
+  };
+  const g = importSongsterrMelodic(GUITAR, { fromMeasure: 1, toMeasure: 1, stepsPerBeat: 4 });
+  check('sustainRepeats: an un-opted-in re-picking voice keeps every attack',
+    g.cells.length === 8 && g.sustain_collapsed === 0, JSON.stringify({ cells: g.cells.length, collapsed: g.sustain_collapsed }));
+}
+
 // ── import_songsterr hands the lengths through, over a STUBBED fetch ────
 {
   const META = {
-    songId: 501859, revisionId: 4102120, image: 'img', title: 'After Dark', artist: 'Mr.Kitty',
+    songId: 900001, revisionId: 1, image: 'img', title: 'Test Song', artist: 'Test Band',
     popularTrackDrum: 9,
     tracks: [{ instrumentId: 89, instrument: 'Pad 2 (warm)', name: 'Track 3', hash: 'p' }],
   };
@@ -1426,7 +1550,7 @@ function check(label: string, ok: boolean, detail?: string): void {
   }) as unknown as typeof globalThis.fetch;
 
   try {
-    const r = await executeImportSongsterr({ url: '501859', track: 0, from_measure: 1, to_measure: 2, voice_name: 'synth2' });
+    const r = await executeImportSongsterr({ url: '900001', track: 0, from_measure: 1, to_measure: 2, voice_name: 'synth2' });
     const row = ('mode' in r ? '' : r.voices?.synth2 ?? '').split(' ');
     check('import_songsterr: the pasted-through row carries lengths and the ceiling split',
       row[0] === 'd#2+d#3+a#3:16_' && row[16] === 'd#2+d#3+a#3:8', `${row[0]} … ${row[16]}`);
@@ -1442,7 +1566,7 @@ function check(label: string, ok: boolean, detail?: string): void {
         return p[0].gate_sixths === 96 && p[0].tie === true && p[16].gate_sixths === 48 && p[16].tie !== true; })(),
       'mode' in r ? '' : r.voices?.synth2);
 
-    const off = await executeImportSongsterr({ url: '501859', track: 0, from_measure: 1, to_measure: 2, voice_name: 'synth2', note_lengths: false });
+    const off = await executeImportSongsterr({ url: '900001', track: 0, from_measure: 1, to_measure: 2, voice_name: 'synth2', note_lengths: false });
     check('import_songsterr: note_lengths:false is an opt-out, and it is flagged',
       !('mode' in off) && (off.voices?.synth2 ?? '').startsWith('d#2+d#3+a#3 ~') && off.melodic?.note_lengths === false
       && /PITCH ONLY/.test(off.next_step),
@@ -1533,7 +1657,7 @@ function check(label: string, ok: boolean, detail?: string): void {
       JSON.stringify(p.warnings));
   }
 
-  // 3. OVER-LENGTH, silent tail. After Dark's Intro in miniature: 20 bars, the
+  // 3. OVER-LENGTH, silent tail. A real Intro in miniature: 20 bars, the
   //    last 4 silent on every part. Trim the tail; it costs nothing.
   {
     const p = planSongChop([
@@ -1663,7 +1787,7 @@ function check(label: string, ok: boolean, detail?: string): void {
   // 10. THE BAR-ALIGNED PACKING, which is what `patterns` now means.
   //     `ceil(steps / 32)` is only exact when a bar divides a pattern, and in
   //     4/4 at a 16th grid it does (16 steps, two bars to a pattern), which is
-  //     why no song shipped before Schism noticed the difference.
+  //     why no song shipped before the first mixed-metre one noticed the difference.
   {
     const eq = (a: readonly number[], b: readonly number[]): boolean => a.join(',') === b.join(',');
     const steps = (sigs: readonly [number, number][], spb = 4, spp = 32): number[] => {
@@ -1682,7 +1806,7 @@ function check(label: string, ok: boolean, detail?: string): void {
       eq(steps(four(4)), [32, 32]) && eq(steps(four(5)), [32, 32, 16]), JSON.stringify(steps(four(5))));
     check('pack: 7/8 bars are 14 steps, so two fit and a third does not: [28, 14], never a split bar',
       eq(steps(rep([7, 8], 3)), [28, 14]), JSON.stringify(steps(rep([7, 8], 3))));
-    check('pack: 5/8 + 7/8 alternating (Schism\'s own riff) packs to a uniform 24',
+    check('pack: 5/8 + 7/8 alternating (the mixed-metre riff) packs to a uniform 24',
       eq(steps([[5, 8], [7, 8], [5, 8], [7, 8], [5, 8], [7, 8], [5, 8], [7, 8]]), [24, 24, 24, 24]),
       JSON.stringify(steps([[5, 8], [7, 8], [5, 8], [7, 8], [5, 8], [7, 8], [5, 8], [7, 8]])));
     // 4/4 = 16 steps, 3/8 = 6, 3/4 = 12. Reading them all at the OPENING 4/4
@@ -1702,7 +1826,7 @@ function check(label: string, ok: boolean, detail?: string): void {
     }
     {
       // At 12 steps per quarter a 7/8 bar is 42 steps and a pattern holds 32.
-      // That is the grid Schism's briefing rules out for exactly this reason. No
+      // That is the grid the private song briefing rules out for exactly this reason. No
       // split rescues it, so it is emitted flagged rather than silently truncated.
       const ws = packPatternsOnBarLines(
         [{ index: 0, startBeat: 0, signature: [7, 8] as [number, number] }], 0, 0, 12, 32);
@@ -1749,7 +1873,7 @@ function check(label: string, ok: boolean, detail?: string): void {
       JSON.stringify(p.projects[0].parts[0]));
   }
 
-  // 12. THE 4/4 REGRESSION GUARD. Everything shipped before Schism is 4/4 at a
+  // 12. THE 4/4 REGRESSION GUARD. Everything shipped before mixed metre is 4/4 at a
   //     16th grid, where the packing and the old division agree exactly. This is
   //     the check that the fix costs those songs nothing.
   {
@@ -1764,14 +1888,14 @@ function check(label: string, ok: boolean, detail?: string): void {
   }
 }
 
-// ── THE SCHISM ACCEPTANCE: 114 patterns, 20 projects ───────────────────
+// ── THE MIXED-METRE ACCEPTANCE: 114 patterns, 20 projects ──────────────
 //
-// Tool's Schism is the song the bar-aligned packing was built for, and its real
-// numbers are the acceptance test. Source: Songsterr `s6700`, revision
-// `8009215`, six parts, 238 bars, ten distinct time signatures and 198 bar-to-bar
+// A long mixed-metre song is what the bar-aligned packing was built for, and its
+// real numbers are the acceptance test. Source: one real tab,
+// six parts, 238 bars, ten distinct time signatures and 198 bar-to-bar
 // metre changes. The metre map, the section markers and each part's sounding bars
 // below are that fetch, transcribed run-length so the golden runs offline; the
-// briefing is `docs/_private/rig/songs/schism-interview.md`.
+// reasoning is in the private song briefing.
 //
 // The three numbers this pins, all of them measured before the fix and quoted in
 // that briefing: the old `ceil(steps / 32)` reported 97 patterns; the true
@@ -1793,7 +1917,7 @@ function check(label: string, ok: boolean, detail?: string): void {
   const MARKERS: Readonly<Record<number, string>> = {
     0: 'Intro I', 3: 'Intro II - Bass', 11: 'Intro III - with Band', 19: 'Verse 1', 43: 'Bridge',
     51: 'Verse 2', 67: 'Bridge', 75: 'Heavy Part', 85: 'Verse 3', 101: 'Bridge', 117: 'Interlude',
-    191: 'Between supposed...', 213: 'Outro',
+    191: 'Interlude 2', 213: 'Outro',
   };
   /** 1-based bar ranges each part sounds in. Occupancy is all the chop reads. */
   const SOUNDING: Readonly<Record<string, string>> = {
@@ -1833,7 +1957,7 @@ function check(label: string, ok: boolean, detail?: string): void {
     }),
   }));
 
-  check('schism: the fixture is the real source (238 bars, 10 signatures, 198 metre changes, 13 markers)',
+  check('mixed metre:the fixture is the real source (238 bars, 10 signatures, 198 metre changes, 13 markers)',
     measures.length === 238 && new Set(sigs.map((s) => s.join('/'))).size === 10
     && sigs.filter((s, i) => i > 0 && s.join('/') !== sigs[i - 1].join('/')).length === 198
     && sections.length === 13,
@@ -1842,57 +1966,57 @@ function check(label: string, ok: boolean, detail?: string): void {
   const p = planSongChop(chopParts);
   const naive = p.projects.reduce((s, x) => s + Math.ceil(x.steps / 32), 0);
 
-  check('schism: 20 PROJECTS, one more than the 19 sections, because a Bridge does not pack into 8 patterns',
+  check('mixed metre:20 PROJECTS, one more than the 19 sections, because a Bridge does not pack into 8 patterns',
     p.projects.length === 20 && p.sections.length === 13,
     JSON.stringify(p.projects.map((x) => `${x.name} m${x.from_measure}-${x.to_measure}`)));
-  check('schism: 114 PATTERNS bar-aligned, against the 97 the old ceil(steps/32) reported',
+  check('mixed metre:114 PATTERNS bar-aligned, against the 97 the old ceil(steps/32) reported',
     p.patterns_planned === 114 && p.projects.reduce((s, x) => s + x.patterns, 0) === 114,
     JSON.stringify({ packed: p.patterns_planned, naive_on_packed_projects: naive }));
-  check('schism: TWELVE distinct pattern lengths, 10 to 32, which is what the metre map demands',
+  check('mixed metre:TWELVE distinct pattern lengths, 10 to 32, which is what the metre map demands',
     p.pattern_lengths.join(',') === '10,12,14,16,18,20,22,24,26,28,30,32' && p.pattern_lengths.length === 12,
     p.pattern_lengths.join(','));
-  check('schism: the m102-117 Bridge is the section that splits, 4 + 5 patterns, and nothing is dropped',
+  check('mixed metre:the m102-117 Bridge is the section that splits, 4 + 5 patterns, and nothing is dropped',
     p.projects.filter((x) => x.section === 'Bridge' && x.name.includes('/')).length === 2
     && p.projects.find((x) => x.name === 'Bridge (1/2)' && x.from_measure === 102 && x.to_measure === 109)?.patterns === 4
     && p.projects.find((x) => x.name === 'Bridge (2/2)' && x.from_measure === 110 && x.to_measure === 117)?.patterns === 5
     && p.trims.length === 0 && p.bars_planned === 238,
     JSON.stringify(p.projects.filter((x) => x.section === 'Bridge').map((x) => `${x.name} m${x.from_measure}-${x.to_measure} ${x.patterns}p`)));
-  check('schism: that Bridge is exactly where the OLD division under-counted: 228 steps read as 8, needs 9',
+  check('mixed metre:that Bridge is exactly where the OLD division under-counted: 228 steps read as 8, needs 9',
     Math.ceil(228 / 32) === 8
     && (p.projects.find((x) => x.name === 'Bridge (1/2)')?.patterns ?? 0)
       + (p.projects.find((x) => x.name === 'Bridge (2/2)')?.patterns ?? 0) === 9,
     JSON.stringify(p.projects.filter((x) => x.name.startsWith('Bridge (')).map((x) => x.pattern_steps)));
-  check('schism: the riff sections author as a UNIFORM 24-step chain (5/8 + 7/8 pairs)',
+  check('mixed metre:the riff sections author as a UNIFORM 24-step chain (5/8 + 7/8 pairs)',
     p.projects.find((x) => x.name === 'Intro II - Bass')?.pattern_steps.join(',') === '24,24,24,24'
     && p.projects.find((x) => x.name === 'Intro II - Bass')?.uniform_patterns === true,
     JSON.stringify(p.projects.find((x) => x.name === 'Intro II - Bass')));
-  check('schism: the Interlude needs a genuinely MIXED chain, [24,30,24,30,24,30,24,18]',
+  check('mixed metre:the Interlude needs a genuinely MIXED chain, [24,30,24,30,24,30,24,18]',
     p.projects.find((x) => x.name === 'Interlude (1/4)')?.pattern_steps.join(',') === '24,30,24,30,24,30,24,18'
     && p.projects.find((x) => x.name === 'Interlude (1/4)')?.uniform_patterns === false,
     JSON.stringify(p.projects.find((x) => x.name === 'Interlude (1/4)')?.pattern_steps));
-  check('schism: the Outro tail is the twelve-length extreme, a 10-step pattern under a chain of 24s',
+  check('mixed metre:the Outro tail is the twelve-length extreme, a 10-step pattern under a chain of 24s',
     p.projects.find((x) => x.name === 'Outro (1/2)')?.pattern_steps.join(',') === '24,24,24,24,24,24,10',
     JSON.stringify(p.projects.find((x) => x.name === 'Outro (1/2)')?.pattern_steps));
-  check('schism: every project fits the 8-pattern budget and every pattern is a whole number of bars',
+  check('mixed metre:every project fits the 8-pattern budget and every pattern is a whole number of bars',
     p.projects.every((x) => x.patterns <= 8 && x.pattern_steps.every((s) => s > 0 && s <= 32)
       && x.pattern_windows.reduce((s, w) => s + w.bars, 0) === x.bars
       && x.pattern_windows.every((w) => w.oversize !== true)),
     JSON.stringify(p.projects.map((x) => `${x.name}:${x.patterns}`)));
-  check('schism: the plan flags the mixed metre so max_bars is not read as the constraint',
+  check('mixed metre:the plan flags the mixed metre so max_bars is not read as the constraint',
     p.ceiling.mixed_metre === true && /CHANGES METRE/.test(p.ceiling.note), p.ceiling.note);
-  check('schism: and it says which projects need a mixed chain, citing the hardware that permits it',
+  check('mixed metre:and it says which projects need a mixed chain, citing the hardware that permits it',
     p.warnings.some((w) => /MIXED-length pattern chain/.test(w) && /2026-07-29/.test(w)),
     JSON.stringify(p.warnings.filter((w) => /MIXED/.test(w))));
 }
 
 // ── ARTICULATION: what each source marking becomes ─────────────────────
 //
-// Every fixture below is VERBATIM from a live 2026-07-27 fetch of the
-// source-fidelity audit's own corpus, so these are real-source goldens run
-// offline. Each block states the song, part and measure it came from.
+// Every fixture below is in the source's own JSON shape, from a 2026-07-27 fetch
+// of the source-fidelity audit's own corpus, so these are real-source goldens run
+// offline. Each block states the kind of part and the shape it covers.
 {
-  // 1. SLIDE, the worked example. Schism (s6700) part 3, the whammy part,
-  //    measures 138-139 verbatim. That part carries 39 `slide:"legato"` markings
+  // 1. SLIDE, the worked example. A whammy bass part, two measures in 6/8.
+  //    That part carries 39 `slide:"legato"` markings
   //    and 38 of them sit on the LOW note of an octave pair whose target is
   //    exactly +12, which is the gesture: pluck the low note, whammy up an
   //    octave, let the octave ring.
@@ -1966,8 +2090,8 @@ function check(label: string, ok: boolean, detail?: string): void {
     importSongsterrMelodic(WHAMMY, { fromMeasure: 1, toMeasure: 2, stepsPerBeat: 4, legatoOverlapSixths: 0 }).cells[0].gate_sixths === GATE_SIXTHS_PER_STEP,
     String(importSongsterrMelodic(WHAMMY, { fromMeasure: 1, toMeasure: 2, stepsPerBeat: 4, legatoOverlapSixths: 0 }).cells[0].gate_sixths));
 
-  // 2. HAMMER-ON / PULL-OFF: the same mechanism, one marking. Schism part 4
-  //    (Justin Chancellor's bass) measure 4 verbatim, the opening riff's figure.
+  // 2. HAMMER-ON / PULL-OFF: the same mechanism, one marking. A bass part's
+  //    opening riff figure, one 5/8 measure.
   //    `hp` sits on the note the transition STARTS from, decoded from this very
   //    shape: the run is 38[hp] 48[hp] 50, three notes and two transitions, with
   //    the flag on the two that LAUNCH one and never on the 50 that ends the run.
@@ -2006,8 +2130,8 @@ function check(label: string, ok: boolean, detail?: string): void {
     JSON.stringify(bm.cells.filter((c) => c.legato === undefined).map((c) => [c.token, c.gate_sixths])));
 
   // 3. PALM MUTE + ACCENT + a sticky dynamic on the SAME notes: the precedence
-  //    case, and it is not hypothetical. Schism part 1 (Adam Jones's lead guitar)
-  //    measure 12 verbatim: every beat is palm-muted, and the part alternates a
+  //    case, and it is not hypothetical. A lead guitar part,
+  //    one 5/8 measure: every beat is palm-muted, and the part alternates a
   //    `p` melody note carrying an ACCENT glyph against an `f` pedal note.
   //
   //    This fixture is why an accent must be a BUMP on the dynamic rather than an
@@ -2065,10 +2189,10 @@ function check(label: string, ok: boolean, detail?: string): void {
     JSON.stringify(lm.warnings.filter((w) => /DAMPED/.test(w))));
 
   // 4. ACCENT on a DRUM part, where velocity is the only channel there is (the
-  //    .ncs drum step has no gate and no tie). Redbone (s434040) part 10 measure 1
-  //    verbatim: 28 heavy accents (`accentuated: 2`) across the part and not one
+  //    .ncs drum step has no gate and no tie). A real drum part's first measure:
+  //    28 heavy accents (`accentuated: 2`) across the part and not one
   //    per-note ghost, so before this was read its groove imported dead flat.
-  const RB_DRUMS: SongsterrPart = {
+  const ACCENT_DRUMS: SongsterrPart = {
     tuningFlat: true,
     measures: [{ signature: [4, 4], voices: [{ beats: [
       { duration: [1, 2], velocity: 'f', notes: [{ fret: 36, string: 3.5, accentuated: 2 }] },
@@ -2078,7 +2202,7 @@ function check(label: string, ok: boolean, detail?: string): void {
       { duration: [1, 8], notes: [{ fret: 36, string: 3.5, accentuated: 2 }] },
     ] }] }],
   };
-  const rd = importSongsterrDrums(RB_DRUMS, { fromMeasure: 1, toMeasure: 1 });
+  const rd = importSongsterrDrums(ACCENT_DRUMS, { fromMeasure: 1, toMeasure: 1 });
   check('accent (drums): level 2 is the HEAVY accent, `f` (100) + 34 clamped to 127',
     rd.accents === 4 && rd.voices.kick?.filter((s) => s.on).every((s) => s.velocity === 127),
     JSON.stringify(rd.voices.kick?.filter((s) => s.on).map((s) => s.velocity)));
@@ -2095,8 +2219,8 @@ function check(label: string, ok: boolean, detail?: string): void {
     rd.warnings.some((w) => /per-note ACCENT/.test(w) && /SECOND dynamics channel/.test(w) && /accentBump/.test(w)),
     JSON.stringify(rd.warnings.filter((w) => /ACCENT/.test(w))));
 
-  // 5. STACCATO, and a let-ring chord on the same bar. Redbone part 5 (Electric
-  //    Piano 1) measure 6 verbatim: five staccato 8ths over a tied, let-ring chord.
+  // 5. STACCATO, and a let-ring chord on the same bar. An Electric
+  //    Piano 1 part, one measure: five staccato 8ths over a tied, let-ring chord.
   const EPIANO: SongsterrPart = {
     tuning: [64, 59, 55, 50, 45, 40], strings: 6,
     measures: [
@@ -2141,11 +2265,11 @@ function check(label: string, ok: boolean, detail?: string): void {
 
 // ── dropped_fidelity: what the source carries and we do not ────────────
 {
-  // Sugar (s560358) part 0 measures 14 and 23 verbatim: a note-level `bend` with
+  // Two measures of a real vocal-line part, condensed: a note-level `bend` with
   // its full point list, `beat.text` lyrics, and a `slide:"legato"` that IS
   // carried. Plus a `slide:"downwards"` (no written destination) and one field
   // invented here to prove the report is self-maintaining.
-  const SUGAR: SongsterrPart = {
+  const BEND_PART: SongsterrPart = {
     tuning: [64, 59, 55, 50, 45, 40], strings: 6,
     measures: [
       { signature: [4, 4], voices: [{ beats: [
@@ -2157,7 +2281,7 @@ function check(label: string, ok: boolean, detail?: string): void {
       ] }] },
     ],
   };
-  const s = importSongsterrMelodic(SUGAR, { fromMeasure: 1, toMeasure: 1, stepsPerBeat: 4 });
+  const s = importSongsterrMelodic(BEND_PART, { fromMeasure: 1, toMeasure: 1, stepsPerBeat: 4 });
   const d = s.dropped_fidelity;
 
   check('dropped_fidelity: a field we NEVER read lands in not_parsed, with a count and a first measure',
@@ -2232,10 +2356,437 @@ function check(label: string, ok: boolean, detail?: string): void {
   const missing = CORPUS_FIELDS.filter((k) => SONGSTERR_FIELDS[k] === undefined);
   check(`dropped_fidelity: THE GATE, all ${CORPUS_FIELDS.length} fields the audit corpus carries have a declared disposition`,
     missing.length === 0, `missing: ${missing.join(', ')}`);
+  // `belowdownwards` and `belowlegato` joined the table 2026-09-11 (first seen in a lead-synth part).
+  // `belowlegato` CONNECTS: its legato half has a written destination, exactly like `legato`.
   check('dropped_fidelity: every slide value the corpus carries is classified, connects or not',
-    ['shift', 'legato', 'downwards', 'below', 'above', 'upwards', 'belowupwards'].every((v) => SONGSTERR_SLIDE_KINDS[v] !== undefined)
-    && Object.entries(SONGSTERR_SLIDE_KINDS).filter(([, f2]) => f2.connects).map(([v]) => v).sort().join(',') === 'legato,shift',
+    ['shift', 'legato', 'downwards', 'below', 'above', 'upwards', 'belowupwards', 'belowdownwards', 'belowlegato']
+      .every((v) => SONGSTERR_SLIDE_KINDS[v] !== undefined)
+    && Object.entries(SONGSTERR_SLIDE_KINDS).filter(([, f2]) => f2.connects).map(([v]) => v).sort().join(',') === 'belowlegato,legato,shift',
     JSON.stringify(Object.fromEntries(Object.entries(SONGSTERR_SLIDE_KINDS).map(([v, f2]) => [v, f2.connects]))));
+  check('dropped_fidelity: the unwritten half of every slide is classified (in from / out to), for the glide renderer',
+    SONGSTERR_SLIDE_KINDS.below.in === 'below' && SONGSTERR_SLIDE_KINDS.above.in === 'above'
+    && SONGSTERR_SLIDE_KINDS.downwards.out === 'down' && SONGSTERR_SLIDE_KINDS.upwards.out === 'up'
+    && SONGSTERR_SLIDE_KINDS.belowupwards.in === 'below' && SONGSTERR_SLIDE_KINDS.belowupwards.out === 'up'
+    && SONGSTERR_SLIDE_KINDS.belowdownwards.in === 'below' && SONGSTERR_SLIDE_KINDS.belowdownwards.out === 'down'
+    && SONGSTERR_SLIDE_KINDS.belowlegato.in === 'below' && SONGSTERR_SLIDE_KINDS.belowlegato.out === undefined
+    && SONGSTERR_SLIDE_KINDS.legato.in === undefined && SONGSTERR_SLIDE_KINDS.legato.out === undefined,
+    JSON.stringify(SONGSTERR_SLIDE_KINDS));
+  check('dropped_fidelity: note.leftHandVibrato (first seen in a lead-synth part) is in the field table as a no-destination loss',
+    SONGSTERR_FIELDS['note.leftHandVibrato']?.disposition === 'no_destination');
+}
+
+// ── PITCH GESTURES: bends + unwritten slides as overlapping glide notes (2026-09-11) ──
+//
+// A stored Circuit step cannot carry pitch bend, and the MicroFreak cannot route a CC to pitch, so a
+// bend is rendered the TB-303 way: the note, then an OVERLAPPING note at the bent pitch, which a
+// mono synth with Envelope Legato ON plays as one continuous glide. Opt-in (`pitchGestures:'glide'`).
+{
+  const t = [64, 59, 55, 50, 45, 40];
+  const bar = (beats: SongsterrPart['measures'][0]['voices'][0]['beats']): SongsterrPart => ({
+    tuning: t, strings: 6, measures: [{ signature: [4, 4], voices: [{ beats }] }],
+  } as unknown as SongsterrPart);
+  const notes = (row: string): string[] => row.split(' ').map((tok, i) => (tok === '~' ? '' : `${i}:${tok}`)).filter(Boolean);
+
+  // 1. OFF by default: byte-identical to the importer without it.
+  const plain = bar([{ duration: [1, 4], rest: true, notes: [{ rest: true }] },
+    { duration: [3, 8], notes: [{ fret: 2, string: 4, slide: 'belowdownwards' }] },
+    { duration: [3, 8], notes: [{ fret: 2, string: 4 }] }]);
+  const off = importSongsterrMelodic(plain, { fromMeasure: 1, toMeasure: 1 });
+  check('pitchGestures: OFF by default, a scoop+fall slide authors nothing extra (one token per written note)',
+    notes(off.notation).length === 2 && off.pitch_gestures === undefined && off.mono_dropped === 0, off.notation);
+
+  // 2. SCOOP + FALL: grace one step before (2 semitones below, connected), fall on the last step.
+  // (string 4 of standard tuning is A2 = 45, fret 2 = B2 = 47.)
+  const on = importSongsterrMelodic(plain, { fromMeasure: 1, toMeasure: 1, pitchGestures: 'glide' });
+  const on2 = notes(on.notation);
+  check('pitchGestures: a scoop is a grace 2 semitones below on the step BEFORE, overlapping the note (1 step + 2/6)',
+    on2[0] === '3:a2:4/3' && on2[1].startsWith('4:b2:'), on.notation);
+  check('pitchGestures: a fall takes the note\'s LAST step, 2 semitones below, and the note overlaps into it',
+    on2[1] === '4:b2:16/3' && on2[2] === '9:a2:1', on.notation);
+  check('pitchGestures: the report counts it, and the slide stops reporting as parsed-but-not-authored',
+    on.pitch_gestures?.scoops === 1 && on.pitch_gestures?.falls === 1
+    && on.dropped_fidelity.parsed_not_authored['note.slide=belowdownwards'] === undefined
+    && off.dropped_fidelity.parsed_not_authored['note.slide=belowdownwards'] !== undefined,
+    JSON.stringify({ r: on.pitch_gestures, off: Object.keys(off.dropped_fidelity.parsed_not_authored) }));
+  check('pitchGestures: rendered connections count as glide_connected, never as legato the SOURCE marked',
+    on.articulation.glide_connected === 2 && on.articulation.legato_connected === 0,
+    JSON.stringify(on.articulation));
+
+  // 3. A fall that lands on the NEXT note's scoop step is ONE note: the arrival (scoop) pitch wins.
+  const pair = bar([{ duration: [1, 4], rest: true, notes: [{ rest: true }] },
+    { duration: [3, 8], notes: [{ fret: 2, string: 4, slide: 'downwards' }] },
+    { duration: [3, 8], notes: [{ fret: 2, string: 4, slide: 'below' }] }]);
+  const merged = notes(importSongsterrMelodic(pair, { fromMeasure: 1, toMeasure: 1, pitchGestures: 'glide', slideSemitones: 3 }).notation);
+  check('pitchGestures: fall + next scoop on the same step merge into one connected note at the scoop pitch',
+    merged.length === 3 && merged[1] === '9:g#2:4/3' && merged[2].startsWith('10:b2:'), merged.join(' '));
+
+  // 4. BEND STAIRCASE: the lead-synth shape, a whole note bent 0 -> 125 (1 1/4 tones = 2.5
+  // semitones) linearly. Rounds TOWARD the unbent pitch (+2, never +3) and spreads the steps.
+  const bend = bar([{ duration: [1, 1], notes: [{ fret: 2, string: 4, bend: { tone: 125, points: [{ position: 0, tone: 0 }, { position: 60, tone: 125 }] } }] }]);
+  const b = importSongsterrMelodic(bend, { fromMeasure: 1, toMeasure: 1, pitchGestures: 'glide' });
+  const bn = notes(b.notation);
+  check('pitchGestures: a slow bend becomes a semitone staircase at the rounding crossings (b2 @0, c3 @3, c#3 @10)',
+    bn.length === 3 && bn[0].startsWith('0:b2:') && bn[1].startsWith('3:c3:') && bn[2].startsWith('10:c#3:'), b.notation);
+  check('pitchGestures: a quarter-tone peak rounds toward the unbent pitch and is reported',
+    b.pitch_gestures?.bends === 1 && b.pitch_gestures?.bends_rounded === 1 && b.pitch_gestures?.bend_steps === 2
+    && b.dropped_fidelity.not_parsed['note.bend'] === undefined,
+    JSON.stringify(b.pitch_gestures));
+  check('pitchGestures: with the renderer OFF, a bend still reports as not_parsed with what it would take',
+    /pitchGestures/.test(importSongsterrMelodic(bend, { fromMeasure: 1, toMeasure: 1 }).dropped_fidelity.not_parsed['note.bend']?.needs ?? ''));
+  check('pitchGestures: the ties-toward-zero rounding is symmetric (2.5 -> 2, 2.51 -> 3, -2.5 -> -2)',
+    roundBendSemitones(2.5) === 2 && roundBendSemitones(2.51) === 3 && roundBendSemitones(-2.5) === -2 && roundBendSemitones(0.4) === 0);
+
+  // 5. A fast bend collapses to ONE target, and a bend-and-release returns.
+  const fast = bar([{ duration: [1, 4], notes: [{ fret: 2, string: 4, bend: { tone: 100, points: [{ position: 0, tone: 0 }, { position: 6, tone: 100 }, { position: 60, tone: 100 }] } }] }]);
+  const fn = notes(importSongsterrMelodic(fast, { fromMeasure: 1, toMeasure: 1, pitchGestures: 'glide' }).notation);
+  check('pitchGestures: a fast full bend keeps its attack step, then ONE target a whole tone up (not a pre-bend)',
+    fn.length === 2 && fn[0].startsWith('0:b2:') && fn[1].startsWith('1:c#3:'), fn.join(' '));
+  const rel = bar([{ duration: [1, 2], notes: [{ fret: 2, string: 4, bend: { tone: 100, points: [{ position: 0, tone: 0 }, { position: 15, tone: 100 }, { position: 45, tone: 100 }, { position: 60, tone: 0 }] } }] }]);
+  const rn = notes(importSongsterrMelodic(rel, { fromMeasure: 1, toMeasure: 1, pitchGestures: 'glide' }).notation).map((x) => x.split(':')[1]);
+  check('pitchGestures: bend-and-release goes up and lands back on the written pitch in the last step',
+    rn[0] === 'b2' && rn.includes('c#3') && rn[rn.length - 1] === 'b2', rn.join(' '));
+  const pre = bar([{ duration: [1, 4], notes: [{ fret: 2, string: 4, bend: { tone: 100, points: [{ position: 0, tone: 100 }, { position: 60, tone: 100 }] } }] }]);
+  check('pitchGestures: a PRE-bend (first point already up) attacks at the bent pitch, one note',
+    notes(importSongsterrMelodic(pre, { fromMeasure: 1, toMeasure: 1, pitchGestures: 'glide' }).notation).join(' ').startsWith('0:c#3:')
+    && notes(importSongsterrMelodic(pre, { fromMeasure: 1, toMeasure: 1, pitchGestures: 'glide' }).notation).length === 1);
+
+  // 6. monoVoice picks one line of a chord; a gesture on an un-reduced chord is skipped, not smeared.
+  const oct = bar([{ duration: [1, 2], notes: [{ fret: 2, string: 4, slide: 'below' }, { fret: 4, string: 3, slide: 'below' }] }, { duration: [1, 2], rest: true, notes: [{ rest: true }] }]);
+  const chordOn = importSongsterrMelodic(oct, { fromMeasure: 1, toMeasure: 1, pitchGestures: 'glide' });
+  check('pitchGestures: a gesture on a CHORD onset is skipped and counted (pass monoVoice)',
+    chordOn.pitch_gestures?.skipped.chord === 2 && chordOn.pitch_gestures?.scoops === 0, JSON.stringify(chordOn.pitch_gestures));
+  const monoTop = importSongsterrMelodic(oct, { fromMeasure: 1, toMeasure: 1, monoVoice: -1, pitchGestures: 'glide' });
+  check('pitchGestures: monoVoice -1 keeps the top note, drops the rest, and the scoop then renders',
+    monoTop.mono_dropped === 1 && notes(monoTop.notation).length === 1 && monoTop.pitch_gestures?.skipped.chord === 0,
+    JSON.stringify({ n: monoTop.notation, g: monoTop.pitch_gestures }));
+
+  // 7. A WHOLE PHRASE, IN A WHOLE PART: the cases above are one bar each. This is the lead of an
+  // invented song (Test Song C, scripts/syntheticSong.ts), read from a window in the middle of a
+  // 42-bar part: every onset an octave pair (so `monoVoice` has to pick the line first), two notes
+  // that scoop in and fall off, a fall that meets the next scoop ACROSS the barline, and a slow
+  // bend that ends in an upward fall. The expected row is derived by hand next to the phrase.
+  const lead = testSongC()[TEST_SONG_C_PART.lead].part;
+  const [phraseFrom, phraseTo] = TEST_SONG_C_GESTURE_PHRASE;
+  const phrase = importSongsterrMelodic(lead, { fromMeasure: phraseFrom, toMeasure: phraseTo, monoVoice: 1, pitchGestures: 'glide' });
+  check('pitchGestures (two-bar phrase): scoop, note, fall=scoop, note, fall=scoop over the barline, bend staircase e-f-f#-g, fall up',
+    phrase.notation.replace(/@90/g, '') === TEST_SONG_C_GESTURE_NOTATION, phrase.notation);
+  // The report counts the PART (the phrase is written twice in it), not the window.
+  check('pitchGestures (two-bar phrase): the report counts both copies of the phrase (6 scoops, 6 falls, 2 bends of 3 steps each), none skipped, none rounded',
+    phrase.pitch_gestures?.scoops === 6 && phrase.pitch_gestures?.falls === 6 && phrase.pitch_gestures?.bends === 2
+    && phrase.pitch_gestures?.bend_steps === 6 && phrase.pitch_gestures?.bends_rounded === 0
+    && phrase.pitch_gestures?.skipped.chord === 0 && phrase.pitch_gestures?.skipped.no_room === 0,
+    JSON.stringify(phrase.pitch_gestures));
+  const unreduced = importSongsterrMelodic(lead, { fromMeasure: phraseFrom, toMeasure: phraseTo, pitchGestures: 'glide' });
+  check('pitchGestures (two-bar phrase): without monoVoice the octave pairs stay chords and no gesture renders',
+    unreduced.pitch_gestures?.scoops === 0 && unreduced.pitch_gestures?.falls === 0 && (unreduced.pitch_gestures?.skipped.chord ?? 0) > 0
+    && unreduced.notation !== phrase.notation, JSON.stringify(unreduced.pitch_gestures));
+}
+
+// ── Pickup (anacrusis) bar detection + the head pad, over a STUBBED fetch ────
+//
+// The 2026-08-08 RC-505mk2 finding: a song opening with a partial bar puts
+// every barline off the 4-beat grid a clock-slaved looper counts from MIDI
+// Start, so its measure-quantized record-start can never land on the song's
+// one (two songs that open on a 2/4 bar, both confirmed on hardware).
+// The importer DETECTS the pickup deterministically and returns the pad as
+// DATA + a paste-ready padded head; it never pads the source grammar in place
+// (the pad changes the Play-press feel, which is the user's call — see
+// docs/_private/circuit-count-in-design-2026-07-29.md).
+{
+  const { detectPickupBar } = await import('../packages/core/src/protocol-generic/patterns/songsterr.js');
+  const bar = (sig: [number, number], frets: number[]): DrumPart['measures'][0] => ({
+    signature: sig,
+    voices: [{ beats: frets.map((fret) => ({ notes: [{ fret }], duration: [1, 4] as [number, number] })) }],
+  });
+  const mkMeasures = (part: DrumPart): MeasureInfo[] => flattenSongsterrDrums(part).measures;
+
+  // Pure detector: a 2/4 pickup into 4/4 pads by 8 steps at a 16th grid.
+  const pickupPart: DrumPart = {
+    measures: [bar([2, 4], [36, 49]), bar([4, 4], [36, 38, 36, 38]), bar([4, 4], [36, 38, 36, 38])],
+    automations: { tempo: [{ measure: 0, position: 0, bpm: 85 }] },
+  };
+  const det = detectPickupBar(mkMeasures(pickupPart), 4);
+  check('pickup: 2/4 into 4/4 detects pad_steps 8 (16th grid)',
+    det !== undefined && det.pad_steps === 8 && det.pickup_steps === 8 && det.prevailing_bar_steps === 16
+    && det.pickup_signature === '2/4' && det.prevailing_signature === '4/4',
+    JSON.stringify(det));
+  check('pickup: a 4/4 opening detects nothing',
+    detectPickupBar(mkMeasures({ measures: [bar([4, 4], [36]), bar([4, 4], [36])] }), 4) === undefined);
+  check('pickup: a RECURRING short signature is alternating metre, not a pickup (suppressed)',
+    detectPickupBar(mkMeasures({ measures: [bar([2, 4], [36]), bar([4, 4], [36]), bar([2, 4], [36])] }), 4) === undefined);
+  check('pickup: a single-measure song detects nothing',
+    detectPickupBar(mkMeasures({ measures: [bar([2, 4], [36])] }), 4) === undefined);
+
+  // Dispatcher surface: windowed head, non-head window, and whole_song.
+  const META = {
+    songId: 888, revisionId: 1, image: 'img', title: 'Pickup Song', artist: 'Band',
+    popularTrackDrum: 0,
+    tracks: [{ instrumentId: 1024, instrument: 'Drums', hash: 'd' }],
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    if (String(url).includes('/api/meta/')) return { ok: true, status: 200, json: async () => META };
+    return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(pickupPart)).buffer };
+  }) as unknown as typeof globalThis.fetch;
+  try {
+    const head = await executeImportSongsterr({ url: '888', track: 0, from_measure: 1, to_measure: 2 });
+    if ('mode' in head) throw new Error('unexpected list_tracks reply');
+    check('pickup: a head window carries pickup data', head.pickup?.pad_steps === 8, JSON.stringify(head.pickup));
+    const paddedKick = head.pickup?.padded_voices?.kick;
+    check('pickup: padded_voices prefixes 8 rests onto each drum row',
+      paddedKick !== undefined && paddedKick.startsWith('........') && !paddedKick.startsWith('.........')
+      && paddedKick.length === (head.window?.steps ?? 0) + 8,
+      JSON.stringify({ paddedKick, steps: head.window?.steps }));
+    check('pickup: the head warning tells the agent to ASK THE USER (feel change, never auto-applied)',
+      (head.warnings ?? []).some((w) => w.includes('PICKUP BAR') && w.includes('ASK THE USER')),
+      JSON.stringify(head.warnings));
+
+    const tail = await executeImportSongsterr({ url: '888', track: 0, from_measure: 2, to_measure: 3 });
+    if ('mode' in tail) throw new Error('unexpected list_tracks reply');
+    check('pickup: a NON-head window carries no pickup field (its own project starts on a barline)',
+      tail.pickup === undefined, JSON.stringify(tail.pickup));
+
+    const ws = await executeImportSongsterr({ url: '888', track: 0, whole_song: true });
+    if ('mode' in ws) throw new Error('unexpected list_tracks reply');
+    check('pickup: whole_song carries pickup data', ws.pickup?.pad_steps === 8, JSON.stringify(ws.pickup));
+    const headSection = ws.arrangement?.sections.find((s) => s.name === ws.arrangement?.order[0]);
+    const headRow = headSection?.voices.kick;
+    check('pickup: whole_song windows are cut from the PADDED timeline (head row opens with 8 rests, kick lands on step 8)',
+      headRow !== undefined && headRow.slice(0, 8) === '........' && headRow[8] === 'x',
+      JSON.stringify({ headRow }));
+    check('pickup: whole_song names the pad in its warnings',
+      (ws.warnings ?? []).some((w) => w.includes('PICKUP BAR')) && (ws.warnings ?? []).some((w) => w.includes('padded')),
+      JSON.stringify(ws.warnings));
+
+    // Control: the same calls on a 4/4 song carry NO pickup anywhere.
+    const plainPart: DrumPart = {
+      measures: [bar([4, 4], [36, 38, 36, 38]), bar([4, 4], [36, 38, 36, 38])],
+      automations: { tempo: [{ measure: 0, position: 0, bpm: 85 }] },
+    };
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      if (String(url).includes('/api/meta/')) return { ok: true, status: 200, json: async () => META };
+      return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(plainPart)).buffer };
+    }) as unknown as typeof globalThis.fetch;
+    const plain = await executeImportSongsterr({ url: '888', track: 0, from_measure: 1, to_measure: 2 });
+    if ('mode' in plain) throw new Error('unexpected list_tracks reply');
+    check('pickup: a 4/4 song carries no pickup field and no PICKUP warning',
+      plain.pickup === undefined && !(plain.warnings ?? []).some((w) => w.includes('PICKUP BAR')),
+      JSON.stringify(plain.warnings));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+// ── ghost_velocity reaches MELODIC parts (BK-SONGSTERR-GHOST-MELODIC, 2026-09-03) ──
+// The flattener always honoured ghostVelocity on a melodic part; only the
+// dispatcher's window call dropped the argument (and its notice said it did not
+// apply), so a real Sub Bass part, 20 of 30 hits ghosted, had no knob to compress its
+// 40-vs-100 spread. Pinned at the dispatcher seam, where the bug lived.
+{
+  const META = {
+    songId: 777, revisionId: 1, image: 'img', title: 'Ghost Bass', artist: 'Band',
+    tracks: [{ instrumentId: 87, instrument: 'Lead 8 (bass + lead)', name: 'Sub Bass', hash: 's' }],
+  };
+  const BASS = {
+    tuning: [32, 25, 22, 15, 11], strings: 5,
+    measures: [{ signature: [4, 4], marker: { text: 'Chorus' }, voices: [{ beats: [
+      { notes: [{ fret: 3, string: 4 }], duration: [1, 4] },               // plain anchor
+      { notes: [{ fret: 3, string: 4, ghost: true }], duration: [1, 4] },  // ghosted
+      { notes: [{ fret: 5, string: 4 }], duration: [1, 4] },
+      { notes: [{ fret: 5, string: 4, ghost: true }], duration: [1, 4] },
+    ] }] }],
+    automations: { tempo: [{ measure: 0, position: 0, bpm: 122 }] },
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    if (String(url).includes('/api/meta/')) return { ok: true, status: 200, json: async () => META };
+    return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(BASS)).buffer };
+  }) as unknown as typeof globalThis.fetch;
+  try {
+    const dflt = await executeImportSongsterr({ url: '777', track: 0, from_measure: 1, to_measure: 1 });
+    if ('mode' in dflt) throw new Error('unexpected list_tracks reply');
+    const row = dflt.voices?.synth1 ?? '';
+    check('melodic ghost: default import carries the ghosts at @40 and the anchors unmarked (100)',
+      (row.match(/@40/g) ?? []).length === 2 && !/@100/.test(row), row);
+    check('melodic ghost: the TRACK-WIDE warning states the default (40)',
+      (dflt.warnings ?? []).some((w) => /GHOSTED/.test(w) && /velocity 40/.test(w)), JSON.stringify(dflt.warnings));
+    check('melodic ghost: the melodic notice says ghost_velocity DOES apply',
+      (dflt.warnings ?? []).some((w) => w.startsWith('PART 0 is MELODIC') && /ghost_velocity does/.test(w)), JSON.stringify(dflt.warnings));
+
+    const soft = await executeImportSongsterr({ url: '777', track: 0, from_measure: 1, to_measure: 1, ghost_velocity: 90 });
+    if ('mode' in soft) throw new Error('unexpected list_tracks reply');
+    const row90 = soft.voices?.synth1 ?? '';
+    check('melodic ghost: ghost_velocity:90 reaches the melodic row (@90 on both ghosts, no @40 left)',
+      (row90.match(/@90/g) ?? []).length === 2 && !/@40/.test(row90), row90);
+    check('melodic ghost: the anchors are untouched by ghost_velocity', !/@100/.test(row90), row90);
+    check('melodic ghost: the warning reports the chosen level',
+      (soft.warnings ?? []).some((w) => /GHOSTED/.test(w) && /velocity 90/.test(w)), JSON.stringify(soft.warnings));
+    check('melodic ghost: cells carry velocity 90 on exactly the ghosted notes',
+      soft.melodic?.cells.filter((c) => c.velocity === 90).length === 2
+        && soft.melodic?.cells.filter((c) => c.velocity === undefined).length === 2,
+      JSON.stringify(soft.melodic?.cells.map((c) => c.velocity)));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+// ── Opt-in tom-lane split (Item A: BK-SONG-PROJECTS-PLANNER) ─────────────
+// The default importer folds all six GM toms (41/43/45/47/48/50) onto one `tom`,
+// so two toms struck together collapse to a single voice + a step collision.
+// `splitToms:true` gives each GM tom its own lane, so a real breakdown section's
+// dominant stacked pair (GM 45+47) lands in DIFFERENT lanes and both survive.
+// The default stays byte-identical (a 17-song rig depends on it); the split path
+// is what the song-projects planner opts into.
+{
+  // GM 45 (Low Tom) AND 47 (Low-Mid Tom) struck together on beat 0, then a kick.
+  const stackedToms: DrumPart = {
+    measures: [{ signature: [4, 4], voices: [{ beats: [
+      { notes: [{ fret: 45 }, { fret: 47 }], duration: [1, 4] }, // two toms, same beat
+      { notes: [{ fret: 36 }], duration: [1, 4] },
+    ] }] }],
+  };
+
+  // Default path: both toms map to the single `tom` voice (unchanged).
+  const plainFlat = flattenSongsterrDrums(stackedToms);
+  check('splitToms(default): GM 45 & 47 both map to the single `tom` voice',
+    plainFlat.events.filter((e) => e.voice === 'tom').length === 2
+      && !plainFlat.events.some((e) => e.voice.startsWith('tom_')),
+    JSON.stringify(plainFlat.events.map((e) => e.voice)));
+  const plainQ = quantizeDrumEvents(plainFlat.events, { beats: 4, stepsPerBeat: 4 });
+  check('splitToms(default): the stacked toms collapse to ONE `tom` cell + a collision warning',
+    plainQ.voices.tom !== undefined && plainQ.voices.tom_lo === undefined && plainQ.voices.tom_lm === undefined
+      && plainQ.warnings.some((w) => /collided/.test(w)),
+    JSON.stringify({ voices: Object.keys(plainQ.voices), warnings: plainQ.warnings }));
+
+  // Opt-in path: 45→tom_lo, 47→tom_lm — two distinct lanes, no bare `tom`.
+  const splitFlat = flattenSongsterrDrums(stackedToms, { splitToms: true });
+  check('splitToms(true): GM 45→tom_lo and 47→tom_lm (distinct lanes, no bare `tom`)',
+    splitFlat.events.some((e) => e.voice === 'tom_lo')
+      && splitFlat.events.some((e) => e.voice === 'tom_lm')
+      && !splitFlat.events.some((e) => e.voice === 'tom'),
+    JSON.stringify(splitFlat.events.map((e) => e.voice)));
+  const splitQ = quantizeDrumEvents(splitFlat.events, { beats: 4, stepsPerBeat: 4 });
+  check('splitToms(true): two separate voices survive, NO collision',
+    splitQ.voices.tom_lo !== undefined && splitQ.voices.tom_lm !== undefined
+      && splitQ.voices.tom === undefined
+      && !splitQ.warnings.some((w) => /collided/.test(w)),
+    JSON.stringify({ voices: Object.keys(splitQ.voices), warnings: splitQ.warnings }));
+
+  // One lane per GM tom (6 lanes): any stack survives, not just 45+47.
+  const sixToms: DrumPart = {
+    measures: [{ signature: [4, 4], voices: [{ beats: [
+      { notes: [{ fret: 41 }, { fret: 43 }, { fret: 45 }, { fret: 47 }, { fret: 48 }, { fret: 50 }], duration: [1, 4] },
+    ] }] }],
+  };
+  const sixFlat = flattenSongsterrDrums(sixToms, { splitToms: true });
+  check('splitToms(true): the six GM toms map to six DISTINCT lanes',
+    new Set(sixFlat.events.map((e) => e.voice)).size === 6
+      && ['tom_flo', 'tom_fhi', 'tom_lo', 'tom_lm', 'tom_hm', 'tom_hi'].every((l) => sixFlat.events.some((e) => e.voice === l)),
+    JSON.stringify(sixFlat.events.map((e) => e.voice)));
+  check('splitToms(default): the six GM toms all still collapse to `tom` (unchanged)',
+    flattenSongsterrDrums(sixToms).events.every((e) => e.voice === 'tom'),
+    JSON.stringify(flattenSongsterrDrums(sixToms).events.map((e) => e.voice)));
+
+  // gmDrumToVoice itself: byte-identical without the flag, split with it.
+  check('gmDrumToVoice: 45/47 → tom by default, tom_lo/tom_lm with splitToms',
+    gmDrumToVoice(45) === 'tom' && gmDrumToVoice(47) === 'tom'
+      && gmDrumToVoice(45, true) === 'tom_lo' && gmDrumToVoice(47, true) === 'tom_lm',
+    JSON.stringify([gmDrumToVoice(45), gmDrumToVoice(45, true), gmDrumToVoice(47, true)]));
+}
+
+// The split lanes FOLD VIA ROLES, so they route on a tom-less kit AND a
+// single-tom kit without a hard error (review B2). A tom_* lane is never an
+// alias of `tom` (that would fail the self-canonical gate); it is its own
+// role that folds through `tom` → `snare`/`perc`.
+{
+  // Circuit shape (kick/snare/hat/ride, NO tom key) → folds to snare.
+  const circuitIdx = indexMapByRole(['snare', 'kick', 'hat', 'ride']);
+  const toSnare = foldVoice('tom_lo', circuitIdx);
+  check('foldVoice: tom_lo on a tom-less kit (Circuit shape) folds to snare',
+    toSnare?.folded_to === 'snare' && toSnare?.map_key === 'snare', JSON.stringify(toSnare));
+  // SPD-SX shape (has a `tom` pad) → resolves to tom.
+  const spdIdx = indexMapByRole(['tom', 'snare']);
+  const toTom = foldVoice('tom_lo', spdIdx);
+  check('foldVoice: tom_lo on a kit WITH a tom pad (SPD-SX shape) resolves to tom',
+    toTom?.folded_to === 'tom' && toTom?.map_key === 'tom', JSON.stringify(toTom));
+  // All six lanes behave the same on both shapes.
+  const lanes = ['tom_flo', 'tom_fhi', 'tom_lo', 'tom_lm', 'tom_hm', 'tom_hi'];
+  check('foldVoice: all six lanes fold to snare on the Circuit shape',
+    lanes.every((l) => foldVoice(l, circuitIdx)?.folded_to === 'snare'));
+  check('foldVoice: all six lanes resolve to tom on the SPD-SX shape',
+    lanes.every((l) => foldVoice(l, spdIdx)?.folded_to === 'tom'));
+}
+
+// A tom_lo pattern resolves against BOTH real device descriptors (no
+// `unmapped_voice`), and condenseToKit routes it (never `unroutable`).
+{
+  const pattern: NeutralPattern = {
+    name: 'split-tom probe', steps: 16,
+    voices: {
+      kick: { steps: Array.from({ length: 16 }, (_, i) => ({ on: i % 8 === 0 })) },
+      tom_lo: { steps: Array.from({ length: 16 }, (_, i) => ({ on: i === 4 })) },
+    },
+  };
+  // Real Circuit descriptor: no `tom` key → tom_lo folds to snare.
+  const onCircuit = resolvePatternVoicesDetailed(pattern, CIRCUIT_TRACKS_DESCRIPTOR.capabilities);
+  check('resolve: tom_lo places on the REAL Circuit descriptor (folds to snare, no unmapped_voice)',
+    onCircuit.map_keys.tom_lo === 'snare' && onCircuit.targets.tom_lo !== undefined,
+    JSON.stringify(onCircuit.map_keys));
+  // Real SPD-SX descriptor: has a `tom` pad → tom_lo resolves to it.
+  const onSpd = resolvePatternVoicesDetailed(pattern, SPD_SX_DESCRIPTOR.capabilities);
+  check('resolve: tom_lo places on the REAL SPD-SX descriptor (its tom pad, no unmapped_voice)',
+    onSpd.map_keys.tom_lo === 'tom' && onSpd.targets.tom_lo !== undefined,
+    JSON.stringify(onSpd.map_keys));
+  // condenseToKit routes tom_lo onto the default 4-voice kit (→ snare track), not unroutable.
+  const condensed = condenseToKit(pattern);
+  check('condense: tom_lo is ROUTED (not unroutable) on the default 4-voice kit → snare track',
+    !condensed.unroutable.includes('tom_lo')
+      && condensed.routings.some((r) => r.voice === 'tom_lo' && r.track_role === 'snare'),
+    JSON.stringify({ unroutable: condensed.unroutable, routings: condensed.routings.map((r) => [r.voice, r.track_role]) }));
+}
+
+// ── Swing: the source's sticky measure.tripletFeel (2026-11-09) ──────────────
+// Found dogfooding a swung tab: the tab writes straight 16ths and marks the bars
+// tripletFeel "16th", and the importer read them straight. A 16th feel moves the 2nd 16th of each 8th
+// to 1/3 of the beat; "off" ends it; straightFeel keeps the written grid.
+{
+  const hat = (): { duration: [number, number]; notes: { fret: number; string: number }[] } =>
+    ({ duration: [1, 16], notes: [{ fret: 42, string: 0 }] });
+  const rest = (d: [number, number]): { duration: [number, number]; rest: true; notes: { rest: true }[] } =>
+    ({ duration: d, rest: true, notes: [{ rest: true }] });
+  const bar = (feel?: string): SongsterrPart['measures'][number] => ({
+    ...(feel !== undefined ? { tripletFeel: feel } : {}),
+    voices: [{ beats: [hat(), hat(), rest([3, 8]), rest([1, 2])] }],
+  }) as SongsterrPart['measures'][number];
+  const part = { measures: [bar('16th'), bar(), bar('off')] } as SongsterrPart;
+  const beats = flattenSongsterrDrums(part).events.map((e) => +e.beat.toFixed(4));
+  check('swing: a 16th feel moves the 2nd 16th to 1/3 beat, is sticky into the next bar, and "off" ends it',
+    JSON.stringify(beats) === JSON.stringify([0, 0.3333, 4, 4.3333, 8, 8.25]), JSON.stringify(beats));
+  const straight = flattenSongsterrDrums(part, { straightFeel: true }).events.map((e) => e.beat);
+  check('swing: straightFeel keeps the written grid',
+    JSON.stringify(straight) === JSON.stringify([0, 0.25, 4, 4.25, 8, 8.25]), JSON.stringify(straight));
+  const flat = flattenSongsterrDrums(part);
+  check('swing: counted (2 swung measures, 2 moved onsets)', flat.swung_measures === 2 && flat.swung_onsets === 2,
+    `${flat.swung_measures}/${flat.swung_onsets}`);
+  const fid = deriveDroppedFidelity(flat.field_census, flat.fields_applied);
+  check('swing: measure.tripletFeel is no longer reported as an unread field',
+    fid.not_parsed['measure.tripletFeel'] === undefined && fid.parsed_not_authored['measure.tripletFeel'] === undefined,
+    JSON.stringify(fid.not_parsed['measure.tripletFeel'] ?? fid.parsed_not_authored['measure.tripletFeel']));
+  // A melodic 8th pair under an 8th feel: long-short, and the pair still abuts.
+  const mel = {
+    tuning: [64],
+    measures: [{ tripletFeel: '8th', voices: [{ beats: [
+      { duration: [1, 8], notes: [{ fret: 0, string: 0 }] },
+      { duration: [1, 8], notes: [{ fret: 2, string: 0 }] },
+      rest([3, 4]),
+    ] }] }],
+  } as SongsterrPart;
+  const mn = flattenSongsterrMelodic(mel).notes.map((n) => [+n.beat.toFixed(4), +n.durationBeats.toFixed(4)]);
+  check('swing: an 8th feel plays a melodic pair 2/3 + 1/3, still abutting',
+    JSON.stringify(mn) === JSON.stringify([[0, 0.6667], [0.6667, 0.3333]]), JSON.stringify(mn));
+  const imp = importSongsterrMelodic(mel, { fromMeasure: 1, toMeasure: 1, stepsPerBeat: 6 });
+  check('swing: at steps 6 the swung pair lands on the grid (steps 0 and 4)',
+    JSON.stringify(imp.cells.map((c) => c.step)) === JSON.stringify([0, 4]), JSON.stringify(imp.cells.map((c) => c.step)));
 }
 
 if (failed > 0) { console.error(`\n${failed} check(s) FAILED`); process.exit(1); }

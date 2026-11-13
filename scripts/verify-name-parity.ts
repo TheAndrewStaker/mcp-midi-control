@@ -103,8 +103,26 @@ check(
 console.log('\nHydrasynth: every PATCH_OFFSETS entry has an NRPN catalog match');
 
 let orphanOffsets = 0;
+let derivedOffsets = 0;
 const orphanOffsetList: string[] = [];
+const badDerived: string[] = [];
+// The ONLY legitimate derived-only shapes: route target-category ids
+// (32 matrix + 64 macro = 96). The counter-assertion below keeps this
+// exemption from silently widening — a stray `derived: true` on a
+// caller-facing name would otherwise drop it from parity unnoticed
+// (review finding, 2026-08-22).
+const DERIVED_NAME_RE = /^(modmatrix\d+targetcategory|macro\d+targetcategory\d+)$/;
+const EXPECTED_DERIVED_COUNT = 96;
 for (const spec of PATCH_OFFSETS) {
+  // `derived: true` entries (route target-category ids) are image-layout
+  // artifacts written by encodePatch's post-pass — they have no NRPN
+  // identity and are never a caller-facing name, so parity does not
+  // apply. Everything a caller CAN name stays gated.
+  if (spec.derived === true) {
+    derivedOffsets++;
+    if (!DERIVED_NAME_RE.test(spec.name)) badDerived.push(spec.name);
+    continue;
+  }
   const entry = findHydraNrpn(spec.name);
   if (entry === undefined || entry.name !== spec.name) {
     orphanOffsets++;
@@ -112,9 +130,16 @@ for (const spec of PATCH_OFFSETS) {
   }
 }
 check(
-  `${PATCH_OFFSETS.length} PATCH_OFFSETS entries align with NRPN catalog canonical names`,
+  `${PATCH_OFFSETS.length} PATCH_OFFSETS entries align with NRPN catalog canonical names (${derivedOffsets} derived-only exempt)`,
   orphanOffsets === 0,
   orphanOffsets > 0 ? `${orphanOffsets} orphans (in PATCH_OFFSETS but not in NRPN catalog as canonical): ${orphanOffsetList.join(', ')}` : undefined,
+);
+check(
+  `derived-only exemption is scoped: exactly ${EXPECTED_DERIVED_COUNT} entries, all target-category shaped`,
+  derivedOffsets === EXPECTED_DERIVED_COUNT && badDerived.length === 0,
+  badDerived.length > 0
+    ? `non-target-category names carry derived:true (parity silently skipped): ${badDerived.slice(0, 10).join(', ')}`
+    : `expected ${EXPECTED_DERIVED_COUNT} derived entries, found ${derivedOffsets} — update EXPECTED_DERIVED_COUNT only for a deliberate layout change`,
 );
 
 // ─────────────────────────────────────────────────────────────────

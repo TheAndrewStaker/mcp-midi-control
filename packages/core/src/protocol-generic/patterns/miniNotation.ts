@@ -508,7 +508,7 @@ export function parseVoiceLine(src: string, steps: number): Step[] {
     // a hair LOW, so a bare floor lands them on the previous cell and the line
     // dies with "places more hits than N steps can hold". A 24-step row is a
     // 6/8 or 12/8 bar at a 16th grid, which is not exotic: it is every measure of
-    // a song like Schism, and importing one threw before this epsilon existed.
+    // an odd-metre song, and importing one threw before this epsilon existed.
     const cell = Math.min(steps - 1, Math.max(0, Math.floor(ev.frac * steps + 1e-9)));
     // No silent drop: two distinct hits quantizing to the same cell means the
     // line is denser than the grid can hold. Fail loudly (raise step count).

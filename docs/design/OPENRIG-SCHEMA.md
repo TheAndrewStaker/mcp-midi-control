@@ -197,6 +197,21 @@ declared port; node ids unique; no dangling `physical_link_id`).
   groups on one USB endpoint). An audio port declares `audio: "mono" | "stereo"`;
   two mono ports/edges that form one stereo pair share a `pair` id, and a mixer
   input is a summing destination (N edges in is legal).
+- **Port direction.** Most kinds fix which way a jack faces (`audio_out`,
+  `midi_din_out`, `midi_thru` send; `audio_in`, `midi_din_in` receive). The
+  control kinds (`expression` / `footswitch` / `cv` / `analog_clock`) and USB do
+  not, because the same kind sits on the sending pedal and the receiving unit, so
+  such a port may declare **`direction: "in" | "out"`** (an effects pedal's EXP
+  jack is `in`; the jack on an expression pedal is `out`). On a fixed kind it must
+  agree. A cable runs from a jack that sends to a jack that receives: an edge
+  leaving an input or arriving at an output is a validation error, which is what
+  rules out "a TRS cable between two EXP inputs". `expression` and `footswitch`
+  accept each other's signal (dual-mode "CTL/EXP" / "PEDAL" TRS jacks).
+- **One plug per jack.** Apart from a summing mixer input and a duplex link (two
+  directed edges sharing a `physical_link_id` between the same two jacks), a port
+  holds at most one enabled cable. A second is a validation warning, and an edit
+  tool must refuse to create one; a `[planned]` (`enabled:false`) cable may reserve
+  a busy jack, which is how a re-cable is staged.
 - **Output stage.** An audio OUTPUT port may declare an **`output_role`**
   (`main` / `monitor` / `sub` / `stem` / `cue`) so tools can reason about and
   guide the output stage, which is a first-class setup concern (the RC-505 has
@@ -475,6 +490,40 @@ it rather than a second env-var map.
 
 ## 7. Repertoire + Performance (L2 / L3, deferred sketch)
 
+> **First implementation: `packages/openrig/src/repertoire.ts`.** The types
+> there are the working shape and supersede the JSON sketches below where they
+> differ. A song carries a flat `units[]` list rather than a nested
+> `rig_config`: each unit names an L1 node and is one of `recall` (a stored
+> preset, patch, kit or memory), `section_map` (which stored unit plays each
+> section, for a sequencer), `scene`, `param`, `channel` (a listening channel,
+> a recorded fact) or `emit` (MIDI the device itself sends, authored into it
+> ahead of the show). Each unit has a status of `confirmed`, `proposed` or
+> `owed`. `validateRepertoire` checks a library against its rig, and `planSong`
+> / `planPerformance` return the ordered device actions as data: recalls, then
+> scenes, then parameter edits, each naming a verb on the unified tool surface.
+> A plan never saves anything; `owed` units, opaque gear and authored facts
+> come back as gaps rather than steps. A `section_map` may name a `container`
+> (the project that holds a sequencer's sequences); nothing loads it, so it is
+> planned as a by-hand gap ahead of the recall. A repeated section with no
+> entry of its own ("Chorus 2") reuses the entry of its first occurrence
+> ("Chorus"), and that step is always `proposed` and says what it reused. A
+> section asked for by name that matches no entry is an owed gap: the planner
+> never falls back to the first entry, which would send the rig to the wrong
+> part of the song without saying so. A repertoire file may also carry its
+> setlists as an optional `performances` list (each an L3 `Performance`), so
+> one file holds the songs and the orders they are played in.
+>
+> **Server binding.** `MCP_RIG_REPERTOIRE` points the reference server at a
+> repertoire file written against the rig in `MCP_RIG_MANIFEST`
+> (`packages/core/src/protocol-generic/openrig/repertoire.ts`).
+> `describe_rig` then lists the songs and setlists, `describe_rig({setlist})`
+> returns one setlist in play order (a summary row per song), and `describe_rig({song, section?})`
+> returns that song's plan. `scripts/convert-song-repertoire.ts` builds a
+> repertoire from per-song section specs and older mapping records, dropping
+> (and counting) anything addressed to a device the rig no longer has. Not
+> built yet: a JSON Schema for these types, and a tool that replays a plan in
+> one call (today the agent calls each step's verb).
+
 The rig is set up for a **performance** (a set of songs/pieces), not one song in
 isolation. So the song layer is two related structures, both deferred (designed
 after L1 lands): a **repertoire** (the reusable library) and a **performance**
@@ -496,7 +545,7 @@ it; the two must not diverge.
     {
       "id": "song-slug",
       "title": "…",
-      "source": { "kind": "songsterr", "id": 1467797 },   // or { kind: "midi", path } / manual
+      "source": { "kind": "songsterr", "id": 1234567 },   // or { kind: "midi", path } / manual
       "tempo_bpm": 72,
       "status": "aspiring",                                // aspiring | learning | gig_ready
       "rig_config": {                                      // OPTIONAL; references L1 nodes/ports/channels
@@ -661,7 +710,7 @@ sample pad, a MIDI thru box fanning clock/PC out, and one opaque passive cab.
     { "id": "circuit", "name": "Circuit Tracks", "server_device_id": "circuit-tracks",
       "roles": ["sequencer","sound_source"],
       "identity": { "manufacturer": "Novation", "family": "Circuit Tracks" },
-      "ports": [ {"id":"out_lr","kind":"audio_out"},
+      "ports": [ {"id":"out_lr","kind":"audio_out"}, {"id":"midi_in","kind":"midi_din_in"},
                  {"id":"midi1","kind":"midi_din_out"}, {"id":"midi2","kind":"midi_din_out"} ] },
     { "id": "spdsx", "name": "SPD-SX", "server_device_id": "spd-sx",
       "roles": ["sampler","sound_source"],
@@ -687,7 +736,7 @@ sample pad, a MIDI thru box fanning clock/PC out, and one opaque passive cab.
     { "id":"rc505-clockhub","from":{"node":"rc505","port":"midi_out"},"to":{"node":"thru","port":"in"},
       "directed":true,"physical_link_id":"din-2",
       "signal":{"kind":"midi","signals":[{"type":"clock"},{"type":"pc","channel":16}]} },
-    { "id":"thru-to-circuit","from":{"node":"thru","port":"out1"},"to":{"node":"circuit","port":"midi1"},
+    { "id":"thru-to-circuit","from":{"node":"thru","port":"out1"},"to":{"node":"circuit","port":"midi_in"},
       "directed":true,"physical_link_id":"din-3",
       "signal":{"kind":"midi","signals":[{"type":"clock"},{"type":"pc","channel":16}]} },
     { "id":"circuit-to-spdsx","from":{"node":"circuit","port":"midi2"},"to":{"node":"spdsx","port":"midi_in"},

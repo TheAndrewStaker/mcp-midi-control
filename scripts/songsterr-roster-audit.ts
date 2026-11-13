@@ -8,7 +8,7 @@
  *
  * A part's General-MIDI instrument name is not a reliable statement of what the
  * part IS. Songsterr contributors file vocal lines under whatever instrument was
- * closest to hand: Schism's Maynard vocal is filed as `Bassoon`. So "is there a
+ * closest to hand: one song's lead vocal is filed as `Bassoon`. So "is there a
  * vocal part on this tab?" cannot be answered from the roster's instrument names
  * alone, and answering it wrong means authoring the wrong melody onto a track
  * whose whole job is to be the pitch target for a singer.
@@ -27,8 +27,8 @@
  * Read-only: three public GETs per part, no device contact, no writes.
  *
  * Usage:
- *   npx tsx scripts/songsterr-roster-audit.ts 501859
- *   npx tsx scripts/songsterr-roster-audit.ts https://www.songsterr.com/a/wsa/...-s501859
+ *   npx tsx scripts/songsterr-roster-audit.ts 123456
+ *   npx tsx scripts/songsterr-roster-audit.ts https://www.songsterr.com/a/wsa/...-s123456
  */
 import {
   fetchSongsterrTracks, parseSongRef,
@@ -39,7 +39,11 @@ import {
 } from '../packages/core/src/protocol-generic/patterns/songsterr.js';
 import { gunzipSync } from 'node:zlib';
 
-const REF = process.argv[2] ?? '501859';
+const REF = process.argv[2];
+if (REF === undefined) {
+  console.error('usage: npx tsx scripts/songsterr-roster-audit.ts <song id | Songsterr URL>');
+  process.exit(1);
+}
 const CDNS = ['https://dqsljvtekg760.cloudfront.net', 'https://d3d3l6a6rcgkaf.cloudfront.net'];
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',

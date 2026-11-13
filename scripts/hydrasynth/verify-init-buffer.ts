@@ -134,9 +134,9 @@ check('curated param decode contains non-zero key params', () => {
   return true;
 });
 
-check('decodePatch returns full curated set (290 entries: 282 prior plus 8 mutator source-selects, FM-Linear/Osc-Sync shared bytes, 2 names per mutator at mode+2. Earlier history: env3-5 x19 each + lfo2-5 x16 each per HW-061 followup; mutators1-4 x6 fields + delaytimesyncon collapsed slot; env2 x14 +5 collapsed sync-on aliases + lfo1 x12 +2 collapsed sync-on aliases)', () => {
+check('decodePatch returns full curated set (674 entries: 290 prior plus 384 mod-matrix/macro route fields, 2026-08-22 P7 — 32 rows x [depth, source, target, targetcategory] + 8x8 macro slots x [depth, target, buttonvalue, targetcategory]. Earlier history: 282 + 8 mutator source-selects; env3-5 x19 each + lfo2-5 x16 each per HW-061 followup; mutators1-4 x6 fields + delaytimesyncon collapsed slot; env2 x14 +5 collapsed sync-on aliases + lfo1 x12 +2 collapsed sync-on aliases)', () => {
   const decoded = decodePatch(INIT_PATCH_BUFFER);
-  return decoded.size === 290 ? true : `got ${decoded.size}, want 290`;
+  return decoded.size === 674 ? true : `got ${decoded.size}, want 674`;
 });
 
 // ---------------------------------------------------------------------------

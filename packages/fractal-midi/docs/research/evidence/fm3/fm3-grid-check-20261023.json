@@ -1,0 +1,221 @@
+{
+ "schemaVersion": 1,
+ "device": "FM3 Mk II Turbo",
+ "firmware": 13,
+ "date": "2026-10-23",
+ "method": "FM3_GRID_CHECK.py: each preset sent to the edit buffer (7F 00) only, live grid read via fn=0x01 sub=0x2E (tail-anchored 226-byte region, cell = u16 id + u16 mask from bit 45, MSB-first). No store, no SET.",
+ "findings": [
+  "All 7 generated grids (splits, merges, 4 rows, Mixer 126, Multiplexer 191, Synth 130 without input, Send 182/Return 186, instances 47/71/119, removals) read back identical in all 48 cells.",
+  "The live cell is the preset-body cell word itself; the fractal-midi parseGen3GridLayout reading (7-bit id at bit 46) misreads every id > 127 (Send 182 -> 54, Return 186 -> 58, Plex 178 -> 50, Multiplexer 191 -> 63, Synth 130 -> 2).",
+  "G02: the user saw the branch start after Amp (before Cab), exactly the encoded link (row 3 col 6 fed from row 2 col 5 = Amp). The original question text said \"after Cab\"; the generator now lists every split/merge source by block and warns when an Amp path reaches the output without a Cab.",
+  "CPU of the grid presets is within the model: Mixer/Multiplexer add no measurable load at this resolution."
+ ],
+ "tests": [
+  {
+   "id": "G01",
+   "proves": "control: the composer two-row layout through the general planner (Send 182 / Return 186 > 127)",
+   "presetSha256": "81c2f14b836aea0d033eb56a471054ab32079d75431e6969118d41082dfc8e33",
+   "gridMatches": true,
+   "cells": 48,
+   "effectIds": [
+    37,
+    42,
+    46,
+    58,
+    62,
+    66,
+    70,
+    118,
+    182,
+    186
+   ],
+   "shunts": 14,
+   "links": [],
+   "cpuMeasured": 53,
+   "cpuEstimate": 53.4,
+   "cpuUnknown": [],
+   "fractalMidiDecoderMisreads": [
+    54
+   ]
+  },
+  {
+   "id": "G02",
+   "proves": "split from Amp (the link targets column 6, so its source is column 5 = Amp, not Cab), Delay || Reverb, merge in the Mixer (126), Drive 2 (119), Send/Return removed; 2026-10-23 the user saw the branch start after Amp on the FM3 screen, as encoded",
+   "presetSha256": "21ad36de5120259b6f19691f685cf245b172092f84aebca10d2fd89d0da1e9ee",
+   "gridMatches": true,
+   "cells": 48,
+   "effectIds": [
+    37,
+    42,
+    46,
+    58,
+    62,
+    66,
+    70,
+    118,
+    119,
+    126
+   ],
+   "shunts": 5,
+   "links": [
+    "rida 2, veerg 9 (mixer) ← delay (rida 2, veerg 7) + reverb (rida 3, veerg 7)",
+    "rida 3, veerg 6 (-) ← amp (rida 2, veerg 5)"
+   ],
+   "cpuMeasured": 60,
+   "cpuEstimate": 61.3,
+   "cpuUnknown": [
+    "mixer"
+   ],
+   "userAnswer": "e",
+   "fractalMidiDecoderMisreads": []
+  },
+  {
+   "id": "G03",
+   "proves": "all four rows: one split into rows 1-4 and a four-input merge (mask 15) in the Mixer",
+   "presetSha256": "870f9477262ebc670915599570128a2e3e827cd9a8f296690a1ff85913a77fa1",
+   "gridMatches": true,
+   "cells": 48,
+   "effectIds": [
+    37,
+    42,
+    46,
+    58,
+    62,
+    66,
+    70,
+    118,
+    126,
+    178
+   ],
+   "shunts": 11,
+   "links": [
+    "rida 1, veerg 6 (-) ← cab (rida 2, veerg 5)",
+    "rida 2, veerg 9 (mixer) ← delay (rida 1, veerg 7) + reverb (rida 2, veerg 7) + plex (rida 3, veerg 7) + cab (rida 2, veerg 5)",
+    "rida 3, veerg 6 (-) ← cab (rida 2, veerg 5)",
+    "rida 4, veerg 6 (-) ← cab (rida 2, veerg 5)"
+   ],
+   "cpuMeasured": 63,
+   "cpuEstimate": 63.9,
+   "cpuUnknown": [
+    "mixer"
+   ],
+   "fractalMidiDecoderMisreads": [
+    50
+   ]
+  },
+  {
+   "id": "G04",
+   "proves": "Multiplexer (191 > 127) merging Drive || Drive 2 rows; cross-row link (row 3 -> row 2)",
+   "presetSha256": "52e11da20f89bd59428327bdb5c8b5300f2c7057a14a18b7b910c50db80c1f58",
+   "gridMatches": true,
+   "cells": 48,
+   "effectIds": [
+    37,
+    42,
+    46,
+    58,
+    62,
+    66,
+    70,
+    118,
+    119,
+    191
+   ],
+   "shunts": 5,
+   "links": [
+    "rida 2, veerg 6 (multiplexer) ← drive (rida 2, veerg 4) + drive2 (rida 3, veerg 4)",
+    "rida 3, veerg 3 (-) ← compressor (rida 2, veerg 2)"
+   ],
+   "cpuMeasured": 60,
+   "cpuEstimate": 61.3,
+   "cpuUnknown": [
+    "multiplexer"
+   ],
+   "fractalMidiDecoderMisreads": [
+    63
+   ]
+  },
+  {
+   "id": "G05",
+   "proves": "Synth (130 > 127) without input on row 4 feeding the Mixer; Send/Return kept",
+   "presetSha256": "671a4a5fa8eb2796b6451c98bc86cc3c3073ab8e8fddb3e90c5e3aedcf7d5078",
+   "gridMatches": true,
+   "cells": 48,
+   "effectIds": [
+    37,
+    42,
+    46,
+    58,
+    62,
+    66,
+    70,
+    118,
+    126,
+    130,
+    182,
+    186
+   ],
+   "shunts": 14,
+   "links": [
+    "rida 2, veerg 8 (mixer) ← cab (rida 2, veerg 5) + synth (rida 4, veerg 6)"
+   ],
+   "cpuMeasured": 62,
+   "cpuEstimate": 60.9,
+   "cpuUnknown": [
+    "mixer"
+   ],
+   "fractalMidiDecoderMisreads": [
+    2,
+    54
+   ]
+  },
+  {
+   "id": "G06",
+   "proves": "removal (Drive, Delay, Send/Return) and a single-row layout, as in 275 of 384 factory presets",
+   "presetSha256": "2ad2535b823e617057a447745371a892df9991d1092394a9d1e26426eac78eeb",
+   "gridMatches": true,
+   "cells": 48,
+   "effectIds": [
+    37,
+    42,
+    46,
+    58,
+    62,
+    66
+   ],
+   "shunts": 6,
+   "links": [],
+   "cpuMeasured": 41.5,
+   "cpuEstimate": 44.3,
+   "cpuUnknown": [],
+   "fractalMidiDecoderMisreads": []
+  },
+  {
+   "id": "G07",
+   "proves": "second instances Compressor 2 (47), Drive 2 (119), Delay 2 (71) in series",
+   "presetSha256": "59ec964fbf570ff31ab5b0a87c7ad1c57689f54c9431b99840eb6c98fcb6ab9a",
+   "gridMatches": true,
+   "cells": 48,
+   "effectIds": [
+    37,
+    42,
+    46,
+    47,
+    58,
+    62,
+    66,
+    70,
+    71,
+    118,
+    119
+   ],
+   "shunts": 1,
+   "links": [],
+   "cpuMeasured": 67,
+   "cpuEstimate": 71.3,
+   "cpuUnknown": [],
+   "fractalMidiDecoderMisreads": []
+  }
+ ],
+ "resultsSha256": "e1cdfeee137317b0bc04bc66317939964ef80330ced197f4912e55ee4a5ecb08"
+}

@@ -92,7 +92,7 @@ an opaque container, so live `set_param` edits are preserved verbatim. `instance
 = Synth 1 (default), 2 = Synth 2. The overwrite gate **refuses by default**: a
 Flash slot cannot be previewed (no random-access stored-patch read), so
 `confirm_overwrite:true` is required. PATCH slots are distinct from the PROJECT
-slots `switch_preset` / `upload_project` use. `supports_save` is **true**:
+slots `switch_preset` / `import_preset` use. `supports_save` is **true**:
 persistence is hardware-verified (2026-07-03; a saved patch survives a power-cycle).
 
 **`get_param` / `get_params` read SYNTH PATCH params** (osc / filter / env / lfo /
@@ -113,13 +113,15 @@ readable snapshot. It reads **saved slots only**: the live working buffer is not
 slot, so unsaved edits must be Saved on the device first. This is the read half of
 a read-modify-write loop (read slot → edit → `apply_pattern mode:ncs_upload`).
 
-**`get_preset("patch:N")` works** for a stored synth PATCH (N = 0..63; device Patch N+1).
-It reads the actual synth BANK (the store `save_preset` writes to) by loading the slot into
-Synth 1's working buffer (Program Change on the synth channel) and dumping it, then RESTORING
-the prior buffer (non-destructive to an unsaved edit). It returns the patch NAME + all decoded
-patch-dump params (osc/filter/env/lfo/mixer/fx/eq) and reflects freshly-saved patches
-(HW-confirmed 2026-07-03: read `PROBE85` / filter.frequency=85 back from slots 62/63 right after
-saving). A Program Change to an EMPTY slot loads nothing. Note the file-transfer read
+**`get_preset("patch:N")` was REFUTED as a stored-slot read (2026-07-27) and now REFUSES
+(2026-08-11).** A sentinel measurement showed a Program Change REVERTS the live edit and
+IGNORES its program number: PC 0, PC 40 and PC 63 all return the same (currently loaded)
+patch, so the old read returned the working patch for every N, not slot N's contents. The
+2026-07-03 "confirmation" PC'd immediately after saving, where a revert is indistinguishable
+from a load. The tool now refuses with the refutation named and points at the honest
+alternatives: verify saves by ear / power-cycle, and note a project `.ncs` embeds both synth
+patch bodies byte-exactly (`0x26d14`/`0x26e68`, verified 340/340). The rest of this section's
+WRITE path stands. Note the file-transfer read
 (`readStoredPatch`, fileType 0x04) reads the pack's sparse FILE store instead and does NOT see
 bank-only saves; it stays wired into `checkOverwriteTarget` only, where it must not disturb the
 buffer `save_preset` is about to persist.
@@ -141,8 +143,9 @@ buffer `save_preset` is about to persist.
   commits to flash silently over a few seconds; any session opened afterward aborts the
   commit. Two earlier failures were: (a) flashing the device's *dirty* live-buffer body
   (`body[17]=0x01`), and (b) an in-band verify read aborting the commit. The device never
-  acks a save even on success. **Verify by ear / power-cycle** (no patch-name display), or
-  read it back with `get_preset("patch:N")`; that now reads the synth BANK (see below).
+  acks a save even on success. **Verify by ear / power-cycle** (no patch-name display), and
+  NOT with `get_preset("patch:N")`, which returns the loaded patch regardless of N (refuted
+  2026-07-27, see above).
 
 **Two storage namespaces (do not conflate):** a synth PATCH bank (128 slots, selected/
 reloaded by `send_program_change` on ch1/ch2 = `save_preset`'s target) is SEPARATE from a
@@ -160,7 +163,7 @@ Load your own WAV drum samples onto the device over USB, replacing the manual
 Novation Components web-app workflow:
 
 - **`upload_sample(port, file, slot 1..64, name?)`**: one WAV to one drum-sample slot.
-- **`upload_kit(port, folder, kit?, start_slot?)`**: a folder of WAVs to consecutive slots.
+- **`upload_sample(port, folder, kit?, slot = first slot)`**: a folder of WAVs to consecutive slots.
 
 The **64 sample slots are the shared drum pool** the four drum tracks pick from
 (synths use **patches**, not samples; there is no "synth sample"). Without a

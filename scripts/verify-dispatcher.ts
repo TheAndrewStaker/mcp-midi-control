@@ -18,9 +18,18 @@
  */
 
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// Offline gate on REAL device labels (mock transport): the cross-process
+// instance lease must not couple this run to a LIVE server that legitimately
+// holds a device — a session whose server held the Circuit killed
+// verify-circuit-delete with port_held_elsewhere (2026-08-08), and this gate
+// has the identical exposure on every label it registers. Isolated lock dir
+// (read per acquire), same pattern as verify-endpoint-arbiter.
+process.env.MCP_INSTANCE_LOCK_DIR = mkdtempSync(path.join(tmpdir(), 'dispatcher-gate-locks-'));
 
 import ts from 'typescript';
 import * as z from 'zod/v4';
@@ -103,7 +112,7 @@ function expectThrows(
 // Order matters: Axe-Fx II registers BEFORE AM4 so the more-specific
 // `/axe-?fx/i` regex fires first on port names like "Fractal Axe-Fx II
 // Port 1". AM4's `/Fractal/i` regex remains as catch-all. Matches the
-// production registration order in `src/server/index.ts`.
+// production registration order in `src/server/createServer.ts`.
 
 console.log('Registering Axe-Fx II descriptor.');
 registerMcpDevice(AXEFX2_DESCRIPTOR);
@@ -1022,6 +1031,99 @@ function collectToolWirings(): SchemaWiring[] {
   return wirings;
 }
 
+/**
+ * Resolve an identifier used as `inputSchema:` to the object literal that
+ * defines it, without a full type-checker program. Exists for the
+ * shared-schema shape: edit_rig consumes RIG_EDIT_SCHEMA through the
+ * dispatcher barrel so an HTTP route can consume the exact same schema, so
+ * the initializer at the registerTool call site is an identifier, not a
+ * literal. Handles a top-level const in the same file, and a named import
+ * followed through RELATIVE specifiers including re-export chains
+ * (`export { X } from './y.js'`, `export * from './y.js'`). Anything this
+ * cannot resolve stays a FAILURE upstream, per the gate-hole rule: bare
+ * package specifiers, aliases through namespaces, and computed shapes are
+ * still unanalyzable.
+ */
+function unwrapExpr(e: ts.Expression): ts.Expression {
+  let cur = e;
+  while (ts.isAsExpression(cur) || ts.isSatisfiesExpression(cur) || ts.isParenthesizedExpression(cur)) {
+    cur = cur.expression;
+  }
+  return cur;
+}
+
+function parseTsFile(abs: string): ts.SourceFile | undefined {
+  if (!existsSync(abs)) return undefined;
+  return ts.createSourceFile(abs, readFileSync(abs, 'utf8'), ts.ScriptTarget.ESNext, true, ts.ScriptKind.TS);
+}
+
+/** `./x.js` relative to `fromFile`, mapped back to the `.ts` source. */
+function relModulePath(fromFile: string, spec: string): string | undefined {
+  if (!spec.startsWith('.')) return undefined;
+  return path.resolve(path.dirname(fromFile), spec.replace(/\.js$/, '.ts'));
+}
+
+function findConstObjectLiteral(
+  sf: ts.SourceFile, name: string, mustBeExported: boolean,
+): ts.ObjectLiteralExpression | undefined {
+  for (const st of sf.statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    if (mustBeExported && !st.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) continue;
+    for (const d of st.declarationList.declarations) {
+      if (ts.isIdentifier(d.name) && d.name.text === name && d.initializer !== undefined) {
+        const init = unwrapExpr(d.initializer);
+        if (ts.isObjectLiteralExpression(init)) return init;
+      }
+    }
+  }
+  return undefined;
+}
+
+function resolveExportedConst(abs: string, name: string, depth: number): ts.ObjectLiteralExpression | undefined {
+  if (depth <= 0) return undefined;
+  const sf = parseTsFile(abs);
+  if (sf === undefined) return undefined;
+  const direct = findConstObjectLiteral(sf, name, true);
+  if (direct !== undefined) return direct;
+  for (const st of sf.statements) {
+    if (!ts.isExportDeclaration(st) || st.moduleSpecifier === undefined
+      || !ts.isStringLiteralLike(st.moduleSpecifier)) continue;
+    const target = relModulePath(abs, st.moduleSpecifier.text);
+    if (target === undefined) continue;
+    if (st.exportClause !== undefined && ts.isNamedExports(st.exportClause)) {
+      const el = st.exportClause.elements.find((e) => e.name.text === name);
+      if (el !== undefined) {
+        const found = resolveExportedConst(target, el.propertyName?.text ?? name, depth - 1);
+        if (found !== undefined) return found;
+      }
+    } else if (st.exportClause === undefined) {
+      // export * from './y.js'
+      const found = resolveExportedConst(target, name, depth - 1);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+function resolveSchemaIdentifier(
+  file: string, sf: ts.SourceFile, name: string,
+): ts.ObjectLiteralExpression | undefined {
+  const local = findConstObjectLiteral(sf, name, false);
+  if (local !== undefined) return local;
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st)) continue;
+    const nb = st.importClause?.namedBindings;
+    if (nb === undefined || !ts.isNamedImports(nb)) continue;
+    const el = nb.elements.find((e) => e.name.text === name);
+    if (el === undefined) continue;
+    if (!ts.isStringLiteralLike(st.moduleSpecifier)) return undefined;
+    const target = relModulePath(file, st.moduleSpecifier.text);
+    if (target === undefined) return undefined;
+    return resolveExportedConst(target, el.propertyName?.text ?? name, 6);
+  }
+  return undefined;
+}
+
 function analyzeRegisterTool(file: string, call: ts.CallExpression): SchemaWiring | undefined {
   const [nameArg, cfgArg, handlerArg] = call.arguments;
   const tool = nameArg !== undefined && ts.isStringLiteralLike(nameArg) ? nameArg.text : '<dynamic-name>';
@@ -1038,10 +1140,15 @@ function analyzeRegisterTool(file: string, call: ts.CallExpression): SchemaWirin
   );
   // No inputSchema at all means no params to drop.
   if (schemaProp === undefined) return undefined;
-  if (!ts.isObjectLiteralExpression(schemaProp.initializer)) {
-    return { ...base, unanalyzable: 'inputSchema is not an object literal' };
+  const schemaLiteral = ts.isObjectLiteralExpression(schemaProp.initializer)
+    ? schemaProp.initializer
+    : ts.isIdentifier(schemaProp.initializer)
+      ? resolveSchemaIdentifier(file, call.getSourceFile(), schemaProp.initializer.text)
+      : undefined;
+  if (schemaLiteral === undefined) {
+    return { ...base, unanalyzable: 'inputSchema is neither an object literal nor an identifier resolvable through relative imports' };
   }
-  for (const p of schemaProp.initializer.properties) {
+  for (const p of schemaLiteral.properties) {
     if (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) {
       if (ts.isIdentifier(p.name) || ts.isStringLiteralLike(p.name)) base.keys.push(p.name.text);
       else return { ...base, unanalyzable: 'computed inputSchema key' };

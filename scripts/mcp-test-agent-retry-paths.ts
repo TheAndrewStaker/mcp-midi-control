@@ -24,8 +24,8 @@
  */
 
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(
   process.cwd(),
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
   }
   const client = new Client(
     { name: 'mcp-test-agent-retry-paths', version: '1.0.0' },
-    { capabilities: {} },
+    { capabilities: {}, versionNegotiation: { mode: 'auto' } },
   );
 
   try {

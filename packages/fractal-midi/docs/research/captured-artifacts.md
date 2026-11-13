@@ -213,10 +213,10 @@ we don't own.
   false-positive markers; cab / drive / delay / reverb share the chain structure
   but their per-block stride + param formula are untested (a naive effectId scan
   false-positives). Five isolated one-variable captures would confirm transfer.
-- UNMINED[2026-07-02]: samples/captured/am4-warm-pair-* (5 new one-variable pairs needed), one warm pair each for delay.mix, drive.drive, a cab param, a scene-bypass toggle, and a per-block channel change, to confirm the amp block's pidHigh+7 / 0x130-stride formula transfers to non-amp blocks (unblocks whole_preset VALUES for every block, not just amp)
+- MINED[2026-11-12]: the five extra warm pairs asked for on 2026-07-02 were not needed. Every chain record states its own effect id and table size, so the amp formula is the general one (`row*cols + pidHigh` behind a 7-word header), and the non-amp blocks, the slot order and the per-scene channel + bypass words were confirmed by cross-checking 15 stored presets against the working-buffer read on hardware plus three one-change working-buffer dumps (bypass, channel, scene). See primitive [[../research/primitives/am4-body-block-record-chain]].
 - **Decode doc**: [`docs/devices/am4/SYSEX-MAP.md`](../devices/am4/SYSEX-MAP.md)
-  (§10b body block-record chain). Primitive [[../research/primitives/am4-gen3-preset-container]].
-- **Status**: ✅ amp block VALUES surfaced (community-beta); ⛔ non-amp block VALUES pending the 5 captures.
+  (§10b body block-record chain). Primitives [[../research/primitives/am4-gen3-preset-container]], [[../research/primitives/am4-body-block-record-chain]].
+- **Status**: ✅ every placed block's VALUES, the slot order and per-scene channel + bypass surfaced (community-beta). Not decoded: controller/modifier records, Input/Output records, scene MIDI.
 
 ### General purpose: any Fractal envelope from a third party
 - Apply [[../research/primitives/xor-7f-envelope-checksum]], universal
@@ -253,6 +253,25 @@ manifest.
 - **Un-mined**: nothing, fully consumed.
 - **Primitives**: [[../research/primitives/fn28-enum-dump]] +
   [[../research/primitives/trim-tolerant-display-match]]
+
+### FM3 grid check (sub=0x2E replies after loading generated grids, 2026-10-23)
+- **Producer**: an FM3 owner's fork of this project (`FM3_GRID_CHECK.py`,
+  packs from its `tools/fm3/grid-check-build.mjs`). Edit-buffer loads +
+  read-only `fn=0x01 sub=0x2E` requests only; FM3 Mk II Turbo, fw 13.
+- **Output (vendored here, Apache-2.0)**:
+  `docs/research/evidence/fm3/fm3-grid-check-20261023-results.jsonl` (7 × 590-byte reply
+  frames + the 48 intended cell words each), the receipt
+  `docs/research/evidence/fm3/fm3-grid-check-20261023.json`, and
+  `docs/research/evidence/fm3/fm3-cpu-calibration-20261023.json`.
+- **Contents**: grids with splits, merges, all 4 rows, Mixer 126,
+  Multiplexer 191, Synth 130 without input, Send 182 / Return 186, instances
+  47/71/119, shunts 1024..1037; CPU byte f[37] per preset.
+- **Mined**: corrected grid cell word (u16 id + u16 mask from bit 45) and the
+  FM3 piecewise CPU decode, both in `gridLayout.ts` / `liveMeters.ts`; goldens
+  G04/G05 in `test/gen3/axe-fx-iii/gridlayout.test.ts`.
+- **Un-mined**: the FM3-only field at f[76..110].
+- **Primitives**: [[../research/primitives/gen3-sub2e-grid-region-tail-anchor]] +
+  [[../research/primitives/gen3-sub2e-live-meters]]
 
 ---
 

@@ -43,7 +43,7 @@ function check(label: string, ok: boolean, detail?: string): void {
 }
 
 // Register all four descriptors against the runtime registry so
-// describeDevice(port) resolves cleanly. Order matches src/server/index.ts:
+// describeDevice(port) resolves cleanly. Order matches src/server/createServer.ts:
 // Axe-Fx III then II then AM4 then Hydra.
 clearRegistry();
 registerDevice(AXEFX3_DESCRIPTOR);

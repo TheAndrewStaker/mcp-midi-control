@@ -67,6 +67,12 @@ import {
 } from 'fractal-midi/am4';
 import { unpackValue } from 'fractal-midi/shared';
 import {
+  formatSceneBlockStates,
+  readActiveBufferBody,
+  readBypassState,
+  sceneBlockStates,
+} from '../shared/bufferState.js';
+import {
   mergeAutoApplied,
   prepareApplyPresetWrites,
   runApplyPresetAt,
@@ -511,6 +517,33 @@ export const writer: DeviceWriter = {
     const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
     // New preset = new channel layout; existing cache is stale.
     invalidateChannelCache();
+    // The echo only proves the unit received the command. On 2026-11-12 an AM4
+    // echoed three switches and stayed where it was, so the receipt reads the
+    // loaded location back. `undefined` = the read did not answer.
+    let landedOn: number | undefined;
+    // The mock transport answers every location read with one fixed value, so
+    // there is nothing to confirm against it.
+    if (result.acked && process.env.MCP_MOCK_TRANSPORT !== '1') {
+      for (let attempt = 0; attempt < 3 && landedOn !== locationIndex; attempt++) {
+        try {
+          const idx = (await sendReadAndParse(ctx.conn, LOCATION_STATE_PID_LOW, LOCATION_STATE_PID_HIGH)).asUInt32LE();
+          landedOn = idx >= 0 && idx <= 103 ? idx : undefined;
+        } catch {
+          landedOn = undefined;
+        }
+        if (landedOn === undefined) break;
+        if (landedOn !== locationIndex) await new Promise((r) => setTimeout(r, 150));
+      }
+    }
+    if (result.acked && landedOn !== undefined && landedOn !== locationIndex) {
+      return {
+        op: 'switch_preset',
+        target: formatLocationDisplay(locationIndex),
+        acked: false,
+        warning: `The AM4 echoed the command but is still on ${formatLocationDisplay(landedOn)}: the preset did NOT change. `
+          + 'Check the AM4 display (a menu or the tuner can block a preset change), then try again.',
+      };
+    }
     if (result.acked) {
       // Switching reloaded the stored preset into the working buffer —
       // it matches flash. markClean AFTER the ack.
@@ -520,6 +553,7 @@ export const writer: DeviceWriter = {
       op: 'switch_preset',
       target: formatLocationDisplay(locationIndex),
       acked: result.acked,
+      ...(result.acked ? { confirmed_by: landedOn === locationIndex ? 'device_ack+read_back' as const : 'device_ack' as const } : {}),
       info: result.acked
         ? 'Any unsaved working-buffer edits were discarded. Channel cache cleared.'
         : undefined,
@@ -602,13 +636,27 @@ export const writer: DeviceWriter = {
       // old fingerprint poll's behavior — not a regression).
       markDirty(AM4_DIRTY_LABEL);
     }
+    // Receipt: read back what the new scene selects (one working-buffer dump,
+    // ~80 ms), so the caller knows each block's channel + bypass without a
+    // follow-up read. Best-effort; a missed read names the call that has it.
+    let sceneState: ReturnType<typeof sceneBlockStates> | undefined;
+    if (result.acked) {
+      const body = await readActiveBufferBody(ctx.conn);
+      if (body !== undefined && body.activeScene === scene - 1) sceneState = sceneBlockStates(body, scene);
+    }
     return {
       op: 'switch_scene',
       target: `scene:${scene}`,
       acked: result.acked,
-      info: result.acked
-        ? 'Channel cache cleared; the new scene may point each block at a different channel.'
-        : undefined,
+      ...(result.acked ? { confirmed_by: sceneState !== undefined ? 'device_ack+read_back' as const : 'device_ack' as const } : {}),
+      ...(sceneState !== undefined ? { scene_state: sceneState } : {}),
+      info: !result.acked
+        ? undefined
+        : sceneState !== undefined
+          ? `Scene ${scene} is active (device acknowledged, and the working buffer read back on scene ${scene}). ` +
+            `On this scene: ${formatSceneBlockStates(sceneState)}.`
+          : `Scene ${scene} is active (device acknowledged). Its per-block channel and bypass were not read back; ` +
+            `get_preset({port:'am4'}) returns them (slots[].active_channel, bypassed).`,
       warning: result.acked
         ? undefined
         : 'Sent, but the device did not confirm it; it may not have landed; check the AM4 display.',
@@ -696,16 +744,26 @@ export const writer: DeviceWriter = {
       markDirty(AM4_DIRTY_LABEL);
     }
     const stateWord = bypassed ? 'bypassed' : 'active';
+    // Receipt: read the block's bypass flag back (one ~50 ms read) so both
+    // directions report the same evidence: the ack AND what the device holds.
+    const readBack = result.acked ? await readBypassState(ctx.conn, block) : undefined;
+    const readBackWord = readBack === undefined ? undefined : readBack ? 'bypassed' : 'active';
+    const mismatch = readBack !== undefined && readBack !== bypassed;
     return {
       op: 'set_bypass',
       target: `${block}:${stateWord}`,
       acked: result.acked,
-      info: result.acked
-        ? `${block} set to ${stateWord} on the active scene. To change a different scene's bypass, switch_scene first and re-issue.`
-        : undefined,
-      warning: result.acked
+      ...(result.acked ? { confirmed_by: readBack === bypassed ? 'device_ack+read_back' as const : 'device_ack' as const } : {}),
+      info: !result.acked || mismatch
         ? undefined
-        : `Sent, but the device did not confirm it; it may not have landed; check the AM4 display.`,
+        : readBack === undefined
+          ? `${block} set to ${stateWord} on the active scene: the device acknowledged the write; the read-back did not answer, so it is not read-back confirmed. Other scenes are unchanged.`
+          : `${block} is ${stateWord} on the active scene: the device acknowledged the write and a read-back of its bypass flag shows ${readBackWord}. Other scenes are unchanged (switch_scene first to change them).`,
+      warning: !result.acked
+        ? `Sent, but the device did not confirm it; it may not have landed; check the AM4 display.`
+        : mismatch
+          ? `The device acknowledged the write but ${block} reads back as ${readBackWord}, not ${stateWord}. Check that ${block} is placed in this preset, then check the AM4 display.`
+          : undefined,
     };
   },
 

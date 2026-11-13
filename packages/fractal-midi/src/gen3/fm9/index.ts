@@ -22,3 +22,38 @@ export {
   FM9_CAB_ROSTERS_BY_BANK,
 } from './cabRosters.generated.js';
 export { resolveFm9CabName, type Fm9CabMatch } from './cabResolve.js';
+// FM9 effectId <-> family map (the addressing layer: (effectId, paramId) for
+// any block, including virtual/system blocks). Shared gen-3 roster aliased
+// from the FM3 table (FM9_FAMILIES === FM3_FAMILIES, verified). See `effectIds.ts`.
+export {
+  FM9_EFFECT_ID_TABLE,
+  FM9_EFFECT_IDS,
+  FM9_FAMILY_BY_EFFECT_ID,
+  fm9EffectId,
+  type Fm9EffectIdEntry,
+  type Fm9EffectAddressing,
+} from './effectIds.js';
+// Editor block-editor UI layouts (pages/tabs + labels + param mapping),
+// keyed by catalog family. See `layouts.generated.ts`.
+export {
+  FM9_LAYOUTS,
+  type Fm9BlockLayout,
+  type Fm9LayoutPage,
+  type Fm9LayoutControl,
+} from './layouts.generated.js';
+// Block & parameter help — shared gen-3 catalog + FM9-specific overrides.
+export { FM9_HELP_OVERRIDES } from './help.js';
+export {
+  GEN3_HELP,
+  GEN3_COMMON_PARAM_HELP,
+  blockHelpFor,
+} from '../help.js';
+export {
+  resolveHelp,
+  type BlockHelp,
+  type ParamHelp,
+  type BlockHelpEntry,
+  type HelpCatalog,
+  type BlockHelpOverride,
+  type HelpOverrides,
+} from '../helpTypes.js';

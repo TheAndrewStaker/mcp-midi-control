@@ -138,7 +138,7 @@ check('fixture: reverb block-slot value resolved', Number.isFinite(REVERB_BLOCK_
 
 // ── Fake AM4 connection ───────────────────────────────────────────────────
 // activeChannelWire selects what the channel-selector short read returns.
-function makeFakeConn(activeChannelWire: number): MidiConnection {
+function makeFakeConn(activeChannelWire: number, sent: number[][] = []): MidiConnection {
   const handlers = new Set<(bytes: number[]) => void>();
 
   function dispatch(frames: number[][]): void {
@@ -155,7 +155,8 @@ function makeFakeConn(activeChannelWire: number): MidiConnection {
     // fn 0x1F GET_ALL_PARAMS → channel-blocked triple for the reverb chunk.
     if (fn === 0x1f) {
       const effectId = dec14(out[6], out[7]);
-      if (effectId !== REVERB_PIDLOW) return []; // other blocks NACK (timeout)
+      // The second instance (effect id + 1) answers with the same body.
+      if (effectId !== REVERB_PIDLOW && effectId !== REVERB_PIDLOW + 1) return []; // other blocks NACK (timeout)
       const header = amFrame([0x74, ...enc14(effectId), ...enc14(ITEM_COUNT)]);
       const packed: number[] = [];
       for (const v of dumpValues) packed.push(...pack16(v));
@@ -175,7 +176,8 @@ function makeFakeConn(activeChannelWire: number): MidiConnection {
       // Block-layout slot reads.
       if (pidLow === BLOCK_SLOT_PID_LOW && pidHigh >= BLOCK_SLOT_PID_HIGH_BASE && pidHigh < BLOCK_SLOT_PID_HIGH_BASE + 4) {
         const slotIdx = pidHigh - BLOCK_SLOT_PID_HIGH_BASE;
-        const value = slotIdx === 0 ? REVERB_BLOCK_VALUE : 0x0fffff; // slot 1 reverb, rest empty
+        // slot 1 reverb, slot 2 a SECOND reverb instance (effect id + 1), rest empty
+        const value = slotIdx === 0 ? REVERB_BLOCK_VALUE : slotIdx === 1 ? REVERB_BLOCK_VALUE + 1 : 0x0fffff;
         return [shortReadResp(out, u32le(value))];
       }
 
@@ -197,7 +199,7 @@ function makeFakeConn(activeChannelWire: number): MidiConnection {
   }
 
   const conn: MidiConnection = {
-    send: (bytes) => dispatch(responsesFor(bytes)),
+    send: (bytes) => { sent.push([...bytes]); dispatch(responsesFor(bytes)); },
     receiveSysEx: () => Promise.reject(new Error('receiveSysEx not used')),
     receiveSysExMatching: (predicate, timeoutMs = 800) =>
       new Promise<number[]>((resolve, reject) => {
@@ -326,6 +328,30 @@ async function main(): Promise<void> {
         check('amp.channel float32-packed fallback decodes to a letter', false, err instanceof Error ? err.message : String(err));
       }
     }
+  }
+
+  // 4. A second instance of a block (slot register = effect id + 1) is read,
+//    not dropped, and is labelled as instance 2.
+  {
+    const ctx: DispatchCtx = { conn: makeFakeConn(0), descriptor: AM4_DESCRIPTOR };
+    const snap = await reader.getPreset(ctx);
+    const second = snap.slots.find((x) => x.slot === 2);
+    check('second instance: slot 2 is present', second !== undefined, `slots=${JSON.stringify(snap.slots.map((x) => x.id))}`);
+    check('second instance: id is reverb_2, instance 2', second?.id === 'reverb_2' && second?.instance === 2, `id=${second?.id} instance=${second?.instance}`);
+    check('second instance: its params are read from its own effect id',
+      second?.params_by_channel?.B?.mix === expectedDisplay(MIX, wireFor(1, MIX.pidHigh)));
+  }
+
+  // 5. get_param with a channel reads that channel's quarter of the dump and
+  //    does NOT switch the block's channel (no write goes out).
+  {
+    const sent: number[][] = [];
+    const ctx: DispatchCtx = { conn: makeFakeConn(0, sent), descriptor: AM4_DESCRIPTOR };
+    const got: (number | string)[] = [];
+    for (const ch of ['A', 'B', 'C', 'D']) got.push((await reader.getParam(ctx, 'reverb', 'mix', ch)).display_value);
+    const want = [0, 1, 2, 3].map((c) => expectedDisplay(MIX, wireFor(c, MIX.pidHigh)));
+    check('get_param channel: each channel returns its own value', JSON.stringify(got) === JSON.stringify(want), `got=${JSON.stringify(got)} want=${JSON.stringify(want)}`);
+    check('get_param channel: only dump reads go out (no channel switch)', sent.length === 4 && sent.every((b) => b[5] === 0x1f), `fns=${sent.map((b) => b[5].toString(16)).join(',')}`);
   }
 
   reportAndExit();

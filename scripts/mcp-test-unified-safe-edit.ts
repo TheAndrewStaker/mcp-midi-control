@@ -10,8 +10,8 @@
  * Run: npm run build && npx tsx scripts/mcp-test-unified-safe-edit.ts
  */
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'dist', 'server', 'index.js');
 
@@ -27,7 +27,7 @@ const PRESET = { slots: [{ slot: 1, block_type: 'amp' }], name: 'sf' };
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER_ENTRY], stderr: 'pipe' });
   if (transport.stderr) transport.stderr.on('data', (b: Buffer) => process.stderr.write(`[server] ${b.toString()}`));
-  const client = new Client({ name: 'unified-safe-edit', version: '1.0.0' }, { capabilities: {} });
+  const client = new Client({ name: 'unified-safe-edit', version: '1.0.0' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   let pass = true;
   try {
     await client.connect(transport);

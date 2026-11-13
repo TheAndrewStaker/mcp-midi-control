@@ -20,8 +20,8 @@
  */
 
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(
   process.cwd(),
@@ -75,7 +75,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   // overwrite a stored location with save_authorized).
   'import_preset',
   // apply_pattern's ncs_upload mode persists + overwrites a Circuit project slot
-  // (same act as upload_project); its other modes are reversible, but the hint
+  // (same act as an import_preset project restore); its other modes are reversible, but the hint
   // reflects the worst case.
   'apply_pattern',
 ]);
@@ -131,7 +131,7 @@ async function main(): Promise<void> {
   }
   const client = new Client(
     { name: 'mcp-test-tool-annotations', version: '1.0.0' },
-    { capabilities: {} },
+    { capabilities: {}, versionNegotiation: { mode: 'auto' } },
   );
 
   let pass = true;

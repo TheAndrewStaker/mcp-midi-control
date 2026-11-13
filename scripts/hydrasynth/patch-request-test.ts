@@ -1,4 +1,14 @@
 /**
+ * ⚠ SUPERSEDED + WRONG-ON-THE-WIRE (2026-08-09, BK-110). Do not run.
+ * This probe predates the envelope decode: it sends RAW info bytes
+ * (`F0 00 20 2B 00 6F 18 00 F7`) with no CRC-32/base64 payload, which
+ * the device does not speak (every hardware-confirmed exchange uses
+ * `wrapSysex`), so it can never receive chunks. The real, golden-tested
+ * read transaction lives in `packages/hydrasynth/src/patchRead.ts`
+ * (`readStoredPatch`), surfaced via get_preset(location). Its question
+ * (working memory or flash?) is ANSWERED by the spec: patch requests
+ * dump FLASH; the working buffer has no read.
+ *
  * Hydrasynth — Patch Request: working memory or flash?
  *
  * Reuses the production `connectHydrasynth()` helper to ensure the

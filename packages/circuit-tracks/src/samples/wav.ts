@@ -4,7 +4,7 @@
  * The device wants a STANDARD WAV sent verbatim, at its native format
  * (confirmed by capture, docs/design/circuit-sample-upload.md):
  *   48000 Hz, MONO, 16-bit PCM.
- * Bounced samples that differ (e.g. the Sleep Token set is 44100 Hz) are
+ * Bounced samples that differ (e.g. a drum-library bounce at 44100 Hz) are
  * channel-folded, resampled, and re-quantized to that target here BEFORE the
  * transport sees them. PCM/integer WAV only (audioFormat 1); compressed WAV is
  * refused rather than silently mangled.

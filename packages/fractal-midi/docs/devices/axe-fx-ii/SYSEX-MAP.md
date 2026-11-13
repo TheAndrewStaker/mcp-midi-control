@@ -446,6 +446,47 @@ form omits the trailing byte. No known semantic difference under
 Q8.02, but minimizing protocol drift is preferable; pending future
 session to retire byte 3.
 
+**AxeEdit's own block REMOVE and same-cell TYPE REPLACE are each a
+single live fn 0x05 write, never a whole-image push and never
+paired with fn 0x06.** Hand-decoded (raw USB-MIDI reassembly,
+`scripts/_research/decode-usbpcap-axefx.ts`) from two 2026-07-17
+captures:
+
+- `samples/captured/ii-axe-edit-removed-chorus.pcapng`: removing a
+  mid-chain Chorus block emits exactly ONE outbound frame relevant to
+  the grid, `f0 00 01 74 07 05 00 00 1d 1a f7` — `block_lo=0x00,
+  block_hi=0x00` (blockId 0, i.e. truly empty, NOT a shunt instance
+  id), `cell_idx=0x1d` (29 decimal → col-major `(col-1)*4+(row-1)=29`
+  → row 2, col 8). No outbound fn 0x06 anywhere in the capture (grep
+  confirms zero fn 0x06 frames).
+- `samples/captured/ii-axe-edit-filter-replaced-with-amp2.pcapng`:
+  replacing a Filter block with Amp 2 at the SAME cell emits exactly
+  ONE relevant frame, `f0 00 01 74 07 05 6b 00 0d 61 f7` — blockId
+  `0x6b`=107 (Amp 2), `cell_idx=0x0d` (13 decimal → row 2, col 4, the
+  Filter's own prior cell). Again zero outbound fn 0x06 frames.
+
+Both cases write ONLY the id word at the cell's existing index; the
+cell's connector mask (routing) is left completely alone by the
+device convention AxeEdit relies on — consistent with `swapGridCellId`
+(`presetImage/grid.ts`) already only touching the id word, never the
+mask word. This is why neither op needs a follow-up shunt placement
+or a fresh cable: a mid-chain removal or same-cell replacement never
+changes what's wired to that cell, only what's living inside it. This
+governs the live-write design of `composeImageChain`'s successor (see
+`presetImage/compose.ts` docstring) — surgical live writes only need
+fresh fn 0x06 authorship when a target lands on a cell that had NO
+prior mask (never-before-wired territory), which none of AxeEdit's own
+captured edits exercise; that gap is left explicitly refused rather
+than guessed.
+
+**Hardware-confirmed 2026-07-18** (`probe-ii-compose-live-ops.ts`, real XL+):
+the server's own same-cell-replace push (`planIILiveComposeOps` /
+`buildComposeLiveApplyOps`) collapses to exactly the same single fn 0x05
+write AxeEdit itself was observed sending, ACKs, and reads back
+byte-exact via the device's own fn 0x1F — the live-write successor is
+no longer just AxeEdit-observed-behavior, it's proven end-to-end
+against our own encoder/executor too.
+
 ## 5d. fn 0x0E SYSEX_QUERY_STATES, whole-preset block-state read 🟡
 
 **AxeEdit name:** `SYSEX_QUERY_STATES`. **Wiki name:** `PRESET_BLOCKS_DATA`.

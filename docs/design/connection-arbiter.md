@@ -1,10 +1,33 @@
 # Connection arbiter: design
 
-Status: **Phase A (R2 handle-health) SHIPPED 2026-07-09.** Phase B (R1
-per-endpoint serialization + R3 contention/cancellation) is the remaining
-forward-looking orchestration foundation, not started. See "Phase A: shipped
-2026-07-09" under Phasing below for what landed, where, and what Phase B
-still needs to build on top of it.
+Status: **Phase A (R2 handle-health) SHIPPED 2026-07-09. Phase B R1 +
+contention SHIPPED 2026-08-06**: the `withEndpoint(descriptor, fn)` seam in
+`protocol-generic/dispatcher/core.ts` (per-endpoint `async-mutex` lock, key =
+`connection_label ?? id`, ctx built fresh inside the lock; the old `openCtx`
+is module-private so a missed wrap is a tsc error), waiter timeout →
+`device_busy` DispatchError with holder metadata (`endpointArbiter.ts`,
+default 5 s, `MCP_ENDPOINT_WAIT_MS` override), AsyncLocalStorage reentrancy
+guard (throws, never deadlocks), `reconnect_midi` through the lock (refuses
+"busy mid-operation" instead of closing the port under a holder), and the
+`MCP_DISABLE_ENDPOINT_ARBITER` kill-switch. Gate:
+`scripts/verify-endpoint-arbiter.ts` (in preflight; serialization,
+interleave-detection, leak regression, reentrancy, busy mapping,
+reconnect-during-hold, kill-switch, lock-release-on-ctx-failure).
+
+Two Phase B notes against the text below. (1) The composite refactor turned
+out to be unnecessary: `dispatchSetModRoute` / `dispatchSetMacroRoute` never
+open a ctx themselves — their inner `executeSetParam` calls each acquire and
+release SEQUENTIALLY, and `executeTranslatePreset` reads + releases the
+source endpoint before the target apply acquires, so no nested-lock path
+existed; the reentrancy guard stands as the tripwire for future violations.
+(2) **R3's cancellation half is the remaining Phase B work** (AbortSignal
+threading, MCP `notifications/cancelled`, live-stream stop checkpoint,
+graceful SIGINT/SIGTERM): the mutex was pulled forward per
+RIG-CONSOLE-DESIGN.md's P2 requirement ("even before Phase B's cancellation
+half"), because the read-interleave defect was blocking the webhost's first
+device-touching route. Until cancellation lands, a long holder is escaped by
+waiting it out (the waiter fails fast with `device_busy` naming it), not by
+aborting it.
 
 Status (pre-Phase-A, kept for context): **sound, ready to build (revised after a 5-lens design review).** The
 mechanical-but-dangerous half of the multi-device song-orchestration vision
@@ -346,12 +369,25 @@ in-flight op ("busy: apply_pattern started 4 s ago").
 
 ## Deferred / future work
 
-- **Cross-process port guard.** A single-instance lockfile / OS named mutex /
-  boot-time port-claim to coordinate across MCP server processes. This is the
-  actual fix for the logged "two processes on one port" incidents; deferred
-  because the existing self-terminate-on-disconnect + held-port diagnostic
-  mitigate it and a hard guard is its own effort. Tracked here so it isn't
-  mistaken for something the arbiter already does.
+- **Cross-process port guard: SHIPPED** (lease 2026-08-06, made SHORT and
+  VISIBLE 2026-09-03). `core/server-shared/instanceLock.ts` + `connections.ts`:
+  a per-label lock file taken at the handle-open seam; the loser degrades to
+  read-only for that device with `port_held_elsewhere`. The lock file carries
+  the holder's identity (MCP client name, pid, held-since, last-active, touched
+  per operation via temp-file + rename). **Idle release:** a handle and its
+  lease are given back `MCP_PORT_IDLE_RELEASE_MS` (15 s) after the instance's
+  last operation on that device, deferred while the arbiter reports an op in
+  flight or a timed primitive holds a pin (`pinConnection`); the Axe-Fx II opts
+  out (`registerConnector(..., { holdWhileIdle: true })`) because its
+  buffer-dirty signal arrives unsolicited on the open port. **Bounded wait:**
+  `withEndpoint` waits `MCP_PORT_WAIT_MS` (20 s) for a foreign holder to go
+  idle before the open reports the holder in words. **Visibility:**
+  `list_midi_ports` lists every lease, so BOTH sessions see who has what.
+  Trigger: 2026-09-03, two Claude Code sessions; one idle for two days still
+  held the Circuit, both saw "in use", neither could proceed. Owner's chosen
+  shape: short reservations + visibility, not a cooperative handoff protocol.
+  Gate: `scripts/verify-instance-lock.ts` (identity, touch atomicity, wait,
+  idle release, pin, holdWhileIdle).
 - **Auto-wrapping reader/writer decorator** at registration (so `withEndpoint` is
   applied structurally, not per-call), the cleaner end state after Phase B proves
   the seam.

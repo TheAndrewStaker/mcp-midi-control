@@ -1,0 +1,17 @@
+{
+ "schemaVersion": 1,
+ "device": "FM3 Mk II Turbo, firmware 13",
+ "date": "2026-10-23",
+ "frame": "fn=0x01 sub=0x2E empty-target reply, byte f[37] (F0 included)",
+ "decode": "cpu% = raw < 64 ? 32 + raw/2 : raw",
+ "previousDecode": "32 + raw*0.5 (ForgeFX, FM3 fw12) - correct only below 64 %",
+ "method": "12 presets rebuilt from the user's subtractive FM3-Edit readings, sent to the edit buffer by FM3_CPU_SWEEP.py; three equal consecutive reads each. User confirmed the first load on the FM3 display.",
+ "points": [
+  {"id": "A0", "raw": 82, "hand": 82.5}, {"id": "A1", "raw": 72, "hand": 72.0}, {"id": "A2", "raw": 57, "hand": 61.0},
+  {"id": "A3", "raw": 51, "hand": 57.7}, {"id": "A4", "raw": 43, "hand": 54.0}, {"id": "A5", "raw": 41, "hand": 52.8},
+  {"id": "B1", "raw": 78, "hand": 78.3}, {"id": "B2", "raw": 76, "hand": 76.4}, {"id": "B3", "raw": 74, "hand": 73.8},
+  {"id": "B4", "raw": 66, "hand": 66.2}, {"id": "B5", "raw": 60, "hand": 62.0}, {"id": "B6", "raw": 41, "hand": 52.9}
+ ],
+ "maxAbsError": 0.5,
+ "editBufferLoad": "Confirmed: a 0x77/0x78x8/0x79 dump with header 7F 00 00 40 00 loads into the FM3 edit buffer (name shown on the display); nothing was stored."
+}

@@ -39,14 +39,20 @@ export function runAm4MidiRegisterTests(): void {
   const isRawExpectations: Array<[Key, boolean]> = [
     ['global.scene_cc', true],
     ['global.out1_vol_cc', true],
-    ['global.midi_chan', true],
     ['global.bypass_fx1_cc', true],
-    ['global.default_scene', true],
     ['preset.scene_1_midi_1_channel', true],
     ['preset.scene_2_midi_1_value', true],
     // enum register — handled on the reader's enum branch, not raw-int
     ['preset.scene_1_midi_1_type', false],
     ['global.midi_prog_change', false],
+    // BK-AM4-CACHE-ORACLE (2026-08-11): midi_chan + default_scene moved from
+    // count raw-int to the cache oracle's 0-based enums (midi_chan 0='1'..
+    // 16='OMNI'; default_scene 0='AS SAVED'..4='SCENE 4'). The deep-verify
+    // reads (u32=0 on both) sat BELOW the old count minima, so the count
+    // shapes could not express the state the registers actually held. As
+    // enums they ride the reader's enum branch, not raw-int.
+    ['global.midi_chan', false],
+    ['global.default_scene', false],
     // normalized continuous 'count' knob (log curve) — must NOT be raw-int
     ['geq.master_q', false],
     // negative-range global 'count' (tuner cent offset -25..25) — Q16
@@ -62,8 +68,8 @@ export function runAm4MidiRegisterTests(): void {
   const hasNoneExpectations: Array<[Key, boolean]> = [
     ['global.scene_cc', true],          // 0..127 CC assignment
     ['global.bypass_fx1_cc', true],
-    ['global.midi_chan', false],        // 1..16, no None
-    ['global.default_scene', false],    // 1..4, no None
+    ['global.midi_chan', false],        // enum now (0='1'..16='OMNI'), not raw-int
+    ['global.default_scene', false],    // enum now (0='AS SAVED'..4), not raw-int
     ['preset.scene_1_midi_1_value', false], // real 0..127 value, no None
     ['preset.scene_1_midi_1_channel', false],
     // 0..127 global VALUE register (external-controller start value), not a
@@ -80,8 +86,8 @@ export function runAm4MidiRegisterTests(): void {
     ['global.scene_cc', 34, 34],                         // HW: CC#34
     ['global.scene_cc', RAW_INT_NONE_SENTINEL, 'None'],  // HW: unassigned
     ['global.scene_cc', 0, 0],                           // CC#0 is distinct from None
-    ['global.midi_chan', 10, 10],
-    ['global.midi_chan', RAW_INT_NONE_SENTINEL, 128],    // no None mapping → raw int
+    ['global.out1_vol_cc', 7, 7],
+    ['global.out1_vol_cc', RAW_INT_NONE_SENTINEL, 'None'],
     ['preset.scene_1_midi_1_channel', 16, 16],           // HW: channel 16
     ['preset.scene_2_midi_1_value', 127, 127],           // HW: value 127
   ];
@@ -105,8 +111,8 @@ export function runAm4MidiRegisterTests(): void {
 
   // ── Write encode rejections ─────────────────────────────────────────
   expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['global.scene_cc'], 200), 'scene_cc 200 out of range', failed);
-  expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['global.midi_chan'], 'None'), "midi_chan 'None' (no sentinel)", failed);
-  expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['global.midi_chan'], 0), 'midi_chan 0 below min', failed);
+  expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['preset.scene_1_midi_1_channel'], 'None'), "scene MIDI channel 'None' (no sentinel)", failed);
+  expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['preset.scene_1_midi_1_channel'], 0), 'scene MIDI channel 0 below min', failed);
   expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['global.ext_startval_begin'], 'None'), "ext_startval_begin 'None' (value register, no sentinel)", failed);
 
   if (failed.length > 0) {

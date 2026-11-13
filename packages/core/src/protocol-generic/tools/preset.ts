@@ -10,7 +10,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import {
@@ -219,7 +219,7 @@ export function registerPresetTools(server: McpServer): void {
   server.registerTool('get_preset', {
     title: 'Read Preset',
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
-    description: 'Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. Use for state-anchoring before a tone edit. Default: active-channel params only. Pass include_channel_state: true for the per-channel nested shape (params_by_channel; II X/Y, AM4 A/B/C/D). Use instance on set_param/set_params to target a specific block (e.g. Amp 2). Scope: active scene only; no scenes 2..N, no routing. GEN-3 (Axe-Fx III / FM3 / FM9): pass `location` (integer preset number) to read a STORED preset and get the FULL decoded patch in `whole_preset` (routing grid, per-channel A/B/C/D block types, all 8 scene names plus per-scene bypass/channel, amp model plus knobs, modifiers, scene controllers; FM9-confirmed). Without location, gen-3 live read: `live_grid` = positioned routing (fn=0x01 sub=0x2E); `slots` = per-block param values; `live_meters.cpu_percent` = the preset\'s DSP/CPU load (answer "how much headroom?"); `active_scene` = current scene index. CIRCUIT: `location` (Project 1..64, + `pack`) reads a stored project; `slots` are pattern 1, `pattern_occupancy` lists which of the 8 patterns hold content (a silent pattern 1 is not an empty project). Performance: II ~2 s; AM4 ~0.3 s; gen-3 location read ~1-2 s. Hydra returns capability_not_supported. DO NOT feed the snapshot back into apply_preset (FRESH-BUILD clears unlisted slots plus scenes); use set_param / set_params for changed knobs. Re-call to verify.',
+    description: 'Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. Use for state-anchoring before a tone edit. Default: active-channel params only. Pass include_channel_state: true for the per-channel nested shape (params_by_channel; II X/Y, AM4 A/B/C/D). Use instance on set_param/set_params to target a specific block (e.g. Amp 2). Scope: active scene only; no scenes 2..N, no routing. GEN-3 (Axe-Fx III / FM3 / FM9): pass `location` (integer preset number) to read a STORED preset and get the FULL decoded patch in `whole_preset` (routing grid, per-channel A/B/C/D block types, all 8 scene names plus per-scene bypass/channel, amp model plus knobs, modifiers, scene controllers; FM9-confirmed). Without location, gen-3 live read: `live_grid` = positioned routing (fn=0x01 sub=0x2E); `slots` = per-block param values; `live_meters.cpu_percent` = the preset\'s DSP/CPU load (answer "how much headroom?"); `active_scene` = current scene index. CIRCUIT: `location` (Project 1..64, + `pack`) reads a stored project; `slots` are pattern 1, `pattern_occupancy` lists which of the 8 patterns hold content (a silent pattern 1 is not an empty project). HYDRA: stored patches only (location REQUIRED). Performance: II ~2 s; AM4 ~0.3 s; gen-3 location read ~1-2 s. DO NOT feed the snapshot back into apply_preset (FRESH-BUILD clears unlisted slots plus scenes); use set_param / set_params for changed knobs. Re-call to verify.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       include_channel_state: z
@@ -232,22 +232,30 @@ export function registerPresetTools(server: McpServer): void {
         .union([z.string(), z.number()])
         .optional()
         .describe(
-          'gen-3 only (Axe-Fx III / FM3 / FM9): stored preset number to read instead of the active buffer. Dumps that stored slot (fn=0x03) and returns the full decoded patch in `whole_preset`. Ignored on II/AM4/Hydra (they read the active buffer).',
+          'Stored location to read instead of the active buffer. gen-3: integer preset number (fn=0x03, full decode in `whole_preset`). AM4: "A01".."Z04". Hydra: "A001".."H128", REQUIRED (decodes name, category, params from the FLASH copy; the working buffer has no read). Circuit: Project 1..64 (+ pack). II: ignored (active buffer).',
         ),
       pack: z.number().int().min(1).max(32).optional().describe(`Which pack the numeric \`location\` lives in. A "patch:N" location instead reads the working buffer, which always follows the front-panel pack. ${PACK_DESC}`),
     },
   }, async ({ port, include_channel_state, location, pack }) => {
     try {
-      const locNum =
+      // Numeric-looking strings become numbers; anything else passes
+      // through VERBATIM for the device reader to parse — the location
+      // grammar is per-device (Hydrasynth "A001".."H128"; found 2026-08-09
+      // when the old blanket parseInt turned "A001" into a refusal above a
+      // reader that parses it fine). Bad strings get the DEVICE's own
+      // bad_location error, which names the device's expected shape.
+      const loc: string | number | undefined =
         location === undefined
           ? undefined
           : typeof location === 'number'
             ? location
-            : Number.parseInt(String(location), 10);
-      if (locNum !== undefined && (!Number.isInteger(locNum) || locNum < 0)) {
-        return asError(new Error(`get_preset: location must be a non-negative integer, got ${JSON.stringify(location)}`));
+            : /^\d+$/.test(location.trim())
+              ? Number.parseInt(location.trim(), 10)
+              : location;
+      if (typeof loc === 'number' && (!Number.isInteger(loc) || loc < 0)) {
+        return asError(new Error(`get_preset: numeric location must be a non-negative integer, got ${JSON.stringify(location)}`));
       }
-      const result = await executeGetPreset({ port, include_channel_state, location: locNum, pack });
+      const result = await executeGetPreset({ port, include_channel_state, location: loc, pack });
       return asText(result);
     } catch (err) {
       return asError(err);
@@ -322,6 +330,10 @@ export function registerPresetTools(server: McpServer): void {
         file_name: fileName,
         device: dump.device,
         name: dump.name,
+        // Devices that keep the category OUT of the dump bytes (MicroFreak)
+        // return it here so import_preset's `preset_type` can put it back.
+        // Nothing else can recover it from the file.
+        ...(dump.category !== undefined ? { category: dump.category } : {}),
         source: dump.source,
         ...(dump.warning !== undefined ? { warning: dump.warning } : {}),
         byte_length: dump.byte_length,
@@ -402,7 +414,7 @@ export function registerPresetTools(server: McpServer): void {
   server.registerTool('apply_preset', {
     title: 'Build Preset',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-    description: 'Build or replace the entire working-buffer preset in one call. Single-knob tweak: use set_param. One block on a linear device: use set_block. Re-apply a byte-exact backup: use import_preset. RECIPES FIRST: scan describe_device(port).recipes[] for a block_stack match and apply via `recipe_id` (+ `overrides`); pasting recipe slots by hand is the dominant failure mode. Modes: `spec` (full author), `recipe_id` (verbatim), `recipe_id`+`overrides` (deep-merged). PITFALLS: FRESH-BUILD, unlisted slots clear and unlisted scenes reset. Slot is integer 1..4 (linear) or {row,col} (grid). Multi-instance blocks use canonical id (`amp`, `amp_2`), not display names. Grid routing[] must end with `{to:"OUTPUT"}`. Type-gated knobs silently drop; when the user names specific knobs, call find_compatible_types first. RESPONSE: ok:true succeeded, do NOT retry. validation_info[] level:"info" = auto-resolved (alias, case fix); level:"warning" needs action (channel-Y inactive, dropped params). ok:false with validation_errors[] = zero writes fired, fix and re-invoke. (1-3 s, +250 ms with save.)',
+    description: 'Build or replace the entire working-buffer preset in one call. Single-knob tweak: use set_param. Several knobs on the CURRENT tone: use set_params. One block on a linear device: use set_block. Re-apply a byte-exact backup: use import_preset. RECIPES FIRST: scan describe_device(port).recipes[] for a block_stack match and apply via `recipe_id` (+ `overrides`); pasting recipe slots by hand is the dominant failure mode. PITFALLS: FRESH-BUILD, unlisted blocks are removed and unlisted scenes reset. Axe-Fx II applies as a DIFF (placed blocks untouched, unlisted params keep their value); other devices reset params to defaults, restate knobs to keep. Slot is integer 1..4 (linear) or {row,col} (grid). Multi-instance blocks use canonical id (`amp`, `amp_2`), not display names. Grid routing[] must end with `{to:"OUTPUT"}`. Type-gated knobs silently drop; when the user names specific knobs, call find_compatible_types first. RESPONSE: ok:true succeeded, do NOT retry. validation_info[] level:"warning" needs action. ok:false with validation_errors[] = zero writes fired, fix and re-invoke. (1-3 s, +250 ms with save.)',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       spec: presetShape.optional().describe(
@@ -447,23 +459,33 @@ export function registerPresetTools(server: McpServer): void {
   server.registerTool('import_preset', {
     title: 'Restore Preset',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-    description: "Re-apply a byte-exact preset backup (a `.syx` written by export_preset) to the device. The inverse of export_preset. SAME-DEVICE-MODEL only: the bytes are that device's native dump, so an Axe-Fx II backup restores to an Axe-Fx II, an AM4 backup to an AM4 (to move a tone across devices, use apply_preset + translate_preset instead). Default pushes to the WORKING BUFFER (reversible by switching presets); with target_location + save_authorized it persists to that stored location. Validates every frame's checksum before sending. Available on Fractal AM4 + Axe-Fx II; other devices return capability_not_supported. Returns { ok, frames_sent, acks_received, nacks[], name?, saved_to_location? }.",
+    description: "Put a byte-exact, device-native file back on the device: a `.syx` preset or a Circuit Tracks `.ncs` project (formerly upload_project), as export_preset / backup_device wrote it. SAME-DEVICE-MODEL only (cross-device: apply_preset + translate_preset). Default pushes to the WORKING BUFFER (reversible); with target_location + save_authorized it persists to that stored location. Hydrasynth / MicroFreak / Circuit Tracks: stored location only, no working buffer (MicroFreak also needs `name`). An occupied Circuit project is backed up before it is overwritten. The file is validated before any write.",
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       file_path: z.string().describe(
-        'Absolute path to the `.syx` backup to re-apply (the `file_path` export_preset returned). Must be a dump from THIS device model.',
+        'Absolute path to the file to put back (the `file_path` export_preset returned).',
       ),
       target_location: z.union([z.string(), z.number()]).optional().describe(
-        'Optional stored location to persist the restored preset to (requires save_authorized). Omit to restore to the working buffer only (reversible). AM4: restore-to-location is not yet supported (working buffer only).',
+        'Stored location to persist the restored preset to (requires save_authorized). AM4: working buffer only. Hydrasynth / MicroFreak / Circuit Tracks (project 1..64): REQUIRED.',
       ),
       save_authorized: SAVE_AUTHORIZED_SCHEMA.describe(
-        'Set true ONLY with explicit save vocab ("save", "store", "keep", "put on"). With target_location, persists the restored bytes to that location (destructive overwrite). Default false = working-buffer restore (reversible).',
+        'Set true ONLY with explicit save vocab ("save", "store", "keep", "put on"). With target_location, persists to that location (destructive overwrite). Default false = working-buffer restore (reversible).',
       ),
+      confirm_overwrite: z.boolean().optional().describe(
+        'Hydrasynth / MicroFreak / Circuit Tracks: an occupied location is refused with the occupant\'s name until true.',
+      ),
+      name: z.string().optional().describe(
+        'MicroFreak only, REQUIRED: the destination preset name (a byte-exact dump omits it). Use export_preset\'s `name`.',
+      ),
+      preset_type: z.number().int().min(0).max(127).optional().describe(
+        'MicroFreak only: the preset\'s category, absent from the dump like `name`. Pass export_preset\'s `category`; omitted files it under none.',
+      ),
+      pack: z.number().int().min(1).max(32).optional().describe(`Which pack holds the target project. ${PACK_DESC}`),
     },
-  }, async ({ port, file_path, target_location, save_authorized }) => {
+  }, async ({ port, file_path, target_location, save_authorized, confirm_overwrite, name, preset_type, pack }) => {
     try {
       const bytes = new Uint8Array(await readFile(file_path.trim()));
-      const result = await executeRestorePreset({ port, bytes, target_location, save_authorized });
+      const result = await executeRestorePreset({ port, bytes, target_location, save_authorized, confirm_overwrite, name, preset_type, pack });
       return asText(result);
     } catch (err) {
       return asError(err);

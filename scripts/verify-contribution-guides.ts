@@ -46,6 +46,7 @@ import { SPD_SX_DESCRIPTOR } from '@mcp-midi-control/spd-sx/descriptor.js';
 import { VE500_DESCRIPTOR } from '@mcp-midi-control/ve-500/descriptor.js';
 import { MICROFREAK_DESCRIPTOR, MINIFREAK_DESCRIPTOR } from '@mcp-midi-control/arturia/descriptor.js';
 import { RC_505_MK2_DESCRIPTOR, RC_600_DESCRIPTOR } from '@mcp-midi-control/boss-rc/descriptor.js';
+import { MPC_ONE_G2_DESCRIPTOR } from '@mcp-midi-control/akai-mpc/descriptor.js';
 import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -53,7 +54,9 @@ const ROOT = path.resolve(HERE, '..');
 const CONTRIB = path.join(ROOT, 'docs', 'contributing');
 const DEVICE_DIR = path.join(CONTRIB, 'devices');
 const HUB = path.join(CONTRIB, 'README.md');
-const SERVER_INDEX = path.join(ROOT, 'packages', 'server-all', 'src', 'server', 'index.ts');
+// The device registrations live in the McpServer factory module since the MCP
+// v2 lifecycle rewrite (2026-08-05): index.ts owns serving + shutdown only.
+const SERVER_INDEX = path.join(ROOT, 'packages', 'server-all', 'src', 'server', 'createServer.ts');
 const REDIRECT_STUB = path.join(
   ROOT, 'packages', 'fractal-midi', 'docs', 'capture-guides', 'README.md',
 );
@@ -93,6 +96,7 @@ const REGISTERED: Record<string, DeviceDescriptor | readonly DeviceDescriptor[]>
   MINIFREAK_DESCRIPTOR,
   RC_505_MK2_DESCRIPTOR,
   RC_600_DESCRIPTOR,
+  MPC_ONE_G2_DESCRIPTOR,
 };
 
 const ROSTER: DeviceDescriptor[] = Object.values(REGISTERED)

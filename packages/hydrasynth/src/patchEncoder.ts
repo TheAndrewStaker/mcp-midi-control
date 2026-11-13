@@ -45,8 +45,20 @@
  *
  * Goldens for this module live in `scripts/hydrasynth/verify-sysex-patch.ts`.
  */
-import { HYDRASYNTH_NRPNS, type HydrasynthNrpn } from './nrpn.js';
+import { HYDRASYNTH_NRPNS, findHydraNrpn, type HydrasynthNrpn } from './nrpn.js';
 import { INIT_PATCH_BUFFER } from './initPatchBuffer.js';
+import {
+  matrixImageFieldKind,
+  modSourceImageIndexForLabel,
+  modDestImageIndexForLabel,
+  modDestCategoryForImageIndex,
+  sampleSourceNames,
+  sampleDestNames,
+  MOD_SOURCE_NAMES,
+  MOD_DEST_NAMES,
+} from './modRouting.js';
+import { resolveNrpnValue, type ResolvedNrpnValue } from './encoding.js';
+import { HYDRASYNTH_ENUMS, resolveHydraEnum } from './enums.js';
 
 /** The full Hydrasynth patch buffer is 2790 bytes (21×128 + 102). */
 export const PATCH_BUFFER_SIZE = 2790;
@@ -126,7 +138,7 @@ export const PATCH_NAME = {
  *   sign-extended into the second byte". Stored at display scale.
  *   No `/8` applied.
  */
-export type PatchOffsetEncoding = 'u16le' | 's16le' | 'u8' | 's8';
+export type PatchOffsetEncoding = 'u16le' | 's16le' | 'u8' | 's8' | 'u16le_raw';
 
 /**
  * Patch buffer divides every NRPN wire value by this constant for u16le
@@ -146,6 +158,27 @@ export interface PatchOffsetSpec {
   readonly enc: PatchOffsetEncoding;
   /** Spec-table label for cross-reference. Optional, debugging aid. */
   readonly label?: string;
+  /**
+   * Image-layout artifact with no NRPN identity: encodePatch's post-pass
+   * computes it (e.g. a route target's category id) and callers never
+   * need to name it. Exempt from the PATCH_OFFSETS↔NRPN name-parity
+   * gate; still writable explicitly for corpus/debug tooling.
+   */
+  readonly derived?: true;
+  /**
+   * DECLARED value space of this field in the encode/decode Map (the
+   * `overrides` input and the `decodePatch` output). Absent = NRPN wire
+   * (the historical convention). `'image-index'` = the patch image's own
+   * linear index (route source/target: edisyn roster position; FX-type
+   * selectors: the raw enum index) — values pass verbatim, bounds-checked,
+   * and label→index resolution happens upstream in resolveApplyPatchValue.
+   * The space is selected by THIS declaration, never by inspecting a
+   * value's magnitude: the wire-first fallthrough it replaces corrupted
+   * CC-range routes on decode→re-encode (2026-08-23 review,
+   * BK-HYDRA-ROUTE-IMAGE-ROUNDTRIP; the NRPN wire and image index spaces
+   * overlap in the CC ranges).
+   */
+  readonly space?: 'image-index';
 }
 
 /**
@@ -177,6 +210,51 @@ export interface PatchOffsetSpec {
  * collapsed value and don't know which semantic was active without
  * also reading the bpm-sync byte.
  */
+/**
+ * MOD MATRIX (32 rows) + MACRO (8 x 8 destinations) route regions.
+ * Offsets from SysexPatchFormat.txt; encodings + the linear-index /
+ * category value spaces established by the 1024-image flash-corpus
+ * census 2026-08-22 (samples/_scratch/hydra-matrix-census*.ts):
+ *
+ *   838 + 2i          matrix depth      u16le      (NRPN wire/8, 512 = 0.0)
+ *   902 + 2i          matrix source     u16le_raw  (MOD_SOURCE_NAMES linear)
+ *   966 + 2i          matrix target     u16le_raw  (MOD_DEST_NAMES linear)
+ *  1030 + 2i          target category   u16le_raw  (MOD_DEST_CATEGORIES)
+ *  1094 + 16m + 2s    macro depth       u16le
+ *  1222 + 16m + 2s    macro target      u16le_raw  (region unlabeled in the
+ *                       spec; pinned by size (8x8x2 between depths and
+ *                       buttons) + census: all values valid dest indices)
+ *  1350 + 16m + 2s    macro button      u16le
+ *  1478 + 16m + 2s    macro tgt categ.  u16le_raw
+ *
+ * Category fields are DERIVED from the target by encodePatch's post-pass;
+ * callers set source/target/depth (+ button) only.
+ */
+function matrixPatchOffsets(): PatchOffsetSpec[] {
+  const out: PatchOffsetSpec[] = [];
+  for (let i = 1; i <= 32; i++) {
+    const o = 2 * (i - 1);
+    out.push(
+      { name: `modmatrix${i}depth`, byte: 838 + o, enc: 'u16le', label: `Mod Matrix ${i} Amount` },
+      { name: `modmatrix${i}modsource`, byte: 902 + o, enc: 'u16le_raw', label: `Mod Matrix ${i} Src (linear)`, space: 'image-index' },
+      { name: `modmatrix${i}modtarget`, byte: 966 + o, enc: 'u16le_raw', label: `Mod Matrix ${i} Dest (linear)`, space: 'image-index' },
+      { name: `modmatrix${i}targetcategory`, byte: 1030 + o, enc: 'u16le_raw', label: `Mod Matrix ${i} Dest Category (derived)`, derived: true },
+    );
+  }
+  for (let m = 1; m <= 8; m++) {
+    for (let s = 1; s <= 8; s++) {
+      const o = 16 * (m - 1) + 2 * (s - 1);
+      out.push(
+        { name: `macro${m}depth${s}`, byte: 1094 + o, enc: 'u16le', label: `Macro ${m} Depth ${s}` },
+        { name: `macro${m}target${s}`, byte: 1222 + o, enc: 'u16le_raw', label: `Macro ${m} Target ${s} (linear)`, space: 'image-index' },
+        { name: `macro${m}buttonvalue${s}`, byte: 1350 + o, enc: 'u16le', label: `Macro ${m} Button ${s}` },
+        { name: `macro${m}targetcategory${s}`, byte: 1478 + o, enc: 'u16le_raw', label: `Macro ${m} Target ${s} Category (derived)`, derived: true },
+      );
+    }
+  }
+  return out;
+}
+
 export const PATCH_OFFSETS: readonly PatchOffsetSpec[] = [
   // -------- Voice / global (bytes 30–60) --------
   { name: 'voicepolyphony',     byte:  30, enc: 'u8',    label: 'Polyphony' },
@@ -317,7 +395,7 @@ export const PATCH_OFFSETS: readonly PatchOffsetSpec[] = [
   { name: 'amplevel',           byte: 350, enc: 'u16le', label: 'Amplifier Level' },
 
   // -------- Pre-FX (bytes 352–367) --------
-  { name: 'prefxtype',          byte: 352, enc: 'u8',    label: 'Pre-FX Type' },
+  { name: 'prefxtype',          byte: 352, enc: 'u8',    label: 'Pre-FX Type', space: 'image-index' },
   // HW-058 follow-up (Session 47): prefxparam1..5 added so the agent's
   // chorus rate/depth recipe lands without erroring on PATCH_OFFSETS lookup.
   // Bytes 356-365 per SysexPatchFormat.txt; each is a u16le LB/HB pair.
@@ -331,7 +409,7 @@ export const PATCH_OFFSETS: readonly PatchOffsetSpec[] = [
   { name: 'prefxwet',           byte: 366, enc: 'u16le', label: 'Pre-FX Dry/Wet' },
 
   // -------- Delay (bytes 368–383) --------
-  { name: 'delaytype',          byte: 368, enc: 'u8',    label: 'Delay Type' },
+  { name: 'delaytype',          byte: 368, enc: 'u8',    label: 'Delay Type', space: 'image-index' },
   { name: 'delaybpmsync',       byte: 370, enc: 'u8',    label: 'Delay BPM Sync' },
   // Spec collapses sync-on/sync-off into one wire slot at byte 372.
   // Both names map to the same byte; the device interprets the value
@@ -348,7 +426,7 @@ export const PATCH_OFFSETS: readonly PatchOffsetSpec[] = [
   { name: 'delaywet',           byte: 382, enc: 'u16le', label: 'Delay Dry/Wet' },
 
   // -------- Reverb (bytes 384–399) --------
-  { name: 'reverbtype',         byte: 384, enc: 'u8',    label: 'Reverb Type' },
+  { name: 'reverbtype',         byte: 384, enc: 'u8',    label: 'Reverb Type', space: 'image-index' },
   { name: 'reverbtime',         byte: 388, enc: 'u16le', label: 'Reverb Time' },
   { name: 'reverbtone',         byte: 390, enc: 'u16le', label: 'Reverb Tone (bipolar)' },
   { name: 'reverbhidamp',       byte: 392, enc: 'u16le', label: 'Reverb High Damp' },
@@ -357,7 +435,7 @@ export const PATCH_OFFSETS: readonly PatchOffsetSpec[] = [
   { name: 'reverbwet',          byte: 398, enc: 'u16le', label: 'Reverb Dry/Wet' },
 
   // -------- Post-FX (bytes 400–415) --------
-  { name: 'postfxtype',         byte: 400, enc: 'u8',    label: 'Post-FX Type' },
+  { name: 'postfxtype',         byte: 400, enc: 'u8',    label: 'Post-FX Type', space: 'image-index' },
   // Same shape as Pre-FX — added Session 47 / HW-058 follow-up.
   { name: 'postfxparam1',       byte: 404, enc: 'u16le', label: 'Post-FX Param 1' },
   { name: 'postfxparam2',       byte: 406, enc: 'u16le', label: 'Post-FX Param 2' },
@@ -566,6 +644,9 @@ export const PATCH_OFFSETS: readonly PatchOffsetSpec[] = [
   { name: 'lfo5steps',          byte: 786, enc: 'u8',    label: 'LFO 5 Steps' },
   { name: 'lfo5smooth',         byte: 788, enc: 'u8',    label: 'LFO 5 Smooth' },
   { name: 'lfo5oneshot',        byte: 790, enc: 'u8',    label: 'LFO 5 One Shot' },
+
+  // -------- Mod matrix + macro routes (bytes 838-1605) --------
+  ...matrixPatchOffsets(),
 ];
 
 /** Build an O(1) name → spec lookup; used by encode/decode helpers. */
@@ -627,6 +708,17 @@ export function writePatchValue(buf: Uint8Array, spec: PatchOffsetSpec, value: n
       buf[spec.byte + 1] = (patchByte >>> 8) & 0xff;
       return;
     }
+    case 'u16le_raw': {
+      // Verbatim u16le, NO /8 convention. Used by the mod-matrix / macro
+      // route fields, whose image values are LINEAR list indices and
+      // category ids (2026-08-22 corpus census), not NRPN wire values.
+      if (value < 0 || value > 0xffff) {
+        throw new Error(`u16le_raw value for "${spec.name}" out of range 0..65535: ${value}`);
+      }
+      buf[spec.byte]     = value & 0xff;
+      buf[spec.byte + 1] = (value >>> 8) & 0xff;
+      return;
+    }
     case 's16le': {
       if (value < -0x8000 || value > 0x7fff) {
         throw new Error(`s16le value for "${spec.name}" out of range -32768..32767: ${value}`);
@@ -678,6 +770,8 @@ export function readPatchValue(buf: Uint8Array, spec: PatchOffsetSpec): number {
   switch (spec.enc) {
     case 'u16le':
       return (lo | (hi << 8)) * PATCH_U16LE_WIRE_DIVISOR;
+    case 'u16le_raw':
+      return lo | (hi << 8);
     case 's16le': {
       const v = lo | (hi << 8);
       return v >= 0x8000 ? v - 0x10000 : v;
@@ -824,6 +918,47 @@ function fillFxTypeDefaults(
   }
 }
 
+/**
+ * Post-pass for the mod-matrix / macro route fields:
+ *
+ * 1. **Derive target categories.** The image stores a route destination as
+ *    (linear index, category id) in two regions; callers set only the
+ *    target, so the category is written here from MOD_DEST_CATEGORIES
+ *    unless the caller set it explicitly. Target Off (index 0) zeroes it.
+ * 2. **Default macro button values.** A newly-assigned macro target whose
+ *    buttonvalue was not set gets display-0 (image 512): the INIT buffer's
+ *    0 decodes as -128, which would slam the destination full-negative on
+ *    a Control-button press — the same footgun set_macro_route guards.
+ */
+function fillMatrixDerivedFields(
+  buf: Uint8Array,
+  overrides: Map<string, number> | ReadonlyMap<string, number>,
+): void {
+  const BUTTON_DISPLAY_ZERO_WIRE = 4096; // NRPN depth wire for display 0.0 (image 512)
+  for (const name of overrides.keys()) {
+    const kind = matrixImageFieldKind(name);
+    if (kind !== 'target' && kind !== 'macro_target') continue;
+    const catName =
+      kind === 'target'
+        ? name.replace(/modtarget$/, 'targetcategory')
+        : name.replace(/^macro(\d+)target(\d+)$/, 'macro$1targetcategory$2');
+    const targetSpec = PATCH_OFFSETS_BY_NAME.get(name);
+    const catSpec = PATCH_OFFSETS_BY_NAME.get(catName);
+    if (!targetSpec || !catSpec) continue;
+    if (!overrides.has(catName)) {
+      const linear = readPatchValue(buf, targetSpec); // u16le_raw -> linear index
+      writePatchValue(buf, catSpec, modDestCategoryForImageIndex(linear));
+    }
+    if (kind === 'macro_target') {
+      const btnName = name.replace(/^macro(\d+)target(\d+)$/, 'macro$1buttonvalue$2');
+      const btnSpec = PATCH_OFFSETS_BY_NAME.get(btnName);
+      if (btnSpec && !overrides.has(btnName) && readPatchValue(buf, btnSpec) === 0) {
+        writePatchValue(buf, btnSpec, BUTTON_DISPLAY_ZERO_WIRE);
+      }
+    }
+  }
+}
+
 export function encodePatch(
   overrides: Map<string, number> | ReadonlyMap<string, number>,
   options: EncodePatchOptions = {},
@@ -846,6 +981,7 @@ export function encodePatch(
   // under the new type (which silences EQ/Compressor). See FX_TYPE_DEFAULTS.
   fillFxTypeDefaults(buf, overrides, 'pre');
   fillFxTypeDefaults(buf, overrides, 'post');
+  fillMatrixDerivedFields(buf, overrides);
   if (options.name !== undefined) {
     writePatchName(buf, options.name);
   }
@@ -863,11 +999,15 @@ export function encodePatch(
  *
  * Three special cases:
  *
- * 1. **u8 enum-scaled params** (prefxtype / postfxtype / delaytype /
- *    reverbtype — all `enumValueScale: 8`): patch buffer stores raw
- *    enum index. u8 encoding has no internal /8 divisor (unlike u16le),
- *    so we have to undo the scale here. Without this, `prefxtype:
- *    "Chorus"` (wire 8) was getting written as byte 8 = Compressor.
+ * 1. **`space: 'image-index'` params** (route source/target/macro-target
+ *    + the u8 enum-scaled FX-type selectors prefxtype / postfxtype /
+ *    delaytype / reverbtype): the Map value IS the image-native index —
+ *    verbatim, bounds-checked, no wire mapping. Labels are resolved to
+ *    this space upstream (`resolveApplyPatchValue`); `decodePatch`
+ *    emits the same space, so encode(decode(x)) is identity by
+ *    construction. Replaced the wire-first magnitude-sniffing branch
+ *    that corrupted CC-range routes and the ÷scale that collapsed
+ *    decoded FX types (2026-08-23, BK-HYDRA-ROUTE-IMAGE-ROUNDTRIP).
  *
  * 2. **u16le enum-scaled params** (reverbtime — `enumValueScale: 64`):
  *    patch buffer stores `wire / 8` per the standard u16le rule. The
@@ -893,7 +1033,50 @@ export function encodePatch(
  *    Detection: enumTable set, no enumValueScale, u16le slot.
  */
 function patchBufferValueFor(name: string, wireValue: number, spec: PatchOffsetSpec): number {
-  const entry = HYDRASYNTH_NRPNS.find((e) => e.name === name);
+  const kind = matrixImageFieldKind(name);
+  // Declared image-index fields: the value IS the image-native index.
+  // Verbatim, bounds-checked, no wire mapping — the space is selected by
+  // the spec's declaration, never by the value's magnitude (see the
+  // `space` field's doc comment for why).
+  if (spec.space === 'image-index') {
+    if (!Number.isInteger(wireValue) || wireValue < 0) {
+      throw new Error(
+        `encodePatch: image-index value for "${name}" must be a non-negative integer, got ${wireValue}. ` +
+          `Pass a LABEL and let resolveApplyPatchValue produce the index.`,
+      );
+    }
+    if (kind === 'source') {
+      if (wireValue >= MOD_SOURCE_NAMES.length) {
+        throw new Error(
+          `encodePatch: mod source index ${wireValue} for "${name}" out of range 0..${MOD_SOURCE_NAMES.length - 1}. ` +
+            `Pass a source LABEL (e.g. ${sampleSourceNames(4).join(', ')}).`,
+        );
+      }
+    } else if (kind === 'target' || kind === 'macro_target') {
+      if (wireValue >= MOD_DEST_NAMES.length) {
+        throw new Error(
+          `encodePatch: mod target index ${wireValue} for "${name}" out of range 0..${MOD_DEST_NAMES.length - 1}. ` +
+            `Pass a destination LABEL (e.g. ${sampleDestNames(4).join(', ')}).`,
+        );
+      }
+    } else {
+      // u8 enum-scaled FX-type selector: value = raw enum index.
+      const entry = findHydraNrpn(name);
+      const table = entry?.enumTable !== undefined ? HYDRASYNTH_ENUMS[entry.enumTable] : undefined;
+      const maxIdx = table !== undefined
+        ? Math.max(...Object.keys(table).map(Number))
+        : entry?.wireMax ?? 255;
+      if (wireValue > maxIdx) {
+        throw new Error(`encodePatch: "${name}" enum index ${wireValue} out of range 0..${maxIdx}`);
+      }
+    }
+    return wireValue;
+  }
+  if (kind === 'target_category') return wireValue; // derived path writes raw ids
+  // O(1) exact-canonical lookup — PATCH_OFFSETS names ARE canonical, and a
+  // linear scan of the 1,175-entry catalog per spec was ~674 scans per
+  // encode/decode after the route fields landed (review finding, 2026-08-22).
+  const entry = findHydraNrpn(name);
   if (entry === undefined) return wireValue;
   // Case 3: u16le enum-as-raw-index. Pre-multiply to cancel u16le /8.
   if (
@@ -906,18 +1089,79 @@ function patchBufferValueFor(name: string, wireValue: number, spec: PatchOffsetS
     }
     return wireValue * PATCH_U16LE_WIRE_DIVISOR;
   }
-  if (entry.enumValueScale === undefined) return wireValue;
-  // Case 1: u8 enum-scaled — undo scale to get raw idx.
-  if (spec.enc !== 'u8') return wireValue;
-  // Sanity: the wire value should be an integer multiple of the scale
-  // (resolveNrpnValue produces idx × scale). If a caller bypasses the
-  // resolver and hand-rolls the wire value, mod-out cleanly to the
-  // nearest index — better than silently truncating.
-  const idx = Math.round(wireValue / entry.enumValueScale);
-  if (idx < 0) {
-    throw new Error(`encodePatch: enum-scaled "${name}" wire ${wireValue} resolved to negative index ${idx}`);
+  return wireValue;
+}
+
+/**
+ * Resolve ONE apply_patch param value into the space the patch image
+ * DECLARES for that field (`PatchOffsetSpec.space`), so `encodePatch`'s
+ * overrides Map carries each field in exactly one declared space:
+ *
+ *   - Route source/target/macro-target (`space: 'image-index'`): LABELS
+ *     ONLY. A label resolves directly to the image's linear list index
+ *     (synonym-tolerant, total over the image tables). A bare NUMBER is
+ *     REFUSED: numeric route values are ambiguous — the NRPN tools
+ *     (set_param / set_mod_route) read numbers as category-prefixed wire
+ *     values while the image stores linear indices, and the two spaces
+ *     overlap in the CC ranges (43 dest + 28 source collisions). Refusing
+ *     beats silently rewiring ("refuse, don't misroute").
+ *   - FX-type selectors (`space: 'image-index'`, u8 enum-scaled): a label
+ *     resolves through the enum table; a bare number keeps its Session-49
+ *     contract (number = enum index) — but the resolved value is the raw
+ *     INDEX, never idx×8 wire, because that is what the image stores.
+ *   - Every other field: delegates to `resolveNrpnValue` (NRPN wire),
+ *     byte-identical to the previous pipeline.
+ */
+export function resolveApplyPatchValue(
+  entry: HydrasynthNrpn,
+  input: number | string,
+): ResolvedNrpnValue {
+  const spec = findPatchOffset(entry.name);
+  if (spec?.space !== 'image-index') return resolveNrpnValue(entry, input);
+  const kind = matrixImageFieldKind(entry.name);
+  if (kind === 'source' || kind === 'target' || kind === 'macro_target') {
+    const samples = kind === 'source' ? sampleSourceNames(3) : sampleDestNames(3);
+    if (typeof input === 'number') {
+      throw new Error(
+        `"${entry.name}" takes route ${kind === 'source' ? 'sources' : 'targets'} by LABEL only in apply_patch ` +
+          `(e.g. ${samples.join(', ')}, or "Off"). A bare number is ambiguous here: set_param / set_mod_route ` +
+          `read numbers as NRPN wire values while the patch image stores linear list indices, and the two ` +
+          `overlap. Pass the label; list_params({port:"hydrasynth", name:"${entry.name}"}) lists them.`,
+      );
+    }
+    const r = kind === 'source' ? modSourceImageIndexForLabel(input) : modDestImageIndexForLabel(input);
+    if (r === undefined) {
+      throw new Error(
+        `Couldn't resolve ${kind === 'source' ? 'mod source' : 'mod target'} "${input}" for ${entry.name}. ` +
+          `First few: ${(kind === 'source' ? sampleSourceNames() : sampleDestNames()).join(', ')}… ` +
+          `Call list_params({port:"hydrasynth", name:"${entry.name}"}) for the full list.`,
+      );
+    }
+    return { wire: r.image, scaled: false, bipolar: false };
   }
-  return idx;
+  // u8 enum-scaled FX-type selector.
+  const table = entry.enumTable !== undefined ? HYDRASYNTH_ENUMS[entry.enumTable] : undefined;
+  const maxIdx = table !== undefined
+    ? Math.max(...Object.keys(table).map(Number))
+    : entry.wireMax ?? 0;
+  if (typeof input === 'string') {
+    const idx = entry.enumTable !== undefined ? resolveHydraEnum(entry.enumTable, input) : undefined;
+    if (idx === undefined) {
+      const sample = table !== undefined ? Object.values(table).slice(0, 6).join(', ') : '';
+      throw new Error(
+        `Couldn't resolve "${input}" in ${entry.enumTable ?? 'the enum table'}. ` +
+          `${sample !== '' ? `First few options: ${sample}… ` : ''}` +
+          `Call list_params({port:"hydrasynth", name:"${entry.name}"}) for the full enum table.`,
+      );
+    }
+    return { wire: idx, scaled: false, bipolar: false };
+  }
+  if (!Number.isInteger(input) || input < 0 || input > maxIdx) {
+    throw new Error(
+      `Parameter "${entry.name}" expects an integer index 0..${maxIdx} (or a name string from ${entry.enumTable}); got ${input}.`,
+    );
+  }
+  return { wire: input, scaled: true, bipolar: false };
 }
 
 /**
@@ -955,7 +1199,7 @@ export function decodePatch(buf: Uint8Array): Map<string, number> {
  */
 function wireValueFromPatchBuffer(name: string, raw: number, spec: PatchOffsetSpec): number {
   if (spec.enc !== 'u16le') return raw;
-  const entry = HYDRASYNTH_NRPNS.find((e) => e.name === name);
+  const entry = findHydraNrpn(name);
   if (entry === undefined) return raw;
   if (entry.enumTable !== undefined && entry.enumValueScale === undefined) {
     return Math.round(raw / PATCH_U16LE_WIRE_DIVISOR);
@@ -1015,6 +1259,19 @@ export function readPatchName(buf: Uint8Array): string {
     s += String.fromCharCode(c);
   }
   return s;
+}
+
+/**
+ * Read the category tag (byte 8) back out of a buffer as its display
+ * name ("Bass", "Pad", …). Returns undefined for an out-of-range index
+ * (unknown firmware tag) rather than guessing.
+ */
+export function readPatchCategory(buf: Uint8Array): string | undefined {
+  if (buf.length !== PATCH_BUFFER_SIZE) {
+    throw new Error(`patch buffer must be ${PATCH_BUFFER_SIZE} bytes, got ${buf.length}`);
+  }
+  const idx = buf[PATCH_CATEGORY_BYTE]!;
+  return idx < HYDRA_PATCH_CATEGORIES.length ? HYDRA_PATCH_CATEGORIES[idx] : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -1106,6 +1363,11 @@ export function unmappedPatchOffsets(): string[] {
   }
   const orphaned: string[] = [];
   for (const spec of PATCH_OFFSETS) {
+    // Derived route-category fields are IMAGE-ONLY by design: the NRPN
+    // surface has no register for them (the device derives the category
+    // from the target on its own panel; the image stores it explicitly,
+    // so encodePatch's post-pass writes it from MOD_DEST_CATEGORIES).
+    if (matrixImageFieldKind(spec.name) === 'target_category') continue;
     if (!known.has(spec.name)) orphaned.push(spec.name);
   }
   return orphaned;

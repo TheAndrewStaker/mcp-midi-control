@@ -1,11 +1,16 @@
 /**
- * Dispatcher — sample upload (`upload_sample`, `upload_kit`).
+ * Dispatcher: sample upload (`upload_sample`, one file or a folder).
  *
  * Resolves the file/folder arguments at the dispatch boundary (read WAV bytes,
- * discover + curate a kit folder into the device's 64 sample slots), then
- * delegates the wire work to the descriptor's `writer.uploadSample` /
- * `writer.uploadKit`. Sample memory is a Circuit Tracks-family capability; a
- * device without it gets a clean capability_not_supported.
+ * discover + curate a folder into the device's 64 sample slots), then delegates
+ * the wire work to the descriptor's `writer.uploadSample` / `writer.uploadKit`.
+ * A device without sample memory gets a clean capability_not_supported.
+ *
+ * `upload_kit` and `upload_project` were separate tools until the transfer-verb
+ * consolidation: a folder of samples is `upload_sample({folder})`, and a
+ * device-native project file restored verbatim is `import_preset` (see
+ * `executeRestorePreset`), the verb every other byte-exact backup goes back
+ * through.
  *
  * Slot numbering: tools and these args use the device-facing 1..64; the wire is
  * 0..63. We convert ONCE here (slot - 1) so everything below the dispatcher is
@@ -15,22 +20,24 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 
-import { openCtx, requireDevice, toWirePack } from './core.js';
-import { backupProjectSlot } from './backup.js';
+import { requireDevice, toWirePack, withEndpoint } from './core.js';
 import {
   DispatchError,
   type KitAuthorResult,
   type KitPadAssignment,
   type KitUploadItem,
   type KitUploadOutcome,
-  type ProjectUploadOutcome,
   type SampleUploadOutcome,
 } from '../types.js';
 
 export interface UploadSampleArgs {
   port: string;
-  /** Path to a WAV file. */
-  file: string;
+  /** Path to a WAV file. Exactly one of `file` / `folder`. */
+  file?: string;
+  /** A folder of WAVs for a batch into consecutive slots (`slot` = the first). */
+  folder?: string;
+  /** With `folder`: keep only files carrying this token (e.g. "k1" matches `NN_k1_role.wav`). */
+  kit?: string;
   /**
    * Device sample slot, 1..64 (Circuit Tracks — required, overwrites that slot).
    * Omit for append-only pools (SPD-SX wave pool — the wave lands at the next
@@ -51,52 +58,14 @@ export interface UploadSampleArgs {
   confirm_overwrite?: boolean;
 }
 
-export interface UploadKitArgs {
-  port: string;
-  /** Folder containing WAV files. */
-  folder: string;
-  /** Optional kit token to filter on (e.g. "k1" matches `NN_k1_role.wav`). */
-  kit?: string;
-  /** First device slot to fill, 1..64 (default 1). */
-  start_slot?: number;
-  /**
-   * Destination microSD pack, 1-BASED ("Pack 5" = 5). Circuit Tracks only;
-   * default 1. Write the SAME pack the project targets. Nonzero-pack is
-   * hardware-confirmed (2026-07-27).
-   */
-  pack?: number;
-  /** Overwrite gate: true to write slots that may hold samples (see SAFE-EDIT-WORKFLOW.md). */
-  confirm_overwrite?: boolean;
-}
-
-export interface UploadProjectArgs {
-  port: string;
-  /** Path to a prepared whole-project file (e.g. a Circuit Tracks .ncs). */
-  file: string;
-  /** Destination PROJECT, 1..64, numbered exactly as the device shows it. */
-  slot: number;
-  /**
-   * Destination microSD pack, 1-BASED as the device numbers it ("Pack 5" = 5).
-   * Default 1. Converted to the wire index at `openCtx`; see `DispatchCtx.pack`.
-   */
-  pack?: number;
-  /** Overwrite gate: true to overwrite an occupied project slot (see SAFE-EDIT-WORKFLOW.md). */
-  confirm_overwrite?: boolean;
-  /**
-   * Backup-before-overwrite. Default true: when `confirm_overwrite` authorizes
-   * clobbering an occupied slot, the slot's current project is read + saved to a
-   * `.ncs` backup first, so the overwrite is reversible. Pass false to skip the
-   * pre-write backup read (a few seconds faster; the overwrite becomes
-   * irreversible).
-   */
-  backup_first?: boolean;
-}
-
 const isWav = (f: string) => extname(f).toLowerCase() === '.wav';
-const isNcs = (f: string) => extname(f).toLowerCase() === '.ncs';
 
-/** Numeric-aware sort so `2_x.wav` precedes `10_x.wav`. */
-function naturalCompare(a: string, b: string): number {
+/**
+ * Numeric-aware sort so `2_x.wav` precedes `10_x.wav`. This IS the order a folder upload maps files
+ * onto consecutive slots, so anything that pre-flights a kit folder offline must sort with this exact
+ * comparator rather than a lookalike.
+ */
+export function naturalCompare(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
@@ -108,7 +77,7 @@ function readWav(path: string): Uint8Array {
   }
 }
 
-export async function executeUploadSample(args: UploadSampleArgs): Promise<SampleUploadOutcome> {
+export async function executeUploadSample(args: UploadSampleArgs): Promise<SampleUploadOutcome | KitUploadOutcome> {
   const descriptor = requireDevice(args.port);
   if (!descriptor.writer.uploadSample) {
     throw new DispatchError('capability_not_supported', descriptor.display_name,
@@ -120,16 +89,30 @@ export async function executeUploadSample(args: UploadSampleArgs): Promise<Sampl
   if (args.slot !== undefined && (!Number.isInteger(args.slot) || args.slot < 1 || args.slot > 64)) {
     throw new DispatchError('bad_location', descriptor.display_name, `slot, when given, must be 1..64 (device numbering), got ${args.slot}.`);
   }
+  if (args.folder !== undefined) {
+    if (args.file !== undefined) {
+      throw new DispatchError('bad_location', descriptor.display_name, 'Pass `file` (one sample) or `folder` (a batch), not both.');
+    }
+    return uploadSampleFolder(descriptor, { ...args, folder: args.folder });
+  }
+  if (args.file === undefined) {
+    throw new DispatchError('bad_location', descriptor.display_name, 'upload_sample needs `file` (one .wav) or `folder` (a folder of .wav files).');
+  }
   if (!isWav(args.file)) {
     throw new DispatchError('bad_location', descriptor.display_name, `'${args.file}' is not a .wav file.`);
   }
-  const wav = readWav(args.file);
-  const filename = args.name ?? basename(args.file);
-  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
+  const file = args.file;
+  const wav = readWav(file);
+  const filename = args.name ?? basename(file);
+  // Local so TS narrowing survives the withEndpoint closure.
+  const uploadSample = descriptor.writer.uploadSample;
   // Convert the device-facing 1-based slot to the wire 0-based index here (once),
   // or pass undefined through for append-only pools.
   const wireSlot = args.slot === undefined ? undefined : args.slot - 1;
-  return descriptor.writer.uploadSample(ctx, wav, wireSlot, filename, { confirmOverwrite: args.confirm_overwrite });
+  // Phase B: the whole transfer is one exclusive visit to the device.
+  return withEndpoint(descriptor,
+    (ctx) => uploadSample(ctx, wav, wireSlot, filename, { confirmOverwrite: args.confirm_overwrite }),
+    { pack: toWirePack(args.pack), opName: 'upload_sample' });
 }
 
 export interface AuthorKitArgs {
@@ -166,6 +149,7 @@ export async function executeAuthorKit(args: AuthorKitArgs): Promise<KitAuthorRe
       throw new DispatchError('capability_not_supported', descriptor.display_name,
         `${descriptor.display_name} cannot edit pad notes; set_notes is a sampler-family capability (e.g. Roland SPD-SX).`);
     }
+    const editPadNotes = descriptor.writer.editPadNotes;
     const notes: Record<number, number> = {};
     for (const [k, v] of Object.entries(args.set_notes!)) {
       const pad = Number(k);
@@ -174,8 +158,11 @@ export async function executeAuthorKit(args: AuthorKitArgs): Promise<KitAuthorRe
       }
       notes[pad] = v;
     }
-    const ctx = openCtx(descriptor);
-    const result = await descriptor.writer.editPadNotes(ctx, args.location, notes, { dryRun: args.dry_run });
+    // Phase B: exclusive per-endpoint visit (storage endpoints share the lock,
+    // so the read-modify-write on the kit file cannot race another op).
+    const result = await withEndpoint(descriptor,
+      (ctx) => editPadNotes(ctx, args.location, notes, { dryRun: args.dry_run }),
+      { opName: 'author_kit' });
     return { ...result, device: descriptor.display_name };
   }
 
@@ -188,25 +175,34 @@ export async function executeAuthorKit(args: AuthorKitArgs): Promise<KitAuthorRe
     throw new DispatchError('bad_request', descriptor.display_name,
       'author_kit: building a kit needs both name and pads (or pass set_notes to patch notes on an existing kit instead).');
   }
-  const ctx = openCtx(descriptor);
-  const result = await descriptor.writer.authorKit(ctx, args.location, args.name, args.pads, {
-    confirmOverwrite: args.confirm_overwrite,
-    dryRun: args.dry_run,
-  });
+  // Locals so TS narrowing (the guards above) survives the closure below.
+  const authorKit = descriptor.writer.authorKit;
+  const kitName = args.name;
+  const pads = args.pads;
+  // Phase B: back-up-then-write is one atomic visit (the design's worked
+  // scenario: nothing slips in between the backup and the kit write).
+  const result = await withEndpoint(descriptor,
+    (ctx) => authorKit(ctx, args.location, kitName, pads, {
+      confirmOverwrite: args.confirm_overwrite,
+      dryRun: args.dry_run,
+    }),
+    { opName: 'author_kit' });
   return { ...result, device: descriptor.display_name };
 }
 
-export async function executeUploadKit(args: UploadKitArgs): Promise<KitUploadOutcome> {
-  const descriptor = requireDevice(args.port);
-  if (!descriptor.writer.uploadKit) {
-    throw new DispatchError('capability_not_supported', descriptor.display_name,
-      `${descriptor.display_name} has no sample memory; upload_kit is a Circuit Tracks-family capability.`);
-  }
-  const startSlot = args.start_slot ?? 1;
-  if (!Number.isInteger(startSlot) || startSlot < 1 || startSlot > 64) {
-    throw new DispatchError('bad_location', descriptor.display_name, `start_slot must be 1..64, got ${startSlot}.`);
-  }
-
+/**
+ * A folder of WAVs into consecutive slots, starting at `slot` (default 1).
+ *
+ * A device with a batch path (`writer.uploadKit`: the Circuit Tracks sends the
+ * whole folder in ONE sample-directory session, all-or-nothing) gets one call.
+ * A device without one gets its single-sample path once per file, in order,
+ * stopping at the first failure; samples sent before the failure stay.
+ */
+async function uploadSampleFolder(
+  descriptor: ReturnType<typeof requireDevice>,
+  args: UploadSampleArgs & { folder: string },
+): Promise<KitUploadOutcome> {
+  const startSlot = args.slot ?? 1;
   let entries: string[];
   try {
     entries = readdirSync(args.folder).filter((f) => isWav(f) && statSync(join(args.folder, f)).isFile());
@@ -224,6 +220,33 @@ export async function executeUploadKit(args: UploadKitArgs): Promise<KitUploadOu
       `No WAV files${args.kit ? ` matching kit '${args.kit}'` : ''} in '${args.folder}'.`);
   }
 
+  const uploadKit = descriptor.writer.uploadKit;
+  if (uploadKit === undefined) {
+    // No batch path: one single-sample call per file. An append-only pool
+    // (SPD-SX) takes no slot; a slot-addressed one counts up from the first.
+    const uploaded: KitUploadOutcome['uploaded'] = [];
+    for (let i = 0; i < entries.length; i++) {
+      const f = entries[i];
+      const stopped = (slot: number, error: string): KitUploadOutcome => ({
+        ok: false, uploaded, failed: { slot, filename: f, error },
+        info: `Uploaded ${uploaded.length} of ${entries.length} sample(s), then stopped.`,
+        warning: `${f} failed (${error}); the ${uploaded.length} sample(s) before it were written and stay.`,
+      });
+      try {
+        const one = await executeUploadSample({
+          port: args.port, file: join(args.folder, f), pack: args.pack, confirm_overwrite: args.confirm_overwrite,
+          ...(args.slot !== undefined ? { slot: args.slot + i } : {}),
+        }) as SampleUploadOutcome;
+        if (!one.ok) return stopped(one.slot, one.warning ?? 'upload failed');
+        uploaded.push({ slot: one.slot, filename: one.filename, converted: one.converted });
+      } catch (err) {
+        if (uploaded.length === 0) throw err;
+        return stopped(-1, err instanceof Error ? err.message : String(err));
+      }
+    }
+    return { ok: true, uploaded, info: `Uploaded ${uploaded.length} sample(s) from '${args.folder}'.` };
+  }
+
   // Curate to the 64-slot ceiling; never silently truncate.
   const capacity = 64 - (startSlot - 1);
   const dropped = entries.length > capacity ? entries.slice(capacity) : [];
@@ -235,8 +258,10 @@ export async function executeUploadKit(args: UploadKitArgs): Promise<KitUploadOu
     filename: f,
   }));
 
-  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
-  const result = await descriptor.writer.uploadKit(ctx, items, { confirmOverwrite: args.confirm_overwrite });
+  // Phase B: the whole multi-slot transfer is one exclusive visit.
+  const result = await withEndpoint(descriptor,
+    (ctx) => uploadKit(ctx, items, { confirmOverwrite: args.confirm_overwrite }),
+    { pack: toWirePack(args.pack), opName: 'upload_sample' });
   if (dropped.length > 0) {
     const note = ` ${dropped.length} file(s) did not fit in the 64 slots and were SKIPPED: ${dropped.slice(0, 6).join(', ')}${dropped.length > 6 ? ', …' : ''}.`;
     result.warning = (result.warning ?? '') + note;
@@ -245,60 +270,3 @@ export async function executeUploadKit(args: UploadKitArgs): Promise<KitUploadOu
   return result;
 }
 
-export async function executeUploadProject(args: UploadProjectArgs): Promise<ProjectUploadOutcome> {
-  const descriptor = requireDevice(args.port);
-  if (!descriptor.writer.uploadProject) {
-    throw new DispatchError('capability_not_supported', descriptor.display_name,
-      `${descriptor.display_name} has no project file-transfer; upload_project is a Circuit Tracks-family capability.`);
-  }
-  // Project numbers are 1-BASED on the tool surface, exactly as the device shows
-  // them (Project 1..64) and exactly as `upload_sample`'s slot already worked in
-  // this same file. They were 0-based here, which is a display-first violation:
-  // the front panel says "Project 35" and the argument wanted 34. Worse, the
-  // on-card filename is 0-based too (`34_SESSION.ncs` IS device Project 35), so
-  // three numbering schemes were live at once and agents were being TOLD to use
-  // the wire one. Convert once, here, at the boundary.
-  if (!Number.isInteger(args.slot) || args.slot < 1 || args.slot > 64) {
-    throw new DispatchError('bad_location', descriptor.display_name,
-      `project must be 1..64, numbered exactly as the device shows it (Project 1..64), got ${args.slot}.`);
-  }
-  const wireSlot = args.slot - 1;
-  if (!isNcs(args.file)) {
-    throw new DispatchError('bad_location', descriptor.display_name,
-      `'${args.file}' is not a .ncs file. upload_project sends a prepared Circuit Tracks project verbatim.`);
-  }
-  let project: Uint8Array;
-  try {
-    project = new Uint8Array(readFileSync(args.file));
-  } catch (err) {
-    throw new DispatchError('bad_location', descriptor.display_name,
-      `Could not read project '${args.file}': ${err instanceof Error ? err.message : String(err)}`);
-  }
-  // One ctx carries the pack, so the backup below, the writer's gate, and the
-  // write itself all address the SAME pack (see DispatchCtx.pack).
-  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
-
-  // Backup-before-overwrite (default on). The writer's overwrite gate SKIPS its
-  // occupancy read when confirm_overwrite is set, so this is the only path where
-  // an occupied slot is clobbered without first being read — back it up here so
-  // the overwrite stays reversible. A read/CRC failure throws and aborts BEFORE
-  // any destructive byte is sent (never overwrite a slot we couldn't back up).
-  let backupNote = '';
-  if (args.backup_first !== false && args.confirm_overwrite) {
-    const backup = await backupProjectSlot(descriptor, ctx, args.slot);   // DEVICE numbering
-    backupNote = ` ${backup.note}`;
-  } else if (args.backup_first === true && !args.confirm_overwrite) {
-    // The flag only ever fires on the overwrite path, because that is the only
-    // path that can destroy anything: without confirm_overwrite the writer
-    // reads the slot and REFUSES if it is occupied. That reasoning is sound but
-    // it was INVISIBLE, so a caller who asked for `backup_first: true` got
-    // silence and could reasonably believe a backup had been taken. Say it.
-    backupNote =
-      ' No pre-write backup was needed: without confirm_overwrite this call refuses rather than overwrites, ' +
-      'so an occupied project cannot be lost here. To take a backup deliberately, use backup_device or export_preset(location).';
-  }
-
-  const outcome = await descriptor.writer.uploadProject(ctx, project, wireSlot, { confirmOverwrite: args.confirm_overwrite });
-  if (backupNote) outcome.info = `${outcome.info}${backupNote}`;
-  return outcome;
-}

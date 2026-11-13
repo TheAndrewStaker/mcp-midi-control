@@ -1,0 +1,116 @@
+{
+ "rig": "fixture-song-rig",
+ "songs": [
+  {
+   "id": "night-drive",
+   "title": "Night Drive",
+   "artist": "Fixture Band",
+   "tempo_bpm": 112,
+   "sections": [
+    {
+     "name": "Intro",
+     "from_bar": 1,
+     "to_bar": 8
+    },
+    {
+     "name": "Verse",
+     "from_bar": 9,
+     "to_bar": 24
+    },
+    {
+     "name": "Chorus",
+     "from_bar": 25,
+     "to_bar": 40
+    }
+   ],
+   "units": [
+    {
+     "kind": "section_map",
+     "node": "mpc",
+     "role": "the sequence that plays each section",
+     "container": "Night Drive (Fixture Band)/Night Drive.xpj",
+     "status": "confirmed",
+     "entries": [
+      {
+       "section": "Intro",
+       "location": 1,
+       "expected_name": "01 Intro"
+      },
+      {
+       "section": "Verse",
+       "location": 2,
+       "expected_name": "02 Verse"
+      },
+      {
+       "section": "Chorus",
+       "location": 4,
+       "expected_name": "03 Chorus"
+      }
+     ]
+    },
+    {
+     "kind": "recall",
+     "node": "am4",
+     "location": "B02",
+     "expected_name": "Night Drive",
+     "role": "guitar tone for the whole song",
+     "status": "proposed"
+    },
+    {
+     "kind": "scene",
+     "node": "am4",
+     "scene": 1,
+     "section": "Verse",
+     "role": "clean verse",
+     "status": "proposed"
+    },
+    {
+     "kind": "scene",
+     "node": "am4",
+     "scene": 3,
+     "section": "Chorus",
+     "role": "driven chorus",
+     "status": "proposed"
+    }
+   ]
+  },
+  {
+   "id": "slow-tide",
+   "title": "Slow Tide",
+   "artist": "Fixture Band",
+   "tempo_bpm": 74,
+   "sections": [
+    {
+     "name": "Verse"
+    },
+    {
+     "name": "Outro"
+    }
+   ],
+   "units": [
+    {
+     "kind": "section_map",
+     "node": "mpc",
+     "container": "Slow Tide (Fixture Band)/Slow Tide.xpj",
+     "status": "confirmed",
+     "entries": [
+      {
+       "section": "Verse",
+       "location": 1
+      },
+      {
+       "section": "Outro",
+       "location": 3
+      }
+     ]
+    },
+    {
+     "kind": "recall",
+     "node": "am4",
+     "role": "guitar tone, not chosen yet",
+     "status": "owed"
+    }
+   ]
+  }
+ ]
+}

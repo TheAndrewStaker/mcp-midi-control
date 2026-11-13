@@ -118,9 +118,10 @@ export const CIRCUIT_TRACKS_DESCRIPTOR: DeviceDescriptor = {
       'Synth 1, 2 = Synth 2); on the device it is Patch <slot+1> (1-indexed). It dumps the live patch, cleans ' +
       'its dirty-edit marker, and writes it via a file-transfer-session-wrapped Replace-Patch sent fire-and-forget ' +
       '(the device commits to flash silently over a few seconds). HARDWARE-CONFIRMED 2026-07-03: survives a ' +
-      'power-cycle. Load Patch <slot+1> on the synth to hear it (the Circuit has no patch-name display). ' +
-      'Read the saved patch back with get_preset("patch:N") (it reflects save_preset writes). ' +
-      'PATCH slots are distinct from the PROJECT slots switch_preset/upload_project use.',
+      'power-cycle. VERIFY BY EAR: load Patch <slot+1> on the synth and listen, or power-cycle and reload (the ' +
+      'Circuit has no patch-name display). A stored PATCH slot cannot be read back over MIDI: a Program Change ' +
+      'ignores its number and reverts the live edit (measured 2026-07-27), so get_preset("patch:N") refuses. ' +
+      'PATCH slots are distinct from the PROJECT slots switch_preset/import_preset use.',
     supports_lineage: false,
     // Orchestrator axis: the Circuit is a pattern target.
     //  - live_stream: audition a beat live (sound module).

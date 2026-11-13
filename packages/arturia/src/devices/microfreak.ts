@@ -150,6 +150,7 @@ export const MICROFREAK: FreakConfig = {
     output_dest_usb_alive: OUTPUT_DEST_USB_ALIVE,
   },
   pc_max_preset: 128,
+  bank_select_msb_cc: 0,
   preset_count: MICROFREAK_PRESET_COUNT_FW5,
   // Hardware-confirmed on the maintainer's own unit: the SysEx read path,
   // Program Change recall, and the global read AND write opcodes. What is
@@ -215,8 +216,8 @@ export const MICROFREAK: FreakConfig = {
     + 'whole song, which is a STRONGER test than the 2026-07-26 midi_thru confirm above: that one '
     + 'proved only that KEYBOARD notes leave the DIN Out, and never exercised the merge-onward path. '
     + 'NOT SUPPORTED: reading preset parameters (the device reports nothing back for them and its '
-    + 'display does not show incoming CC, contrary to the manual), and any preset authoring or save '
-    + '(the dump payload is a self-describing TLV whose value encoding is undecoded, and no preset '
-    + 'WRITE path is known).',
+    + 'display does not show incoming CC, contrary to the manual), and authoring any single preset '
+    + 'parameter (the dump payload\'s value encoding is undecoded). Whole presets DO write back '
+    + 'byte-exact via import_preset, hardware-confirmed 2026-08-14/15.',
   agent_guidance: MICROFREAK_AGENT_GUIDANCE,
 };

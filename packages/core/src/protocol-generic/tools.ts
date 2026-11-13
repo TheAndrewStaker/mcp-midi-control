@@ -26,7 +26,7 @@
  * problem; not Session B's job.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 // Side-effect import: keep the descriptor registry in this module's
 // import graph so any future bundler / tree-shaker preserves it

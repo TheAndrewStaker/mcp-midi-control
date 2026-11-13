@@ -9,9 +9,12 @@
  * drift + device presence are the reference implementation's job (Phase C), not
  * this pure function's.
  */
+import {
+  directionContradictsKind, liveCablesOnPort, portAcceptsMultipleCables, portDirection,
+} from './portRules.js';
 import { relaysSignal } from './routing.js';
 import type {
-  Edge, MidiChannel, MidiSignal, Node, PortKind, Rig, Role, SignalKind,
+  Edge, MidiChannel, MidiSignal, Node, Port, PortKind, Rig, Role, SignalKind,
 } from './types.js';
 import { OPENRIG_VERSION, ROLES } from './types.js';
 
@@ -32,7 +35,13 @@ export interface ValidationResult {
   warnings: ValidationIssue[];
 }
 
-/** Which signal kinds may attach to a port of each kind (the §3 invariant). */
+/**
+ * Which signal kinds may attach to a port of each kind (the §3 invariant).
+ * `expression` and `footswitch` accept each other: the TRS control jack on
+ * most gear is dual-mode (Boss "CTL 1,2/EXP", Fractal "PEDAL"), so a
+ * footswitch plugged into an EXP-declared jack is the normal case, not a
+ * mismatch.
+ */
 const PORT_SIGNAL_COMPAT: Record<PortKind, SignalKind[]> = {
   audio_out: ['audio'],
   audio_in: ['audio'],
@@ -41,8 +50,8 @@ const PORT_SIGNAL_COMPAT: Record<PortKind, SignalKind[]> = {
   midi_thru: ['midi'],
   usb_midi: ['midi'],
   usb_serial: ['midi'],
-  expression: ['expression'],
-  footswitch: ['footswitch'],
+  expression: ['expression', 'footswitch'],
+  footswitch: ['footswitch', 'expression'],
   cv: ['control_voltage'],
   analog_clock: ['analog_clock'],
 };
@@ -87,6 +96,9 @@ export function validateRig(rig: Rig): ValidationResult {
     for (const port of node.ports) {
       if (portIds.has(port.id)) err('duplicate-port-id', `node "${node.id}" has a duplicate port id "${port.id}"`, node.id);
       portIds.add(port.id);
+      if (directionContradictsKind(port)) {
+        err('port-direction-contradicts-kind', `node "${node.id}" port "${port.id}" is of kind ${port.kind} but declares direction "${port.direction}"`, node.id);
+      }
     }
     portsByNode.set(node.id, portIds);
 
@@ -95,10 +107,10 @@ export function validateRig(rig: Rig): ValidationResult {
     }
   }
 
-  const resolvePort = (nodeId: string, portId: string): PortKind | undefined => {
+  const resolvePort = (nodeId: string, portId: string): Port | undefined => {
     const node = nodeById.get(nodeId);
     if (node === undefined) return undefined;
-    return node.ports.find((p) => p.id === portId)?.kind;
+    return node.ports.find((p) => p.id === portId);
   };
 
   // --- edge referential integrity + port/signal compatibility ---
@@ -107,10 +119,22 @@ export function validateRig(rig: Rig): ValidationResult {
     if (edgeIds.has(edge.id)) err('duplicate-edge-id', `duplicate edge id "${edge.id}"`, edge.id);
     edgeIds.add(edge.id);
 
-    const fromKind = resolvePort(edge.from.node, edge.from.port);
-    const toKind = resolvePort(edge.to.node, edge.to.port);
+    const fromPort = resolvePort(edge.from.node, edge.from.port);
+    const toPort = resolvePort(edge.to.node, edge.to.port);
+    const fromKind = fromPort?.kind;
+    const toKind = toPort?.kind;
     if (fromKind === undefined) err('dangling-endpoint', `edge "${edge.id}" from endpoint ${edge.from.node}.${edge.from.port} does not resolve to a declared node+port`, edge.id);
     if (toKind === undefined) err('dangling-endpoint', `edge "${edge.id}" to endpoint ${edge.to.node}.${edge.to.port} does not resolve to a declared node+port`, edge.id);
+
+    // --- a cable runs from a jack that sends to a jack that receives ---
+    // Two inputs joined by a cable (an effects pedal's EXP input to an amp
+    // modeler's PEDAL input) is not a weak connection, it is no connection.
+    if (fromPort !== undefined && portDirection(fromPort) === 'sink') {
+      err('edge-direction', `edge "${edge.id}" leaves ${edge.from.node}.${edge.from.port}, which is an INPUT (${fromPort.kind}); a cable runs from an output to an input`, edge.id);
+    }
+    if (toPort !== undefined && portDirection(toPort) === 'source') {
+      err('edge-direction', `edge "${edge.id}" arrives at ${edge.to.node}.${edge.to.port}, which is an OUTPUT (${toPort.kind}); a cable runs from an output to an input`, edge.id);
+    }
 
     const sigKind = edge.signal.kind;
     if (fromKind !== undefined && !PORT_SIGNAL_COMPAT[fromKind].includes(sigKind)) {
@@ -118,6 +142,20 @@ export function validateRig(rig: Rig): ValidationResult {
     }
     if (toKind !== undefined && !PORT_SIGNAL_COMPAT[toKind].includes(sigKind)) {
       err('port-signal-mismatch', `edge "${edge.id}" carries a ${sigKind} signal but its to-port is a ${toKind} port`, edge.id);
+    }
+
+    // --- audio payloads must declare their channels (§3) ---
+    // The type requires `channels`, but JSON on disk does not, and an audio
+    // edge missing it validated clean for a full release while being the one
+    // shape that crashed `summarizeSignal`. A payload the renderers cannot read
+    // is malformed, so this is an error rather than a warning.
+    if (edge.signal.kind === 'audio') {
+      const channels = (edge.signal as { channels?: unknown }).channels;
+      if (!Array.isArray(channels) || channels.length === 0) {
+        err('audio-signal-no-channels', `edge "${edge.id}" carries an audio signal with no "channels" declared; a mono cable is ["M"], a stereo pair is ["L","R"]`, edge.id);
+      } else if (!channels.every((c) => c === 'L' || c === 'R' || c === 'M')) {
+        err('audio-signal-bad-channel', `edge "${edge.id}" declares an audio channel outside L / R / M`, edge.id);
+      }
     }
 
     // --- per-signal channel rules (§3) ---
@@ -168,6 +206,20 @@ export function validateRig(rig: Rig): ValidationResult {
         if (rule.to !== undefined && !(portsByNode.get(node.id)?.has(rule.to) ?? false)) {
           err('routing-dangling-port', `node "${node.id}" routing "pass to" port "${rule.to}" is not declared`, node.id);
         }
+      }
+    }
+  }
+
+  // --- a jack takes one plug (portRules) ---
+  // A warning, not an error: a hand-edited manifest can carry it, and it should
+  // surface loudly without making the whole rig unloadable. The edit path
+  // refuses to CREATE it.
+  for (const node of rig.nodes) {
+    for (const port of node.ports) {
+      if (portAcceptsMultipleCables(node, port)) continue;
+      const live = liveCablesOnPort(rig, node.id, port.id);
+      if (live.length > 1) {
+        warn('port-double-booked', `${node.id}.${port.id} carries ${live.length} enabled cables (${live.map((o) => o.edge_id).join(', ')}) but a jack (${port.kind}) takes one plug; disable or remove all but one`, node.id);
       }
     }
   }

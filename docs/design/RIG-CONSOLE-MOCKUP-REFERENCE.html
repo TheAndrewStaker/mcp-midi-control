@@ -1,0 +1,475 @@
+<title>Rig Terminal — overlay take</title>
+<style>
+  /* Faces: Titillium Web + Share Tech Mono (both SIL OFL, embedded as latin
+     subsets). The game's own signature face is commercial (Fontworks), so
+     these are the closest open-licensed stand-ins: squarish technical
+     grotesque for UI, tech mono for data. */
+  @font-face { font-family: 'TW'; font-weight: 400; font-style: normal; font-display: swap;
+    src: url(data:font/woff2;base64,__TW400__) format('woff2'); }
+  @font-face { font-family: 'TW'; font-weight: 600; font-style: normal; font-display: swap;
+    src: url(data:font/woff2;base64,__TW600__) format('woff2'); }
+  @font-face { font-family: 'TW'; font-weight: 700; font-style: normal; font-display: swap;
+    src: url(data:font/woff2;base64,__TW700__) format('woff2'); }
+  @font-face { font-family: 'STM'; font-weight: 400; font-style: normal; font-display: swap;
+    src: url(data:font/woff2;base64,__STM400__) format('woff2'); }
+
+  :root {
+    --sea: #0A1E2C;
+    --sea-hi: #123650;
+    --ink: #CFE8F2;
+    --ink-dim: #6F93A4;
+    --cyan: #7FD4E8;
+    --gold: #D9B23F;
+    --amber: #E8C25C;
+    --bar: rgba(150, 200, 220, .10);
+    --bar-solid: rgba(205, 232, 242, .85);
+    --sel: rgba(205, 232, 242, .88);
+    --sel-ink: #0A1E2C;
+    --edge: rgba(160, 205, 225, .25);
+    --ui: 'TW', 'Segoe UI', sans-serif;
+    --data: 'STM', Consolas, monospace;
+  }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { background: radial-gradient(130% 100% at 72% 25%, var(--sea-hi), var(--sea) 62%);
+    color: var(--ink); font-family: var(--ui); overflow: hidden; }
+  /* phosphor dot grid */
+  body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 4;
+    background-image: radial-gradient(rgba(160,205,225,.09) 1px, transparent 1px);
+    background-size: 24px 24px; }
+  /* CRT: scanlines + vignette. Static by design; motion stays out of an
+     interface you stare at. */
+  body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 5;
+    background:
+      repeating-linear-gradient(180deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px),
+      radial-gradient(120% 100% at 50% 45%, transparent 55%, rgba(2,10,16,.55) 100%);
+  }
+  @media (max-height: 540px) { body { overflow: auto; } }
+
+  .hud { position: relative; height: 100%; display: flex; flex-direction: column; padding: .9rem 1.2rem; }
+
+  /* THE MAP LAYER — full-bleed, focal cluster biased upper-right, wires
+     bleed into every quadrant. In RIG mode it is the interactive subject;
+     elsewhere it is ambient. */
+  #graph { position: absolute; inset: 0; z-index: 0; opacity: .45; }
+  body[data-page="rig"] #graph { opacity: 1; }
+  #graph .hit { pointer-events: none; }
+  body[data-page="rig"] #graph .hit { pointer-events: stroke; cursor: pointer; }
+  body[data-page="rig"] #graph .node { pointer-events: all; cursor: pointer; }
+  body[data-page="rig"] #graph { cursor: grab; }
+  body[data-page="rig"] #graph.panning { cursor: grabbing; }
+  #graph text { font-family: var(--data); text-shadow: 0 0 7px rgba(127,212,232,.35); }
+  #graph .node rect { fill: rgba(10,30,44,.55); stroke: rgba(160,205,225,.4); }
+  #graph .glyph { color: rgba(160,205,225,.75); }
+  #graph .glyph rect, #graph .glyph path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+  #graph .node.sel .glyph { color: var(--cyan); }
+  #graph .node.sel rect { fill: var(--sel); stroke: var(--cyan); }
+  #graph .node.sel text { fill: var(--sel-ink); text-shadow: none; }
+  #graph .wire.sel { stroke: #FFFFFF; filter: url(#bloom); }
+
+  .top { position: relative; z-index: 2; display: flex; align-items: center; gap: 1.2rem; }
+  .ver { font-family: var(--data); font-size: .66rem; color: var(--amber); letter-spacing: .08em; text-shadow: 0 0 8px rgba(232,194,92,.4); }
+  .ver small { display: block; color: var(--ink-dim); text-shadow: none; }
+  .tabs { display: flex; gap: .45rem; align-items: center; margin-left: 1rem; }
+  .kbd { font-family: var(--data); font-size: .6rem; color: var(--ink-dim); border: 1px solid var(--edge); border-radius: 2px; padding: .1rem .3rem; }
+  .tab { font: 600 .7rem/1 var(--ui); letter-spacing: .2em; color: var(--ink-dim);
+    background: var(--bar); border: 1px solid transparent; padding: .42rem .85rem; cursor: pointer; text-transform: uppercase; }
+  .tab[aria-selected="true"] { color: var(--sel-ink); background: var(--sel); }
+  .tab:focus-visible, .row:focus-visible { outline: 1px solid var(--cyan); outline-offset: 1px; }
+
+  .main { position: relative; z-index: 1; flex: 1; display: grid; grid-template-columns: minmax(370px, 44%) 1fr; gap: 2rem; padding-top: .9rem; min-height: 0; pointer-events: none; }
+  .main > * { pointer-events: auto; }
+  body[data-page="rig"] .left, body[data-page="rig"] .right { display: none; }
+  body[data-page="songs"] .inspect { display: none; }
+
+  .left { display: flex; flex-direction: column; gap: .7rem; min-height: 0; }
+  .panel-h { background: var(--bar-solid); color: var(--sel-ink); padding: .28rem .6rem;
+    font: 700 .66rem/1.3 var(--ui); letter-spacing: .24em; text-transform: uppercase; width: max-content; min-width: 46%; }
+  .songscroll { overflow-y: auto; max-height: 46vh; scrollbar-width: thin; }
+  table.songs { border-collapse: collapse; width: 100%; font-size: .84rem; }
+  .row.unfiled td { opacity: .45; }
+  .songs th { text-align: left; font: 600 .6rem/1.3 var(--ui); letter-spacing: .16em; color: var(--ink-dim);
+    padding: .2rem .5rem; border-bottom: 1px solid var(--edge); text-transform: uppercase; }
+  .songs td { padding: .28rem .5rem; font-family: var(--ui); font-weight: 600; }
+  .songs td.d { font-family: var(--data); font-weight: 400; }
+  .row { cursor: pointer; background: var(--bar); }
+  .row + .row td { border-top: 2px solid rgba(10,30,44,.55); }
+  .row[aria-selected="true"] { background: var(--sel); color: var(--sel-ink); }
+  .row .num { color: var(--gold); } .row[aria-selected="true"] .num { color: #6B5410; }
+  .desc { font-size: .8rem; line-height: 1.5; max-width: 52ch; padding: .1rem .15rem; min-height: 3.2em; font-weight: 400; }
+  .desc .t { color: var(--ink-dim); }
+  .voices { margin-top: auto; }
+  table.rew { border-collapse: collapse; width: 100%; font-size: .8rem; }
+  .rew td { padding: .24rem .55rem; background: rgba(217,178,63,.14); border-top: 2px solid rgba(10,30,44,.55); }
+  .rew td.k { color: var(--amber); width: 40%; font-weight: 600; }
+  .rew td.bar-cell { position: relative; font-family: var(--data); }
+  .rew .fill { position: absolute; inset: 0; background: rgba(217,178,63,.30); }
+  .rew .lbl { position: relative; }
+
+  .right { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; min-height: 0; }
+  .tasks { background: var(--bar); border-left: 3px solid var(--gold); padding: .55rem .75rem; min-width: 300px; backdrop-filter: blur(2px); }
+  .tasks h3 { font: 600 .62rem/1.3 var(--ui); letter-spacing: .2em; color: var(--ink-dim); margin-bottom: .45rem; text-transform: uppercase; }
+  .task { display: flex; gap: .5rem; align-items: baseline; font-size: .8rem; padding: .18rem 0; }
+  .box { display: inline-block; width: 11px; height: 11px; border: 1px solid var(--ink-dim); flex: none; position: relative; top: 1px; }
+  .box.done { border-color: var(--cyan); background: linear-gradient(135deg, transparent 46%, var(--cyan) 46%, var(--cyan) 58%, transparent 58%); }
+  .task.open { color: var(--amber); }
+  .cluster { text-align: right; font-family: var(--data); font-size: .7rem; line-height: 1.75; }
+  .cluster .k { color: var(--ink-dim); padding-right: .8em; font-family: var(--ui); font-weight: 600; font-size: .62rem; letter-spacing: .12em; text-transform: uppercase; }
+  .cluster .v { color: var(--ink); } .cluster .v.gold { color: var(--gold); text-shadow: 0 0 8px rgba(217,178,63,.45); }
+
+  /* RIG mode: the inspect panel owns the TOP-LEFT quadrant (the map's
+     focal cluster is upper-right, so this space is free) and wears the same
+     header-bar grammar as the song-list panels. */
+  .inspect { position: absolute; left: 0; top: 1.2rem; width: min(520px, 46%); display: flex; flex-direction: column; gap: .7rem; }
+  .inspect .ph { background: var(--bar-solid); color: var(--sel-ink); padding: .3rem .7rem;
+    font: 700 .8rem/1.3 var(--ui); letter-spacing: .24em; text-transform: uppercase; width: max-content; min-width: 46%; }
+  .inspect .body { background: rgba(10,30,44,.66); border-left: 3px solid var(--cyan);
+    padding: .75rem .95rem .85rem; backdrop-filter: blur(3px); }
+  .inspect .tag { font-family: var(--data); font-size: .7rem; color: var(--ink-dim); margin-bottom: .55rem; }
+  .inspect dl { display: grid; grid-template-columns: 112px 1fr; gap: .3rem .9rem; font-size: .86rem; line-height: 1.5; }
+  .inspect dt { font: 600 .62rem/1.9 var(--ui); letter-spacing: .14em; color: var(--ink-dim); text-transform: uppercase; }
+  .inspect dd { font-family: var(--data); }
+  .inspect .hz { color: #E8B48F; }
+
+  .maplegend { position: absolute; right: 0; bottom: 0; z-index: 1; background: rgba(10,30,44,.6);
+    border-left: 3px solid var(--edge); padding: .5rem .7rem; font-family: var(--data); font-size: .68rem;
+    display: none; backdrop-filter: blur(2px); }
+  body[data-page="rig"] .maplegend { display: block; }
+  .maplegend .row2 { display: flex; align-items: center; gap: .55rem; padding: .14rem 0; color: var(--ink-dim); }
+  .maplegend .sw { width: 26px; height: 0; border-top: 2px solid; flex: none; }
+  .maplegend .sw.dash { border-top-style: dashed; }
+
+  .foot { position: relative; z-index: 2; display: flex; align-items: center; gap: .9rem; padding-top: .7rem; font-size: .7rem; }
+  .act { background: var(--sel); color: var(--sel-ink); font: 700 .68rem/1 var(--ui); letter-spacing: .12em; padding: .34rem .85rem; }
+  .foot .hint { color: var(--ink-dim); font-family: var(--data); font-size: .64rem; }
+</style>
+<div class="hud" id="hud">
+  <svg id="graph" viewBox="0 0 1500 800" preserveAspectRatio="xMidYMid slice" aria-label="Rig wire map; in RIG mode drag to pan, wheel to zoom, click a device or cable for details">
+    <defs>
+      <filter id="bloom" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="4" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+    <g id="world"></g>
+  </svg>
+
+  <div class="top">
+    <div class="ver">RIG TERMINAL v0.8<small>FORK B · CLOCK 100</small></div>
+    <div class="tabs" role="tablist">
+      <span class="kbd">[</span>
+      <button class="tab" role="tab" aria-selected="true" data-page="rig">Rig</button>
+      <button class="tab" role="tab" aria-selected="false" data-page="songs">Songs</button>
+      <span class="kbd">]</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="left">
+      <div class="panel-h">Song List</div>
+      <div class="songscroll"><table class="songs" id="songtbl">
+        <tr><th>Title</th><th>Pack</th><th>Slots</th><th>Ready</th></tr>
+      </table></div>
+      <div class="desc" id="desc"></div>
+      <div class="voices">
+        <div class="panel-h" style="background: rgba(217,178,63,.85)">Voices</div>
+        <table class="rew" id="voices"></table>
+      </div>
+    </div>
+    <div class="right">
+      <div class="tasks">
+        <h3 id="task-h"></h3>
+        <div id="tasks"></div>
+      </div>
+      <div class="cluster">
+        <div><span class="k">Last Run</span><span class="v">2026-08-23 · EXIT 0</span></div>
+        <div><span class="k">Verified</span><span class="v">17</span></div>
+        <div><span class="k">Proposed</span><span class="v gold">9</span></div>
+        <div><span class="k">Owed</span><span class="v gold">6</span></div>
+      </div>
+    </div>
+    <div class="inspect" id="inspect"></div>
+    <div class="maplegend" aria-label="Cable legend">
+      <div class="row2"><span class="sw" style="border-color:#7FD4E8"></span>notes · MIDI stream</div>
+      <div class="row2"><span class="sw" style="border-color:#E8C25C"></span>clock · transport</div>
+      <div class="row2"><span class="sw dash" style="border-color:#7FD4E8"></span>relay · filtered</div>
+      <div class="row2"><span class="sw dash" style="border-color:#E8C25C"></span>program change</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span class="act" id="act">Enter · Select</span>
+    <span class="hint" id="hint"></span>
+  </div>
+</div>
+<script>
+  // ── The map: nodes upper-right cluster, wires bleeding across quadrants ──
+  const NODES = {
+    // BANDS DERIVED FROM CONNECTION TYPES: note-receivers (the voices you
+    // play) group center under the master; timing-only + router devices
+    // flank right. Position and wire color encode the same distinction.
+    circuit:   { x: 700,  y: 170, w: 235, label: 'CIRCUIT TRACKS ◆ MASTER' },
+    microfreak:{ x: 450,  y: 420, w: 180, label: 'MICROFREAK ch3' },
+    hydra:     { x: 700,  y: 420, w: 185, label: 'HYDRASYNTH ch1' },
+    spdsx:     { x: 940,  y: 420, w: 150, label: 'SPD-SX ch4' },
+    ve500:     { x: 450,  y: 600, w: 150, label: 'VE-500 ch2' },
+    quadra:    { x: 1250, y: 340, w: 155, label: 'QUADRA ×4' },
+    rc505:     { x: 1160, y: 540, w: 150, label: 'RC-505 clk' },
+    am4:       { x: 1360, y: 540, w: 140, label: 'AM4' },
+  };
+  const WIRES = [
+    { id: 'w-out',   from: 'circuit', to: 'microfreak', c: 'rgba(127,212,232,.55)' },
+    { id: 'w-thru',  from: 'circuit', to: 'quadra', c: 'rgba(232,194,92,.55)' },
+    { id: 'w-relay', from: 'microfreak', to: 've500', c: 'rgba(127,212,232,.4)', dash: '3 6' },
+    { id: 'w-hydra', from: 'quadra', to: 'hydra', c: 'rgba(127,212,232,.55)' },
+    { id: 'w-spd',   from: 'quadra', to: 'spdsx', c: 'rgba(127,212,232,.55)' },
+    { id: 'w-rc',    from: 'quadra', to: 'rc505', c: 'rgba(232,194,92,.55)' },
+    { id: 'w-am4c',  from: 'quadra', to: 'am4', c: 'rgba(232,194,92,.55)' , fs: 'r', ts: 't' },
+    { id: 'w-am4pc', from: 'am4', to: 'circuit', c: 'rgba(232,194,92,.5)', dash: '6 8' , fs: 't', ts: 'r' },
+  ];
+  // Rows are baked into NODES (y = hop depth). Wires anchor on box
+  // perimeters with a standoff, prefer vertical departures (rows make
+  // most runs near-vertical), and honor per-wire side overrides for the
+  // topology's one loop (the AM4 return, routed up the right flank).
+  {
+    const GAP = 12, HT = 16, HB = 14, SPREAD = 22, ST = 16;
+    const sideFrom = (n, o) => {
+      const dx = o.x - n.x, dy = o.y - n.y;
+      return Math.abs(dx) * 0.55 > Math.abs(dy) ? (dx > 0 ? 'r' : 'l') : (dy > 0 ? 'b' : 't');
+    };
+    const sideTo = (n, o) =>
+      Math.abs(o.x - n.x) > 60 ? (o.x > n.x ? 'r' : 'l') : (o.y > n.y ? 'b' : 't');
+    const counts = {}, used = {};
+    for (const w of WIRES) {
+      const fs2 = w.fs || sideFrom(NODES[w.from], NODES[w.to]);
+      const ts2 = w.ts || sideTo(NODES[w.to], NODES[w.from]);
+      counts[w.from + fs2] = (counts[w.from + fs2] || 0) + 1;
+      counts[w.to + ts2] = (counts[w.to + ts2] || 0) + 1;
+    }
+    const anchor = (n, id, o, forced) => {
+      const side = forced, k = id + side;
+      const i = (used[k] = (used[k] || 0) + 1) - 1;
+      const off = (i - (counts[k] - 1) / 2) * SPREAD;
+      if (side === 'r') return { x: n.x + n.w / 2 + GAP, y: n.y + off, nx: 1, ny: 0 };
+      if (side === 'l') return { x: n.x - n.w / 2 - GAP, y: n.y + off, nx: -1, ny: 0 };
+      if (side === 'b') return { x: n.x + off, y: n.y + HB + GAP, nx: 0, ny: 1 };
+      return { x: n.x + off, y: n.y - HT - GAP, nx: 0, ny: -1 };
+    };
+    for (const w of WIRES) {
+      const a = anchor(NODES[w.from], w.from, NODES[w.to], w.fs || sideFrom(NODES[w.from], NODES[w.to]));
+      const b = anchor(NODES[w.to], w.to, NODES[w.from], w.ts || sideTo(NODES[w.to], NODES[w.from]));
+// KINK-FREE single arcs (owner): no stub segments — the wire runs
+      // anchor to anchor as ONE quadratic whose control sits at the
+      // intersection of the two edge normals, so it leaves and arrives
+      // tangent to its boxes and bends exactly once. Parallel normals
+      // (rare after side-facing entries) get a gentle near-straight cubic.
+      if (a.ny !== 0 && b.nx !== 0) {
+        w.d = 'M' + a.x + ' ' + a.y + ' Q ' + a.x + ' ' + b.y + ', ' + b.x + ' ' + b.y;
+      } else if (a.nx !== 0 && b.ny !== 0) {
+        w.d = 'M' + a.x + ' ' + a.y + ' Q ' + b.x + ' ' + a.y + ', ' + b.x + ' ' + b.y;
+      } else {
+        const dist = Math.hypot(b.x - a.x, b.y - a.y);
+        const k = Math.round(Math.min(70, dist * 0.25));
+        w.d = 'M' + a.x + ' ' + a.y +
+          ' C ' + (a.x + a.nx * k) + ' ' + (a.y + a.ny * k) + ', ' +
+          (b.x + b.nx * k) + ' ' + (b.y + b.ny * k) + ', ' + b.x + ' ' + b.y;
+      }
+    }
+  }
+
+  const EL = {
+    circuit: { name: 'CIRCUIT TRACKS', tag: 'clock master · sequencer · submixer', d: { sends: 'full stream ×2 (Out + Thru=dup)', hears: 'PC ch16 from AM4 · consumed', tracks: 'S1→ch1 S2→ch2 M1→ch3 M2→ch4' } },
+    quadra: { name: 'QUADRA THRU', tag: 'passive 1→4 fan-out', d: { copies: 'the Thru stream to 4 legs', legs: 'Hydra · SPD-SX · RC-505 · AM4' } },
+    microfreak: { name: 'MICROFREAK', tag: 'MIDI 1 voice · 1 hop from Out', d: { hears: 'ch3 notes + clock', filters: 'EATS ch3 — nothing downstream sees it', relays: 'ch1 · ch2 · ch4 · clock' }, hz: 'filters' },
+    ve500: { name: 'VE-500', tag: 'vocal harmony + retune', d: { hears: 'ch2 (pitch target = Synth 2)', constraint: 'retune is Song E ONLY', open: 'program check owed' }, hz: 'constraint' },
+    hydra: { name: 'HYDRASYNTH', tag: 'Synth 1 voice · Quadra leg', d: { hears: 'ch1 + PC + clock', recall: 'patch N ← PC N−1 · bank A', gates: 'bank A · find-by-number' }, hz: 'gates' },
+    spdsx: { name: 'SPD-SX', tag: 'drum sampler · Quadra leg', d: { hears: 'ch4 GM + clock (+12 route)', kit: 'Song D: 61 Lo-Fi 1 GM', open: 'Song C kit unrecorded' } },
+    rc505: { name: 'RC-505 MKII', tag: 'looper · clock slave · audio hub', d: { hears: 'clock + transport', pedals: '3× FS-5U · PLY/STP excl', audio: 'phones · bass INST 1 R' } },
+    am4: { name: 'AM4', tag: 'guitar rig · song-part trigger', d: { sends: 'scene stomp → PC ch16', hears: 'clock only (delay sync)', open: 'scene→PC map unauthored' }, hz: 'open' },
+    'w-out': { name: 'OUT → MICROFREAK', tag: 'DIN cable · 1 hop', d: { carries: 'every channel + clock + transport', filtered: 'MicroFreak keeps ch3 to itself' } },
+    'w-thru': { name: 'THRU → QUADRA', tag: 'DIN cable · duplicate of Out', d: { carries: 'the full stream, again', note: 'Thru mirrors Out, never In' } },
+    'w-relay': { name: 'MICROFREAK → VE-500', tag: 'relay leg', d: { carries: 'ch1 · ch2 · ch4 · clock', missing: 'ch3 — eaten upstream' }, hz: 'missing' },
+    'w-hydra': { name: 'QUADRA → HYDRA', tag: 'fan leg 1', d: { carries: 'ch1 notes + PC + clock' } },
+    'w-spd': { name: 'QUADRA → SPD-SX', tag: 'fan leg 2', d: { carries: 'ch4 GM notes + clock' } },
+    'w-rc': { name: 'QUADRA → RC-505', tag: 'fan leg 3', d: { carries: 'clock + transport (slave)' } },
+    'w-am4c': { name: 'QUADRA → AM4', tag: 'fan leg 4', d: { carries: 'clock only — tempo-synced delays' } },
+    'w-am4pc': { name: 'AM4 → CIRCUIT', tag: 'the song-part trigger', d: { carries: 'scene PC on ch16', fate: 'consumed by project-select, never relayed' } },
+  };
+
+  const GLYPHS = {
+    circuit: '<rect x="0" y="1" width="26" height="14" rx="2"/><path d="M3 5h3M8 5h3M13 5h3M18 5h3M3 9h3M8 9h3M13 9h3M18 9h3"/>',
+    quadra: '<rect x="6" y="4" width="12" height="9" rx="1"/><path d="M0 8.5h6M18 5l6-3M18 7.5h6M18 9.5l6 2M18 12l6 4"/>',
+    microfreak: '<rect x="0" y="0" width="26" height="15" rx="2"/><path d="M0 10h26M4 10v5M8 10v5M12 10v5M16 10v5M20 10v5M4 5h8"/>',
+    ve500: '<rect x="2" y="2" width="22" height="13" rx="2"/><path d="M6 11h5v0M15 11h5v0M6 9v3h5V9zM15 9v3h5V9zM6 5h14"/>',
+    hydra: '<rect x="0" y="0" width="26" height="15" rx="1"/><path d="M0 9h26M3 9v6M7 9v6M11 9v6M15 9v6M19 9v6M23 9v6M3 4h6M13 4h10"/>',
+    spdsx: '<path d="M2 14 L6 2 h14 l4 12 z M9 6h8M7 10h12"/>',
+    rc505: '<rect x="0" y="1" width="26" height="14" rx="1"/><path d="M4 4v8M9 4v8M14 4v8M19 4v8M2 12h22"/>',
+    am4: '<rect x="0" y="5" width="26" height="9" rx="1"/><path d="M4 9v0.1M10 9v0.1M16 9v0.1M22 9v0.1M4 8v2M10 8v2M16 8v2M22 8v2"/>',
+  };
+  const world = document.getElementById('world');
+  const svgNS = 'http://www.w3.org/2000/svg';
+  // bloom underlayer: each wire drawn blurred+bright beneath its crisp copy
+  for (const w of WIRES) {
+    for (const pass of ['glow', 'wire', 'hit']) {
+      const p = document.createElementNS(svgNS, 'path');
+      p.setAttribute('d', w.d);
+      p.setAttribute('fill', 'none');
+      if (pass === 'glow') { p.setAttribute('stroke', w.c); p.setAttribute('stroke-width', '5'); p.setAttribute('filter', 'url(#bloom)'); p.setAttribute('opacity', '.7'); }
+      if (pass === 'wire') { p.setAttribute('stroke', w.c); p.setAttribute('stroke-width', '1.8'); if (w.dash) p.setAttribute('stroke-dasharray', w.dash); p.classList.add('wire'); p.dataset.el = w.id; }
+      if (pass === 'hit') { p.setAttribute('stroke', 'transparent'); p.setAttribute('stroke-width', '16'); p.classList.add('hit'); p.dataset.el = w.id; }
+      world.appendChild(p);
+    }
+  }
+  for (const [id, n] of Object.entries(NODES)) {
+    const g = document.createElementNS(svgNS, 'g');
+    g.classList.add('node'); g.dataset.el = id;
+    const r = document.createElementNS(svgNS, 'rect');
+    r.setAttribute('x', n.x - n.w / 2); r.setAttribute('y', n.y - 16);
+    r.setAttribute('width', n.w); r.setAttribute('height', 30);
+    const t = document.createElementNS(svgNS, 'text');
+    t.setAttribute('x', n.x + 14); t.setAttribute('y', n.y + 4);
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', '12.5');
+    t.setAttribute('fill', 'rgba(207,232,242,.9)');
+    t.textContent = n.label;
+    g.appendChild(r); g.appendChild(t);
+    if (GLYPHS[id]) {
+      const gl = document.createElementNS(svgNS, 'g');
+      gl.classList.add('glyph');
+      gl.setAttribute('transform', 'translate(' + (n.x - n.w / 2 + 10) + ' ' + (n.y - 8) + ') scale(0.85)');
+      gl.innerHTML = GLYPHS[id];
+      g.appendChild(gl);
+    }
+    world.appendChild(g);
+  }
+
+  // ── inspect ──
+  const inspect = document.getElementById('inspect');
+  function inspectEl(id) {
+    document.querySelectorAll('#graph .node.sel, #graph .wire.sel').forEach((e) => e.classList.remove('sel'));
+    document.querySelectorAll(`#graph [data-el="${id}"]`).forEach((e) => { if (!e.classList.contains('hit')) e.classList.add('sel'); });
+    const el = EL[id];
+    inspect.innerHTML = `<div class="ph">${el.name}</div><div class="body"><div class="tag">${el.tag}</div><dl>` +
+      Object.entries(el.d).map(([k, v]) => `<dt>${k}</dt><dd${el.hz === k ? ' class="hz"' : ''}>${v}</dd>`).join('') + '</dl></div>';
+  }
+  // ── pan / zoom (viewBox-free: transform on #world) ──
+  // Click-to-inspect rides pointerdown/up, NOT the click event: pointer
+  // capture (needed for smooth panning) retargets click to the SVG root,
+  // so the element under the cursor never sees it. Resolve the element at
+  // press time; inspect on a movement-free release.
+  const graph = document.getElementById('graph');
+  let tx = 0, ty = 0, scale = 1, panning = false, sx = 0, sy = 0, moved = false, downEl = null;
+  function apply() { world.setAttribute('transform', `translate(${tx} ${ty}) scale(${scale})`); }
+  graph.addEventListener('pointerdown', (e) => {
+    if (document.body.dataset.page !== 'rig') return;
+    panning = true; moved = false; sx = e.clientX; sy = e.clientY;
+    const t = e.target.closest ? e.target.closest('[data-el]') : null;
+    downEl = t ? t.dataset.el : null;
+    graph.classList.add('panning');
+    graph.setPointerCapture(e.pointerId);
+  });
+  graph.addEventListener('pointermove', (e) => {
+    if (!panning) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+    tx += dx * (1500 / graph.clientWidth); ty += dy * (800 / graph.clientHeight);
+    sx = e.clientX; sy = e.clientY; apply();
+  });
+  graph.addEventListener('pointerup', () => {
+    panning = false; graph.classList.remove('panning');
+    if (!moved && downEl) inspectEl(downEl);
+    downEl = null;
+  });
+  graph.addEventListener('wheel', (e) => {
+    if (document.body.dataset.page !== 'rig') return;
+    e.preventDefault();
+    const k = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const ns = Math.min(2.6, Math.max(.55, scale * k));
+    // zoom toward the SVG-space cursor point
+    const rect = graph.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (1500 / rect.width);
+    const py = (e.clientY - rect.top) * (800 / rect.height);
+    tx = px - (px - tx) * (ns / scale);
+    ty = py - (py - ty) * (ns / scale);
+    scale = ns; apply();
+  }, { passive: false });
+
+  // ── pages ──
+  const hints = {
+    rig: 'DRAG · PAN — WHEEL · ZOOM — CLICK · INSPECT — [ ] · PAGE',
+    songs: '↑↓ · SONG — [ ] · PAGE — the map idles behind everything',
+  };
+  const acts = { rig: 'Click · Inspect', songs: 'Enter · Select' };
+  function setPage(p) {
+    document.body.dataset.page = p;
+    document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.page === p)));
+    document.getElementById('hint').textContent = hints[p];
+    document.getElementById('act').textContent = acts[p];
+  }
+  document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => setPage(b.dataset.page)));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '[') setPage('rig');
+    if (e.key === ']') setPage('songs');
+  });
+
+  // ── songs (unchanged data) ──
+  const SONGS = {
+    sa: { desc:'<span class="t">All four projects verified on-card.</span> Plays from the Circuit alone; no routing rows filed.',
+      voices: [['Circuit', 'internal kit', 100]], tasks: [['All projects verified by name', true]] },
+    sb: { desc:'Chorus pad enters m16; the pad RESTS in Verse 2, Buildup and Breakdown — that silence is in the source. <span class="t">(7 projects)</span>',
+      voices: [['MicroFreak pad', 'UNPICKED · audition 97–162', 15], ['Circuit', 'verified on-card', 100]],
+      tasks: [['7 projects verified by name', true], ['Pad channel confirmed ch3', true], ['Pick the pad patch, file the PC', false]] },
+    sc: { desc:'Two AM4 presets carry 8 stomps; Chorus 2 swaps A→B mid-stomp. <span class="t">(PC 88–93 · ch16 · 80 BPM)</span>',
+      voices: [['Hydra Warm Sub', 'pointer lands on Fuzz Sub', 30], ['Synth 2 Rhodes', 'never created', 0], ['MicroFreak pad', 'candidate 98 Infini', 20], ['SPD-SX kit', 'not recorded', 0]],
+      tasks: [['5 projects verified by name', true], ['Author scene→PC to real AM4 presets', false], ['Fix the Hydra pointer (0 → Warm Sub)', false], ['Pick pad + kit', false]] },
+    sd: { desc:'Recall arithmetic verified: A015 ↔ PC 14 on ch1. <span class="t">Two name checks skipped — devices were offline.</span>',
+      voices: [['Hydra A015 Distortified', 'verified math', 100], ['MicroFreak 163 Nostromo', 'skipped (offline)', 60], ['SPD-SX kit 61 Lo-Fi GM', 'chosen by ear', 100]],
+      tasks: [['Recall math verified', true], ['Re-run with devices plugged in', false]] },
+  };
+  const ROSTER = [
+    { id: 'sa', t: 'Song A', pack: '2', slots: '50–53', ready: '4/4' },
+    { id: 'sb', t: 'Song B', pack: '5', slots: '57–63', ready: '8/9' },
+    { id: 'sc', t: 'Song C', pack: '2', slots: '25–30', ready: '5/15' },
+    { id: 'sd', t: 'Song D', pack: '5', slots: '27–34', ready: '3/5' },
+    { t: 'Song E', pack: '2', slots: '1–5' },
+    { t: 'Song F', pack: '2', slots: '9–24' },
+    { t: 'Song G' }, { t: 'Song H' }, { t: 'Song I' }, { t: 'Song J' },
+    { t: 'Song K' }, { t: 'Song L' }, { t: 'Song M' }, { t: 'Song N' },
+    { t: 'Song O' }, { t: 'Song P' }, { t: 'Song Q' },
+  ];
+  const UNFILED = {
+    desc: '<span class="t">No claims filed yet.</span> The song lives in the library; its device mappings have not been filed to song-mappings.json, so nothing is device-verified.',
+    voices: [['—', 'file claims to see voices here', 0]],
+    tasks: [['File device claims for this song', false]],
+  };
+  const tbl = document.getElementById('songtbl');
+  for (const s of ROSTER) {
+    const tr = document.createElement('tr');
+    tr.className = 'row' + (s.id ? '' : ' unfiled');
+    tr.tabIndex = 0;
+    if (s.id) tr.dataset.song = s.id;
+    tr.innerHTML = '<td>' + s.t + '</td><td class="d">' + (s.pack || '—') +
+      '</td><td class="d num">' + (s.slots || '—') + '</td><td class="d">' + (s.ready || '—') + '</td>';
+    tbl.appendChild(tr);
+  }
+  const rows = [...document.querySelectorAll('.row')];
+  function show(row) {
+    rows.forEach((r) => r.setAttribute('aria-selected', String(r === row)));
+    const s = SONGS[row.dataset.song] || UNFILED;
+    document.getElementById('desc').innerHTML = s.desc;
+    document.getElementById('voices').innerHTML = s.voices.map(([k, v, pct]) =>
+      `<tr><td class="k">${k}</td><td class="bar-cell"><span class="fill" style="width:${pct}%"></span><span class="lbl">${v}</span></td></tr>`).join('');
+    document.getElementById('task-h').textContent = 'Staging Tasks · ' + row.cells[0].textContent;
+    document.getElementById('tasks').innerHTML = s.tasks.map(([t, done]) =>
+      `<div class="task${done ? '' : ' open'}"><span class="box${done ? ' done' : ''}"></span>${t}</div>`).join('');
+  }
+  rows.forEach((r) => r.addEventListener('click', () => show(r)));
+  document.addEventListener('keydown', (e) => {
+    if (document.body.dataset.page !== 'songs') return;
+    const i = rows.findIndex((r) => r.getAttribute('aria-selected') === 'true');
+    if (e.key === 'ArrowDown' && i < rows.length - 1) { show(rows[i + 1]); rows[i + 1].focus(); e.preventDefault(); }
+    if (e.key === 'ArrowUp' && i > 0) { show(rows[i - 1]); rows[i - 1].focus(); e.preventDefault(); }
+  });
+  show(rows[2]);
+  inspectEl('circuit');
+  setPage('rig');
+</script>

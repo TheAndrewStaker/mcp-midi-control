@@ -22,7 +22,7 @@ import {
 } from '../types.js';
 
 import { getCachedBlockLayout } from './blockLayoutCache.js';
-import { assertInstanceSupported, openCtx, requireDevice, withHandleRetry } from './core.js';
+import { assertInstanceSupported, requireDevice, withEndpoint, withHandleRetry } from './core.js';
 import {
   encodeValue,
   resolveBlockName,
@@ -190,45 +190,52 @@ export async function executeSetParam(args: {
       `set_param is not yet implemented for ${descriptor.display_name}.`,
     );
   }
-  const ctx = openCtx(descriptor);
-  // BK-075 phantom-param pre-flight: consult the cached block-layout
-  // snapshot to surface a `validation_info[]` warning when the target
-  // block isn't placed in the active working buffer. The write still
-  // proceeds (display-first / user-agency, same shape as BK-071).
-  // Devices without a placement model (Hydra) get an empty array.
-  const phantomWarnings = await collectPhantomParamWarnings(
-    descriptor,
-    ctx,
-    canonical_block,
-    canonical_name,
-  );
-  // BK-076 routing-mask pre-flight. Mutually exclusive with phantom-
-  // param (a block in `unroutedBlocks` is by construction in
-  // `placedBlocks` too) but both calls are safe: phantom returns empty
-  // when the block is placed, routing returns empty when the block
-  // isn't unrouted. Shares the cached snapshot — no extra wire read.
-  const routingWarnings = await collectRoutingMaskWarnings(
-    descriptor,
-    ctx,
-    canonical_block,
-    canonical_name,
-  );
-  // Tempo-lock standalone advisory: a single set_param on a tempo-locked
-  // timing param (delay.time / <mod>.rate) can't carry its own tempo, so
-  // the co-write inspection can't see it. Read the block's current tempo;
-  // if synced, the write lands in the register but is inaudible (BUG-2).
-  // One extra read, only for timing params.
-  const tempoLockWarnings = await collectTempoLockStandaloneWarnings(descriptor, ctx, [
-    { block: canonical_block, name: canonical_name, value: wire_value, channel, instance },
-  ]);
-  // Phase A.5 (connection-arbiter.md): a HANDLE-level fault on this write (a
-  // thrown send, e.g. a clean Windows USB replug where the acquire-time
-  // canary's own signals all still read healthy) reconnects the endpoint by
-  // connection_label and retries this SAME write once on the fresh handle.
-  // A device-level rejection (no-ACK, a DispatchError) is NOT retried.
-  const result = await withHandleRetry(ctx, (c) =>
-    setParam(c, canonical_block, canonical_name, wire_value, channel, instance));
-  const combinedWarnings = [...phantomWarnings, ...routingWarnings, ...tempoLockWarnings];
+  // Phase B (connection-arbiter.md): pre-flight reads + the write run under
+  // the per-endpoint lock, so a concurrent op on the same device cannot
+  // interleave its own SysEx between our snapshot read and our write.
+  const { result, combinedWarnings } = await withEndpoint(descriptor, async (ctx) => {
+    // BK-075 phantom-param pre-flight: consult the cached block-layout
+    // snapshot to surface a `validation_info[]` warning when the target
+    // block isn't placed in the active working buffer. The write still
+    // proceeds (display-first / user-agency, same shape as BK-071).
+    // Devices without a placement model (Hydra) get an empty array.
+    const phantomWarnings = await collectPhantomParamWarnings(
+      descriptor,
+      ctx,
+      canonical_block,
+      canonical_name,
+    );
+    // BK-076 routing-mask pre-flight. Mutually exclusive with phantom-
+    // param (a block in `unroutedBlocks` is by construction in
+    // `placedBlocks` too) but both calls are safe: phantom returns empty
+    // when the block is placed, routing returns empty when the block
+    // isn't unrouted. Shares the cached snapshot — no extra wire read.
+    const routingWarnings = await collectRoutingMaskWarnings(
+      descriptor,
+      ctx,
+      canonical_block,
+      canonical_name,
+    );
+    // Tempo-lock standalone advisory: a single set_param on a tempo-locked
+    // timing param (delay.time / <mod>.rate) can't carry its own tempo, so
+    // the co-write inspection can't see it. Read the block's current tempo;
+    // if synced, the write lands in the register but is inaudible (BUG-2).
+    // One extra read, only for timing params.
+    const tempoLockWarnings = await collectTempoLockStandaloneWarnings(descriptor, ctx, [
+      { block: canonical_block, name: canonical_name, value: wire_value, channel, instance },
+    ]);
+    // Phase A.5 (connection-arbiter.md): a HANDLE-level fault on this write (a
+    // thrown send, e.g. a clean Windows USB replug where the acquire-time
+    // canary's own signals all still read healthy) reconnects the endpoint by
+    // connection_label and retries this SAME write once on the fresh handle.
+    // A device-level rejection (no-ACK, a DispatchError) is NOT retried.
+    const written = await withHandleRetry(ctx, (c) =>
+      setParam(c, canonical_block, canonical_name, wire_value, channel, instance));
+    return {
+      result: written,
+      combinedWarnings: [...phantomWarnings, ...routingWarnings, ...tempoLockWarnings],
+    };
+  }, { opName: 'set_param' });
   const validation_info = combinedWarnings.length > 0 ? combinedWarnings : undefined;
   return {
     ...result,
@@ -263,12 +270,17 @@ export async function executeGetParam(args: {
   const { name: canonical_name, aliased_from } = resolveParamName(descriptor, canonical_block, args.name);
   const channel = resolveChannel(descriptor, canonical_block, args.channel);
   const instance = args.instance;
-  const ctx = openCtx(descriptor);
-  // Phase A.5: same handle-fault reconnect-and-retry-once as executeSetParam,
-  // on the read side (the exact "list_samples succeeded, next call threw"
-  // hardware repro applies equally to a bare get_param after a replug).
-  const result = await withHandleRetry(ctx, (c) =>
-    descriptor.reader.getParam(c, canonical_block, canonical_name, channel, instance));
+  // Phase B: read under the per-endpoint lock. Response correlation on
+  // several devices is by arrival order (no correlation id on the wire), so
+  // two concurrent reads on one port can swap answers; the lock is what
+  // makes that structurally impossible.
+  const result = await withEndpoint(descriptor, (ctx) =>
+    // Phase A.5: same handle-fault reconnect-and-retry-once as executeSetParam,
+    // on the read side (the exact "list_samples succeeded, next call threw"
+    // hardware repro applies equally to a bare get_param after a replug).
+    withHandleRetry(ctx, (c) =>
+      descriptor.reader.getParam(c, canonical_block, canonical_name, channel, instance)),
+  { opName: 'get_param' });
   const description = args.include_description
     ? getParamDescription(args.port, canonical_block, canonical_name)
     : undefined;
@@ -325,39 +337,45 @@ export async function executeSetParams(args: {
       throw err;
     }
   }
-  const ctx = openCtx(descriptor);
-  // BK-075/BK-076 phantom-param + routing-mask pre-flight, per batch entry.
-  // executeSetParam has run these BEFORE its write since BK-075/BK-076
-  // shipped; set_params never ran them at all until this fix, so a batch
-  // write to an unplaced or uncabled block returned a clean ok:true with no
-  // hint that the write landed on the wire but not on the audible signal
-  // path. Collected here, before the write, to match executeSetParam's
-  // ordering — these are genuinely pre-flight, not post-hoc. Both
-  // collectors share one cached getBlockLayoutSnapshot read per device (5s
-  // TTL), so looping over the batch costs no extra wire round-trips beyond
-  // the first.
-  const phantomWarnings: ValidationInfo[] = [];
-  const routingWarnings: ValidationInfo[] = [];
-  for (const op of validated) {
-    phantomWarnings.push(...await collectPhantomParamWarnings(descriptor, ctx, op.block, op.name));
-    routingWarnings.push(...await collectRoutingMaskWarnings(descriptor, ctx, op.block, op.name));
-  }
-  // Tempo-lock co-write advisory: if this batch set a tempo division AND
-  // the absolute time/rate it locks, the absolute write is silently
-  // ignored on the hardware. Pure inspection of the resolved writes —
-  // no extra wire read. Additive `validation_info[]`; write proceeds.
-  const tempoWarnings = collectTempoLockCowriteWarnings(descriptor, displayWrites);
-  // Standalone case: timing params in the batch whose tempo isn't also in
-  // the batch — read the live tempo and warn if synced (BUG-2). The
-  // collector skips co-write cases internally, so the two don't double-warn.
-  const tempoStandaloneWarnings = await collectTempoLockStandaloneWarnings(descriptor, ctx, displayWrites);
-  // Phase A.5: reconnect-and-retry-once on a handle-level fault. `setParams`
-  // is a batch of independent single-param writes (not a stateful multi-block
-  // transfer session), so restarting the whole batch on a fresh handle is
-  // safe — each write is idempotent (setting the same param to the same
-  // value twice is a no-op the second time).
-  const result = await withHandleRetry(ctx, (c) => setParams(c, validated));
-  const allWarnings = [...phantomWarnings, ...routingWarnings, ...tempoWarnings, ...tempoStandaloneWarnings];
+  // Phase B: the whole batch (pre-flight reads + N writes) is one exclusive
+  // visit to the device, so nothing interleaves between its entries.
+  const { result, allWarnings } = await withEndpoint(descriptor, async (ctx) => {
+    // BK-075/BK-076 phantom-param + routing-mask pre-flight, per batch entry.
+    // executeSetParam has run these BEFORE its write since BK-075/BK-076
+    // shipped; set_params never ran them at all until this fix, so a batch
+    // write to an unplaced or uncabled block returned a clean ok:true with no
+    // hint that the write landed on the wire but not on the audible signal
+    // path. Collected here, before the write, to match executeSetParam's
+    // ordering — these are genuinely pre-flight, not post-hoc. Both
+    // collectors share one cached getBlockLayoutSnapshot read per device (5s
+    // TTL), so looping over the batch costs no extra wire round-trips beyond
+    // the first.
+    const phantomWarnings: ValidationInfo[] = [];
+    const routingWarnings: ValidationInfo[] = [];
+    for (const op of validated) {
+      phantomWarnings.push(...await collectPhantomParamWarnings(descriptor, ctx, op.block, op.name));
+      routingWarnings.push(...await collectRoutingMaskWarnings(descriptor, ctx, op.block, op.name));
+    }
+    // Tempo-lock co-write advisory: if this batch set a tempo division AND
+    // the absolute time/rate it locks, the absolute write is silently
+    // ignored on the hardware. Pure inspection of the resolved writes —
+    // no extra wire read. Additive `validation_info[]`; write proceeds.
+    const tempoWarnings = collectTempoLockCowriteWarnings(descriptor, displayWrites);
+    // Standalone case: timing params in the batch whose tempo isn't also in
+    // the batch — read the live tempo and warn if synced (BUG-2). The
+    // collector skips co-write cases internally, so the two don't double-warn.
+    const tempoStandaloneWarnings = await collectTempoLockStandaloneWarnings(descriptor, ctx, displayWrites);
+    // Phase A.5: reconnect-and-retry-once on a handle-level fault. `setParams`
+    // is a batch of independent single-param writes (not a stateful multi-block
+    // transfer session), so restarting the whole batch on a fresh handle is
+    // safe — each write is idempotent (setting the same param to the same
+    // value twice is a no-op the second time).
+    const written = await withHandleRetry(ctx, (c) => setParams(c, validated));
+    return {
+      result: written,
+      allWarnings: [...phantomWarnings, ...routingWarnings, ...tempoWarnings, ...tempoStandaloneWarnings],
+    };
+  }, { opName: 'set_params' });
   return {
     ...result,
     ...(allWarnings.length > 0 ? { validation_info: allWarnings } : {}),
@@ -453,10 +471,13 @@ export async function executeGetParams(args: {
       throw err;
     }
   }
-  const ctx = openCtx(descriptor);
-  // Phase A.5: reconnect-and-retry-once on a handle-level fault. Same
-  // rationale as executeSetParams — a batch of independent reads restarts
-  // cleanly on a fresh handle.
-  const result = await withHandleRetry(ctx, (c) => descriptor.reader.getParams(c, validated));
+  // Phase B: one exclusive visit for the whole batch of reads (arrival-order
+  // response correlation makes concurrent reads on one port swap answers).
+  const result = await withEndpoint(descriptor, (ctx) =>
+    // Phase A.5: reconnect-and-retry-once on a handle-level fault. Same
+    // rationale as executeSetParams — a batch of independent reads restarts
+    // cleanly on a fresh handle.
+    withHandleRetry(ctx, (c) => descriptor.reader.getParams(c, validated)),
+  { opName: 'get_params' });
   return { ...result, device: descriptor.display_name };
 }

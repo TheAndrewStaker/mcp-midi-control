@@ -1,0 +1,200 @@
+{
+ "openrig_version": "0.1",
+ "id": "fixture-song-rig",
+ "name": "Agent-regression song rig (MPC + AM4)",
+ "nodes": [
+  {
+   "id": "mpc",
+   "name": "Akai MPC One G2",
+   "server_device_id": "mpc-one-g2",
+   "identity": {
+    "manufacturer": "Akai",
+    "family": "MPC One G2"
+   },
+   "roles": [
+    "sequencer",
+    "sampler",
+    "sound_source",
+    "clock_master"
+   ],
+   "ports": [
+    {
+     "id": "midi_in",
+     "kind": "midi_din_in",
+     "label": "MIDI In (scene PC from the AM4)"
+    },
+    {
+     "id": "midi_out",
+     "kind": "midi_din_out",
+     "label": "MIDI Out (clock + transport to the RC-505)"
+    },
+    {
+     "id": "usb",
+     "kind": "usb_midi",
+     "label": "USB (this server; the \"Public\" port)"
+    },
+    {
+     "id": "in1",
+     "kind": "audio_in",
+     "audio": "mono",
+     "label": "Input 1 (free)"
+    },
+    {
+     "id": "in2",
+     "kind": "audio_in",
+     "audio": "mono",
+     "label": "Input 2 (free)"
+    },
+    {
+     "id": "out_l",
+     "kind": "audio_out",
+     "audio": "mono",
+     "output_role": "stem",
+     "label": "Main Out L"
+    },
+    {
+     "id": "out_r",
+     "kind": "audio_out",
+     "audio": "mono",
+     "output_role": "stem",
+     "label": "Main Out R"
+    }
+   ],
+   "routing": {
+    "consume": [
+     {
+      "port": "midi_in",
+      "kind": "midi",
+      "type": "pc",
+      "channel": 15,
+      "binding": "am4-scene-sequence"
+     }
+    ],
+    "originate": [
+     {
+      "port": "midi_out",
+      "kind": "midi",
+      "type": "clock"
+     },
+     {
+      "port": "midi_out",
+      "kind": "midi",
+      "type": "transport"
+     }
+    ]
+   },
+   "note": "Clock master and the song book: one project per song, one sequence per section, in song order. Program Change = Sequence must be on (Preferences > MIDI / Sync). A sequence change is immediate while stopped and waits for the playing sequence to end while playing."
+  },
+  {
+   "id": "am4",
+   "name": "Fractal AM4",
+   "server_device_id": "am4",
+   "identity": {
+    "manufacturer": "Fractal",
+    "family": "AM4"
+   },
+   "roles": [
+    "sound_source",
+    "effect"
+   ],
+   "ports": [
+    {
+     "id": "midi_out",
+     "kind": "midi_din_out",
+     "label": "MIDI Out (scene PC to the MPC, ch15)"
+    },
+    {
+     "id": "midi_in",
+     "kind": "midi_din_in",
+     "label": "MIDI In (unpatched)"
+    },
+    {
+     "id": "input",
+     "kind": "audio_in",
+     "audio": "mono",
+     "label": "INPUT (guitar)"
+    },
+    {
+     "id": "pedal1",
+     "kind": "expression",
+     "direction": "in",
+     "label": "PEDAL 1 (rear TRS; expression pedal or footswitch)"
+    },
+    {
+     "id": "pedal2",
+     "kind": "expression",
+     "direction": "in",
+     "label": "PEDAL 2 (rear TRS; expression pedal or footswitch)"
+    },
+    {
+     "id": "out_lr",
+     "kind": "audio_out",
+     "audio": "stereo",
+     "output_role": "stem"
+    }
+   ],
+   "routing": {
+    "originate": [
+     {
+      "port": "midi_out",
+      "kind": "midi",
+      "type": "pc",
+      "channel": 15,
+      "binding": "am4-scene-sequence"
+     }
+    ]
+   },
+   "note": "Scene MIDI leaves only by the physical MIDI Out. A scene Program Change on ch15, value N, selects MPC sequence N+1."
+  }
+ ],
+ "edges": [
+  {
+   "id": "am4-scene-to-mpc",
+   "from": {
+    "node": "am4",
+    "port": "midi_out"
+   },
+   "to": {
+    "node": "mpc",
+    "port": "midi_in"
+   },
+   "directed": true,
+   "physical_link_id": "din-am4-mpc",
+   "signal": {
+    "kind": "midi",
+    "signals": [
+     {
+      "type": "pc",
+      "channel": 15,
+      "binding": "am4-scene-sequence"
+     }
+    ]
+   },
+   "enabled": true,
+   "note": "[confirmed 2026-11-04] direct TRS-to-DIN cable; scene PC N selects sequence N+1."
+  }
+ ],
+ "bindings": [
+  {
+   "id": "am4-scene-sequence",
+   "from": {
+    "node": "am4",
+    "emits": {
+     "node": "am4",
+     "type": "pc",
+     "channel": 15
+    }
+   },
+   "to": {
+    "node": "mpc",
+    "expects": {
+     "node": "mpc",
+     "type": "pc",
+     "channel": 15,
+     "target": "sequence-select"
+    }
+   },
+   "note": "One AM4 scene stomp = a PC on ch15 = the MPC sequence for that song part (value = sequence - 1). The Scene MIDI rows are authored per preset on the AM4."
+  }
+ ]
+}

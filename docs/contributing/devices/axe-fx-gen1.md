@@ -29,7 +29,7 @@ are deliberately absent rather than gated.
 | `set_param` / `set_params` | hardware-unverified | 922 parameters across 35 blocks, decoded byte-exactly from the published gen-1 SysEx parameter-set document and its 0 to 255 conversion table |
 | `get_param` / `get_params` | hardware-unverified | Function `0x02` with the set flag cleared returns the live value plus the device's own display label. Decoded from the fuller published gen-1 specification |
 | `get_preset` | hardware-unverified, partial by design | The patch dump's spec-pinned subset: preset name, the four-by-twelve effect-grid layout, and the source flag. The dump's roughly 1790-byte parameter region is explicitly undetermined in the spec and is surfaced honestly as a byte count rather than guessed |
-| `switch_preset` | hardware-unverified | Standard MIDI Program Change |
+| `switch_preset` | hardware-unverified, presets 0 to 127 only | Standard MIDI Program Change, the era's own recall path, a channel voice message rather than gen-1 SysEx. Presets 128 and up refuse honestly: the published specification pins no bank-select mechanism, and this server does not guess wire paths. Which preset lands also depends on the unit's own MIDI channel and any custom PC mapping, so confirm on the front panel |
 | `get_preset` for bank C, presets 256 and up | gated | The request byte for the high bank is left open in the spec |
 | `apply_preset`, block placement, `save_preset` | gated | The structural wire messages are not in the published spec at all |
 | Scenes, channels | not applicable | The hardware predates both |
@@ -95,6 +95,34 @@ In your MCP host:
 Paste the **full** output, not just the line you think matters. Your exact port
 name is the only thing needed to confirm or fix the routing before you try
 anything else.
+
+### REPORT-2: Standard owners, tell us whether SysEx commands work at all
+**Tier: REPORT then SESSION | ~3 minutes | one working-buffer write | unlocks: the Standard model byte**
+
+Only for the Axe-Fx **Standard**. Ultra owners can skip this.
+
+Every SysEx frame this server sends uses the Ultra model byte `0x01`. The
+published specification and the community model-ID table both list the Standard
+as `0x00`, and both mark it **assumed**. Nobody has confirmed either value on a
+real Standard. If the listed `0x00` is right, a Standard will silently ignore
+everything this server sends over SysEx, and the server warns you about exactly
+that when your port name says "Standard".
+
+With your Standard connected:
+
+> "Set the amp gain to 7 on my Axe-Fx."
+
+Then check the front panel. **Either outcome is the answer we need:**
+
+- The panel moved: the Standard accepts the Ultra byte `0x01`. Done.
+- Nothing happened: the model byte is likely wrong. Say so, and if you can, run
+  a capture of the era's Axe-Edit doing the same edit
+  ([../tools/capture-setup.md](../tools/capture-setup.md)) so the real byte is
+  pinned in one shot.
+
+Either way, include your exact port name and firmware version. One report
+settles a question that gates every SysEx capability on the Standard. Plain
+Program Change (`switch_preset`) carries no model byte and works regardless.
 
 ### DONATE-1: Two preset exports with one parameter changed between them
 **Tier: DONATE | ~5 minutes | no capture tools | unlocks: per-parameter values inside `get_preset`**

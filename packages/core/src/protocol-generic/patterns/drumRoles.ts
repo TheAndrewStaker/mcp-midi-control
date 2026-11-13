@@ -26,6 +26,11 @@ export const DRUM_ROLES = [
   'closed_hat', 'open_hat', 'busy_hat',
   'ride', 'ride_bell', 'crash', 'china',
   'tom', 'perc',
+  // Split-tom lanes (opt-in Songsterr importer, `splitToms`): one self-canonical
+  // role per GM tom number, in descending-pitch order, so two toms struck
+  // together survive as distinct voices instead of collapsing onto `tom`. They
+  // fold back to tom/snare/perc at resolve time (drumFold.ts ROLE_FOLDS).
+  'tom_flo', 'tom_fhi', 'tom_lo', 'tom_lm', 'tom_hm', 'tom_hi',
   // fine percussion (GM 60-81 + common kit extras)
   'bongo', 'conga', 'timbale', 'agogo', 'cabasa', 'maracas',
   'whistle', 'guiro', 'claves', 'woodblock', 'cuica', 'triangle',

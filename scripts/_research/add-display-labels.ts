@@ -29,7 +29,7 @@ const XML_EXPERT = 'samples/captured/decoded/binarydata/extracted/__block_layout
 
 const BLOCK_TO_FAMILY: Record<string, string> = {
   amp: 'DISTORT',
-  drive: 'DISTORT',
+  drive: 'FUZZ', // NOT 'DISTORT' (the amp family): that mapping gave every drive knob an amp label
   reverb: 'REVERB',
   delay: 'DELAY',
   chorus: 'CHORUS',

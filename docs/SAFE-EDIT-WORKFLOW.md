@@ -1,7 +1,9 @@
 # Safe-Edit Workflow
 
-The cross-device contract this project guarantees for every supported
-MIDI device: AM4, Axe-Fx II, Hydrasynth, and any device added later.
+The cross-device contract this project guarantees across the registered
+fleet (16 devices today, and any device added later; the roster and
+per-device tiers are in the device table in
+[contributing/README.md](contributing/README.md)).
 
 **The rule, one sentence:** no tool silently overwrites a preset, no
 tool silently loses your in-progress edits, and "save" is something
@@ -10,21 +12,13 @@ because a setlist without persistence isn't a setlist.
 
 ## Why this exists
 
-Audio gear protocols don't natively protect users from this kind of
-data loss. The Axe-Fx II's working buffer is just RAM; switching
-presets discards whatever you were editing. The AM4 is the same.
-AxeEdit's UI mitigates with a warning dialog before you navigate
-away from an edited preset; bare MIDI has no such gate.
-
-When an LLM is the one steering the device, the loss surface gets
-larger: the agent may not realize the user has been editing, or
-may interpret an ambiguous request like "build a tone at slot 700"
-as "save to slot 700" when the user just meant "audition there."
-We've hit both failure modes during development.
-
-This document codifies the gates. Implementing them consistently
-across every device means users can speak to any of our supported
-devices the same way and trust the same safety guarantees.
+Bare MIDI has no gate against edit loss: a device's working buffer is
+RAM, and switching presets silently discards it. An LLM steering the
+device adds a second failure mode: an ambiguous request like "build a
+tone at slot 700" can be read as "save to slot 700" when the user meant
+"audition there." This document codifies the gates that prevent both,
+implemented consistently so users can speak to every supported device
+the same way and trust the same guarantees.
 
 ## The contract
 
@@ -83,9 +77,9 @@ implementation strategy:
 |---|---|---|---|---|
 | Device-sourced dirty signal | ❌ not exposed (verified by capture: zero MIDI bytes on front-panel edits). Dirty gate uses the deterministic in-memory `markDirty`/`markClean` tracker (`core/server-shared/bufferDirty.ts`), set at AM4 write call sites + cleared on save/switch; see `tools/safeEdit.ts`. Does NOT track front-panel / parallel-editor edits (deliberate tradeoff; the old fingerprint poll did, but non-deterministically, which false-refused users). | ✅ via `0x74` state-broadcast | ❌ not exposed in MIDI | n/a: no working-buffer "save" model. Edits are either live (fire-and-forget CC/NRPN, instantly audible, nothing to lose) or whole-slot file transfers (see the slot-transfer gate below). There is no dirty preset buffer to guard. |
 | `on_active_preset_edited` guard | ✅ unified surface (`apply_preset`, `switch_preset`) | ✅ shipped | n/a (no dirty detection) | n/a (no working buffer) |
-| `save_authorized` guard on apply-at-slot | ✅ unified `apply_preset(target_location, save_authorized)` | ✅ shipped | ✅ `apply_patch(save: true)` | replaced by the **slot-transfer overwrite gate** (`confirm_overwrite`) on the destructive transfer tools, see below |
-| Multi-preset overwrite scan | ✅ `scan_locations` | ✅ `scan_locations` | n/a (different patch model) | ⚠️ partial: `upload_project` / `apply_pattern ncs_upload` READ the target project slot (empty→write, occupied→refuse + name); sample slots can't be read yet (`upload_sample` / `upload_kit` refuse by default). `delete_project` scans every named slot and its refusal IS the report (see below). |
-| `save_preset` single-target overwrite gate | ✅ reads the target's stored name and refuses a non-active occupied location until `confirm_overwrite: true` | ✅ **since 2026-08-03, on a different basis**: this device can read which preset is ACTIVE but has no decoded read for what is stored at an ARBITRARY location, so occupancy is genuinely unknown. It refuses any NON-ACTIVE target until `confirm_overwrite: true`, and the refusal SAYS no occupancy check was possible rather than implying one happened. Saving back to the location being edited is unaffected. Before this the store landed `acked: true` with the caution on the RECEIPT, which is a warning after a flash write, not a gate | n/a (patch model, `apply_patch(save)`) | see the slot-transfer gate below |
+| `save_authorized` guard on apply-at-slot | ✅ unified `apply_preset(target_location, save_authorized)` | ✅ shipped | ✅ `apply_patch(save: true)`, and `import_preset` (a restore on this device is ALWAYS a flash write, so `target_location` + `save_authorized` are both required) | replaced by the **slot-transfer overwrite gate** (`confirm_overwrite`) on the destructive transfer tools, see below |
+| Multi-preset overwrite scan | ✅ `scan_locations` | ✅ `scan_locations` | ✅ `scan_locations` since 2026-08-09 (BK-110): real bank-name reads (`02 00 BANK`), non-destructive, max 4 banks/call | ⚠️ partial: `import_preset` (a project file) / `apply_pattern ncs_upload` READ the target project slot (empty→write, occupied→refuse + name); sample slots can't be read yet (`upload_sample` (one file or a folder) refuse by default). `delete_project` scans every named slot and its refusal IS the report (see below). |
+| `save_preset` single-target overwrite gate | ✅ reads the target's stored name and refuses a non-active occupied location until `confirm_overwrite: true` | ✅ **since 2026-08-03, on a different basis**: this device can read which preset is ACTIVE but has no decoded read for what is stored at an ARBITRARY location, so occupancy is genuinely unknown. It refuses any NON-ACTIVE target until `confirm_overwrite: true`, and the refusal SAYS no occupancy check was possible rather than implying one happened. Saving back to the location being edited is unaffected. Before this the store landed `acked: true` with the caution on the RECEIPT, which is a warning after a flash write, not a gate | ✅ **since 2026-08-09 (BK-110), on `apply_patch(save:true)`** (the device's save path): pre-reads the target's STORED name and refuses until `confirm_overwrite: true` (every Hydrasynth slot is occupied, so a flash save always overwrites). Post-save, the response carries the device's true flash receipt (`15 00`, BK-112) plus a name read-back receipt. Since 2026-08-10 the identical pre-read + `confirm_overwrite` + receipt/read-back pattern also gates `import_preset` (byte-exact restore to a stored slot over the BK-113 series-write flow) | see the slot-transfer gate below |
 | Erase (make a stored slot empty) | n/a: no erase exists on the device, a location always holds something | n/a | n/a | ✅ `delete_project`, gated harder than any overwrite: see "erasing, which is not overwriting" below |
 | Tool-description guidance for agent | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance | ✅ `describe_device` agent_guidance, all 13 topics inline (they were withheld until 2026-08-02, when patch-archetype `source_notes` moved to `describe_device({port, recipe})` and freed ~24 KB). Any topic a device cannot fit is still named in `agent_guidance_withheld` and read via `describe_device(port, guidance: [...topics])` | ✅ the `confirm_overwrite` contract is in every transfer tool's description |
 
@@ -98,8 +92,8 @@ contract.
 
 The Circuit Tracks has no working-buffer "save" model, so the preset
 dirty/save gates above don't apply. What it DOES have is **destructive
-slot transfers**: `upload_sample` / `upload_kit` (a sample slot, 1..64),
-`upload_project` (a project, 1..64 as the device numbers it), and
+slot transfers**: `upload_sample` (one file or a folder) (a sample slot, 1..64),
+`import_preset` (a project file, to project 1..64 as the device numbers it), and
 `apply_pattern mode:ncs_upload`
 (authors a pattern into a template, then writes a project slot). Each one
 permanently overwrites whatever is in the target slot. The project's
@@ -109,14 +103,14 @@ here just as it does to a preset location.
 The gate is **occupancy-driven, not a blanket refuse-by-default**, so it
 adds friction only where there's something to lose:
 
-- **`upload_project` / `apply_pattern ncs_upload`** (project slots are
+- **`import_preset` (a project file) / `apply_pattern ncs_upload`** (project slots are
   readable): without `confirm_overwrite`, the tool READS the target slot
   first. **Empty → it writes straight through** (no friction). **Occupied →
   it refuses** (`overwrite_confirmation_required`) and names the stored
   project, for the agent to surface and the user to confirm; re-call with
   `confirm_overwrite: true`. The read costs one extra slot download and runs
   only on the non-authorized path.
-- **`upload_sample` / `upload_kit`** (sample slots are NOT readable yet, the
+- **`upload_sample` (one file or a folder)** (sample slots are NOT readable yet, the
   sample-directory decode is RE-gated): occupancy "can't be confirmed", so the
   tool refuses by default and asks for `confirm_overwrite: true`. When the
   dir-listing decode lands, these graduate to the same empty-slot-no-friction
@@ -160,7 +154,7 @@ it. Implementation:
 | Gate | Behaviour | Why it differs from the overwrite gate |
 |---|---|---|
 | **Read before delete** | Unconditional, both oracles, per slot, and again in-session one instruction before each destructive frame. Refuses on empty, on unreadable, and on the two oracles DISAGREEING. | The overwrite gate SKIPS its read when `confirm_overwrite` is passed, because on a write the read only buys information: the write lands either way. Here the read is the only thing separating "erase this project" from "erase the wrong project", and the only evidence that the file backed up is the file destroyed. |
-| **Backup** | Mandatory, CRC-verified, with NO flag to skip it. Anything other than a saved, structurally valid file aborts the whole call before a single delete frame. | `upload_project`'s `backup_first` is a flag, and was found on 2026-07-29 to be a silent no-op unless `confirm_overwrite` was also passed. A flag whose effect depends on another flag is the failure mode. There is also no non-destructive path here for it to be optional on: the tool refuses empty slots, so every call that reaches the backup destroys something. The backup IS the undo, and an undo you can switch off is not an undo. |
+| **Backup** | Mandatory, CRC-verified, with NO flag to skip it. Anything other than a saved, structurally valid file aborts the whole call before a single delete frame. | `upload_project`'s `backup_first` (a tool since folded into `import_preset`, which now always backs up before an authorised overwrite) was a flag, and was found on 2026-07-29 to be a silent no-op unless `confirm_overwrite` was also passed. A flag whose effect depends on another flag is the failure mode. There is also no non-destructive path here for it to be optional on: the tool refuses empty slots, so every call that reaches the backup destroys something. The backup IS the undo, and an undo you can switch off is not an undo. |
 | **Authorization** (`confirm_delete`) | Refuse-by-default. The refusal CARRIES the pre-flight report, naming every project that would be lost. | This is the multi-preset overwrite gate above ("pre-flight scan the target range and surface what would be overwritten"), not a second gate beside it. It is also why the tool needs no `dry_run`: the unauthorized call already is one. |
 | **Per-call ceiling** | 8 slots. Over it the call is REFUSED, never trimmed to fit. | A truncating delete leaves the caller believing a range is clear when it is not, which is the same class of lie as a silent no-op. The number is an order of magnitude below the 64 slots a loop of these frames cleared on 2026-06-27; clearing a pack takes eight separate calls, each re-reading the card and re-stating what it will destroy. |
 | **Verify after** | Both oracles, in a fresh session, past the manifest-flush window: the device's own per-file query AND a directory read, plus a byte-for-byte comparison against a known-free control slot. | The directory is the table a delete edits, so verifying with it alone is circular; reading it too early reports stale contents. The control comparison exists because a 2026-07-29 verification whose matcher accepted only the occupied reply shape scored a real successful erase as "still there", and the obvious next move after reading that is to send the delete again. |
@@ -203,8 +197,10 @@ false-refuses: a real user was refused a navigation immediately after
 a clean save (2026-06-03). Tradeoff vs. the old poll: this detects OUR
 edits reliably but not out-of-band front-panel / parallel-editor edits.
 
-**No detection (Hydrasynth).** Device doesn't expose a dirty signal
-and the patch-buffer dump cost is prohibitive. We don't fake it.
+**No detection (Hydrasynth).** Device doesn't expose a dirty signal,
+and the WORKING BUFFER cannot be read at all (the protocol only dumps
+STORED patches — BK-110 wired those reads, but a flash copy says
+nothing about unsaved buffer state). We don't fake it.
 `save_authorized` guard still works; `on_active_preset_edited` is
 omitted as `n/a`; agents know to ask the user before navigating.
 
@@ -314,8 +310,9 @@ exercises the gates. Extending it to cover more of the unified
 ## Failure modes documented
 
 - **Front-panel edits on Hydrasynth.** No dirty detection at all:
-  the device doesn't broadcast and the patch-buffer dump cost is
-  prohibitive. `save_authorized` still catches save-intent
+  the device doesn't broadcast, and the working buffer has no read
+  (stored-patch reads exist since BK-110; the buffer itself does
+  not). `save_authorized` still catches save-intent
   ambiguity; `on_active_preset_edited` is omitted. Honest scope:
   agents ask the user before navigating.
 

@@ -1,5 +1,5 @@
 """
-pack_groove.py — pack a FULL 4-bar (64-step) Sleep Token groove into the Circuit's
+pack_groove.py — pack a FULL 4-bar (64-step) Mixwave groove into the Circuit's
 4 monophonic drum tracks using per-step SAMPLE FLIP (drum_choice), so we keep the
 complete iconic beat (not a 2-bar slice) AND carry more pieces than the old
 4-voice reduction.
@@ -17,7 +17,7 @@ Model (matches the "piece classes priority" brief):
 Output: a packed JSON (2 patterns x 4 tracks x 32 steps per groove) for the TS
 authoring step, plus a readable report (grids, flips, flagged guesses, drops).
 
-  python pack_groove.py "The Summoning" [out.json]
+  python pack_groove.py "Song 01" [out.json]
 """
 import json, os, sys, glob, collections
 import mido
@@ -156,7 +156,7 @@ def hit_count(mid):
 
 
 def main():
-    song = sys.argv[1] if len(sys.argv) > 1 else "The Summoning"
+    song = sys.argv[1] if len(sys.argv) > 1 else next(iter(SONG_NAMES.values()))
     mode = sys.argv[2] if len(sys.argv) > 2 else "full"      # full (4x 4-bar) | chopped (8x 2-bar)
     out_path = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(__file__), "_packed.json")
     steps = 64 if mode == "full" else 32

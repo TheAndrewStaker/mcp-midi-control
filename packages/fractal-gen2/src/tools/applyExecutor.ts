@@ -270,11 +270,52 @@ export interface ApplyPresetAtOp {
   expectedChannel?: AxeFxIIChannel;
   /** For scene_verify ops: the expected scene (1..8 display) after the switch. */
   expectedScene?: number;
-  // For 'clear_cell' ops only, the (row, col) being cleared. The
-  // runtime uses this to skip clears for cells the device's GET_GRID_
-  // LAYOUT read confirms are already empty (no point emitting ~40
-  // grid writes when the target slot was an empty preset to begin with).
+  /**
+   * For 'clear_cell' ops, the (row, col) being cleared. The runtime uses
+   * this to skip clears for cells the device's GET_GRID_LAYOUT read
+   * confirms are already empty (no point emitting ~40 grid writes when
+   * the target slot was an empty preset to begin with).
+   *
+   * BK-084 mode-collapse: also set on 'place_block' ops (the cell being
+   * placed into) and on the anti-screech 'bypass' op immediately paired
+   * with each 'place_block' — the runtime correlates a skipped placement
+   * with its paired mute by matching `cellRef`.
+   */
   cellRef?: { row: number; col: number };
+  /**
+   * BK-084 mode-collapse ('place_block' ops only): the wire_id being
+   * placed at `cellRef`. The runtime compares this against the CURRENT
+   * device grid (one read, same mechanism as the empty-cell skip above)
+   * and skips the write entirely when the cell already holds this exact
+   * wire_id — leaving an already-correctly-placed block COMPLETELY
+   * untouched at the wire level, so params the caller's spec doesn't
+   * list survive instead of resetting to FRESH_DEFAULT_RECORDS (today's
+   * mode:'build' behavior). A same-cell REPLACE (different wire_id) or a
+   * fresh insert still places normally — only an exact (cell, wire_id)
+   * match skips.
+   */
+  targetWireId?: number;
+  /**
+   * BK-084 mode-collapse ('param' ops only, cab-polish): true when this
+   * write is a cab-polish AUTO DEFAULT, never something the caller's spec
+   * actually listed (see `PendingParamWrite.injected`'s docstring). Set
+   * alongside `cellRef` (the block's cell) so the runtime can skip this
+   * specific op when the SAME cell's placement was itself skipped
+   * (block already correctly placed, left untouched) — an auto-default
+   * has no business overwriting a block the caller didn't ask to change.
+   * Absent (falsy) on every param op the caller's spec itself listed;
+   * those always fire regardless of the placement-skip decision.
+   */
+  injectedOnly?: boolean;
+  /**
+   * BK-084 mode-collapse ('param' ops only): the block's display name
+   * (e.g. "Cab 1"), set alongside `injectedOnly` so the runtime can
+   * report WHICH block had an injected default skipped (`RunOpsResult.
+   * skippedInjectedParamBlocks`) without parsing it back out of
+   * `summary`. Only populated on injected-only ops; ordinary param ops
+   * don't need it (the caller never has to filter a report for them).
+   */
+  blockName?: string;
 }
 
 // ── Cab-polish defaults (BK-103c, gen-2 extension of the AM4's BK-103b) ──
@@ -399,6 +440,41 @@ const SCENE_LEVELS_OFFSETS_NOTE_GEN2 =
   'scene at the Output block Internal Levels Meter (the white line), or with ' +
   'measure_loudness while the Axe-Fx II feeds the computer audio input, and adjust. ' +
   'TELL THE USER; to zero them, set output.scene_N_main to 0.';
+
+/**
+ * BK-084 mode-collapse: strip a cab-polish report of channels whose
+ * injected defaults were, in fact, never sent — `RunOpsResult.
+ * skippedInjectedParamBlocks` (block display names, e.g. "Cab 1") names
+ * every block whose placement turned out unchanged, which skips its
+ * injected-only param ops entirely (see `ApplyPresetAtOp.injectedOnly`'s
+ * docstring). `onCabPolish`'s report is built at BUILD time, before the
+ * live grid read the skip decision depends on even exists, so it can't
+ * know this on its own; call this AFTER `runApplyPresetAtOps` returns,
+ * before `mergeAutoApplied`, so `ApplyResult.auto_applied` never claims a
+ * default was "auto-applied" to a block that was left completely
+ * untouched.
+ */
+export function filterCabPolishForSkippedBlocks(
+  cabPolish: ApplyPresetCabPolish | undefined,
+  skippedBlocks: ReadonlySet<string>,
+): ApplyPresetCabPolish | undefined {
+  if (cabPolish === undefined || skippedBlocks.size === 0) return cabPolish;
+  // `channelLabel` (the cab-polish injection loop above) uses ONE style
+  // for the WHOLE report: bare "X"/"Y" when exactly one cab block is in
+  // the spec, "<blockName> X"/"<blockName> Y" when more than one is.
+  const isBareChannelShape = cabPolish.channels.every((label) => label === 'X' || label === 'Y');
+  if (isBareChannelShape) {
+    // Single-cab build: every entry belongs to the ONE cab block in the
+    // spec. Any name in skippedBlocks means that block's defaults never
+    // actually sent — the whole report is stale.
+    return undefined;
+  }
+  const survivingChannels = cabPolish.channels.filter(
+    (label) => ![...skippedBlocks].some((name) => label.startsWith(`${name} `)),
+  );
+  if (survivingChannels.length === 0) return undefined;
+  return { ...cabPolish, channels: survivingChannels };
+}
 
 /**
  * Merge the executor's injections into the generic `ApplyResult.auto_applied`
@@ -666,6 +742,18 @@ export function buildApplyPresetAtOps(
   // wire (80/65534 is near-minimum, not 80 Hz). Every production apply
   // path (the unified writer) runs displayMode; wireMode survives only
   // in legacy research/golden scripts.
+  // BK-084 mode-collapse: whether cab-polish injection fired at all this
+  // build. Hoisted above the `!wireMode` block's scope so `validateParam`
+  // below can mark the specific injected param ops (never user-specified,
+  // since `hasCabOpinion` gates injection off entirely the moment ANY cab
+  // entry expresses an opinion) as `injected: true` — the runtime skip
+  // logic in applyExecutor's caller then omits an injected-only op for a
+  // cab block whose placement turned out to be unchanged (see the
+  // `injected` field on PendingParamWrite / ApplyPresetAtOp below): an
+  // auto-default has no business overwriting a block the caller's own
+  // spec left completely untouched, unlike a param the caller actually
+  // listed, which always fires regardless of the skip decision.
+  let cabPolishFired = false;
   if (!wireMode) {
     const cabEntries = resolved.filter((r) => r.target.groupCode === 'CAB');
     const hasCabOpinion = cabEntries.some((r) => {
@@ -683,6 +771,7 @@ export function buildApplyPresetAtOps(
       });
     });
     if (cabEntries.length > 0 && !hasCabOpinion) {
+      cabPolishFired = true;
       const injectedDefaults = Object.fromEntries(
         CAB_POLISH_DEFAULTS_GEN2.map(([n, v]) => [n, v]),
       ) as Record<string, number>;
@@ -790,6 +879,16 @@ export function buildApplyPresetAtOps(
     modeNote: string;
     channel?: AxeFxIIChannel;
     isEnum: boolean;
+    /**
+     * BK-084 mode-collapse: true when this write is a cab-polish AUTO
+     * DEFAULT (never something the caller's spec actually listed — see
+     * `cabPolishFired`'s docstring). The runtime skips an injected-only
+     * param write when its block's placement was itself skipped
+     * (already correctly placed, left untouched): an auto-default has no
+     * business overwriting a block the caller didn't ask to change,
+     * unlike a param the caller actually listed, which fires regardless.
+     */
+    injected: boolean;
   }
   const pendingParams: PendingParamWrite[] = [];
   function validateParam(
@@ -845,7 +944,16 @@ export function buildApplyPresetAtOps(
       }
     }
     const isEnum = param.controlType === 'select' || 'enumValues' in param;
-    pendingParams.push({ blockIdx, paramName, paramId: param.paramId, wire, displayValue: value, modeNote, channel, isEnum });
+    // Injection fires ALL-OR-NOTHING across every cab entry (hasCabOpinion
+    // is one boolean over the whole apply) — so when it fired, a cab
+    // block's low_cut/high_cut/filter_slope/room_level value is GUARANTEED
+    // to be the injected default, never something the caller listed (if it
+    // had been, hasCabOpinion would be true and injection wouldn't have
+    // run at all). Using the ALREADY-RESOLVED canonical `param.name` here
+    // (not the caller's raw spelling) matches exactly how `hasCabOpinion`
+    // itself checked for a cab opinion.
+    const injected = cabPolishFired && r.target.groupCode === 'CAB' && CAB_POLISH_TRIGGERS_GEN2.has(param.name);
+    pendingParams.push({ blockIdx, paramName, paramId: param.paramId, wire, displayValue: value, modeNote, channel, isEnum, injected });
   }
   for (let i = 0; i < resolved.length; i++) {
     const r = resolved[i];
@@ -934,17 +1042,21 @@ export function buildApplyPresetAtOps(
   // stable preset, exactly like a normal preset load (which is silent).
   // Shunts (canBypass=false) are pass-through cells with nothing to bypass.
   for (const r of resolved) {
+    const cellRef = { row: r.row, col: r.col };
     ops.push({
       kind: 'place_block',
       bytes: buildSetGridCell({ row: r.row, col: r.col, blockId: r.target.id, modelId }),
       summary: `PLACE ${r.target.name} at row ${r.row} col ${r.col}`,
       awaitResponse: 'set_grid_cell',
+      cellRef,
+      targetWireId: r.target.id,
     });
     if (r.target.canBypass) {
       ops.push({
         kind: 'bypass',
         bytes: buildSetBlockBypassEnvelope(r.target.id, true, { modelId }),
         summary: `build-safe BYPASS ${r.target.name} (anti-screech; re-engaged after params)`,
+        cellRef,
       });
     }
   }
@@ -1205,6 +1317,9 @@ export function buildApplyPresetAtOps(
             kind: 'param',
             bytes: buildParamBytes(r.target.id, pp, wireMode, r.target.name, r.target.groupCode, modelId),
             summary: `${r.target.name}.${pp.paramName} [${ch}] = ${pp.modeNote}`,
+            cellRef: { row: r.row, col: r.col },
+            injectedOnly: pp.injected,
+            blockName: r.target.name,
           });
         }
       }
@@ -1241,6 +1356,9 @@ export function buildApplyPresetAtOps(
           kind: 'param',
           bytes: buildParamBytes(r.target.id, pp, wireMode, r.target.name, undefined, modelId),
           summary: `${r.target.name}.${pp.paramName} = ${pp.modeNote}`,
+          cellRef: { row: r.row, col: r.col },
+          injectedOnly: pp.injected,
+          blockName: r.target.name,
         });
       }
     }
@@ -1605,6 +1723,20 @@ export interface RunOpsResult {
   nackedSteps: NackedStep[];
   /** @deprecated use nackedSteps; this is the last entry kept for back-compat. */
   lastNack?: { summary: string; resultCode: number };
+  /**
+   * BK-084 mode-collapse: block display names (e.g. "Cab 1") that had AT
+   * LEAST ONE auto-injected (cab-polish) param op skipped this run
+   * because their placement was itself skipped as unchanged. The
+   * build-time `onCabPolish` report can't know this (it fires before any
+   * wire I/O, let alone the live grid read the skip decision depends
+   * on), so the CALLER (writer.ts) uses this set to filter a stale
+   * "defaults were auto-applied" claim out of `ApplyResult.auto_applied`
+   * for a block whose defaults were, in fact, never written. Empty when
+   * every injected op that was queued actually sent (the common case:
+   * no cab-polish injection, or the cab block was genuinely fresh/
+   * replaced).
+   */
+  skippedInjectedParamBlocks: ReadonlySet<string>;
 }
 
 /**
@@ -1654,6 +1786,7 @@ export async function runApplyPresetAtOps(
   let acks = 0;
   let lastNack: { summary: string; resultCode: number } | undefined;
   const nackedSteps: NackedStep[] = [];
+  const skippedInjectedParamBlocks = new Set<string>();
   // Working-buffer sequences (buildApplyPresetOps) have no `save` op,
   // for those, `ok` reduces to "no non-recoverable failures along the
   // way." When a `save` op IS in the sequence (apply_preset_at /
@@ -1668,8 +1801,37 @@ export async function runApplyPresetAtOps(
   // wall-time savings. An empty target preset goes from 42 writes →
   // 0 writes (~1.3s saved); a fully-loaded slot pays only the one-time
   // ~100ms grid read.
+  //
+  // BK-084 mode-collapse: the SAME read also seeds `currentGridId`, the
+  // full cell → wire_id map (not just emptiness). `place_block` ops
+  // carrying a `targetWireId` are skipped outright when the cell
+  // already holds that exact wire_id — a block already correctly
+  // placed is left COMPLETELY untouched at the wire level (no clear,
+  // no re-place), so params the caller's spec doesn't list keep
+  // whatever the device already has instead of resetting to
+  // FRESH_DEFAULT_RECORDS (today's mode:'build' behavior, kept for a
+  // genuine replace/insert). The paired anti-screech `bypass` op
+  // (same cellRef, emitted immediately after each `place_block` in
+  // buildApplyPresetAtOps) is skipped alongside: an untouched block
+  // was never mid-build in the first place, so it needs no mute, and
+  // skipping avoids an audible engage/re-engage blip on an otherwise
+  // unchanged block.
   const emptyCells = new Set<string>(); // key: "row,col"
+  const currentGridId = new Map<string, number>(); // key: "row,col" -> wire_id
+  const skippedPlacementCells = new Set<string>(); // key: "row,col"
   let gridReadDone = false;
+  // BK-084 mode-collapse: whether ANY clear_cell/place_block op actually
+  // sent (as opposed to being skipped as already-correct). Gates
+  // scene-level-init (see the 'scene_level' handling below): unlike
+  // cab-polish's per-block `injectedOnly`/`cellRef` skip, scene levels
+  // address the Output block globally, with no single cell to key off, so
+  // this is a coarser whole-apply signal — "did this apply structurally
+  // change ANYTHING at all." Defaults true (safe fallback, matching
+  // today's unconditional reset) whenever the grid read itself fails
+  // (readGridIntoSkipSet's catch branch emits every clear/place
+  // defensively; an apply that can't SEE the current grid can't tell
+  // whether it was a no-op either, so it doesn't claim it was).
+  let anyStructuralChange = false;
 
   async function readGridIntoSkipSet(afterSwitch: boolean): Promise<void> {
     if (gridReadDone) return;
@@ -1687,15 +1849,20 @@ export async function runApplyPresetAtOps(
       const ack = await ackP;
       const cells = parseGetGridLayoutResponse(ack, modelId);
       for (const c of cells) {
-        if (c.blockId === 0) emptyCells.add(`${c.row},${c.col}`);
+        const key = `${c.row},${c.col}`;
+        currentGridId.set(key, c.blockId);
+        if (c.blockId === 0) emptyCells.add(key);
       }
       summaries.push(
-        `  GRID_READ (skip-empty optimization): ${emptyCells.size}/48 cells already empty, those clears will be skipped`,
+        `  GRID_READ (skip-empty + unchanged-block optimization): ${emptyCells.size}/48 cells already empty, those clears will be skipped`,
       );
     } catch (err) {
-      // Fall through; we'll emit all clears defensively.
+      // Fall through; we'll emit all clears/places defensively (fails
+      // open: an unreadable grid means every place_block still fires,
+      // same as pre-BK-084 mode:'build' behavior).
+      anyStructuralChange = true;
       summaries.push(
-        `  GRID_READ failed (${err instanceof Error ? err.message : String(err)}), emitting all clears defensively`,
+        `  GRID_READ failed (${err instanceof Error ? err.message : String(err)}), emitting all clears/places defensively`,
       );
     }
   }
@@ -1821,9 +1988,9 @@ export async function runApplyPresetAtOps(
         continue;
       }
       // For working-buffer-only sequences (no switch_preset op), still do
-      // the grid read once before the first clear_cell, no settle needed
-      // because the working buffer is already current.
-      if (op.kind === 'clear_cell' && !gridReadDone) {
+      // the grid read once before the first clear_cell or place_block, no
+      // settle needed because the working buffer is already current.
+      if ((op.kind === 'clear_cell' || op.kind === 'place_block') && !gridReadDone) {
         await readGridIntoSkipSet(/* afterSwitch */ false);
       }
 
@@ -1834,6 +2001,70 @@ export async function runApplyPresetAtOps(
           summaries.push(`  ${op.summary}  ⊘ already empty (skipped)`);
           continue;
         }
+        // Shunts (firmware-reserved blockIds 200..235, see
+        // buildApplyPresetAtOps's SHUNT_BASE_ID/SHUNT_MAX) get cleared
+        // and re-placed with a FRESH sequential id on every single apply,
+        // regardless of whether the caller's actual content changed at
+        // all — that churn must NOT count as a structural change (a
+        // shunt is a shunt regardless of its numeric id; swapping id 201
+        // for id 203 at the same cell is sonically a no-op). Only clearing
+        // a cell that held REAL content is a genuine structural change.
+        const priorId = currentGridId.get(key);
+        const priorWasShunt = priorId !== undefined && priorId >= 200 && priorId <= 235;
+        if (!priorWasShunt) anyStructuralChange = true;
+      }
+
+      // BK-084 mode-collapse: a block already correctly placed at its
+      // target cell is left completely untouched (no clear, no
+      // re-place) so its unlisted params survive. See the docstring on
+      // `readGridIntoSkipSet` / `ApplyPresetAtOp.targetWireId`.
+      if (op.kind === 'place_block' && op.cellRef !== undefined && op.targetWireId !== undefined) {
+        const key = `${op.cellRef.row},${op.cellRef.col}`;
+        if (currentGridId.get(key) === op.targetWireId) {
+          skippedPlacementCells.add(key);
+          summaries.push(`  ${op.summary}  ⊘ already correctly placed (skipped, params preserved)`);
+          continue;
+        }
+        anyStructuralChange = true; // a genuine insert or replace
+      }
+      if (op.kind === 'bypass' && op.cellRef !== undefined) {
+        const key = `${op.cellRef.row},${op.cellRef.col}`;
+        if (skippedPlacementCells.has(key)) {
+          summaries.push(`  ${op.summary}  ⊘ paired placement was unchanged (skipped, no anti-screech mute needed)`);
+          continue;
+        }
+      }
+
+      // BK-084 mode-collapse: an auto-injected default (cab-polish) for a
+      // block whose placement was skipped (unchanged) has no business
+      // overwriting that block's existing tuned value. A param the
+      // caller's own spec actually listed (injectedOnly falsy) still
+      // fires unconditionally, matching every other resolved block.
+      if (op.kind === 'param' && op.injectedOnly === true && op.cellRef !== undefined) {
+        const key = `${op.cellRef.row},${op.cellRef.col}`;
+        if (skippedPlacementCells.has(key)) {
+          if (op.blockName !== undefined) skippedInjectedParamBlocks.add(op.blockName);
+          summaries.push(`  ${op.summary}  ⊘ auto-injected default skipped (block unchanged, not overwriting existing value)`);
+          continue;
+        }
+      }
+
+      // BK-084 mode-collapse (founder decision, 2026-07-18): scene-level-
+      // init (output.scene_N_main reset to 0 dB) has no single block/cell
+      // to key off — it addresses the Output block globally — so it's
+      // gated on the coarser whole-apply `anyStructuralChange` signal
+      // instead: if NOTHING in this apply actually changed the grid (every
+      // placement was skipped as already-correct, and no real content was
+      // cleared out — shunt churn doesn't count, see `anyStructuralChange`
+      // above), this apply is not a "fresh build" in any meaningful sense,
+      // and resetting the user's balanced per-scene trims would be pure,
+      // unjustified clobbering. `scene_level` ops all land at the END of
+      // the op sequence (after every placement decision), so by the time
+      // we reach the first one, `anyStructuralChange` already holds its
+      // final value for this apply.
+      if (op.kind === 'scene_level' && !anyStructuralChange) {
+        summaries.push(`  ${op.summary}  ⊘ scene-level-init skipped (nothing in this apply structurally changed)`);
+        continue;
       }
 
       if (op.awaitResponse === 'set_grid_cell') {
@@ -2045,5 +2276,6 @@ export async function runApplyPresetAtOps(
     summaries,
     nackedSteps,
     lastNack,
+    skippedInjectedParamBlocks,
   };
 }

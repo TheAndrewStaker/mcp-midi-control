@@ -61,6 +61,7 @@ const NON_DURATION_ENCODE_RE = /^reverbtime$/;
 const PARITY_PENDING_ALLOWLIST: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
   { pattern: /^voicevibratoratesyncoff$/, reason: 'vibrato rate is a Hz curve [0-127]; needs its own Hz inverse (separate from lfo*ratesyncoff, which is now display-first)' },
   { pattern: /syncon$/, reason: 'sync-ON variants take a musical-division enum string (already name-based, not ms)' },
+  { pattern: /^lfo[1-5]fadeinsyncoff$/, reason: 'BK-HYDRA-DISPLAY-GAPS P2: raw 0..127 today, panel shows 0-5943 ms; needs the vendored edisyn fade-in table transcribed (Phase 2)' },
 ];
 
 // ── GATE A: family coverage ─────────────────────────────────────────
@@ -75,6 +76,31 @@ for (const entry of HYDRASYNTH_NRPNS) {
       'duration param has a display decoder but no inverse: add encode to its timeTable');
   }
 }
+
+// ── GATE A′: completeness — no duration/rate param falls through ────
+// GATE A only inspects params that already HAVE a decoder, which is the
+// hole that hid lfo2..5delaysyncoff for months (BK-HYDRA-DISPLAY-GAPS
+// P1/P3): a param whose NAME says "this is a time" but that has no
+// NRPN_DISPLAY formula silently takes raw wire while the tool contract
+// promises ms. Every DURATION/LFO-RATE-shaped NRPN must either have a
+// display formula or carry an explicit PARITY_PENDING_ALLOWLIST line.
+console.log('\n[display-first] GATE A′ — every duration/LFO-rate NRPN has a formula or a tracked-debt line');
+let aPrimeScope = 0;
+for (const entry of HYDRASYNTH_NRPNS) {
+  if (!DURATION_RE.test(entry.name) && !LFO_RATE_RE.test(entry.name)) continue;
+  aPrimeScope++;
+  const f = NRPN_DISPLAY[entry.name];
+  const hasFormula = f !== undefined && typeof f.decode === 'function';
+  const allowlisted = PARITY_PENDING_ALLOWLIST.some(({ pattern }) => pattern.test(entry.name));
+  check(`${entry.name}: display formula or allowlist entry`, hasFormula || allowlisted,
+    'a duration/LFO-rate-shaped NRPN has neither a display formula nor a PARITY_PENDING_ALLOWLIST line — add its decode+encode or file the debt explicitly');
+}
+// Scope floor: A′ must actually see the whole family. If the catalog is ever
+// regenerated with renamed entries (the DESTRUCTIVE hydra:gen-nrpn hazard),
+// the regexes silently match nothing and A′ passes vacuously — this pins the
+// expected population: 25 env durations + 10 lfo delay/fadein + 5 lfo rates.
+check('GATE A′ scope covers the full duration/rate family (40 params)', aPrimeScope === 40,
+  `expected 40 params in scope, matched ${aPrimeScope} — a catalog regen or rename shrank the family; fix the catalog or update this floor deliberately`);
 // Reverse: every encode-capable param must be a known display-first family
 // (env/LFO duration ms tables, LFO free-run Hz, or reverb time).
 for (const [name, f] of Object.entries(NRPN_DISPLAY)) {

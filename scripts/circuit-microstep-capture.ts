@@ -5,8 +5,8 @@
  * (drumPattern.ts), but we have only ever pinned its two ENDPOINTS — a plain
  * hit = 0x01 and a full buzz roll = 0x3F. The 60 values in between (placing a
  * hit on micro-tick 1..5, or any combination) are unconfirmed, so we author
- * only roll {1,6}. That caps faithful import of fast parts: the Sleep Token
- * "Gethsemane" bridge hat needs a hit at micro-tick 3 (32nd notes) and ticks
+ * only roll {1,6}. That caps faithful import of fast parts: one song's
+ * bridge hat needs a hit at micro-tick 3 (32nd notes) and ticks
  * 2 & 4 (16th-triplets) — ~69% → ~87% fidelity hangs on this byte.
  *
  * HYPOTHESIS (strong; 0x01 and 0x3F are exactly the two endpoints of a

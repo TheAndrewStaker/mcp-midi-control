@@ -9,7 +9,7 @@
  * Both reuse the bank/PC dance + chunk-pacing helpers in shared.ts.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import { findHydraNrpn } from '../nrpn.js';
@@ -25,8 +25,9 @@ import {
 import { decodeFxNrpnDisplay, decodeNrpnDisplay } from '../nrpnDisplay.js';
 import { HYDRASYNTH_ENUMS } from '../enums.js';
 import { wrapSysex, unwrapSysex } from '../sysexEnvelope.js';
-import { encodePatch, findPatchOffset, splitIntoChunks, PATCH_CHUNK_COUNT, categoryNameToIndex, HYDRA_PATCH_CATEGORIES } from '../patchEncoder.js';
+import { encodePatch, findPatchOffset, readPatchName, resolveApplyPatchValue, splitIntoChunks, PATCH_CHUNK_COUNT, categoryNameToIndex, HYDRA_PATCH_CATEGORIES } from '../patchEncoder.js';
 import { INIT_PATCH_BUFFER } from '../initPatchBuffer.js';
+import { readBankNames } from '../patchRead.js';
 
 import {
   APPLY_PATCH_DUP_WINDOW_MS,
@@ -45,6 +46,7 @@ import {
 } from './shared.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { asError } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
+import { clearBypassWetCache } from '../descriptor/writer.js';
 import {
   materializeHydraPatchRecipe,
   RecipeMaterializeError,
@@ -130,6 +132,11 @@ server.registerTool('init_patch', {
     await sleep(SYSEX_TAIL_DRAIN_MS);
   } finally {
     unsubscribe();
+    // A14-2: the INIT dump replaced the whole working buffer, so wet levels
+    // cached from earlier set_bypass / set_param calls are stale. Cleared on
+    // the failure path too, where the buffer state is uncertain: falling
+    // back to the engage default is the conservative restore.
+    clearBypassWetCache();
   }
 
   const elapsedMs = Date.now() - startMs;
@@ -197,7 +204,7 @@ server.registerTool('init_patch', {
 
   return {
     content: [{
-      type: 'text',
+      type: 'text' as const,
       text: lines.join('\n'),
     }],
   };
@@ -228,8 +235,8 @@ FX SUB-PARAMS ARE TYPE-DEPENDENT: prefxparam1..5 / postfxparam1..5 mean differen
   Tremolo: Rate, Depth, LFO Shape ("Sine"/"Square"), Phase, Pitch Mod.  EQ: Low Gain dB, High Gain dB, Mid Gain dB, Xover Low Hz, Xover High Hz.
   Compressor: Threshold, Ratio (1.0..20.0), Attack ms, Release ms, Output dB.  Distortion: Drive, Tone, Asym, Curve, Output dB.
 GAIN STAGING for quiet patches (flow: osc->mixer->filter->amp->prefx->delay/reverb->postfx->master): push amplevel to 120-128; raise mixerosc{1,2,3}vol (INIT has osc2/osc3 at 0). Lo-Fi prefxparam4 is makeup gain; prefxparam1 is Cutoff Hz downstream of the filter, so set it ABOVE the highest played note (C4=262Hz, C5=523Hz) or signal dies.
-CLOBBER WARNING on save:true: it flashes THIS call's params + INIT defaults. Any front-panel tweaks the user made between calls ARE LOST (Hydrasynth has no SysEx working-memory read). If the user says "save my current sound" after turning knobs, do NOT use save:true; tell them to press the device SAVE button. Reserve save:true for "build this recipe and persist it". save:true also silently no-ops if System Menu -> Protect is ON (undetectable).
-PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended when current slot unknown; no SysEx current-patch query exists). dance: "both" (default, pre+post PC bounce, always works), "post" (assumes caller pre-navigated), "none" (advanced). name <=16 ASCII, embedded ONLY when save:true (RAM-only patches can't display a name). save:true persists to flash (+~3.5s, default false/reversible) and REQUIRES save_authorized:true. save_authorized:true: set ONLY for explicit save vocab ("save","store","keep","persist","put on"). Precondition: device must have Pgm Chg RX = On (MIDI Page 11 knob 4) for the post-dance to fire.`,
+CLOBBER WARNING on save:true: it flashes THIS call's params + INIT defaults. Any front-panel tweaks the user made between calls ARE LOST (Hydrasynth has no SysEx working-memory read). If the user says "save my current sound" after turning knobs, do NOT use save:true; tell them to press the device SAVE button. Reserve save:true for "build this recipe and persist it".
+PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended when current slot unknown; no SysEx current-patch query exists). dance: "both" (default, pre+post PC bounce, always works), "post" (assumes caller pre-navigated), "none" (advanced). name <=16 ASCII, embedded ONLY when save:true (RAM-only patches can't display a name). save:true persists to flash (+~5.5s incl. occupant pre-read + name read-back, default false/reversible) and REQUIRES save_authorized:true + confirm_overwrite:true (the tool pre-reads the target's stored name and refuses without it). save_authorized:true: set ONLY for explicit save vocab ("save","store","keep","persist","put on"). Precondition: device must have Pgm Chg RX = On (MIDI Page 11 knob 4) for the post-dance to fire.`,
   inputSchema: {
     slot: z.string().optional().describe(
       'Target slot in "A001".."H128" form. Should match the device\'s currently-active patch, only that bank\'s working memory will be modified. OMIT to use the H128 scratch slot (in-place test workflow): the tool will navigate to H128 first via dance:"both" so the patch lands audibly without you needing to know which slot the device is on. The Hydrasynth has no SysEx query for current patch (per SysexEncoding.txt, "request from current working memory" is not supported), so omit + scratch is the recommended path when you don\'t know.',
@@ -251,16 +258,19 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
       '`both` (default) = pre-navigate to target slot + dump + post-navigate to make audible. Always works regardless of where the device started. `post` = post-dump bounce only, assumes you already navigated to the target via `hydra_navigate_to`; faster (~600ms saved) but if you didn\'t navigate, the SysEx writes land on a non-active bank\'s working memory and silently disappear. `none` = pure dump, no PC at all (advanced; for diagnostic use). When `slot` is omitted, defaults to H128 scratch.',
     ),
     name: z.string().max(16).optional().describe(
-      'Optional patch name (max 16 ASCII chars per Owners Manual page 4369; longer names truncated, shorter ones zero-padded). **The name is only embedded in the patch buffer when `save: true` is also set.** Hydrasynth\'s on-screen patch-name display reads from flash, not from working memory, so a name written to a RAM-only dump never appears anywhere visible, by suppressing the name on no-save calls we avoid clobbering whatever name happens to be in the working buffer from a prior recipe. Pair `name` with `save: true` for the canonical "build + persist this recipe with a label" flow. Example: `{ params: [...], name: "Eno Wash", save: true }`. If `name` is provided without `save`, it is silently dropped (the response will note this).',
+      'Optional patch name (max 16 ASCII chars per Owners Manual page 4369; the schema REFUSES longer names, so shorten before calling; shorter ones zero-padded). **The name is only embedded in the patch buffer when `save: true` is also set.** Hydrasynth\'s on-screen patch-name display reads from flash, not from working memory, so a name written to a RAM-only dump never appears anywhere visible, by suppressing the name on no-save calls we avoid clobbering whatever name happens to be in the working buffer from a prior recipe. Pair `name` with `save: true` for the canonical "build + persist this recipe with a label" flow. Example: `{ params: [...], name: "Eno Wash", save: true }`. If `name` is provided without `save`, it is silently dropped (the response will note this).',
     ),
     save: z.boolean().optional().describe(
-      'When true, sends a Write Request (`14 00`) after the chunks, persisting THE RECIPE in `params` to flash. **Costs ~3.5 seconds of additional wire time**. Default false. **CLOBBER WARNING, this re-dumps the recipe; any manual front-panel tweaks the user made on the device between the last apply_patch call and this one ARE LOST.** Hydrasynth has no SysEx read flow that surfaces working memory, so this tool has no way to preserve unknown tweaks. If the user just turned knobs and now says "save it", tell them to press the device\'s SAVE button (or Shift+Save), DO NOT call apply_patch+save:true, because it will overwrite their tweaks with the agent\'s last-known recipe. Reserve save:true for "build this exact recipe and persist it" (the recipe IS the saved state). Also note: silently no-ops if System Menu → Protect is ON; the tool cannot detect that, verify off the device.',
+      'When true, sends a Write Request (`14 00`) after the chunks, persisting THIS call\'s params to flash (+~3.5 s flash pause). Default false. See the CLOBBER WARNING in the tool description: front-panel tweaks are NOT preserved; "save my current sound" after knob turns means the device\'s SAVE button, never this. If System Menu → Protect is ON the write silently no-ops; the response\'s missing `15 00` flash receipt is the tell.',
     ),
     save_authorized: z.boolean().optional().describe(
       'Cross-device safe-edit gate (see docs/SAFE-EDIT-WORKFLOW.md). When `save: true` is set, this MUST also be true. Description-only enforcement isn\'t enough, agents can misread "build a patch at A005" as save intent. The runtime gate makes the refusal explicit. Authorize ONLY when the user uses save/store/keep/persist language. For "build a patch" / "design a sound" without save language, omit `save` entirely (RAM-only dump, reversible by navigating). The gate fires BEFORE any wire I/O so refusals are zero-cost.',
     ),
+    confirm_overwrite: z.boolean().optional().describe(
+      'Read-before-write gate for save:true. The tool pre-reads the target slot\'s STORED patch name; every Hydrasynth slot is occupied, so a flash save always overwrites, and it refuses (surfacing the occupant\'s name) unless this is true. Set it ONLY after the user has seen/confirmed what the target holds. RAM-only dumps (save omitted) never need it.',
+    ),
   },
-}, async ({ slot, params: paramsArg, recipe_id, overrides: recipeOverrides, category, dance, name, save, save_authorized }) => {
+}, async ({ slot, params: paramsArg, recipe_id, overrides: recipeOverrides, category, dance, name, save, save_authorized, confirm_overwrite }) => {
   // Safe-edit save-authorization gate (cross-device contract per
   // docs/SAFE-EDIT-WORKFLOW.md). Hydrasynth doesn't expose a MIDI
   // dirty signal so there's no on_active_preset_edited gate, but
@@ -391,7 +401,7 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
   // PASS 2, resolve each value. Collect errors across every param so
   // the agent gets a single re-roll covering every issue, instead of
   // serially fixing one mistake per round-trip (pre-fix the user's
-  // Hydrasynth report showed three round-trips for a Billie Jean patch:
+  // Hydrasynth report showed three round-trips for one patch:
   // first surfaced one bad name, second surfaced the next bad name,
   // third surfaced a missing PATCH_OFFSET).
   const validationErrors: Array<{
@@ -495,7 +505,12 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
     }
     let resolved;
     try {
-      resolved = resolveNrpnValue(entry, value);
+      // Image-pipeline resolver: identical to resolveNrpnValue for every
+      // field EXCEPT the declared image-index classes (route source/target:
+      // labels only, resolved to the image's linear index; FX-type
+      // selectors: index space, never idx×8 wire). See
+      // resolveApplyPatchValue's doc comment for the ambiguity it closes.
+      resolved = resolveApplyPatchValue(entry, value);
     } catch (err) {
       validationErrors.push({
         path: `params[name="${name}"]`,
@@ -570,6 +585,38 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
   buf[2] = target.bank;
   buf[3] = target.patch;
 
+  // ── Read-before-write occupancy gate (BK-110) ────────────────────────
+  // A flash save always overwrites (every Hydrasynth slot holds a patch),
+  // so before burning flash we READ the target's stored name and require
+  // confirm_overwrite. The read is ~19 ack-driven round trips (<1 s).
+  // If the read itself fails we still refuse without confirm_overwrite —
+  // degraded but loud, never a silent unverified overwrite.
+  let occupantName: string | undefined;
+  let occupantReadError: string | undefined;
+  if (save === true) {
+    try {
+      occupantName = (await readBankNames(conn, target.bank))[target.patch];
+    } catch (err) {
+      occupantReadError = err instanceof Error ? err.message : String(err);
+    }
+    if (confirm_overwrite !== true) {
+      const occupantLine = occupantName !== undefined
+        ? `${target.display} currently stores "${occupantName}".`
+        : `${target.display}'s stored name could not be read (${occupantReadError ?? 'unknown error'}), so what is there is UNKNOWN.`;
+      return {
+        content: [{
+          type: 'text',
+          text:
+            `REFUSING TO OVERWRITE: ${occupantLine} A save:true flash write replaces it ` +
+            `permanently.\n\nTell the user what the slot holds and, once they confirm, re-call with ` +
+            `confirm_overwrite: true (keep save: true and save_authorized: true). To audition without ` +
+            `touching stored content, drop save entirely (RAM-only dump, reversible).`,
+        }],
+        isError: true,
+      };
+    }
+  }
+
   const observed: Array<{ ms: number; bytes: number[] }> = [];
   const unsubscribe = conn.onMessage((bytes) => {
     observed.push({ ms: Date.now() - startMs, bytes: [...bytes] });
@@ -626,13 +673,36 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
     await sleep(SYSEX_TAIL_DRAIN_MS);
   } finally {
     unsubscribe();
+    // A14-2: the patch dump replaced the whole working buffer (its own wet
+    // values included), so anything the bypass wet-cache remembers predates
+    // this patch and is stale. Also cleared on the failure path, where a
+    // partial dump leaves the buffer state uncertain.
+    clearBypassWetCache();
   }
+
+  // ── Post-save name read-back (BK-110 save verification) ──────────────
+  // After a flash write, read the target bank's names again: the stored
+  // name now matching what we SENT (readPatchName of the exact buffer we
+  // dumped) is deterministic evidence the write persisted. ~1 s extra,
+  // paid only on save:true.
+  let savedNameReadback: string | undefined;
+  let savedNameReadbackError: string | undefined;
+  const sentName = readPatchName(buf);
+  if (save === true) {
+    try {
+      savedNameReadback = (await readBankNames(conn, target.bank))[target.patch];
+    } catch (err) {
+      savedNameReadbackError = err instanceof Error ? err.message : String(err);
+    }
+  }
+  const readbackMatches = savedNameReadback !== undefined && savedNameReadback === sentName;
 
   const elapsedMs = Date.now() - startMs;
 
   let headerResponses = 0;
   let footerResponses = 0;
   let patchSaveds = 0;
+  let writeReqResponses = 0;
   const chunkAcksSeen = new Set<number>();
   const others: string[] = [];
   for (const { bytes } of observed) {
@@ -646,6 +716,7 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
       }
       if (info.length === 2 && info[0] === 0x19 && info[1] === 0x00) headerResponses++;
       else if (info.length === 2 && info[0] === 0x1b && info[1] === 0x00) footerResponses++;
+      else if (info.length === 2 && info[0] === 0x15 && info[1] === 0x00) writeReqResponses++;
       else if (info.length === 4 && info[0] === 0x17 && info[1] === 0x00 && info[3] === 0x16) chunkAcksSeen.add(info[2]!);
       else if (info.length === 4 && info[0] === 0x07 && info[1] === 0x00) patchSaveds++;
       else others.push(describeInboundMessage(bytes));
@@ -653,6 +724,17 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
       others.push(describeInboundMessage(bytes));
     }
   }
+
+  // ── Flash-receipt verdict (BK-112) ───────────────────────────────────
+  // `15 00` (Write Request Response) is the device's one TRUE flash
+  // receipt; the `07 00` "Patch Saved" counter fires even on RAM-only
+  // dumps and proves nothing about persistence. `saved` is receipt-truth:
+  // confirmed by 15 00 or by the name read-back, never an intent echo.
+  const saveReceipt: 'confirmed' | 'not_observed' | 'no_input_port' | undefined =
+    save === true
+      ? (writeReqResponses > 0 ? 'confirmed' : conn.hasInput ? 'not_observed' : 'no_input_port')
+      : undefined;
+  const saveConfirmed = save === true && (writeReqResponses > 0 || readbackMatches);
 
   // Soft duplicate-call detection. Same inputs within 30s of the last
   // successful call probably means the upstream agent looped on a
@@ -714,9 +796,37 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
   // caller omitted `slot`, the patch lives in WORKING MEMORY only — say so
   // instead of "applied to H128", which reads as if a slot were written.
   if (slot === undefined && !save) {
-    lines.push(`Patch loaded into the working buffer (RAM only, NOT saved; the device was navigated to ${target.display} first, but that slot's stored contents are untouched and the patch reverts on the next patch load). ${params.length} override${params.length === 1 ? '' : 's'} written via SysEx in ${elapsedMs} ms. Audition on the front panel to confirm; if it isn't audible, call reconnect_midi and retry.`);
+    lines.push(`Patch loaded into the working buffer (RAM only, NOT saved; the device was navigated to ${target.display} first, but that slot's stored FLASH contents are untouched). ${params.length} override${params.length === 1 ? '' : 's'} written via SysEx in ${elapsedMs} ms. Audition on the front panel to confirm; if it isn't audible, call reconnect_midi and retry.`);
   } else {
     lines.push(`Patch applied to ${target.display}${save ? '' : "'s working memory (RAM only, not saved)"}, ${params.length} override${params.length === 1 ? '' : 's'} written via SysEx in ${elapsedMs} ms. Audition the patch on the front panel to confirm; if it isn't audible, call reconnect_midi and retry.`);
+  }
+  if (!save) {
+    lines.push('');
+    lines.push(`NOTE the RAM dump's real lifetime (SysexEncoding NOTE 0): the whole BANK's working copy holds it until power-off — navigating away and back shows it AGAIN, and a LATER flash save of ANY patch in bank ${target.display[0]} would persist this one too. To fully discard it, power-cycle (or re-dump before saving elsewhere in the bank).`);
+  }
+  if (save === true) {
+    lines.push('');
+    if (occupantName !== undefined) {
+      lines.push(`Overwrote ${target.display} (previously stored: "${occupantName}"; pre-read before the write, confirmed via confirm_overwrite).`);
+    } else if (occupantReadError !== undefined) {
+      lines.push(`Overwrote ${target.display}. Its previous contents could NOT be pre-read (${occupantReadError}); the overwrite proceeded on confirm_overwrite alone.`);
+    }
+    if (saveReceipt === 'confirmed') {
+      lines.push('Flash write CONFIRMED: the device sent its Write Request Response (15 00) receipt.');
+    } else if (saveReceipt === 'not_observed') {
+      lines.push('WARNING: no Write Request Response (15 00) receipt arrived. If System Menu -> Protect is ON, the write silently no-ops — the read-back below is the decider.');
+    } else if (saveReceipt === 'no_input_port') {
+      lines.push('Flash receipt unobservable: no Hydrasynth input port is open, so neither the 15 00 receipt nor a read-back is available. Verify on the device.');
+    }
+    if (savedNameReadback !== undefined) {
+      if (readbackMatches) {
+        lines.push(`Post-save read-back: ${target.display} now stores "${savedNameReadback}" — matches what was sent. The save PERSISTED.`);
+      } else {
+        lines.push(`WARNING post-save read-back MISMATCH: ${target.display} reads "${savedNameReadback}" but this call sent "${sentName}". The flash write likely did NOT land (Protect ON?). Check the device.`);
+      }
+    } else if (savedNameReadbackError !== undefined) {
+      lines.push(`Post-save read-back failed (${savedNameReadbackError}); persistence is unverified beyond the receipt above.`);
+    }
   }
   if (recipe_id !== undefined) {
     lines.push('');
@@ -787,7 +897,10 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
   lines.push(`(Informational, Hydrasynth doesn't reliably ack chunk dumps; the patch landed via the SysEx writes above regardless of these counters. Do NOT treat zero counts as failure.)`);
   lines.push(`  Header Response (19 00):   ${headerResponses} seen`);
   lines.push(`  Chunk Acks (17 00 NN 16):  ${chunkAcksSeen.size}/${PATCH_CHUNK_COUNT}`);
-  lines.push(`  Patch Saved (07 00 BB PP): ${patchSaveds} seen`);
+  lines.push(`  Patch Saved (07 00 BB PP): ${patchSaveds} seen (chunk-stream counter, fires on RAM dumps too — NOT flash proof)`);
+  if (save === true) {
+    lines.push(`  Write Request Resp (15 00): ${writeReqResponses} seen (the flash receipt)`);
+  }
   lines.push(`  Footer Response (1B 00):   ${footerResponses} seen`);
   lines.push(`  Other / unrecognized:      ${others.length}`);
 
@@ -800,7 +913,14 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
       target_slot: target.display,
       target_bank: target.bank,
       target_patch: target.patch,
-      saved: save === true,
+      // Receipt-truth (BK-112): true only when the flash write was
+      // CONFIRMED (15 00 receipt, or the post-save name read-back
+      // matching what was sent) — no longer an echo of the save arg.
+      saved: saveConfirmed,
+      save_requested: save === true,
+      ...(saveReceipt !== undefined ? { save_receipt: saveReceipt } : {}),
+      ...(occupantName !== undefined ? { previous_occupant_name: occupantName } : {}),
+      ...(savedNameReadback !== undefined ? { saved_name_readback: savedNameReadback, readback_matches: readbackMatches } : {}),
       overrides_count: params.length,
       elapsed_ms: elapsedMs,
       chunk_acks_seen: chunkAcksSeen.size,
@@ -808,6 +928,7 @@ PARAMS: slot "A001".."H128", omit for H128 scratch + dance:"both" (recommended w
       header_responses: headerResponses,
       footer_responses: footerResponses,
       patch_saved_responses: patchSaveds,
+      write_request_responses: writeReqResponses,
       duplicate_call: isDuplicate,
     },
   };

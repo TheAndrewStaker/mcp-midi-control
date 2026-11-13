@@ -18,7 +18,7 @@ import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.j
 export const MODERN_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> = Object.freeze({
   amp: ['type', 'gain', 'bass', 'mid', 'treble', 'master', 'presence', 'level'],
   reverb: ['type', 'mix', 'time', 'predelay', 'size', 'hicut', 'level'],
-  delay: ['type', 'time', 'feed', 'mix', 'locut', 'hicut', 'level'],
+  delay: ['model', 'type', 'time', 'feed', 'mix', 'locut', 'hicut', 'level'],
   chorus: ['type', 'rate', 'depth', 'mix', 'level'],
   flanger: ['type', 'rate', 'depth', 'feedback', 'mix', 'level'],
   phaser: ['type', 'rate', 'depth', 'feedback', 'mix', 'level'],

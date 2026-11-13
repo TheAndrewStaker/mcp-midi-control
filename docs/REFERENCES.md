@@ -282,6 +282,75 @@ binary are potential cross-references for AM4 (same family, similar format):
 - Not formally indexed here; search `github.com` for `axefx3` / `fractal preset parser`.
 - Fractal Forum thread #159885 on `forum.fractalaudio.com`.
 
+### Competitive landscape refresh (2026-11-11)
+A second survey, wider than the June one below: the Fractal space again, plus
+the other supported devices, the Akai MPC, and MCP music servers generally.
+Entries were fetched by a research pass and are not yet re-measured against
+this project's own captures; treat each as a lead, not a fact. Licenses decide
+what can be lifted: MIT / Apache-2.0 / BSD / Unlicense / CC0 code with
+attribution, CC BY data with attribution, everything GPL / AGPL / CC-BY-SA /
+unlicensed as reference only.
+
+**Fractal.** This codec is no longer the only deep open decoder; several
+projects built on it now lead in specific areas.
+- `sKuhLight/forgefx-midi` (Apache-2.0, fork of this codec, last push
+  2026-07): live device self-describe walk, a device-agnostic preset
+  representation with full-body gen-3 synthesis, the fn 0x08 firmware query.
+  ForgeFX and Axis themselves have been quiet since 2026-07.
+- `BigSaurus/axefx-sysex-maps` (CC BY 4.0, III fw 32.02): a passive `01 10`
+  read returning value plus display text without marking the preset edited, a
+  fn 0x1F whole-block dump that includes inactive channels, and the modifier
+  attach / release protocol (`01 3A` / `01 3B`).
+- `szecs/vp4-offline-editor` (MIT code; its embedded editor tables are not):
+  a VP4 preset-body format document covering the routing block and scene
+  records, and the `0x51`-`0x53` system backup.
+- `monzta1/ToneCommand` (Apache-2.0) and `GreyManSoftware/fractone` (MIT): two
+  FM9 MCP servers. ToneCommand carries the III fw 33 amp roster and firmware
+  identity fixtures; fractone carries FM9 fw 12 hardware-validation data.
+- `RamonWide/axe-grid` (MIT, Rust): an Axe-Fx II editor with modifier
+  commands and confidence-tagged wire notes. `M0JXD/axeiiloader`
+  (BSD-2 / GPLv2): II preset and IR transfer.
+- `iamknow0ne/axefx-ultra-edit-remake` (no license): a gen-1 Ultra editor
+  with whole-preset edits; reference only.
+- Fractal shipped Axe-Fx III firmware 33 (NAM Player block, reworked Drive
+  block, new amp and DynaCabs), so the III rosters here predate it.
+- Unchanged since June: `tysonlt/AxeFxControl`, `bspaulding/axe-fx-midi`,
+  `laxu/AxeFx2VirtualPedalboard`, `JamesDunne/axefx-sysex-decoder`,
+  `vangrieg/Midi-SysEx-MCPServer` (a capture-analysis script, not a server).
+
+**Other supported devices.**
+- Arturia: `kmorrill/freakout` (MIT). The MiniFreak moves presets over a
+  vendor USB bulk protocol rather than Arturia SysEx; also MicroFreak globals
+  (including the MIDI merge setting) and wavetable transfer.
+  `dagargo/elektroid` (GPL-3) is the maintained MicroFreak sample-transfer
+  reference.
+- Boss RC: `hysteve/rc505mk2-mcp` (MIT), an MCP server with an Input FX /
+  Track FX parameter map taken from the Parameter Guide and not yet verified
+  on a device. No project has found RC SysEx.
+- Novation: `namirsab/circuit-tracks-tools` (MIT), a Circuit Tracks MCP
+  server with an `.ncs` format document and single-variable fixtures;
+  `martin-stone/ctpatch` (MIT) for the synth patch.
+- Roland: `markxbrooks/JDXI-Editor` (MIT) address maps for the JD-Xi. Nothing
+  open exists for the VE-500 or XS-100.
+- ASM: `eclab/edisyn` (Apache-2.0) remains the Hydrasynth reference.
+- Cross-device: `pencilresearch/midi` (CC-BY-SA-4.0), CC / NRPN tables for
+  several hundred devices.
+
+**Akai MPC.** No open library in any language writes MPC 3 projects with
+sequences, velocity-layered drum programs and song structure; existing tools
+cover one slice each (`ConvertWithMoss`, LGPL-3.0, for keygroups;
+`kurtjcu/MPC-project-file-definitions` for format notes; `liotier/AkaiMPC`,
+Unlicense, for progressions). A rooted-device ecosystem appeared in autumn
+2026: `open-mpc/mpc-vst-plugins` (filesystem and format reference),
+`jacob-sabella/mpc-addin-remote` (MIT, an MCP server running inside the MPC
+that drives the screen and MIDI), `mmiroshnikov/akai_standalone_remap` (MIT).
+
+**MCP music servers.** DAW servers are crowded (`ahujasid/ableton-mcp` leads);
+hardware servers are single-device and small. The one breadth-first rival is
+`roomi-fields/osc-bridge` (AGPL-3.0): declarative per-device JSON drivers and
+a hosted server reached through a browser relay page. No project found models
+a multi-device rig with a setlist and applies it to hardware.
+
 ### Competitive landscape: other public Fractal decoders (2026-06-27 survey)
 A fan-out research pass mapped every public project that touches the Fractal
 protocol, to confirm whether any rivals this project's codec (`fractal-midi`)

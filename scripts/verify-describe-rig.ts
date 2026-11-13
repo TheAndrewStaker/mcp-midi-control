@@ -21,6 +21,10 @@ import {
   clearRigInventoryCache,
   RIG_MANIFEST_ENV,
   RIG_INVENTORY_ENV,
+  executeSetlistPlan,
+  executeSongPlan,
+  clearRepertoireCache,
+  RIG_REPERTOIRE_ENV,
 } from '@mcp-midi-control/core/protocol-generic/dispatcher.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { SPD_SX_DESCRIPTOR } from '@mcp-midi-control/spd-sx/descriptor.js';
@@ -41,6 +45,9 @@ clearRigManifestCache();
 const priorInventory = process.env[RIG_INVENTORY_ENV];
 delete process.env[RIG_INVENTORY_ENV];
 clearRigInventoryCache();
+const priorRepertoire = process.env[RIG_REPERTOIRE_ENV];
+delete process.env[RIG_REPERTOIRE_ENV];
+clearRepertoireCache();
 
 console.log('describe_rig roster:');
 clearRegistry();
@@ -294,6 +301,84 @@ console.log('\ndescribe_rig inventory:');
     if (priorManifest === undefined) delete process.env[RIG_MANIFEST_ENV]; else process.env[RIG_MANIFEST_ENV] = priorManifest;
     if (priorInventory === undefined) delete process.env[RIG_INVENTORY_ENV]; else process.env[RIG_INVENTORY_ENV] = priorInventory;
     clearRigManifestCache(); clearRigInventoryCache();
+  }
+}
+
+// --- song book: the repertoire list + one song's setup plan (§7) ---
+console.log('\ndescribe_rig song book:');
+{
+  clearRegistry();
+  registerDevice(AM4_DESCRIPTOR);
+  registerDevice(RC_505_MK2_DESCRIPTOR);
+  const throws = (fn: () => unknown, re: RegExp): boolean => {
+    try { fn(); return false; } catch (e) { return re.test((e as Error).message); }
+  };
+  assert(executeDescribeRig().repertoire === undefined, 'no song book configured -> no repertoire key');
+  assert(throws(() => executeSongPlan('x'), /MCP_RIG_REPERTOIRE/), 'a plan with no song book names the env var to set');
+
+  const rigFx = { openrig_version: '0.1', id: 'song-rig', name: 'Song rig',
+    nodes: [
+      { id: 'gtr', name: 'AM4', server_device_id: 'am4', identity: { manufacturer: 'Fractal', family: 'AM4' }, roles: ['sound_source'], ports: [] },
+      { id: 'loop', name: 'RC-505mk2', server_device_id: 'rc-505mk2', identity: { manufacturer: 'Boss', family: 'RC-505mk2' }, roles: ['looper', 'clock_master'], ports: [] },
+    ],
+    edges: [] } as unknown as Rig;
+  const repFx = { rig: 'song-rig', songs: [
+    { id: 'night-drive', title: 'Night Drive', artist: 'Nobody', tempo_bpm: 96,
+      sections: [{ name: 'Verse' }, { name: 'Chorus' }],
+      units: [
+        { kind: 'scene', node: 'gtr', scene: 2, section: 'Chorus' },
+        { kind: 'scene', node: 'gtr', scene: 1, section: 'Verse' },
+        { kind: 'recall', node: 'gtr', location: 'B02', status: 'confirmed' },
+        { kind: 'recall', node: 'loop', status: 'owed', role: 'loop memory' },
+      ] },
+    { id: 'night-shift', title: 'Night Shift', units: [] },
+  ], performances: [
+    { id: 'friday', name: 'Friday Set', rig: 'song-rig',
+      songs: [{ ref: 'night-shift' }, { ref: 'night-drive', tempo_override: 100, note: 'closer' }, { ref: 'gone' }] },
+  ] };
+  const rigTmp = path.join(os.tmpdir(), `openrig-song-rig-${process.pid}.json`);
+  const repTmp = path.join(os.tmpdir(), `openrig-song-rep-${process.pid}.json`);
+  fs.writeFileSync(rigTmp, JSON.stringify(rigFx), 'utf8');
+  fs.writeFileSync(repTmp, JSON.stringify(repFx), 'utf8');
+  try {
+    process.env[RIG_MANIFEST_ENV] = rigTmp;
+    process.env[RIG_REPERTOIRE_ENV] = repTmp;
+    clearRigManifestCache(); clearRepertoireCache();
+    const rp = executeDescribeRig().repertoire;
+    assert(rp?.song_count === 2 && rp?.songs?.[0].id === 'night-drive', 'repertoire lists the songs by id');
+    assert(rp?.validation?.ok === true && rp.validation.warning_count === 1, 'repertoire is validated against the manifest (the owed unit warns)');
+    const plan = executeSongPlan('Night Drive');
+    assert(plan.steps.map((s) => s.tool).join(',') === 'switch_preset,switch_scene', 'plan: recall first, then the scene of the first section');
+    assert(plan.steps[0].args.port === 'am4' && plan.steps[0].args.location === 'B02', 'plan step args are the verb args (port = descriptor id)');
+    assert(plan.steps[1].args.scene === 1 && plan.section === 'Verse', 'plan defaults to the first section');
+    assert(executeSongPlan('night-drive', 'Chorus').steps[1].args.scene === 2, 'a named section picks its own scene');
+    assert(plan.gaps.length === 1 && plan.gaps[0].reason === 'owed', 'an owed unit is a gap, not a step');
+    assert(plan.tempo_node === 'loop' && /96 BPM/.test(plan.note), 'plan names the tempo and the clock master');
+    assert(throws(() => executeSongPlan('night'), /night-drive, night-shift/), 'an ambiguous title lists the candidate ids');
+    assert(throws(() => executeSongPlan('night-drive', 'Bridge'), /Sections: Verse, Chorus/), 'an unknown section lists the real ones');
+    assert(rp?.setlists?.length === 1 && rp.setlists[0].id === 'friday' && rp.setlists[0].song_count === 3, 'repertoire lists its setlists by id');
+    const set = executeSetlistPlan('Friday Set');
+    assert(set.positions.map((x) => `${x.position}:${x.song}`).join(',') === '1:night-shift,2:night-drive', 'setlist: songs in play order, keeping their position numbers');
+    assert(set.positions[1].tempo_bpm === 100 && set.positions[1].note === 'closer', 'setlist: the per-show tempo override and note ride the row');
+    assert(set.positions[1].steps === 2 && set.positions[1].owed === 1 && set.positions[0].steps === 0, 'setlist: each row counts its plan steps and what is still owed');
+    assert(set.unknown_songs?.join() === 'gone' && /has errors/.test(set.note), 'setlist: an entry naming a song the book lacks is reported, not dropped silently');
+    assert(/describe_rig\(\{song\}\)/.test(set.note) && /Nothing here saves/.test(set.note), 'setlist: the note says how to get one song\'s steps and that nothing is applied');
+    assert(throws(() => executeSetlistPlan('saturday'), /Setlist ids: friday/), 'an unknown setlist lists the real ids');
+    fs.writeFileSync(repTmp, JSON.stringify({ ...repFx, performances: undefined }), 'utf8');
+    clearRepertoireCache();
+    assert(executeDescribeRig().repertoire?.setlists === undefined, 'a song book with no setlist has no setlists key');
+    assert(throws(() => executeSetlistPlan('friday'), /holds no setlist/), 'asking for a setlist when the book has none says how to add one');
+    fs.writeFileSync(repTmp, JSON.stringify({ ...repFx, rig: 'other-rig' }), 'utf8');
+    clearRepertoireCache();
+    assert(throws(() => executeSongPlan('night-drive'), /written for rig "other-rig"/), 'a song book for another rig refuses to plan');
+    fs.writeFileSync(repTmp, '{ nope', 'utf8');
+    clearRepertoireCache();
+    assert(/not valid JSON/.test(executeDescribeRig().repertoire?.error ?? ''), 'a malformed song book degrades to an error field');
+  } finally {
+    fs.rmSync(rigTmp, { force: true }); fs.rmSync(repTmp, { force: true });
+    if (priorManifest === undefined) delete process.env[RIG_MANIFEST_ENV]; else process.env[RIG_MANIFEST_ENV] = priorManifest;
+    if (priorRepertoire === undefined) delete process.env[RIG_REPERTOIRE_ENV]; else process.env[RIG_REPERTOIRE_ENV] = priorRepertoire;
+    clearRigManifestCache(); clearRepertoireCache();
   }
 }
 

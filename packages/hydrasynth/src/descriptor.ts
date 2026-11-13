@@ -26,19 +26,35 @@
  *     patch-dump + Write Request envelope is hardware-confirmed there), NOT
  *     in the guitar-shaped unified apply_preset/save_preset. This is a
  *     deliberate two-surface split (synth vs guitar), not a pending wire.
+ *     NOTE this capability does NOT gate `import_preset`: byte-exact
+ *     restore persists via writer.restorePresetBinary (the BK-113
+ *     hardware-confirmed series-write flow), which owns its own gates.
  *   - supports_lineage: false (Fractal lineage corpus doesn't apply)
  *
- * Unified surface coverage (v1):
+ * Unified surface coverage:
  *   ✓ set_param / set_params / list_params / describe_device
  *   ✓ switch_preset (Bank Select MSB/LSB + Program Change)
- *   ✗ apply_preset (legacy apply_patch covers — deferred)
- *   ✗ get_param / get_params (no decoded read primitive)
- *   ✗ scan_locations (Hydrasynth patches are full SysEx dumps, no name-only query)
+ *   ✓ scan_locations (BK-110: bank patch-name read `02 00 BANK`, ~19
+ *     ack-driven chunks per 128-name bank; max 4 banks per call)
+ *   ✓ get_preset — STORED location only (`04 00 BANK PATCH`, 22 chunks
+ *     → decodePatch); the working buffer is unreadable by protocol
+ *   ✓ export_preset(location) / backup_device — byte-exact stored-patch
+ *     dump via reader.dumpStoredPresetBinary
+ *   ✓ import_preset: byte-exact restore to a stored slot over the
+ *     BK-113 series-write flow (target + save_authorized +
+ *     confirm_overwrite all required; receipt-true verification)
+ *   ✗ apply_preset (voice-class apply_patch covers — deliberate split)
+ *   ✗ get_param / get_params (no single-param query primitive exists)
  *   ✗ switch_scene / set_bypass / set_block — no-op for synth
  */
 
 import type { DeviceDescriptor, PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { listConceptKeysForDevice } from '@mcp-midi-control/core/protocol-generic/concept-keys.js';
+
+// Side effect: registers the 'hydrasynth' connector factory with the shared
+// connection registry, so a server that loads only the descriptor (dispatcher
+// path) opens the same custom-policy handle the legacy patch tools use.
+import './midi.js';
 
 import { HYDRASYNTH_AGENT_GUIDANCE } from './descriptor/agentGuidance.js';
 import { buildBlocks, buildBlockTypes } from './descriptor/schema.js';

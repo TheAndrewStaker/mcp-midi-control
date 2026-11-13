@@ -10,7 +10,7 @@
  * paramIds are FM3's own (reusing the III's mis-addresses 6.9% of shared
  * params; see `docs/_private/MINING-FINDINGS-FM-VP4.md`). community-beta.
  */
-import { FM3_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm3';
+import { FM3_PARAMS_BY_FAMILY, FM3_ENUM_OVERRIDES_BY_NAME } from 'fractal-midi/gen3/fm3';
 import type { FractalModernConfig, } from '../factory.js';
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 import {
@@ -80,21 +80,26 @@ export const FM3_CONFIG: FractalModernConfig = {
   bank_select: 'msb',
   support_tier: 'community-beta',
   verification:
-    'Model byte 0x11 byte-confirmed via tysonlt/AxeFxControl AND an FM3-Edit loopMIDI capture ' +
-    '(the block-insert op fn=0x01 sub=0x32 decoded on model 0x11, byte-identical to III/FM9; ' +
-    'grid wire-confirmed as 4 rows, 12 cols). Param catalog is FM3-true (mined from FM3-Edit\'s ' +
-    'own parameter tables; paramIds are device-specific, not reused from the III); roster ' +
-    'filtered to FM3\'s families. HARDWARE-CONFIRMED on FM3 fw 12.00 (macOS USB-CDC serial ' +
-    'field test, 2026-06-12): serial discovery + framing, the documented queries (patch name / ' +
-    'scene / tempo / status), the fn=0x1F whole-block read across 35 block types, the fn=0x01 ' +
-    'sub=0x52 continuous SET (echo + read-back), set_bypass, switch_scene, and the sub=0x27 ' +
-    'preset switch. Discrete set-by-name SET (float32(ordinal), sub 09 00) is FM3-hardware-' +
-    'confirmed separately via a 2026-06-10 community session: frames byte-identical to this ' +
-    'server\'s builder, sent from the tester\'s own rig, moved the FM3 front panel. Not yet ' +
-    'confirmed: set_block placement, save_preset, and the Windows serial-driver path ' +
-    '(untested, not falsified).',
+    'Model byte 0x11 byte-confirmed (tysonlt/AxeFxControl + an FM3-Edit loopMIDI capture; ' +
+    'grid wire-confirmed 4 rows x 12 cols). Param catalog is FM3-true (mined from FM3-Edit\'s ' +
+    'own tables; paramIds device-specific, never the III\'s); roster filtered to FM3\'s ' +
+    'families. HARDWARE-CONFIRMED on FM3 fw 12.00 (2026-06-12 macOS USB-CDC serial field ' +
+    'test): serial discovery + framing, the documented queries, the fn=0x1F whole-block read ' +
+    'across 35 block types, sub=0x52 continuous SET (echo + read-back), set_bypass, ' +
+    'switch_scene, and the sub=0x27 preset switch. Discrete set-by-name SET is FM3-hardware-' +
+    'confirmed via a 2026-06-10 community session (frames byte-identical to this server\'s ' +
+    'builder). set_block placement AND grid routing are FM3-hardware-confirmed via the ' +
+    '2026-06-27 ForgeFX field test (independent app on this codec\'s frames, real FM3, Linux ' +
+    'USB serial; the needed sub=0x30 cell-select is sent automatically). A 2026-11 Windows 11 ' +
+    'session (fw 12.00) confirmed the Windows serial path and save_preset to the loaded ' +
+    'location across a power cycle.',
   params_by_family: FM3_PARAMS_BY_FAMILY,
   device_true_roster: true,
+  // Device-true FM3 enum labels from the FM3 editor's UI configuration data,
+  // joined to this catalog by (family, paramId) and checked against the FM3
+  // cache's own enum counts, plus the fw 13 amp delta (issue #22). The ordinal
+  // IS the discrete-SET value, so these are read labels AND settable by name.
+  enum_overrides: FM3_ENUM_OVERRIDES_BY_NAME,
   canonical_terms: {
     block: 'block',
     slot: 'grid location (row 1..4, col 1..12)',
@@ -107,32 +112,34 @@ export const FM3_CONFIG: FractalModernConfig = {
     ...MODERN_AGENT_GUIDANCE,
     device_note: [
       'This is the Fractal FM3 (community beta). It shares the Axe-Fx III',
-      'gen-3 SysEx protocol with 8 scenes and A–D channels, but uses a',
-      'SMALLER 4×12 grid (48 cells, vs the III/FM9 6×14) and a reduced block roster.',
-      'The param catalog is FM3-true (mined from FM3-Edit\'s own binary, so',
-      'paramIds address the right knob); the roster is filtered to FM3\'s',
-      'families. A 2026-06-12 hardware field test (fw 12.00, USB-CDC serial)',
-      'confirmed the read path, continuous set_param, set_bypass, switch_scene,',
-      'and the SysEx preset switch end-to-end through this server\'s own code;',
-      'a 2026-06-10 community session confirmed set-by-name discrete set_param',
-      'via frames byte-identical to this server\'s encoder. set_block and',
-      'save_preset remain hardware-unverified; confirm those on the device.',
+      'gen-3 SysEx protocol with 8 scenes and A-D channels, but uses a',
+      'SMALLER 4x12 grid (48 cells, vs the III/FM9 6x14) and a reduced block',
+      'roster. The param catalog is FM3-true (mined from FM3-Edit\'s own',
+      'binary, so paramIds address the right knob). Hardware-confirmed on a',
+      'real FM3: the read path, continuous set_param, set_bypass,',
+      'switch_scene, and the SysEx preset switch (2026-06-12 field test);',
+      'set-by-name discrete set_param (2026-06-10, byte-identical frames);',
+      'set_block placement and grid routing (2026-06-27 ForgeFX field test).',
+      'the Windows serial path and save_preset (2026-11, power-cycled).',
+      'Moving a block clears the source of modifiers that target it.',
     ].join('\n'),
     cab_polish: [
       'CAB POLISH DEFAULTS (mix-ready cuts + room). Close-mic\'d IRs carry more',
-      'lows and highs than any real rig in a room; the validated starting point',
-      'is a low cut ~80 Hz / high cut ~6.5 kHz plus a little cab room, and the',
-      'server auto-applies it on fresh cab-bearing builds on the AM4, Axe-Fx II,',
-      'and FM9 (reported in `auto_applied`).',
+      'lows and highs than any real rig in a room; un-cut modeler presets read',
+      'as "shrill / digital / fizzy".',
       '',
-      'NOT AUTO-APPLIED ON THE FM3 YET: the FM3\'s cab cut/room params',
-      '(cab locut / hicut / roommix) are registered but carry NO calibrated',
-      'display range in the FM3 catalog, so a Hz value like 80 cannot be',
-      'expressed on the wire without guessing (set_param on them takes a raw',
-      '0..65534 wire integer, NOT Hz). Do NOT write display-shaped values to',
-      'them, and do not claim cuts were applied. Until FM3 range evidence lands,',
-      'advise the user to set the cab low/high cut (80 Hz / 6.5-7.5 kHz,',
-      '12 dB/oct) on the front panel or in FM3-Edit for direct/FRFR presets.',
+      'THE SERVER ENFORCES THIS DEFAULT on the FM3 (BK-103c): every',
+      'apply_preset that places a CAB block and sets NO cab cut/room/slope',
+      'param auto-applies, per written cab channel window:',
+      '  cab locut 80 Hz, cab hicut 6500 Hz, cab roommix 8 %.',
+      'These ride the FM3\'s display-calibrated ranges (device-true, from its',
+      'own editor cache) over the community-beta continuous set_param path, so',
+      'confirm by ear / front panel like any other gen-3 write. NO filter-slope',
+      'write is made (no verified value table). The response reports the',
+      'injection in `auto_applied`; ALWAYS RELAY IT with the one-phrase undo:',
+      '"applied mix-ready cab cuts (80 Hz / 6.5 kHz) and 8% room - say \'wide',
+      'open\' to remove." A build with NO cab block injects nothing, and',
+      'set_param(s) edits never inject.',
     ].join('\n'),
   },
   example_spec: FM3_EXAMPLE_SPEC,

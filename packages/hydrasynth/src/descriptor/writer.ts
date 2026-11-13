@@ -79,6 +79,7 @@ function listParamNamesForHydraBlock(block: string): string[] {
 }
 
 import { parseHydrasynthLocation } from './schema.js';
+import { restorePresetBinaryHydrasynth } from './presetRestore.js';
 
 const DEVICE_LABEL = 'ASM Hydrasynth Explorer';
 const DEFAULT_CHANNEL = 1;
@@ -157,6 +158,20 @@ function buildBankPCBytes(bank: number, patch: number, channel: number): number[
 
 // ── Writer ─────────────────────────────────────────────────────────
 
+/**
+ * Send one resolved NRPN write. Each of the 4 CC messages must be a
+ * discrete send (node-midi expects one MIDI message per sendMessage
+ * call). Used by `setParam` (which additionally keeps the bypass wet
+ * cache honest) and by `setBypass`'s own internal write (which must
+ * NOT run the cache hook: writing wet = 0 to bypass would otherwise
+ * clobber the very value the next engage is supposed to restore).
+ */
+function sendResolvedNrpn(ctx: DispatchCtx, entry: HydrasynthNrpn, wireValue: number): void {
+  for (const msg of nrpnMessagesFor(entry, DEFAULT_CHANNEL, wireValue)) {
+    ctx.conn.send(msg);
+  }
+}
+
 export const writer: DeviceWriter = {
   // ── Pure builders ────────────────────────────────────────────────
 
@@ -177,11 +192,11 @@ export const writer: DeviceWriter = {
 
   async setParam(ctx, block, name, wireValue): Promise<WriteResult> {
     const entry = resolveNrpn(block, name);
-    // Each NRPN message must be a discrete send (node-midi expects one
-    // MIDI message per sendMessage call).
-    for (const msg of nrpnMessagesFor(entry, DEFAULT_CHANNEL, wireValue)) {
-      ctx.conn.send(msg);
-    }
+    sendResolvedNrpn(ctx, entry, wireValue);
+    // A14-2: a DIRECT write to an FX wet/mix param is the freshest truth
+    // about that block's wet level; record it so a later bypass/engage
+    // cycle restores THIS value, not a stale earlier one.
+    noteWetLevelWrite(entry.name, wireValue);
     // Bug H in the alpha.13 report: Hydrasynth set_param responses were
     // missing display_value, breaking cross-device consistency with the
     // Fractal devices (which return both wire and display). Decode via
@@ -281,14 +296,16 @@ export const writer: DeviceWriter = {
           bypassWetCache[block.toLowerCase()] ?? bypassEntry.engageDefault
         } (server-cached last-known value); call set_param(${bypassEntry.block}, ${bypassEntry.name}, <value>) afterward if you need a different wet level.`;
     } else {
-      wireValue = bypassWetCache[block.toLowerCase()] ?? bypassEntry.engageDefault;
+      const cached = bypassWetCache[block.toLowerCase()];
+      wireValue = cached ?? bypassEntry.engageDefault;
       bypassWetCache[block.toLowerCase()] = wireValue;
       infoExtra =
-        `Wet level restored to ${wireValue} (${
-          bypassWetCache[block.toLowerCase()] !== undefined ? 'server-cached' : 'default'
-        }).`;
+        `Wet level restored to ${wireValue} (${cached !== undefined ? 'server-cached' : 'default'}).`;
     }
-    await writer.setParam!(ctx, bypassEntry.block, bypassEntry.name, wireValue);
+    // Deliberately NOT writer.setParam: its A14-2 cache hook would record
+    // the bypass write (wet = 0) as the block's last-known wet level and
+    // the next engage would "restore" silence.
+    sendResolvedNrpn(ctx, resolveNrpn(bypassEntry.block, bypassEntry.name), wireValue);
     return {
       op: 'set_bypass',
       target: `${block}:${bypassed ? 'bypassed' : 'engaged'}`,
@@ -299,6 +316,13 @@ export const writer: DeviceWriter = {
         infoExtra,
     };
   },
+
+  // Byte-exact restore of an export_preset/backup_device `.syx` to a
+  // stored slot over the hardware-confirmed BK-113 series-write flow.
+  // Requires target_location + save_authorized + confirm_overwrite (a
+  // restore on this device is always a flash overwrite; see the module
+  // header of presetRestore.ts).
+  restorePresetBinary: restorePresetBinaryHydrasynth,
 
   // setBlock / switchScene / rename / applyPreset / applySetlist
   // intentionally omitted in v1 — the dispatcher surfaces
@@ -328,10 +352,57 @@ const HYDRASYNTH_BYPASS_PARAMS: Record<
 
 // Cache of the wet value last written to each FX block. set_bypass(engage)
 // reads from here so a bypass/engage cycle within the same session ends
-// at the same wet level the agent / user just set. Cleared on
-// switchPreset (the new patch carries its own values).
+// at the same wet level the agent / user just set. Kept honest by (A14-2):
+//   - noteWetLevelWrite: a direct set_param/set_params write to an
+//     underlying wet/mix param updates (or, at 0, drops) the entry;
+//   - clearBypassWetCache on every path that replaces the whole working
+//     buffer: switchPreset here, apply_patch / init_patch in tools/patch.ts
+//     (the new patch carries its own wet values, so anything cached before
+//     it is stale).
 const bypassWetCache: Record<string, number> = {};
 
-function clearBypassWetCache(): void {
+/**
+ * Drop every cached wet level. Exported for the whole-buffer write paths
+ * (apply_patch / init_patch) whose SysEx dump replaces all wet values at
+ * once; switchPreset calls it too.
+ */
+export function clearBypassWetCache(): void {
   for (const key of Object.keys(bypassWetCache)) delete bypassWetCache[key];
+}
+
+// Lazy map from an underlying wet/mix param's CANONICAL NRPN name to its
+// bypass-cache key. Resolved through the same resolveNrpn path the writes
+// use, so every alias spelling a caller might use ("delay.dry_wet",
+// "delaywet", ...) lands on the same canonical entry and hits the cache.
+// Built lazily to keep declaration order flexible (resolveNrpn + the table
+// above both need to exist first).
+let wetParamCanonicalToKey: Map<string, string> | undefined;
+
+function bypassKeyForCanonicalName(canonicalName: string): string | undefined {
+  if (wetParamCanonicalToKey === undefined) {
+    wetParamCanonicalToKey = new Map();
+    for (const [key, p] of Object.entries(HYDRASYNTH_BYPASS_PARAMS)) {
+      try {
+        wetParamCanonicalToKey.set(resolveNrpn(p.block, p.name).name, key);
+      } catch {
+        // A bypass entry whose param does not resolve cannot be cached;
+        // set_bypass on it would already fail at the same resolveNrpn.
+      }
+    }
+  }
+  return wetParamCanonicalToKey.get(canonicalName);
+}
+
+/**
+ * A14-2 cache hook, called from setParam only (never from setBypass's own
+ * internal write). A positive direct write IS the block's current wet level:
+ * record it. A direct write of 0 is a manual mute; caching 0 would make the
+ * next engage "restore" silence, so the entry is dropped instead and engage
+ * falls back to the audible default.
+ */
+function noteWetLevelWrite(canonicalName: string, wireValue: number): void {
+  const key = bypassKeyForCanonicalName(canonicalName);
+  if (key === undefined) return;
+  if (wireValue > 0) bypassWetCache[key] = wireValue;
+  else delete bypassWetCache[key];
 }

@@ -12,7 +12,7 @@ import {
 } from '../types.js';
 
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
-import { assertInstanceSupported, openCtx, requireDevice, withHandleRetry } from './core.js';
+import { assertInstanceSupported, requireDevice, withEndpoint, withHandleRetry } from './core.js';
 import { resolveBlockName } from './resolvers.js';
 
 /**
@@ -41,10 +41,12 @@ export async function executeSetBlock(args: {
     args.change.instance,
     args.change.block_type ? `set_block ${args.change.block_type}` : 'set_block',
   );
-  const ctx = openCtx(descriptor);
-  // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
-  // handle-level fault (see dispatcher/core.ts withHandleRetry).
-  const result = await withHandleRetry(ctx, (c) => setBlock(c, args.slot, args.change));
+  // Phase B: exclusive per-endpoint visit (see dispatcher/core.ts withEndpoint).
+  const result = await withEndpoint(descriptor, (ctx) =>
+    // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
+    // handle-level fault (see dispatcher/core.ts withHandleRetry).
+    withHandleRetry(ctx, (c) => setBlock(c, args.slot, args.change)),
+  { opName: 'set_block' });
   // BK-075: block placement just changed; invalidate the cached layout
   // snapshot so the next set_param pre-flight re-reads.
   invalidateBlockLayoutCache(descriptor.id);
@@ -73,9 +75,11 @@ export async function executeSetBypass(args: {
   }
   assertInstanceSupported(descriptor, args.instance, `set_bypass ${args.block}`);
   const canonical_block = resolveBlockName(descriptor, args.block);
-  const ctx = openCtx(descriptor);
-  // Phase A.5: reconnect-and-retry-once on a handle-level fault.
-  const result = await withHandleRetry(ctx, (c) => setBypass(c, canonical_block, args.bypassed, args.instance));
+  // Phase B: exclusive per-endpoint visit.
+  const result = await withEndpoint(descriptor, (ctx) =>
+    // Phase A.5: reconnect-and-retry-once on a handle-level fault.
+    withHandleRetry(ctx, (c) => setBypass(c, canonical_block, args.bypassed, args.instance)),
+  { opName: 'set_bypass' });
   return { ...result, device: descriptor.display_name };
 }
 

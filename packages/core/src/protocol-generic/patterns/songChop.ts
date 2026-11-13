@@ -13,7 +13,7 @@
  * the source already wrote. That is what this module does.
  *
  * **The chop is computed ONCE FOR THE SONG, not once per part.** A song is not
- * one part. "After Dark" is a bass, a pad, two leads, two pianos and a drum kit,
+ * one part. One example is a bass, a pad, two leads, two pianos and a drum kit,
  * and if each part were windowed on its own the projects would not line up: the
  * bass's project 3 would start at a different bar from the pad's, and a
  * foot-switch would land mid-phrase on five of seven tracks. So every input part
@@ -59,13 +59,13 @@
  * music has no edge. So the pattern lengths are PACKED, greedily, bar by bar,
  * using each bar's OWN time signature, and a project fits when that packing needs
  * 8 patterns or fewer. `ceil(steps / 32)` is only a lower bound on that count and
- * it is wrong wherever a bar is not a divisor of 32. On Tool's Schism (238 bars,
+ * it is wrong wherever a bar is not a divisor of 32. On one odd-metre song (238 bars,
  * ten signatures, 198 metre changes) the division reports 97 patterns against a
  * true 114 and undercounts 13 of its 19 sections; its one plan consequence is the
  * m102-117 Bridge, which reads as 8 patterns and really needs 9, so it splits and
  * the song costs 20 projects rather than 19. In 4/4 at a 16th grid the two answers
  * agree exactly (a bar is 16 steps, two to a pattern), which is why every song
- * shipped before Schism never noticed.
+ * shipped before that one never noticed.
  *
  * Each project therefore emits `pattern_steps` (the chain the device plays) and
  * `pattern_windows` (which bars each pattern covers), and every SOUNDING part

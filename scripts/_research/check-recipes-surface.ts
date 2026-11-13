@@ -5,8 +5,8 @@
  * Run: npx tsx scripts/_research/check-recipes-surface.ts
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 interface RecipeEntry {
   id: string;
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
     env: { ...process.env, MCP_MOCK_TRANSPORT: 'true' },
   });
 
-  const client = new Client({ name: 'check', version: '0.0.0' }, { capabilities: {} });
+  const client = new Client({ name: 'check', version: '0.0.0' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   for (const port of ['am4', 'axe-fx-ii', 'axe-fx-iii', 'hydrasynth']) {

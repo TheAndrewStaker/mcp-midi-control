@@ -20,20 +20,25 @@ This is a synth, so the tool surface is shaped differently from the guitar
 processors here: patches are voices rather than block layouts, there is no
 scene model, and whole-patch authoring goes through `apply_patch` rather than a
 block-placement pipeline. Modulation matrix and macro-page routing are
-authorable by name.
+authorable by name, both live (`set_mod_route` / `set_macro_route`, NRPN) and
+in the patch image itself: since 2026-08-22 routes ride `apply_patch` as
+ordinary named params, so an atomic save persists them to flash with the rest
+of the patch (no front-panel SAVE needed to keep routes).
 
 ## Support status
 
 | Capability | Status | Evidence |
 |---|---|---|
 | `set_param` / `set_params` | confirmed | Hardware-verified on the maintainer's Explorer. Decodes live in the codec package at `packages/fractal-midi/docs/devices/hydrasynth/SYSEX-MAP.md` |
-| `get_param` / `get_params` | confirmed | Same |
-| `apply_patch`, `init_patch` | confirmed | Same |
+| `get_param` / `get_params` | not supported | The device has no single-param query primitive, and the working buffer has no read at all. Stored patches are readable (see the row below) |
+| `scan_locations`, `get_preset` (stored location), `export_preset` (location) | confirmed | Built 2026-08-09 (BK-110) from the Request flows in the vendored `SysexEncoding.txt` spec, then hardware-confirmed the same day on the maintainer's Explorer: a 128-name bank scan returned the freshly-written favourites block by name, a stored-patch read decoded one of those patches (name, category, and every recipe param consistent, 56 ms), and a byte-exact export produced the 22-frame `.syx`. The ack-driven transaction and the fixed-stride name parse are locked to the spec's worked example by `scripts/hydrasynth/verify-patch-read.ts`. Reads return the FLASH copy only. Since 2026-08-22 a stored read also decodes the patch's ACTIVE mod-matrix + macro routes (hardware-confirmed against a flash read-back and byte dump the same day), and a stored-FX-type mislabel that had shipped with the read leg (enum-scaled bytes double-divided, so byte 1 = Chorus read as "Bypass") is fixed |
+| `import_preset` (restore a `.syx` backup to a stored slot) | hardware-unverified | Wired 2026-08-10 over the series-write flow that the same day's full-device reorg hardware-confirmed end-to-end (1024 patches flashed with `15 00` receipts, 1024/1024 name verifies including post-power-cycle). The tool path is the identical flow with a single-entry batch plus an occupant pre-read (`confirm_overwrite` gate) and a post-write name read-back; only that wrapper awaits its first on-device run. Restores to a stored slot ONLY: the working buffer has no byte-level restore, and a RAM-level dump is not reversible (spec NOTE 0) |
+| `apply_patch`, `init_patch` | confirmed | Hardware-verified on the maintainer's Explorer. Since 2026-08-22 the patch image carries the mod-matrix + macro route regions too (routes as ordinary named params, e.g. `modmatrix1modsource: "Env 3"`), hardware-confirmed by an atomic save WITH routes whose flash read-back and byte dump matched exactly |
 | `set_mod_route` (32 matrix slots) | confirmed | Source and target wire values resolve through name-backed tables (`packages/hydrasynth/src/descriptor.ts`) |
 | `set_macro`, `set_macro_route` (8 macros, 8 destinations each) | confirmed | Same |
 | `switch_preset` | confirmed | Same |
 | Display-first non-linear parameters, envelope and LFO times | confirmed | The exponential bucket schedules carry both directions of their formula, and a preflight gate round-trips every display-first parameter over its full on-grid sample set |
-| `save_preset` | not supported | The descriptor declares `supports_save: false`. Patches are authored into the working buffer; storing is done on the device |
+| `save_preset` | not supported | The descriptor declares `supports_save: false`; the voice-class save path is `apply_patch(save: true)`, which is gated by `save_authorized` + `confirm_overwrite` (the tool pre-reads the target's stored name) and reports the device's `15 00` flash receipt plus a post-save name read-back |
 | Dirty-buffer detection | not available | The Hydrasynth emits no MIDI dirty signal, so the safe-edit workflow's buffer-dirty gate has no input on this device |
 
 Support tier: `verified`. This mirrors `capabilities.support_tier` on the
@@ -42,7 +47,10 @@ the two disagree.
 
 ## Confirmed on hardware
 
-- The whole parameter surface, read and write, on an Explorer.
+- The whole parameter WRITE surface on an Explorer (there is no per-param
+  read).
+- Stored-content reads (bank-name scan, whole-patch decode, byte-exact
+  export), bench-confirmed 2026-08-09 on the maintainer's Explorer.
 - Modulation matrix and macro-page routing by name.
 - Whole-patch authoring.
 - The non-linear display-first tables, which is the part most likely to be
@@ -67,8 +75,10 @@ Read [../SAFETY.md](../SAFETY.md) once. The device-specific parts:
   the server can refuse to navigate away from an edited buffer. Here it cannot
   see that state, so **store or abandon your own edits before you start**.
   Switching patches discards the working buffer without asking.
-- **Save happens on the device, not through the server.** If you build something
-  you want to keep, store it from the front panel.
+- **Server-side saves are gated.** `apply_patch(save: true)` flashes a patch but
+  refuses without explicit confirmation, pre-reads what the target slot holds,
+  and reports the device's flash receipt. Front-panel SAVE remains the only way
+  to keep manual knob tweaks (the server cannot read the working buffer).
 - **Firmware updates.** Never run ASM's firmware updater while the server holds
   the port.
 - **What we will never ask you to do.** No firmware modification, no opening the
@@ -102,16 +112,18 @@ Only worth doing if you have a model other than the Explorer.
 
 Store or abandon any edits first, since there is no dirty gate here. Then:
 
-> "Read the filter 1 cutoff on my Hydrasynth."
+> "What patches are stored in bank A on my Hydrasynth?"
 
 > "Set the filter 1 cutoff to 55."
 
-> "Set envelope 1 attack to 250 ms, then read it back."
+> "Set envelope 1 attack to 250 ms."
 
-The third one matters most. Envelope and LFO times are the non-linear
-display-first tables, where the panel reading and the underlying value are not
-the same number. If a time lands somewhere other than what you asked for, that
-is a real finding on your model.
+For the writes, read the device's own screen and report what it shows next to
+what the tool said. The envelope one matters most: envelope and LFO times are
+the non-linear display-first tables, where the panel reading and the underlying
+value are not the same number. If a time lands somewhere other than what you
+asked for, that is a real finding on your model. The bank read exercises the
+stored-content transfer flow, which is new and unconfirmed on the larger models.
 
 Report each response next to what the device's own screen showed.
 

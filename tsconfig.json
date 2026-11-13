@@ -21,6 +21,6 @@
       "@mcp-midi-control/server-all/*": ["packages/server-all/src/*"]
     }
   },
-  "include": ["scripts/**/*", "types/**/*"],
+  "include": ["scripts/**/*", "types/**/*", "tests/console-e2e/**/*", "playwright.config.ts"],
   "exclude": ["node_modules", "dist", "packages/*/dist", "scripts/_research/**"]
 }

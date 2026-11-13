@@ -12,7 +12,7 @@ and the storage-transport path in `openCtx`.
 The unified surface (`set_param`, `apply_preset`, `switch_scene`, …) was built
 for guitar preset devices and scales cleanly there: a new Fractal device is a
 descriptor, not new tools. But newer device *shapes* started minting
-device-specific tools: Circuit Tracks (`apply_pattern`, `upload_project`),
+device-specific tools: Circuit Tracks (`apply_pattern`, and at the time `upload_project`, since folded into `import_preset`),
 SPD-SX (`spdsx_status`, `spdsx_list_kits`, `spdsx_author_kit`, …). The registered
 surface crossed ~53 tools. Two real costs, neither a round number:
 

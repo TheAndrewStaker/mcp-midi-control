@@ -38,8 +38,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { registeredDevicePorts } from './_lib/mcp-bundle-harness.js';
 
 const ROOT = process.cwd();
@@ -128,7 +128,7 @@ async function main(): Promise<void> {
     env: { ...process.env, MCP_MOCK_TRANSPORT: '1' },
     stderr: 'pipe',
   });
-  const c = new Client({ name: 'zip-verify', version: '1' }, { capabilities: {} });
+  const c = new Client({ name: 'zip-verify', version: '1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await c.connect(t);
   try {
     const sv = c.getServerVersion();
@@ -167,7 +167,9 @@ async function main(): Promise<void> {
       if (port === 'axe-fx-gen1') {
         check('gen-1 guidance: parameter-WRITES framing', /parameter WRITE surface|set_param \/ set_params \(full parameter/i.test(text));
         check('gen-1 guidance: capture-unlock pointer', /contributing\/devices\/axe-fx-gen1\.md/.test(text));
-        check('gen-1 guidance: send_program_change workflow', /send_program_change/.test(text));
+        // gen-1 has its own switch_preset now (a standard Program Change), so the
+        // guidance names that verb, not the generic send_program_change.
+        check('gen-1 guidance: switch_preset by Program Change', /switch_preset \(standard MIDI Program Change/.test(text));
       }
       if (port === 'fm9') {
         check('FM9 beta_status leads with writes-NOT-gated', /writes are NOT gated/i.test(text));

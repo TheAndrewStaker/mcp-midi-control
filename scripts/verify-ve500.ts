@@ -190,16 +190,38 @@ check(`catalog params checked (>800)`, checkedParams > 800, `got ${checkedParams
 /** PC-IN read answers 1 (ON), 0 (OFF), or never (a device that is not talking). */
 type PcIn = 1 | 0 | 'silent';
 
-function recallCtx(pcIn: PcIn) {
+/** An RQ1 on the Current Patch Number register (absolute address 0): the recall read-back. */
+const isPatchNumberRead = (f: number[]): boolean =>
+  f[0] === 0xf0 && f[7] === 0x11 && f[8] === 0 && f[9] === 0 && f[10] === 0 && f[11] === 0;
+
+/**
+ * A mock unit. It answers the PC IN read per `pcIn`, and answers the Current
+ * Patch Number read with whatever was last recalled (by Program Change or by
+ * the register write). `stuck` makes it ignore every recall, as a unit with the
+ * wrong receive channel would.
+ */
+function recallCtx(pcIn: PcIn, stuck = false) {
   const sent: number[][] = [];
   const pcInDef = findParam('system_midi', 'midi_program_change_in')!;
+  let loaded = 0;
+  let lastSent: number[] = [];
   const ctx = {
     conn: {
-      send: (b: number[]) => sent.push(b),
-      receiveSysExMatching: () =>
-        pcIn === 'silent'
+      send: (b: number[]) => {
+        sent.push(b);
+        lastSent = b;
+        if (stuck) return;
+        if ((b[0] & 0xf0) === 0xc0) loaded = b[1];
+        else if (b[0] === 0xf0 && b[7] === 0x12 && b[8] === 0 && b[9] === 0 && b[10] === 0 && b[11] === 0) {
+          loaded = (b[12] << 4) | b[13];
+        }
+      },
+      receiveSysExMatching: () => {
+        if (isPatchNumberRead(lastSent)) return Promise.resolve(buildSwitchPatch(loaded));
+        return pcIn === 'silent'
           ? Promise.reject(new Error('timeout'))
-          : Promise.resolve(buildSetParam(pcInDef, pcIn)),
+          : Promise.resolve(buildSetParam(pcInDef, pcIn));
+      },
     },
   } as never;
   // The pre-flight RQ1 is infrastructure, not part of the recall; drop it so the
@@ -523,12 +545,13 @@ function recallCtx(pcIn: PcIn) {
 }
 
 // ── 12. The PC-IN gate on user-memory recall ─────────────────────────────────
-// THE SILENT FAILURE THIS CLOSES. U01-U99 recall is a bare Program Change, and
-// the VE-500 acts on one only while `system_midi.midi_program_change_in` is 1.
+// THE SILENT FAILURE THIS CLOSES. U01-U99 recall prefers a bare Program Change,
+// and the VE-500 acts on one only while `system_midi.midi_program_change_in` is 1.
 // People turn it off on purpose, to stop a stray Program Change on a shared bus
-// recalling a patch mid-song. With it off the Program Change goes out, nothing
-// on the device moves, and a Program Change is never echoed, so switch_preset
-// used to return a clean success while the patch had not changed.
+// recalling a patch mid-song. With it off a Program Change goes out, nothing on
+// the device moves, and a Program Change is never echoed, so switch_preset used
+// to return a clean success while the patch had not changed. It now reads PC IN
+// first and, when off, recalls by the register write instead.
 {
   const pcInDef = findParam('system_midi', 'midi_program_change_in')!;
   check('the gate reads a real catalog param', !!pcInDef && pcInDef.region === 'system');
@@ -537,32 +560,28 @@ function recallCtx(pcIn: PcIn) {
   const isRq1 = (f: number[]) => f[0] === 0xf0 && f[7] === 0x11;
   const isPc = (f: number[]) => (f[0] & 0xf0) === 0xc0;
 
-  // ── PC IN = OFF: refuse, and send NOTHING but the pre-flight read ──────────
+  // ── PC IN = OFF: fall back to the register write, never a Program Change ───
+  // Hardware-confirmed 2026-09-30: the editor's own user-memory handler writes
+  // the "Current Patch Number" register, which does not depend on PC IN. So the
+  // recall succeeds without asking the user to touch the front panel or flip a
+  // setting that would re-expose the unit to stray Program Changes.
   {
     const { ctx, sent } = recallCtx(0);
     let err: DispatchError | undefined;
-    await writer.switchPreset!(ctx, 'U97').catch((e) => { err = e as DispatchError; });
-    check('PC IN off -> switch_preset REFUSES instead of reporting success', err !== undefined);
-    check('the refusal does NOT send a Program Change', !sent.some(isPc), JSON.stringify(sent));
-    check('the only frame sent is the pre-flight read', sent.length === 1 && isRq1(sent[0]), JSON.stringify(sent));
+    const r = await writer.switchPreset!(ctx, 'U97').catch((e) => { err = e as DispatchError; return undefined; });
+    check('PC IN off -> switch_preset succeeds via the register write', err === undefined && r?.acked === true,
+      err?.message ?? JSON.stringify(r));
+    check('PC IN off -> NO Program Change is sent (it would be ignored)', !sent.some(isPc), JSON.stringify(sent));
+    const frames = sent.filter((f) => !isPatchNumberRead(f));
+    check('PC IN off -> pre-flight read first, then exactly the register write',
+      frames.length === 2 && isRq1(frames[0]) && hex(frames[1]) === hex(buildSwitchPatch(96)), JSON.stringify(sent.map(hex)));
+    check('PC IN off -> the recall is confirmed by reading the loaded memory number back',
+      r?.confirmed_by === 'read_back' && isPatchNumberRead(sent[sent.length - 1]), JSON.stringify(r));
     check('the pre-flight read targets the PC-IN address', hex(sent[0] ?? []) === hex(buildGetParam(pcInDef)),
       `got ${hex(sent[0] ?? [])}`);
-
-    const m = err?.message ?? '';
-    check('the refusal explains WHY it cannot work',
-      m.includes('bare') && m.includes('Program Change') && m.includes('ignores'), m);
-    check('the refusal names the parameter, so it is actionable',
-      m.includes('system_midi.midi_program_change_in'), m);
-    check('the refusal offers the front panel as a way out', /front panel/i.test(m), m);
-    check('the refusal offers the setting change as the OTHER way out', m.includes('set to 1') || m.includes('to 1 first'), m);
-    check('the refusal states the cost of turning it on (stray PC exposure)',
-      m.includes('stray Program Change'), m);
-    check('the refusal says the server will not flip it for the user',
-      m.includes('will not') && m.includes('flip'), m);
-    // The asymmetry has to be IN the message: an agent that reads "recall is
-    // dead" and stops would strand a user whose target was a factory preset.
-    check('the refusal states that P01-P50 are unaffected', m.includes('P01-P50'), m);
-    check('the refusal carries a retry_action', (err?.details?.retry_action ?? '').length > 40);
+    const info = r?.info ?? '';
+    check('the result says it was NOT a Program Change', info.includes('not a Program Change'), info);
+    check('the result says nothing on the device had to change', info.includes('Nothing was changed'), info);
   }
 
   // ── PC IN = ON: unchanged behaviour, plus a confirmed-precondition note ────
@@ -571,7 +590,8 @@ function recallCtx(pcIn: PcIn) {
     const r = await writer.switchPreset!(ctx, 'U97');
     check('PC IN on -> the recall goes through', r.acked === true);
     check('PC IN on -> exactly one pre-flight read + one Program Change',
-      sent.filter(isRq1).length === 1 && sent.filter(isPc).length === 1, JSON.stringify(sent));
+      sent.filter((f) => isRq1(f) && !isPatchNumberRead(f)).length === 1 && sent.filter(isPc).length === 1, JSON.stringify(sent));
+    check('PC IN on -> the recall is confirmed by read-back', r.confirmed_by === 'read_back', JSON.stringify(r));
     check('PC IN on -> the pre-flight happens BEFORE the Program Change',
       isRq1(sent[0]) && isPc(sent[1]), JSON.stringify(sent));
     check('PC IN on -> no warning', r.warning === undefined, r.warning);
@@ -579,17 +599,27 @@ function recallCtx(pcIn: PcIn) {
       (r.info ?? '').includes('PC IN was read as ON'), r.info);
   }
 
-  // ── PC IN unreadable: send anyway, and SAY it went out unverified ──────────
-  // A read timeout is not evidence the setting is off. Refusing on silence would
-  // turn an unrelated transport hiccup into a broken recall path, so the honest
-  // answer is to send and flag it.
+  // ── PC IN unreadable: recall by the register write, which works either way ──
+  // Found on hardware 2026-11-12: the unit is briefly deaf right after a recall,
+  // so a second recall in quick succession read PC IN as unknown, sent a Program
+  // Change, and a unit with PC IN off ignored it. A read timeout is not evidence
+  // the setting is on, and the register write does not care.
   {
     const { ctx, sent } = recallCtx('silent');
     const r = await writer.switchPreset!(ctx, 'U12');
-    check('an unreadable PC IN does NOT block the recall', sent.some(isPc), JSON.stringify(sent));
-    check('an unreadable PC IN produces a warning, not a silent success', r.warning !== undefined, JSON.stringify(r));
-    check('the warning says the recall was UNVERIFIED', (r.warning ?? '').includes('UNVERIFIED'), r.warning);
-    check('the warning points at the front panel', /front panel/i.test(r.warning ?? ''), r.warning);
+    check('an unreadable PC IN does NOT block the recall', sent.some((f) => hex(f) === hex(buildSwitchPatch(11))), JSON.stringify(sent));
+    check('an unreadable PC IN sends NO Program Change', !sent.some(isPc), JSON.stringify(sent));
+    check('an unreadable PC IN is still confirmed by read-back', r.acked === true && r.confirmed_by === 'read_back', JSON.stringify(r));
+  }
+
+  // ── A recall the unit ignored is reported as NOT landed ────────────────────
+  // Neither recall path is echoed, so the read-back is the only evidence. A unit
+  // that stays where it was must not produce a success receipt.
+  {
+    const { ctx } = recallCtx(1, true);
+    const r = await writer.switchPreset!(ctx, 'U40');
+    check('an ignored recall is acked:false', r.acked === false, JSON.stringify(r));
+    check('an ignored recall names the memory the unit is still on', (r.warning ?? '').includes('U01'), r.warning);
   }
 
   // ── THE ASYMMETRY: factory presets recall by a register write, not a PC ────
@@ -600,8 +630,9 @@ function recallCtx(pcIn: PcIn) {
     const { ctx, sent } = recallCtx(0);   // PC IN OFF, which kills U-recall
     const r = await writer.switchPreset!(ctx, 'P12');
     check('PC IN off does NOT block factory-preset recall', r.acked === true, JSON.stringify(r));
-    check('factory recall skips the pre-flight read entirely', !sent.some(isRq1), JSON.stringify(sent.map(hex)));
-    check('factory recall still sends its register write', sent.length === 1 && hex(sent[0]) === hex(buildSwitchPatch(110)),
+    const frames = sent.filter((f) => !isPatchNumberRead(f));
+    check('factory recall skips the pre-flight read entirely', !frames.some(isRq1), JSON.stringify(sent.map(hex)));
+    check('factory recall still sends its register write', frames.length === 1 && hex(frames[0]) === hex(buildSwitchPatch(110)),
       JSON.stringify(sent.map(hex)));
   }
 

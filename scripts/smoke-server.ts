@@ -1,8 +1,18 @@
 /**
- * Smoke test for the MCP server — spawns it as a child process, does the
+ * Smoke test for the MCP server: spawns it as a child process, does the
  * MCP initialize handshake over stdio, lists tools, and checks every
  * registered tool shows up. Does NOT call any tool that touches MIDI;
  * this is a harness-level check.
+ *
+ * DELIBERATELY NOT MIGRATED to the v2 @modelcontextprotocol/client. This
+ * script hand-rolls JSON-RPC and speaks the LEGACY dialect on purpose
+ * (hardcoded 2024-11-05 initialize + notifications/initialized): it is this
+ * repo's legacy-client compatibility gate. Claude Desktop still speaks the
+ * 2025-era dialect, and this script is what proves the server's
+ * serveStdio legacy:'serve' path keeps answering it. The modern 2026-07-28
+ * path is covered separately by the v2-client scripts (budget gates,
+ * list-tools, launch-verification, agent-regression). Keep the hardcoded
+ * handshake as-is.
  *
  *   npx tsx scripts/smoke-server.ts
  */

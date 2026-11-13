@@ -10,7 +10,7 @@
  * scene, call `switch_scene` first.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import { executeSetBlock, executeSetBypass } from '../dispatcher.js';

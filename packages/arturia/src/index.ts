@@ -4,6 +4,7 @@
  * One package per CODEC, not per device. The Arturia envelope is shared across
  * the line and differs by a device-code byte, so new models join as configs.
  */
+export * from './codec/mfprojz.js';
 export * from './codec/sysex.js';
 export * from './devices/types.js';
 export * from './downstream.js';

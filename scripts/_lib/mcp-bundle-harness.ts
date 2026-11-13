@@ -25,8 +25,8 @@ import { mkdtempSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import AdmZip from 'adm-zip';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 // ── pass/fail accounting ──────────────────────────────────────────────────
 
@@ -142,7 +142,7 @@ export async function connectBundledServer(opts: {
     env,
     stderr: 'pipe',
   });
-  const client = new Client({ name: opts.clientName, version: '1' }, { capabilities: {} });
+  const client = new Client({ name: opts.clientName, version: '1' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   try {
     await client.connect(transport);
   } catch (err) {

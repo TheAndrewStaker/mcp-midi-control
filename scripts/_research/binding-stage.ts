@@ -38,8 +38,8 @@ const CANONICAL = [1, 2, 5, 11];
 
 /**
  * Deliberately NOT ours — excluded on the maintainer's standing call recorded in
- * drum-levels-pass-2026-07-30.md. CaughtGlim predates the campaign and its
- * un-processed state is itself the signal; the pack-4 "Sugar 2/10" pair are orphan
+ * drum-levels-pass-2026-07-30.md. One song predates the campaign and its
+ * un-processed state is itself the signal; a pack-4 same-named pair are orphan
  * duplicates of unknown provenance belonging to no current song block.
  */
 const EXCLUDE = new Set(['5/14', '5/15', '5/16', '5/17', '4/01', '4/02']);
@@ -71,7 +71,7 @@ for (const f of readdirSync(SCAN).filter(n => n.endsWith('.ncs'))) {
 }
 rows.sort((a, b) => a.pack - b.pack || a.slot - b.slot);
 
-// De-duplicate: the scan dir may hold two captures of the same slot (the Breakdown
+// De-duplicate: the scan dir may hold two captures of the same slot (one
 // calibration read ran before the full pack-5 sweep). Keep the LAST filename, which
 // sorts later by timestamp.
 const bySlot = new Map<string, Row>();

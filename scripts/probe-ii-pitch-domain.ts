@@ -35,8 +35,8 @@
 import path from 'node:path';
 import readline from 'node:readline';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { parseGetBlockParameterResponse } from 'fractal-midi/gen2/axe-fx-ii';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
@@ -68,7 +68,7 @@ function fmt(v: unknown): string {
 
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER_ENTRY], stderr: 'pipe' });
-  const client = new Client({ name: 'ii-pitch-domain', version: '0.1.0' });
+  const client = new Client({ name: 'ii-pitch-domain', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   const rows: Row[] = [];

@@ -703,11 +703,28 @@ console.log('\n[encodability] every recipe value encodes on every device it clai
 // rather than a half-open pedal. Fixing it needs a display calibration
 // on `wah.control` (the AM4's hardware-verified `wah.wah_control` is a
 // 0..10 knob and is the obvious `am4-shared` donor), not a recipe edit.
+// 2026-08-11 (BK-GEN3-RANGES): the III's wah.control rows came OFF this list
+// because the device-cache calibration landed (WAH_TRACK-family display 0..10,
+// so a cocked 2.5 now encodes as a real display value); the II rows stay.
+// ADDED the III wah.q rows: the III/FM9 device caches give WAH_Q a display
+// window of [20..200] (row carries scale 10, so the panel may actually read
+// 2.0..20.0), while these recipes carry Q values 3..7 authored in the
+// AM4/II Q domain. Before calibration the III leg silently encoded 3..7 as
+// RAW wire (near-zero Q, wrong on hardware), so nothing working was lost;
+// now it refuses honestly. Clearing this debt needs ONE panel reading of the
+// III/FM9 wah Q range (settles 20..200 vs 2.0..20.0), then either a recipe
+// value map or a scale fix in the ranges generator. Do NOT guess a x10
+// conversion.
 const ENCODABILITY_DEBT = new Set<string>([
   'wah/wah_cocked_low/axe-fx-ii:wah.control',
-  'wah/wah_cocked_low/axe-fx-iii:wah.control',
   'wah/wah_cocked_high/axe-fx-ii:wah.control',
-  'wah/wah_cocked_high/axe-fx-iii:wah.control',
+  'wah/wah_cocked_low/axe-fx-iii:wah.q',
+  'wah/wah_cocked_mid/axe-fx-iii:wah.q',
+  'wah/wah_cocked_high/axe-fx-iii:wah.q',
+  'auto_wah/auto_wah_funk/axe-fx-iii:wah.q',
+  'auto_wah/auto_wah_cantrell/axe-fx-iii:wah.q',
+  'auto_wah/auto_wah_hendrix/axe-fx-iii:wah.q',
+  'auto_wah/auto_wah_subtle/axe-fx-iii:wah.q',
 ]);
 const debtSeen = new Set<string>();
 

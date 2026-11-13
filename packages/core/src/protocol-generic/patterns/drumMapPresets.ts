@@ -36,10 +36,24 @@
  * at the pack's base fill-rate (31/160 ≈ 19%, not concentrated in fills) —
  * they're ordinary secondary articulations used throughout normal grooves,
  * not fill/transition-specific pieces.
+ *
+ * KEY 2 RE-MAPPED hat -> snare (2026-11-07). The 2026-06-21 A/B preview heard
+ * whole grooves, not key 2 in isolation, and the "soft busy-hat runs" reading
+ * does not survive the files: key 2's loud hits (vel >= 110) peak on steps 8
+ * and 12 of the bar, exactly where snare key 3 accents (key 3: 312 / 107 hits
+ * there), while hat key 14's accents spread evenly; key 2 and key 3 sound
+ * together once in 793 key-3 hits; and S04 Groove 09 has NO key 3 at all,
+ * with key 14 playing the hat figure and key 2 carrying the ghost 16ths plus
+ * the beat-4 backbeat every bar. Read as a hat, that groove imported as
+ * "hat, kick" with no snare (dogfooded through apply_pattern dry_run).
+ * Candidates from the same 2026-11-07 survey, NOT in the preset (structural
+ * inference only, unheard): 0 = second kick (alternates 16ths with key 1,
+ * never coincides), 23 = hat foot, 32 = crash (38/115 on beat 1 with the
+ * kick), 53 = ridden crash, 54 = china, 7/9/11 = high/mid/floor tom.
  */
 export const MIXWAVE_ST2_GROOVES: Readonly<Record<number, string>> = {
   1: 'kick',
-  2: 'hat',    // busy/roll hat lane (folds into the hat voice)
+  2: 'snare',  // soft/ghost snare lane (re-mapped 2026-11-07 from 'hat'; see the evidence note above)
   3: 'snare',
   14: 'hat',   // closed hat
   41: 'ride',

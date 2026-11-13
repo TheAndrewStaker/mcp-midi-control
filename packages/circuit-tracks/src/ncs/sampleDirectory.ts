@@ -146,6 +146,20 @@ const DRAIN_TIMEOUT_MS = 40;
 /** Fixed on-wire length of a DIR_CONTROL listing-header reply (F0 + 6-byte header + sub + fileType + pack + count-lo + count-hi + F7). */
 const DIR_LIST_HEADER_LENGTH = 13;
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Session-reset + prelude settle delays, copied VALUE-FOR-VALUE from the
+ * hardware-confirmed transfer driver (`uploadProject.ts` `downloadOnce`, which
+ * runs exactly `CLOSE 200 / OPEN 300 / DIR_CONTROL(1) 100 / QUERY_INFO 100 /
+ * DIR_CONTROL(2) 100` before every stored-project read). See the module
+ * docstring, "the half-open-session defect", for why this read now leads with
+ * the same reset instead of opening cold.
+ */
+const SESSION_RESET_SETTLE_MS = 200;
+const OPEN_SESSION_SETTLE_MS = 300;
+const PRELUDE_STEP_SETTLE_MS = 100;
+
 /** One sample-pool slot: 0-based wire slot, device-facing 1-based number, and name (undefined = empty). Alias of the generic {@link DirectorySlot}. */
 export type SampleSlot = DirectorySlot;
 
@@ -226,6 +240,14 @@ export interface FileDirectoryResult {
   slots: DirectorySlot[];
   /** The 0-based microSD pack this directory was read from (device Pack 1 = 0). */
   pack: number;
+  /**
+   * True only when the device answered the listing header AND every announced
+   * entry arrived. False means the listing is PARTIAL or absent (header timeout
+   * or an entry stall), in which case an unnamed slot is NOT evidence of
+   * emptiness: a gate deciding "safe to overwrite" must treat it as unknown.
+   * Without this flag a dead device read exactly like an empty pack.
+   */
+  listing_complete: boolean;
 }
 
 /**
@@ -249,19 +271,41 @@ export async function readFileDirectory(conn: MidiConnection, fileType: number, 
   }
   const slots: DirectorySlot[] = Array.from({ length: SLOT_COUNT }, (_, slot) => ({ slot, device_slot: slot + 1 }));
   try {
-    // Replay the captured, non-destructive open + directory handshake (drain
-    // each reply). Byte-identical to the first 4 steps of the hardware-
-    // confirmed project-upload prelude (transfer.ts buildUploadFrames).
-    const prelude: number[][] = [
-      makeMessage(SUB.OPEN_SESSION),
-      makeMessage(SUB.DIR_CONTROL, [0x01]),
-      makeMessage(SUB.QUERY_INFO, [0x01, 0x00]),
-      makeMessage(SUB.DIR_CONTROL, [0x02]),
+    // SESSION RESET, then the captured non-destructive open + directory
+    // handshake. Both halves are the hardware-confirmed transfer driver's own
+    // sequence (uploadProject.ts `downloadOnce` / `runUploadFramePlan`):
+    //
+    //  - The leading CLOSE_SESSION + settle is NOT cosmetic. Quoting the read
+    //    driver at its own call site: "Reset any half-open session left by a
+    //    prior aborted transfer, else the device ignores OPEN_SESSION and never
+    //    sends READ_INIT." A directory read issued milliseconds after another
+    //    op's CLOSE (apply_pattern's drum-binding pool read runs right behind
+    //    backup_first's 160 KB project download) is exactly that case, and
+    //    without the reset the device answers the listing with nothing while
+    //    still lighting its transfer LED — a listing that "did not complete"
+    //    on a device that is demonstrably reachable.
+    //  - SEND-AND-SETTLE, not send-and-await-any-reply. The old loop waited for
+    //    ANY inbound SysEx per step, so one straggler from the preceding
+    //    transfer satisfied a step instantly and desynced the whole prelude
+    //    (the same failure class as the 2026-07-10 desync bug, one layer up).
+    //    Fixed settles cannot be satisfied early by a frame we did not ask for,
+    //    and with no receiver registered during them a straggler is dropped by
+    //    the transport instead of being consumed as an answer.
+    //
+    // Frame sequence is UNCHANGED apart from the prepended CLOSE (which this
+    // function already sends in its `finally`, so it is not a new frame shape):
+    // still only OPEN_SESSION / DIR_CONTROL / QUERY_INFO / CLOSE_SESSION.
+    conn.send(makeMessage(SUB.CLOSE_SESSION));
+    await sleep(SESSION_RESET_SETTLE_MS);
+    const prelude: [number[], number][] = [
+      [makeMessage(SUB.OPEN_SESSION), OPEN_SESSION_SETTLE_MS],
+      [makeMessage(SUB.DIR_CONTROL, [0x01]), PRELUDE_STEP_SETTLE_MS],
+      [makeMessage(SUB.QUERY_INFO, [0x01, 0x00]), PRELUDE_STEP_SETTLE_MS],
+      [makeMessage(SUB.DIR_CONTROL, [0x02]), PRELUDE_STEP_SETTLE_MS],
     ];
-    for (const msg of prelude) {
-      const replyP = conn.receiveSysEx(PRELUDE_TIMEOUT_MS).catch(() => [] as number[]);
+    for (const [msg, settleMs] of prelude) {
       conn.send(msg);
-      await replyP;
+      await sleep(settleMs);
     }
 
     // Best-effort drain (2026-07-10 fix, see module docstring "prelude
@@ -290,19 +334,27 @@ export async function readFileDirectory(conn: MidiConnection, fileType: number, 
     const count = header?.count ?? 0;
 
     let occupied = 0;
+    let entriesReceived = 0;
     for (let i = 0; i < count; i++) {
       // Register the matcher BEFORE any further send (sync-throw-safe ordering).
       const entryReply = await conn
         .receiveSysExMatching((m) => m[7] === DIR_ENTRY && m[8] === fileType && m[9] === (pack & 0x7f), REPLY_TIMEOUT_MS)
         .catch(() => [] as number[]);
       if (entryReply.length === 0) break; // honest partial result on a stall, never a silent hang
+      entriesReceived++;
       const entry = parseDirEntry(entryReply);
       if (!entry || entry.slot < 0 || entry.slot >= SLOT_COUNT) continue;
       slots[entry.slot] = { slot: entry.slot, device_slot: entry.slot + 1, name: entry.name || undefined };
       occupied++;
     }
 
-    return { occupied, total: SLOT_COUNT, slots, pack };
+    // Complete = the header arrived AND every announced entry arrived. A header
+    // timeout (count 0 with no header) or an entry stall leaves the listing
+    // PARTIAL: display callers may still show what came back, but an occupancy
+    // gate must not read an unnamed slot as empty.
+    const listing_complete = header !== undefined && entriesReceived === count;
+
+    return { occupied, total: SLOT_COUNT, slots, pack, listing_complete };
   } finally {
     // ALWAYS end the session so the device leaves its transfer screen.
     try {

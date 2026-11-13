@@ -12,8 +12,11 @@
  *     name + 4x12 effect grid + edit-buffer/stored flag; the dump's parameter
  *     region is unpinned by the spec and NOT decoded — the snapshot says so).
  *     Stored reads cover presets 0..255 (banks A/B); bank C refuses.
+ *   - switch_preset: supported for presets 0..127 via standard MIDI Program
+ *     Change (a channel voice message, not gen-1 SysEx; community-beta).
+ *     Presets >= 128 refuse: the published spec pins no bank-select mechanism.
  *   - describe_device / list_params: supported (introspection).
- *   - save / switch / scene / channel / block: refuse cleanly.
+ *   - save / scene / channel / block: refuse cleanly.
  *
  * Registration order in server-all is INTENTIONAL: register the gen-1
  * `/axe-?fx.*(ultra|standard)/i` pattern BEFORE the broad Axe-Fx II `/axe-?fx/i`
@@ -22,6 +25,9 @@
 
 import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 
+// Side-effect import: registers the `axe-fx-gen1` connector factory (port
+// needles + the Standard model-byte warning hook). See ./midi.ts.
+import './midi.js';
 import { buildBlocks, buildBlockTypes } from './descriptor/schema.js';
 import { reader } from './descriptor/reader.js';
 import { writer } from './descriptor/writer.js';
@@ -44,9 +50,12 @@ export const AXEFXGEN1_DESCRIPTOR: DeviceDescriptor = {
       'Wire decoded byte-exactly from the published Axe-Fx gen-1 SysEx spec (model 0x01, fn 0x02, ' +
       'nibble-split, trailing query(0)/set(1) flag), validated against the full 0..255 conversion table. ' +
       'NOT hardware-verified; the project owns no gen-1 hardware. SET, parameter READ (get_param via ' +
-      'fn 0x02 query -> MIDI_PARAM_VALUE), and the whole-patch dump SPEC-PINNED SUBSET (get_preset via ' +
+      'fn 0x02 query -> MIDI_PARAM_VALUE), the whole-patch dump SPEC-PINNED SUBSET (get_preset via ' +
       'fn 0x03 -> fn 0x04: name + effect grid + source flag; per-param values NOT decoded; the spec ' +
-      'leaves that region undetermined) are wired; save and preset/scene/channel ops are not.',
+      'leaves that region undetermined), and switch_preset (standard MIDI Program Change, presets ' +
+      '0..127 only; no bank-select is pinned, so >= 128 refuses) are wired; save and scene/channel ' +
+      'ops are not. SysEx frames use the Ultra model byte 0x01; the Standard is listed as 0x00 ' +
+      '(assumed) in the spec, unconfirmed either way; a runtime warning fires on Standard-named ports.',
     has_scenes: false,
     has_channels: false,
     supports_save: false,
@@ -58,7 +67,7 @@ export const AXEFXGEN1_DESCRIPTOR: DeviceDescriptor = {
     preset: 'preset',
     scene: 'n/a (gen-1 has no scenes)',
     channel: 'n/a (gen-1 has no X/Y channels)',
-    location: 'preset number 0..255 (spec labels A000..B255) for get_preset stored reads; no save/switch over this protocol',
+    location: 'preset number: 0..255 (spec labels A000..B255) for get_preset stored reads, 0..127 for switch_preset (standard MIDI Program Change; no pinned bank-select); no save over this protocol',
   },
   blocks: buildBlocks(),
   block_types: buildBlockTypes(),

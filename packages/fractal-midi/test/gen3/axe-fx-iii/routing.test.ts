@@ -4,29 +4,23 @@
  * Grid sizes:
  *   Axe-Fx III: 6 rows × 14 cols (model 0x10)
  *   FM9:        6 rows × 14 cols (model 0x12)
- *   FM3:        4 rows × 12 cols (model 0x11) — 4-row routing decoded (FM3-Edit loopMIDI)
+ *   FM3:        4 rows × 12 cols (model 0x11)
  *   VP4:        serial 4-slot     (model 0x14) — no routing primitive
  *
- * Wire encoding formula (6-row grids only, validated against 24 FM9-Edit
- * loopMIDI captures, 2026-06-05):
+ * One law for every grid, from the source and destination gridPos:
  *
- *   srcGp    = (srcCol - 1) * 6 + (srcRow - 1)
- *   b21      = floor(srcGp / 2)
- *   colTerm  = floor(3 * (srcCol - 1) / 2) + 1
- *   destSign = destRow >= 3 ? 1 : 0
- *   b22      = ((srcGp & 1) << 6) | (colTerm + destSign)
- *   b23      = ((|destRow - 3| + (srcCol % 2 === 0 ? 2 : 0)) % 4) << 5
+ *   from = (srcCol - 1) * rows + (srcRow - 1)
+ *   to   = srcCol * rows + (destRow - 1)
+ *   b21  = from >> 1;  b22 = ((from & 1) << 6) | (to >> 2);  b23 = (to & 3) << 5
  *
  * Frame layout (26 bytes):
  *   F0 00 01 74 <model> 01 35 00 00 00 00 00 <OP> 00 00 00 00 00 00 02 00 <b21> <b22> <b23> <cs> F7
- *   Fixed-prefix XOR (bytes 0-11): FM9=0xA3, III=0xA1
- *   cs (CONNECT):    (0xA0 ^ b21 ^ b22 ^ b23) & 7F  [FM9];  (0xA2 ^ b21 ^ b22 ^ b23) & 7F [III]
- *   cs (DISCONNECT): (0xA3 ^ b21 ^ b22 ^ b23) & 7F  [FM9];  (0xA1 ^ b21 ^ b22 ^ b23) & 7F [III]
  *
- * The codec is shared across III/FM9/VP4 (same fn+sub). FM3 uses the same
- * codec family with a different 4-row baseline/mod-4 formula, now decoded and
- * byte-confirmed (FM3-Edit loopMIDI, 2026-06-05) and golden-tested below; only
- * a 3-row grid still throws.
+ * The 6-row goldens below are every distinct sub=0x35 frame FM9-Edit sent in
+ * our loopMIDI captures (`samples/captured/<file>.annotated.jsonl`), not values
+ * derived from the law. Decoding each with the law above puts its destination
+ * exactly one column right of its source (42/42), which a wrong law would not.
+ * The 4-row goldens are the FM3-Edit captures (2026-06-05).
  */
 import { createModernFractalCodec, ROUTING_OP_CONNECT, ROUTING_OP_DISCONNECT } from '../../../src/gen3/axe-fx-iii/index.js';
 
@@ -45,158 +39,79 @@ const III = 0x10;
 
 const cases: Array<() => void> = [];
 
-// ─── CONNECT goldens ──────────────────────────────────────────────────────────
+// ─── FM9 6-row goldens: captured FM9-Edit frames ──────────────────────────────
+// [srcRow, srcCol, destRow, op, wire bytes 21..24 (b21 b22 b23 cs), capture]
+const FM9_CAPTURED: ReadonlyArray<readonly [number, number, number, number, string, string]> = [
+  [2, 3, 3, 1, '06 45 00 63', 'fm9-cc-routing-live'],
+  [3, 3, 1, 1, '07 04 40 63', 'fm9-cc-routing-sweep'],
+  [3, 3, 2, 1, '07 04 60 43', 'fm9-cc-routing-sweep'],
+  [3, 3, 3, 1, '07 05 00 22', 'fm9-cc-routing-sweep'],
+  [3, 3, 4, 1, '07 05 20 02', 'fm9-cc-routing-sweep'],
+  [3, 3, 5, 1, '07 05 40 62', 'fm9-cc-routing-sweep'],
+  [3, 3, 6, 1, '07 05 60 42', 'fm9-cc-routing-sweep'],
+  [1, 2, 1, 1, '03 03 00 20', 'fm9-cc-routing-sweep'],
+  [1, 2, 3, 1, '03 03 40 60', 'fm9-cc-routing-sweep'],
+  [3, 1, 3, 1, '01 02 00 23', 'fm9-cc-routing-sweep'],
+  [3, 2, 3, 1, '04 03 40 67', 'fm9-cc-routing-sweep'],
+  [3, 4, 3, 1, '0a 06 40 6c', 'fm9-cc-routing-sweep'],
+  [3, 5, 3, 1, '0d 08 00 25', 'fm9-cc-routing-sweep'],
+  [1, 3, 2, 1, '06 04 60 42', 'fm9-cc-routing-sweep'],
+  [1, 4, 1, 1, '09 06 00 2f', 'fm9-cc-routing-sweep'],
+  [1, 4, 5, 1, '09 07 00 2e', 'fm9-cc-routing-sweep'],
+  [4, 3, 1, 1, '07 44 40 23', 'fm9-cc-routing-sweep'],
+  [4, 3, 3, 1, '07 45 00 62', 'fm9-cc-routing-sweep'],
+  [4, 3, 6, 1, '07 45 60 02', 'fm9-cc-routing-sweep'],
+  [5, 3, 1, 1, '08 04 40 6c', 'fm9-cc-routing-sweep'],
+  [5, 3, 3, 1, '08 05 00 2d', 'fm9-cc-routing-sweep'],
+  [5, 3, 6, 1, '08 05 60 4d', 'fm9-cc-routing-sweep'],
+  [6, 3, 1, 1, '08 44 40 2c', 'fm9-cc-routing-sweep'],
+  [6, 3, 3, 1, '08 45 00 6d', 'fm9-cc-routing-sweep'],
+  [6, 3, 6, 1, '08 45 60 0d', 'fm9-cc-routing-sweep'],
+  [1, 3, 1, 1, '06 04 40 62', 'fm9-cc-routing-sweep'],
+  [1, 3, 3, 1, '06 05 00 23', 'fm9-cc-routing-sweep'],
+  [1, 3, 4, 1, '06 05 20 03', 'fm9-cc-routing-sweep'],
+  [1, 3, 5, 1, '06 05 40 63', 'fm9-cc-routing-sweep'],
+  [1, 3, 6, 1, '06 05 60 43', 'fm9-cc-routing-sweep'],
+  [2, 3, 4, 1, '06 45 20 43', 'fm9-cc-routing2-live'],
+  [2, 5, 3, 1, '0c 48 00 64', 'fm9-cc-routing3-live'],
+  [1, 6, 1, 1, '0f 09 00 26', 'fm9-sim-m1-2026-06-04'],
+  [1, 7, 1, 1, '12 0a 40 78', 'fm9-sim-m1-2026-06-04'],
+  [2, 2, 2, 2, '03 43 20 43', 'fm9-sim-m1-2026-06-04'],
+  [1, 1, 1, 1, '00 01 40 61', 'fm9-sim-m1-2026-06-04'],
+  [1, 1, 2, 1, '00 01 60 41', 'fm9-sim-m1-2026-06-04'],
+  [2, 3, 2, 1, '06 44 60 02', 'fm9-sim-m1-2026-06-04'],
+  [2, 4, 2, 1, '09 46 20 4f', 'fm9-sim-m1-2026-06-04'],
+  [2, 1, 2, 2, '00 41 60 02', 'fm9-sim-m1-2026-06-04'],
+  [2, 2, 2, 1, '03 43 20 40', 'fm9-sim-m1-2026-06-04'],
+  [2, 3, 2, 2, '06 44 60 01', 'fm9-sim-m1-2026-06-04'],
+];
+for (const [srcRow, srcCol, destRow, op, tail, src] of FM9_CAPTURED) {
+  cases.push(() => {
+    const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow, srcCol, destRow, op });
+    const want = parseHex(
+      `f0 00 01 74 12 01 35 00 00 00 00 00 0${op} 00 00 00 00 00 00 02 00 ${tail} f7`,
+    );
+    assert(got.length === want.length && got.every((b, i) => b === want[i]),
+      `FM9 r${srcRow}c${srcCol}→r${destRow}c${srcCol + 1} op ${op} (${src}): [${hexStr(got)}]`);
+  });
+}
 
-// Case 1: r2c1 → r2c2 — same-row serial forward (most common topology).
-// FM9 and III both golden to verify model-byte propagation: only bytes[4]
-// (model) and bytes[24] (checksum) differ; payload bytes[6..23] are identical.
+// The III shares the payload; only the model byte and checksum differ.
 cases.push(() => {
   const fm9 = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 2, srcCol: 1, destRow: 2 });
   const iii = createModernFractalCodec(III).buildSetGridRouting({ srcRow: 2, srcCol: 1, destRow: 2 });
-  const wantFm9 = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 00 41 20 41 f7');
-  const wantIii = parseHex('f0 00 01 74 10 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 00 41 20 43 f7');
-  assert(fm9.length === wantFm9.length && fm9.every((b, i) => b === wantFm9[i]),
-    `FM9 r2c1→r2c2: [${hexStr(fm9)}]`);
-  assert(iii.length === wantIii.length && iii.every((b, i) => b === wantIii[i]),
-    `III r2c1→r2c2: [${hexStr(iii)}]`);
-  // Bytes outside model byte (index 4) and checksum (index 24) must match.
+  assert(iii[4] === III, 'III model byte');
   for (let i = 0; i < fm9.length; i++) {
     if (i === 4 || i === 24) continue;
     assert(fm9[i] === iii[i], `FM9 vs III byte[${i}] should match outside model+checksum`);
   }
 });
 
-// Case 2: r2c1 → r4c2 — fan-out to lower row (parallel effects split).
-// Primary parallel topology: amp at r2c1 feeds both delay (same row) and
-// reverb (row 4) simultaneously.
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 2, srcCol: 1, destRow: 4 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 00 42 20 42 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r2c1→r4c2: [${hexStr(got)}]`);
-});
-
-// Case 3: r2c1 → r6c2 — fan-out to bottom row (6-row grid maximum row).
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 2, srcCol: 1, destRow: 6 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 00 42 60 02 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r2c1→r6c2: [${hexStr(got)}]`);
-});
-
-// Case 4: r3c1 → r2c2 — row-3 source merging into row 2.
-// Typical for two col-1 blocks fanning into a single row-2 chain.
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 3, srcCol: 1, destRow: 2 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 01 01 20 00 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r3c1→r2c2: [${hexStr(got)}]`);
-});
-
-// Case 5: r4c1 → r6c2 — lower rows, cross-row.
-// srcGp=3, b21=1; colTerm=1, destSign=1; b22=(1<<6)|(1+1)=66=0x42; b23=(3%4)<<5=0x60
-// cs=(A0^01^42^60)&7F=(A1^42=E3,E3^60=83)&7F=0x03
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 4, srcCol: 1, destRow: 6 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 01 42 60 03 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r4c1→r6c2: [${hexStr(got)}]`);
-});
-
-// Case 6: r5c1 → r5c2 — row 5, same-row serial.
-// srcGp=4, b21=2; colTerm=1, destSign=1 (5>=3); b22=(0<<6)|(1+1)=2=0x02; b23=(2%4)<<5=0x40
-// cs=(A0^02^02^40)&7F=(A0^40)&7F=E0&7F=0x60
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 5, srcCol: 1, destRow: 5 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 02 02 40 60 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r5c1→r5c2: [${hexStr(got)}]`);
-});
-
-// Case 7: r6c1 → r6c2 — bottom row, same-row serial.
-// srcGp=5, b21=2; colTerm=1, destSign=1 (6>=3); b22=(1<<6)|(1+1)=66=0x42; b23=(3%4)<<5=0x60
-// cs=(A0^02^42^60)&7F=(A2^42=E0,E0^60=80)&7F=0x00
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 6, srcCol: 1, destRow: 6 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 02 42 60 00 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r6c1→r6c2: [${hexStr(got)}]`);
-});
-
-// Case 8: r1c1 → r1c2 — row 1, odd col source forward.
-// Row-1 odd-column case (col 1 validated; formula generalises to other odd cols).
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 1, srcCol: 1, destRow: 1 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 00 01 40 61 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r1c1→r1c2: [${hexStr(got)}]`);
-});
-
-// Case 9: r1c1 → r3c2 — row 1 odd-col fan-out to row 3.
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 1, srcCol: 1, destRow: 3 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 00 02 00 22 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r1c1→r3c2: [${hexStr(got)}]`);
-});
-
-// Case 10: r2c2 → r2c3 — even srcCol, same-row.
-// Exercises the even-srcCol formula branch (colTerm advances, b23 adds +2 offset).
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 2, srcCol: 2, destRow: 2 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 03 42 60 01 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r2c2→r2c3: [${hexStr(got)}]`);
-});
-
-// Case 11: r4c3 → r2c4 — mid-grid cross-row merge.
-// Reverb branch on row 4 merging back into row 2 chain at col 4.
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 4, srcCol: 3, destRow: 2 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 07 44 20 43 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r4c3→r2c4: [${hexStr(got)}]`);
-});
-
-// Case 12: r6c3 → r4c4 — bottom row, mid-grid cross-row.
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 6, srcCol: 3, destRow: 4 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 08 45 20 4d f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r6c3→r4c4: [${hexStr(got)}]`);
-});
-
-// Case 13: r5c5 → r3c6 — high row + high col (exercises full formula range).
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 5, srcCol: 5, destRow: 3 });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 0e 08 00 26 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r5c5→r3c6: [${hexStr(got)}]`);
-});
-
-// Case 14: r2c13 → r2c14 — maximum srcCol boundary on a 14-col grid.
-// The 6-row grid extends to col 14 (III/FM9). srcCol max = 13.
+// Max column boundary on a 14-col grid: r2c13 → r2c14.
+// from = 73, to = 79: b21 = 0x24, b22 = 0x40 | 0x13 = 0x53, b23 = 0x60.
 cases.push(() => {
   const got = createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 2, srcCol: 13, destRow: 2 });
-  // srcGp=(13-1)*6+(2-1)=73; b21=36=0x24; colTerm=floor(3*12/2)+1=18+1=19=0x13
-  // destSign=0; b22=((73&1)<<6)|(19+0)=64|19=83=0x53; b23=(1+0)%4<<5=32=0x20
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 24 53 20 77 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r2c13→r2c14: [${hexStr(got)}]`);
-});
-
-// ─── DISCONNECT golden ────────────────────────────────────────────────────────
-
-// Case 15: DISCONNECT variant — same positions as Case 1 but op=DISCONNECT.
-// Only byte[12] (OP=0x02) and byte[24] (checksum) change vs. the CONNECT variant.
-cases.push(() => {
-  const got = createModernFractalCodec(FM9).buildSetGridRouting({
-    srcRow: 2, srcCol: 1, destRow: 2, op: ROUTING_OP_DISCONNECT,
-  });
-  const want = parseHex('f0 00 01 74 12 01 35 00 00 00 00 00 02 00 00 00 00 00 00 02 00 00 41 20 42 f7');
-  assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM9 r2c1→r2c2 DISCONNECT: [${hexStr(got)}]`);
-  assert(got[12] === ROUTING_OP_DISCONNECT, `op byte: got 0x${got[12].toString(16)}, want 0x02`);
+  assert(hexStr(got.slice(21, 24)) === '24 53 60', `FM9 r2c13→r2c14: [${hexStr(got)}]`);
 });
 
 // ─── FM3 4-row goldens (byte-confirmed FM3-Edit loopMIDI, 2026-06-05) ─────────
@@ -256,13 +171,12 @@ cases.push(() => {
     `FM3 r2c3→r2c4: [${hexStr(got)}]`);
 });
 
-// FM3 r1c2→r1c3 (row-1 EVEN-COL, srcGp=4): works on FM3 (refused on 6-row).
-// Confirms the even-col gate only applies to 6-row grids.
+// FM3 r1c2→r1c3 (row-1 even col, srcGp=4).
 cases.push(() => {
   const got = createModernFractalCodec(0x11).buildSetGridRouting({ srcRow: 1, srcCol: 2, destRow: 1, rows: 4 });
   const want = parseHex('f0 00 01 74 11 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 02 02 00 23 f7');
   assert(got.length === want.length && got.every((b, i) => b === want[i]),
-    `FM3 r1c2→r1c3 (row-1 even-col, now works): [${hexStr(got)}]`);
+    `FM3 r1c2→r1c3: [${hexStr(got)}]`);
 });
 
 // ─── Model byte smoke: all gen-3 devices produce well-formed frames ───────────
@@ -300,22 +214,6 @@ cases.push(() => {
     createModernFractalCodec(0x11).buildSetGridRouting({ srcRow: 2, srcCol: 1, destRow: 2, rows: 3 });
   } catch { threw = true; }
   assert(threw, 'rows=3 (invalid) should throw');
-});
-
-// Row-1 even-col: encoding not yet decoded (4 data points, pattern not closed).
-cases.push(() => {
-  let threw = false;
-  try {
-    createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 1, srcCol: 2, destRow: 1 });
-  } catch { threw = true; }
-  assert(threw, 'srcRow=1 srcCol=2 (even col) should throw');
-});
-cases.push(() => {
-  let threw = false;
-  try {
-    createModernFractalCodec(FM9).buildSetGridRouting({ srcRow: 1, srcCol: 4, destRow: 1 });
-  } catch { threw = true; }
-  assert(threw, 'srcRow=1 srcCol=4 (even col) should throw');
 });
 
 // srcRow out of range.

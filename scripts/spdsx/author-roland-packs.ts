@@ -154,7 +154,7 @@ console.log(`\n[C] slot plan (PROVISIONAL — confirm against occupancy before -
 const p2 = plan.filter((k) => k.pack === 2), p1s = plan.filter((k) => k.pack === 1);
 console.log(`  Pack 1 "Live favourites"  kits ${p1s[0]?.slot}..${p1s[p1s.length - 1]?.slot}: ${p1s.map((k) => `${k.slot}=${k.name}`).join('  ')}`);
 console.log(`  Pack 2 "Roland demo"      kits ${p2[0].slot}..${p2[p2.length - 1].slot}: ${p2.map((k) => `${k.slot}=${k.name}`).join('  ')}`);
-console.log(`  (Pack 1's 2 Sleep Token kits are existing — NOT authored here; place them at ${Math.max(1, pack1Start - 2)}..${pack1Start - 1}.)`);
+console.log(`  (Pack 1's 2 Mixwave kits are existing — NOT authored here; place them at ${Math.max(1, pack1Start - 2)}..${pack1Start - 1}.)`);
 
 // ── PHASE D: device plan / write (only with --root) ───────────────────────────
 if (!root) {

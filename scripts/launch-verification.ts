@@ -53,8 +53,8 @@
 
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 
@@ -65,7 +65,7 @@ interface CliOpts {
 }
 
 function parseCli(argv: string[]): CliOpts {
-  const opts: CliOpts = { ports: ['am4', 'axefx2', 'axefx-gen1', 'axe-fx-iii', 'fm3', 'fm9', 'hydrasynth', 'circuit'] };
+  const opts: CliOpts = { ports: ['am4', 'axefx2', 'axefx-gen1', 'axe-fx-iii', 'fm3', 'fm9', 'hydrasynth', 'circuit', 'mpc'] };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port') opts.ports = [argv[++i]];
@@ -1014,6 +1014,45 @@ async function verifyAxefxGen1(client: Client): Promise<void> {
     );
   }
 
+  // switch_preset is now WIRED on gen-1 as a standard MIDI Program Change
+  // (community-beta, hardware-unverified). PC is fire-and-forget, so this
+  // succeeds without a responding unit; the response must name Program
+  // Change, must NOT claim the recall was confirmed, and must direct the
+  // user to the front panel.
+  {
+    const r = await client.callTool({
+      name: 'switch_preset',
+      arguments: { port: 'axe-fx-gen1', location: 42 },
+    });
+    const t = extractText(r);
+    record(
+      'gen1 switch_preset is wired via Program Change (not capability_not_supported)',
+      !isError(r) && !/capability_not_supported/i.test(t) && /program change/i.test(t),
+      t.slice(0, 300),
+    );
+    record(
+      'gen1 switch_preset response does NOT claim a confirmed recall',
+      !isError(r) && /front panel/i.test(t) && !/confirmed on (the )?device/i.test(t),
+      t.slice(0, 300),
+    );
+  }
+
+  // switch_preset presets >= 128 must refuse BEFORE any wire bytes: PC
+  // reaches 0..127 and the published gen-1 spec pins no bank-select
+  // mechanism. Deterministic; needs no device reply.
+  {
+    const r = await client.callTool({
+      name: 'switch_preset',
+      arguments: { port: 'axe-fx-gen1', location: 200 },
+    });
+    const t = extractText(r);
+    record(
+      'gen1 switch_preset refuses presets >= 128 (no pinned bank-select)',
+      /capability_not_supported|bank/i.test(t) && /0\.\.127|127/.test(t),
+      t.slice(0, 300),
+    );
+  }
+
   // save_preset must refuse (no save on gen-1).
   {
     const r = await client.callTool({
@@ -1426,6 +1465,43 @@ async function verifyCircuit(client: Client): Promise<void> {
   }
 }
 
+/**
+ * Akai MPC One G2. Two independent surfaces: the card in a reader (project
+ * list + one project's sequences, read-only) and the USB MIDI "Public" port.
+ * Each is checked when present. Nothing here selects a sequence or plays a
+ * note: both change what the unit is doing and are confirmed by hand.
+ */
+async function verifyMpc(client: Client, hasMidi: boolean): Promise<void> {
+  console.log('\n── Akai MPC One G2 ───────────────────────────────────────────');
+  {
+    const r = await client.callTool({ name: 'describe_device', arguments: { port: 'mpc-one-g2' } });
+    const t = extractText(r);
+    record('mpc describe_device carries the card guidance', !isError(r) && /scan_locations/.test(t) && /card/i.test(t), t.slice(0, 200));
+  }
+  {
+    const r = await client.callTool({ name: 'get_params', arguments: { port: 'mpc-one-g2', queries: [{ block: 'x', name: 'y' }] } });
+    record('mpc get_params refuses (no parameter surface over MIDI)', isError(r) || /"ok":\s*false/.test(extractText(r)), extractText(r).slice(0, 160));
+  }
+  const scan = await client.callTool({ name: 'scan_locations', arguments: { port: 'mpc-one-g2', from: 1, to: 200 } });
+  let rows: Array<{ location: string; name?: string }> = [];
+  try { rows = (JSON.parse(extractText(scan)) as { scanned?: typeof rows }).scanned ?? []; } catch { /* a refusal is plain text */ }
+  if (isError(scan) || rows.length === 0) {
+    console.log('  ⊘ No MPC card in a reader: card checks skipped.');
+    record('mpc scan_locations without a card says how to mount one', isError(scan) && /card/i.test(extractText(scan)), extractText(scan).slice(0, 200));
+  } else {
+    record("mpc scan_locations lists the card's projects", true, `${rows.length} project(s)`);
+    const one = await client.callTool({ name: 'get_preset', arguments: { port: 'mpc-one-g2', location: rows[0].location } });
+    const t = extractText(one);
+    record("mpc get_preset reads a project's sequences", !isError(one) && /"block_type":\s*"sequence"/.test(t), t.slice(0, 200));
+    const byTail = await client.callTool({ name: 'get_preset', arguments: { port: 'mpc-one-g2', location: rows[0].location.split('/').slice(-1)[0] } });
+    record('mpc get_preset finds a project by the last part of its path', !isError(byTail), extractText(byTail).slice(0, 160));
+    const wide = await client.callTool({ name: 'scan_locations', arguments: { port: 'mpc-one-g2', from: 1, to: 500 } });
+    record('mpc scan_locations refuses a range wider than 200, naming how to page', isError(wide) && /at most 200/.test(extractText(wide)), extractText(wide).slice(0, 160));
+  }
+  if (!hasMidi) console.log('  ⊘ MPC "Public" MIDI port not visible: MIDI checks are by hand (see the device page, SESSION-1).');
+  else console.log('  ✓ MPC "Public" MIDI port visible. Selecting a sequence is a by-hand check (device page, SESSION-1).');
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1449,7 +1525,7 @@ async function main(): Promise<void> {
 
   const client = new Client(
     { name: 'launch-verification', version: '1.0.0' },
-    { capabilities: {} },
+    { capabilities: {}, versionNegotiation: { mode: 'auto' } },
   );
 
   try {
@@ -1570,6 +1646,7 @@ async function main(): Promise<void> {
         await verifyCircuit(client);
       }
     }
+    if (opts.ports.includes('mpc')) await verifyMpc(client, /mpc one.*public/i.test(portsText));
 
     console.log('\n══════════════════════════════════════════════════════════════');
     const passed = checks.filter((c) => c.pass).length;

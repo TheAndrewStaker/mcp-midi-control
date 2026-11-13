@@ -25,6 +25,13 @@
  *     yet. Chains that start above Scene 1 need a fresh capture.
  *   - END is decoded-beta: byte-identical to the device for 1→4; 1→N (N≠4)
  *     extrapolates the single end byte and is UNTESTED beyond 1→4.
+ *   - ON LOAD + PLAY the device does NOT pick a stored scene chain up by itself
+ *     (heard 2026-09-03, P1:56: a project with a 1→2 chain and the
+ *     active `0x2c4` table cleared to [0,0] looped pattern 1 only). It plays the
+ *     ACTIVE per-track chain table (chain.ts), which the device's own save image
+ *     keeps EQUAL to the selected scene. Whether a stored chain then runs after a
+ *     hand selection in Mixer View is untested (HW-CIRCUIT-013,
+ *     BK-CIRCUIT-SCENES-ON-LOAD).
  */
 
 import { NCS_FILE_SIZE, NUM_DRUM_TRACKS, PATTERNS_PER_TRACK, type NoteTrack } from './format.js';
@@ -34,11 +41,23 @@ export const MAX_SCENES = 16;
 
 /** Scene-chain END byte: 0-based index of the last scene in the chain. */
 const SCENE_CHAIN_END_OFFSET = 0x2c1;
-/** Scene-select playback-state bytes the device sets when a chain is active. */
-const SCENE_STATE_A_OFFSET = 0x26fbc;
-const SCENE_STATE_A_CHAINED = 0x00;
-const SCENE_STATE_B_OFFSET = 0x26fd2;
-const SCENE_STATE_B_CHAINED = 0x07;
+/**
+ * MIS-DECODE, CORRECTED 2026-09-20. `0x26fbc` and `0x26fd2` were read as "scene-select playback
+ * state" from the 2026-06-24 capture, where they moved 0x08 -> 0x00 and 0x05 -> 0x07 alongside the
+ * scene-chain end byte. They are not scene state: they are **Drum 1 and Drum 3 `patch_select`**, the
+ * +0 field of the 11-byte per-drum record at 0x26fbc (stride 11, four tracks), whose `level` at
+ * 0x26fbd we had already hardware-confirmed. The capture's author had changed two drum samples in
+ * the same pass, so the two edits rode together and one was attributed to the other.
+ *
+ * Evidence: a period-11 four-fold census over 1,144 byte-distinct projects; 17 Novation factory demo
+ * projects carrying non-default values in exactly these columns; and an independent third-party
+ * parser in this repo (`samples/circuit-tracks/pack0/ref/ncs_parser.py`) that derives the same base,
+ * stride, field order and defaults. `0x26fd2 == 7` in 57 of 74 chained files but in 1 of 1,070
+ * unchained ones, i.e. OUR writer put it there, not the device.
+ *
+ * So writing them is a bug: baking a scene chain silently repointed two drum tracks at different
+ * samples. A scene chain now writes ONLY its end byte.
+ */
 
 function assertBuf(buf: Uint8Array): void {
   if (buf.length !== NCS_FILE_SIZE) throw new RangeError(`.ncs buffer must be ${NCS_FILE_SIZE} bytes, got ${buf.length}`);
@@ -59,9 +78,7 @@ export function setSceneChain(buf: Uint8Array, endScene: number): readonly numbe
     throw new RangeError(`scene chain end must be an integer 2..${MAX_SCENES} (start is always Scene 1), got ${endScene}`);
   }
   buf[SCENE_CHAIN_END_OFFSET] = endScene - 1; // 0-based last scene
-  buf[SCENE_STATE_A_OFFSET] = SCENE_STATE_A_CHAINED;
-  buf[SCENE_STATE_B_OFFSET] = SCENE_STATE_B_CHAINED;
-  return [SCENE_CHAIN_END_OFFSET, SCENE_STATE_A_OFFSET, SCENE_STATE_B_OFFSET];
+  return [SCENE_CHAIN_END_OFFSET];
 }
 
 /** Read back the scene-chain end (1-based last scene), or undefined if no chain. */
@@ -185,8 +202,66 @@ export function getSceneNoteChain(
   assertBuf(buf);
   const slot = NOTE_SCENE_SLOT[track];
   if (slot === undefined || sceneIndex < 0 || sceneIndex >= MAX_SCENES) return undefined;
+  // The READER needs the same ceiling the writer has, and for a sharper reason than symmetry: at the
+  // 0x28 stride, scene 16's note table lands on 0x2c0..0x2cf, and slots 1-3 of it ARE the active chain
+  // slots for synth1 / synth2 / midi1 (0x2c4 / 0x2c8 / 0x2cc). Reading scene 15 would therefore return
+  // a TRACK'S CHAIN as if it were a scene selection - a wrong answer that looks entirely plausible.
+  // The stride is device-confirmed only through Scene 4; beyond that this reads the wrong bytes.
+  if (sceneIndex > MAX_TESTED_SCENE) return undefined;
   const block = SCENE_BLOCK_BASE + sceneIndex * SCENE_BLOCK_STRIDE;
   if (buf[block + SCENE_DEFINED_FLAG_OFS] !== 0x01) return undefined;
   const off = block + SCENE_NOTE_TABLE_OFS + slot * 4;
   return { start: buf[off], end: buf[off + 1] };
 }
+
+/**
+ * CLEAR the whole 16-scene stack back to undefined, and with it the scene-chain end byte.
+ *
+ * Why this exists. A project authored with a PLAIN chain still inherits whatever scenes its template
+ * defined, and a defined scene is not inert: touching a scene pad in Mixer View REPLACES the active
+ * chain with that scene's. So a 16-bar project built on a template whose Scene 1 holds `[0,0]`
+ * collapses to its first two bars the moment the owner touches a pad, and on a short project the
+ * scenes point at patterns that were cleared, which is silence. That is the same family as the
+ * 2026-07-23 "scenes sound duplicated" defect {@link clearNoteChain} was added for, from the other
+ * direction: there a stale PLAIN chain survived a scene conversion, here stale SCENES survive a plain
+ * one. Both are "the template's layout outlived the authoring".
+ *
+ * Clearing the `defined` flag is what makes a scene a no-op; the chain slots are zeroed too so a
+ * reader never sees a half-cleared block. Returns the offsets changed.
+ *
+ * Scope note, inherited from this file's decode: the `0x28` stride is device-confirmed for scenes
+ * 1..4 and shares-the-stride-but-untested for 5..16. Clearing is the safe direction for that
+ * uncertainty - it writes zeros into a region a fresh project already holds as zeros, so a wrong
+ * stride would at worst clear something already clear, never invent state.
+ */
+export function clearScenes(buf: Uint8Array): readonly number[] {
+  assertBuf(buf);
+  const changed: number[] = [];
+  // HARD BOUND, and the reason is a bug this function caused on 2026-09-20. This file carries TWO
+  // models of the stack's extent: the block accessors say base 0x50 stride 0x28, which for 16 scenes
+  // runs to 0x2d0; its own chain-end derivation says 0x51 + 16*0x27 = 0x2c1. They disagree by 15
+  // bytes, and the ACTIVE CHAIN TABLE starts at 0x2c4 — inside the first model. Walking the block
+  // model zeroed chain slots 0, 1 and 2, so synth1, synth2 and midi1 all came back unchained: the
+  // Hydrasynth's notes sit in patterns 5-8 and an unchained track plays pattern 1 forever, so it
+  // never sounded at all, and the pad looped its first two bars.
+  //
+  // `SCENE_CHAIN_END_OFFSET` is the documented boundary ("the byte right after the 16-scene stack"),
+  // so the stack is everything BELOW it. Clearing stops there, and the invariant below makes a
+  // future edit that reintroduces the overrun fail loudly instead of silently un-chaining a song.
+  for (let off = SCENE_BLOCK_BASE; off < SCENE_CHAIN_END_OFFSET; off++) {
+    if (buf[off] !== 0) { buf[off] = 0; changed.push(off); }
+  }
+  if (buf[SCENE_CHAIN_END_OFFSET] !== 0) { buf[SCENE_CHAIN_END_OFFSET] = 0; changed.push(SCENE_CHAIN_END_OFFSET); }
+  /* istanbul ignore next -- structural invariant, not a reachable branch once the bound is right */
+  if (changed.some((o) => o >= CHAIN_TABLE_FIRST_BYTE)) {
+    throw new Error(
+      `clearScenes wrote into the active chain table at 0x${CHAIN_TABLE_FIRST_BYTE.toString(16)}+ ` +
+      `(offsets ${changed.filter((o) => o >= CHAIN_TABLE_FIRST_BYTE).map((o) => `0x${o.toString(16)}`).join(', ')}). ` +
+      `That un-chains the note tracks and silently breaks every project it touches.`,
+    );
+  }
+  return changed;
+}
+
+/** First byte of the active per-track chain table (`chain.ts` CHAIN_TABLE_BASE). Nothing here may reach it. */
+const CHAIN_TABLE_FIRST_BYTE = 0x2c4;

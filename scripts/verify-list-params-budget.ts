@@ -49,8 +49,8 @@
  */
 import path from 'node:path';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 const REPORT_ONLY = process.argv.includes('--report');
@@ -101,7 +101,7 @@ function compact(text: string): number {
 
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER_ENTRY], stderr: 'pipe' });
-  const client = new Client({ name: 'list-params-budget', version: '0.1.0' });
+  const client = new Client({ name: 'list-params-budget', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   const failures: Finding[] = [];

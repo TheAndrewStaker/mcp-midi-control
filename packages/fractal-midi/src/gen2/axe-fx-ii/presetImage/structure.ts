@@ -69,7 +69,7 @@ import {
   isBlockCellId,
   type IIGridCell,
 } from './grid.js';
-import { DEFAULT_RECORDS, PAYLOAD_LEN_CENSUS } from './defaultRecords.js';
+import { DEFAULT_RECORDS, FRESH_DEFAULT_RECORDS, PAYLOAD_LEN_CENSUS } from './defaultRecords.js';
 
 const TAIL_RESIDENT: ReadonlySet<number> = new Set(II_TAIL_RESIDENT_WIRE_IDS);
 
@@ -216,9 +216,11 @@ export interface IIInsertBlockInput {
   /**
    * The full TLV span to insert ([wireId, payloadLen, ...payload] with
    * optional reserved bits), e.g. from a prior remove or a donor dump.
-   * Omit to use the corpus-modal DEFAULT_RECORDS entry (available only
-   * for the five small rarely-tweaked families; every always-tweaked
-   * family refuses without a donor).
+   * Omit to use a registered default record: FRESH_DEFAULT_RECORDS
+   * (hardware-captured, the 8 always-tweaked families) is preferred,
+   * falling back to DEFAULT_RECORDS (corpus-modal, the five small
+   * rarely-tweaked families). Families in neither table refuse without
+   * a donor span.
    */
   readonly span?: IITlvSpan;
   /** Grid cell currently holding a SHUNT, whose routing the block inherits. */
@@ -258,24 +260,36 @@ export function insertBlockIntoImage(
   const warnings: string[] = [];
   let span = input.span;
   if (span === undefined) {
-    const def = DEFAULT_RECORDS[wireId];
-    if (def === undefined) {
+    const fresh = FRESH_DEFAULT_RECORDS[wireId];
+    const modal = DEFAULT_RECORDS[wireId];
+    if (fresh !== undefined) {
+      span = {
+        words: [fresh.wireId, fresh.payloadLen, ...fresh.payload],
+        reserved: new Array<number>(2 + fresh.payloadLen).fill(0),
+      };
+      warnings.push(
+        `default record for ${fresh.blockName}: HARDWARE-FRESH (device-authored bytes read back via ` +
+          `fn 0x1F after a live PLACE, ${fresh.capturedFrom}); pushing a record synthesized from this ` +
+          `table through insertBlockIntoImage is community-beta / hardware-unverified (the hardware push ` +
+          `test exercised a REMOVE-only image, not this INSERT path).`,
+      );
+    } else if (modal !== undefined) {
+      span = {
+        words: [modal.wireId, modal.payloadLen, ...modal.payload],
+        reserved: new Array<number>(2 + modal.payloadLen).fill(0),
+      };
+      warnings.push(
+        `default record for ${modal.blockName}: factory-modal (exact in ${modal.fullModalMatches}/${modal.occurrences} ` +
+          `factory instances, byte-identical on live hw dumps); fresh-placement device behavior is community-beta.`,
+      );
+    } else {
       return {
         ok: false,
         reason:
-          `insertBlockIntoImage: no donor span given and wire_id ${wireId} has no corpus-derivable ` +
-          `default record (always-tweaked family; synthesizing one would be a guess with no oracle). ` +
-          `Provide a donor span from a same-firmware dump.`,
+          `insertBlockIntoImage: no donor span given and wire_id ${wireId} has no corpus-derivable or ` +
+          `hardware-captured default record. Provide a donor span from a same-firmware dump.`,
       };
     }
-    span = {
-      words: [def.wireId, def.payloadLen, ...def.payload],
-      reserved: new Array<number>(2 + def.payloadLen).fill(0),
-    };
-    warnings.push(
-      `default record for ${def.blockName}: factory-modal (exact in ${def.fullModalMatches}/${def.occurrences} ` +
-        `factory instances, byte-identical on live hw dumps); fresh-placement device behavior is community-beta.`,
-    );
   }
   if (span.words.length < 2 || span.words[0] !== wireId || span.words[1] !== span.words.length - 2) {
     return {

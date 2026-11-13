@@ -176,7 +176,7 @@ function blockTrack(block: number): string {
  * differ in a way that matters (note content: they are different music) or in
  * a way that does not (a mixer level). A bare byte count cannot tell those
  * apart, and on this card that distinction is load-bearing: an earlier note
- * called two "Sugar 2/10" copies a two-mixer-byte difference when 136 of the
+ * called two same-named copies a two-mixer-byte difference when 136 of the
  * 138 differing bytes were Synth 1 note data.
  */
 function regionOf(off: number): string {
@@ -264,7 +264,7 @@ export function findDrift(captureDir: string, capturedAt: number): Drift[] {
 /**
  * sha256 of every `.ncs` under `root`, so a project can be matched to the
  * authoring artifact, groove file or earlier snapshot it came from. This is
- * how Pack 4's two unexplained "Sugar 2/10" projects were identified (they are
+ * how Pack 4's two unexplained same-named projects were identified (they are
  * byte-identical to the before/after images of a 2026-07-26 mixer experiment)
  * and how Pack 1 project 11 turned out to be an untouched blank template.
  */
@@ -284,7 +284,7 @@ export function buildXref(root: string, exclude: string, enabled = true): Map<st
   walk(root);
   // A match inside a timestamped restore/backup directory says only "we took a
   // backup", which the map already reports. A match against an authoring
-  // artifact (`grooves/gm/all/granite_gm.ncs`, `blank_slot20.ncs`) says where
+  // artifact (a `grooves/gm/all/*_gm.ncs` file, `blank_slot20.ncs`) says where
   // the project CAME FROM. Rank the second kind first.
   const transient = /(^|\/)(restore|backup|card-backup|metre-test)[-/]/;
   for (const [h, paths] of index) {
@@ -395,7 +395,7 @@ function annotate(r: Row): void {
       `not wrong: the device's transfer CRC32 covers the ENCODED STREAM, not the decoded file, so it cannot see this ` +
       `class of damage at all. The backup now records structural validity as its own field beside the CRC verdict` +
       `${r.manifestKnows === false ? ', but THIS capture predates that field and does not carry it' : ''}. ` +
-      `Not restorable; \`upload_project\` refuses it.`,
+      `Not restorable; \`import_preset\` refuses it.`,
     );
   }
   if (r.roster && r.roster.name !== d.name) {

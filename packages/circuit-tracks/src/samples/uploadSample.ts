@@ -60,6 +60,59 @@ import { normalizeToDevice } from './wav.js';
 // NOT engage awaitCommitMs by default; the opt-in mechanism + ingest fix remain for
 // the eventual real fix. Root cause STILL OPEN. See docs/design/circuit-sample-upload.md.
 
+/** Outcome of aligning a sample filename to its target slot's `NN_` prefix. */
+export interface AlignedSampleName {
+  /** The name to store (prefix-derived when the input had none). */
+  filename: string;
+  /** True when a `NN_` prefix was prepended to align the registration. */
+  derived: boolean;
+}
+
+/**
+ * Align a sample's stored filename to the slot the transfer addresses
+ * (BK-CIRCUIT-SAMPLENAME, device finding 2026-07-30): the Circuit registers a
+ * sample's DIRECTORY entry at the slot named by the filename's leading `NN_`
+ * prefix, NOT at the addressed slot. A misaligned name is an acked, silent,
+ * partial failure: the entry registers elsewhere and a later write to that
+ * slot strands the data (invisible, and this device has no erase). Observed
+ * twice on hardware in one session; every earlier working upload had
+ * prefix == slot, which is why the two models were indistinguishable until then.
+ *
+ * The prefix is the 0-based WIRE slot, zero-padded to two digits (`00_PCM.wav`
+ * sits at wire slot 0 = device Sample 1; a `05_` name registered at wire 5).
+ *
+ *  - No leading `NN_` → DERIVE: prepend `{NN}_` for the addressed slot.
+ *  - Prefix == addressed slot → pass through unchanged.
+ *  - Prefix != addressed slot → throw (the caller refuses, naming the finding).
+ *    Never send a misaligned registration silently.
+ */
+export function alignSampleFilename(filename: string, wireSlot: number): AlignedSampleName {
+  if (!Number.isInteger(wireSlot) || wireSlot < 0 || wireSlot > 63) {
+    throw new RangeError(`sample slot must be 0..63 (device 1..64), got ${wireSlot}`);
+  }
+  const m = /^(\d{1,3})_/.exec(filename);
+  if (!m) {
+    return { filename: `${String(wireSlot).padStart(2, '0')}_${filename}`, derived: true };
+  }
+  const prefix = Number(m[1]);
+  if (prefix === wireSlot) return { filename, derived: false };
+  if (prefix > 63) {
+    throw new RangeError(
+      `"${filename}" starts with "${m[1]}_", which the device would read as a directory-registration prefix, but ` +
+      `${m[1]} is not a sample slot (the pool holds Sample 1..64 = prefixes 00..63). Rename the file so its leading ` +
+      `digits are not followed by an underscore (e.g. "kick_${m[1]}.wav"), or let the tool derive the prefix by ` +
+      `passing a name with no leading NN_.`,
+    );
+  }
+  throw new RangeError(
+    `"${filename}" carries the prefix "${m[1]}_", and the Circuit registers a sample's directory entry at the slot ` +
+    `the NAME's prefix says (device Sample ${prefix + 1}), not at the addressed slot (device Sample ${wireSlot + 1}). ` +
+    `Sending it would register the entry at Sample ${prefix + 1} and later writes there would strand this sample's ` +
+    `data with no way to erase it (observed on hardware, 2026-07-30). Either upload it to sample slot ${prefix + 1}, ` +
+    `or rename it with the matching prefix "${String(wireSlot).padStart(2, '0')}_".`,
+  );
+}
+
 export interface SampleUploadResult {
   ok: boolean;
   /** Destination sample slot, 0..63 (device shows 1..64). */

@@ -19,8 +19,8 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const REPO_ROOT = process.cwd();
 const SERVER_ENTRY = path.resolve(REPO_ROOT, 'packages', 'server-all', 'dist', 'server', 'index.js');
@@ -239,7 +239,7 @@ async function listAllTools(): Promise<ToolEntry[]> {
   });
   // Silence the server's startup banner; we don't need it cluttering our output.
   if (transport.stderr) transport.stderr.on('data', () => {});
-  const client = new Client({ name: 'tool-inventory', version: '1.0.0' }, { capabilities: {} });
+  const client = new Client({ name: 'tool-inventory', version: '1.0.0' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   try {
     await client.connect(transport);
   } catch (err) {
@@ -372,40 +372,6 @@ function spliceReadmeRegion(readme: string, region: string): { updated: string; 
   return { updated: before + region + after, existed: true };
 }
 
-const TOOL_SURFACE_HEADING = '## The tool surface';
-
-/**
- * Extract the set of tool names documented in README's "## The tool
- * surface" section tables. Each tool occupies the first column of a
- * markdown table row as a backtick-quoted name, optionally with a
- * parameter signature that is stripped (`apply_preset(port, spec)` ->
- * apply_preset). Used by the drift check to assert the documented set
- * matches the live registered set, so a new tool cannot ship
- * undocumented and a removed tool cannot linger in the table. We assert
- * the SET, not the prose, so the curated "what it does" column stays
- * hand-written.
- */
-function readmeDocumentedTools(readme: string): Set<string> {
-  const lines = readme.split(/\r?\n/);
-  const startIdx = lines.findIndex((l) => l.trim() === TOOL_SURFACE_HEADING);
-  const names = new Set<string>();
-  if (startIdx === -1) return names;
-  for (let i = startIdx + 1; i < lines.length; i++) {
-    const line = lines[i]!;
-    // Stop at the next top-level section.
-    if (line.startsWith('## ')) break;
-    // Table rows start with a pipe; the first cell holds the tool name
-    // in backticks.
-    const m = /^\|\s*`([^`]+)`/.exec(line);
-    if (!m) continue;
-    // Strip a parameter signature: keep the identifier before '('.
-    const name = m[1]!.trim().split('(')[0]!.trim();
-    // Only accept plausible tool identifiers (snake_case).
-    if (/^[a-z][a-z0-9_]*$/.test(name)) names.add(name);
-  }
-  return names;
-}
-
 async function main(): Promise<void> {
   const checkMode = process.argv.includes('--check');
   const all = await listAllTools();
@@ -434,33 +400,9 @@ async function main(): Promise<void> {
       console.error(`Drift: README.md's tool-inventory region is out of sync. Run npm run tools:inventory.`);
       failed = true;
     }
-    // Tool-set completeness: the README "## The tool surface" tables must
-    // name exactly the registered tools. Catches a new tool shipping
-    // undocumented (the failure that motivated this check: set_macro_route
-    // and set_mod_route were absent from the tables) and a removed tool
-    // lingering in the README. Asserts the name SET only; the prose is
-    // hand-curated.
-    const documented = readmeDocumentedTools(readme);
-    const registered = new Set(all.map((t) => t.name));
-    const missingFromReadme = [...registered].filter((n) => !documented.has(n)).sort();
-    const phantomInReadme = [...documented].filter((n) => !registered.has(n)).sort();
-    if (missingFromReadme.length > 0) {
-      console.error(
-        `README tool-surface drift: ${missingFromReadme.length} registered ` +
-          `tool(s) missing from the "## The tool surface" tables: ` +
-          `${missingFromReadme.join(', ')}. Add a row (with a hand-written ` +
-          `description) under the right family.`,
-      );
-      failed = true;
-    }
-    if (phantomInReadme.length > 0) {
-      console.error(
-        `README tool-surface drift: ${phantomInReadme.length} tool(s) in the ` +
-          `README tables are not registered: ${phantomInReadme.join(', ')}. ` +
-          `Remove the stale row or fix the name.`,
-      );
-      failed = true;
-    }
+    // NOTE: the README no longer carries hand-maintained per-tool tables
+    // (docs/TOOLS.md, generated above, is the complete inventory), so the
+    // old README tool-surface set-completeness check is retired.
     // Description budget lint. Fails on any tool over
     // the 1000-char hard cap (unless explicitly overridden in
     // DESCRIPTION_BUDGET_OVERRIDES). Warns over 600. Catches the

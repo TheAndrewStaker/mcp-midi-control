@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 /** Final II read: the category-A disagreements in the placed delay/chorus/rotary blocks. */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import path from 'node:path';
 const SERVER = path.join(path.resolve(import.meta.dirname, '..', '..'), 'packages', 'server-all', 'dist', 'server', 'index.js');
 const READS = [
@@ -15,7 +15,7 @@ const READS = [
 function tx(r: unknown): string { return ((r as { content?: { text?: string }[] }).content ?? []).map((c) => c.text ?? '').join(' '); }
 async function main() {
   const t = new StdioClientTransport({ command: 'node', args: [SERVER], env: { ...process.env } });
-  const c = new Client({ name: 'rem', version: '0' }, { capabilities: { tools: {} } });
+  const c = new Client({ name: 'rem', version: '0' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await c.connect(t);
   for (const r of READS) {
     try {

@@ -17,6 +17,7 @@ import { CIRCUIT_TRACKS_CASES } from './cases-circuit-tracks.js';
 import { SPD_SX_CASES } from './cases-spd-sx.js';
 import { VE500_CASES } from './cases-ve-500.js';
 import { ARTURIA_CASES } from './cases-arturia.js';
+import { AKAI_MPC_CASES } from './cases-akai-mpc.js';
 import type { AgentRegressionCase } from './types.js';
 
 export const ALL_CASES: readonly AgentRegressionCase[] = [
@@ -32,5 +33,6 @@ export const ALL_CASES: readonly AgentRegressionCase[] = [
   ...SPD_SX_CASES,
   ...VE500_CASES,
   ...ARTURIA_CASES,
+  ...AKAI_MPC_CASES,
   ...CROSS_DEVICE_CASES,
 ];

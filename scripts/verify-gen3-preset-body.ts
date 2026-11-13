@@ -23,11 +23,16 @@ import { spawnSync } from 'node:child_process';
 import {
   parsePresetBank,
   parsePresetDump,
+  serializePresetDump,
 } from '../packages/fractal-gen3/dist/presetDump.js';
-import { decodeRawPatch } from '../packages/fractal-gen3/dist/presetHuffman.js';
+import { decodeRawPatch, huffmanUncompress } from '../packages/fractal-gen3/dist/presetHuffman.js';
 import {
   decodeGen3Body,
   decodeGen3PresetDump,
+  Gen3EmptyPresetError,
+  fm3CabProximityFrequencyFieldByteOffset,
+  FM3_CAB_PROXIMITY_FREQUENCY_BODY_INDEX,
+  FM3_CAB_PROXIMITY_FREQUENCY_PARAM_ID,
   typeName,
 } from '../packages/fractal-gen3/dist/presetBody.js';
 import { gen3WholePresetToSpec } from '../packages/core/dist/protocol-generic/gen3-source.js';
@@ -117,6 +122,46 @@ check(
   `got=${JSON.stringify(typeName('Amp', 0))}`,
 );
 
+// FM3 fw 13 hardware captures: the front-panel Proximity Frequency knob was
+// the only intentional edit (100 Hz -> 120 Hz). Both captures traverse the
+// production SysEx/container/Huffman/body decoder; no raw-file cmp oracle.
+// Stored-body decode only — NOT calibration evidence for the live-wire
+// CABINET_PROXFREQ paramId (see the comment on FM3_CAB_PROXIMITY_FREQUENCY_PARAM_ID).
+// samples/ is gitignored (private captures), so this gates on existsSync like
+// the III/FM9 cross-checks below — green on the maintainer's machine, a no-op
+// on a fresh clone/CI where the captures aren't present.
+const PROXIMITY_CAPTURES = [
+  { hz: 100, raw: 45806, path: 'samples/captured/proximity-frequency-100hz.syx' },
+  { hz: 120, raw: 50995, path: 'samples/captured/proximity-frequency-120hz.syx' },
+] as const;
+if (PROXIMITY_CAPTURES.every((capture) => existsSync(capture.path))) {
+  for (const capture of PROXIMITY_CAPTURES) {
+    const source = new Uint8Array(readFileSync(capture.path));
+    const parsed = parsePresetDump(source);
+    const decoded = decodeRawPatch(parsed.chunkPayloads);
+    const body = decodeGen3Body(decoded.body, parsed.modelId);
+    const cab = body.blocks?.find((b) => b.block === 'Cab');
+    const offset = cab ? fm3CabProximityFrequencyFieldByteOffset(cab, 'B') : -1;
+    const raw = offset >= 0 ? decoded.body[offset] | (decoded.body[offset + 1] << 8) : -1;
+    check(`FM3 Proximity Frequency ${capture.hz} Hz: model`, parsed.modelId === 0x11);
+    check(`FM3 Proximity Frequency ${capture.hz} Hz: CRC`, decoded.crcValid);
+    // Issue #34.4 on a second device and a newer firmware: this capture's
+    // Delay, Drive and Chorus tables are 89, 44 and 32 columns wide, sizes the
+    // table-size map does not list, so the old decode dropped all three.
+    const fams = (body.blocks ?? []).map((b) => b.block).join(',');
+    check(`FM3 Proximity Frequency ${capture.hz} Hz: every placed block is named from the grid`,
+      body.blocks_identified_by === 'grid' && fams === 'Amp,Cab,Chorus,Comp,Delay,Flanger,Drive,Input,Output,Phaser,Reverb,Wah', `by=${body.blocks_identified_by} got=${fams}`);
+    check(`FM3 Proximity Frequency ${capture.hz} Hz: live paramId`, FM3_CAB_PROXIMITY_FREQUENCY_PARAM_ID === 41);
+    check(`FM3 Proximity Frequency ${capture.hz} Hz: stored-body index`, FM3_CAB_PROXIMITY_FREQUENCY_BODY_INDEX === 35);
+    check(`FM3 Proximity Frequency ${capture.hz} Hz: raw u16 LE`, raw === capture.raw, `got=${raw}`);
+    check(
+      `FM3 Proximity Frequency ${capture.hz} Hz: decoded display`,
+      cab?.channels?.B?.proximity_frequency_hz === capture.hz,
+      `got=${String(cab?.channels?.B?.proximity_frequency_hz)}`,
+    );
+  }
+}
+
 // ── 2. Reference cross-check (when samples + Python present) ──────────
 function findPython(): string | undefined {
   for (const cmd of ['python', 'py', 'python3']) {
@@ -146,11 +191,73 @@ function compareOne(ref: OraclePreset, tsBody: ReturnType<typeof decodeGen3Body>
   check(`${label}: preset name`, ref.preset_name === tsName, `ref="${ref.preset_name}" got="${tsName}"`);
   const rp = ref.params ?? {};
   // Only the fields the oracle emits are compared; the oracle is the authority.
-  for (const field of ['scene_names', 'grid', 'blocks', 'amp1', 'modifiers', 'scene_controllers'] as const) {
+  for (const field of ['scene_names', 'grid', 'amp1', 'modifiers', 'scene_controllers'] as const) {
     if (!(field in rp)) continue;
-    const d = diff(rp[field], (tsBody as Record<string, unknown>)[field], field);
+    const d = diff(rp[field], oracleVocabulary((tsBody as Record<string, unknown>)[field]), field);
     check(`${label}: ${field}`, d === '', d);
   }
+  if ('blocks' in rp) {
+    const d = diffBlocks(rp.blocks as OracleBlock[], tsBody.blocks ?? []);
+    check(`${label}: blocks`, d === '', d);
+  }
+  // What the oracle cannot check: every block placed on the grid has exactly
+  // one chain entry, named from the grid (issue #34.4).
+  const placed = [...new Set((tsBody.grid ?? []).filter((c) => !c.is_shunt).map((c) => c.effect_id))].sort((a, b) => a - b);
+  const named = (tsBody.blocks ?? []).map((b) => b.effect_id ?? -1).sort((a, b) => a - b);
+  check(`${label}: blocks are named from the grid, one per placed block`,
+    tsBody.blocks_identified_by === 'grid' && JSON.stringify(placed) === JSON.stringify(named),
+    `by=${tsBody.blocks_identified_by} grid=${placed.join(',')} blocks=${named.join(',')}`);
+}
+
+/**
+ * The reference decoder names blocks by parameter-table size alone and does
+ * not know four families. Ours names them from the grid. To keep the oracle
+ * useful for everything else, the comparison allows exactly these corrections
+ * and nothing more:
+ *  - families the oracle prints as a bare id (`eid_170`) are mapped back;
+ *  - a block the oracle found is compared at its byte offset, and its name may
+ *    differ only by a pair in ORACLE_MISNAMES (same table size, different
+ *    block: the oracle's known confusions);
+ *  - blocks the oracle did not find at all (ours has more) are not an error;
+ *  - Rotary's "type" is dropped on our side (the block has none).
+ */
+const ORACLE_UNKNOWN_FAMILIES: Record<string, number> = { 'Crossover': 142, 'Tone Match': 170, 'RTA': 174, 'IR Player': 195 };
+const ORACLE_MISNAMES = new Set([
+  'Vol/Pan>Input', 'PEQ>Output', 'Enhancer>Formant', 'Flanger>PEQ', 'Comp>Filter', 'Comp>MultiComp',
+  'Filter>Comp', 'Filter>MultiComp', 'MultiComp>Comp', 'MultiComp>Filter', 'Return>RTA', 'Vol/Pan>eid_202',
+  // Same column count, different row count: the oracle ignores rows.
+  'Enhancer>RingMod', 'Tremolo>Tone Match', 'Phaser>Megatap',
+]);
+interface OracleBlock { block: string; offset: number; [k: string]: unknown }
+
+function oracleVocabulary(v: unknown): unknown {
+  if (typeof v === 'string') {
+    const m = /^(.*) ([1-4])$/.exec(v);
+    if (v === 'Input 5') return 'eid_41';
+    if (m && m[1] in ORACLE_UNKNOWN_FAMILIES) return `eid_${ORACLE_UNKNOWN_FAMILIES[m[1]] + Number(m[2]) - 1}`;
+    return v;
+  }
+  if (Array.isArray(v)) return v.map(oracleVocabulary);
+  if (v !== null && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, oracleVocabulary(x)]));
+  return v;
+}
+
+function diffBlocks(ref: OracleBlock[], got: ReadonlyArray<{ block: string; offset: number }>): string {
+  for (const r of ref) {
+    const g = got.find((b) => b.offset === r.offset);
+    if (!g) return `oracle block ${r.block} at offset ${r.offset} is missing from ours`;
+    if (g.block !== r.block) {
+      if (!ORACLE_MISNAMES.has(`${r.block}>${g.block}`)) return `offset ${r.offset}: ref="${r.block}" got="${g.block}" (not a known oracle confusion)`;
+      const d = diff({ cols: r.cols, rows: r.rows, scene_channels: r.scene_channels, scene_bypass: r.scene_bypass }, g, `blocks@${r.offset}`);
+      if (d) return d;
+      continue;
+    }
+    const rr: Record<string, unknown> = { ...r };
+    if (r.block === 'Rotary') { delete rr.type_id; delete rr.type; delete rr.channels; }
+    const d = diff(rr, g, `blocks@${r.offset}`);
+    if (d) return d;
+  }
+  return '';
 }
 
 const samplesPresent = III_BANKS.every(existsSync);
@@ -262,6 +369,34 @@ if (existsSync(III_BANKS[0])) {
   check('gen3->II translate: ok', toII.ok);
   check('gen3->II translate: amp survives', toII.applied_spec.slots.some((s) => s.block_type === 'amp'));
   check('gen3->II translate: II keeps 8 scenes (no collapse)', toII.port_summary.scene_collapses === 0, String(toII.port_summary.scene_collapses));
+}
+
+// An empty preset location. A III owner's stored read of an unused location
+// died with "Maximum call stack size exceeded": the container held no
+// compressed body, and the tree reader took the zeros past the end of the data
+// as an endless run of internal nodes. Needs no sample file: the dump is built
+// here, all zeros between valid frame envelopes.
+{
+  const thrown = (fn: () => unknown): Error | undefined => { try { fn(); return undefined; } catch (e) { return e as Error; } };
+  const e1 = thrown(() => huffmanUncompress(new Uint8Array(0), 0));
+  check('empty: a zero-length compressed body refuses with a reason, not a stack overflow',
+    e1 !== undefined && !(e1 instanceof RangeError) && /past the end/.test(e1.message), String(e1));
+  const e2 = thrown(() => huffmanUncompress(new Uint8Array(64), 100));
+  check('empty: a body of zeros (no tree) refuses with a reason, not a stack overflow',
+    e2 !== undefined && !(e2 instanceof RangeError) && /Huffman tree/.test(e2.message), String(e2));
+  const zeroChunks = Array.from({ length: 16 }, () => new Uint8Array(3074));
+  const d = decodeRawPatch(zeroChunks);
+  check('empty: an all-zero container decodes as empty with a zero-length body', d.empty === true && d.body.length === 0 && d.compSize === 0);
+  const dump = serializePresetDump({
+    modelId: 0x10,
+    raw: new Uint8Array(0),
+    byteLength: 0,
+    headerPayload: new Uint8Array(5),
+    chunkPayloads: zeroChunks,
+    footerPayload: new Uint8Array(3),
+  });
+  const e3 = thrown(() => decodeGen3PresetDump(dump, 0x10));
+  check('empty: a whole dump of an empty location raises Gen3EmptyPresetError', e3 instanceof Gen3EmptyPresetError, String(e3));
 }
 
 console.log(`\n${ok} ok, ${fail} fail.`);

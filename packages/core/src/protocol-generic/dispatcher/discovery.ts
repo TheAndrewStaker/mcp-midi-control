@@ -20,6 +20,7 @@ import { listRegisteredDevices } from '../registry.js';
 import { resolveRigLinks, rigLinksSource, type RigLinks } from '../rigLinks.js';
 import { loadRigManifest } from '../openrig/manifest.js';
 import { loadRigInventory } from '../openrig/inventory.js';
+import { buildRepertoireSummary, type RepertoireSummary } from '../openrig/repertoire.js';
 import { descriptorCapabilityLookup } from '../openrig/capabilities.js';
 import {
   validateRig, checkRigCompatibility, checkAudioOutput, checkRigCapacity, validateInventory, crossReferenceInventory,
@@ -111,9 +112,12 @@ function orderGuidanceTopics(
 /**
  * Pure descriptor-introspection helper for `describe_device`. No I/O —
  * returns the registered capabilities + canonical terms + block roster.
- * The dynamic identity (firmware version, model byte echo) comes from
- * `send_identity_request` (BK-049 Layer 0) and is merged on top of this
- * by the tool handler when available.
+ * Dynamic identity (firmware version, model byte echo) is NOT part of
+ * this response: no identity-request tool exists on the surface (a
+ * Universal SysEx Identity Request builder was sketched as BK-049
+ * Layer 0 but never built — BK-PHANTOM-IDENTITY-REF removed the stale
+ * claim that one did). If one ever ships, its result would be merged
+ * on top of this by the tool handler.
  *
  * When a device's guidance does not fit the budget above, the withheld topics
  * are named in `agent_guidance_withheld` and fetched via
@@ -494,6 +498,15 @@ export interface RigInventorySummary {
 function buildRigManifestSummary(devices: readonly RigDevice[]): RigManifestSummary | undefined {
   const loaded = loadRigManifest();
   if (loaded.status === 'unconfigured') return undefined;
+  if (loaded.status === 'absent') {
+    // Configured-but-not-created is NOT a corrupt manifest: name the real state
+    // (and the fix) instead of a generic load failure.
+    return {
+      configured: true,
+      source: loaded.source,
+      error: `no rig manifest file exists yet at ${loaded.source} (MCP_RIG_MANIFEST is set, the file was never created); create it to declare the rig`,
+    };
+  }
   if (loaded.status === 'error') return { configured: true, source: loaded.source, error: loaded.error };
 
   const rig = loaded.rig;
@@ -563,6 +576,8 @@ function buildRigInventorySummary(): RigInventorySummary | undefined {
   const inventory = loaded.inventory;
   const validation = validateInventory(inventory);
   const manifest = loadRigManifest();
+  // Positive 'loaded' gate: an absent (not-yet-created) or failed manifest just
+  // means no in-rig-vs-spare cross-reference, exactly like unconfigured.
   const report = manifest.status === 'loaded' ? crossReferenceInventory(inventory, manifest.rig) : undefined;
   return {
     configured: true,
@@ -596,6 +611,8 @@ export function executeDescribeRig(): {
   manifest?: RigManifestSummary;
   /** What the user OWNS (+ in-rig-vs-spare cross-reference), when MCP_RIG_INVENTORY is set. */
   inventory?: RigInventorySummary;
+  /** The song book (ids for describe_rig({song})), when MCP_RIG_REPERTOIRE is set. */
+  repertoire?: RepertoireSummary;
   /** External-instrument wiring (host track → device): manifest-derived, else MCP_RIG_LINKS. */
   rig_links?: RigLinks;
   note: string;
@@ -650,6 +667,7 @@ export function executeDescribeRig(): {
 
   const manifest = buildRigManifestSummary(devices);
   const inventory = buildRigInventorySummary();
+  const repertoire = buildRepertoireSummary();
   const rigLinks = resolveRigLinks();
   const hasLinks = Object.keys(rigLinks).length > 0;
   const linksSource = rigLinksSource() === 'manifest' ? 'the rig manifest' : 'MCP_RIG_LINKS';
@@ -723,10 +741,16 @@ export function executeDescribeRig(): {
     devices,
     ...(manifest !== undefined ? { manifest } : {}),
     ...(inventory !== undefined ? { inventory } : {}),
+    ...(repertoire !== undefined ? { repertoire } : {}),
     ...(hasLinks ? { rig_links: rigLinks } : {}),
     note:
       manifestNote
       + inventoryNote
+      + (repertoire === undefined
+        ? ''
+        : repertoire.error !== undefined
+          ? `A song book is configured but failed to load: ${repertoire.error}. `
+          : `Song book: ${repertoire.song_count} song(s) in repertoire.songs; call describe_rig({song: id}) for one song's setup plan. `)
       + (hasLinks
         ? `rig_links records external-instrument wiring (a host MIDI track → the device it drives), sourced from ${linksSource}; `
           + 'apply_pattern external_targets defaults a target\'s track from it. '

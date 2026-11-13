@@ -48,7 +48,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { listMidiPorts } from '../packages/core/src/midi/transport.js';
+import { listMidiPorts, pairedInputName } from '../packages/core/src/midi/transport.js';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const REPO = join(HERE, '..');
@@ -201,11 +201,30 @@ function staticLeg(): void {
       `use reconnectMidi() from scripts/_lib/midi-lifecycle.ts at:\n        ${offenders.join('\n        ')}`);
 }
 
+/**
+ * A port named only on its output side must find the input of the same pair.
+ * Names as enumerated on real gear: an MPC One standalone on USB, and the
+ * Windows class-driver style.
+ */
+function pairingLeg(): void {
+  const mpcIns = ['MPC One USB-C DAW', 'MPC One USB-C In 1', 'MPC One USB-C In 2'];
+  check('an output named "Out 1" pairs with the input named "In 1"',
+    pairedInputName('MPC One USB-C Out 1', mpcIns) === 'MPC One USB-C In 1');
+  check('"Out 2" pairs with "In 2", never the first input in the list',
+    pairedInputName('MPC One USB-C Out 2', mpcIns) === 'MPC One USB-C In 2');
+  check('"MIDIOUT2 (X)" pairs with "MIDIIN2 (X)"', pairedInputName('MIDIOUT2 (X)', ['X', 'MIDIIN2 (X)']) === 'MIDIIN2 (X)');
+  check('"Output" pairs with "Input"', pairedInputName('Synth Output', ['Synth Input']) === 'Synth Input');
+  check('an output with no "Out" in its name pairs with nothing', pairedInputName('MPC One USB-C DAW', mpcIns) === undefined);
+  check('no matching input pairs with nothing (the caller then opens send-only)',
+    pairedInputName('Box Out 1', ['Other In 1']) === undefined);
+}
+
 // ── run ──────────────────────────────────────────────────────────────────────
 
 console.log('verify-midi-handle-release');
 await runtimeLeg();
 staticLeg();
+pairingLeg();
 
 if (failures > 0) {
   console.log(`\nFAILED: ${failures} check(s).`);

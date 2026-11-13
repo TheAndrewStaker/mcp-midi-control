@@ -12,8 +12,8 @@
  *   npx tsx scripts/_research/hw-verify-cold-start.ts
  */
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 
@@ -25,7 +25,7 @@ const err = (r: unknown) => !!(r as CallResult)?.isError;
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER_ENTRY], stderr: 'pipe' });
   transport.stderr?.on('data', (b: Buffer) => { const s = b.toString(); if (/error|throw/i.test(s)) process.stderr.write(`[server] ${s}`); });
-  const client = new Client({ name: 'hw-verify-cold-start', version: '1.0.0' }, { capabilities: {} });
+  const client = new Client({ name: 'hw-verify-cold-start', version: '1.0.0' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
   try {
     console.log('1. reconnect_midi(am4) → force a fresh COLD handle');

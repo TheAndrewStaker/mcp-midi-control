@@ -21,7 +21,9 @@ import {
   FILE_TYPE_SAMPLE, buildSampleUploadFrames, sampleBlockCount, sampleFileId,
 } from '@mcp-midi-control/circuit-tracks/samples/sampleTransfer.js';
 import { normalizeToDevice, parseWav } from '@mcp-midi-control/circuit-tracks/samples/wav.js';
-import { writer } from '@mcp-midi-control/circuit-tracks/descriptor/writer.js';
+import { alignSampleFilename } from '@mcp-midi-control/circuit-tracks/samples/uploadSample.js';
+import { writer, decideSampleOverwrite } from '@mcp-midi-control/circuit-tracks/descriptor/writer.js';
+import type { SampleDirectoryResult } from '@mcp-midi-control/circuit-tracks/ncs/sampleDirectory.js';
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import { DispatchError, type DispatchCtx } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { existsSync, readFileSync } from 'node:fs';
@@ -401,12 +403,13 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
 
 // ── Overwrite GATE (#0): the safe-edit read-before-write contract on the ──────
 // destructive transfer tools, exercised through the device WRITER. Empty → write
-// through; occupied → refuse (overwrite_confirmation_required) + name; sample
-// slots → refuse by default (no dir read); confirm_overwrite skips the gate.
-// The writer uses production transfer timing (it exposes no test knob), so these
-// stay to the FAST paths: a refusal sends nothing, and confirm_overwrite skips
-// the (slow) occupancy read. The slow empty-read path is covered by the probe
-// test above; here we assert the gate WIRING + refusal messages.
+// through; occupied → refuse (overwrite_confirmation_required) + name the
+// occupant; UNREADABLE → refuse (can't-confirm is not empty). Sample slots are
+// occupancy-gated off the pool directory since 2026-08-11 (the "no
+// sample-directory read yet" era is over: readSampleDirectory is HW-confirmed);
+// confirm_overwrite skips the read on every tool. The writer uses production
+// transfer timing (it exposes no test knob), so these stay to the FAST paths;
+// here we assert the gate WIRING + refusal messages.
 {
   const SUB = TRANSFER_CONSTANTS.SUBCMD;
   const HDRLEN = TRANSFER_CONSTANTS.HEADER.length;
@@ -441,29 +444,90 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
     try { return { threw: false, res: await fn() }; } catch (err) { return { threw: true, err }; }
   };
 
-  // upload_sample: no confirm → refuse (sample slots can't be read), 0 frames sent.
+  // Destructive-frame detector: the pool-directory occupancy read is allowed on
+  // the non-confirmed path (it is the point of the gate); what a refusal must
+  // NEVER send is a write-class frame.
+  const destructive = (frames: number[][]) =>
+    frames.filter((f) => ([SUB.WRITE_INIT, SUB.WRITE_DATA, SUB.WRITE_FINISH, SUB.SET_FILENAME] as number[]).includes(f[7]));
+
+  // upload_sample: no confirm + pool UNREADABLE (mock answers no listing header)
+  // → refuse; only non-destructive directory frames went out.
   {
     const m = acking();
     const r = await grab(() => writer.uploadSample!(ctxOf(m.conn), sampleWav, 4, 's.wav'));
-    check('gate: upload_sample without confirm_overwrite REFUSES (overwrite_confirmation_required)',
-      r.threw && isOverwriteRefusal(r.err) && /slot 5/.test((r.err as Error).message), JSON.stringify({ threw: r.threw, msg: (r.err as Error | undefined)?.message }));
-    check('gate: refused upload_sample sent ZERO frames', m.sent.length === 0, `sent ${m.sent.length}`);
+    check('gate: upload_sample without confirm_overwrite + unreadable pool REFUSES (overwrite_confirmation_required)',
+      r.threw && isOverwriteRefusal(r.err) && /slot 5/.test((r.err as Error).message) && /did not complete/.test((r.err as Error).message),
+      JSON.stringify({ threw: r.threw, msg: (r.err as Error | undefined)?.message }));
+    check('gate: refused upload_sample sent NO destructive frames (directory read only)',
+      destructive(m.sent).length === 0, `destructive: ${destructive(m.sent).length} of ${m.sent.length}`);
   }
-  // upload_kit: no confirm → refuse, naming the slot RANGE, 0 frames sent.
+  // folder upload: no confirm + unreadable pool → refuse, naming the slot RANGE.
   {
     const m = acking();
     const items = [0, 1, 2].map((i) => ({ wav: sampleWav, slot: i, filename: `k${i}.wav` }));
     const r = await grab(() => writer.uploadKit!(ctxOf(m.conn), items));
-    check('gate: upload_kit without confirm_overwrite REFUSES, names the slot range',
+    check('gate: folder upload without confirm_overwrite + unreadable pool REFUSES, names the slot range',
       r.threw && isOverwriteRefusal(r.err) && /slots 1\.\.3/.test((r.err as Error).message), JSON.stringify((r.err as Error | undefined)?.message));
-    check('gate: refused upload_kit sent ZERO frames', m.sent.length === 0, `sent ${m.sent.length}`);
+    check('gate: refused folder upload sent NO destructive frames', destructive(m.sent).length === 0, `destructive: ${destructive(m.sent).length}`);
   }
-  // upload_sample: confirm:true → gate passes, the (acked) transfer runs, ok:true.
+  // decideSampleOverwrite (the pure decision the wire read feeds): the three
+  // occupancy verdicts, pinned without a mock session.
+  {
+    const dir = (names: (string | undefined)[], complete = true): SampleDirectoryResult => ({
+      occupied: names.filter(Boolean).length, total: 64, pack: 0, listing_complete: complete,
+      slots: Array.from({ length: 64 }, (_, i) => ({ slot: i, device_slot: i + 1, ...(names[i] ? { name: names[i] } : {}) })),
+    });
+    const note = decideSampleOverwrite(dir([]), [4], undefined, 'Pack 1');
+    check('gate decision: EMPTY slot writes through, receipt says read-checked empty',
+      /read-checked against the pool directory/.test(note) && /empty/.test(note), note);
+    const occ = (() => { try { decideSampleOverwrite(dir([undefined, undefined, undefined, undefined, '04_perc.wav']), [4], undefined, 'Pack 1'); return undefined; } catch (e) { return e as DispatchError; } })();
+    check('gate decision: OCCUPIED slot refuses NAMING the occupant',
+      occ?.code === 'overwrite_confirmation_required' && /"04_perc\.wav"/.test(occ.message) && /slot 5/.test(occ.message), occ?.message);
+    const part = (() => { try { decideSampleOverwrite(dir([], false), [4], undefined, 'Pack 1'); return undefined; } catch (e) { return e as DispatchError; } })();
+    check('gate decision: a PARTIAL/absent listing refuses (unnamed is not evidence of empty)',
+      part?.code === 'overwrite_confirmation_required' && /did not complete/.test(part.message), part?.message);
+  }
+  // upload_sample: confirm:true → gate passes, the (acked) transfer runs, ok:true,
+  // and the prefix-less name is DERIVED to align the directory registration.
   {
     const m = acking();
     const r = await grab(() => writer.uploadSample!(ctxOf(m.conn), sampleWav, 4, 's.wav', { confirmOverwrite: true }));
     check('gate: upload_sample with confirm_overwrite proceeds (ok:true)',
       !r.threw && (r.res as { ok: boolean }).ok === true, JSON.stringify({ threw: r.threw, err: (r.err as Error | undefined)?.message }));
+    const res = r.res as { filename: string; info: string };
+    check('prefix: "s.wav" at slot 5 (wire 4) stores as "04_s.wav" and the receipt says derived',
+      res.filename === '04_s.wav' && /Stored name derived as "04_s\.wav"/.test(res.info), JSON.stringify({ filename: res.filename }));
+  }
+  // FILENAME-PREFIX enforcement (BK-CIRCUIT-SAMPLENAME): derive / agree / refuse.
+  {
+    check('alignSampleFilename: no prefix derives the wire-slot prefix (kick.wav @ wire 5 → 05_kick.wav)',
+      (() => { const a = alignSampleFilename('kick.wav', 5); return a.filename === '05_kick.wav' && a.derived === true; })());
+    check('alignSampleFilename: an agreeing prefix passes through unchanged',
+      (() => { const a = alignSampleFilename('05_kick.wav', 5); return a.filename === '05_kick.wav' && a.derived === false; })());
+    check('alignSampleFilename: a disagreeing prefix THROWS naming both slots (device numbering)',
+      (() => {
+        try { alignSampleFilename('11_bass.wav', 1); return false; }
+        catch (e) { return /Sample 12/.test((e as Error).message) && /Sample 2/.test((e as Error).message) && /strand/.test((e as Error).message); }
+      })());
+    // Through the writer: a misaligned single upload refuses BEFORE the gate,
+    // zero frames sent, even with confirm_overwrite.
+    const m = acking();
+    const r = await grab(() => writer.uploadSample!(ctxOf(m.conn), sampleWav, 1, '11_bass.wav', { confirmOverwrite: true }));
+    check('prefix: misaligned upload_sample REFUSES (bad_location) with ZERO frames sent',
+      r.threw && r.err instanceof DispatchError && (r.err as DispatchError).code === 'bad_location' && m.sent.length === 0,
+      JSON.stringify({ threw: r.threw, sent: m.sent.length, msg: (r.err as Error | undefined)?.message?.slice(0, 120) }));
+    // Through the writer: folder upload's natural-sort trap. A batch holding one
+    // file named for ANOTHER pack's layout refuses whole, naming the remedy.
+    const m2 = acking();
+    const items = [
+      { wav: sampleWav, slot: 0, filename: '00_kick.wav' },
+      { wav: sampleWav, slot: 1, filename: '05_snare.wav' },   // names wire 5, addressed at wire 1
+    ];
+    const r2 = await grab(() => writer.uploadKit!(ctxOf(m2.conn), items, { confirmOverwrite: true }));
+    check('prefix: folder upload with one misaligned file REFUSES the whole batch, names start_slot as the remedy',
+      r2.threw && r2.err instanceof DispatchError && (r2.err as DispatchError).code === 'bad_location'
+      && /natural-sort/.test((r2.err as Error).message) && /start_slot/.test((r2.err as Error).message) && m2.sent.length === 0,
+      JSON.stringify({ threw: r2.threw, sent: m2.sent.length }));
   }
   // PACK THREADING (2026-07-17): ctx.pack must reach every sample WRITE frame, so
   // an upload lands on the SAME pack a project targets (the cross-pack name trap).
@@ -550,17 +614,55 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
     const n = await readPackCount(conn, 500);
     check('readPackCount parses the 0b 02 header reply → card holds 3 packs (COUNT, not an active-pack index)', n === 3, String(n));
   }
-  // upload_project: confirm:true → SKIPS the occupancy read, writes (ok:true).
+  // project upload: confirm:true → SKIPS the occupancy read, writes (ok:true).
   {
     const m = acking();
     const r = await grab(() => writer.uploadProject!(ctxOf(m.conn), NCS, 33, { confirmOverwrite: true }));
-    check('gate: upload_project with confirm_overwrite writes (ok:true)',
+    check('gate: project upload with confirm_overwrite writes (ok:true)',
       !r.threw && (r.res as { ok: boolean }).ok === true, JSON.stringify({ threw: r.threw, err: (r.err as Error | undefined)?.message }));
     // The upload's OWN handshake sends a WRITE_INIT; an occupancy READ would send
     // a SECOND one (its read-request). Exactly one ⇒ the read was skipped.
     const writeInits = m.sent.filter((f) => subcmdOf(f) === SUB.WRITE_INIT).length;
     check('gate: confirm_overwrite SKIPS the occupancy read (only the upload\'s WRITE_INIT, no read-request)',
       writeInits === 1, `WRITE_INIT count = ${writeInits} (expected 1)`);
+  }
+
+  // import_preset's project leg (`restorePresetBinary`): the same upload behind
+  // the stored-write gates every other device's restore has.
+  {
+    const m = acking();
+    const noTarget = await grab(() => writer.restorePresetBinary!(ctxOf(m.conn), NCS, { save_authorized: true }));
+    check('restore: a project file with no target_location REFUSES (there is no working buffer)',
+      noTarget.threw && (noTarget.err as DispatchError).code === 'bad_location'
+        && /project number 1\.\.64/.test((noTarget.err as Error).message), (noTarget.err as Error | undefined)?.message);
+    const badTarget = await grab(() => writer.restorePresetBinary!(ctxOf(m.conn), NCS, { target_location: 65, save_authorized: true }));
+    check('restore: a project number past 64 REFUSES', badTarget.threw && (badTarget.err as DispatchError).code === 'bad_location');
+    const unauth = await grab(() => writer.restorePresetBinary!(ctxOf(m.conn), NCS, { target_location: 34 }));
+    check('restore: a project file without save_authorized REFUSES (it is a stored write)',
+      unauth.threw && (unauth.err as DispatchError).code === 'save_authorization_required', (unauth.err as Error | undefined)?.message);
+    check('restore: the refusals sent NOTHING', m.sent.length === 0, `${m.sent.length} frame(s) sent`);
+
+    const done = await grab(() => writer.restorePresetBinary!(ctxOf(m.conn), NCS,
+      { target_location: '34', save_authorized: true, confirm_overwrite: true }));
+    const res = done.res as { ok: boolean; saved_to_location?: number; format: string; frames_sent: number; info?: string } | undefined;
+    check('restore: authorised + confirmed writes the project (ok, saved_to_location in DEVICE numbering)',
+      !done.threw && res?.ok === true && res.saved_to_location === 34 && res.format === 'circuit-ncs-project',
+      JSON.stringify({ threw: done.threw, err: (done.err as Error | undefined)?.message, res }));
+    check('restore: the receipt names the device project, 1-based', /Project 34\b/.test(res?.info ?? ''), res?.info);
+    check('restore: frames_sent counts the data blocks', (res?.frames_sent ?? 0) > 0, String(res?.frames_sent));
+
+    const notAProject = new Uint8Array(NCS_FILE_SIZE);
+    const m2 = acking();
+    const wrong = await grab(() => writer.restorePresetBinary!(ctxOf(m2.conn), notAProject,
+      { target_location: 34, save_authorized: true, confirm_overwrite: true }));
+    check('restore: a right-length file that is not a project REFUSES before any frame',
+      wrong.threw && (wrong.err as DispatchError).code === 'bad_location' && m2.sent.length === 0);
+    const syx = new Uint8Array([0xf0, 0x00, 0x01, 0x74, 0x15, 0xf7]);
+    const wrongKind = await grab(() => writer.restorePresetBinary!(ctxOf(m2.conn), syx,
+      { target_location: 34, save_authorized: true }));
+    check('restore: another device\'s file (a .syx) REFUSES by size, nothing sent',
+      wrongKind.threw && /expected a \d+-byte \.ncs project/.test((wrongKind.err as Error).message) && m2.sent.length === 0,
+      (wrongKind.err as Error | undefined)?.message);
   }
 
   // STRUCTURAL GATE on the write path (2026-07-29). A file that is exactly the
@@ -570,7 +672,7 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
     const notAProject = new Uint8Array(NCS_FILE_SIZE);   // right length, no USER magic, size field 0
     const m = acking();
     const r = await grab(() => writer.uploadProject!(ctxOf(m.conn), notAProject, 33, { confirmOverwrite: true }));
-    check('gate: upload_project REFUSES a right-length non-project',
+    check('gate: project upload REFUSES a right-length non-project',
       r.threw && r.err instanceof DispatchError && (r.err as DispatchError).code === 'bad_location',
       JSON.stringify({ threw: r.threw, err: (r.err as Error | undefined)?.message }));
     check('gate: the refusal names the CRC as not vouching for structure',
@@ -589,7 +691,7 @@ check('sampleFileId(63) = [5,0,63]', eq(sampleFileId(63), [5, 0, 63]));
       const bad = new Uint8Array(readFileSync(p));
       const m = acking();
       const r = await grab(() => writer.uploadProject!(ctxOf(m.conn), bad, 33, { confirmOverwrite: true }));
-      check('gate: upload_project REFUSES the real CRC-verified-but-corrupt capture',
+      check('gate: project upload REFUSES the real CRC-verified-but-corrupt capture',
         r.threw && r.err instanceof DispatchError, (r.err as Error | undefined)?.message);
       check('gate: the refusal cites its totalSessionSize, the only invariant that catches it',
         /totalSessionSize/.test((r.err as Error | undefined)?.message ?? ''));

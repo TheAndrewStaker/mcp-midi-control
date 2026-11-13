@@ -22,7 +22,7 @@
  * Run via:  npx tsx scripts/verify-bossrc.ts
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -50,6 +50,7 @@ import {
   decodeTarget,
   readAllAssigns,
   memoryIdIn,
+  sourceOrdinalFromDisplay,
   type AssignSpec,
 } from '@mcp-midi-control/boss-rc/codec/mk2.js';
 import {
@@ -63,6 +64,8 @@ import {
   writeMemory,
 } from '@mcp-midi-control/boss-rc/storage/memoryStore.js';
 import { isRc505Root } from '@mcp-midi-control/boss-rc/storage/discovery.js';
+import { readLoopSummary, loopSummaryLine } from '@mcp-midi-control/boss-rc/codec/loops.js';
+import { readSystemSettings } from '@mcp-midi-control/boss-rc/storage/systemSettings.js';
 import { RC_505_MK2_DESCRIPTOR, RC600_CONFIG, RC_600_DESCRIPTOR } from '@mcp-midi-control/boss-rc/descriptor.js';
 import { createNullMidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import type { DispatchCtx, PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
@@ -157,6 +160,11 @@ eq('CC#81 source = 87', sourceOrdinal({ kind: 'cc', cc: 81 }), 87);
 eq('CC#82 source = 88', sourceOrdinal({ kind: 'cc', cc: 82 }), 88);
 eq('CC#95 source = 101', sourceOrdinal({ kind: 'cc', cc: 95 }), 101);
 throws('CC#20 source refused (unsampled range)', () => sourceOrdinal({ kind: 'cc', cc: 20 }));
+// Author-path source labels: CTL3 is author-legal (ordinal 35 device-confirmed
+// 2026-07-19); CTL4 stays refused (~36 is unsampled and must never be guessed).
+eq('sourceOrdinalFromDisplay("CTL3") = 35 (author-legal)', sourceOrdinalFromDisplay('CTL3'), 35);
+throws('sourceOrdinalFromDisplay("CTL4") refused (unsampled ordinal)', () => sourceOrdinalFromDisplay('CTL4'));
+throws('sourceOrdinalFromDisplay(36) refused (unsampled ordinal)', () => sourceOrdinalFromDisplay(36));
 
 // 4. authorAssign: the hardware-confirmed Memory 1 scene ping-pong.
 //    CC#81 -> TRK2 PLY/STP + TRK3 STOP;  CC#82 -> TRK3 PLY/STP + TRK2 STOP.
@@ -225,6 +233,10 @@ eq('decodeTarget(0) = TRK1 REC/PLY', decodeTarget(0), 'TRK1 REC/PLY');
 eq('decodeTarget(12) = TRK2 PLY/STP', decodeTarget(12), 'TRK2 PLY/STP');
 eq('decodeTarget(24) = TRK3 STOP', decodeTarget(24), 'TRK3 STOP');
 eq('decodeTarget(99) = TARGET#99 (non-per-track, un-decoded)', decodeTarget(99), 'TARGET#99');
+eq('decodeTarget(870) = MIDI CC#80 (device-confirmed)', decodeTarget(870), 'MIDI CC#80');
+eq('decodeTarget(854) = MIDI CC#64 (range start, real file)', decodeTarget(854), 'MIDI CC#64');
+eq('decodeTarget(917) = MIDI CC#127 (range end)', decodeTarget(917), 'MIDI CC#127');
+eq('decodeTarget(853) stays raw (CC#01-31 unsampled)', decodeTarget(853), 'TARGET#853');
 
 // 9. Storage layer (A/B <count> memory store) + hybrid descriptor, driven against
 //    a synthetic mounted ROLAND/DATA tree in a temp dir (self-contained, no corpus).
@@ -267,6 +279,63 @@ await (async (): Promise<void> => {
   eq('scan memory 1 name', scan.scanned[0].name, 'Basic');
   eq('scan memory 1 not empty', scan.scanned[0].is_empty, false);
   eq('scan memory 2 (absent) is empty', scan.scanned[1].is_empty, true);
+  eq('scan memory 1 carries a loop summary', typeof scan.scanned[0].summary, 'string');
+
+  // Loop summary: values as stored in a real memory (122.0 BPM, track 3 one
+  // measure, track 4 two measures), where each length equalled the frame count
+  // of the WAV the unit keeps for that track.
+  const trk = (n: number, w: number, x: number): string =>
+    `<TRACK${n}>\n\t<A>0</A>\n\t<B>0</B>\n\t<C>${n === 4 ? 30 : 50}</C>\n\t<D>100</D>\n\t<L>1</L>\n\t<M>0</M>\n\t<R>${n === 4 ? 2 : 1}</R>\n\t<S>${n === 4 ? 2 : 0}</S>\n\t<V>86751</V>\n\t<W>${w}</W>\n\t<X>${x}</X>\n</TRACK${n}>`;
+  const loopDoc = parseRc0(
+    ['<?xml version="1.0" encoding="utf-8"?>', '<database name="RC-505MK2" revision="0">', '<mem id="0">',
+      trk(1, 0, 0), trk(2, 0, 0), trk(3, 1, 86751), trk(4, 1, 173502), trk(5, 0, 0),
+      '<MASTER>\n\t<A>1220</A>\n</MASTER>', '</mem>', '</database>'].join('\n'),
+  );
+  const loops = readLoopSummary(loopDoc, '0', 5);
+  eq('loop summary tempo', loops.tempo_bpm, 122);
+  eq('loop summary recorded tracks', loops.recorded_count, 2);
+  eq('loop summary track 3 is one measure', loops.tracks[2].measures, 1);
+  eq('loop summary track 4 is two measures', loops.tracks[3].measures, 2);
+  eq('loop summary track 4 seconds', loops.tracks[3].seconds, 3.93);
+  eq('loop summary track 1 is not recorded', loops.tracks[0].recorded, false);
+  eq('loop summary line', loopSummaryLine(loops), '2 loops, 122 BPM');
+  eq('a recorded track reports its settings', JSON.stringify(loops.tracks[3]), JSON.stringify({
+    track: 4, recorded: true, measures: 2, seconds: 3.93, level: 100, pan: 'L20', reverse: false, one_shot: false,
+    loop_sync: true, tempo_sync: false, measure: 2,
+  }));
+  eq('an unrecorded track still reports its settings', JSON.stringify(loops.tracks[0]), JSON.stringify({
+    track: 1, recorded: false, level: 100, pan: 'CENTER', reverse: false, one_shot: false, loop_sync: true,
+    tempo_sync: false, measure: 'FREE',
+  }));
+
+  // RX CTL channel: read off the drive's system file and reported in a storage
+  // read; never remembered. Stored 0-indexed (4 = channel 5), as on the real unit.
+  const priorCtl = process.env.MCP_RC505_CTL_CHANNEL;
+  delete process.env.MCP_RC505_CTL_CHANNEL;
+  const ctlCtx = { conn: { ...createNullMidiConnection('rc'), send: (): void => {} }, descriptor: RC_505_MK2_DESCRIPTOR } as DispatchCtx;
+  eq('no system file on the drive reads as undefined', readSystemSettings(root), undefined);
+  writeFileSync(
+    join(root, 'DATA', 'SYSTEM1.RC0'),
+    ['<?xml version="1.0" encoding="utf-8"?>', '<database name="RC-505MK2" revision="0">', '<sys>',
+      '<MIDI>\n\t<A>4</A>\n\t<C>10</C>\n\t<D>11</D>\n\t<E>16</E>\n\t<F>0</F>\n\t<G>0</G>\n\t<H>2</H>\n\t<I>1</I>\n\t<J>3</J>\n\t<K>0</K>\n</MIDI>', '</sys>', '</database>'].join('\n'),
+    'latin1',
+  );
+  eq('system file RX CTL channel decodes to 5', readSystemSettings(root)?.rx_ctl_channel, 5);
+  // The MIDI section exactly as stored on the real unit.
+  eq('system MIDI menu decodes as the panel words it', JSON.stringify(readSystemSettings(root)?.midi), JSON.stringify({
+    rx_ctl_channel: 5, rx_rhythm_channel: 11, rx_voice_channel: 12, tx_channel: 'RX CTL', sync_clock: 'AUTO',
+    clock_out: 'OFF', start_sync: 'RHYTHM', pc_out: 'ON', thru: 'USB & MIDI',
+  }));
+  const withCh = await RC_505_MK2_DESCRIPTOR.reader.getPreset!(storageCtx, { location: 1 });
+  eq('a storage read reports the unit control channel', withCh.looper?.control_channel, 5);
+  eq('a drive read teaches the recall nothing: still the default channel', RC_505_MK2_DESCRIPTOR.writer.buildSwitchPreset!(12)[0], 0xc0);
+  const recall = await RC_505_MK2_DESCRIPTOR.writer.switchPreset!(ctlCtx, 12);
+  check('recall says the channel is the default, not read, and where to read it',
+    /ch1 is the factory default/.test(recall.info ?? '') && /looper\.control_channel/.test(recall.info ?? ''));
+  process.env.MCP_RC505_CTL_CHANNEL = '9';
+  eq('the env override wins', RC_505_MK2_DESCRIPTOR.writer.buildSwitchPreset!(12)[0], 0xc8);
+  if (priorCtl === undefined) delete process.env.MCP_RC505_CTL_CHANNEL; else process.env.MCP_RC505_CTL_CHANNEL = priorCtl;
+  rmSync(join(root, 'DATA', 'SYSTEM1.RC0'));
 
   const dump = await RC_505_MK2_DESCRIPTOR.reader.dumpStoredPresetBinary!(1, storageCtx);
   eq('export_preset dumps the live (B) copy', dump.byte_length, Buffer.byteLength(baseB, 'latin1'));
@@ -336,6 +405,55 @@ await (async (): Promise<void> => {
   eq('assign 2 = CC#81 -> TRK3 STOP', `${enabledAfter[1].source} -> ${enabledAfter[1].target}`, 'CC#81 -> TRK3 STOP');
   eq('assign 4 = CC#82 -> TRK2 STOP', `${enabledAfter[3].source} -> ${enabledAfter[3].target}`, 'CC#82 -> TRK2 STOP');
   eq('memory name authored', readName(authored.doc, aId), 'ScenePP');
+
+  // CTL3 round-trip (read -> author): a get_preset of a 3-pedal ASSIGN layout
+  // emits source 'CTL3' (ordinal 35, device-confirmed 2026-07-19), and the
+  // author path must accept the exact label the read emits, or the documented
+  // read-inverts-author contract breaks. Author it, then read it back.
+  const ctl3Spec: PresetSpec = {
+    name: 'CTL3RT',
+    slots: [{ slot: 1, block_type: 'assign', params: { source: 'CTL3', target: 'TRK1 REC/PLY' } }],
+  };
+  const ctl3Wrote = await executeApplyPreset({ port: 'rc-505mk2', spec: ctl3Spec, target_location: 5, save_authorized: true });
+  check('apply_preset accepts CTL3 (author-legal)', ctl3Wrote.ok === true && ctl3Wrote.saved === true);
+  const ctl3Mem = readActiveMemory(root2, 5);
+  const ctl3Id = memoryIdIn(ctl3Mem.doc)!;
+  eq('CTL3 authored leaf C=35 (the device-confirmed ordinal)', getLeaf(ctl3Mem.doc, `database/mem#${ctl3Id}/ASSIGN1/C`), '35');
+  const ctl3Assigns = readAllAssigns(ctl3Mem.doc, ctl3Id).filter((a) => a.sw);
+  eq('CTL3 reads back as the label that was authored (read-inverts-author)', `${ctl3Assigns[0]?.source} -> ${ctl3Assigns[0]?.target}`, 'CTL3 -> TRK1 REC/PLY');
+
+  // MIDI CC transmit target (device-confirmed 2026-11-04: CC#80 = H 870, CC#82 = H 872,
+  // panel-authored). Author CTL3 -> MIDI CC#80 plus a CC relay, read back, and check
+  // TARGET MAX defaults to 127 (a CC target sends 0..127, not on/off).
+  const ccSpec: PresetSpec = {
+    name: 'CCOUT',
+    slots: [
+      { slot: 1, block_type: 'assign', params: { source: 'CTL3', target: 'MIDI CC#80' } },
+      { slot: 2, block_type: 'assign', params: { source: 'CC#81', target: 'MIDI CC#82' } },
+    ],
+  };
+  const ccWrote = await executeApplyPreset({ port: 'rc-505mk2', spec: ccSpec, target_location: 5, save_authorized: true });
+  check('apply_preset accepts a MIDI CC target', ccWrote.ok === true && ccWrote.saved === true);
+  const ccMem = readActiveMemory(root2, 5);
+  const ccId = memoryIdIn(ccMem.doc)!;
+  eq('MIDI CC#80 authored leaf H=870 (device-confirmed)', getLeaf(ccMem.doc, `database/mem#${ccId}/ASSIGN1/H`), '870');
+  eq('MIDI CC#82 authored leaf H=872 (device-confirmed)', getLeaf(ccMem.doc, `database/mem#${ccId}/ASSIGN2/H`), '872');
+  eq('MIDI CC target TARGET MAX defaults to 127', getLeaf(ccMem.doc, `database/mem#${ccId}/ASSIGN1/J`), '127');
+  const ccAssigns = readAllAssigns(ccMem.doc, ccId).filter((a) => a.sw);
+  eq('CC relay reads back (read-inverts-author)', `${ccAssigns[1]?.source} -> ${ccAssigns[1]?.target}`, 'CC#81 -> MIDI CC#82');
+  const cc20Refused = await executeApplyPreset({
+    port: 'rc-505mk2', target_location: 5, save_authorized: true,
+    spec: { slots: [{ slot: 1, block_type: 'assign', params: { source: 'CTL3', target: 'MIDI CC#20' } }] },
+  });
+  check('apply_preset refuses the unsampled MIDI CC#01-31 target range', cc20Refused.ok === false);
+
+  // CTL4 stays refused end-to-end: the preflight validation rejects it before
+  // any file write (its ordinal is unsampled; a guess must never ship).
+  const ctl4Spec: PresetSpec = {
+    slots: [{ slot: 1, block_type: 'assign', params: { source: 'CTL4', target: 'TRK1 REC/PLY' } }],
+  };
+  const ctl4Refused = await executeApplyPreset({ port: 'rc-505mk2', spec: ctl4Spec, target_location: 5, save_authorized: true });
+  check('apply_preset refuses CTL4 (ok=false, validation_errors)', ctl4Refused.ok === false && (ctl4Refused.validation_errors?.length ?? 0) > 0);
 
   // Preflight rejects an author-illegal source (CC#20 is outside the CC#64-95 base) — no write fires.
   const badSrc = await executeApplyPreset({

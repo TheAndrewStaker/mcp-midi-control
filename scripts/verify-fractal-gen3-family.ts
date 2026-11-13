@@ -32,6 +32,8 @@ import {
   resolveGen3EnumOrdinal,
   encode5SeptetFloat32,
   decode5SeptetFloat32,
+  buildRenamePreset,
+  buildSetSceneName,
   type Param,
 } from 'fractal-midi/gen3/axe-fx-iii';
 import { mockConnect } from '@mcp-midi-control/core/midi/transport.js';
@@ -45,7 +47,7 @@ import {
 } from 'fractal-midi/gen3/vp4';
 import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
-import { encodeValue } from '@mcp-midi-control/core/protocol-generic/dispatcher/resolvers.js';
+import { encodeValue, resolveBlockName } from '@mcp-midi-control/core/protocol-generic/dispatcher/resolvers.js';
 import { assertInstanceSupported } from '@mcp-midi-control/core/protocol-generic/dispatcher/core.js';
 import {
   clearRegistry,
@@ -54,7 +56,8 @@ import {
 } from '@mcp-midi-control/core/protocol-generic/registry.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
-import { markDirty, markClean } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
+import { markDirty, markClean, isDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
+import { wrapWithDirtyClassification } from '@mcp-midi-control/fractal-gen3/midi.js';
 
 let failures = 0;
 function check(label: string, cond: boolean, detail?: string): void {
@@ -113,6 +116,20 @@ for (const { desc, modelByte } of [
   const frame = desc.writer.buildSetParam!('reverb', 'type', 100);
   const r = frameIsWellFormed(frame, modelByte);
   check(`${desc.id} set_param(reverb.type) → model 0x${modelByte.toString(16)}`, r.ok, r.why);
+  // Ordinal 0 on the discrete form (sub 09 00, value 0) is the zeroed GET and
+  // does nothing on the device, so it must go out as a continuous 0.0 (sub 52).
+  const zero = desc.writer.buildSetParam!('reverb', 'type', 0);
+  const one = desc.writer.buildSetParam!('reverb', 'type', 1);
+  check(`${desc.id} reverb.type ordinal 0 rides sub 52 (continuous 0.0)`, zero[6] === 0x52, `sub=0x${zero[6]?.toString(16)}`);
+  check(`${desc.id} reverb.type ordinal 1 rides sub 09 (discrete)`, one[6] === 0x09, `sub=0x${one[6]?.toString(16)}`);
+  // Cab IR index: bounded by the cache's 0..1023 window, not the highest
+  // ordinal a roundtrip happened to visit (FM9 fw 12 set 315 on hardware).
+  const cabType = desc.blocks['cab']?.params['type1'];
+  let cab315: number | undefined;
+  let cab1024Refused = false;
+  try { cab315 = cabType?.encode(315) as number; } catch { /* refused */ }
+  try { cabType?.encode(1024); } catch { cab1024Refused = true; }
+  check(`${desc.id} cab.type1 accepts 315 and refuses 1024`, cab315 === 315 && cab1024Refused, `315→${cab315}`);
 }
 
 // ── 2a2. Reverb-type set-by-name (write leg, capture-backed) ────────
@@ -160,9 +177,9 @@ for (const desc of [AXEFX3_DESCRIPTOR, FM3_DESCRIPTOR, FM9_DESCRIPTOR]) {
     `${desc.id} set reverb.type 16 (numeric ordinal passthrough) → 16`,
     encodeValue(desc, 'reverb', 'type', 16) === 16,
   );
-  // FM9 has a device-true reverb roster (cache-mined): adjective-first labels.
-  // III/FM3 still borrow AM4 REVERB_TYPES noun-first names until their own caches.
-  const expRev16 = desc.id === 'fm9' ? 'Medium Spring' : 'Spring, Medium';
+  // FM9 (cache-mined) and FM3 (editor UI data) carry device-true reverb rosters:
+  // adjective-first labels. The III still borrows AM4 REVERB_TYPES noun-first names.
+  const expRev16 = 'Medium Spring';
   check(
     `${desc.id} reverb.type decode(16) → "${expRev16}" (read leg intact)`,
     schema?.decode(16) === expRev16,
@@ -415,12 +432,13 @@ async function writerChecks(): Promise<void> {
     check('FM3 select+insert both carry model byte 0x11', sent3.every((f) => f[4] === 0x11));
   }
 
-  // Axe-Fx III (6-row): single-frame insert, no pre-select (the confirmed path).
+  // Axe-Fx III (6-row): select THEN insert too. The FM9 fw 12 inserts at the
+  // edit cursor without the select (issue #23), and the editors always send it.
   {
     const { ctx, sent } = fakeCtx();
     try { await AXEFX3_DESCRIPTOR.writer.setBlock!(ctx, { row: 1, col: 1 }, { block_type: 'reverb' }); } catch { /* ignore */ }
-    check('III set_block emits ONE frame (sub=0x32 insert only, no 0x30 pre-select)',
-      sent.length === 1 && sent[0][6] === 0x32, JSON.stringify(sent.map((f) => `0x${f[6]?.toString(16)}`)));
+    check('III set_block emits sub=0x30 select THEN sub=0x32 insert (two frames)',
+      sent.length === 2 && sent[0][6] === 0x30 && sent[1][6] === 0x32, JSON.stringify(sent.map((f) => `0x${f[6]?.toString(16)}`)));
   }
 
   // FM9 6x14: the same col 14 is IN-grid and must be accepted + emit model 0x12.
@@ -432,7 +450,7 @@ async function writerChecks(): Promise<void> {
       ok = r.acked === true || r.unconfirmed === true; // sent, not rejected (no positive ack)
     } catch { ok = false; }
     check('FM9 set_block {row:1,col:14} accepted (within 6x14 grid)', ok);
-    check('FM9 in-grid set_block emitted a model-0x12 frame', sent.length === 1 && sent[0][4] === 0x12, JSON.stringify(sent[0]?.slice(0, 6)));
+    check('FM9 in-grid set_block emitted model-0x12 select + insert', sent.length === 2 && sent.every((f) => f[4] === 0x12), JSON.stringify(sent.map((f) => f.slice(0, 7))));
   }
 
   // apply_preset(target_location) honors save_authorization: the store envelope
@@ -499,6 +517,34 @@ async function writerChecks(): Promise<void> {
     check('FM9 guard emits NO STORE/wire frame in save_active_first', sent.length === 0, `sent ${sent.length}`);
   }
 
+  // Dirty classification: the 0x74 burst that ANSWERS our own fn=0x1F poll is
+  // a read, not an edit. Before this, every get_param / get_preset marked the
+  // buffer dirty and the gate refused straight after a clean load (III fw 32.06).
+  {
+    const listeners: Array<(b: number[]) => void> = [];
+    const raw = {
+      send: (_b: number[]) => {},
+      onMessage: (fn: (b: number[]) => void) => { listeners.push(fn); return () => {}; },
+    } as unknown as Parameters<typeof wrapWithDirtyClassification>[0];
+    const label = 'gen3-dirty-probe';
+    const wrapped = wrapWithDirtyClassification(raw, 0x10, label);
+    const deliver = (b: number[]): void => { for (const l of listeners) l(b); };
+    const head = (blockId: number): number[] =>
+      [0xf0, 0x00, 0x01, 0x74, 0x10, 0x74, blockId & 0x7f, (blockId >> 7) & 0x7f, 0x10, 0x00, 0x00, 0xf7];
+    const codec10 = createModernFractalCodec(0x10);
+    markClean(label);
+    wrapped.send(codec10.buildBlockBulkReadPoll(66));
+    deliver(head(66));
+    check('a 0x74 burst answering OUR poll of the same block does not mark dirty', !isDirty(label));
+    deliver(head(66));
+    check('a second, unsolicited 0x74 burst for that block DOES mark dirty (front-panel edit)', isDirty(label));
+    markClean(label);
+    wrapped.send(codec10.buildBlockBulkReadPoll(66));
+    deliver(head(58));
+    check('a 0x74 burst for a block we did NOT poll marks dirty', isDirty(label));
+    markClean(label);
+  }
+
   // Guard is a no-op (proceed=true) when the buffer is clean.
   {
     const { ctx, sent } = fakeCtx();
@@ -513,10 +559,19 @@ async function writerChecks(): Promise<void> {
   // >127 (fw 12.00 ignores CC32; field test 2026-06-12) — while the III/FM9
   // keep MIDI Program Change + Bank Select, split into one send per message
   // (the WinMM long-message drop workaround). Preset 475: bank 3, PC 91.
+  // Every switch is followed by ONE fn=0x0D active-preset query (the
+  // read-back that turns "sent" into "confirmed"); it is asserted, then
+  // filtered out so the switch frames are compared on their own.
+  const isNameQuery = (m: readonly number[]): boolean => m[0] === 0xf0 && m[5] === 0x0d;
   {
     const codec11 = createModernFractalCodec(0x11);
-    const { ctx, sent } = fakeCtx();
+    const { ctx, sent: sentAll } = fakeCtx();
     const r = await FM3_DESCRIPTOR.writer.switchPreset!(ctx, 475);
+    check('FM3 switch_preset follows with one fn=0x0D read-back query',
+      sentAll.filter(isNameQuery).length === 1, JSON.stringify(sentAll));
+    check('FM3 switch_preset with a silent device says UNCONFIRMED',
+      /UNCONFIRMED/.test(r.warning ?? ''), r.warning);
+    const sent = sentAll.filter((m) => !isNameQuery(m));
     check('FM3 switch_preset(475) acked', r.acked === true);
     check('FM3 switch_preset emits exactly ONE frame', sent.length === 1, `sent ${sent.length}`);
     const f = sent[0] ?? [];
@@ -533,27 +588,102 @@ async function writerChecks(): Promise<void> {
   // FM9: PC + Bank Select short-MIDI messages with the 'msb' encoding — the
   // FM9 reads the bank from CC0 and ignores CC32. No 0xF0-prefixed frame.
   {
-    const { ctx, sent } = fakeCtx();
+    const { ctx, sent: sentAll } = fakeCtx();
     await FM9_DESCRIPTOR.writer.switchPreset!(ctx, 475);
+    const sent = sentAll.filter((m) => !isNameQuery(m));
     check('FM9 switch_preset emits NO SysEx frame (PC+Bank path)',
       sent.length > 0 && sent.every((m) => m[0] !== 0xf0), JSON.stringify(sent));
     check('FM9 switch_preset(475) = CC0=3 (bank in CC0, msb mode), CC32=0, PC=91',
       JSON.stringify(sent) === JSON.stringify([[0xb0, 0x00, 3], [0xb0, 0x20, 0], [0xc0, 91]]),
       JSON.stringify(sent));
   }
-  // III: same PC+Bank path with the spec-standard (CC0<<7)|CC32 encoding.
+  // III: the SysEx switch too. The III honours Bank MSB (CC0) and ignores
+  // Bank LSB (CC32), so the spec's 'standard' PC encoding landed every preset
+  // >= 128 on (location mod 128): hardware-found on a Mk I, fw 32.06, and the
+  // sub=0x27 switch was confirmed on the same unit.
   {
-    const { ctx, sent } = fakeCtx();
+    const codec10 = createModernFractalCodec(0x10);
+    const { ctx, sent: sentAll } = fakeCtx();
     await AXEFX3_DESCRIPTOR.writer.switchPreset!(ctx, 475);
-    check('III switch_preset emits NO SysEx frame (PC+Bank path)',
-      sent.length > 0 && sent.every((m) => m[0] !== 0xf0), JSON.stringify(sent));
-    check('III switch_preset(475) = CC0=0, CC32=3 (standard), PC=91',
-      JSON.stringify(sent) === JSON.stringify([[0xb0, 0x00, 0], [0xb0, 0x20, 3], [0xc0, 91]]),
-      JSON.stringify(sent));
+    const sent = sentAll.filter((m) => !isNameQuery(m));
+    check('III switch_preset emits exactly ONE switch frame', sent.length === 1, JSON.stringify(sent));
+    check('III switch_preset frame is byte-identical to buildSwitchPresetSysEx(475)',
+      JSON.stringify(sent[0]) === JSON.stringify(codec10.buildSwitchPresetSysEx(475)), JSON.stringify(sent[0]));
+    // 'msb' keeps any residual PC use right: bank rides CC0, CC32 stays 0.
+    check('III PC builder = CC0=3, CC32=0, PC=91 (msb mode)',
+      JSON.stringify(createModernFractalCodec(0x10, { bankSelect: 'msb' }).buildSwitchPresetPC(475)) ===
+        JSON.stringify([0xb0, 0x00, 3, 0xb0, 0x20, 0, 0xc0, 91]));
+  }
+  // Read-back: a unit that reports a DIFFERENT active preset must not ack.
+  {
+    const codec10 = createModernFractalCodec(0x10);
+    const { ctx } = fakeCtx();
+    const name = Array.from('Other Preset'.padEnd(32, ' ')).map((c) => c.charCodeAt(0));
+    const body = [0xf0, 0x00, 0x01, 0x74, 0x10, 0x0d, 116, 0, ...name];
+    const reply = [...body, body.reduce((a, b) => a ^ b, 0) & 0x7f, 0xf7];
+    (ctx.conn as { receiveSysExMatching: unknown }).receiveSysExMatching =
+      async (pred: (b: number[]) => boolean) => {
+        if (pred(reply)) return reply;
+        throw new Error('timeout');
+      };
+    const r = await AXEFX3_DESCRIPTOR.writer.switchPreset!(ctx, 500);
+    check('III switch_preset(500) landing on 116 is NOT acked', r.acked === false, JSON.stringify(r));
+    check('III switch_preset mismatch names the preset the unit reports',
+      /116/.test(r.warning ?? '') && /Other Preset/.test(r.warning ?? ''), r.warning);
+    void codec10;
   }
 }
 
 await writerChecks();
+
+// ── 7a2. Rename wiring: preset = fn=0x01 sub=0x28, scene = sub=0x2b ─
+//
+// The gen-3 rename op rides the EDITOR'S OWN decoded name writes
+// (buildRenamePreset / buildSetSceneName, Ghidra FACT tier), replacing the
+// earlier fn=0x09 II-port hypothesis, and scene rename no longer refuses.
+// Byte-identity per device model byte; community-beta (hardware-unverified).
+async function renameChecks(): Promise<void> {
+  console.log('\nRename wiring (sub=0x28 preset / sub=0x2b scene):');
+  for (const { desc, modelByte } of [
+    { desc: AXEFX3_DESCRIPTOR, modelByte: 0x10 },
+    { desc: FM3_DESCRIPTOR, modelByte: 0x11 },
+    { desc: FM9_DESCRIPTOR, modelByte: 0x12 },
+  ]) {
+    {
+      const { ctx, sent } = fakeCtx();
+      const r = await desc.writer.rename!(ctx, 'preset', 'Test Name');
+      const want = buildRenamePreset('Test Name', modelByte);
+      check(`${desc.id} rename(preset) emits buildRenamePreset byte-identical (sub=0x28, model 0x${modelByte.toString(16)})`,
+        sent.length === 1 && JSON.stringify(sent[0]) === JSON.stringify(want),
+        `sent ${sent.length} frame(s)`);
+      check(`${desc.id} rename(preset) frame carries sub-action 0x28`,
+        sent[0]?.[5] === 0x01 && sent[0]?.[6] === 0x28, `fn=${sent[0]?.[5]} sub=${sent[0]?.[6]}`);
+      check(`${desc.id} rename(preset) labels the envelope honestly (sub=0x28, not 0x09)`,
+        (r.warning ?? '').includes('sub=0x28') && !(r.warning ?? '').includes('0x09'), r.warning);
+    }
+    {
+      const { ctx, sent } = fakeCtx();
+      const r = await desc.writer.rename!(ctx, 'scene:3', 'Verse');
+      const want = buildSetSceneName(2, 'Verse', modelByte); // display scene 3 = wire index 2
+      check(`${desc.id} rename(scene:3) emits buildSetSceneName(2) byte-identical (sub=0x2b)`,
+        sent.length === 1 && JSON.stringify(sent[0]) === JSON.stringify(want),
+        `sent ${sent.length} frame(s)`);
+      check(`${desc.id} rename(scene:3) no longer refuses (false "no envelope to port from" removed)`,
+        r.op === 'rename' && r.target === 'scene:3', JSON.stringify({ op: r.op, target: r.target }));
+    }
+    {
+      // Name-field validation still surfaces as value_out_of_range, not a wire frame.
+      const { ctx, sent } = fakeCtx();
+      let code: string | undefined;
+      try { await desc.writer.rename!(ctx, 'preset', 'X'.repeat(33)); } catch (e) {
+        code = e instanceof DispatchError ? e.code : `(non-dispatch: ${String(e)})`;
+      }
+      check(`${desc.id} rename(33-char name) refuses value_out_of_range with no wire frame`,
+        code === 'value_out_of_range' && sent.length === 0, `code ${code}, sent ${sent.length}`);
+    }
+  }
+}
+await renameChecks();
 
 // ── 7b. VP4 (model 0x14): serial AM4-shape + gated writes ───────────
 //
@@ -714,8 +844,8 @@ for (const { desc } of [
   { desc: FM9_DESCRIPTOR },
 ]) {
   const typeSchema = desc.blocks['reverb']?.params['type'];
-  // FM9 = device-true cache roster (adjective-first); III/FM3 = AM4-borrowed.
-  const expRev16 = desc.id === 'fm9' ? 'Medium Spring' : 'Spring, Medium';
+  // FM9/FM3 = device-true rosters (adjective-first); III = AM4-borrowed.
+  const expRev16 = 'Medium Spring';
   check(`${desc.id} reverb.type carries enum_values`, typeSchema?.enum_values !== undefined);
   check(
     `${desc.id} reverb.type ordinal 16 → '${expRev16}' (byte-anchor)`,
@@ -915,7 +1045,43 @@ async function readerChecks(): Promise<void> {
     }
     check(`${desc.id} get_param(reverb.type) reads the fn=0x1F dump`, res !== undefined, String(err));
     check(`${desc.id} get_param(reverb.type) wire_value = 16 (device-true paramId ${typeParamId})`, res?.wire_value === 16, JSON.stringify(res?.wire_value));
-    check(`${desc.id} get_param(reverb.type) display_value labels via S1 overlay`, res?.display_value === (desc.id === 'fm9' ? 'Medium Spring' : 'Spring, Medium'), JSON.stringify(res?.display_value));
+    check(`${desc.id} get_param(reverb.type) display_value labels via S1 overlay`, res?.display_value === (desc.id === 'vp4' ? 'Spring, Medium' : 'Medium Spring'), JSON.stringify(res?.display_value));
+  }
+
+  // FM9 cab IR index: labeled from the bank in the same dump (FM9 fw 12
+  // hardware: Factory 2 #315 = "4x12 1960A 300W 57", issue #23).
+  {
+    const enc14 = (n: number) => [n & 0x7f, (n >> 7) & 0x7f];
+    const cabParams = FM9_PARAMS_BY_FAMILY['CABINET'] ?? [];
+    const bankPid = cabParams.find((p) => p.name === 'CABINET_BANK1')!.paramId;
+    const typePid = cabParams.find((p) => p.name === 'CABINET_TYPE1')!.paramId;
+    const cabEffectId = resolveEffectId('cab', 1);
+    const stride = Math.max(bankPid, typePid) + 4;
+    const itemCount = stride * 4;
+    const values = Array.from({ length: itemCount }, (_, idx) =>
+      idx % stride === bankPid ? 1 : idx % stride === typePid ? 315 : 0);
+    const burst = [
+      broadcastFrame(0x12, 0x74, [...enc14(cabEffectId), ...enc14(itemCount), 0x07]),
+      broadcastFrame(0x12, 0x75, [0x00, 0x02, ...values.flatMap((v) => packValue16(v))]),
+      broadcastFrame(0x12, 0x76, []),
+    ];
+    const conn = mockConnect({ responder: (out) => (out[5] === 0x1f ? burst : []), ackLatencyMs: 1 });
+    const ctx = { conn, descriptor: FM9_DESCRIPTOR } as unknown as Parameters<NonNullable<DeviceDescriptor['reader']>['getParam']>[0];
+    let res: Awaited<ReturnType<NonNullable<DeviceDescriptor['reader']>['getParam']>> | undefined;
+    try { res = await FM9_DESCRIPTOR.reader!.getParam(ctx, 'cab', 'type1'); } catch { /* reported below */ }
+    check('fm9 get_param(cab.type1) labels the IR from its bank', res?.wire_value === 315 && res?.display_value === '4x12 1960A 300W 57', JSON.stringify(res));
+  }
+
+  // FM3 device-true enum labels (editor UI data + the fw 13 amp delta, issue
+  // #22). A complete device roster replaces the family list rather than
+  // merging over it, so the FM3's 27 delay models carry no shared tail.
+  {
+    const amp = FM3_DESCRIPTOR.blocks['amp']?.params['type'];
+    check('fm3 amp.type ordinal 283 = "Deluxe Tweed Bright" (fw 13)', amp?.enum_values?.[283] === 'Deluxe Tweed Bright', JSON.stringify(amp?.enum_values?.[283]));
+    check('fm3 amp.type ordinal 335 = "Brit JVM Crunch Red" (fw 13)', amp?.enum_values?.[335] === 'Brit JVM Crunch Red', JSON.stringify(amp?.enum_values?.[335]));
+    const model = FM3_DESCRIPTOR.blocks['delay']?.params['model'];
+    const n = Object.keys(model?.enum_values ?? {}).length;
+    check('fm3 delay.model is the device\'s own 27-model roster (no family tail)', n === 27 && model?.enum_values?.[21] === 'Worn Tape', `${n} ${JSON.stringify(model?.enum_values?.[21])}`);
   }
 
   // Channel-DIVERGENT read: the four channel copies of REVERB_TYPE differ. This
@@ -1470,6 +1636,32 @@ console.log('\nC13: signed-raw-semitone decode (PITCH/PLEX/SYNTH/REVERB shift, i
     // Self-coverage: if the roster ever came back empty this leg would pass
     // having checked nothing, which is precisely how the original defect hid.
     check(`${d.id}: the slug roster is non-empty (this leg measured something)`, slugs.length >= 20, `got ${slugs.length}`);
+  }
+
+  // A III owner's sweep tried the names a person reaches for (vol_pan, tremolo,
+  // megatap, ring_mod, multi_delay, "tone match") and every one was refused,
+  // though each block exists under its full catalog name. Short names now map
+  // to the catalog name, and a typed name is tried in slug form.
+  console.log('\nShort and typed block names reach the catalog block:');
+  const iii = MODERN_FRACTAL_DESCRIPTORS.find((d) => d.id === 'axe-fx-iii')!;
+  const expectations: Array<[string, string]> = [
+    ['vol_pan', 'volume_pan'], ['volpan', 'volume_pan'], ['pan_trem', 'pan_tremolo'], ['tremolo', 'pan_tremolo'],
+    ['megatap', 'megatap_delay'], ['ring_mod', 'ring_modulator'], ['multiband_comp', 'multiband_compressor'],
+    ['multi_delay', 'multitap_delay'], ['ten_tap', 'ten_tap_delay'], ['rta', 'real_time_analyzer'],
+    ['tone match', 'tone_match'], ['Tone Match', 'tone_match'], ['Vol-Pan', 'volume_pan'], ['Plex Delay', 'plex_delay'],
+  ];
+  const wrong = expectations.filter(([typed, want]) => {
+    try { return resolveBlockName(iii, typed) !== want; } catch { return true; }
+  });
+  check(`axe-fx-iii: ${expectations.length} short and typed names resolve to their catalog block`,
+    wrong.length === 0, wrong.map(([t, w]) => `${t} -> ${w}`).join(', '));
+  let stillRefuses = false;
+  try { resolveBlockName(iii, 'wobble'); } catch (e) { stillRefuses = e instanceof DispatchError && e.code === 'unknown_block'; }
+  check('axe-fx-iii: a name that is no block still refuses with unknown_block', stillRefuses);
+  for (const d of MODERN_FRACTAL_DESCRIPTORS) {
+    const dangling = Object.entries(d.block_aliases ?? {}).filter(([short, full]) => !(full in d.blocks) || short in d.blocks);
+    check(`${d.id}: every short name points at a block this device has, and shadows none`,
+      dangling.length === 0, dangling.map(([a, b]) => `${a} -> ${b}`).join(', '));
   }
 
   // A shunt is NOT a cleared cell: the grid word carries block type 0x08 plus

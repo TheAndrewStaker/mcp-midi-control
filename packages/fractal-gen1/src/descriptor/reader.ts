@@ -53,6 +53,18 @@ import {
   type AxeFxGen1Param,
 } from 'fractal-midi/gen1';
 
+import { gen1StandardModelByteWarning } from '../midi.js';
+
+/**
+ * Standard model-byte suffix for SysEx timeout diagnostics: a Standard whose
+ * model byte really is 0x00 would IGNORE our 0x01-addressed queries, which
+ * presents exactly as this timeout. Empty string on Ultra-named ports.
+ */
+function standardByteSuffix(): string {
+  const w = gen1StandardModelByteWarning();
+  return w === undefined ? '' : ` ${w}`;
+}
+
 const DEVICE_LABEL = 'Fractal Axe-Fx Standard/Ultra';
 /** Query response window. gen-1 round-trips are short; 300 ms matches AM4. */
 const READ_RESPONSE_TIMEOUT_MS = 300;
@@ -112,7 +124,8 @@ async function readOne(ctx: DispatchCtx, block: string, name: string): Promise<R
       DEVICE_LABEL,
       `No PARAM_VALUE response from ${DEVICE_LABEL} for '${block}.${name}' within ${READ_RESPONSE_TIMEOUT_MS}ms. ` +
         `gen-1 read-back is community-beta and unconfirmed on hardware; the unit may not answer queries on ` +
-        `your firmware, or the port may have routed to a different codec.`,
+        `your firmware, or the port may have routed to a different codec.` +
+        standardByteSuffix(),
       { retry_action: "Read the value off the device's front-panel display, and report the result so we can confirm gen-1 reads." },
     );
   }
@@ -213,7 +226,8 @@ async function getPresetSnapshot(ctx: DispatchCtx, options?: GetPresetOptions): 
       `No MIDI_PATCH_DUMP response from ${DEVICE_LABEL} within ${DUMP_RESPONSE_TIMEOUT_MS}ms ` +
         `(request: ${preset === undefined ? 'edit buffer' : `stored preset ${preset}`}). ` +
         `The gen-1 patch dump is community-beta and unconfirmed on hardware; the unit may not answer ` +
-        `fn 0x03 on your firmware, or the port may have routed to a different codec.`,
+        `fn 0x03 on your firmware, or the port may have routed to a different codec.` +
+        standardByteSuffix(),
       { retry_action: 'Read the preset name off the front panel, and report the result so we can confirm the gen-1 patch dump.' },
     );
   }

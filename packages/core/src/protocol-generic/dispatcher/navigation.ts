@@ -7,13 +7,14 @@
 
 import {
   DispatchError,
+  type DispatchCtx,
   type RenameTarget,
   type ScannedLocation,
   type WriteResult,
 } from '../types.js';
 
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
-import { assertInstanceSupported, openCtx, requireDevice, toWirePack, withHandleRetry } from './core.js';
+import { assertInstanceSupported, requireDevice, toWirePack, withEndpoint, withHandleRetry } from './core.js';
 import { resetModRouteState } from './modRouteState.js';
 
 /**
@@ -37,28 +38,33 @@ export async function executeSwitchPreset(args: {
       `switch_preset is not implemented for ${descriptor.display_name}.`,
     );
   }
-  const ctx = openCtx(descriptor);
-  // NOTE: guardActiveBufferOrSave (below) is intentionally NOT wrapped in
-  // Phase A.5's reconnect-and-retry: in 'save_active_first' mode it performs
-  // a SAVE itself (multi-step, not a single leaf op), so it stays out of
-  // scope this phase alongside apply_preset/apply_setlist — see
-  // dispatcher/core.ts's withHandleRetry doc comment.
-  if (descriptor.writer.guardActiveBufferOrSave) {
-    const mode = args.on_active_preset_edited ?? 'warn';
-    const guard = await descriptor.writer.guardActiveBufferOrSave(ctx, mode);
-    if (!guard.proceed) {
-      return {
-        op: 'switch_preset',
-        target: String(args.location),
-        acked: false,
-        refused: true,
-        warningText: guard.warningText,
-        device: descriptor.display_name,
-      };
+  // Phase B: the dirty-gate read and the switch ride one exclusive visit,
+  // so nothing lands on the wire between the gate's answer and the move.
+  const outcome = await withEndpoint(descriptor, async (ctx) => {
+    // NOTE: guardActiveBufferOrSave (below) is intentionally NOT wrapped in
+    // Phase A.5's reconnect-and-retry: in 'save_active_first' mode it performs
+    // a SAVE itself (multi-step, not a single leaf op), so it stays out of
+    // scope this phase alongside apply_preset/apply_setlist — see
+    // dispatcher/core.ts's withHandleRetry doc comment.
+    if (descriptor.writer.guardActiveBufferOrSave) {
+      const mode = args.on_active_preset_edited ?? 'warn';
+      const guard = await descriptor.writer.guardActiveBufferOrSave(ctx, mode);
+      if (!guard.proceed) {
+        return {
+          op: 'switch_preset',
+          target: String(args.location),
+          acked: false,
+          refused: true,
+          warningText: guard.warningText,
+        };
+      }
     }
+    // Phase A.5: reconnect-and-retry-once on a handle-level fault.
+    return withHandleRetry(ctx, (c) => switchPreset(c, args.location));
+  }, { opName: 'switch_preset' });
+  if ('refused' in outcome && outcome.refused === true) {
+    return { ...outcome, device: descriptor.display_name };
   }
-  // Phase A.5: reconnect-and-retry-once on a handle-level fault.
-  const result = await withHandleRetry(ctx, (c) => switchPreset(c, args.location));
   // BK-075: switching to a new preset replaces the working buffer
   // contents entirely; cached layout is now stale.
   invalidateBlockLayoutCache(descriptor.id);
@@ -66,7 +72,7 @@ export async function executeSwitchPreset(args: {
   // session slot allocator's view of which slots are free is no longer
   // valid. Clear it so the next set_mod_route on this device starts fresh.
   resetModRouteState(descriptor.id);
-  return { ...result, device: descriptor.display_name };
+  return { ...outcome, device: descriptor.display_name };
 }
 
 /**
@@ -103,8 +109,26 @@ export async function executeSavePreset(args: {
         `its persistence envelope is not wired).`,
     );
   }
-  const ctx = openCtx(descriptor);
+  // Phase B: the overwrite pre-check read, the persisting write, and the
+  // read-back receipt are one exclusive visit — a concurrent op cannot
+  // slip between the gate's answer and the flash write it authorized.
+  return withEndpoint(descriptor, (ctx) => savePresetLocked(descriptor, ctx, savePreset, args),
+    { opName: 'save_preset' });
+}
 
+/** The locked tail of {@link executeSavePreset}: everything that touches the wire. */
+async function savePresetLocked(
+  descriptor: ReturnType<typeof requireDevice>,
+  ctx: DispatchCtx,
+  savePreset: NonNullable<ReturnType<typeof requireDevice>['writer']['savePreset']>,
+  args: {
+    port: string;
+    location: string | number;
+    name?: string;
+    confirm_overwrite?: boolean;
+    instance?: number;
+  },
+): Promise<WriteResult & { device: string }> {
   // ── Overwrite gate (confirmable, never a hard wall) — device-agnostic.
   // Runs only when the device exposes `checkOverwriteTarget`; devices that
   // can't read a stored location's name simply skip it (today's behavior).
@@ -240,9 +264,11 @@ export async function executeSwitchScene(args: { port: string; scene: number }):
       `Scene index ${args.scene} out of range on ${descriptor.display_name} (valid: 1..${max}).`,
     );
   }
-  const ctx = openCtx(descriptor);
-  // Phase A.5: reconnect-and-retry-once on a handle-level fault.
-  const result = await withHandleRetry(ctx, (c) => switchScene(c, args.scene));
+  // Phase B: exclusive per-endpoint visit.
+  const result = await withEndpoint(descriptor, (ctx) =>
+    // Phase A.5: reconnect-and-retry-once on a handle-level fault.
+    withHandleRetry(ctx, (c) => switchScene(c, args.scene)),
+  { opName: 'switch_scene' });
   return { ...result, device: descriptor.display_name };
 }
 
@@ -292,9 +318,11 @@ export async function executeRename(args: { port: string; target: string; name: 
       `rename name length ${args.name.length} out of range (must be 1..32).`,
     );
   }
-  const ctx = openCtx(descriptor);
-  // Phase A.5: reconnect-and-retry-once on a handle-level fault.
-  const result = await withHandleRetry(ctx, (c) => rename(c, args.target as RenameTarget, args.name));
+  // Phase B: exclusive per-endpoint visit.
+  const result = await withEndpoint(descriptor, (ctx) =>
+    // Phase A.5: reconnect-and-retry-once on a handle-level fault.
+    withHandleRetry(ctx, (c) => rename(c, args.target as RenameTarget, args.name)),
+  { opName: 'rename' });
   return { ...result, device: descriptor.display_name };
 }
 
@@ -325,10 +353,37 @@ export async function executeScanLocations(args: {
     );
   }
   // `pack` (Circuit Tracks) rides on ctx like every other pack-addressed op, so a
-  // scan lists the requested pack's directory. assertPackSupported (in openCtx)
-  // refuses pack>1 on packless devices.
-  const ctx = openCtx(descriptor, { pack: toWirePack(args.pack) });
+  // scan lists the requested pack's directory. assertPackSupported (inside the
+  // ctx build) refuses pack>1 on packless devices.
+  //
+  // Phase B: the dirty-gate read and the whole multi-location sweep are one
+  // exclusive visit. The AM4's preset-name responses carry NO location on the
+  // wire (correlation is arrival order), so a concurrent read during a sweep
+  // could bind a name to the wrong location — the exact defect the arbiter
+  // exists to close.
+  return withEndpoint(descriptor, (ctx) => scanLocationsLocked(descriptor, ctx, scanLocations, args),
+    { pack: toWirePack(args.pack), opName: 'scan_locations' });
+}
 
+/** The locked tail of {@link executeScanLocations}: the gate read + the sweep. */
+async function scanLocationsLocked(
+  descriptor: ReturnType<typeof requireDevice>,
+  ctx: DispatchCtx,
+  scanLocations: NonNullable<ReturnType<typeof requireDevice>['reader']['scanLocations']>,
+  args: {
+    port: string;
+    from: string | number;
+    to: string | number;
+    pack?: number;
+    on_active_preset_edited?: 'warn' | 'discard' | 'save_active_first';
+  },
+): Promise<{
+  device: string;
+  scanned: readonly ScannedLocation[];
+  failed_at?: string;
+  failed_reason?: string;
+  warning?: string;
+}> {
   // ── Buffer-dirty gate, for devices whose scan NAVIGATES ────────────
   //
   // On such a device (the Axe-Fx II) a scan sends a switch per slot, so it

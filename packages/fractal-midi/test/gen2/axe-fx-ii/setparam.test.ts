@@ -15,6 +15,7 @@
  */
 import {
   AXE_FX_II_XL_PLUS_MODEL_ID,
+  KNOWN_PARAMS,
   MODEL_IDS,
   packValue16,
   unpackValue16,
@@ -379,6 +380,30 @@ export function runAxeFxIISetParamTests(): void {
     throw new Error(
       `fn 0x16 enum re-encode drift\n  expected: [${hex(FN16_ENUM_PAYLOAD)}]\n  got:      [${hex(fn16Reencode)}]`,
     );
+  }
+
+  // BK-PITCH-II codec-leg golden: pitch.voice_N_shift is declared over the
+  // PANEL domain (signed semitones) with the offset-ordinal wire mapping
+  // wire = display + 24 (unison at wire 24). Hardware anchor: XL+ 5-point
+  // sweep per voice, 2026-08-02 (probe-ii-pitch-domain --sweep; the device
+  // renders its own label into the GET frame): sent 0->wire 24, 1->25,
+  // 3->27, 7->31, 12->36. A regen of params.ts that reverts these rows to
+  // the wiki's wire-domain 0..48 copy fails here.
+  for (const key of ['pitch.voice_1_shift', 'pitch.voice_2_shift'] as const) {
+    const p = KNOWN_PARAMS[key];
+    if (p.displayMin !== -24 || p.displayMax !== 24 || p.step !== 1) {
+      throw new Error(
+        `${key}: expected panel domain -24..+24 step 1, got ${p.displayMin}..${p.displayMax} step ${p.step}`,
+      );
+    }
+    if (p.wireOrdinalOffset !== 24) {
+      throw new Error(`${key}: expected wireOrdinalOffset 24, got ${p.wireOrdinalOffset}`);
+    }
+    for (const [display, wire] of [[0, 24], [1, 25], [3, 27], [7, 31], [12, 36], [-24, 0], [24, 48]] as const) {
+      if (display + p.wireOrdinalOffset !== wire) {
+        throw new Error(`${key}: display ${display} + offset must equal wire ${wire}`);
+      }
+    }
   }
 
   // Envelope goldens.

@@ -480,6 +480,19 @@ export const PARAM_ALIASES: Record<string, string> = {
   'wah.min_frequency': 'wah.minimum_frequency',
   'wah.max_frequency': 'wah.maximum_frequency',
   'filter.freq': 'filter.frequency',
+  // External controllers 1-4 (Setup > MIDI/Remote > External Control). The
+  // register names are positional (`ext_cc_begin` + offset), so an agent
+  // asked to "set External 2 to CC 17" could not find the param by name
+  // (2026-09-16, wiring a MIDI expression pedal to the AM4). Aliases give each
+  // its Fractal-manual name; CC number vs INITIAL VALUE stay distinct.
+  'global.external_1_cc': 'global.ext_cc_begin',
+  'global.external_2_cc': 'global.ext_cc_begin_1',
+  'global.external_3_cc': 'global.ext_cc_begin_2',
+  'global.external_4_cc': 'global.ext_cc_begin_3',
+  'global.external_1_initial_value': 'global.ext_startval_begin',
+  'global.external_2_initial_value': 'global.ext_startval_begin_1',
+  'global.external_3_initial_value': 'global.ext_startval_begin_2',
+  'global.external_4_initial_value': 'global.ext_startval_begin_3',
 };
 
 /**
@@ -1971,7 +1984,7 @@ export const KNOWN_PARAMS = {
 
   'drive.drive': {
     block: 'drive', name: 'drive',
-    displayLabel: 'Gain',
+    displayLabel: 'Drive',
     pidLow: 0x0076, pidHigh: 0x000b,
     unit: 'knob_0_10', displayMin: 0, displayMax: 10,
   },
@@ -1985,19 +1998,19 @@ export const KNOWN_PARAMS = {
   // unchanged across drive types.
   'drive.tone': {
     block: 'drive', name: 'tone',
-    displayLabel: 'Bass',
+    displayLabel: 'Tone',
     pidLow: 0x0076, pidHigh: 0x000c,
     unit: 'knob_0_10', displayMin: 0, displayMax: 10,
   },
   'drive.level': {
     block: 'drive', name: 'level',
-    displayLabel: 'Mid',
+    displayLabel: 'Level',
     pidLow: 0x0076, pidHigh: 0x000d,
     unit: 'knob_0_10', displayMin: 0, displayMax: 10,
   },
   'drive.mix': {
     block: 'drive', name: 'mix',
-    displayLabel: 'Tone',
+    displayLabel: 'Mix',
     pidLow: 0x0076, pidHigh: 0x000e,
     unit: 'percent', displayMin: 0, displayMax: 100,
   },
@@ -2021,7 +2034,7 @@ export const KNOWN_PARAMS = {
   },
   'drive.bass': {
     block: 'drive', name: 'bass',
-    displayLabel: 'Bright Cap',
+    displayLabel: 'Bass',
     pidLow: 0x0076, pidHigh: 0x0014,
     unit: 'knob_0_10', displayMin: 0, displayMax: 10,
   },
@@ -2032,14 +2045,14 @@ export const KNOWN_PARAMS = {
   },
   'drive.mid_freq': {
     block: 'drive', name: 'mid_freq',
-    displayLabel: 'XFormer Low Freq',
+    displayLabel: 'Mid Frequency',
     pidLow: 0x0076, pidHigh: 0x0016,
     unit: 'hz', displayMin: 200, displayMax: 2000,
     scaling: 'log10',
   },
   'drive.treble': {
     block: 'drive', name: 'treble',
-    displayLabel: 'XFormer Hi Freq',
+    displayLabel: 'Treble',
     pidLow: 0x0076, pidHigh: 0x0017,
     unit: 'knob_0_10', displayMin: 0, displayMax: 10,
   },
@@ -2058,7 +2071,7 @@ export const KNOWN_PARAMS = {
   // Mirrored from CACHE_PARAMS so the type-check picks them up.
   'drive.high_cut': {
     block: 'drive', name: 'high_cut',
-    displayLabel: 'High Cut Frequency',
+    displayLabel: 'High Cut',
     pidLow: 0x0076, pidHigh: 0x0011,
     unit: 'hz', displayMin: 200, displayMax: 20000,
     scaling: 'log10',
@@ -2073,10 +2086,10 @@ export const KNOWN_PARAMS = {
   },
   'drive.clip_type': {
     block: 'drive', name: 'clip_type',
-    // 'Type' is a provisional caption for this 14-entry clip-diode enum.
-    // The prior 'Frequency' was wrong (likely an editor label-extraction
-    // error). PENDING hardware confirmation of the AM4-Edit caption.
-    displayLabel: 'Type',
+    // 'Clip Type' is AM4-Edit's own caption for FUZZ_CLIPTYPE (id 18) in its
+    // block-layout XML. The earlier 'Frequency' / 'Type' captions came from
+    // the label join mapping drive to the AMP family (DISTORT) by paramId.
+    displayLabel: 'Clip Type',
     pidLow: 0x0076, pidHigh: 0x0012,
     // Cache id=18: 14-entry enum. Hand-authored (the generator only
     // attaches one enum import per block, used for `type` at id=10).
@@ -2089,13 +2102,13 @@ export const KNOWN_PARAMS = {
   },
   'drive.bit_reduce': {
     block: 'drive', name: 'bit_reduce',
-    displayLabel: 'Location',
+    displayLabel: 'Bit Reduce',
     pidLow: 0x0076, pidHigh: 0x0018,
     unit: 'count', displayMin: 0, displayMax: 24,
   },
   'drive.input_select': {
     block: 'drive', name: 'input_select',
-    displayLabel: 'Amp Input Select',
+    displayLabel: 'Input Select',
     pidLow: 0x0076, pidHigh: 0x0019,
     // Cache id=25: enum [L+R / LEFT / RIGHT].
     unit: 'enum', displayMin: 0, displayMax: 2,
@@ -2120,7 +2133,7 @@ export const KNOWN_PARAMS = {
   // confirmed — see open follow-ups in session-44-findings.md.
   'drive.slew_rate': {
     block: 'drive', name: 'slew_rate',
-    displayLabel: 'Depth',
+    displayLabel: 'Sample Rate',
     pidLow: 0x0076, pidHigh: 0x001a,
     unit: 'percent', displayMin: 0, displayMax: 100,
   },
@@ -2132,16 +2145,16 @@ export const KNOWN_PARAMS = {
   // 10-band Graphic EQ — frequencies 100/160/250/400/640/1000/1600/
   // 2500/4000/6400 Hz, each ±12 dB. Wire-display match exact across
   // all 10 bands.
-  'drive.geq_band_1':  { block: 'drive', name: 'geq_band_1', displayLabel: 'Supply Sag',  pidLow: 0x0076, pidHigh: 0x001d, unit: 'db', displayMin: -12, displayMax: 12 },
-  'drive.geq_band_2':  { block: 'drive', name: 'geq_band_2', displayLabel: 'Presence',  pidLow: 0x0076, pidHigh: 0x001e, unit: 'db', displayMin: -12, displayMax: 12 },
-  'drive.geq_band_3':  { block: 'drive', name: 'geq_band_3', displayLabel: 'Negative FB',  pidLow: 0x0076, pidHigh: 0x001f, unit: 'db', displayMin: -12, displayMax: 12 },
-  'drive.geq_band_4':  { block: 'drive', name: 'geq_band_4', displayLabel: 'Presence Freq',  pidLow: 0x0076, pidHigh: 0x0020, unit: 'db', displayMin: -12, displayMax: 12 },
-  'drive.geq_band_5':  { block: 'drive', name: 'geq_band_5', displayLabel: 'Low Freq',  pidLow: 0x0076, pidHigh: 0x0021, unit: 'db', displayMin: -12, displayMax: 12 },
-  'drive.geq_band_6':  { block: 'drive', name: 'geq_band_6', displayLabel: 'Low Reso',  pidLow: 0x0076, pidHigh: 0x0022, unit: 'db', displayMin: -12, displayMax: 12 },
-  'drive.geq_band_7':  { block: 'drive', name: 'geq_band_7', displayLabel: 'Amp Section',  pidLow: 0x0076, pidHigh: 0x0023, unit: 'db', displayMin: -12, displayMax: 12 },
-  'drive.geq_band_8':  { block: 'drive', name: 'geq_band_8', displayLabel: 'Depth Freq',  pidLow: 0x0076, pidHigh: 0x0024, unit: 'db', displayMin: -12, displayMax: 12 },
+  'drive.geq_band_1':  { block: 'drive', name: 'geq_band_1', displayLabel: '100 Hz',  pidLow: 0x0076, pidHigh: 0x001d, unit: 'db', displayMin: -12, displayMax: 12 },
+  'drive.geq_band_2':  { block: 'drive', name: 'geq_band_2', displayLabel: '160 Hz',  pidLow: 0x0076, pidHigh: 0x001e, unit: 'db', displayMin: -12, displayMax: 12 },
+  'drive.geq_band_3':  { block: 'drive', name: 'geq_band_3', displayLabel: '250 Hz',  pidLow: 0x0076, pidHigh: 0x001f, unit: 'db', displayMin: -12, displayMax: 12 },
+  'drive.geq_band_4':  { block: 'drive', name: 'geq_band_4', displayLabel: '400 Hz',  pidLow: 0x0076, pidHigh: 0x0020, unit: 'db', displayMin: -12, displayMax: 12 },
+  'drive.geq_band_5':  { block: 'drive', name: 'geq_band_5', displayLabel: '640 Hz',  pidLow: 0x0076, pidHigh: 0x0021, unit: 'db', displayMin: -12, displayMax: 12 },
+  'drive.geq_band_6':  { block: 'drive', name: 'geq_band_6', displayLabel: '1000 Hz',  pidLow: 0x0076, pidHigh: 0x0022, unit: 'db', displayMin: -12, displayMax: 12 },
+  'drive.geq_band_7':  { block: 'drive', name: 'geq_band_7', displayLabel: '1600 Hz',  pidLow: 0x0076, pidHigh: 0x0023, unit: 'db', displayMin: -12, displayMax: 12 },
+  'drive.geq_band_8':  { block: 'drive', name: 'geq_band_8', displayLabel: '2500 Hz',  pidLow: 0x0076, pidHigh: 0x0024, unit: 'db', displayMin: -12, displayMax: 12 },
   'drive.geq_band_9':  { block: 'drive', name: 'geq_band_9',  pidLow: 0x0076, pidHigh: 0x0025, unit: 'db', displayMin: -12, displayMax: 12 },
-  'drive.geq_band_10': { block: 'drive', name: 'geq_band_10', displayLabel: 'Master Vol Cap', pidLow: 0x0076, pidHigh: 0x0026, unit: 'db', displayMin: -12, displayMax: 12 },
+  'drive.geq_band_10': { block: 'drive', name: 'geq_band_10', displayLabel: '6400 Hz', pidLow: 0x0076, pidHigh: 0x0026, unit: 'db', displayMin: -12, displayMax: 12 },
   'drive.high_mid': {
     block: 'drive', name: 'high_mid',
     pidLow: 0x0076, pidHigh: 0x002d,
@@ -4833,32 +4846,52 @@ export const KNOWN_PARAMS = {
   'global.out2eq9': { block: 'global', name: 'out2eq9', pidLow: 0x0001, pidHigh: 0x002a, unit: 'db', displayMin: -12, displayMax: 12 },
   // GEQ band ±12 dB convention — HW unverified
   'global.out2eq10': { block: 'global', name: 'out2eq10', pidLow: 0x0001, pidHigh: 0x002b, unit: 'db', displayMin: -12, displayMax: 12 },
-  // gate threshold offset dB — HW unverified
-  'global.gate_offset': { block: 'global', name: 'gate_offset', displayLabel: "Noisegate Offset", pidLow: 0x0001, pidHigh: 0x002d, unit: 'db', displayMin: -40, displayMax: 0 },
+  // cache oracle (tc=0x31, step 0.1): bipolar -40..40 dB, not the shipped -40..0.
+  // deep-verify 2026-06-10 read u32=32767 (mid-scale) -> 0.0 dB under this range
+  // (a clean default); the old -40..0 decoded the same register to -20 dB.
+  'global.gate_offset': { block: 'global', name: 'gate_offset', displayLabel: "Noisegate Offset", pidLow: 0x0001, pidHigh: 0x002d, unit: 'db', displayMin: -40, displayMax: 40 },
   // confirmed 2026-06-05: AVERAGE/LAST TWO (index 1 previously captured)
   'global.tap_tempo_mode': { block: 'global', name: 'tap_tempo_mode', displayLabel: "Tap Tempo Mode", pidLow: 0x0001, pidHigh: 0x002e, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Average', 1: 'Last Two' } },
-  // input trim percent — HW unverified
-  'global.in1_trim': { block: 'global', name: 'in1_trim', displayLabel: "Input Pad", pidLow: 0x0001, pidHigh: 0x002f, unit: 'percent', displayMin: 0, displayMax: 100 },
+  // cache oracle + deep-verify (2026-06-10, roster n=4, read ordinal 2 -> '12 dB'):
+  // 4-step input pad enum, not a percent placeholder
+  'global.in1_trim': { block: 'global', name: 'in1_trim', displayLabel: "Input Pad", pidLow: 0x0001, pidHigh: 0x002f, unit: 'enum', displayMin: 0, displayMax: 3, enumValues: { 0: '0 dB', 1: '6 dB', 2: '12 dB', 3: '18 dB' } },
   // confirmed 2026-06-05: STEREO/SUM L+R/COPY L->R/SPLIT/MUTE (note: SPLIT shows cab-sim routing info on device)
   'global.out1_config': { block: 'global', name: 'out1_config', displayLabel: "Output Mode", pidLow: 0x0001, pidHigh: 0x0030, unit: 'enum', displayMin: 0, displayMax: 4, enumValues: { 0: 'Stereo', 1: 'Sum L+R', 2: 'Copy L->R', 3: 'Split', 4: 'Mute' } },
   // confirmed 2026-06-05
   'global.out1_phase': { block: 'global', name: 'out1_phase', displayLabel: "Output Phase", pidLow: 0x0001, pidHigh: 0x0031, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Normal', 1: 'Invert' } },
   // confirmed 2026-06-05
   'global.in1_source': { block: 'global', name: 'in1_source', displayLabel: "Input Source", pidLow: 0x0001, pidHigh: 0x0034, unit: 'enum', displayMin: 0, displayMax: 2, enumValues: { 0: 'Analog', 1: 'SPDIF', 2: 'USB (Channels 3/4)' } },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.in1_config': { block: 'global', name: 'in1_config', pidLow: 0x0001, pidHigh: 0x0035, unit: 'count', displayMin: 0, displayMax: 127 },
+  // cache oracle + deep-verify (2026-06-10, roster n=2, read ordinal 0 -> 'MONO (LEFT ONLY)')
+  'global.in1_config': { block: 'global', name: 'in1_config', pidLow: 0x0001, pidHigh: 0x0035, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'MONO (LEFT ONLY)', 1: 'STEREO' } },
   // percent inferred from AM4-Edit display — HW unverified
   'global.lcd_contrast': { block: 'global', name: 'lcd_contrast', displayLabel: "LCD Contrast", pidLow: 0x0001, pidHigh: 0x0038, unit: 'percent', displayMin: 0, displayMax: 100 },
-  // press-hold timeout ms — HW unverified
-  'global.fc_hold_timeout': { block: 'global', name: 'fc_hold_timeout', displayLabel: "Hold Timeout", pidLow: 0x0001, pidHigh: 0x0039, unit: 'ms', displayMin: 0, displayMax: 5000 },
-  // MIDI channel 1..16
-  'global.midi_chan': { block: 'global', name: 'midi_chan', displayLabel: "MIDI Channel", pidLow: 0x0001, pidHigh: 0x003a, unit: 'count', displayMin: 1, displayMax: 16 },
+  // cache oracle + deep-verify (2026-06-10, roster n=8, read ordinal 1 -> '0.50 SECONDS'):
+  // 8-step enum, not a ms knob
+  'global.fc_hold_timeout': { block: 'global', name: 'fc_hold_timeout', displayLabel: "Hold Timeout", pidLow: 0x0001, pidHigh: 0x0039, unit: 'enum', displayMin: 0, displayMax: 7, enumValues: { 0: '0.25 SECONDS', 1: '0.50 SECONDS', 2: '0.75 SECONDS', 3: '1.00 SECONDS', 4: '1.25 SECONDS', 5: '1.50 SECONDS', 6: '1.75 SECONDS', 7: '2.00 SECONDS' } },
+  // cache oracle + deep-verify (2026-06-10): 0-BASED enum with OMNI at 16, not the
+  // shipped count[1..16]. The register read u32=0 while the unit sat on channel 1,
+  // which the count shape cannot express (0 is below its min); the old shape's
+  // writes were off by one (writing 5 selected channel 6). Same 0-based GLOBAL
+  // enum convention as the hardware-confirmed tap_tempo_mode (wire 1.0 = index 1).
+  'global.midi_chan': { block: 'global', name: 'midi_chan', displayLabel: "MIDI Channel", pidLow: 0x0001, pidHigh: 0x003a, unit: 'enum', displayMin: 0, displayMax: 16, enumValues: { 0: '1', 1: '2', 2: '3', 3: '4', 4: '5', 5: '6', 6: '7', 7: '8', 8: '9', 9: '10', 10: '11', 11: '12', 12: '13', 13: '14', 14: '15', 15: '16', 16: 'OMNI' } },
   // confirmed 2026-06-05
   'global.midi_prog_change': { block: 'global', name: 'midi_prog_change', displayLabel: "Receive MIDI PC", pidLow: 0x0001, pidHigh: 0x003b, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
   // confirmed 2026-06-05
   'global.no_redundant_pc': { block: 'global', name: 'no_redundant_pc', displayLabel: "Ignore Redundant PC", pidLow: 0x0001, pidHigh: 0x003c, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
   // confirmed 2026-06-05: OFF + Chan 1..16 + Omni
   'global.send_midipc': { block: 'global', name: 'send_midipc', displayLabel: "Send MIDI PC", pidLow: 0x0001, pidHigh: 0x003f, unit: 'enum', displayMin: 0, displayMax: 17, enumValues: { 0: 'Off', 1: 'Chan 1', 2: 'Chan 2', 3: 'Chan 3', 4: 'Chan 4', 5: 'Chan 5', 6: 'Chan 6', 7: 'Chan 7', 8: 'Chan 8', 9: 'Chan 9', 10: 'Chan 10', 11: 'Chan 11', 12: 'Chan 12', 13: 'Chan 13', 14: 'Chan 14', 15: 'Chan 15', 16: 'Chan 16', 17: 'Omni' } },
+  // CC-assignment registers (here + every `*_cc` below): DELIBERATELY KEPT as
+  // count 0..127 raw-int registers, NOT converted to the cache oracle's 1-based
+  // 'CC #n' pick-list enums (BK-AM4-CACHE-ORACLE review, 2026-08-11). The
+  // raw-int register class + 128 'None' sentinel is HARDWARE-CONFIRMED
+  // (BUG-6/GAP-2 session 2026-07-03/04: scene_cc read u32=34 with the panel on
+  // CC#34, u32=128 with the panel on NONE; see midiRegisters.ts) and postdates
+  // the cache draft. Wire value = CC number under both stories; what the cache
+  // adds beyond that is unconfirmed and partly conflicting (min=1 vs the
+  // confirmed 0-is-a-valid-CC decode; PEDAL 1/2 tails at 129/130 on the n=130
+  // lists). The PEDAL tail is real unshipped capability; it needs one
+  // write+panel-read before widening the hardware-confirmed 0..127+None
+  // contract.
   'global.in1_vol_cc': { block: 'global', name: 'in1_vol_cc', displayLabel: "Input Volume", pidLow: 0x0001, pidHigh: 0x0046, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.out1_vol_cc': { block: 'global', name: 'out1_vol_cc', displayLabel: "Output Volume", pidLow: 0x0001, pidHigh: 0x0047, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.tempo_cc': { block: 'global', name: 'tempo_cc', displayLabel: "Tap Tempo", pidLow: 0x0001, pidHigh: 0x0048, unit: 'count', displayMin: 0, displayMax: 127 },
@@ -4866,15 +4899,25 @@ export const KNOWN_PARAMS = {
   'global.scene_cc': { block: 'global', name: 'scene_cc', displayLabel: "Scene Select", pidLow: 0x0001, pidHigh: 0x004a, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.scene_incr_cc': { block: 'global', name: 'scene_incr_cc', displayLabel: "Scene +1", pidLow: 0x0001, pidHigh: 0x004b, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.scene_decr_cc': { block: 'global', name: 'scene_decr_cc', displayLabel: "Scene -1", pidLow: 0x0001, pidHigh: 0x004c, unit: 'count', displayMin: 0, displayMax: 127 },
-  // not visible on front-panel Setup menu; may be editor-only or firmware-internal
-  'global.scene_revert': { block: 'global', name: 'scene_revert', displayLabel: "Default Scene Revert", pidLow: 0x0001, pidHigh: 0x004d, unit: 'count', displayMin: 0, displayMax: 127 },
+  // cache oracle + deep-verify (2026-06-10, roster n=2, read ordinal 0 -> 'OFF'):
+  // OFF/ON enum. Still not visible on the front-panel Setup menu (editor-only or
+  // firmware-internal); writes via MIDI persist.
+  'global.scene_revert': { block: 'global', name: 'scene_revert', displayLabel: "Default Scene Revert", pidLow: 0x0001, pidHigh: 0x004d, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
   // safe placeholder (range unverified) — Ghidra catalog entry only
   'global.custom_scale': { block: 'global', name: 'custom_scale', pidLow: 0x0001, pidHigh: 0x0050, unit: 'count', displayMin: 0, displayMax: 127 },
   // safe placeholder (range unverified) — Ghidra catalog entry only
   'global.tuner_source': { block: 'global', name: 'tuner_source', pidLow: 0x0001, pidHigh: 0x0053, unit: 'count', displayMin: 0, displayMax: 127 },
-  // AM4 has 4 scenes (1..4)
-  'global.default_scene': { block: 'global', name: 'default_scene', displayLabel: "Default Scene", pidLow: 0x0001, pidHigh: 0x0056, unit: 'count', displayMin: 1, displayMax: 4 },
-  // percent inferred from AM4-Edit display — HW unverified
+  // cache oracle + deep-verify (2026-06-10, roster n=5, read ordinal 0 -> 'AS SAVED'):
+  // 5-option enum with AS SAVED at 0, not the shipped count[1..4] (which could not
+  // express the AS SAVED state the register actually read back).
+  'global.default_scene': { block: 'global', name: 'default_scene', displayLabel: "Default Scene", pidLow: 0x0001, pidHigh: 0x0056, unit: 'enum', displayMin: 0, displayMax: 4, enumValues: { 0: 'AS SAVED', 1: 'SCENE 1', 2: 'SCENE 2', 3: 'SCENE 3', 4: 'SCENE 4' } },
+  // percent inferred from AM4-Edit display, HW unverified. The cache oracle's
+  // proposed count[1..100] reshape was REJECTED (BK-AM4-CACHE-ORACLE review,
+  // 2026-08-11): its "wire = display 1:1" inference is contradicted by the
+  // deep-verify read (u32=58914, i.e. Q16-normalized, decoding ~90 either way),
+  // and a min>=0 global count would misroute onto the raw-int register path
+  // (midiRegisters.ts). Residual open question is only min 0 vs 1, which needs
+  // one panel read at a known wire value.
   'global.fc_ring_bright_level': { block: 'global', name: 'fc_ring_bright_level', displayLabel: "Switch LED Bright", pidLow: 0x0001, pidHigh: 0x0058, unit: 'percent', displayMin: 0, displayMax: 100 },
   // percent inferred from AM4-Edit display — HW unverified
   'global.fc_ring_dim_level': { block: 'global', name: 'fc_ring_dim_level', displayLabel: "Switch LED Dim", pidLow: 0x0001, pidHigh: 0x0059, unit: 'percent', displayMin: 0, displayMax: 100 },
@@ -4882,23 +4925,33 @@ export const KNOWN_PARAMS = {
   'global.linefreq': { block: 'global', name: 'linefreq', displayLabel: "AC Line Frequency", pidLow: 0x0001, pidHigh: 0x005a, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: '50 Hz', 1: '60 Hz' } },
   'global.preset_incr_cc': { block: 'global', name: 'preset_incr_cc', displayLabel: "Preset +1", pidLow: 0x0001, pidHigh: 0x005d, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.preset_decr_cc': { block: 'global', name: 'preset_decr_cc', displayLabel: "Preset -1", pidLow: 0x0001, pidHigh: 0x005e, unit: 'count', displayMin: 0, displayMax: 127 },
-  // unit inferred from USBLEVEL1 sibling — HW unverified
-  'global.metlevel1': { block: 'global', name: 'metlevel1', displayLabel: "Metronome Level", pidLow: 0x0001, pidHigh: 0x0061, unit: 'db', displayMin: -64, displayMax: 24 },
+  // cache oracle (tc=0x61, step 0.1): -40..20 dB, not the shipped -64..24.
+  // deep-verify 2026-06-10 read u32=43689 -> 0.0 dB EXACTLY under this range
+  // (unity default); the old range decoded the same register to -5.3 dB.
+  'global.metlevel1': { block: 'global', name: 'metlevel1', displayLabel: "Metronome Level", pidLow: 0x0001, pidHigh: 0x0061, unit: 'db', displayMin: -40, displayMax: 20 },
   // confirmed 2026-06-05: only 2 values visible (Input/None)
   'global.usb78_source': { block: 'global', name: 'usb78_source', displayLabel: "USB 3/4 Record Source", pidLow: 0x0001, pidHigh: 0x0062, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Input', 1: 'None' } },
-  // — captured at 1.11 dB
-  'global.usblevel1': { block: 'global', name: 'usblevel1', displayLabel: "USB 1/2 Level", pidLow: 0x0001, pidHigh: 0x0063, unit: 'db', displayMin: -64, displayMax: 24 },
-  // unit inferred from USBLEVEL1 sibling — HW unverified
-  'global.usblevel2': { block: 'global', name: 'usblevel2', displayLabel: "USB 3/4 Level", pidLow: 0x0001, pidHigh: 0x0064, unit: 'db', displayMin: -64, displayMax: 24 },
-  // unit inferred from USBLEVEL1 sibling — HW unverified
-  'global.aeslevel': { block: 'global', name: 'aeslevel', displayLabel: "SPDIF In Level", pidLow: 0x0001, pidHigh: 0x0065, unit: 'db', displayMin: -64, displayMax: 24 },
-  // down-tune semitones — HW unverified
-  'global.downtune': { block: 'global', name: 'downtune', displayLabel: "Downtune", pidLow: 0x0001, pidHigh: 0x0067, unit: 'semitones', displayMin: -12, displayMax: 0 },
+  // cache oracle (tc=0x61, step 0.1): -40..20 dB, not the shipped -64..24. The
+  // earlier 1.11 dB SET capture is range-agnostic (db writes carry the raw dB
+  // float); the range governs the READ decode + bounds, and deep-verify
+  // 2026-06-10 read u32=43689 -> 0.0 dB EXACTLY under -40..20 (unity default),
+  // -5.3 dB under the old range.
+  'global.usblevel1': { block: 'global', name: 'usblevel1', displayLabel: "USB 1/2 Level", pidLow: 0x0001, pidHigh: 0x0063, unit: 'db', displayMin: -40, displayMax: 20 },
+  // cache oracle (tc=0x61): same correction + same deep-verify unity read as usblevel1
+  'global.usblevel2': { block: 'global', name: 'usblevel2', displayLabel: "USB 3/4 Level", pidLow: 0x0001, pidHigh: 0x0064, unit: 'db', displayMin: -40, displayMax: 20 },
+  // cache oracle (tc=0x61): same correction + same deep-verify unity read as usblevel1
+  'global.aeslevel': { block: 'global', name: 'aeslevel', displayLabel: "SPDIF In Level", pidLow: 0x0001, pidHigh: 0x0065, unit: 'db', displayMin: -40, displayMax: 20 },
+  // cache oracle + deep-verify (2026-06-10, roster n=5, read ordinal 0 -> 'NONE'):
+  // 5-option enum (NONE..4 SEMITONES), not a signed semitones knob
+  'global.downtune': { block: 'global', name: 'downtune', displayLabel: "Downtune", pidLow: 0x0001, pidHigh: 0x0067, unit: 'enum', displayMin: 0, displayMax: 4, enumValues: { 0: 'NONE', 1: '1 SEMITONE', 2: '2 SEMITONES', 3: '3 SEMITONES', 4: '4 SEMITONES' } },
   // confirmed 2026-06-05: 0=Flats, 1=Both (b for flats / # for sharps), 2=Sharps
   'global.tuneraccidentals': { block: 'global', name: 'tuneraccidentals', displayLabel: "Tuner Accidentals", pidLow: 0x0001, pidHigh: 0x0068, unit: 'enum', displayMin: 0, displayMax: 2, enumValues: { 0: 'Flats', 1: 'Both', 2: 'Sharps' } },
   // confirmed 2026-06-05
   'global.midi_thru': { block: 'global', name: 'midi_thru', displayLabel: "MIDI Thru", pidLow: 0x0001, pidHigh: 0x006d, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
-  // CC# assignment param (0=CC#1 ... not ON/OFF); exact mapping unconfirmed — keep as count
+  // CC# assignment register (not ON/OFF). Kept as count with the rest of the CC
+  // class (see the review note at in1_vol_cc). deep-verify 2026-06-10 read
+  // u32=1: under wire=CC-number that is CC#1, which supersedes the earlier
+  // probe note's "0=CC#1" reading (likely a clamped write-0 observation).
   'global.tuner_on_volume': { block: 'global', name: 'tuner_on_volume', displayLabel: "Tuner on Heel Down CC", pidLow: 0x0001, pidHigh: 0x006e, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.bypass_fx1_cc': { block: 'global', name: 'bypass_fx1_cc', displayLabel: "FX1 Bypass", pidLow: 0x0001, pidHigh: 0x006f, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.bypass_fx2_cc': { block: 'global', name: 'bypass_fx2_cc', displayLabel: "FX2 Bypass", pidLow: 0x0001, pidHigh: 0x0070, unit: 'count', displayMin: 0, displayMax: 127 },
@@ -4911,30 +4964,28 @@ export const KNOWN_PARAMS = {
   // external CC routing — CC number 0..127
   'global.ext_cc_begin': { block: 'global', name: 'ext_cc_begin', displayLabel: "External 1", pidLow: 0x0001, pidHigh: 0x0077, unit: 'count', displayMin: 0, displayMax: 127 },
   // external CC routing — CC number 0..127
-  'global.ext_cc_begin_1': { block: 'global', name: 'ext_cc_begin_1', pidLow: 0x0001, pidHigh: 0x0078, unit: 'count', displayMin: 0, displayMax: 127 },
+  'global.ext_cc_begin_1': { block: 'global', name: 'ext_cc_begin_1', displayLabel: "External 2", pidLow: 0x0001, pidHigh: 0x0078, unit: 'count', displayMin: 0, displayMax: 127 },
   // external CC routing — CC number 0..127
-  'global.ext_cc_begin_2': { block: 'global', name: 'ext_cc_begin_2', pidLow: 0x0001, pidHigh: 0x0079, unit: 'count', displayMin: 0, displayMax: 127 },
+  'global.ext_cc_begin_2': { block: 'global', name: 'ext_cc_begin_2', displayLabel: "External 3", pidLow: 0x0001, pidHigh: 0x0079, unit: 'count', displayMin: 0, displayMax: 127 },
   // external CC routing — CC number 0..127
-  'global.ext_cc_begin_3': { block: 'global', name: 'ext_cc_begin_3', pidLow: 0x0001, pidHigh: 0x007a, unit: 'count', displayMin: 0, displayMax: 127 },
+  'global.ext_cc_begin_3': { block: 'global', name: 'ext_cc_begin_3', displayLabel: "External 4", pidLow: 0x0001, pidHigh: 0x007a, unit: 'count', displayMin: 0, displayMax: 127 },
   // external CC initial value 0..127
-  'global.ext_startval_begin': { block: 'global', name: 'ext_startval_begin', displayLabel: "External 1", pidLow: 0x0001, pidHigh: 0x007b, unit: 'count', displayMin: 0, displayMax: 127 },
+  'global.ext_startval_begin': { block: 'global', name: 'ext_startval_begin', displayLabel: "External 1 Initial Value", pidLow: 0x0001, pidHigh: 0x007b, unit: 'count', displayMin: 0, displayMax: 127 },
   // external CC initial value 0..127
-  'global.ext_startval_begin_1': { block: 'global', name: 'ext_startval_begin_1', pidLow: 0x0001, pidHigh: 0x007c, unit: 'count', displayMin: 0, displayMax: 127 },
+  'global.ext_startval_begin_1': { block: 'global', name: 'ext_startval_begin_1', displayLabel: "External 2 Initial Value", pidLow: 0x0001, pidHigh: 0x007c, unit: 'count', displayMin: 0, displayMax: 127 },
   // external CC initial value 0..127
-  'global.ext_startval_begin_2': { block: 'global', name: 'ext_startval_begin_2', pidLow: 0x0001, pidHigh: 0x007d, unit: 'count', displayMin: 0, displayMax: 127 },
+  'global.ext_startval_begin_2': { block: 'global', name: 'ext_startval_begin_2', displayLabel: "External 3 Initial Value", pidLow: 0x0001, pidHigh: 0x007d, unit: 'count', displayMin: 0, displayMax: 127 },
   // external CC initial value 0..127
-  'global.ext_startval_begin_3': { block: 'global', name: 'ext_startval_begin_3', pidLow: 0x0001, pidHigh: 0x007e, unit: 'count', displayMin: 0, displayMax: 127 },
+  'global.ext_startval_begin_3': { block: 'global', name: 'ext_startval_begin_3', displayLabel: "External 4 Initial Value", pidLow: 0x0001, pidHigh: 0x007e, unit: 'count', displayMin: 0, displayMax: 127 },
   // confirmed 2026-06-05
   'global.auto_truebypass': { block: 'global', name: 'auto_truebypass', displayLabel: "Automatic AM4 Bypass", pidLow: 0x0001, pidHigh: 0x0081, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
   'global.truebypass_cc': { block: 'global', name: 'truebypass_cc', displayLabel: "AM4 Bypass", pidLow: 0x0001, pidHigh: 0x0083, unit: 'count', displayMin: 0, displayMax: 127 },
-  // press-hold timeout ms — HW unverified
-  'global.fs_press_hold1': { block: 'global', name: 'fs_press_hold1', displayLabel: "Press & Hold 1", pidLow: 0x0001, pidHigh: 0x0084, unit: 'ms', displayMin: 0, displayMax: 5000 },
-  // press-hold timeout ms — HW unverified
-  'global.fs_press_hold2': { block: 'global', name: 'fs_press_hold2', displayLabel: "Press & Hold 2", pidLow: 0x0001, pidHigh: 0x0085, unit: 'ms', displayMin: 0, displayMax: 5000 },
-  // press-hold timeout ms — HW unverified
-  'global.fs_press_hold3': { block: 'global', name: 'fs_press_hold3', displayLabel: "Press & Hold 3", pidLow: 0x0001, pidHigh: 0x0086, unit: 'ms', displayMin: 0, displayMax: 5000 },
-  // press-hold timeout ms — HW unverified
-  'global.fs_press_hold4': { block: 'global', name: 'fs_press_hold4', displayLabel: "Press & Hold 4", pidLow: 0x0001, pidHigh: 0x0087, unit: 'ms', displayMin: 0, displayMax: 5000 },
+  // cache oracle + deep-verify (2026-06-10, roster n=15, read ordinal 0 -> 'DISABLED'):
+  // 15-action assignment enum, not a ms knob. Same roster for all four switches.
+  'global.fs_press_hold1': { block: 'global', name: 'fs_press_hold1', displayLabel: "Press & Hold 1", pidLow: 0x0001, pidHigh: 0x0084, unit: 'enum', displayMin: 0, displayMax: 14, enumValues: { 0: 'DISABLED', 1: 'MODE SELECT', 2: 'PRESET MODE', 3: 'SCENE MODE', 4: 'EFFECTS MODE', 5: 'TUNER MODE', 6: 'BANK -1', 7: 'BANK +1', 8: 'PRESET -1', 9: 'PRESET +1', 10: 'SCENE -1', 11: 'SCENE +1', 12: 'CHANNEL PICKER', 13: 'AMP MODE', 14: 'AM4 BYPASS' } },
+  'global.fs_press_hold2': { block: 'global', name: 'fs_press_hold2', displayLabel: "Press & Hold 2", pidLow: 0x0001, pidHigh: 0x0085, unit: 'enum', displayMin: 0, displayMax: 14, enumValues: { 0: 'DISABLED', 1: 'MODE SELECT', 2: 'PRESET MODE', 3: 'SCENE MODE', 4: 'EFFECTS MODE', 5: 'TUNER MODE', 6: 'BANK -1', 7: 'BANK +1', 8: 'PRESET -1', 9: 'PRESET +1', 10: 'SCENE -1', 11: 'SCENE +1', 12: 'CHANNEL PICKER', 13: 'AMP MODE', 14: 'AM4 BYPASS' } },
+  'global.fs_press_hold3': { block: 'global', name: 'fs_press_hold3', displayLabel: "Press & Hold 3", pidLow: 0x0001, pidHigh: 0x0086, unit: 'enum', displayMin: 0, displayMax: 14, enumValues: { 0: 'DISABLED', 1: 'MODE SELECT', 2: 'PRESET MODE', 3: 'SCENE MODE', 4: 'EFFECTS MODE', 5: 'TUNER MODE', 6: 'BANK -1', 7: 'BANK +1', 8: 'PRESET -1', 9: 'PRESET +1', 10: 'SCENE -1', 11: 'SCENE +1', 12: 'CHANNEL PICKER', 13: 'AMP MODE', 14: 'AM4 BYPASS' } },
+  'global.fs_press_hold4': { block: 'global', name: 'fs_press_hold4', displayLabel: "Press & Hold 4", pidLow: 0x0001, pidHigh: 0x0087, unit: 'enum', displayMin: 0, displayMax: 14, enumValues: { 0: 'DISABLED', 1: 'MODE SELECT', 2: 'PRESET MODE', 3: 'SCENE MODE', 4: 'EFFECTS MODE', 5: 'TUNER MODE', 6: 'BANK -1', 7: 'BANK +1', 8: 'PRESET -1', 9: 'PRESET +1', 10: 'SCENE -1', 11: 'SCENE +1', 12: 'CHANNEL PICKER', 13: 'AMP MODE', 14: 'AM4 BYPASS' } },
   // confirmed 2026-06-05
   'global.startup_mode': { block: 'global', name: 'startup_mode', displayLabel: "Startup Mode", pidLow: 0x0001, pidHigh: 0x0089, unit: 'enum', displayMin: 0, displayMax: 3, enumValues: { 0: 'Preset', 1: 'Scene', 2: 'Effects', 3: 'Amp' } },
   // confirmed 2026-06-05: 0=Off is default (gapless is OFF until user enables it)
@@ -4951,9 +5002,40 @@ export const KNOWN_PARAMS = {
   'global.cabinetbyp': { block: 'global', name: 'cabinetbyp', displayLabel: "Cab Modeling", pidLow: 0x0001, pidHigh: 0x0095, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Active', 1: 'Bypassed' } },
   // confirmed 2026-06-05
   'global.pwrampbyp': { block: 'global', name: 'pwrampbyp', displayLabel: "Power Amp Modeling", pidLow: 0x0001, pidHigh: 0x0096, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'On', 1: 'Off' } },
-  // confirmed 2026-06-05: index 0 = Default (manual); indices 1-8 confirmed on hardware;
-  // more entries likely exist beyond index 8 (full list not swept)
-  'global.sprk_model': { block: 'global', name: 'sprk_model', displayLabel: "Speaker Imp. Curve", pidLow: 0x0001, pidHigh: 0x0097, unit: 'enum', displayMin: 0, displayMax: 127, enumValues: { 0: 'Default', 1: 'Resistive Load', 2: '1x8 5F1 Tweed', 3: '1x10 Princeton NR', 4: '1x10 BF Princeton', 5: '1x10 SF Princeton', 6: '1x12 Tweed Emmi', 7: '1x12 Vibrato Lux', 8: '1x12 Deluxe Verb' } },
+  // Full 94-entry roster from the cache oracle (roster n=94; deep-verify 2026-06-10
+  // read ordinal 0 -> 'DEFAULT'). Indices 0-8 order matches the 2026-06-05
+  // front-panel probe; spellings follow the cache ('Princetone' is Fractal's
+  // roster pun; the probe note's 'Princeton' was a transcription). Same list as
+  // amp.spkr_imp_curve minus the DEFAULT row (amp index N = this index N+1).
+  'global.sprk_model': { block: 'global', name: 'sprk_model', displayLabel: "Speaker Imp. Curve", pidLow: 0x0001, pidHigh: 0x0097, unit: 'enum', displayMin: 0, displayMax: 93, enumValues: {
+    0: 'DEFAULT', 1: 'Resistive Load', 2: '1x8 5F1 Tweed', 3: '1x10 Princetone NR',
+    4: '1x10 BF Princetone', 5: '1x10 SF Princetone', 6: '1x12 Tweed Emmi',
+    7: '1x12 Vibrato Lux', 8: '1x12 Deluxe Verb', 9: '1x12 Deluxe Verb RI', 10: '1x12 JR Blues',
+    11: '1x12 Brit G12H55', 12: '1x12 Brit G12H75', 13: '1x12 Div13 CJ11', 14: '1x12 Brit G12T',
+    15: '1x12 V30', 16: '1x12 AC-20 DLX', 17: '1x12 Car Ambler', 18: '1x12 AST BV25',
+    19: '1x15 Vibrato Verb', 20: '1x15 Portabass', 21: '2x10 Super', 22: '2x10 Vibrato Lux',
+    23: '2x12 Bassguy', 24: '2x12 Double Verb', 25: '2x12 Double Verb SF',
+    26: '1x12 Class-A 15W', 27: '2x12 Class-A 30W', 28: '2x12 TX Star', 29: '2x12 Match Chief',
+    30: '1x12 Hot Kitty', 31: '2x12 Jazz 120', 32: '4x10 Bassguy', 33: '4x10 Brit JM45',
+    34: '4x10 Super Verb', 35: '4x10 SV Bass', 36: '4x12 Brit TV', 37: '4x12 Brit Greenback',
+    38: '4x12 Basketweave', 39: '4x12 Brit 800', 40: '4x12 Brit AX', 41: '4x12 Hipower',
+    42: '4x12 USA MC90', 43: '4x12 Recto Large', 44: '4x12 Recto Small', 45: '4x12 Recto Slant',
+    46: '4x12 Recto Straight', 47: '4x12 5153', 48: '4x12 Citrus', 49: '4x12 Rumble',
+    50: '2x12 Lead 80', 51: '4x12 Solo 100', 52: 'Load Box LB-2 UK', 53: 'Load Box LB-2 US',
+    54: '4x12 Friedman', 55: '2x12 Bassbuster', 56: '1x12 Tweed Alnico Blue',
+    57: '4x12 PVH 6160', 58: '4x12 Euro', 59: '2x12 Recto', 60: '2x12 Godzilla',
+    61: '1x12 Tweed C12Q', 62: '1x12 Dirty Shirley EV12L', 63: '1x12 USA Ext EV12L',
+    64: '2x12 Band Commander SRO', 65: '2x12 Guy Tron Alnico Blue', 66: '1x12 G12T-75',
+    67: '2x12 Class-A Greenback', 68: '2x12 Two Stone 1265', 69: '4x12 Lerxst Omega',
+    70: '1x12 Deluxe Oxford', 71: '4x12 Hipower Pete T', 72: '4x12 USA Semi-Open',
+    73: '2x12 Dizzy RV', 74: '4x12 Hipower Lindsey B', 75: '4x12 London Town Tall',
+    76: 'Oxbow Loadbox', 77: 'Double Notes Loadbox', 78: '1x10 Metro Blues',
+    79: '4x10 Bassguy RI', 80: '2x12 Class-A 30W Silver', 81: '2x10 Heart Key',
+    82: '4x12 1960BV', 83: '1x12 Deluxe Tweed', 84: '1x15 Heart Key',
+    85: '2x12 USA C90 Open Back', 86: '1x12 Friedman', 87: '2x12 5153 Stealth',
+    88: '4x12 5153 Stealth', 89: '1x12 Scholz', 90: '1x8 Princetone', 91: '1x12 Black Magick',
+    92: '8x10 SV Bass', 93: 'Suhr Reactive Load',
+  } },
   'global.amp_chan_cc': { block: 'global', name: 'amp_chan_cc', displayLabel: "Amp Channel", pidLow: 0x0001, pidHigh: 0x0098, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.out_boost_cc': { block: 'global', name: 'out_boost_cc', displayLabel: "Amp Out Boost", pidLow: 0x0001, pidHigh: 0x0099, unit: 'count', displayMin: 0, displayMax: 127 },
   // confirmed 2026-06-05: OFF + Chan 1..16 + Omni
@@ -4963,8 +5045,8 @@ export const KNOWN_PARAMS = {
   // (not in Setup menu). Global default; per-preset behavior may differ.
   'global.dynacab_sync': { block: 'global', name: 'dynacab_sync', displayLabel: "DynaCab Auto-Match", pidLow: 0x0001, pidHigh: 0x009e, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
   'global.amp1_vol_cc': { block: 'global', name: 'amp1_vol_cc', displayLabel: "Amp Block Out Vol", pidLow: 0x0001, pidHigh: 0x009f, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.metronome': { block: 'global', name: 'metronome', displayLabel: "Metronome", pidLow: 0x0001, pidHigh: 0x00a0, unit: 'count', displayMin: 0, displayMax: 127 },
+  // cache oracle + deep-verify (2026-06-10, roster n=2, read ordinal 0 -> 'OFF')
+  'global.metronome': { block: 'global', name: 'metronome', displayLabel: "Metronome", pidLow: 0x0001, pidHigh: 0x00a0, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
   'global.metronome_cc': { block: 'global', name: 'metronome_cc', displayLabel: "Metronome", pidLow: 0x0001, pidHigh: 0x00a1, unit: 'count', displayMin: 0, displayMax: 127 },
   // confirmed 2026-06-05: only visible when Input Source = SPDIF
   'global.inspdif_config': { block: 'global', name: 'inspdif_config', displayLabel: "SPDIF Input Mode", pidLow: 0x0001, pidHigh: 0x00a2, unit: 'enum', displayMin: 0, displayMax: 3, enumValues: { 0: 'Stereo', 1: 'Left Only', 2: 'Right Only', 3: 'Sum L+R' } },

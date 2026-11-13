@@ -34,33 +34,32 @@ export const VE500_AGENT_GUIDANCE: Readonly<Record<string, string>> = {
     'Communication Mode ON, then the store command, then waits for the device\'s store-ack echo (the ' +
     'device DOES echo the store, so acked reflects a real ack). HARDWARE-CONFIRMED 2026-07-08: a set + ' +
     'save + flash-reload round-trip persisted on the maintainer\'s unit. It is destructive (overwrites the ' +
-    'target user memory) and there is no overwrite pre-check, so confirm the target is intended; verify a ' +
-    'save by recalling the memory. Presets P01–P50 are factory/read-only and rejected. NOTE: an earlier ' +
-    'bare-store-only version was hardware-refuted 2026-07-08 (the mode handshake is what fixed it).',
+    'target user memory). The target is read first: a memory holding anything other than INIT PATCH is ' +
+    'refused unless it is the loaded one or confirm_overwrite is passed, and the receipt reads the stored ' +
+    'name and the sections that are on back from the saved memory. Presets P01–P50 are factory/read-only and rejected.',
   recall:
-    'switch_preset recalls a USER memory U01–U99 (or 1–99) by a bare Program Change on MIDI channel 1 ' +
-    '(hardware-confirmed). The VE-500 must have PC IN = ON and RX CH = OMNI or Ch.1; a Bank Select is ' +
-    'deliberately NOT sent (the unit ignores the recall if one precedes the PC). User-memory recall now ' +
-    'PRE-FLIGHT READS system_midi.midi_program_change_in and REFUSES when it is 0, because the unit ' +
-    'would ignore the Program Change and never say so. If you hit that refusal, do NOT "fix" it by ' +
-    'setting midi_program_change_in to 1 on the user\'s behalf: turning it on re-exposes the unit to ' +
-    'any stray Program Change on the bus recalling a patch mid-song, which is normally why it is off. ' +
-    'Offer the front panel as the first option and the setting change as an explicit trade the user ' +
-    'chooses. Preset (P01–P50) recall is available too (2026-07-09): it sends a DIFFERENT mechanism, a ' +
-    'SysEx DT1 write to the "Current Patch Number" register (decoded from the VE-500 Editor\'s own ' +
-    'patch-switch handler, not a Program Change at all); community-beta, not yet hardware-confirmed. ' +
-    'It does NOT depend on PC IN and is not gated. Neither recall path is echoed, so the front panel ' +
-    'is ground truth for both.',
+    'switch_preset recalls a user memory U01–U99 (or 1–99) or a factory preset P01–P50. It reads the ' +
+    'Program Change IN setting of the unit first: when that is on it sends a bare Program Change on MIDI ' +
+    'channel 1 (no Bank Select, which makes the unit ignore the recall); otherwise, and always for ' +
+    'P01–P50, it writes the Current Patch Number register, which works whatever that setting ' +
+    'is. Do NOT set system_midi.midi_program_change_in to 1 to make recall work: it is not needed, and ' +
+    'it re-exposes the unit to a stray Program Change on the bus recalling a patch mid-song. Neither ' +
+    'path is echoed, so switch_preset reads the loaded memory number back: confirmed_by "read_back" ' +
+    'means the unit reports the target as loaded, and acked false means it did not move.',
   status:
-    'Hardware-confirmed on the maintainer\'s unit (2026-06-28): set_param, get_param (RQ1→DT1), ' +
-    'set_bypass, user-memory recall (switch_preset), apply_preset (whole-patch build), and set-by-NAME ' +
-    'for type/mode/voice selectors all round-trip end-to-end. The wire was decoded from the BOSS VE-500 ' +
-    'Editor\'s own code. Ordinary patch-address writes are not echoed, so get_param is their in-band ' +
-    'confirm. save_preset (store to a user memory) is HARDWARE-CONFIRMED 2026-07-08 after a re-decode: a ' +
-    'bare store command was refuted (did not persist), so it now sends Editor Communication Mode ON first ' +
-    'and waits for the device\'s store-ack echo, and a set + save + reload round-trip persisted on the ' +
-    'unit. Patch NAME can be set as part of save_preset(location, name). NEW 2026-07-09 (community-beta, ' +
-    'hardware-unverified): factory preset (P01–P50) recall via switch_preset, and the global SYSTEM param ' +
-    'region (MIDI, USB, tuner, preference, input/output + their EQs) via set_param/get_param/get_params/ ' +
-    'list_params under system_-prefixed blocks. Still not available: whole-patch get_preset.',
+    'Hardware-confirmed on the maintainer unit: set_param, get_param, set_bypass, user-memory ' +
+    'recall, apply_preset, set-by-NAME for type/mode/voice selectors, save_preset (a name can be set ' +
+    'with save_preset(location, name)), the SYSTEM params under system_-prefixed blocks, and the memory ' +
+    'reads in reading. Ordinary parameter writes are not echoed, so get_param is their confirm. ' +
+    'Hardware-unverified: factory preset (P01–P50) recall.',
+  reading:
+    'Nothing has to be loaded to look at a memory. scan_locations({from:"U01", to:"U99"}) lists every ' +
+    'user memory by name in about 2 seconds; is_empty is true for a memory still named INIT PATCH, which ' +
+    'is how to find a free one. get_preset({port}) reads the LOADED memory: its name, its number ' +
+    '(_meta.current_location), each section on or off with its type, and the parameters of the sections ' +
+    'that are on. get_preset({port, location:"U20"}) reads a STORED user memory the same way without ' +
+    'loading it, so unsaved edits are untouched. Both take about 2 seconds and are summaries: a section ' +
+    'that is off reports only its type, and fx1-fx4 report only their type. get_param / get_params read ' +
+    'the loaded memory only. Factory presets P01-P50 cannot be read while stored. Use these reads before ' +
+    'a save to check the target, and never tell the user a memory cannot be inspected without loading it.',
 };

@@ -22,6 +22,8 @@
 import {
   buildClearBlock,
   buildClearBlockCompanion,
+  buildSelectCell,
+  buildSetGridCell,
   buildRenamePreset,
   buildSetSceneName,
   buildClearAllSceneNames,
@@ -311,6 +313,21 @@ cases.push(() => {
     threw = true;
   }
   assert(threw, 'sceneBlobHeader must refuse scene 8');
+});
+
+// Hardware goldens (FM9 fw 12, issue #23): select r2c2, then insert Drive 1
+// (effect 118). The insert alone lands at the edit cursor; the pair places it.
+cases.push(() => {
+  assertBytes(
+    buildSelectCell({ row: 2, col: 2, rows: 6 }, 0x12),
+    parseHex('F0 00 01 74 12 01 30 00 00 00 00 00 07 00 00 00 00 00 00 00 00 21 F7'),
+    'FM9 select r2c2',
+  );
+  assertBytes(
+    buildSetGridCell({ row: 2, col: 2, blockId: 118, rows: 6 }, 0x12),
+    parseHex('F0 00 01 74 12 01 32 00 76 00 00 00 07 00 00 00 00 00 00 00 00 55 F7'),
+    'FM9 insert Drive 1 at r2c2',
+  );
 });
 
 export const GEN3_SUBACTION_CASE_COUNT = cases.length;

@@ -11,7 +11,10 @@
  * DEFAULT_RECORDS ships ONLY the five small, rarely-tweaked block types
  * whose factory-modal record is corpus-extractable byte-exactly AND
  * cross-confirmed on live Q8.02 hardware dumps (hw132: records
- * byte-identical to the factory modal for all five wireIds):
+ * byte-identical to the factory modal for all five wireIds — NOTE, the
+ * 2026-07-16 re-mine established hw132's stored-slot-7 / EB dumps are
+ * unmodified factory A007 content, so this cross-check confirms the
+ * live SERIALIZATION axis, not an independent defaults axis):
  *
  *   wireId 116 Chorus 1          modal exact in  41/146 factory instances
  *   wireId 118 Flanger 1         modal exact in  50/91
@@ -28,11 +31,17 @@
  *
  * PAYLOAD_LEN census: payloadLen is constant per wireId within each
  * source kind across the 502-dump census; the ONLY factory-vs-live
- * drift is Amp 106 (factory files 234, live Q8.02 hardware 236). When
+ * drift is Amp 106 (factory files 234, live Q8.02 hardware 236 — the
+ * conversion is PINNED 2026-07-16: append one 32767/0x7FFF at the end
+ * of each 117-word half; 6 witnesses + the fn=0x1F byte-identity
+ * golden, verify-ii-image-continuous-apply Section 2c; so every
+ * factory Amp record converts deterministically to live layout). When
  * an encoder needs a length for a wireId absent from the target dump,
  * prefer the live-observed length, applied per BLOCK FAMILY (both Amp
- * wireIds 106/107 resolve to the live 236 on a live device even though
- * 107 itself has zero live observations).
+ * wireIds 106/107 resolve to live 236 — CONFIRMED for 107 too by the
+ * 2026-07-16 fresh-default capture, closing the prediction noted here
+ * previously). Pitch 130 shows no factory-vs-live drift (170/170),
+ * also confirmed by the same session's fresh capture.
  *
  * Evidence: samples/captured/decoded/ii-block-record-encode/
  * (structure-summary.json, default-records-factory.json,
@@ -42,6 +51,34 @@
  * hardware-confirmed; the corpus-internal oracle is modal recurrence
  * across 41..66 heterogeneous presets plus the A000+modal-Phaser ==
  * A001 structural synthesis.
+ *
+ * FRESH_DEFAULT_RECORDS (below) is the HARDWARE-FRESH tier: the 8
+ * always-tweaked families (Amp 1/2, Cab, Reverb, Delay, Multi Delay,
+ * Pitch, Drive) that DEFAULT_RECORDS deliberately excludes for lack of
+ * a corpus oracle. These bytes are not a corpus-statistical guess —
+ * they are the literal record the XL+ itself wrote when the family was
+ * placed fresh on live hardware (captured 2026-07-16 late night,
+ * splice-then-place route for the 6 families the device otherwise
+ * remembers in-buffer; live remove/re-place for the 2 that were
+ * unplaced going in), read back byte-exact via fn 0x1F (== the image
+ * TLV payload, see `ii-fn1f-atomic-read`). Per the project's evidence
+ * bar this is STRONGER evidence than DEFAULT_RECORDS' corpus-modal
+ * tier (device-authored, not statistically inferred) — but it is a
+ * SINGLE capture (one XL+ unit, one Q8.02 firmware, one session), so
+ * generalization across other units/firmwares is unconfirmed, and
+ * pushing a record built FROM this table through `insertBlockIntoImage`
+ * has not itself been hardware round-tripped (the 2026-07-16 splice-
+ * push hardware test exercised REMOVE-only images; a synthesized-
+ * INSERT push is the next hardware ask). Record per-instance, do not
+ * average: fresh Amp 1 (106) and Amp 2 (107) differ at exactly one
+ * paramId (9, xformer_grind: 6553 vs 0, mirrored at the X/Y half
+ * offset +118) — instances are NOT interchangeable defaults.
+ *
+ * Evidence: samples/captured/bk084-hw-mech-2026-07-17-02-07-16/
+ * (Amp 2, Pitch — unplaced-family route) and
+ * samples/captured/fresh-defaults-r2-2026-07-17-02-12-34/ (Amp 1, Cab,
+ * Reverb, Delay, Multi Delay, Drive — splice-then-place route), each
+ * dir's manifest.json records the exact protocol per family.
  */
 
 export interface AxeFxIIDefaultRecord {
@@ -103,6 +140,83 @@ export const DEFAULT_RECORDS: Readonly<Record<number, AxeFxIIDefaultRecord>> = O
   }),
 });
 
+export interface AxeFxIIFreshDefaultRecord {
+  /** TLV wire id the record is for. */
+  readonly wireId: number;
+  /** Display name of the block instance ("Amp 1"). */
+  readonly blockName: string;
+  /** Self-described payload length (live Q8.02 hardware layout). */
+  readonly payloadLen: number;
+  /** The captured payload words (length == payloadLen), device-authored. */
+  readonly payload: readonly number[];
+  /** Capture directory (under samples/captured/) this record was read from. */
+  readonly capturedFrom: string;
+}
+
+/**
+ * HARDWARE-FRESH default block records for the 8 always-tweaked
+ * families, keyed by wireId. See module docstring for provenance and
+ * the evidence-tier distinction from DEFAULT_RECORDS.
+ */
+export const FRESH_DEFAULT_RECORDS: Readonly<Record<number, AxeFxIIFreshDefaultRecord>> = Object.freeze({
+  106: Object.freeze({
+    wireId: 106,
+    blockName: "Amp 1",
+    payloadLen: 236,
+    payload: Object.freeze([0, 32767, 32767, 32767, 32767, 65534, 0, 62796, 37619, 6553, 21845, 65534, 6688, 44346, 1, 2, 0, 26214, 10, 8192, 32767, 44563, 32767, 0, 18284, 32767, 15518, 28125, 0, 45806, 0, 0, 8693, 39320, 1, 29592, 39320, 0, 22282, 1, 0, 48845, 38272, 39455, 43689, 0, 52382, 32767, 55049, 0, 0, 32767, 42631, 37555, 0, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 34078, 32767, 44620, 65534, 65534, 4, 0, 42631, 27833, 32767, 32767, 32767, 0, 21845, 32767, 0, 32767, 49603, 32767, 1, 32767, 32767, 0, 0, 28086, 38010, 0, 0, 0, 0, 0, 22903, 6182, 1, 32767, 29490, 32767, 37082, 32767, 1, 62621, 0, 21845, 8519, 42258, 47536, 0, 0, 0, 32767, 49151, 49151, 19660, 22903, 32767, 0, 32767, 32767, 32767, 32767, 65534, 0, 62796, 37619, 6553, 21845, 65534, 6688, 44346, 1, 2, 0, 26214, 10, 8192, 32767, 44563, 32767, 0, 18284, 32767, 15518, 28125, 0, 45806, 0, 0, 8693, 39320, 1, 29592, 39320, 0, 22282, 1, 0, 48845, 38272, 39455, 43689, 0, 52382, 32767, 55049, 0, 0, 32767, 42631, 37555, 0, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 34078, 32767, 44620, 65534, 65534, 4, 0, 42631, 27833, 32767, 32767, 32767, 0, 21845, 32767, 0, 32767, 49603, 32767, 1, 32767, 32767, 0, 0, 28086, 38010, 0, 0, 0, 0, 0, 22903, 6182, 1, 32767, 29490, 32767, 37082, 32767, 1, 62621, 0, 21845, 8519, 42258, 47536, 0, 0, 0, 32767, 49151, 49151, 19660, 22903, 32767]),
+    capturedFrom: "fresh-defaults-r2-2026-07-17-02-12-34/fresh-106-amp-1.syx (splice-then-place)",
+  }),
+  107: Object.freeze({
+    wireId: 107,
+    blockName: "Amp 2",
+    payloadLen: 236,
+    payload: Object.freeze([0, 32767, 32767, 32767, 32767, 65534, 0, 62796, 37619, 0, 21845, 65534, 6688, 44346, 1, 2, 0, 26214, 10, 8192, 32767, 44563, 32767, 0, 18284, 32767, 15518, 28125, 0, 45806, 0, 0, 8693, 39320, 1, 29592, 39320, 0, 22282, 1, 0, 48845, 38272, 39455, 43689, 0, 52382, 32767, 55049, 0, 0, 32767, 42631, 37555, 0, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 34078, 32767, 44620, 65534, 65534, 4, 0, 42631, 27833, 32767, 32767, 32767, 0, 21845, 32767, 0, 32767, 49603, 32767, 1, 32767, 32767, 0, 0, 28086, 38010, 0, 0, 0, 0, 0, 22903, 6182, 1, 32767, 29490, 32767, 37082, 32767, 1, 62621, 0, 21845, 8519, 42258, 47536, 0, 0, 0, 32767, 49151, 49151, 19660, 22903, 32767, 0, 32767, 32767, 32767, 32767, 65534, 0, 62796, 37619, 0, 21845, 65534, 6688, 44346, 1, 2, 0, 26214, 10, 8192, 32767, 44563, 32767, 0, 18284, 32767, 15518, 28125, 0, 45806, 0, 0, 8693, 39320, 1, 29592, 39320, 0, 22282, 1, 0, 48845, 38272, 39455, 43689, 0, 52382, 32767, 55049, 0, 0, 32767, 42631, 37555, 0, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 34078, 32767, 44620, 65534, 65534, 4, 0, 42631, 27833, 32767, 32767, 32767, 0, 21845, 32767, 0, 32767, 49603, 32767, 1, 32767, 32767, 0, 0, 28086, 38010, 0, 0, 0, 0, 0, 22903, 6182, 1, 32767, 29490, 32767, 37082, 32767, 1, 62621, 0, 21845, 8519, 42258, 47536, 0, 0, 0, 32767, 49151, 49151, 19660, 22903, 32767]),
+    capturedFrom: "bk084-hw-mech-2026-07-17-02-07-16/fresh-107-amp-2.syx (unplaced-family route)",
+  }),
+  108: Object.freeze({
+    wireId: 108,
+    blockName: "Cab 1",
+    payloadLen: 78,
+    payload: Object.freeze([0, 0, 0, 0, 1, 65534, 65534, 26214, 39320, 52427, 32767, 0, 0, 0, 0, 0, 0, 29126, 6553, 0, 55670, 32767, 0, 0, 0, 26079, 0, 0, 0, 50995, 0, 0, 32767, 32767, 32767, 0, 0, 1, 32767, 0, 0, 0, 0, 1, 65534, 65534, 26214, 39320, 52427, 32767, 0, 0, 0, 0, 0, 0, 29126, 6553, 0, 55670, 32767, 0, 0, 0, 26079, 0, 0, 0, 50995, 0, 0, 32767, 32767, 32767, 0, 0, 1, 32767]),
+    capturedFrom: "fresh-defaults-r2-2026-07-17-02-12-34/fresh-108-cab-1.syx (splice-then-place)",
+  }),
+  110: Object.freeze({
+    wireId: 110,
+    blockName: "Reverb 1",
+    payloadLen: 90,
+    payload: Object.freeze([1, 525, 42631, 39455, 65534, 19197, 2621, 34078, 51117, 0, 0, 13107, 9864, 13107, 52427, 32767, 0, 0, 65534, 8, 13107, 19660, 0, 3, 0, 13107, 32767, 29592, 27833, 27833, 32767, 32767, 0, 32767, 27691, 52427, 0, 65534, 0, 19660, 39320, 32767, 45874, 0, 0, 1, 525, 42631, 39455, 65534, 19197, 2621, 34078, 51117, 0, 0, 13107, 9864, 13107, 52427, 32767, 0, 0, 65534, 8, 13107, 19660, 0, 3, 0, 13107, 32767, 29592, 27833, 27833, 32767, 32767, 0, 32767, 27691, 52427, 0, 65534, 0, 19660, 39320, 32767, 45874, 0, 0]),
+    capturedFrom: "fresh-defaults-r2-2026-07-17-02-12-34/fresh-110-reverb-1.syx (splice-then-place)",
+  }),
+  112: Object.freeze({
+    wireId: 112,
+    blockName: "Delay 1",
+    payloadLen: 140,
+    payload: Object.freeze([0, 0, 4088, 65534, 36044, 36044, 36044, 32767, 65534, 0, 0, 65534, 22903, 45806, 0, 0, 0, 9830, 52427, 32767, 0, 0, 2, 65534, 0, 0, 4088, 0, 32767, 0, 32767, 32767, 65534, 65534, 0, 65534, 0, 0, 2322, 1, 0, 0, 0, 32767, 21845, 0, 29126, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 22903, 27833, 0, 42631, 29592, 27833, 27833, 32767, 32767, 0, 32767, 0, 0, 0, 4088, 65534, 36044, 36044, 36044, 32767, 65534, 0, 0, 65534, 22903, 45806, 0, 0, 0, 9830, 52427, 32767, 0, 0, 0, 65534, 0, 0, 4088, 0, 32767, 0, 32767, 32767, 65534, 65534, 0, 65534, 0, 0, 2322, 1, 0, 0, 0, 32767, 21845, 0, 29126, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 22903, 27833, 0, 42631, 29592, 27833, 27833, 32767, 32767, 0, 32767, 0]),
+    capturedFrom: "fresh-defaults-r2-2026-07-17-02-12-34/fresh-112-delay-1.syx (splice-then-place)",
+  }),
+  114: Object.freeze({
+    wireId: 114,
+    blockName: "Multi Delay 1",
+    payloadLen: 118,
+    payload: Object.freeze([13081, 19637, 26194, 32751, 14, 11, 12, 15, 65534, 65534, 65534, 65534, 36044, 36044, 36044, 36044, 16384, 49151, 0, 65534, 23089, 23089, 23089, 23089, 0, 0, 0, 0, 16384, 52427, 32767, 0, 0, 65534, 10, 0, 5451, 65534, 0, 32767, 0, 32767, 65534, 65534, 65534, 32770, 0, 65534, 49151, 49151, 38010, 35388, 30146, 27524, 24, 24, 24, 24, 22903, 29592, 39455, 45806, 40400, 40400, 40400, 40400, 65534, 0, 65534, 0, 32767, 0, 0, 0, 0, 1, 3, 0, 0, 3214, 0, 0, 32767, 0, 6, 0, 0, 65534, 0, 32767, 0, 65534, 65534, 0, 2621, 3277, 3277, 3277, 3277, 3277, 3277, 3277, 3277, 3277, 52427, 52427, 52427, 52427, 52427, 52427, 52427, 52427, 52427, 52427, 120, 0, 590, 0]),
+    capturedFrom: "fresh-defaults-r2-2026-07-17-02-12-34/fresh-114-multi-delay-1.syx (splice-then-place)",
+  }),
+  130: Object.freeze({
+    wireId: 130,
+    blockName: "Pitch 1",
+    payloadLen: 170,
+    payload: Object.freeze([0, 0, 65534, 65534, 24, 24, 0, 0, 0, 32767, 32767, 24, 24, 65534, 65534, 32767, 32767, 0, 0, 0, 0, 1, 40360, 16384, 52427, 32767, 0, 0, 65534, 0, 32767, 16359, 16359, 0, 0, 0, 0, 0, 1, 45806, 21845, 65534, 65534, 65534, 65534, 7, 1, 2, 3, 4, 5, 6, 7, 0, 0, 4, 31, 1, 6, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 65534, 65534, 24, 24, 0, 0, 0, 32767, 32767, 24, 24, 65534, 65534, 32767, 32767, 0, 0, 0, 0, 1, 40360, 16384, 52427, 32767, 0, 0, 65534, 0, 32767, 16359, 16359, 0, 0, 0, 0, 0, 1, 45806, 21845, 65534, 65534, 65534, 65534, 7, 1, 2, 3, 4, 5, 6, 7, 0, 0, 4, 31, 1, 6, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    capturedFrom: "bk084-hw-mech-2026-07-17-02-07-16/fresh-130-pitch-1.syx (unplaced-family route)",
+  }),
+  133: Object.freeze({
+    wireId: 133,
+    blockName: "Drive 1",
+    payloadLen: 42,
+    payload: Object.freeze([0, 32767, 32767, 32767, 65534, 0, 31268, 2, 15634, 61440, 6, 33095, 32767, 32767, 32926, 32767, 0, 0, 32767, 65534, 32767, 0, 32767, 32767, 32767, 65534, 0, 31268, 0, 15634, 61440, 6, 33095, 32767, 32767, 32926, 32767, 0, 0, 32767, 65534, 32767]),
+    capturedFrom: "fresh-defaults-r2-2026-07-17-02-12-34/fresh-133-drive-1.syx (splice-then-place)",
+  }),
+});
+
 /**
  * Per-wireId payloadLen census (Q8.02): factory bank files vs live
  * hardware dumps. `undefined` = no observation of that kind on disk.
@@ -116,7 +230,7 @@ export const PAYLOAD_LEN_CENSUS: Readonly<Record<number, { readonly factory?: nu
   104: Object.freeze({ factory: 48, live: undefined }),
   105: Object.freeze({ factory: 48, live: undefined }),
   106: Object.freeze({ factory: 234, live: 236 }),
-  107: Object.freeze({ factory: 234, live: undefined }),
+  107: Object.freeze({ factory: 234, live: 236 }),
   108: Object.freeze({ factory: 78, live: 78 }),
   109: Object.freeze({ factory: 78, live: undefined }),
   110: Object.freeze({ factory: 90, live: 90 }),
@@ -137,7 +251,7 @@ export const PAYLOAD_LEN_CENSUS: Readonly<Record<number, { readonly factory?: nu
   126: Object.freeze({ factory: 12, live: undefined }),
   127: Object.freeze({ factory: 9, live: 9 }),
   128: Object.freeze({ factory: 32, live: undefined }),
-  130: Object.freeze({ factory: 170, live: undefined }),
+  130: Object.freeze({ factory: 170, live: 170 }),
   131: Object.freeze({ factory: 14, live: undefined }),
   132: Object.freeze({ factory: 14, live: undefined }),
   133: Object.freeze({ factory: 42, live: 42 }),

@@ -18,7 +18,7 @@
  *     AM4-specific tools.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import {
@@ -37,7 +37,7 @@ import {
 } from '@mcp-midi-control/core/midi/messages.js';
 import { toHex } from '@mcp-midi-control/core/midi/transport.js';
 
-import { ensureConnection } from '@mcp-midi-control/core/server-shared/connections.js';
+import { ensureConnection, pinConnection } from '@mcp-midi-control/core/server-shared/connections.js';
 
 const channelArg = z.number().int().min(1).max(16);
 
@@ -159,9 +159,16 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
             const onBytes = buildNoteOn(wireChannel, note, velocity);
             const offBytes = buildNoteOff(wireChannel, note, 0);
             const conn = ensureConnection(port);
-            conn.send(onBytes);
-            await new Promise<void>((resolve) => setTimeout(resolve, duration));
-            conn.send(offBytes);
+            // Pinned across the hold: the idle-release timer must not close
+            // the handle between Note On and Note Off.
+            const unpin = pinConnection(port);
+            try {
+                conn.send(onBytes);
+                await new Promise<void>((resolve) => setTimeout(resolve, duration));
+                conn.send(offBytes);
+            } finally {
+                unpin();
+            }
             return {
                 content: [{
                     type: 'text',
@@ -482,12 +489,17 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
         try {
             const wireChannel = userChannelToWire(channel);
             const conn = ensureConnection(port);
-            for (const note of notes) {
-                conn.send(buildNoteOn(wireChannel, note, velocity));
-            }
-            await new Promise<void>((resolve) => setTimeout(resolve, duration));
-            for (const note of notes) {
-                conn.send(buildNoteOff(wireChannel, note, 0));
+            const unpin = pinConnection(port); // hold the handle across the chord
+            try {
+                for (const note of notes) {
+                    conn.send(buildNoteOn(wireChannel, note, velocity));
+                }
+                await new Promise<void>((resolve) => setTimeout(resolve, duration));
+                for (const note of notes) {
+                    conn.send(buildNoteOff(wireChannel, note, 0));
+                }
+            } finally {
+                unpin();
             }
             return {
                 content: [{
@@ -543,19 +555,26 @@ export function registerMidiPrimitiveTools(server: McpServer): void {
             let totalNotes = 0;
             // Emit a per-event-scheduled timeline (see buildSequenceTimeline for
             // why this is not a batch of note-offs at the end).
-            for (let rep = 0; rep < repeats; rep++) {
-                const timeline = buildSequenceTimeline(sorted, wireChannel);
-                totalNotes += sorted.length;
+            // Pinned for the whole play (up to 30 s x 10 repeats): the
+            // idle-release timer must never close the handle mid-sequence.
+            const unpin = pinConnection(port);
+            try {
+                for (let rep = 0; rep < repeats; rep++) {
+                    const timeline = buildSequenceTimeline(sorted, wireChannel);
+                    totalNotes += sorted.length;
 
-                const repStartMs = Date.now();
-                for (const ev of timeline) {
-                    const targetMs = repStartMs + ev.at;
-                    const now = Date.now();
-                    if (targetMs > now) {
-                        await new Promise<void>((resolve) => setTimeout(resolve, targetMs - now));
+                    const repStartMs = Date.now();
+                    for (const ev of timeline) {
+                        const targetMs = repStartMs + ev.at;
+                        const now = Date.now();
+                        if (targetMs > now) {
+                            await new Promise<void>((resolve) => setTimeout(resolve, targetMs - now));
+                        }
+                        conn.send(ev.bytes);
                     }
-                    conn.send(ev.bytes);
                 }
+            } finally {
+                unpin();
             }
             return {
                 content: [{

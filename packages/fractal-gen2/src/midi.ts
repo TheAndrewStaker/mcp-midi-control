@@ -54,6 +54,19 @@ function loadMidi(): typeof import('@julusian/midi') {
 }
 
 const AXE_FX_II_PORT_NEEDLES = ['axe-fx', 'axefx'];
+
+/**
+ * Port names the needles above also match but that are NOT an Axe-Fx II:
+ * the Axe-Fx III ("Axe-Fx III" contains "axe-fx ii") and the gen-1
+ * Standard / Ultra. Without this, a rig holding only a III logged
+ * "Axe-Fx II detected" and `describe_rig` reported a phantom II.
+ */
+const NOT_AXE_FX_II = /axe-?fx ?(iii|3\b|ultra|standard)/;
+
+/** True when a (lower-cased) port name looks like an Axe-Fx II. */
+function isAxeFxIIPortName(lowerName: string): boolean {
+  return AXE_FX_II_PORT_NEEDLES.some((n) => lowerName.includes(n)) && !NOT_AXE_FX_II.test(lowerName);
+}
 const AXEFX_DIRTY_LABEL = 'axe-fx-ii';
 
 // Fractal Axe-Fx II model byte (Q8.02 XL+). All envelopes targeted at /
@@ -196,7 +209,7 @@ export interface AxeFxIIPortInfo {
 function findAxeFxIIOutputIndex(out: Output): number {
   for (let i = 0; i < out.getPortCount(); i++) {
     const name = out.getPortName(i).toLowerCase();
-    if (AXE_FX_II_PORT_NEEDLES.some((n) => name.includes(n))) return i;
+    if (isAxeFxIIPortName(name)) return i;
   }
   return -1;
 }
@@ -204,7 +217,7 @@ function findAxeFxIIOutputIndex(out: Output): number {
 function findAxeFxIIInputIndex(input: Input): number {
   for (let i = 0; i < input.getPortCount(); i++) {
     const name = input.getPortName(i).toLowerCase();
-    if (AXE_FX_II_PORT_NEEDLES.some((n) => name.includes(n))) return i;
+    if (isAxeFxIIPortName(name)) return i;
   }
   return -1;
 }
@@ -225,7 +238,7 @@ export function listAxeFxIIOutputs(): AxeFxIIPortInfo[] {
       result.push({
         index: i,
         name,
-        looksLikeAxeFxII: AXE_FX_II_PORT_NEEDLES.some((n) => lower.includes(n)),
+        looksLikeAxeFxII: isAxeFxIIPortName(lower),
       });
     }
     return result;
@@ -745,4 +758,10 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
 // a plain structural assignment rather than an escape hatch.
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import { registerConnector, AXEFX2_LABEL } from '@mcp-midi-control/core/server-shared/connections.js';
-registerConnector(AXEFX2_LABEL, () => connectAxeFxII() as MidiConnection);
+// holdWhileIdle: the II's buffer-dirty signal is DEVICE-SOURCED and arrives
+// unsolicited on the open port (the state-broadcast listener above). If the
+// registry released this handle after the idle grace like every other device,
+// a knob turned on the front panel while no tool was running would go unseen
+// and the buffer-dirty gate would wave a destructive navigation through. So
+// the II keeps its port (and its instance lease) for the whole session.
+registerConnector(AXEFX2_LABEL, () => connectAxeFxII() as MidiConnection, { holdWhileIdle: true });

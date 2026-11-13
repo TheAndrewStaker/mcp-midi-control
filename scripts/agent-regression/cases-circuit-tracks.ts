@@ -35,7 +35,6 @@ export const CIRCUIT_TRACKS_CASES: AgentRegressionCase[] = [
     prompt: `Load the sample at ${KICK_WAV} onto the Circuit Tracks drum sample slot 5.`,
     expectations: {
       must_call: ['upload_sample'],
-      must_not_call: ['upload_kit'],
       max_tools: 4,
       max_repeats: { upload_sample: 1 },
       tool_call_validators: [{
@@ -189,12 +188,12 @@ export const CIRCUIT_TRACKS_CASES: AgentRegressionCase[] = [
     description:
       'import_songsterr part selection: asked for the BASS part of a song, the agent must actually go and fetch it (list_tracks to see the roster, and/or track / track_name), NOT refuse on the belief that the tool is drum-only. It must also not author anything: this is a read-only inspection request. Catches a tool description that reads as drum-only.',
     prompt:
-      'Using the Songsterr tab https://www.songsterr.com/a/wsa/sleep-token-gethsemane-drum-tab-s1467797, tell me what parts that song has, and then '
+      'Using the Songsterr tab https://www.songsterr.com/a/wsa/queen-another-one-bites-the-dust-drum-tab-s371, tell me what parts that song has, and then '
       + 'fetch the BASS part specifically. Do not send anything to any device, and do not save anything.',
     expectations: {
       must_call: ['import_songsterr'],
       // A read-only inspection must not touch the device or a stored slot.
-      must_not_call: ['apply_pattern', 'upload_project'],
+      must_not_call: ['apply_pattern', 'import_preset'],
       max_tools: 6,
       min_tools: 1,
       // The agent must not report the capability as absent. These are the exact

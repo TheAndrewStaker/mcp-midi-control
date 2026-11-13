@@ -20,13 +20,13 @@ from its CDN, and on a drum track each hit stores its instrument as
 
 | # | Request | Yields |
 |---|---|---|
-| 1 | URL `…-s23527` (regex `-s(\d+)`) | `songId` = 23527 |
+| 1 | URL `…-s12345` (regex `-s(\d+)`) | `songId` = 12345 |
 | 2 | `GET https://www.songsterr.com/api/meta/{songId}` (plain JSON) | `revisionId`, `image` (a CDN hash), `tracks[]` |
 | 3 | `GET {cdn}/{songId}/{revisionId}/{image}/{partId}.json` | the part score (**gzip**) |
 
 - **Drum track** = the `tracks[]` entry with `instrumentId == 1024`
   (`instrument == "Drums"`).
-- **`partId` = the track's index in `tracks[]`.** Verified on song 23527 (drums
+- **`partId` = the track's index in `tracks[]`.** Verified on one song (drums
   at index 6 → `…/6.json` decoded as the drum score). The page's `#state` script
   carries an explicit `partId` per track if we ever need to stop trusting the
   index.
@@ -55,11 +55,11 @@ from its CDN, and on a drum track each hit stores its instrument as
 
 | Field | Meaning | How we use it |
 |---|---|---|
-| `notes[].fret` | **GM percussion note number**, *usually*. Tabs can write a layer on a NON-GM number (Like That hides its clap on `0`) | `drumMap` remap first (number → voice or GM number), then `gmDrumToVoice` → neutral voice. Unmapped numbers are skipped and reported **by number with hit counts** (`unmapped_numbers`), so the fix is one `drum_map` arg |
+| `notes[].fret` | **GM percussion note number**, *usually*. Tabs can write a layer on a NON-GM number (one tab hides its clap on `0`) | `drumMap` remap first (number → voice or GM number), then `gmDrumToVoice` → neutral voice. Unmapped numbers are skipped and reported **by number with hit counts** (`unmapped_numbers`), so the fix is one `drum_map` arg |
 | `notes[].string` | drum-staff line (half-ints) | display only, **ignored** |
 | `notes[].ghost` | per-note ghost flag: a quiet, parenthesised hit | `→ event.ghost` → **velocity 40 at quantize time. A ghosted hit SOUNDS, quietly; it is never dropped** (see the ghost policy below), and the total is reported as `ghosts`. A repeated fret in one beat with one ghosted copy is **flam notation**: folds to ONE event (the main hit), counted in `flams_collapsed` (2026-07-02; previously these double-emitted and surfaced as phantom same-step collisions) |
-| `notes[].tie` | tie-continuation (held, not re-struck) | **melodic parts only** in every tab censused (Sugar's bassoon carries 34; its drum part and Gethsemane's carry none, as expected: a drum hit has no sustain to tie into). Declared on `SsNote` so it is not mistaken for undecoded; the drum flattener does not read it |
-| `graceNote` (beat) | grace ornament attached to the next beat. A **string**, `"onBeat"` (Sugar) or `"beforeBeat"` (Gethsemane), *not* a boolean | Songsterr's SECOND flam encoding. Its `duration` is an engraving hint, **not measure time**: the notes are emitted at the current position as ghosts and the cursor does **not** advance, counted in `graces_folded`. Same-voice grace + main then share a step and the quantizer keeps the loud one (the flam policy); a cross-voice grace keeps its own hit |
+| `notes[].tie` | tie-continuation (held, not re-struck) | **melodic parts only** in every tab censused (one song's bassoon carries 34; the drum parts censused carry none, as expected: a drum hit has no sustain to tie into). Declared on `SsNote` so it is not mistaken for undecoded; the drum flattener does not read it |
+| `graceNote` (beat) | grace ornament attached to the next beat. A **string**, `"onBeat"` or `"beforeBeat"`, *not* a boolean | Songsterr's SECOND flam encoding. Its `duration` is an engraving hint, **not measure time**: the notes are emitted at the current position as ghosts and the cursor does **not** advance, counted in `graces_folded`. Same-voice grace + main then share a step and the quantizer keeps the loud one (the flam policy); a cross-voice grace keeps its own hit |
 | `duration` `[num,den]` | **actual** fraction of a whole note (dots already folded in: a dotted-8th is `[3,16]`) | quarter-beats = `num/den * 4`; accumulate for onset position |
 | `velocity` | dynamics string (`fff`/`f`/`mf`/`p`…) | resolved through the **full ladder** `SONGSTERR_DYNAMIC_VELOCITY` (see below), not three buckets. `ff`/`fff` still set the accent flag and `pp`/`ppp` the ghost flag (per-note `ghost` wins over the sticky dynamic); the ladder additionally carries `p`/`mp`/`mf` as real velocities |
 | `rest` / `notes:[{rest:true}]` | silence | advance position, emit nothing |
@@ -86,14 +86,14 @@ registering all of it as a *sounding* map was a render table doing duty as a
 voice table. Numbers 27–34 are the GM2/GS **effect** block (High Q, Slap,
 Scratch Push, Scratch Pull, Sticks, Square Click, Metronome Click, Metronome
 Bell): studio and engraving artefacts, not kit voices anyone plays, and a
-metronome click is emphatically not part of the song. Sleep Token "Sugar"
-(s560358 rev 3001145, part 10) writes **103 of its 964 notes** as
+metronome click is emphatically not part of the song. One tab's drum
+part writes **103 of its 964 notes** as
 `{fret:30, string:-1.5, ghost:true}` (all of them ghosted, m25–m86, at the same
 off-staff position the tab uses for fret 52, Chinese Cymbal), and Songsterr's
 own player sounds none of them. We folded all 103 to `perc` → GM 56 → an SPD-SX
 china pad, which the maintainer heard interleaved through the clap/snare part.
-Corpus exposure measured the same day: Amber, Caught A Glimpse, Gethsemane and
-Lost Child use none of 27–34; Sugar was the only affected song, at 10.7% of the
+Corpus exposure measured the same day: four other tabs
+use none of 27–34; this was the only affected song, at 10.7% of the
 part. The code path was unconditional, so the defect was general.
 With the entries gone those hits route to `unmapped_numbers`, so the import
 **reports** "103 hits on number 30" instead of inventing a voice, and a caller
@@ -102,12 +102,12 @@ overrides everything. Do not restore 27–34 without a per-number musical
 justification. Golden: `scripts/verify-song-import.ts`, the "effect block" block.
 
 **Ghost policy: a ghosted hit sounds, quietly (2026-07-27).** It is tempting to
-drop ghosts, since Songsterr's playback of Sugar's ghosted number-30 notes is
+drop ghosts, since Songsterr's playback of that tab's ghosted number-30 notes is
 silent, but that reads the wrong cause. Those notes were inaudible because of
-the *mapping* defect above, not the ghost flag. The same Sugar part ghosts 3 of
+the *mapping* defect above, not the ghost flag. The same drum part ghosts 3 of
 its 61 snare hits, 2 electric snares, a tom and all 3 pedal-hat hits, all real
 groove that a blanket drop would silently delete; in drum notation a ghost note
-*is* played, just very quietly, and Tom Petty's "Breakdown" turns on exactly such
+*is* played, just very quietly, and one classic-rock groove turns on exactly such
 a soft tail snare. So ghosts import as soft hits at `GHOST_HIT_VELOCITY` = **40**
 (the same value the ASCII-tab `g` glyph emits and the threshold the SMF path
 reads back as a ghost, so all three importers agree on one number; 40% of the
@@ -117,8 +117,8 @@ surfaced in a TRACK-WIDE warning and the level is tunable per import with
 magic. There is deliberately **no value that silences a ghost**; a caller who
 wants a ghosted layer gone routes it elsewhere with `drum_map`.
 
-**Dynamics are a LADDER, not accent / plain / ghost (2026-07-27).** Tom Petty
-"Breakdown" (s23527 part 6) carries *no* per-note `ghost` flag at all; its drum
+**Dynamics are a LADDER, not accent / plain / ghost (2026-07-27).** One
+classic-rock tab's drum part carries *no* per-note `ghost` flag at all; its drum
 dynamics live entirely in the sticky beat marking: `fff`×112, `f`×101, `p`×24,
 `mf`×8, `mp`×2. The measure-1 tail snare the maintainer hears as a "light snare
 tail hit" is literally `{"fret":38,"velocity":"p"}`. With only an ACCENT set
@@ -137,7 +137,7 @@ The accent/ghost *flags* are unchanged, and a velocity is carried on the event
 only when the flags alone would get it wrong. So a tab written in `fff`/`f`/`pp`
 flattens byte-identically to before, and one written in `p`/`mp`/`mf` gains real
 dynamics. Override per import with `FlattenOptions.dynamicVelocity`.
-Numbers outside even Songsterr's table (Like That's clap on `0`, their legend
+Numbers outside even Songsterr's table (one tab's clap on `0`, their legend
 special-cases unknown numbers) remain a musical inference: named in warnings
 with counts, judged by the agent/user from where they land, applied explicitly
 via `drum_map`, confirmed by ear. GM is the *default dictionary*, not a
@@ -205,7 +205,7 @@ decompose + dedup rather than store every bar.
 
 Exact dedup barely collapses a *human-played* track: a ghost note or a turnaround
 fill makes each "same" 2-bar groove a distinct grid (39 windows → **31 unique**
-on the Tom Petty test). `coalescePatterns` merges windows whose **onset distance**
+on the classic-rock test). `coalescePatterns` merges windows whose **onset distance**
 (`gridDistance`: normalized Hamming over `voice × step` cells, accents/rolls
 ignored, they don't change which groove a bar *is*) is within `maxDistance`.
 Greedy in song order: a groove's first appearance seeds a cluster, later
@@ -215,7 +215,7 @@ member most typical of the group); `variantCount` reports how many exact variant
 folded in, and the individual fills of non-medoid members are flattened, the
 right trade when the goal is "fit the song into the hardware."
 
-On "Breakdown" at the default `maxDistance: 0.10`, the song reduces to **3 grooves**
+On the classic-rock test at the default `maxDistance: 0.10`, the song reduces to **3 grooves**
 (a clean verse / fill / chorus split) with the 5 remaining slots free; tightening
 to `0.05` keeps 13 (over 8 slots). So the threshold is the fidelity↔fit knob
 (`--fuzz N`, `--exact` to disable).
@@ -224,8 +224,8 @@ to `0.05` keeps 13 (over 8 slots). So the threshold is the fidelity↔fit knob
 
 The dedup key used to be the drum grid alone, and on a multi-part build that is
 a false certificate: two windows with identical drums but DIFFERENT melodic /
-synth content merged as "the same section" (the Amber rebuild plan hit this;
-Amber survived only because its pad alternated in lockstep with the drums). Now
+synth content merged as "the same section" (one rebuild plan hit this;
+it survived only because its pad alternated in lockstep with the drums). Now
 `whole_song` with `parts` builds the bank with every other selected part as an
 **identity layer** (`DecomposeLayer`: melodic onsets tokenized `pitch:gateSteps`,
 extra percussion parts by voice), so two windows share a letter only when EVERY
@@ -250,7 +250,7 @@ The Circuit advances content on **two axes**, and a long song uses both:
 into slots; fuzzy-coalesced so `bankSize ≤ 8`) + a **scene-chain** = the
 run-length of `order`. Each run (a maximal stretch of one pattern) becomes one
 scene that selects that pattern and holds for the run's window count. On
-"Breakdown": bank 3/8, a 14-step scene-chain (`A×15 B A×3 B×2 C×5 …`). Flags
+the classic-rock test: bank 3/8, a 14-step scene-chain (`A×15 B A×3 B×2 C×5 …`). Flags
 report what each layer reaches: `fitsInOnePattern`, `fitsViaChainOnly` (each
 pattern once, in order, a plain chain reproduces it, no scenes), `fitsInPatternSlots`.
 
@@ -267,7 +267,7 @@ phrasing and scene-advance carries the section moves.
 - **`tempos: {measure,beat,bpm}[]`**: the whole tempo map, each mark's measure
   resolved to a quarter-beat. `tempoAtBeat(flat, beat)` returns the tempo IN
   FORCE at a position. `importSongsterrDrums` reports the window's local tempo,
-  not the song's opening one. (Bug it fixes: Gethsemane is 71→141→148→74 bpm;
+  not the song's opening one. (Bug it fixes: one song is 71→141→148→74 bpm;
   the bridge is 74, and verses 141/148 were being reported/streamed at 71 ≈ half
   speed.) `--whole-song` is still single-tempo and now warns loudly when the song
   has >1 tempo (per-scene tempo lands with scene-chain encoding).
@@ -276,7 +276,7 @@ phrasing and scene-advance carries the section moves.
   by **DISPLAYED measure** (`--from-measure`/`--to-measure`, 1-based to match the
   tab UI) or **section name** (`--section "Bridge"`), instead of hand-computed
   beat offsets. Section names are sticky in the source and carried forward;
-  duplicate names (Gethsemane has two "Bridge"s) warn and pick the first.
+  duplicate names (a song with two "Bridge"s) warn and pick the first.
 - **Sticky dynamics**: `velocity` is now carried forward like `signature`
   (Songsterr emits both only on change). A `fff` accents following hits until the
   next marking; a `pp` switches them to ghost.
@@ -353,7 +353,7 @@ several is resolved by running the stages in order, never by picking a winner:
 Four decisions worth naming, because each one had a plausible-looking
 alternative:
 
-- **A dynamic and an accent COMPOSE.** Schism part 1 m12 alternates a `p` melody
+- **A dynamic and an accent COMPOSE.** One tab's part 1 m12 alternates a `p` melody
   note carrying an accent glyph against an `f` pedal note. Read as an absolute
   120, the accented `p` note would come out LOUDER than the unaccented `f` one
   and invert the tab's own written dynamic. Composed, it lands just under it

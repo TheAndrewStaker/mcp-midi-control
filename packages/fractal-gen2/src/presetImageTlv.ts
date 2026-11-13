@@ -291,15 +291,24 @@ export function parsePresetImage(words: Uint16Array): AxeFxIIPresetImage {
         payload: Array.from(words.slice(i + 2, i + 2 + payloadLen)),
       });
     } else {
+      // System-tail blocks (Noisegate 139 / Output 140 / Controllers 141)
+      // are SINGLE-CHANNEL: the device exposes no X/Y on them, and the
+      // even-payload=two-halves heuristic is corpus-REFUTED for all three
+      // (0/384 Q8.02 factory presets mirror the halves; Output words 8..15
+      // hold the scene_1..8_main 0 dB encoding 32767 in 339/384, the rest
+      // pre-scene-firmware zeros — 2026-07-16 BK-084 wiring session).
+      // Pre-fix, paramWordIndex refused Output paramIds 10..15
+      // (scene_3..8_main) as "out of the X half".
+      const singleChannel = SYSTEM_TAIL_SET.has(wireId);
       const block: PresetImageBlock = {
         wireId,
         blockName: EFFECT_ID_TO_BLOCK_NAME.get(wireId),
         tlvWord: i,
         baseWord: i + 2,
         payloadLen,
-        xToYOffset: payloadLen % 2 === 0 ? payloadLen / 2 : undefined,
+        xToYOffset: !singleChannel && payloadLen % 2 === 0 ? payloadLen / 2 : undefined,
       };
-      (SYSTEM_TAIL_SET.has(wireId) ? systemTail : blocks).push(block);
+      (singleChannel ? systemTail : blocks).push(block);
     }
     i += 2 + payloadLen;
   }

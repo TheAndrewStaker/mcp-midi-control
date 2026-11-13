@@ -3,11 +3,14 @@
  *
  * The III is the byte-verified anchor of the modern Fractal family: its
  * fn=0x01 SET path is confirmed against 10 public captures (Session 97),
- * and FM3/FM9 reuse the same codec with their own model byte. The III is
- * still `community-beta` because no maintainer owns the hardware to
- * confirm end-to-end — the GET-response shape and the II-ported
- * set_block / save / rename envelopes remain unconfirmed on real III
- * firmware.
+ * and FM3/FM9 reuse the same codec with their own model byte. GET and
+ * continuous SET are now III-HARDWARE-CONFIRMED (2026-06-17 owner test:
+ * device echo + read-back matching the front panel; 2026-06-18
+ * catalog-wide SET->GET roundtrip). set_block, save, and rename ride the
+ * gen-3 EDITOR-DECODED envelopes (fn=0x01 sub=0x32 / sub=0x26 /
+ * sub=0x28), not II ports; those writes, discrete set-by-name, and the
+ * live grid read stay `community-beta` on real III firmware (decoded,
+ * key-press pending).
  *
  * BEFORE EDITING, READ:
  *   - `docs/devices/axe-fx-iii/SYSEX-MAP.md`
@@ -26,7 +29,7 @@ import { MODERN_AGENT_GUIDANCE } from './shared.js';
 const AXEFX3_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> = Object.freeze({
   amp: ['type', 'gain', 'bass', 'mid', 'treble', 'master', 'presence', 'level'],
   reverb: ['type', 'mix', 'time', 'predelay', 'size', 'hicut', 'level'],
-  delay: ['type', 'time', 'feed', 'mix', 'locut', 'hicut', 'level'],
+  delay: ['model', 'type', 'time', 'feed', 'mix', 'locut', 'hicut', 'level'],
   chorus: ['type', 'rate', 'depth', 'mix', 'level'],
   flanger: ['type', 'rate', 'depth', 'feedback', 'mix', 'level'],
   phaser: ['type', 'rate', 'depth', 'feedback', 'mix', 'level'],
@@ -64,23 +67,24 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
     'now III-hardware-confirmed (community owner test: amp gain on channel A',
     'acked with device echo, read-back matched the front panel). Discrete',
     'set-by-name, save_preset, set_block, and the live grid read stay community-',
-    'beta on the III; confirm those writes on the device front panel.',
-  ].join('\n'),
+    'beta on the III; confirm those writes on the device front panel.',  ].join('\n'),
   cab_polish: [
     'CAB POLISH DEFAULTS (mix-ready cuts + room). Close-mic\'d IRs carry more',
-    'lows and highs than any real rig in a room; the validated starting point',
-    'is a low cut ~80 Hz / high cut ~6.5 kHz plus a little cab room, and the',
-    'server auto-applies it on fresh cab-bearing builds on the AM4, Axe-Fx II,',
-    'and FM9 (reported in `auto_applied`).',
+    'lows and highs than any real rig in a room; un-cut modeler presets read',
+    'as "shrill / digital / fizzy".',
     '',
-    'NOT AUTO-APPLIED ON THE AXE-FX III YET: the III\'s cab cut/room params',
-    '(cab locut / hicut / roommix) are registered but carry NO calibrated',
-    'display range in the III catalog, so a Hz value like 80 cannot be',
-    'expressed on the wire without guessing (set_param on them takes a raw',
-    '0..65534 wire integer, NOT Hz). Do NOT write display-shaped values to',
-    'them, and do not claim cuts were applied. Until III range evidence lands,',
-    'advise the user to set the cab low/high cut (80 Hz / 6.5-7.5 kHz,',
-    '12 dB/oct) on the front panel or in Axe-Edit for direct/FRFR presets.',
+    'THE SERVER ENFORCES THIS DEFAULT on the Axe-Fx III (BK-103c): every',
+    'apply_preset that places a CAB block and sets NO cab cut/room/slope',
+    'param auto-applies, per written cab channel window:',
+    '  cab locut 80 Hz, cab hicut 6500 Hz, cab roommix 8 %.',
+    'These ride the III\'s display-calibrated ranges (device-true, from its',
+    'own editor cache) over the community-beta continuous set_param path, so',
+    'confirm by ear / front panel like any other gen-3 write. NO filter-slope',
+    'write is made (no verified value table). The response reports the',
+    'injection in `auto_applied`; ALWAYS RELAY IT with the one-phrase undo:',
+    '"applied mix-ready cab cuts (80 Hz / 6.5 kHz) and 8% room - say \'wide',
+    'open\' to remove." A build with NO cab block injects nothing, and',
+    'set_param(s) edits never inject.',
   ].join('\n'),
 };
 
@@ -136,15 +140,31 @@ export const AXE_FX_III_CONFIG: FractalModernConfig = {
   grid: { rows: 6, cols: 14 },
   scene_count: 8,
   channel_names: ['A', 'B', 'C', 'D'],
+  // 1024 is the Mark II count; a Mark I holds 512. The model is not
+  // distinguishable over the wire, so the ceiling stays permissive and
+  // switch_preset's fn=0x0D read-back reports a location the unit refused.
   preset_count: 1024,
   preset_location_format: /^(?:\d{1,4})$/,
+  // Preset switching: the III honours Bank MSB (CC0) and IGNORES Bank LSB
+  // (CC32), so the spec's 'standard' encoding lands every preset >= 128 on
+  // (location mod 128). Hardware-found on a Mk I, fw 32.06 (2026-10-28
+  // community run: location 500 loaded 116; CC0=3 + PC 116 loads 500). The
+  // fn=0x01 sub=0x27 SysEx switch was confirmed on the same unit (502 -> 499),
+  // so it is the default path; 'msb' keeps any residual PC use correct.
+  switch_preset_via: 'sysex',
+  bank_select: 'msb',
   support_tier: 'community-beta',
   verification:
     'fn=0x01 SET byte-verified against 10 public captures, and now III-hardware-confirmed ' +
     'end-to-end (community owner test 2026-06-17: continuous set_param amp gain on channel A ' +
-    'acked with device echo, get_param read-back matched the front panel display). This is the ' +
-    'first on-device confirmation of the III, the gen-3 byte-identity anchor. Still beta on real ' +
-    'III hardware: discrete set-by-name, save_preset, set_block, and the live grid read (sub=0x2E).',
+    'acked with device echo, get_param read-back matched the front panel display). A 2026-06-18 ' +
+    'catalog-wide SET->GET roundtrip then confirmed the read + continuous-write paths across the ' +
+    'whole III catalog on hardware, and became the device oracle for the 2026-06-20 reroute of ' +
+    '~92 type/model/count selectors from continuous floats to discrete ordinals (wire builders ' +
+    'unchanged; byte-identity intact). After a Mk I sweep (fw 32.06): switch_preset goes by SysEx ' +
+    'and save_preset is checked by a name read-back; no CPU figure (sibling formula falsified). ' +
+    'Still beta on real III hardware: discrete set-by-name, save_preset, set_block, and the live ' +
+    'grid read (sub=0x2E).',
   // The III's own catalog — the byte-identity anchor for the family.
   params_by_family: PARAMS_BY_FAMILY,
   canonical_terms: {

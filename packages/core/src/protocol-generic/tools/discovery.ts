@@ -9,17 +9,20 @@
  *   - `lookup_lineage(port, block_type, ...)`, Fractal-style real-gear lineage
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { RigEditOp, Role } from 'openrig';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import {
+  RIG_EDIT_SCHEMA,
+  buildRigEditOp,
   describeDevice,
   describeDeviceGuidance,
   describeDeviceRecipe,
   executeDescribeRig,
   executeLookupLineage,
   executeRigEdit,
+  executeSetlistPlan,
+  executeSongPlan,
   findCompatibleTypes,
   listParams,
 } from '../dispatcher.js';
@@ -31,15 +34,25 @@ export function registerDiscoveryTools(server: McpServer): void {
     title: 'Describe Rig',
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     description: [
-      'Whole-rig overview: every device this server can drive, which are connected right now, and what each one is. Read-only, pure introspection (a non-opening port scan plus a mounted-drive check; opens no MIDI handles).',
-      'Call this FIRST when configuring more than one device (e.g. setting up a rig for a song) so you can plan against what is actually present, instead of guessing ports.',
+      'Whole-rig overview: every device this server can drive, which are connected right now, and what each one is. Read-only (opens no MIDI handles).',
+      'Call this FIRST when configuring more than one device, so you plan against what is present instead of guessing ports.',
       'Per device: id and name (pass either as the `port` arg to drive it), connected plus how (a MIDI port name or a mounted drive), transport (midi/serial/storage/hybrid), preset_class (layout = preset processor, voice = synth or sampler), support_tier, pattern_target (accepts apply_pattern), and a one-line capability summary. For deep per-device detail, call describe_device(port).',
-      'When a rig manifest is configured (MCP_RIG_MANIFEST), also returns `manifest`: the declared OpenRig rig (devices + typed audio/MIDI cabling + channels + cross-device bindings) plus three verification checks and presence-only declared-vs-connected drift. `validation` = is the graph well-formed. `compatibility` = per cross-device binding, do both ends agree (channel/CC/note) and is the mapping legal for the gear (will the MIDI coordination WORK). `audio` = does each instrument reach front-of-house, or is it unpatched / dead-ending. Read the manifest when configuring the rig for a song.',
+      'When a rig manifest is configured (MCP_RIG_MANIFEST), also returns `manifest`: the declared OpenRig rig (devices + typed audio/MIDI cabling + channels + cross-device bindings) plus presence-only drift and three checks: `validation` (is the graph well-formed), `compatibility` (do both ends of each binding agree, is the mapping legal for the gear), `audio` (does each instrument reach front-of-house).',
+      'With a song book (MCP_RIG_REPERTOIRE) also lists `repertoire.songs` and `repertoire.setlists`.',
       'Note: serial devices (FM3) are invisible to the MIDI scan and can read connected:false even when plugged in; confirm with describe_device or list_midi_ports.',
     ].join(' '),
-    inputSchema: {},
-  }, async () => {
+    inputSchema: {
+      song: z.string().optional().describe(
+        'A song id or title from `repertoire.songs`. Returns ONLY its setup plan: ordered `steps` (tool + args to call) and `gaps` (left to the player). A plan never saves.',
+      ),
+      section: z.string().optional().describe('With `song`: the section to set up for (default: first).'),
+      setlist: z.string().optional().describe('A setlist id from `repertoire.setlists`. Returns ONLY its songs in play order and what each still needs.'),
+    },
+  }, async ({ song, section, setlist }) => {
     try {
+      if (song !== undefined && setlist !== undefined) throw new Error('Pass `song` or `setlist`, not both.');
+      if (setlist !== undefined) return asText(executeSetlistPlan(setlist));
+      if (song !== undefined) return asText(executeSongPlan(song, section));
       return asText(executeDescribeRig());
     } catch (err) {
       return asError(err);
@@ -158,79 +171,14 @@ export function registerDiscoveryTools(server: McpServer): void {
     title: 'Edit Rig',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     description: [
-      'Edit the OpenRig manifest (MCP_RIG_MANIFEST): add/remove a DEVICE, or add/remove/enable/disable a CABLE. Invalid edits are refused, the file is backed up, and the response re-runs the compatibility + audio + capacity checks. Call describe_rig first for ids.',
-      'add_device: id + name + roles (+ manufacturer/family/server_device_id/ports/note). Adds the node with NO cables: where it plugs in is a separate decision, and describe_rig.capacity.free_by_kind names the genuinely free ports. remove_device: device (id or name); cables touching it go too, listed in removed_edge_ids.',
-      'add_cable: from + to + kind (audio/midi/footswitch); for MIDI add midi_type, channel, cc/notes/note_map; for audio audio_channels (default L/R). Missing ports are created; enabled:false marks it [planned]. remove_cable: cable_id, or from/to (+kind). set_cable_enabled: cable_id + enabled. dry_run:true previews.',
+      'Edit the OpenRig manifest (MCP_RIG_MANIFEST): add/remove a DEVICE, or add/remove/enable/disable a CABLE. Invalid edits are refused; the file is backed up; the response re-runs the rig checks. Call describe_rig first for ids.',
+      'add_device: id + name + roles (+ manufacturer/family/server_device_id/ports/note), no cables yet (capacity.free_by_kind names free jacks). remove_device: device; its cables go too.',
+      'add_cable: from + to + kind; for MIDI midi_type, channel, cc/notes/note_map; for audio audio_channels. Picks a free jack facing the right way unless from_port/to_port name one; a busy or wrong-way jack is refused with the reason. enabled:false = [planned]. remove_cable: cable_id, or from/to (+kind). set_cable_enabled: cable_id + enabled. dry_run:true previews.',
     ].join(' '),
-    inputSchema: {
-      operation: z.enum(['add_cable', 'remove_cable', 'set_cable_enabled', 'add_device', 'remove_device']).describe('The edit to make.'),
-      device: z.string().optional().describe('remove_device: the device to remove (id or display name).'),
-      id: z.string().optional().describe('add_device: stable, opaque node id, unique in the rig.'),
-      name: z.string().optional().describe('add_device: display name.'),
-      roles: z.array(z.string()).optional().describe('add_device: OpenRig roles, e.g. ["sound_source"]. At least one is required; the checks key on roles.'),
-      manufacturer: z.string().optional().describe('add_device: manufacturer, e.g. "Arturia".'),
-      family: z.string().optional().describe('add_device: model family, e.g. "MicroFreak".'),
-      server_device_id: z.string().optional().describe('add_device: registered server descriptor id, when this server supports the device. Omit for opaque gear.'),
-      ports: z.array(z.object({
-        id: z.string(),
-        kind: z.enum(['audio_out', 'audio_in', 'midi_din_in', 'midi_din_out', 'midi_thru', 'usb_midi', 'usb_serial', 'expression', 'footswitch', 'cv', 'analog_clock']),
-        label: z.string().optional(),
-        audio: z.enum(['mono', 'stereo']).optional(),
-        output_role: z.enum(['main', 'monitor', 'sub', 'stem', 'cue']).optional(),
-      })).optional().describe('add_device: the jacks on the device.'),
-      from: z.string().optional().describe('add_cable / remove_cable: source device (id or display name).'),
-      to: z.string().optional().describe('add_cable / remove_cable: destination device (id or display name).'),
-      kind: z.enum(['audio', 'midi', 'footswitch']).optional().describe('Cable type.'),
-      midi_type: z.enum(['clock', 'transport', 'spp', 'song_select', 'pc', 'cc', 'nrpn', 'note', 'sysex', 'active_sensing']).optional().describe('add_cable MIDI message type (default cc).'),
-      channel: z.number().int().min(1).max(16).optional().describe('MIDI channel 1-16.'),
-      cc: z.array(z.number().int().min(0).max(127)).optional().describe('add_cable cc numbers.'),
-      notes: z.array(z.number().int().min(0).max(127)).optional().describe('add_cable note numbers.'),
-      note_map: z.union([z.literal('GM'), z.record(z.string(), z.string())]).optional().describe('add_cable note cable: "GM" or {note: voice}.'),
-      audio_channels: z.array(z.enum(['L', 'R', 'M'])).optional().describe('add_cable audio channels (default ["L","R"], mono = ["M"]).'),
-      enabled: z.boolean().optional().describe('add_cable / set_cable_enabled: false marks the cable [planned] (not active).'),
-      note: z.string().optional().describe('add_cable: a human note on the cable.'),
-      cable_id: z.string().optional().describe('remove_cable / set_cable_enabled: the cable id (from describe_rig).'),
-      dry_run: z.boolean().optional().describe('Preview only: validate + report the effect, write nothing.'),
-    },
+    inputSchema: RIG_EDIT_SCHEMA,
   }, async (a) => {
     try {
-      let op: RigEditOp;
-      if (a.operation === 'add_cable') {
-        if (a.from === undefined || a.to === undefined || a.kind === undefined) {
-          throw new Error('edit_rig add_cable needs from, to, and kind.');
-        }
-        op = {
-          op: 'add_cable', from: a.from, to: a.to, kind: a.kind, midi_type: a.midi_type,
-          channel: a.channel, cc: a.cc, notes: a.notes, note_map: a.note_map,
-          audio_channels: a.audio_channels, enabled: a.enabled, note: a.note,
-        };
-      } else if (a.operation === 'add_device') {
-        if (a.id === undefined || a.name === undefined || a.roles === undefined) {
-          throw new Error('edit_rig add_device needs id, name, and roles.');
-        }
-        // `roles` arrives as string[] from the JSON schema; applyRigEdit rejects
-        // an empty list, and validateRig rejects a role outside the core enum,
-        // so a bad value fails loudly at the seam rather than silently landing.
-        op = {
-          op: 'add_device', id: a.id, name: a.name, roles: a.roles as Role[],
-          manufacturer: a.manufacturer, family: a.family,
-          server_device_id: a.server_device_id, ports: a.ports, note: a.note,
-        };
-      } else if (a.operation === 'remove_device') {
-        if (a.device === undefined) throw new Error('edit_rig remove_device needs device.');
-        op = { op: 'remove_device', device: a.device };
-      } else if (a.operation === 'remove_cable') {
-        if (a.cable_id === undefined && a.from === undefined && a.to === undefined) {
-          throw new Error('edit_rig remove_cable needs cable_id, or from/to (with optional kind).');
-        }
-        op = { op: 'remove_cable', cable_id: a.cable_id, from: a.from, to: a.to, kind: a.kind };
-      } else {
-        if (a.cable_id === undefined || a.enabled === undefined) {
-          throw new Error('edit_rig set_cable_enabled needs cable_id and enabled.');
-        }
-        op = { op: 'set_cable_enabled', cable_id: a.cable_id, enabled: a.enabled };
-      }
-      return asText(executeRigEdit(op, { dry_run: a.dry_run }));
+      return asText(executeRigEdit(buildRigEditOp(a), { dry_run: a.dry_run }));
     } catch (err) {
       return asError(err);
     }

@@ -5,7 +5,7 @@
  * `downloadProject(c, slot)` with no options, and `downloadProject` defaults
  * `opts.pack` to 0 — so it silently reads Pack 1 no matter which pack the
  * device is showing. That cost a session an invalid test result on 2026-08-01
- * (asked for Pack 5 projects, got Pack 1's "Vore" and "Rain").
+ * (asked for Pack 5 projects, got two Pack 1 projects instead).
  *
  * Pack is 0-BASED on the wire (`fileId(slot, pack)`), so Pack 5 = 4. Slot is
  * 0-based too, so Project 41 = slot 40. Both are printed back 1-based to match

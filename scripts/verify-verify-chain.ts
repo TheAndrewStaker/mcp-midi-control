@@ -16,10 +16,18 @@
  * Run: npx tsx scripts/verify-verify-chain.ts
  */
 
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { registerDevice, unregisterDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
 import { registerConnector } from '@mcp-midi-control/core/server-shared/connections.js';
 import { executeApplyPreset } from '@mcp-midi-control/core/protocol-generic/dispatcher.js';
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
+
+// Offline gate: isolate the cross-process instance lease from any LIVE server
+// (see verify-circuit-delete, 2026-08-08 port_held_elsewhere collision).
+process.env.MCP_INSTANCE_LOCK_DIR = mkdtempSync(join(tmpdir(), 'verify-chain-gate-locks-'));
 import type {
   ApplyResult,
   DeviceDescriptor,

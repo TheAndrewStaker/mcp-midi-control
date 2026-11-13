@@ -949,7 +949,7 @@
       "drive.drive": {
         "block": "drive",
         "name": "drive",
-        "displayLabel": "Gain",
+        "displayLabel": "Drive",
         "pidLow": 118,
         "pidHigh": 11,
         "unit": "knob_0_10",
@@ -959,7 +959,7 @@
       "drive.tone": {
         "block": "drive",
         "name": "tone",
-        "displayLabel": "Bass",
+        "displayLabel": "Tone",
         "pidLow": 118,
         "pidHigh": 12,
         "unit": "knob_0_10",
@@ -969,7 +969,7 @@
       "drive.level": {
         "block": "drive",
         "name": "level",
-        "displayLabel": "Mid",
+        "displayLabel": "Level",
         "pidLow": 118,
         "pidHigh": 13,
         "unit": "knob_0_10",
@@ -979,7 +979,7 @@
       "drive.mix": {
         "block": "drive",
         "name": "mix",
-        "displayLabel": "Tone",
+        "displayLabel": "Mix",
         "pidLow": 118,
         "pidHigh": 14,
         "unit": "percent",
@@ -1010,7 +1010,7 @@
       "drive.high_cut": {
         "block": "drive",
         "name": "high_cut",
-        "displayLabel": "High Cut Frequency",
+        "displayLabel": "High Cut",
         "pidLow": 118,
         "pidHigh": 17,
         "unit": "hz",
@@ -1030,7 +1030,7 @@
       "drive.bass": {
         "block": "drive",
         "name": "bass",
-        "displayLabel": "Bright Cap",
+        "displayLabel": "Bass",
         "pidLow": 118,
         "pidHigh": 20,
         "unit": "knob_0_10",
@@ -1049,7 +1049,7 @@
       "drive.mid_freq": {
         "block": "drive",
         "name": "mid_freq",
-        "displayLabel": "XFormer Low Freq",
+        "displayLabel": "Mid Frequency",
         "pidLow": 118,
         "pidHigh": 22,
         "unit": "hz",
@@ -1060,7 +1060,7 @@
       "drive.treble": {
         "block": "drive",
         "name": "treble",
-        "displayLabel": "XFormer Hi Freq",
+        "displayLabel": "Treble",
         "pidLow": 118,
         "pidHigh": 23,
         "unit": "knob_0_10",
@@ -1070,7 +1070,7 @@
       "drive.bit_reduce": {
         "block": "drive",
         "name": "bit_reduce",
-        "displayLabel": "Location",
+        "displayLabel": "Bit Reduce",
         "pidLow": 118,
         "pidHigh": 24,
         "unit": "count",
@@ -1080,7 +1080,7 @@
       "drive.geq_band_1": {
         "block": "drive",
         "name": "geq_band_1",
-        "displayLabel": "Supply Sag",
+        "displayLabel": "100 Hz",
         "pidLow": 118,
         "pidHigh": 29,
         "unit": "db",
@@ -1090,7 +1090,7 @@
       "drive.geq_band_2": {
         "block": "drive",
         "name": "geq_band_2",
-        "displayLabel": "Presence",
+        "displayLabel": "160 Hz",
         "pidLow": 118,
         "pidHigh": 30,
         "unit": "db",
@@ -1100,7 +1100,7 @@
       "drive.geq_band_3": {
         "block": "drive",
         "name": "geq_band_3",
-        "displayLabel": "Negative FB",
+        "displayLabel": "250 Hz",
         "pidLow": 118,
         "pidHigh": 31,
         "unit": "db",
@@ -1110,7 +1110,7 @@
       "drive.geq_band_4": {
         "block": "drive",
         "name": "geq_band_4",
-        "displayLabel": "Presence Freq",
+        "displayLabel": "400 Hz",
         "pidLow": 118,
         "pidHigh": 32,
         "unit": "db",
@@ -1120,7 +1120,7 @@
       "drive.geq_band_5": {
         "block": "drive",
         "name": "geq_band_5",
-        "displayLabel": "Low Freq",
+        "displayLabel": "640 Hz",
         "pidLow": 118,
         "pidHigh": 33,
         "unit": "db",
@@ -1130,7 +1130,7 @@
       "drive.geq_band_6": {
         "block": "drive",
         "name": "geq_band_6",
-        "displayLabel": "Low Reso",
+        "displayLabel": "1000 Hz",
         "pidLow": 118,
         "pidHigh": 34,
         "unit": "db",
@@ -1140,7 +1140,7 @@
       "drive.geq_band_7": {
         "block": "drive",
         "name": "geq_band_7",
-        "displayLabel": "Amp Section",
+        "displayLabel": "1600 Hz",
         "pidLow": 118,
         "pidHigh": 35,
         "unit": "db",
@@ -1150,7 +1150,7 @@
       "drive.geq_band_8": {
         "block": "drive",
         "name": "geq_band_8",
-        "displayLabel": "Depth Freq",
+        "displayLabel": "2500 Hz",
         "pidLow": 118,
         "pidHigh": 36,
         "unit": "db",
@@ -1169,7 +1169,7 @@
       "drive.geq_band_10": {
         "block": "drive",
         "name": "geq_band_10",
-        "displayLabel": "Master Vol Cap",
+        "displayLabel": "6400 Hz",
         "pidLow": 118,
         "pidHigh": 38,
         "unit": "db",
@@ -6138,7 +6138,7 @@
       "drive.clip_type": {
         "block": "drive",
         "name": "clip_type",
-        "displayLabel": "Type",
+        "displayLabel": "Clip Type",
         "pidLow": 118,
         "pidHigh": 18,
         "unit": "enum",
@@ -6164,7 +6164,7 @@
       "drive.input_select": {
         "block": "drive",
         "name": "input_select",
-        "displayLabel": "Amp Input Select",
+        "displayLabel": "Input Select",
         "pidLow": 118,
         "pidHigh": 25,
         "unit": "enum",
@@ -6193,7 +6193,7 @@
       "drive.slew_rate": {
         "block": "drive",
         "name": "slew_rate",
-        "displayLabel": "Depth",
+        "displayLabel": "Sample Rate",
         "pidLow": 118,
         "pidHigh": 26,
         "unit": "percent",
@@ -12252,7 +12252,7 @@
         "pidHigh": 45,
         "unit": "db",
         "displayMin": -40,
-        "displayMax": 0
+        "displayMax": 40
       },
       "global.tap_tempo_mode": {
         "block": "global",
@@ -12274,9 +12274,15 @@
         "displayLabel": "Input Pad",
         "pidLow": 1,
         "pidHigh": 47,
-        "unit": "percent",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 100
+        "displayMax": 3,
+        "enumValues": {
+          "0": "0 dB",
+          "1": "6 dB",
+          "2": "12 dB",
+          "3": "18 dB"
+        }
       },
       "global.out1_config": {
         "block": "global",
@@ -12329,9 +12335,13 @@
         "name": "in1_config",
         "pidLow": 1,
         "pidHigh": 53,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 127
+        "displayMax": 1,
+        "enumValues": {
+          "0": "MONO (LEFT ONLY)",
+          "1": "STEREO"
+        }
       },
       "global.lcd_contrast": {
         "block": "global",
@@ -12349,9 +12359,19 @@
         "displayLabel": "Hold Timeout",
         "pidLow": 1,
         "pidHigh": 57,
-        "unit": "ms",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 5000
+        "displayMax": 7,
+        "enumValues": {
+          "0": "0.25 SECONDS",
+          "1": "0.50 SECONDS",
+          "2": "0.75 SECONDS",
+          "3": "1.00 SECONDS",
+          "4": "1.25 SECONDS",
+          "5": "1.50 SECONDS",
+          "6": "1.75 SECONDS",
+          "7": "2.00 SECONDS"
+        }
       },
       "global.midi_chan": {
         "block": "global",
@@ -12359,9 +12379,28 @@
         "displayLabel": "MIDI Channel",
         "pidLow": 1,
         "pidHigh": 58,
-        "unit": "count",
-        "displayMin": 1,
-        "displayMax": 16
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 16,
+        "enumValues": {
+          "0": "1",
+          "1": "2",
+          "2": "3",
+          "3": "4",
+          "4": "5",
+          "5": "6",
+          "6": "7",
+          "7": "8",
+          "8": "9",
+          "9": "10",
+          "10": "11",
+          "11": "12",
+          "12": "13",
+          "13": "14",
+          "14": "15",
+          "15": "16",
+          "16": "OMNI"
+        }
       },
       "global.midi_prog_change": {
         "block": "global",
@@ -12497,9 +12536,13 @@
         "displayLabel": "Default Scene Revert",
         "pidLow": 1,
         "pidHigh": 77,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 127
+        "displayMax": 1,
+        "enumValues": {
+          "0": "OFF",
+          "1": "ON"
+        }
       },
       "global.custom_scale": {
         "block": "global",
@@ -12525,9 +12568,16 @@
         "displayLabel": "Default Scene",
         "pidLow": 1,
         "pidHigh": 86,
-        "unit": "count",
-        "displayMin": 1,
-        "displayMax": 4
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 4,
+        "enumValues": {
+          "0": "AS SAVED",
+          "1": "SCENE 1",
+          "2": "SCENE 2",
+          "3": "SCENE 3",
+          "4": "SCENE 4"
+        }
       },
       "global.fc_ring_bright_level": {
         "block": "global",
@@ -12590,8 +12640,8 @@
         "pidLow": 1,
         "pidHigh": 97,
         "unit": "db",
-        "displayMin": -64,
-        "displayMax": 24
+        "displayMin": -40,
+        "displayMax": 20
       },
       "global.usb78_source": {
         "block": "global",
@@ -12614,8 +12664,8 @@
         "pidLow": 1,
         "pidHigh": 99,
         "unit": "db",
-        "displayMin": -64,
-        "displayMax": 24
+        "displayMin": -40,
+        "displayMax": 20
       },
       "global.usblevel2": {
         "block": "global",
@@ -12624,8 +12674,8 @@
         "pidLow": 1,
         "pidHigh": 100,
         "unit": "db",
-        "displayMin": -64,
-        "displayMax": 24
+        "displayMin": -40,
+        "displayMax": 20
       },
       "global.aeslevel": {
         "block": "global",
@@ -12634,8 +12684,8 @@
         "pidLow": 1,
         "pidHigh": 101,
         "unit": "db",
-        "displayMin": -64,
-        "displayMax": 24
+        "displayMin": -40,
+        "displayMax": 20
       },
       "global.downtune": {
         "block": "global",
@@ -12643,9 +12693,16 @@
         "displayLabel": "Downtune",
         "pidLow": 1,
         "pidHigh": 103,
-        "unit": "semitones",
-        "displayMin": -12,
-        "displayMax": 0
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 4,
+        "enumValues": {
+          "0": "NONE",
+          "1": "1 SEMITONE",
+          "2": "2 SEMITONES",
+          "3": "3 SEMITONES",
+          "4": "4 SEMITONES"
+        }
       },
       "global.tuneraccidentals": {
         "block": "global",
@@ -12779,6 +12836,7 @@
       "global.ext_cc_begin_1": {
         "block": "global",
         "name": "ext_cc_begin_1",
+        "displayLabel": "External 2",
         "pidLow": 1,
         "pidHigh": 120,
         "unit": "count",
@@ -12788,6 +12846,7 @@
       "global.ext_cc_begin_2": {
         "block": "global",
         "name": "ext_cc_begin_2",
+        "displayLabel": "External 3",
         "pidLow": 1,
         "pidHigh": 121,
         "unit": "count",
@@ -12797,6 +12856,7 @@
       "global.ext_cc_begin_3": {
         "block": "global",
         "name": "ext_cc_begin_3",
+        "displayLabel": "External 4",
         "pidLow": 1,
         "pidHigh": 122,
         "unit": "count",
@@ -12806,7 +12866,7 @@
       "global.ext_startval_begin": {
         "block": "global",
         "name": "ext_startval_begin",
-        "displayLabel": "External 1",
+        "displayLabel": "External 1 Initial Value",
         "pidLow": 1,
         "pidHigh": 123,
         "unit": "count",
@@ -12816,6 +12876,7 @@
       "global.ext_startval_begin_1": {
         "block": "global",
         "name": "ext_startval_begin_1",
+        "displayLabel": "External 2 Initial Value",
         "pidLow": 1,
         "pidHigh": 124,
         "unit": "count",
@@ -12825,6 +12886,7 @@
       "global.ext_startval_begin_2": {
         "block": "global",
         "name": "ext_startval_begin_2",
+        "displayLabel": "External 3 Initial Value",
         "pidLow": 1,
         "pidHigh": 125,
         "unit": "count",
@@ -12834,6 +12896,7 @@
       "global.ext_startval_begin_3": {
         "block": "global",
         "name": "ext_startval_begin_3",
+        "displayLabel": "External 4 Initial Value",
         "pidLow": 1,
         "pidHigh": 126,
         "unit": "count",
@@ -12870,9 +12933,26 @@
         "displayLabel": "Press & Hold 1",
         "pidLow": 1,
         "pidHigh": 132,
-        "unit": "ms",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 5000
+        "displayMax": 14,
+        "enumValues": {
+          "0": "DISABLED",
+          "1": "MODE SELECT",
+          "2": "PRESET MODE",
+          "3": "SCENE MODE",
+          "4": "EFFECTS MODE",
+          "5": "TUNER MODE",
+          "6": "BANK -1",
+          "7": "BANK +1",
+          "8": "PRESET -1",
+          "9": "PRESET +1",
+          "10": "SCENE -1",
+          "11": "SCENE +1",
+          "12": "CHANNEL PICKER",
+          "13": "AMP MODE",
+          "14": "AM4 BYPASS"
+        }
       },
       "global.fs_press_hold2": {
         "block": "global",
@@ -12880,9 +12960,26 @@
         "displayLabel": "Press & Hold 2",
         "pidLow": 1,
         "pidHigh": 133,
-        "unit": "ms",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 5000
+        "displayMax": 14,
+        "enumValues": {
+          "0": "DISABLED",
+          "1": "MODE SELECT",
+          "2": "PRESET MODE",
+          "3": "SCENE MODE",
+          "4": "EFFECTS MODE",
+          "5": "TUNER MODE",
+          "6": "BANK -1",
+          "7": "BANK +1",
+          "8": "PRESET -1",
+          "9": "PRESET +1",
+          "10": "SCENE -1",
+          "11": "SCENE +1",
+          "12": "CHANNEL PICKER",
+          "13": "AMP MODE",
+          "14": "AM4 BYPASS"
+        }
       },
       "global.fs_press_hold3": {
         "block": "global",
@@ -12890,9 +12987,26 @@
         "displayLabel": "Press & Hold 3",
         "pidLow": 1,
         "pidHigh": 134,
-        "unit": "ms",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 5000
+        "displayMax": 14,
+        "enumValues": {
+          "0": "DISABLED",
+          "1": "MODE SELECT",
+          "2": "PRESET MODE",
+          "3": "SCENE MODE",
+          "4": "EFFECTS MODE",
+          "5": "TUNER MODE",
+          "6": "BANK -1",
+          "7": "BANK +1",
+          "8": "PRESET -1",
+          "9": "PRESET +1",
+          "10": "SCENE -1",
+          "11": "SCENE +1",
+          "12": "CHANNEL PICKER",
+          "13": "AMP MODE",
+          "14": "AM4 BYPASS"
+        }
       },
       "global.fs_press_hold4": {
         "block": "global",
@@ -12900,9 +13014,26 @@
         "displayLabel": "Press & Hold 4",
         "pidLow": 1,
         "pidHigh": 135,
-        "unit": "ms",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 5000
+        "displayMax": 14,
+        "enumValues": {
+          "0": "DISABLED",
+          "1": "MODE SELECT",
+          "2": "PRESET MODE",
+          "3": "SCENE MODE",
+          "4": "EFFECTS MODE",
+          "5": "TUNER MODE",
+          "6": "BANK -1",
+          "7": "BANK +1",
+          "8": "PRESET -1",
+          "9": "PRESET +1",
+          "10": "SCENE -1",
+          "11": "SCENE +1",
+          "12": "CHANNEL PICKER",
+          "13": "AMP MODE",
+          "14": "AM4 BYPASS"
+        }
       },
       "global.startup_mode": {
         "block": "global",
@@ -13037,17 +13168,102 @@
         "pidHigh": 151,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 127,
+        "displayMax": 93,
         "enumValues": {
-          "0": "Default",
+          "0": "DEFAULT",
           "1": "Resistive Load",
           "2": "1x8 5F1 Tweed",
-          "3": "1x10 Princeton NR",
-          "4": "1x10 BF Princeton",
-          "5": "1x10 SF Princeton",
+          "3": "1x10 Princetone NR",
+          "4": "1x10 BF Princetone",
+          "5": "1x10 SF Princetone",
           "6": "1x12 Tweed Emmi",
           "7": "1x12 Vibrato Lux",
-          "8": "1x12 Deluxe Verb"
+          "8": "1x12 Deluxe Verb",
+          "9": "1x12 Deluxe Verb RI",
+          "10": "1x12 JR Blues",
+          "11": "1x12 Brit G12H55",
+          "12": "1x12 Brit G12H75",
+          "13": "1x12 Div13 CJ11",
+          "14": "1x12 Brit G12T",
+          "15": "1x12 V30",
+          "16": "1x12 AC-20 DLX",
+          "17": "1x12 Car Ambler",
+          "18": "1x12 AST BV25",
+          "19": "1x15 Vibrato Verb",
+          "20": "1x15 Portabass",
+          "21": "2x10 Super",
+          "22": "2x10 Vibrato Lux",
+          "23": "2x12 Bassguy",
+          "24": "2x12 Double Verb",
+          "25": "2x12 Double Verb SF",
+          "26": "1x12 Class-A 15W",
+          "27": "2x12 Class-A 30W",
+          "28": "2x12 TX Star",
+          "29": "2x12 Match Chief",
+          "30": "1x12 Hot Kitty",
+          "31": "2x12 Jazz 120",
+          "32": "4x10 Bassguy",
+          "33": "4x10 Brit JM45",
+          "34": "4x10 Super Verb",
+          "35": "4x10 SV Bass",
+          "36": "4x12 Brit TV",
+          "37": "4x12 Brit Greenback",
+          "38": "4x12 Basketweave",
+          "39": "4x12 Brit 800",
+          "40": "4x12 Brit AX",
+          "41": "4x12 Hipower",
+          "42": "4x12 USA MC90",
+          "43": "4x12 Recto Large",
+          "44": "4x12 Recto Small",
+          "45": "4x12 Recto Slant",
+          "46": "4x12 Recto Straight",
+          "47": "4x12 5153",
+          "48": "4x12 Citrus",
+          "49": "4x12 Rumble",
+          "50": "2x12 Lead 80",
+          "51": "4x12 Solo 100",
+          "52": "Load Box LB-2 UK",
+          "53": "Load Box LB-2 US",
+          "54": "4x12 Friedman",
+          "55": "2x12 Bassbuster",
+          "56": "1x12 Tweed Alnico Blue",
+          "57": "4x12 PVH 6160",
+          "58": "4x12 Euro",
+          "59": "2x12 Recto",
+          "60": "2x12 Godzilla",
+          "61": "1x12 Tweed C12Q",
+          "62": "1x12 Dirty Shirley EV12L",
+          "63": "1x12 USA Ext EV12L",
+          "64": "2x12 Band Commander SRO",
+          "65": "2x12 Guy Tron Alnico Blue",
+          "66": "1x12 G12T-75",
+          "67": "2x12 Class-A Greenback",
+          "68": "2x12 Two Stone 1265",
+          "69": "4x12 Lerxst Omega",
+          "70": "1x12 Deluxe Oxford",
+          "71": "4x12 Hipower Pete T",
+          "72": "4x12 USA Semi-Open",
+          "73": "2x12 Dizzy RV",
+          "74": "4x12 Hipower Lindsey B",
+          "75": "4x12 London Town Tall",
+          "76": "Oxbow Loadbox",
+          "77": "Double Notes Loadbox",
+          "78": "1x10 Metro Blues",
+          "79": "4x10 Bassguy RI",
+          "80": "2x12 Class-A 30W Silver",
+          "81": "2x10 Heart Key",
+          "82": "4x12 1960BV",
+          "83": "1x12 Deluxe Tweed",
+          "84": "1x15 Heart Key",
+          "85": "2x12 USA C90 Open Back",
+          "86": "1x12 Friedman",
+          "87": "2x12 5153 Stealth",
+          "88": "4x12 5153 Stealth",
+          "89": "1x12 Scholz",
+          "90": "1x8 Princetone",
+          "91": "1x12 Black Magick",
+          "92": "8x10 SV Bass",
+          "93": "Suhr Reactive Load"
         }
       },
       "global.amp_chan_cc": {
@@ -13140,9 +13356,13 @@
         "displayLabel": "Metronome",
         "pidLow": 1,
         "pidHigh": 160,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 127
+        "displayMax": 1,
+        "enumValues": {
+          "0": "OFF",
+          "1": "ON"
+        }
       },
       "global.metronome_cc": {
         "block": "global",
@@ -14210,7 +14430,15 @@
       "delay.diffusor": "delay.diffuser",
       "wah.min_frequency": "wah.minimum_frequency",
       "wah.max_frequency": "wah.maximum_frequency",
-      "filter.freq": "filter.frequency"
+      "filter.freq": "filter.frequency",
+      "global.external_1_cc": "global.ext_cc_begin",
+      "global.external_2_cc": "global.ext_cc_begin_1",
+      "global.external_3_cc": "global.ext_cc_begin_2",
+      "global.external_4_cc": "global.ext_cc_begin_3",
+      "global.external_1_initial_value": "global.ext_startval_begin",
+      "global.external_2_initial_value": "global.ext_startval_begin_1",
+      "global.external_3_initial_value": "global.ext_startval_begin_2",
+      "global.external_4_initial_value": "global.ext_startval_begin_3"
     },
     "BLOCK_TYPE_VALUES": {
       "none": 0,

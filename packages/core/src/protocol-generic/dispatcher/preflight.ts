@@ -549,7 +549,9 @@ function validateSlotRef(
       errors.push({
         slot_index: slotIndex,
         path: `slots[${slotIndex}].slot`,
-        error: `${descriptor.display_name} is a linear-slot device , pass slot as a 1-based integer, not {row, col}.`,
+        error: slot === undefined
+          ? `slots[${slotIndex}].slot is required: pass the ${descriptor.display_name} slot as a 1-based integer (1..${cap.slot_count ?? '?'}).`
+          : `${descriptor.display_name} is a linear-slot device: pass slot as a 1-based integer, not {row, col}.`,
       });
       return slot;
     }
@@ -585,7 +587,7 @@ function validateSlotRef(
       errors.push({
         slot_index: slotIndex,
         path: `slots[${slotIndex}].slot`,
-        error: `${descriptor.display_name} is a grid device , pass slot as {row, col} or as a single integer shorthand for {row: 2, col: N}.`,
+        error: `${descriptor.display_name} is a grid device: pass slot as {row, col} or as a single integer shorthand for {row: 2, col: N}.`,
       });
       return slot;
     }
@@ -826,7 +828,7 @@ export function collectApplyPresetPreflight(
         errors.push({
           scene_index: i,
           path: `scenes[${i}]`,
-          error: `${descriptor.display_name} does not expose scenes , drop the scenes[] array.`,
+          error: `${descriptor.display_name} does not expose scenes; drop the scenes[] array.`,
         });
         continue;
       }
@@ -911,7 +913,7 @@ export function collectApplyPresetPreflight(
     if (cap.slot_model === 'linear') {
       errors.push({
         path: 'routing',
-        error: `${descriptor.display_name} is a linear-slot device , routing edges are not accepted (routing is implicit by slot order).`,
+        error: `${descriptor.display_name} is a linear-slot device: routing edges are not accepted (routing is implicit by slot order).`,
       });
     } else {
       // Routing edges use the same resolver as scenes — accepts

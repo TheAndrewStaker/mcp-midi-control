@@ -38,6 +38,16 @@
  *
  * `switch_preset` is Program Change and is hardware-confirmed **0-based**
  * (PC 4 loaded preset 5), which the manual never documents at all.
+ *
+ *   - **Byte-exact preset restore (`restorePresetBinary` / `import_preset`).**
+ *     Untested (community beta): decoded from a real MIDI Control Center
+ *     capture writing presets TO a MicroFreak, byte-identical payload
+ *     content against a live device read, but never itself sent by this
+ *     server's own implementation. See `../presetWrite.ts` for the full
+ *     transaction and `codec/sysex.ts`'s "Preset WRITE" section for the
+ *     wire-level provenance. Only attached when `config.sysex` exists (a
+ *     MiniFreak, with no known device-code byte, has no write path to
+ *     wire at all, mirroring `dumpStoredPresetBinary` in `reader.ts`).
  */
 
 import type {
@@ -45,6 +55,7 @@ import type {
   DeviceWriter,
   DispatchCtx,
   LocationRef,
+  RestorePresetResult,
   WriteOp,
   WriteResult,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
@@ -58,6 +69,7 @@ import {
 } from '../codec/sysex.js';
 import { downstreamMidiConsumers, type DownstreamMidiConsumer } from '../downstream.js';
 import { ccEvidenceNote, findCc, findGlobal, type FreakGlobal, type FreakConfig } from '../devices/types.js';
+import { restorePresetBinaryMicroFreak } from './presetWrite.js';
 
 const READ_BACK_TIMEOUT_MS = 400;
 
@@ -298,17 +310,33 @@ export function createWriter(config: FreakConfig): DeviceWriter {
         + 'Firmware 4 units only have 384; the ceiling is probe-able by reading preset names.',
       );
     }
+    const slot0 = slot - 1;
+    const bank = Math.floor(slot0 / 128);
+    const pcValue = slot0 % 128;
+    const ch = txChannel(config) - 1;
+    let bankSent = false;
     if (slot > config.pc_max_preset) {
-      throw new DispatchError(
-        'capability_not_supported',
-        LABEL,
-        `Preset ${slot} is beyond ${config.pc_max_preset}, and plain Program Change only addresses 0..127. `
-        + 'Bank Select for the higher banks is NOT decoded or tested on this device, so this '
-        + 'refuses rather than sending a message that would silently load the wrong sound. '
-        + 'Select it on the front panel.',
-      );
+      if (config.bank_select_msb_cc === undefined) {
+        throw new DispatchError(
+          'capability_not_supported',
+          LABEL,
+          `Preset ${slot} is beyond ${config.pc_max_preset}, and plain Program Change only addresses 0..127. `
+          + 'Bank Select for the higher banks is NOT decoded or tested on this device, so this '
+          + 'refuses rather than sending a message that would silently load the wrong sound. '
+          + 'Select it on the front panel.',
+        );
+      }
+      // Bank Select MSB, hardware-confirmed on this model (see `bank_select_msb_cc`'s
+      // doc comment). LSB is deliberately never sent: it was tested and had no
+      // effect, and MSB alone reached every bank up to and including the top of
+      // memory.
+      ctx.conn.send([0xb0 | ch, config.bank_select_msb_cc & 0x7f, bank & 0x7f]);
+      if (ctx.conn.lastSendError !== undefined) {
+        throw new DispatchError('stale_handle', LABEL, `Bank Select send failed: ${ctx.conn.lastSendError.message}`);
+      }
+      bankSent = true;
     }
-    ctx.conn.send([0xc0 | (txChannel(config) - 1), (slot - 1) & 0x7f]);
+    ctx.conn.send([0xc0 | ch, pcValue & 0x7f]);
     if (ctx.conn.lastSendError !== undefined) {
       throw new DispatchError('stale_handle', LABEL, `Send failed: ${ctx.conn.lastSendError.message}`);
     }
@@ -317,10 +345,27 @@ export function createWriter(config: FreakConfig): DeviceWriter {
       target: String(slot),
       acked: false,
       unconfirmed: true,
-      info:
-        'Program Change sent (0-based, hardware-confirmed). The MicroFreak does not acknowledge '
-        + 'preset changes on the wire, so confirm on its display.',
+      info: bankSent
+        ? `Bank Select (CC ${config.bank_select_msb_cc}=${bank}) then Program Change ${pcValue} sent `
+          + '(hardware-confirmed 2026-08-14). The MicroFreak does not acknowledge preset changes on '
+          + 'the wire, so confirm on its display.'
+        : 'Program Change sent (0-based, hardware-confirmed). The MicroFreak does not acknowledge '
+          + 'preset changes on the wire, so confirm on its display.',
     };
   },
+
+  // Presence of this method is itself a capability signal (the `import_preset`
+  // dispatcher gates on it, same pattern as `dumpStoredPresetBinary` in
+  // `reader.ts`). Attached ONLY when the SysEx surface exists: a Freak with no
+  // device code (MiniFreak) has no write protocol to speak at all.
+  ...(config.sysex !== undefined
+    ? {
+        restorePresetBinary: (
+          ctx: DispatchCtx,
+          bytes: Uint8Array,
+          options?: { target_location?: LocationRef; save_authorized?: boolean; confirm_overwrite?: boolean; name?: string },
+        ): Promise<RestorePresetResult> => restorePresetBinaryMicroFreak(ctx, bytes, options, config),
+      }
+    : {}),
   };
 }

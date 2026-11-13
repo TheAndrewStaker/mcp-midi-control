@@ -43,8 +43,8 @@
 import path from 'node:path';
 import readline from 'node:readline';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 const PORT = 'axe-fx-ii';
@@ -92,11 +92,11 @@ const ask = (q: string): Promise<string> => new Promise((r) => rl.question(q, r)
 
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER_ENTRY], stderr: 'pipe' });
-  const client = new Client({ name: 'probe-ii-save-overwrite', version: '1.0.0' });
+  const client = new Client({ name: 'probe-ii-save-overwrite', version: '1.0.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   const call = async (name: string, args: Record<string, unknown>): Promise<string> => {
-    const res = await client.callTool({ name, arguments: args }, undefined, { timeout: 60_000 });
+    const res = await client.callTool({ name, arguments: args }, { timeout: 60_000 });
     return (res as { content?: { text?: string }[] }).content?.[0]?.text ?? '';
   };
 

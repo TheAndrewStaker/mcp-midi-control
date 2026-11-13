@@ -46,8 +46,8 @@
  */
 
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(
   process.cwd(),
@@ -102,7 +102,7 @@ async function withClient(
       if (/error|throw/i.test(s)) process.stderr.write(`[server] ${s}`);
     });
   }
-  const client = new Client({ name: 'verify-am4-edited-bit', version: '1.0.0' }, { capabilities: {} });
+  const client = new Client({ name: 'verify-am4-edited-bit', version: '1.0.0' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   try {
     await client.connect(transport);
     await fn(client);

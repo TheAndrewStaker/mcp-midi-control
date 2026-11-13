@@ -35,8 +35,8 @@
  */
 
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { AMP_TYPES } from 'fractal-midi/am4';
 
 const SERVER_ENTRY = path.resolve(
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   }
   const client = new Client(
     { name: 'verify-am4-save-receipt', version: '1.0.0' },
-    { capabilities: {} },
+    { capabilities: {}, versionNegotiation: { mode: 'auto' } },
   );
 
   const savePreset = (location: string, confirm_overwrite?: boolean) =>

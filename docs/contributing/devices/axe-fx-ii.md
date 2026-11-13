@@ -26,11 +26,13 @@ on the same codec; see [ax8.md](ax8.md).
 | Capability | Status | Evidence |
 |---|---|---|
 | `set_param` / `set_params` | confirmed | Hardware-verified on the maintainer's Quantum 8.02 XL+ unit |
+| `set_params` atomic image path | confirmed (2026-07-17/18) | A batch of 4 or more continuous knobs lands automatically as ONE silent atomic image load (dump, patch, push, verify) instead of per-param writes: no audible stepping, and the response carries a word-exact receipt (`apply_path: 'preset-image'`, `receipt: 'word-exact'`, a full read-back match of every image word). Smaller batches, and any batch the image path cannot serve, send per-param as before. Hardware-confirmed 2026-07-17/18 on the XL+: threshold timing measured, a 32-param 8-block batch landed word-exact, and a param aimed at an unplaced block refuses per-entry without corrupting the rest of the batch |
 | `get_param` / `get_params` | confirmed | Same |
 | `set_block`, `set_bypass` | confirmed | Same |
 | `switch_preset`, `switch_scene`, `save_preset` | confirmed | Same |
 | `save_preset` overwrite pre-check | confirmed (both directions, 2026-08-03) | This device can read which preset is ACTIVE but has no decoded read for the name stored at an arbitrary location (`buildGetPresetName` takes no location argument, and `scan_locations` here works by navigating, which would discard the buffer being saved). Since 2026-08-03 a save to a NON-ACTIVE location REFUSES until the caller passes `confirm_overwrite: true`, and says plainly that no occupancy check was possible rather than implying one happened. Saving back to the location being edited is unaffected. A real occupancy read is an open gen-2 decode task. **Hardware-confirmed 2026-08-03/04** on a live XL+, including against the FRONT PANEL: the server's active-slot read agreed with the panel (server 5, panel `005`), the unconfirmed save to a non-active slot refused, and the panel read `005` both before and after it, so the refusal is inert at the device rather than only in the response. `confirm_overwrite: true` was then acked by the device |
 | `apply_preset`, `get_preset` | confirmed | Same |
+| `apply_preset` diff-based placement | confirmed (2026-07-18) | On this device `apply_preset` applies as a DIFF against what the grid already holds: a correctly-placed block is left untouched at the wire, and hand-tuned params of unchanged blocks survive the re-apply (unlisted params keep the device's current value; only listed params change). Blocks that changed type, moved, or were removed are still placed, replaced, or cleared as specified. Hardware-confirmed 2026-07-18 on the XL+: a hand-tuned amp param survived a mixed one-call re-apply (unchanged, replaced, and removed blocks together) exactly, with the baseline restored byte-identical afterwards |
 | `export_preset` / `import_preset` | confirmed | Same |
 
 Support tier: `verified`. This mirrors `capabilities.support_tier` on the
@@ -51,6 +53,14 @@ live in the codec package's per-device protocol map at
   non-active location refuses and sends nothing (front panel unchanged across
   the refusal), and `confirm_overwrite: true` is acked. The server's
   active-preset read was checked against the front panel in the same run.
+
+- The BK-084 batch and diff behavior, 2026-07-17/18: the `set_params` atomic
+  image path (threshold timing measured, a 32-param batch landed with a
+  word-exact receipt, per-entry refusal on an unplaced block), diff-based
+  `apply_preset` placement (a hand-tuned param of an unchanged block survived a
+  mixed re-apply exactly), and surgical live compose (one block replaced with a
+  single placement write, nine other placed blocks untouched, verified by the
+  device's own reads).
 
 **Please do not re-run these.** The XL+ is the reference device for this codec.
 

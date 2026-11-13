@@ -69,8 +69,8 @@
  */
 import path from 'node:path';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 const REPORT_ONLY = process.argv.includes('--report');
@@ -194,7 +194,15 @@ const DEVICE_CEILINGS: Readonly<Record<string, number>> = {
   // loop cannot emit more than 50,000 total). But if the intent is headroom
   // rather than more prose, the lever is the server budget or the topic, not
   // this table.
-  am4: 48_700,
+  //
+  // RECORDED REASON for the rise from 48_700 (2026-08-11, BK-AM4-CACHE-ORACLE
+  // batch, item 2): the descriptor now declares `capabilities.backup`
+  // (unit 'preset', locations 0..103, seconds_per_unit 0.6, restore_tool
+  // 'import_preset'): ~115 bytes of STRUCTURED capability data, not prose,
+  // the same shape and reason as the microfreak entry below. It is what lets
+  // backup_device run a whole-device sweep with no from/to. Do not spend the
+  // remaining margin on prose.
+  am4: 48_900,
 
   // RECORDED REASON for the drop from 48_000 (2026-08-02, second pass): the
   // block_stack summary dropped the three fields an agent only reads AFTER it
@@ -235,12 +243,32 @@ const DEVICE_CEILINGS: Readonly<Record<string, number>> = {
   'circuit-tracks': 23_200,
   vp4: 15_300,
   've-500': 11_400,
-  microfreak: 10_100,
+
+  // RECORDED REASON for the rise from 10_100 (2026-08-11, BK-MF-EXPORT): the
+  // descriptor now declares `capabilities.backup` (unit 'preset', locations
+  // 1..512, seconds_per_unit) alongside the new stored-preset dump behind
+  // export_preset / backup_device. That is 97 bytes of STRUCTURED capability
+  // data, not prose, and it is what lets backup_device size a stored sweep
+  // and quote a duration without a probe call. The old ceiling had ~47 bytes
+  // of slack. A restore_note was deliberately NOT declared (the receipt
+  // already carries the no-restore-path sentence), so this is the minimal
+  // shape. Do not spend the new margin on prose.
+  microfreak: 10_200,
   'rc-505mk2': 8_000,
   'rc-600': 7_700,
   'spd-sx': 6_800,
-  'axe-fx-gen1': 5_300,
+
+  // RECORDED REASON for the rise from 5_300 (2026-08-11, gen-1 switch_preset):
+  // `capabilities.verification`, `canonical_terms.location`, and the
+  // `capabilities` + `preset_workflow` guidance keys now document the newly
+  // shipped switch_preset (standard MIDI Program Change, 0..127, no pinned
+  // bank-select, refusal semantics) and the Standard model-byte runtime
+  // warning. That is capability-status truth an agent must see before driving
+  // the device, not decorative prose; ~400 bytes bought a shipped verb plus
+  // the misaddressed-frames warning. Do not spend the margin again.
+  'axe-fx-gen1': 5_750,
   minifreak: 3_100,
+  'mpc-one-g2': 4_600,
 };
 
 /** A device with no ceiling yet gets this, so a NEW device cannot land oversized. */
@@ -373,7 +401,7 @@ interface Row {
 
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER_ENTRY], stderr: 'pipe' });
-  const client = new Client({ name: 'describe-device-budget', version: '0.1.0' });
+  const client = new Client({ name: 'describe-device-budget', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   const rows: Row[] = [];

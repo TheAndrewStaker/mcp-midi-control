@@ -35,6 +35,15 @@ export function resolveBlockName(
   if (input in descriptor.blocks) return input;
   const aliased = descriptor.block_aliases?.[input];
   if (aliased !== undefined && aliased in descriptor.blocks) return aliased;
+  // The name as a person types it ("Tone Match", "vol-pan"): same lookups on
+  // the slug form. Exact names were tried first, so this can only turn a
+  // refusal into a match, never change which block an exact name means.
+  const slug = input.trim().toLowerCase().replace(/[\s/-]+/g, '_');
+  if (slug !== input) {
+    if (slug in descriptor.blocks) return slug;
+    const viaSlug = descriptor.block_aliases?.[slug];
+    if (viaSlug !== undefined && viaSlug in descriptor.blocks) return viaSlug;
+  }
   const valid = Object.keys(descriptor.blocks);
   const sample = valid.slice(0, 8).join(', ');
   const details: DispatchErrorDetails = {

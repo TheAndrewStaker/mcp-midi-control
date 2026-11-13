@@ -14,7 +14,7 @@
  * sees the value.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import {
@@ -94,11 +94,11 @@ export function registerParamTools(server: McpServer): void {
     title: 'Set Parameters',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: [
-      'Batch-write parameters on a device. Prefer this over many set_param calls when applying a scene, preset, or any grouped change.',
-      '- Per-entry shape mirrors set_param: (block, name, value, channel?, instance?). Writes go in the order provided.',
-      '- Pass `instance` for grid devices with multiple blocks of the same type (e.g. instance=2 targets Amp 2). Default 1.',
-      '- Validation is atomic: a bad value in any entry rejects the whole call with nothing sent.',
-      '- Same ack caveat as set_param: a wire-ack is not audible confirmation. Same describe_device guidance applies.',
+      'Batch-write parameters. Prefer this over many set_param calls for grouped changes to the CURRENT tone; apply_preset is for the complete chain.',
+      '- Per-entry shape mirrors set_param: (block, name, value, channel?, instance?), applied in order.',
+      '- Pass `instance` for grid devices with multiple same-type blocks (instance=2 targets Amp 2). Default 1.',
+      '- Validation is atomic: a bad value in any entry rejects the whole call, nothing sent. Axe-Fx II auto-lands a large continuous-knob batch as ONE silent image load; smaller batches and other devices send per-param.',
+      '- Ack caveat as set_param: a wire-ack is not audible confirmation; describe_device guidance applies.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),

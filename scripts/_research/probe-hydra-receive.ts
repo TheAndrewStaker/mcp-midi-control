@@ -13,8 +13,8 @@
  * RAM-only (no flash burn); loads INIT into scratch slot H128.
  */
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 
@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   if (transport.stderr) {
     transport.stderr.on('data', (b: Buffer) => process.stderr.write(`[server] ${b.toString()}`));
   }
-  const client = new Client({ name: 'hydra-receive-probe', version: '0.0.0' }, { capabilities: {} });
+  const client = new Client({ name: 'hydra-receive-probe', version: '0.0.0' }, { capabilities: {}, versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
 
   const ports = await client.callTool({ name: 'list_midi_ports', arguments: { pattern: 'hydra' } });

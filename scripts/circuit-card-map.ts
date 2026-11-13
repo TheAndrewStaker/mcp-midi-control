@@ -1,7 +1,7 @@
 /**
  * circuit-card-map.ts — GENERATE the one map of the whole Circuit Tracks card.
  *
- * THE PROBLEM THIS SOLVES. "What is Pack 5 project 37?" and "where does Sugar
+ * THE PROBLEM THIS SOLVES. "What is Pack 5 project 37?" and "where does this song
  * live?" were answerable only by reading six documents that disagreed with each
  * other and, in places, with the device. This emits ONE index that answers both
  * directions, and it emits it FROM THE PROJECT FILES so it cannot be stale by
@@ -176,7 +176,7 @@ function render(captureDir: string, man: Manifest, rows: Row[], drift: Drift[]):
   L.push('> `npx tsx scripts/circuit-card-map.ts --dir samples/circuit-ncs/<new-capture>`');
   L.push('');
   L.push('This is the index the other rig docs are not: **by slot** (what is Pack 5 project 37?) and');
-  L.push('**by song** (where does Sugar live?), for all five packs and all 64 slots of each. It links out');
+  L.push('**by song** (where does this song live?), for all five packs and all 64 slots of each. It links out');
   L.push('rather than duplicating — the fuller story of a song, a groove or a pack lives in the docs it');
   L.push('points at.');
   L.push('');

@@ -47,9 +47,17 @@
  * Run: `npm run build && npx tsx scripts/verify-handle-health-retry.ts`
  */
 
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import {
   ensureConnection, registerConnector,
 } from '@mcp-midi-control/core/server-shared/connections.js';
+
+// Offline gate: isolate the cross-process instance lease from any LIVE server
+// (see verify-circuit-delete, 2026-08-08 port_held_elsewhere collision).
+process.env.MCP_INSTANCE_LOCK_DIR = mkdtempSync(join(tmpdir(), 'handle-health-gate-locks-'));
 import {
   isHandleFaultError, isHandleHealthy, withHandleFaultRetry, withReconnectRetry,
   type RetryableResult,

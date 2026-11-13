@@ -122,9 +122,11 @@ export function downstreamMidiConsumersIn(
   return out;
 }
 
-/** Same question, against the configured rig manifest. Empty when none is configured or it failed to load. */
+/** Same question, against the configured rig manifest. Empty when none is configured, none exists yet (absent), or it failed to load. */
 export function downstreamMidiConsumers(sourceDeviceId: string): DownstreamMidiConsumer[] {
   const manifest = loadRigManifest();
+  // Positive 'loaded' gate: unconfigured, absent (file not created yet), and
+  // error all mean "no declared topology", so no downstream consumers.
   if (manifest.status !== 'loaded') return [];
   return downstreamMidiConsumersIn(manifest.rig as unknown as RigTopology, sourceDeviceId);
 }

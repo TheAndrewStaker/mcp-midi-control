@@ -97,8 +97,19 @@ const EXPECTED = {
   // added/removed) — only the SURFACE `unit` field changes for those 31 params.
   // WIRE byte-identity is intact: SET still emits the standard normalized
   // continuous form (sub=0x52, float32(normalized)); only READ decode changed.
+  //
+  // Re-blessed AGAIN for BK-GEN3-RANGES (2026-08-11): III_RANGES (device-true
+  // display ranges + enum counts mined from the III's own community editor
+  // cache, 2026-07-02) is now wired through `deviceRanges`. Cache kind:'enum'
+  // rows route their params DISCRETE (`unit: 'enum'`), exactly the FM9's
+  // shipped mechanism, and where the cache and the 2026-06-18 roundtrip oracle
+  // disagree the roundtrip wins. CATALOG (family,name,paramId) and BLOCKS are
+  // UNCHANGED (no params added/removed; paramCount stays 1711): only the
+  // SURFACE `unit` field flips for cache-enum params. WIRE byte-identity is
+  // intact: no wire builder was touched; a discrete SET still emits sub=0x09
+  // float32(ordinal), a continuous SET sub=0x52 float32(normalized).
   catalog: { count: 2216, hash: '109f858e07b904de65b8782edb41383d746844b0dce309ffd6628fabd2d30223' },
-  surface: { blockCount: 50, paramCount: 1711, hash: '8576a2c86284c4306ed2c8de09f9f0959cfdeec6880c2aca09685e20ea33b954' },
+  surface: { blockCount: 50, paramCount: 1711, hash: '0ab444bdffea397cd40b10d1d057f5263339db0dadbf5f48229f8a8d75aef553' },
   blocks: { count: 50, hash: '07db286053f0f4bd242e14c45697f5bbc612f642c5c7f6c7fdd9dd0e9dd7dd51' },
 };
 

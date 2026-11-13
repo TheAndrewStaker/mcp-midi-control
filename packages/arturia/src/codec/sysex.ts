@@ -161,9 +161,249 @@ export function decodeGlobalReply(bytes: readonly number[]): number {
   return bytes[10];
 }
 
+// ── Preset-dump reply matchers ──────────────────────────────────────────────
+//
+// Reply shapes, hardware-verified end to end by the 2026-07-25 probe run
+// (scripts/probe-microfreak-dump.ts; recorded in STATE-MICROFREAK.md "FULL
+// PRESET DUMP", 146 packets / 4672 bytes terminating on 0x17):
+//
+//   ack        :  F0 00 20 6B <dev> 01 <seq> 00 15 F7
+//   data packet:  F0 00 20 6B <dev> 01 <seq> <len> 16|17 ...payload... F7
+//
+// Unlike the global path, dump replies carry 0x01 in byte 5 (like the name
+// path) and echo the request seq in byte 6, so the direction byte cannot be
+// the echo guard here. The COMMAND byte is: every host-originated frame on
+// this flow carries 0x19 (dump start) or 0x18 (data request) in byte 8,
+// while replies carry 0x15/0x16/0x17, so a looped-back request can never
+// satisfy these matchers. Seq echo then pins WHICH request a reply answers
+// (the same misattribution discipline `nameReplyMatcher` exists for).
+
+/** Matcher for the dump-start acknowledgement (`00 15`). */
+export function dumpAckMatcher(seq: number, device = DEVICE_MICROFREAK) {
+  return (b: readonly number[]): boolean =>
+    isArturia(b, device) && b[6] === (seq & 0x7f) && b[8] === CMD.DUMP_ACK;
+}
+
+/** Matcher for a dump data packet: 0x16 (more follow) or 0x17 (last). */
+export function dumpPacketMatcher(seq: number, device = DEVICE_MICROFREAK) {
+  return (b: readonly number[]): boolean =>
+    isArturia(b, device) && b[6] === (seq & 0x7f)
+    && (b[8] === CMD.DUMP_MORE || b[8] === CMD.DUMP_LAST);
+}
+
+/** True when a dump data packet is the LAST one (command byte 0x17). */
+export function isLastDumpPacket(bytes: readonly number[]): boolean {
+  return bytes[8] === CMD.DUMP_LAST;
+}
+
+/**
+ * Payload bytes of one dump data packet: everything after the 9-byte header,
+ * before the trailing F7. The same slice the hardware-confirmed probe used to
+ * assemble the 4672-byte preset payload (`p.slice(9, p.length - 1)`).
+ */
+export function dumpPacketPayload(bytes: readonly number[]): number[] {
+  return [...bytes.slice(9, bytes.length - 1)];
+}
+
 /** Extract the null-padded ASCII preset name from a NAME_REPLY. */
 export function decodePresetName(bytes: readonly number[]): string {
   const raw = bytes.slice(NAME_OFFSET, bytes.length - 1);
   const end = raw.indexOf(0x00);
   return String.fromCharCode(...(end === -1 ? raw : raw.slice(0, end)));
+}
+
+// ── Preset WRITE (import_preset) ────────────────────────────────────────────
+//
+// Decoded from a real MIDI Control Center capture writing presets TO a
+// MicroFreak (`samples/captured/microfreak-mcc-preset-copy.pcapng`,
+// 2026-08-13/14; per-event frame dumps at
+// `samples/_scratch/microfreak-write-decode/event{1,2,3}-{out,in}.syx`).
+// Three drags were captured: "Revert to Iron" -> slot 505, the SAME preset
+// -> slot 506 (isolates address bytes from content), then a DIFFERENT
+// preset "Yggdrasil" -> slot 506 (isolates content from address). The
+// 146-frame payload was cross-validated against a live `export_preset`
+// read of the same preset taken immediately after the capture
+// (`Arturia_MicroFreak-Revert_to_Iron-2026-08-14_00-03-34.syx`): ZERO byte
+// difference across all 146 payload frames, so the write side reuses the
+// EXACT SAME TLV container the read side already decodes -- no separate
+// write-side content decode is needed.
+//
+// One MicroFreak preset write is six frame types in this order:
+//   1. `buildNameRequest` (EXISTING, above) at the DESTINATION slot: a
+//      read-before-write occupancy check, answered with the CURRENT
+//      occupant's name.
+//   2. `buildPresetMetadata`: destination bank/index + name (45B).
+//   3. `buildPresetConfirm`: same body shape as `buildNameRequest`,
+//      different cmd + flag (13B).
+//   4. `buildBulkBegin`: "the bulk payload starts now" (10B). The captured
+//      seq byte is ALWAYS 0 here, a deliberate reset from whatever the
+//      running counter held (0x60,0x61,0x62 -> 0x00 in event 1); the
+//      causal necessity of the reset is unconfirmed, but it is reproduced
+//      verbatim rather than risked away.
+//   5. 146 x `buildPresetDataFrame` (42B each): the SAME 32-byte payload
+//      shape `dumpPacketPayload` parses on the read side, built in
+//      reverse.
+//   6. `buildNameRequest` again at the DESTINATION slot: the closing
+//      query, answered with the NEW name. This is the write's actual
+//      proof of persistence (an ack is not proof of a stored write; the
+//      read-back is).
+//
+// DIRECTIONAL REUSE. Frames 2-5 reuse READ-side class bytes with the
+// OPPOSITE role, and sometimes the OPPOSITE direction of "who normally
+// sends this":
+//   - NAME_REPLY (0x52): read-side, a device->host answer. Write-side, the
+//     HOST sends it twice (metadata push, confirm) as a command.
+//   - DUMP_ACK (0x15): read-side, a device->host "dump starting" ack.
+//     Write-side, the HOST sends it once to mark "beginning the bulk
+//     transfer".
+//   - DUMP_MORE / DUMP_LAST (0x16 / 0x17): read-side, device->host data
+//     packets. Write-side, the HOST sends them (identical 32-byte payload
+//     shape) and the DEVICE ACKs each one.
+//   - DUMP_NEXT (0x18): read-side, a host->device "send the next packet"
+//     request (`buildDumpNext`, 11 bytes with a trailing flag byte).
+//     Write-side, the DEVICE sends it back as a per-frame ACK
+//     (`presetWriteAckMatcher`, 10 bytes, NO trailing flag byte -- a
+//     different shape despite the shared class byte).
+// Direction byte 5 is 0x01 (DIR_TO_DEVICE) on EVERY frame in this flow, in
+// BOTH directions, exactly like the read-side dump packets (see the
+// "Preset-dump reply matchers" note above) -- so a write-flow matcher must
+// key off the COMMAND byte + seq, never the direction byte.
+
+/**
+ * ASCII name field width in a preset-write metadata/confirm frame. Matches
+ * NAME_OFFSET's 45-byte reply shape: the field runs bytes 21..43 inclusive.
+ */
+export const PRESET_NAME_FIELD_LENGTH = 23;
+
+function presetNameField(name: string): number[] {
+  if (name.length > PRESET_NAME_FIELD_LENGTH) {
+    throw new Error(
+      `MicroFreak preset name "${name}" is ${name.length} characters; the write frame's name field holds ${PRESET_NAME_FIELD_LENGTH}.`,
+    );
+  }
+  const bytes = [...name].map((c) => c.charCodeAt(0) & 0x7f);
+  while (bytes.length < PRESET_NAME_FIELD_LENGTH) bytes.push(0x00);
+  return bytes;
+}
+
+/**
+ * WRITE metadata push: destination bank/index, a preset "Type"/category
+ * tracking byte, and the preset name. 45 bytes, byte-exact against
+ * `event1-out.syx` frame index 1 (event2/event3 index 1 differ only in
+ * the varying fields):
+ *
+ *   `F0 00 20 6B 07 01 61 23 52 03 78 00 00 00 00 00 00 78 06 09 33
+ *    52 65 76 65 72 74 20 74 6F 20 49 72 6F 6E 00x9 F7`
+ *
+ * The six zero bytes at offsets 11-16 and the index value repeated at
+ * offset 17 are constant across all three captured drags; their role is
+ * unknown, and they are reproduced verbatim rather than guessed at.
+ *
+ * `presetType` is a HYPOTHESIS, not independently confirmed: only two data
+ * points exist across the whole capture (0x09 for "Revert to Iron",
+ * written twice; 0x05 for "Yggdrasil"), and the 4672-byte dump payload
+ * does NOT carry it at any matching byte offset (checked programmatically:
+ * no position in the "Revert to Iron" payload holds 0x09 where the
+ * "Yggdrasil" payload holds 0x05), so it cannot be derived from an
+ * `export_preset` dump. Defaults to 0x00, the value an empty "Init" slot
+ * answers with -- filing the written preset with NO category rather than
+ * risking a wrong one. See `decodePresetType` for what IS confirmed about
+ * this byte (not yet wired into the write path).
+ */
+export function buildPresetMetadata(
+  seq: number,
+  destSlot0: number,
+  name: string,
+  presetType = 0x00,
+  device = DEVICE_MICROFREAK,
+): number[] {
+  const { bank, index } = toBankIndex(destSlot0);
+  return envelope(device, seq, [
+    0x23, CMD.NAME_REPLY, bank, index,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    index, 0x06, presetType & 0x7f, 0x33,
+    ...presetNameField(name),
+  ]);
+}
+
+/**
+ * WRITE confirm: same body shape as `buildNameRequest` (length 0x03, bank,
+ * index, flag) but the cmd byte is NAME_REPLY (0x52, not READ_PRESET) and
+ * the trailing flag is 0x01 (not 0x00). Byte-exact against
+ * `event1-out.syx` frame index 2: `F0 00 20 6B 07 01 62 03 52 03 78 01 F7`.
+ */
+export function buildPresetConfirm(seq: number, destSlot0: number, device = DEVICE_MICROFREAK): number[] {
+  const { bank, index } = toBankIndex(destSlot0);
+  return envelope(device, seq, [0x03, CMD.NAME_REPLY, bank, index, 0x01]);
+}
+
+/**
+ * WRITE begin-bulk marker: "the 146-packet payload starts now". 10 bytes,
+ * length 0x00 (nothing follows the cmd byte). Byte-exact against
+ * `event1-out.syx` frame index 3: `F0 00 20 6B 07 01 00 00 15 F7`. Callers
+ * should pass `seq = 0`, matching every captured drag (see the module note
+ * above on the seq reset).
+ */
+export function buildBulkBegin(seq: number, device = DEVICE_MICROFREAK): number[] {
+  return envelope(device, seq, [0x00, CMD.DUMP_ACK]);
+}
+
+/**
+ * WRITE data frame (one of 146): 32 payload bytes, the exact inverse of
+ * `dumpPacketPayload`. `isLast` picks DUMP_LAST (0x17, the 146th frame)
+ * over DUMP_MORE (0x16, the other 145). Byte-exact against
+ * `event1-out.syx` frame index 4 (first frame, 0x16) and index 149 (last
+ * frame, 0x17).
+ */
+export function buildPresetDataFrame(
+  seq: number,
+  chunk: readonly number[],
+  isLast: boolean,
+  device = DEVICE_MICROFREAK,
+): number[] {
+  if (chunk.length !== 32) {
+    throw new Error(`buildPresetDataFrame: chunk must be exactly 32 bytes, got ${chunk.length}.`);
+  }
+  return envelope(device, seq, [0x20, isLast ? CMD.DUMP_LAST : CMD.DUMP_MORE, ...chunk]);
+}
+
+/**
+ * Matcher for the device's per-frame ACK during a preset WRITE. The
+ * metadata push, the confirm, the begin marker, and each of the 146 data
+ * frames all get one (149 acks total per write). Reuses DUMP_NEXT's class
+ * byte (0x18) in the OPPOSITE direction from `buildDumpNext`'s
+ * host->device request: this is a device->host reply, 10 bytes, with NO
+ * trailing flag byte (`buildDumpNext`'s request is 11 bytes with a
+ * trailing 0x00 -- a different shape despite the shared class byte).
+ * Byte-exact against `event1-in.syx` frame index 1:
+ * `F0 00 20 6B 07 01 61 00 18 F7`.
+ */
+export function presetWriteAckMatcher(seq: number, device = DEVICE_MICROFREAK) {
+  return (b: readonly number[]): boolean =>
+    isArturia(b, device) && b[6] === (seq & 0x7f) && b[7] === 0x00 && b[8] === CMD.DUMP_NEXT;
+}
+
+/**
+ * The "Type"/category byte from a NAME_REPLY frame: offset 19, one byte
+ * before the 0x33 marker that precedes the name field at NAME_OFFSET.
+ * Observed consistently across 4 independent readings in the capture: an
+ * "Init" (empty) slot answers 0, and every reply naming an OCCUPIED slot
+ * carries the SAME value the metadata push later used to (re)write that
+ * exact preset (0x09 for "Revert to Iron", seen once in a destination
+ * query reply AND in two separate metadata pushes; 0x05 for "Yggdrasil").
+ * That cross-check (reply value == push value, for two different presets)
+ * is stronger than the two raw data points suggest, but still only two
+ * distinct VALUES. Round-trippable without knowing its semantics: copy it
+ * from a source read to a destination write unchanged.
+ *
+ * The VALUE SPACE is now decoded: it is MCC's preset "Type" field, an
+ * alphabetical ordinal (see `MICROFREAK_CATEGORIES` in `mfprojz.ts`),
+ * recovered from the 322 non-empty presets of a device export whose names
+ * partition cleanly across the twelve categories. Wired into
+ * `buildPresetMetadata`'s call site via `restorePresetBinary`'s
+ * `preset_type` option, which also checks this decoder's answer against
+ * what it wrote in the closing read-back.
+ */
+export function decodePresetType(bytes: readonly number[]): number {
+  return bytes[19] ?? 0;
 }

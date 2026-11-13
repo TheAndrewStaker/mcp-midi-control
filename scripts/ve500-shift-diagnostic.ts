@@ -146,7 +146,7 @@ if (MODE === 'revert') {
   console.log('    If you DO NOT   -> the block is not in the audio path at all.');
   console.log('                       Stop here; MIDI is not the problem.');
   console.log('');
-  console.log('  STATE B — now play the After Dark chorus and sing over it.');
+  console.log('  STATE B — now play the song chorus and sing over it.');
   console.log('    Expect: the octave-up STOPS and your voice snaps to the melody');
   console.log('            (notes 51..65, D#3..F4 — around your own register).');
   console.log('    If it CHANGES   -> MIDI notes ARE reaching the block. The chain');

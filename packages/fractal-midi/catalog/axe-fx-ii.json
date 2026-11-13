@@ -8728,9 +8728,10 @@
         "controlType": "unknown",
         "parameterName": "PITCH_SHIFT1",
         "xmlLabel": "Voice1 Shift",
-        "displayMin": 0,
-        "displayMax": 48,
+        "displayMin": -24,
+        "displayMax": 24,
         "step": 1,
+        "wireOrdinalOffset": 24,
         "modifierAssignable": true
       },
       "pitch.voice_2_shift": {
@@ -8742,9 +8743,10 @@
         "controlType": "unknown",
         "parameterName": "PITCH_SHIFT2",
         "xmlLabel": "Voice2 Shift",
-        "displayMin": 0,
-        "displayMax": 48,
+        "displayMin": -24,
+        "displayMax": 24,
         "step": 1,
+        "wireOrdinalOffset": 24,
         "modifierAssignable": true
       },
       "pitch.voice_1_level": {

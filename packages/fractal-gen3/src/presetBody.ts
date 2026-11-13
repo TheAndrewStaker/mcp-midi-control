@@ -108,7 +108,8 @@ const SHARED_TYPE_LOCS: Record<string, TypeLoc> = {
   Tremolo: TYPE_H17,
   Wah: TYPE_H17,
   Enhancer: TYPE_H17,
-  Rotary: TYPE_H17,
+  // Rotary is deliberately absent: the block has no Type, and header word 17
+  // holds a knob value there (it read back as "type_id 42597").
 };
 
 interface DeviceProfile {
@@ -230,10 +231,62 @@ const EFFECT_BASES: Record<number, string> = {
   62: 'Cab', 66: 'Reverb', 70: 'Delay', 74: 'MultiTap', 78: 'Chorus',
   82: 'Flanger', 86: 'Rotary', 90: 'Phaser', 94: 'Wah', 98: 'Formant',
   102: 'Vol/Pan', 106: 'Tremolo', 110: 'Pitch', 114: 'Filter', 118: 'Drive',
-  122: 'Enhancer', 126: 'Mixer', 130: 'Synth', 138: 'Megatap', 146: 'Gate',
+  122: 'Enhancer', 126: 'Mixer', 130: 'Synth', 138: 'Megatap', 142: 'Crossover', 146: 'Gate',
   150: 'RingMod', 154: 'MultiComp', 158: 'Ten-Tap', 162: 'Resonator',
-  166: 'Looper', 178: 'Plex Delay', 182: 'Send', 186: 'Return', 191: 'Multiplexer',
+  166: 'Looper', 170: 'Tone Match', 174: 'RTA', 178: 'Plex Delay', 182: 'Send', 186: 'Return',
+  191: 'Multiplexer', 195: 'IR Player',
 };
+
+/**
+ * The order the unit writes a preset's blocks into the stored block chain.
+ *
+ * The chain carries no effect id, only each block's parameter-table size, and
+ * that size changes with firmware (an Axe-Fx III Delay is 88 columns on one
+ * firmware and something else on the next), so a size-to-name table mislabels
+ * or drops blocks as firmware moves. What does not move is the ORDER: the chain
+ * holds exactly the blocks placed on the grid, one entry each, in this fixed
+ * family order (instances ascending inside a family), followed by one system
+ * block. The grid does carry effect ids, so pairing the two names every block.
+ *
+ * Evidence: all 384 Axe-Fx III factory presets pair this way with no
+ * exception (entry count = grid blocks + 1 in every one, and every family
+ * lands on a single table size), and an FM9 export and an FM3 capture pair
+ * the same way. Pairs of families that never share a factory preset are in
+ * `CHAIN_ORDER_UNSETTLED`: their relative order here is unproven.
+ */
+/** Effect id 202 is placed in two factory presets and named by no published list; it sorts last. */
+const UNNAMED_202 = 'eid_202';
+
+const CHAIN_ORDER: readonly string[] = [
+  'Amp', 'Cab', 'Chorus', 'Comp', 'Crossover', 'Delay', 'Enhancer', 'Return', 'Send',
+  'Filter', 'Flanger', 'Formant', 'Drive', 'Gate', 'GEQ', 'MultiTap', 'Input', 'Megatap',
+  'Mixer', 'Multiplexer', 'MultiComp', 'Output', 'PEQ', 'Pitch', 'Phaser', 'Plex Delay',
+  'Reverb', 'RingMod', 'Rotary', 'Synth', 'Ten-Tap', 'Tremolo', 'Resonator', 'Vol/Pan',
+  'Wah', 'Tone Match', 'RTA', 'Looper', UNNAMED_202,
+];
+
+/** Family pairs whose relative chain order no preset on hand settles. */
+const CHAIN_ORDER_UNSETTLED: ReadonlyArray<readonly [string, string]> = [
+  ['Megatap', 'Mixer'], ['Megatap', 'Multiplexer'], ['Megatap', 'MultiComp'], ['Mixer', 'Multiplexer'],
+  ['Mixer', 'MultiComp'], ['Phaser', 'Resonator'], ['Plex Delay', 'Resonator'], ['Reverb', 'Resonator'],
+  ['RingMod', 'Ten-Tap'], ['RingMod', 'Resonator'], ['RingMod', UNNAMED_202], ['Rotary', 'Ten-Tap'],
+  ['Rotary', 'Resonator'], ['Rotary', UNNAMED_202], ['Synth', 'Ten-Tap'], ['Synth', 'Resonator'],
+  ['Synth', UNNAMED_202], ['Ten-Tap', 'Resonator'], ['Ten-Tap', UNNAMED_202], ['Tremolo', 'Resonator'],
+  ['Tremolo', UNNAMED_202], ['Resonator', UNNAMED_202], ['Vol/Pan', UNNAMED_202], ['Wah', UNNAMED_202],
+  ['Tone Match', 'RTA'], ['Tone Match', UNNAMED_202], ['RTA', 'Looper'], ['RTA', UNNAMED_202],
+  ['Looper', UNNAMED_202],
+];
+
+/** Split an effect id into its family and 1-based instance. */
+function effectFamily(eid: number): { family: string; instance: number } | undefined {
+  for (const [baseStr, family] of Object.entries(EFFECT_BASES)) {
+    const d = eid - Number(baseStr);
+    // Four instances per family, except Input, which has five (37..41).
+    if (d >= 0 && d <= (family === 'Input' ? 4 : 3)) return { family, instance: d + 1 };
+  }
+  if (eid === 202) return { family: UNNAMED_202, instance: 1 };
+  return undefined;
+}
 
 /**
  * Resolve a gen-3 effect ID to its display name + instance (e.g. 58 → "Amp 1",
@@ -245,7 +298,7 @@ export function effectName(eid: number): string | undefined {
   for (const [baseStr, name] of Object.entries(EFFECT_BASES)) {
     const base = Number(baseStr);
     const d = eid - base;
-    if (d > 0 && d <= 3) return `${name} ${d + 1}`;
+    if (d > 0 && d <= (name === 'Input' ? 4 : 3)) return `${name} ${d + 1}`;
   }
   return undefined;
 }
@@ -263,6 +316,32 @@ const MODIFIER_SOURCE_NAMES: Record<number, string> = {
 const CAB_BANK_NAMES: Record<number, string> = { 0: 'FACTORY 1', 1: 'FACTORY 2', 3: 'LEGACY' };
 const CAB_MODE_NAMES: Record<number, string> = { 0: 'LEGACY', 1: 'DYNA-CAB' };
 const CAB_MIC_NAMES: Record<number, string> = { 0: 'Condenser', 1: 'Ribbon', 2: 'Dynamic 1', 3: 'Dynamic 2' };
+
+/** FM3 fw 13 hardware-capture anchor for CABINET_PROXFREQ (live paramId 41).
+ * In the stored-preset Cab channel array it is word/index 35, a u16 LE value
+ * normalized logarithmically across 20..200 Hz. This stored-body index is a
+ * SEPARATE decode from the live SET/GET paramId — it has no evidence of its
+ * own on the live wire path (params.ts deliberately does not calibrate
+ * paramId 41 from this). Evidence: 100 Hz -> 45806, 120 Hz -> 50995
+ * (samples/captured/proximity-frequency-{100,120}hz.syx). */
+export const FM3_CAB_PROXIMITY_FREQUENCY_PARAM_ID = 41;
+export const FM3_CAB_PROXIMITY_FREQUENCY_BODY_INDEX = 35;
+
+export function fm3CabProximityFrequencyFieldByteOffset(
+  block: Gen3Block,
+  channel: string,
+): number {
+  if (block.block !== 'Cab' || block.cols !== 106 || block.rows !== 4) {
+    throw new Error('Proximity Frequency stored-body offset is validated only for an FM3 106x4 Cab block');
+  }
+  const ch = CHANNEL_LETTERS.indexOf(channel.toUpperCase() as (typeof CHANNEL_LETTERS)[number]);
+  if (ch < 0) throw new Error(`Invalid channel "${channel}" (expected A/B/C/D)`);
+  return block.params_offset + ch * block.cols * 2 + FM3_CAB_PROXIMITY_FREQUENCY_BODY_INDEX * 2;
+}
+
+function decodeFm3CabProximityFrequency(raw: number): number {
+  return Math.round(20 * Math.pow(10, raw / 65534));
+}
 
 // ── low-level reads ───────────────────────────────────────────────────
 function u16(data: Uint8Array, off: number): number {
@@ -283,7 +362,7 @@ const TYPE_BINARY_FALLBACK_ROSTER: Readonly<Record<string, keyof typeof GEN3_REA
   Amp: 'DISTORT_TYPE',
   Chorus: 'CHORUS_TYPE',
   Comp: 'COMP_TYPE',
-  Delay: 'DELAY_TYPE',
+  Delay: 'DELAY_MODEL',
   Drive: 'FUZZ_TYPE',
   Filter: 'FILTER_TYPE',
   Flanger: 'FLANGER_TYPE',
@@ -319,6 +398,9 @@ export interface Gen3BlockChannel {
 }
 export interface Gen3Block {
   block: string;
+  /** 1-based instance within the family, and the grid effect id. Set when the block was named from the grid. */
+  instance?: number;
+  effect_id?: number;
   cols: number;
   rows: number;
   /** Byte offset of the block header inside the decompressed body. */
@@ -352,6 +434,15 @@ export interface Gen3PresetBody {
   scene_names?: string[];
   grid?: Gen3GridCell[];
   blocks?: Gen3Block[];
+  /**
+   * How `blocks` were named. 'grid': paired with the grid's effect ids by the
+   * fixed chain order, so every placed block is present and correctly named
+   * whatever the firmware. 'table-size': the pairing did not hold and blocks
+   * were named by parameter-table size, which can miss or mislabel blocks.
+   */
+  blocks_identified_by?: 'grid' | 'table-size';
+  /** Family pairs present whose relative order is unproven; their two entries may be swapped. */
+  block_order_unsettled?: string[];
   /** Convenience: the first Amp block's per-channel map. */
   amp1?: Record<string, Gen3BlockChannel>;
   modifiers?: Gen3Modifier[];
@@ -411,30 +502,81 @@ function classifyCols33(data: Uint8Array, pos: number): string | undefined {
   return u16(data, pos + 17 * 2) <= 28 ? 'Flanger' : undefined;
 }
 
-function walkBlocks(data: Uint8Array, chainStart: number, profile: DeviceProfile): Gen3Block[] {
-  const { blockColsMap, typeLocations } = profile;
-  const results: Gen3Block[] = [];
+interface ChainEntry { pos: number; cols: number; rows: number }
+
+/** Every non-modifier entry of the block chain, in stored order. */
+function chainEntries(data: Uint8Array, chainStart: number): ChainEntry[] {
+  const out: ChainEntry[] = [];
   let pos = chainStart;
   while (pos + BLOCK_HEADER_WORDS * 2 + 2 <= data.length) {
     const cols = u16(data, pos + 30); // header word 15
     const rows = u16(data, pos + 32); // header word 16
     if (cols === 0 || rows === 0 || cols > 500 || rows > 8) break;
-    const size = (BLOCK_HEADER_WORDS + cols * rows) * 2;
-    if (cols === 25 && rows === 1) { pos += size; continue; } // modifier slot
+    if (!(cols === 25 && rows === 1)) out.push({ pos, cols, rows }); // 25x1 = modifier slot
+    pos += (BLOCK_HEADER_WORDS + cols * rows) * 2;
+  }
+  return out;
+}
 
-    let blockName = blockColsMap[cols];
-    if (!blockName) { pos += size; continue; }
+interface GridLabel { family: string; instance: number; effectId: number }
 
+/**
+ * Name the chain entries from the grid (see CHAIN_ORDER). Returns undefined
+ * when the pairing does not hold: a grid block of a family with no known
+ * place in the order, or an entry count that is not the grid's block count
+ * (plus the one trailing system block). The caller then falls back to naming
+ * by table size.
+ */
+function labelsFromGrid(entries: readonly ChainEntry[], grid: readonly Gen3GridCell[] | undefined): GridLabel[] | undefined {
+  if (!grid) return undefined;
+  const ids = [...new Set(grid.filter((c) => !c.is_shunt).map((c) => c.effect_id))];
+  if (ids.length === 0) return undefined;
+  const labels: GridLabel[] = [];
+  for (const effectId of ids) {
+    const f = effectFamily(effectId);
+    if (!f || !CHAIN_ORDER.includes(f.family)) return undefined;
+    labels.push({ ...f, effectId });
+  }
+  if (entries.length !== labels.length + 1 && entries.length !== labels.length) return undefined;
+  return labels.sort((a, b) => CHAIN_ORDER.indexOf(a.family) - CHAIN_ORDER.indexOf(b.family) || a.effectId - b.effectId);
+}
+
+function walkBlocks(
+  data: Uint8Array,
+  chainStart: number,
+  profile: DeviceProfile,
+  grid?: readonly Gen3GridCell[],
+): { blocks: Gen3Block[]; identifiedBy: 'grid' | 'table-size'; unsettled: string[] } {
+  const { blockColsMap, typeLocations } = profile;
+  const results: Gen3Block[] = [];
+  const entries = chainEntries(data, chainStart);
+  const labels = labelsFromGrid(entries, grid);
+  const unsettled: string[] = [];
+  if (labels) {
+    const present = new Set(labels.map((l) => l.family));
+    for (const [a, b] of CHAIN_ORDER_UNSETTLED) if (present.has(a) && present.has(b)) unsettled.push(`${a} / ${b}`);
+  }
+  for (let i = 0; i < entries.length; i++) {
+    const { pos, cols, rows } = entries[i];
     const paramsStart = pos + BLOCK_HEADER_WORDS * 2;
-
-    if (blockName === 'Comp' && cols === 37 && rows === 4) blockName = classifyCols37(data, paramsStart);
-    if (blockName === 'Flanger' && cols === 33 && rows === 4) {
-      const c = classifyCols33(data, pos);
-      if (c === undefined) { pos += size; continue; }
-      blockName = c;
+    let blockName: string | undefined;
+    const label = labels?.[i];
+    if (labels) {
+      if (!label) continue; // the trailing system block
+      blockName = label.family;
+    } else {
+      blockName = blockColsMap[cols];
+      if (!blockName) continue;
+      if (blockName === 'Comp' && cols === 37 && rows === 4) blockName = classifyCols37(data, paramsStart);
+      if (blockName === 'Flanger' && cols === 33 && rows === 4) {
+        const c = classifyCols33(data, pos);
+        if (c === undefined) continue;
+        blockName = c;
+      }
     }
 
     const block: Gen3Block = { block: blockName, cols, rows, offset: pos, params_offset: paramsStart };
+    if (label) { block.instance = label.instance; block.effect_id = label.effectId; }
 
     // Per-scene channel + bypass: header words [-1,0..6] = channel, [7..14] = bypass.
     if (pos >= 2) {
@@ -468,6 +610,13 @@ function walkBlocks(data: Uint8Array, chainStart: number, profile: DeviceProfile
         const base = paramsStart + ch * cols * 2;
         const modeId = u16(data, base + 25 * 2);
         const c: Gen3BlockChannel = { mode: CAB_MODE_NAMES[modeId] ?? `mode_${modeId}` };
+        // Hardware-validated only on the FM3's 106x4 Cab body layout (two real
+        // captures, 100/120 Hz). Keep the evidence scoped instead of assuming
+        // sibling-device (III/FM9) body indices match.
+        if (profile === DEVICE_PROFILES[MODEL_FM3] && cols === 106 && rows === 4) {
+          const proxRaw = u16(data, base + FM3_CAB_PROXIMITY_FREQUENCY_BODY_INDEX * 2);
+          c.proximity_frequency_hz = decodeFm3CabProximityFrequency(proxRaw);
+        }
         if (modeId === 1) {
           const dc1 = u16(data, base + 79 * 2);
           c.dynacab1_id = dc1;
@@ -541,9 +690,8 @@ function walkBlocks(data: Uint8Array, chainStart: number, profile: DeviceProfile
     }
 
     results.push(block);
-    pos += size;
   }
-  return results;
+  return { blocks: results, identifiedBy: labels ? 'grid' : 'table-size', unsettled };
 }
 
 // ── modifiers ─────────────────────────────────────────────────────────
@@ -649,7 +797,10 @@ export function decodeGen3Body(body: Uint8Array, modelId: number): Gen3PresetBod
 
   const chainStart = findBlockChainStart(body);
   if (chainStart >= 0) {
-    out.blocks = walkBlocks(body, chainStart, profile);
+    const walked = walkBlocks(body, chainStart, profile, out.grid);
+    out.blocks = walked.blocks;
+    out.blocks_identified_by = walked.identifiedBy;
+    if (walked.unsettled.length) out.block_order_unsettled = walked.unsettled;
     const amp = out.blocks.find((b) => b.block === 'Amp');
     if (amp?.channels) out.amp1 = amp.channels;
   }
@@ -701,9 +852,22 @@ function rawPatchName(rawPatch: Uint8Array): string {
  * expected model byte. Throws if the dump framing is invalid; a CRC mismatch is
  * reported via `crc_valid` (the body is still decoded best-effort).
  */
+/**
+ * A stored-preset dump whose container holds no compressed body: an empty or
+ * never-written preset location. Not a decode failure, so it has its own
+ * class and the reader reports the location as empty.
+ */
+export class Gen3EmptyPresetError extends Error {
+  constructor() {
+    super('the dump holds no preset body (an empty location)');
+    this.name = 'Gen3EmptyPresetError';
+  }
+}
+
 export function decodeGen3PresetDump(bytes: Uint8Array, expectedModelId?: number): Gen3DecodedPreset {
   const parsed = parsePresetDump(bytes, 0, expectedModelId);
   const decoded = decodeRawPatch(parsed.chunkPayloads);
+  if (decoded.empty) throw new Gen3EmptyPresetError();
   const body = decodeGen3Body(decoded.body, parsed.modelId);
   return {
     model_id: parsed.modelId,

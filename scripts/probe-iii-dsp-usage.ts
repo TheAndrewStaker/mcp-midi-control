@@ -135,17 +135,21 @@ async function main(): Promise<void> {
   const gridReq = buildRequestGridLayout(MODEL);
   console.error(`  → ${toHex(gridReq)}`);
   const gridFrames = await sendAndCollect(gridReq, 800);
-  let liveMeters: { cpu_percent: number; output_left: number; output_right: number } | undefined;
+  let liveMeters: { cpu_percent?: number; output_left: number; output_right: number } | undefined;
   let primaryVerdict: string;
   if (gridFrames.length === 0) {
     primaryVerdict = 'NO RESPONSE to sub=0x2E empty-target query. (Some firmwares may need the grid read triggered by a placed preset; try again with a preset loaded.)';
   } else {
     try {
-      liveMeters = parseGen3LiveMeters(gridFrames[0]);
+      const meters = parseGen3LiveMeters(gridFrames[0]);
+      liveMeters = meters;
+      // The III's CPU decode was falsified on hardware (raw 80 against a 20.0 %
+      // panel), so the codec reports none. Print the raw byte: pairs of
+      // (raw, front-panel %) across presets are what pin the real law.
       primaryVerdict =
-        `cpu_percent=${liveMeters.cpu_percent}%  output_left=${liveMeters.output_left}  ` +
-        `output_right=${liveMeters.output_right}. COMPARE cpu_percent AGAINST THE FRONT-PANEL ` +
-        `DSP/CPU METER NOW: this is the confirmation this probe exists to get.`;
+        `raw CPU byte f[37]=${gridFrames[0][37]}  output_left=${meters.output_left}  ` +
+        `output_right=${meters.output_right}. WRITE DOWN THE FRONT-PANEL CPU % NEXT TO THE RAW ` +
+        `BYTE, on a light preset and a heavy one: two pairs can pin the III's formula.`;
     } catch (err) {
       primaryVerdict = `Got ${gridFrames.length} frame(s) but failed to parse live meters: ${err instanceof Error ? err.message : String(err)}`;
     }

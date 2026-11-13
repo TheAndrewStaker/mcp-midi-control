@@ -9,8 +9,11 @@
  * There are TWO different patch stores on this device and only one of them is
  * pack-addressed:
  *
- *  1. The **synth patch BANK** (64 Flash slots per synth part) — what a project
- *     references and what you hear. Written ONLY by Replace-Patch
+ *  1. The **synth patch BANK**, what a project references and what you hear.
+ *     The device's Patch view shows 128 patches (four pages of 32; the on-card
+ *     file store's 16 groups of 8 cover all 128; the old "64 Flash slots per
+ *     synth part" framing here was a mis-model, corrected 2026-08-11 per the
+ *     2026-07-30 pack-2 patch-upload decode). Written ONLY by Replace-Patch
  *     (`codec/sysex.ts buildReplaceFlashPatch`), a one-shot SysEx whose frame is
  *     `F0 00 20 29 01 64 01 00 <slotHi> <slotLo> 00 <340 body> F7`. There is NO
  *     pack byte in it. It writes whichever pack the FRONT PANEL has selected,
