@@ -25,15 +25,21 @@ could test here is already done. The remaining asks are narrow and specific.
 |---|---|---|
 | `get_param` / `get_params` | confirmed | A community owner test on firmware 11.0, macOS, round-tripped reads through this server, including channel-specific reads and amp-name alias resolution |
 | `set_param` continuous knobs | confirmed | The same owner test, acknowledged with the value confirmed on the editor display. A later catalog-wide SET then GET round-trip on hardware confirmed the continuous path across the whole FM9 catalog |
-| `set_block` placement | confirmed for single-word blocks | A Windows verify probe placed a block and the device's own status dump listed it. That probe used a block whose slug equals its display name, which is the only kind that used to resolve at all |
+| `set_block` placement | confirmed for single-word blocks | A Windows verify probe on firmware 11.0 placed a block and the device's own status dump listed it. On firmware 12.0 the FM9 inserts at the cursor cell unless a cell-select comes first: an owner sent select-then-insert frames built by this repo's own builders and placed Input, Drive, Amp, Cab, Delay, Reverb and Output at the cells asked (issue #23). Since 0.9.0 `set_block` sends that select before every insert; the tool call itself is not yet re-run on firmware 12 |
+| Grid cables (`apply_preset` routing) | confirmed law, tool path untested | The 6-row cable formula was wrong (cables had no effect). The corrected formula was confirmed on firmware 12.0 for same-row connect, disconnect and a cross-row cable (issue #23), and 0.9.0 uses it |
 | `set_block` / `set_bypass` on the 15 multi-word blocks | **hardware-unverified, newly reachable** | These never resolved before 2026-08-03: the write path matched display names and group codes against the descriptor SLUG, so `graphic_eq`, `parametric_eq`, `gate_expander`, `volume_pan`, `pan_tremolo`, `multitap_delay`, `megatap_delay`, `ten_tap_delay`, `plex_delay`, `ring_modulator`, `multiband_compressor`, `tone_match`, `ir_capture`, `ir_player` and `real_time_analyzer` returned "unknown block" for a block the device really has. The resolver now matches the read path. **The effect IDs come from the v1.4 spec table and the frame is the same wire-confirmed insert, but no one has placed one of THESE blocks on hardware.** Treat as untested |
-| `switch_scene` | confirmed | Same probe run |
+| `switch_scene`, `switch_preset`, `set_bypass` | confirmed | The firmware 11.0 probe run (scenes), and an owner session on firmware 12.0, Windows 11 (all three, issue #23) |
+| Preset and scene rename | confirmed | The legacy rename frame is rejected on firmware 12.0. The `fn=0x01 sub=0x28` preset rename and `sub=0x2B` scene rename both showed on the panel and persisted through a save (issue #23); 0.9.0 uses them |
 | Reading a block's current type or model | hardware-unverified | Read as the bulk read's ordinal, labeled from the roster. The fn=0x01 sub=0x1F name query this used to rely on answers with the roster's first entry whatever the real type (two independent owners, firmware 11 and 12), so it is no longer used |
-| `set_param` discrete set-by-name | hardware-unverified | The discrete wire form is byte-exact against real FM3 and FM9 captures. Type and mode selectors route as discrete ordinals, corrected using the FM9's own editor-cache enum data, which is why only the FM9 changed and the family byte-identity held (`packages/fractal-gen3/src/configs/fm9.ts`) |
-| `save_preset` | hardware-unverified | Confirmed on the FM3 (a save that survived a power cycle); unrun on the FM9 |
-| `get_preset` live grid read | hardware-unverified | Decoded from the shared gen-3 grid frame and cross-validated against an FM9 capture |
-| Block list in a stored `get_preset` | hardware-unverified | Named by pairing the stored block chain with the grid. Checked offline against one editor export |
+| Enum names for every selector | hardware-unverified | Since 0.9.1 all 507 FM9 selectors its fw 12.0 editor cache defines are named from it. That corrected lists the family overlay had wrong: LFO types from ordinal 6 ("Log" sent EXP), `delay.model` from 22, `pitch.tempo`, `inputselect` |
+| `set_param` discrete set-by-name | confirmed | Amp, drive and reverb type by name and cab bank by name, on firmware 12.0 (issue #23). On the FM9 the delay's 29 model names belong to `delay.model`, not `delay.type` (8 values); 0.9.0 moved them, so `set_param(delay, model, "Vintage Digital")` is the call. 0.9.0's names are wrong from ordinal 22; 0.9.1 names all 29 from the FM9's own editor cache |
+| Cab IR (`cab.type1` / `type2`) | confirmed | 0..1023 within the selected bank; Factory 2 #315 showed "4x12 1960A 300W 57" and Factory 1 #0 "1x4 Pig 57", matching the roster this server labels from (issue #23). The 0..15 cap is gone in 0.9.0 |
+| Tempo divisions (`tempo` on delay and other blocks) | confirmed | The division is an ordinal into the 79-entry list the AM4 uses: 12 showed "1/8 Dot" on firmware 12.0 (issue #23). 0.9.0 ships that list; from 0.9.1 the agent sets `tempo` by name, and `pitch.tempo` (78 entries, no "None") is no longer one off |
+| `save_preset` | confirmed | Firmware 12.0: the save persisted the preset and scene names, checked by switching away and back (issue #23). Mind the Display Offset setting: a unit set to number presets from 1 shows location 495 as 496 |
+| `get_preset` live grid read | confirmed | Used as the read-back for every placement and cable in the firmware 12.0 session, and it matched the panel (issue #23). Its `route_flag` is a bitmask of source rows |
+| Block list in a stored `get_preset` | hardware-unverified | Under 0.8.0 this list showed blocks the preset does not hold (issue #23). Since 0.9.0 it names stored blocks from the grid; not yet re-checked on an FM9. The stored read's reverb `scene_bypass` disagreed with the panel in the same report and is not yet explained |
 | Live CPU and output meters inside `get_preset` | hardware-unverified | Decoded from the same grid frame, not yet front-panel confirmed |
+| Writes to a block that is not in the preset | warns, hardware-unverified | Since 0.9.1 `set_param` / `set_params` read the live grid once (cached 5 s) and attach a warning when the block is not placed, or is placed with no input cable. An Axe-Fx III acknowledges such a write and reads back the last value written (issue #35), so the ack alone cannot tell |
 | `export_preset` | hardware-unverified | Preset receive is confirmed on this device; the container is self-validating against the device's own CRC |
 | `import_preset` | not implemented (refuses) | The gen-3 writer has no byte-restore path yet; the unified verb returns a capability error rather than emitting an unverified push |
 
@@ -51,6 +57,11 @@ the two disagree.
 - Preset receive, the dump path used by `export_preset`.
 - Model rosters and parameter ranges are complete and device-true, from a
   community cache file. Set-by-name works across the whole amp space.
+- Firmware 12.0, Windows 11 (issue #23): set-by-name, `save_preset` with names
+  surviving, `switch_preset`, `switch_scene`, `set_bypass`, preset and scene
+  rename, cab IR selection, the tempo-division list, the live grid read, and
+  select-then-insert placement plus the corrected cable formula (sent as raw
+  frames from this repo's builders).
 
 **Please do not re-run these.** They are done, and the catalog-wide sweep in
 particular does not need repeating.
@@ -63,8 +74,6 @@ either a key-press or a data gap.
 | Blocked capability | Missing evidence | Closed by |
 |---|---|---|
 | Exact `ms` and `Hz` landing for log-taper knobs | Whether a continuous SET's normalized float is normalized in value space or knob-position space. The catalog round-trip used raw wire values, so it did not pin the curve | CAPTURE-1 |
-| Per-block enum name rosters beyond reverb | The device only emits a model name when a model is actually selected, so the rosters for blocks other than reverb are incomplete | CAPTURE-2 |
-| Named tempo divisions on any gen-3 device | The wire encoding for the TEMPO division select is undecoded | See [axe-fx-iii.md](axe-fx-iii.md) CAPTURE-2, which is device-independent |
 
 ## Before you start
 
@@ -81,23 +90,22 @@ Read [../SAFETY.md](../SAFETY.md) once. The device-specific parts:
 
 ## Asks, ranked
 
-### SESSION-1: Confirm a discrete set-by-name write
-**Tier: SESSION | ~3 minutes | writes to the working buffer | unlocks: `set_param` discrete**
+### SESSION-1: Build a preset through the tools on 0.9.1
+**Tier: SESSION | ~5 minutes | writes to the working buffer | unlocks: the tool path for placement, cables and rename on firmware 12**
 
-The one write path still unconfirmed on the FM9. Continuous writes are already
-confirmed; changing a **model by name** rides a different sub-action, so the
-existing evidence does not carry over.
+The firmware 12.0 fixes in issue #23 were proven with raw frames. What is left is
+the same build driven through the tools. On an empty location, with FM9-Edit
+quit:
 
-With the FM9 connected and FM9-Edit quit:
+> "Build a preset in row 2: Drive, Amp, Cab, Delay, Reverb, wired in order. Name
+> it Test Build and give it three scenes."
 
-> "Set Amp 1 to a Plexi, then read back what model it is on."
-
-Report whether the model on the front panel changed, and paste both responses.
+Report whether every block landed in row 2 at the column asked, whether the
+cables connect, and whether the name shows. Then read it back with `get_preset`
+for that location and say whether the `blocks` list matches the grid.
 
 ### SESSION-2: Run the write-verify probe on a preset that has a reverb block
-**Tier: SESSION | ~5 minutes | writes to the working buffer, self-restoring | unlocks: discrete set-by-name plus `save_preset` on Windows**
-
-The rigorous form of SESSION-1, and it covers the save path too.
+**Tier: SESSION | ~5 minutes | writes to the working buffer, self-restoring | unlocks: the multi-word block names, and the probe's own checks on firmware 12**
 
 Load a preset that **has a Reverb block** first: the probe skips its reverb
 tests if no reverb is placed, which is what a previous run hit.
@@ -157,30 +165,8 @@ or High **Cut**, to at least five points across its range, pausing at each, and
 Send the capture plus the ordered list of readings. Without the paired readings
 the capture cannot be used.
 
-### CAPTURE-2: Type-dropdown sweep for a block other than reverb
-**Tier: CAPTURE | ~10 minutes | sniffer required | unlocks: per-block enum name rosters**
-
-The wire records the ordinal; a screenshot records the name. Pairing them is
-what builds a roster.
-
-One-time tool setup: [../tools/capture-setup.md](../tools/capture-setup.md).
-
-1. Load a preset with the block you are covering placed. Open FM9-Edit.
-2. **Before capturing:** open that block's **Model** dropdown and screenshot the
-   full list, scrolling slowly until every name is captured. Multiple
-   screenshots are fine.
-3. Start the capture.
-4. With it running, **select** each model **top to bottom**, about two seconds
-   apart, in the same order you photographed.
-5. Stop. Send the capture **plus all screenshots** together.
-
-> Just opening a dropdown sends nothing. Names only cross the wire when you
-> **select** a model. Step through them one at a time. A partial sweep, the top
-> thirty or forty, still helps. The two reasons a previous sweep was unusable:
-> the dropdown was opened rather than stepped through, and the screenshots were
-> omitted so the ordinals had no names to bind to.
-
-Reload the preset afterwards. Nothing is stored.
+CAPTURE-2 (a type-dropdown sweep to build name rosters) is closed: the fw 12.0
+editor cache names every selector, so no capture is needed.
 
 ## Submitting
 

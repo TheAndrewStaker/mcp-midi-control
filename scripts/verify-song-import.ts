@@ -75,7 +75,19 @@ import type { MeasureInfo } from '../packages/core/src/protocol-generic/patterns
 import { GATE_SIXTHS_PER_STEP, type NeutralPattern } from '../packages/core/src/protocol-generic/patterns/types.js';
 import { parsePitch, parseVoice } from '../packages/core/src/protocol-generic/patterns/miniNotation.js';
 import { GHOST_HIT_VELOCITY, gmDrumToVoice, quantizeDrumEvents } from '../packages/core/src/protocol-generic/patterns/drumScore.js';
-import { executeImportSongsterr } from '../packages/core/src/protocol-generic/dispatcher/songsterr.js';
+import {
+  executeImportSongsterr,
+  exampleWindow,
+  melodicRoutingAdvice,
+  resolveRigPatternTargets,
+} from '../packages/core/src/protocol-generic/dispatcher/songsterr.js';
+import { searchMatchConfidence } from '../packages/core/src/protocol-generic/patterns/songsterrFetch.js';
+import { registerDevice, unregisterDevice } from '../packages/core/src/protocol-generic/registry.js';
+import { clearRigManifestCache } from '../packages/core/src/protocol-generic/openrig/manifest.js';
+import { MPC_ONE_G2_DESCRIPTOR } from '../packages/akai-mpc/src/descriptor.js';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 // Item A (opt-in tom-lane split): the fold / condense / resolve layer the split
 // lanes route through, plus the two REAL device descriptors they must place on.
 import { foldVoice, indexMapByRole } from '../packages/core/src/protocol-generic/patterns/drumFold.js';
@@ -2787,6 +2799,111 @@ function check(label: string, ok: boolean, detail?: string): void {
   const imp = importSongsterrMelodic(mel, { fromMeasure: 1, toMeasure: 1, stepsPerBeat: 6 });
   check('swing: at steps 6 the swung pair lands on the grid (steps 0 and 4)',
     JSON.stringify(imp.cells.map((c) => c.step)) === JSON.stringify([0, 4]), JSON.stringify(imp.cells.map((c) => c.step)));
+}
+
+// ── 2026-11-14 audit: search confidence, rig-aware routing, marker-less windows ──
+{
+  // (c) A hit sharing too little with the query is LOW confidence.
+  const wrong = searchMatchConfidence('Dimension fusion Japan', { artist: 'King Gizzard & The Lizard Wizard', title: 'Nuclear Fusion' });
+  check('search confidence: "Dimension fusion Japan" -> "Nuclear Fusion" is low', wrong.low && wrong.score < 0.5
+    && wrong.missing.includes('dimension') && wrong.missing.includes('japan'), JSON.stringify(wrong));
+  const right = searchMatchConfidence('Metallica Enter Sandman', { artist: 'Metallica', title: 'Enter Sandman' });
+  check('search confidence: an exact artist + title match is not low', !right.low && right.score === 1, JSON.stringify(right));
+  const accents = searchMatchConfidence('Beyonce halo', { artist: 'Beyoncé', title: 'Halo' });
+  check('search confidence: diacritics do not count against a match', !accents.low, JSON.stringify(accents));
+
+  // (d) No section markers: the example window is a bar range, never section:"Intro".
+  check('exampleWindow: a marker-less tab suggests a bar range',
+    exampleWindow([], 12) === 'from_measure:1, to_measure:4', exampleWindow([], 12));
+  check('exampleWindow: a short marker-less tab caps the range at its length',
+    exampleWindow([], 2) === 'from_measure:1, to_measure:2', exampleWindow([], 2));
+  check('exampleWindow: a tab with markers suggests its first section',
+    exampleWindow([{ name: 'Verse' }], 12) === 'section:"Verse"', exampleWindow([{ name: 'Verse' }], 12));
+
+  // (a) Routing advice follows the rig's targets, not a hardcoded Circuit.
+  check('melodic routing: no manifest points at the target\'s own voices, not the Circuit',
+    /list_pattern_recipes/.test(melodicRoutingAdvice(undefined)) && !/Circuit/.test(melodicRoutingAdvice(undefined)),
+    melodicRoutingAdvice(undefined));
+  check('melodic routing: a drum-only rig says no target takes a melodic voice',
+    /no pattern target in this rig takes a melodic voice/.test(melodicRoutingAdvice([
+      { id: 'mpc-one-g2', name: 'Akai MPC One G2', melodic: [], modes: ['live_stream'], clock_master: true },
+    ])) && /Akai MPC One G2 take drum voices only/.test(melodicRoutingAdvice([
+      { id: 'mpc-one-g2', name: 'Akai MPC One G2', melodic: [], modes: ['live_stream'], clock_master: true },
+    ])));
+  check('melodic routing: a melodic target is named with its own voice names',
+    /Hydrasynth: bass \/ lead/.test(melodicRoutingAdvice([
+      { id: 'hydrasynth', name: 'Hydrasynth', melodic: ['bass', 'lead'], modes: ['live_stream'], clock_master: false },
+    ])));
+
+  // Stub fetch: a search answering with a wrong first hit, and a marker-less drum part.
+  const META = {
+    songId: 777, revisionId: 1, image: 'img', title: 'Nuclear Fusion', artist: 'King Gizzard & The Lizard Wizard',
+    popularTrackDrum: 0,
+    tracks: [{ instrumentId: 1024, instrument: 'Drums', hash: 'd' }],
+  };
+  const PART: DrumPart = {
+    measures: Array.from({ length: 6 }, () => ({ signature: [4, 4] as [number, number], voices: [{ beats: [{ notes: [{ fret: 36 }], duration: [1, 4] as [number, number] }] }] })),
+    automations: { tempo: [{ measure: 0, position: 0, bpm: 100 }] },
+  };
+  const HITS = [
+    { songId: 777, title: 'Nuclear Fusion', artist: 'King Gizzard & The Lizard Wizard' },
+    { songId: 778, title: 'Dimension', artist: 'Fusion Japan Band' },
+  ];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    const s = String(url);
+    if (s.includes('/api/songs?')) return { ok: true, status: 200, json: async () => HITS };
+    if (s.includes('/api/meta/')) return { ok: true, status: 200, json: async () => META };
+    return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(PART)).buffer };
+  }) as unknown as typeof globalThis.fetch;
+  const dir = mkdtempSync(join(tmpdir(), 'song-import-rig-'));
+  const priorManifest = process.env.MCP_RIG_MANIFEST;
+  try {
+    const low = await executeImportSongsterr({ query: 'Dimension fusion Japan', list_tracks: true });
+    check('import_songsterr: a low-confidence search hit is flagged',
+      low.search_confidence?.level === 'low', JSON.stringify(low.search_confidence));
+    check('import_songsterr: the flag leads next_step and lists the alternative by url',
+      low.next_step.startsWith('LOW-CONFIDENCE MATCH') && low.next_step.includes('url:"778"'), low.next_step.slice(0, 300));
+    const ok = await executeImportSongsterr({ query: 'King Gizzard Nuclear Fusion', list_tracks: true });
+    check('import_songsterr: a confident search hit carries no flag',
+      ok.search_confidence === undefined && !ok.next_step.startsWith('LOW-CONFIDENCE'), JSON.stringify(ok.search_confidence));
+
+    delete process.env.MCP_RIG_MANIFEST;
+    clearRigManifestCache();
+    const disc = await executeImportSongsterr({ url: '777' });
+    check('import_songsterr: sections:[] discovery suggests a bar range, not section:"Intro"',
+      !('mode' in disc) && disc.sections.length === 0 && disc.next_step.includes('from_measure:1, to_measure:4')
+      && !disc.next_step.includes('section:"'), 'mode' in disc ? '' : disc.next_step);
+
+    // A rig whose clock master and only pattern target is the MPC.
+    registerDevice(MPC_ONE_G2_DESCRIPTOR);
+    const manifestPath = join(dir, 'rig.json');
+    writeFileSync(manifestPath, JSON.stringify({
+      openrig_version: '0.1', id: 'mpc-rig', name: 'MPC rig',
+      nodes: [{ id: 'mpc', name: 'Akai MPC One G2', server_device_id: 'mpc-one-g2', roles: ['sequencer', 'clock_master'], ports: [] }],
+      edges: [],
+    }));
+    process.env.MCP_RIG_MANIFEST = manifestPath;
+    clearRigManifestCache();
+    const targets = resolveRigPatternTargets();
+    check('rig targets: the MPC resolves as a drum-only, clock-master pattern target',
+      targets?.length === 1 && targets[0].id === 'mpc-one-g2' && targets[0].melodic.length === 0 && targets[0].clock_master,
+      JSON.stringify(targets));
+    const win = await executeImportSongsterr({ url: '777', from_measure: 1, to_measure: 1 });
+    check('import_songsterr: drum next_step names the rig\'s target, not a Circuit Tracks slot',
+      !('mode' in win) && win.next_step.includes('Akai MPC One G2 (live_stream)') && !win.next_step.includes('Circuit Tracks slot'),
+      'mode' in win ? '' : win.next_step);
+    check('import_songsterr: tempo_setup names the manifest\'s clock master and where it was read',
+      !('mode' in win) && win.tempo_setup?.clock_master === 'Akai MPC One G2'
+      && (win.tempo_setup?.clock_master_source ?? '').includes(manifestPath),
+      JSON.stringify('mode' in win ? undefined : win.tempo_setup));
+  } finally {
+    globalThis.fetch = realFetch;
+    if (priorManifest === undefined) delete process.env.MCP_RIG_MANIFEST; else process.env.MCP_RIG_MANIFEST = priorManifest;
+    clearRigManifestCache();
+    unregisterDevice(MPC_ONE_G2_DESCRIPTOR.id);
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 if (failed > 0) { console.error(`\n${failed} check(s) FAILED`); process.exit(1); }

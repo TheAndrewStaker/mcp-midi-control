@@ -113,27 +113,36 @@ class WalkError extends Error {
 // Grammar primitives
 // ---------------------------------------------------------------------------
 
-function tryLpString(off: number, maxlen = 64): [string, number] | undefined {
+function tryLpString(off: number, maxlen = 64, allowEmpty = false): [string, number] | undefined {
   if (off + 4 > N) return undefined;
   const L = u32(off);
-  if (L < 1 || L > maxlen || off + 4 + L > N) return undefined;
+  if (L < (allowEmpty ? 0 : 1) || L > maxlen || off + 4 + L > N) return undefined;
   const s = buf.subarray(off + 4, off + 4 + L);
   for (const c of s) if (c < 0x20 || c > 0x7e) return undefined;
   return [s.toString('ascii'), off + 4 + L];
 }
 
-function tryEnumBody(off: number, maxcount = 4096): [number, string[], number] | undefined {
+// Zero-length names occur in real caches (issue #25, III): entry 0 of an
+// owner's User cab-IR table on fw 32.04/32.06, and the last entry of a fw 21.01
+// amp channel-mode list. A later empty entry is always accepted. An empty FIRST
+// entry is accepted only for a cab/IR table (allowEmptyFirst, ids
+// 0xfff0..0xfffe): elsewhere it would let a float tail of t1=1, t2=0 read as a
+// one-entry enum of "". A body whose names are ALL empty is never an enum: an
+// unpopulated cab table (VP4 fw 2.47, id 0xfff0) is a float-tailed record whose
+// zero bytes would otherwise read as 256 empty names and swallow the file.
+function tryEnumBody(off: number, maxcount = 4096, allowEmptyFirst = false): [number, string[], number] | undefined {
   if (off + 4 > N) return undefined;
   const count = u32(off);
   if (count < 1 || count > maxcount) return undefined;
   let p = off + 4;
   const vals: string[] = [];
   for (let i = 0; i < count; i++) {
-    const r = tryLpString(p);
+    const r = tryLpString(p, 64, i > 0 || allowEmptyFirst);
     if (r === undefined) return undefined;
     vals.push(r[0]);
     p = r[1];
   }
+  if (vals.every(v => v === '')) return undefined;
   return [count, vals, p];
 }
 
@@ -244,7 +253,7 @@ while (off < N) {
   const df = f32(off + 14);
   const st = f32(off + 18);
 
-  const en = tryEnumBody(off + 22);
+  const en = tryEnumBody(off + 22, 4096, idv >= 0xfff0 && idv <= 0xfffe);
   if (en !== undefined) {
     const [count, vals, end] = en;
     if (end + 6 > N) throw new WalkError('ENUM-EOF', off, records.length);

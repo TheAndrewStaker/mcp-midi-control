@@ -254,6 +254,17 @@ function isIndexedDisplaySlug(slug: string): boolean {
 export function buildBlockTypeUnion(): readonly string[] {
   const out = new Set<string>();
   for (const desc of listRegisteredDevices()) {
+    // A grid device with no block_types (gen-3) places its catalog blocks.
+    // Without this the schema refused every gen-3 block whose name no AM4 /
+    // II block shares (pan_tremolo, ten_tap_delay, multiplexer: issue #35).
+    if (desc.placeable_blocks !== undefined && (desc.block_types === undefined || Object.keys(desc.block_types).length === 0)) {
+      const placeable = new Set(desc.placeable_blocks);
+      for (const k of placeable) out.add(k);
+      for (const [short, full] of Object.entries(desc.block_aliases ?? {})) {
+        if (placeable.has(full)) out.add(short);
+      }
+      continue;
+    }
     if (!desc.block_types) continue;
     const placementKeys = Object.keys(desc.block_types);
     if (placementKeys.length === 0) continue;

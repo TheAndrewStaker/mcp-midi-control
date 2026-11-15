@@ -37,11 +37,12 @@ export {
   type AxeFxIIIParamRange,
   type AxeFxIIIRangeFamilyMeta,
 } from './ranges.generated.js';
+export { III_CACHE_ENUM_NAMES } from './enumNames.generated.js';
 
 // Enum vocabulary overlay — universal Fractal conventions + AM4-
 // verified shared symbols + III-specific direct overrides. See
 // `enumOverlay.ts` for evidence chain and provenance tagging.
-export { resolveEnumValues, resolveEffectTypeEnum, enumOverlayStats } from './enumOverlay.js';
+export { resolveEnumValues, resolveEffectTypeEnum, resolveDirectEnumOverride, enumOverlayStats } from './enumOverlay.js';
 export type { EnumOverlayEntry, EnumProvenance } from './enumOverlay.js';
 
 // Gen-3 enum set-by-name resolver: name → read-roster ORDINAL (the float32(ordinal)

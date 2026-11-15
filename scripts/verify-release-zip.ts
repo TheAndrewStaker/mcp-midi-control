@@ -17,8 +17,8 @@
  *      their code paths against a real extracted bundle).
  *   4. Functional mock pass on the Axe-Fx II: apply_preset with routing[]
  *      (default-on verify_chain), get_preset, export_preset (edit-buffer
- *      dump responder) to a temp dir, translate II->FM9 (tempo-division
- *      strip + unmapped-model warning).
+ *      dump responder) to a temp dir, translate II->FM9 (named tempo
+ *      division kept + unmapped-model warning).
  *   5. gen-1 surface honesty: describe_device guidance carries the
  *      parameter-WRITES framing and the C2 capture pointer.
  *
@@ -230,7 +230,10 @@ async function main(): Promise<void> {
     });
     const trText = ext(tr);
     check('translate ok', !isError(tr) && /"ok":\s*true/.test(trText), trText.slice(0, 200));
-    check('translate: tempo division stripped with warning', /dropped tempo division/.test(trText));
+    // Since 0.9.1 the gen-3 grid devices take named tempo divisions, so a
+    // translate to the FM9 keeps "1/2 DOT" (only the VP4 still strips one).
+    check('translate: tempo division kept for the FM9 (no strip warning)',
+      !/dropped tempo division/.test(trText) && /"tempo"/.test(trText), trText.slice(0, 300));
     check('translate: unmapped-model aggregate warning', /without a cross-roster mapping/i.test(trText));
     check('translate: gain alias landed (drive)', /"drive":\s*3\.5/.test(trText));
     check('translate: scene name carried', /"Verse"/.test(trText));

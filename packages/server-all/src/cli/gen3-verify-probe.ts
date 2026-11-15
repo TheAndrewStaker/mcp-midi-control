@@ -137,7 +137,7 @@ async function main(): Promise<void> {
   conn.close();
   console.error(`\n✓ Wrote ${outPath}`);
   console.error(`  ${report.summary.passed} passed, ${report.summary.failed} failed, ${report.summary.skipped} skipped.`);
-  console.error('\nPlease email me this JSON file. Thank you!');
+  console.error('\nPlease attach this JSON file to a new GitHub issue (see docs/contributing/SUBMITTING.md). Thank you!');
   process.exit(0);
 }
 

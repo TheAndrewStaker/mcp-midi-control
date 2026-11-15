@@ -31,7 +31,76 @@ import {
     listRegisteredDevices,
     resolveDevice,
 } from '@mcp-midi-control/core/protocol-generic/registry.js';
+import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { invalidateChannelCache } from '@mcp-midi-control/am4/shared/channels.js';
+
+const AM4_DRIVER_HINT = 'The AM4 / Fractal units need Fractal\'s USB driver (https://www.fractalaudio.com/am4-downloads/).';
+
+type PortRow = { name: string; matched: boolean };
+
+/**
+ * The first registered descriptor whose `port_match` claims this port name, in
+ * registration order (the same tiebreak the dispatcher uses). Port matchers
+ * only: an id or display name is not a port name.
+ */
+export function matchRegisteredDevice(portName: string): DeviceDescriptor | undefined {
+    const lower = portName.toLowerCase();
+    return listRegisteredDevices().find((desc) => desc.port_match.some((m) =>
+        m.pattern instanceof RegExp ? m.pattern.test(portName) : lower.includes(m.pattern.toLowerCase())));
+}
+
+/**
+ * Device-neutral verdict: which registered devices a visible port matched (and
+ * in which directions), and which visible ports matched none. The AM4 driver
+ * hint appears only when nothing at all is visible on Windows, where a missing
+ * vendor driver is the usual cause.
+ */
+function registeredDeviceVerdict(inputs: readonly PortRow[], outputs: readonly PortRow[]): string {
+    if (inputs.length === 0 && outputs.length === 0) {
+        return 'No MIDI ports of any kind are visible. This usually means no MIDI driver is installed, or the device is off or unplugged.'
+            + (process.platform === 'win32' ? ` ${AM4_DRIVER_HINT}` : '');
+    }
+    const seen = new Map<string, { device: DeviceDescriptor; input: boolean; output: boolean }>();
+    const unmatched = new Set<string>();
+    for (const [rows, dir] of [[inputs, 'input'], [outputs, 'output']] as const) {
+        for (const p of rows) {
+            const device = matchRegisteredDevice(p.name);
+            if (device === undefined) { unmatched.add(p.name); continue; }
+            const entry = seen.get(device.id) ?? { device, input: false, output: false };
+            entry[dir] = true;
+            seen.set(device.id, entry);
+        }
+    }
+    const lines: string[] = [];
+    if (seen.size > 0) {
+        const parts = [...seen.values()].map((e) => `${e.device.display_name} (${
+            e.input && e.output ? 'in + out' : e.input ? 'input only' : 'output only'})`);
+        lines.push(`Registered devices visible: ${parts.join(', ')}. The server connects on the next tool call.`);
+        if ([...seen.values()].some((e) => !(e.input && e.output))) {
+            lines.push('A one-direction device can be sent to but cannot answer reads; if it should answer, check the cable and driver.');
+        }
+    } else {
+        lines.push('No registered device matches a visible port. Check the device is on, its USB cable, and its driver.');
+    }
+    if (unmatched.size > 0) {
+        lines.push(`Visible ports matching no registered device: ${[...unmatched].join(', ')} (reachable with the send_* primitives).`);
+    }
+    return lines.join('\n');
+}
+
+/** Verdict for an explicit `pattern`. Keeps the AM4 driver hint for an AM4 search that found nothing. */
+function patternVerdict(needles: readonly string[], inputs: readonly PortRow[], outputs: readonly PortRow[]): string {
+    const label = `"${needles.join('" / "')}"`;
+    const matchedInput = inputs.some((p) => p.matched);
+    const matchedOutput = outputs.some((p) => p.matched);
+    const forAm4 = needles.some((n) => AM4_PORT_NEEDLES.some((a) => n.toLowerCase().includes(a)));
+    if (matchedInput && matchedOutput) return `Device matching ${label} visible on both input and output.`;
+    if (matchedInput || matchedOutput) return `Device matching ${label} partially visible (one direction missing). Check USB cable and driver.`;
+    const base = inputs.length === 0 && outputs.length === 0
+        ? `No MIDI ports of any kind are visible, so nothing to match ${label} against. This usually means no MIDI driver is installed.`
+        : `No MIDI ports match ${label}. Check USB cable, power, and driver.`;
+    return forAm4 ? `${base} ${AM4_DRIVER_HINT}` : base;
+}
 
 export function registerMidiControlTools(server: McpServer): void {
     server.registerTool('list_midi_ports', {
@@ -40,40 +109,28 @@ export function registerMidiControlTools(server: McpServer): void {
         description: [
             'List every MIDI input + output port the OS exposes. Safe any time; opens no connection. Also lists every device LEASE: which mcp-midi-control instance (this one or another session) holds which device.',
             'Call when the user reports a device isn\'t connected, to diagnose whether the device is visible, the driver is installed, or another app holds the port.',
-            '- Default tags AM4 (needles "am4"/"fractal"). Pass `pattern` to tag a different device (e.g. "hydra", "axe-fx").',
+            '- Tags each port with the registered device it matches and names visible ports no device matches. `pattern` tags by name substring instead.',
             '- If a port shows up here, just call the tool you want and the server binds to it on the next call. No need to call reconnect_midi first; it only recovers a handle that died after a USB replug.',
         ].join(' '),
         inputSchema: {
             pattern: z.union([z.string(), z.array(z.string())]).optional().describe(
-                'Optional name-substring pattern for tagging matched ports. Defaults to AM4 needles ("am4"/"fractal"). Pass a string or array of strings (case-insensitive).',
+                'Name substring(s) to tag, case-insensitive. Omit to tag by the registered devices\' own port matchers.',
             ),
         },
     }, async ({ pattern }) => {
         const needles = pattern === undefined
             ? undefined
             : Array.isArray(pattern) ? pattern : [pattern];
-        const { inputs, outputs } = listMidiPorts(needles ?? AM4_PORT_NEEDLES);
-        const isCustomPattern = needles !== undefined;
-        const tagLabel = isCustomPattern ? `matches "${needles!.join('" / "')}"` : 'looks like the AM4';
-        const format = (port: { index: number; name: string; matched: boolean }): string =>
-            `  [${port.index}] ${port.name}${port.matched ? `  ← ${tagLabel}` : ''}`;
-        const matchedInput = inputs.find((p) => p.matched);
-        const matchedOutput = outputs.find((p) => p.matched);
-        const verdict = isCustomPattern
-            ? matchedInput && matchedOutput
-                ? `Device matching "${needles!.join('" / "')}" visible on both input and output.`
-                : matchedInput || matchedOutput
-                    ? `Device matching "${needles!.join('" / "')}" partially visible (one direction missing). Check USB cable and driver.`
-                    : inputs.length === 0 && outputs.length === 0
-                        ? `No MIDI ports of any kind are visible, so nothing to match "${needles!.join('" / "')}" against. This usually means no MIDI driver is installed.`
-                        : `No MIDI ports match "${needles!.join('" / "')}". Check USB cable, power, and driver.`
-            : matchedInput && matchedOutput
-                ? 'AM4 input + output both visible. The server will connect to these on the next tool call.'
-                : matchedInput || matchedOutput
-                    ? 'Only one of AM4 input/output is visible. The AM4 needs both directions; check the USB cable and driver.'
-                    : inputs.length === 0 && outputs.length === 0
-                        ? 'No MIDI ports of any kind are visible. This usually means no MIDI driver is installed.'
-                        : 'AM4 not visible. Check USB cable, power, and that the AM4 driver is installed (https://www.fractalaudio.com/am4-downloads/).';
+        const { inputs, outputs } = listMidiPorts(needles ?? []);
+        const verdict = needles !== undefined
+            ? patternVerdict(needles, inputs, outputs)
+            : registeredDeviceVerdict(inputs, outputs);
+        const format = (port: { index: number; name: string; matched: boolean }): string => {
+            const tag = needles !== undefined
+                ? (port.matched ? `matches "${needles.join('" / "')}"` : undefined)
+                : matchRegisteredDevice(port.name)?.display_name;
+            return `  [${port.index}] ${port.name}${tag !== undefined ? `  ← ${tag}` : ''}`;
+        };
         // Serial (USB-CDC) candidates — the FM3 is a serial device over USB,
         // not a MIDI device, so it never appears in the MIDI lists above.
         // Surface Fractal-looking serial ports here so "is my FM3 visible?"

@@ -46,6 +46,7 @@ import type {
   OverwriteTargetInfo,
   LocationRef,
   ScannedLocation,
+  BlockLayoutSnapshot,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import type { ModernFractalCodec, Gen3BlockBulkRead } from 'fractal-midi/gen3/axe-fx-iii';
@@ -63,9 +64,21 @@ import {
 } from 'fractal-midi/gen3/vp4';
 import type { Vp4StructureBlob } from 'fractal-midi/gen3/vp4';
 import { FM9_CAB_ROSTERS_BY_BANK } from 'fractal-midi/gen3/fm9';
+import { FM3_CAB_IRS } from 'fractal-midi/gen3/fm3';
 
 /** FM9 model byte: the only gen-3 device with mined, bank-keyed cab IR rosters. */
 const FM9_MODEL_BYTE = 0x12;
+const FM3_MODEL_BYTE = 0x11;
+
+/**
+ * FM3 cab IR names per bank NAME, from the FM3 editor's own data. Factory 1,
+ * Factory 2 and Legacy only: the User bank holds the owner's IRs (no names in
+ * the editor data), and the SCRATCHPAD list in the generated file is not
+ * confirmed to be the unit's scratchpad, so neither is labelled. Hardware
+ * anchor: Factory 2 #800 (ordinal 799) reads "4x12 Recto 57 A" in FM3-Edit on
+ * fw 13 (issue #22), and this table holds exactly that name there.
+ */
+const FM3_NAMED_CAB_BANKS: ReadonlySet<string> = new Set(['FACTORY 1', 'FACTORY 2', 'LEGACY']);
 import { parsePresetDump, extractPresetName } from './presetDump.js';
 import { decodeGen3PresetDump, effectName, Gen3EmptyPresetError } from './presetBody.js';
 import type { Gen3DecodedPreset } from './presetBody.js';
@@ -453,6 +466,76 @@ export function liveGridView(frame: number[], modelByte: number): Gen3GridCellVi
   );
 }
 
+/**
+ * Turn a live grid view into the dispatcher's placed / unrouted block sets,
+ * keyed by catalog slug (the bare slug `resolveBlockName` hands the
+ * pre-flight, so any instance of a block counts as placed).
+ *
+ * Blocks that never sit on the grid (Controllers, Tuner, IR Capture, Scene
+ * MIDI, Foot Controller, Preset FC: effect IDs below the first Input, or
+ * flagged not addressable) are always reported as placed. Their params are
+ * device/preset state that a write reaches whatever the grid holds, so an
+ * "unplaced" warning on them would be false.
+ *
+ * Unrouted: every cell of the block sits past column 0 with an empty cable
+ * mask (no input from the previous column). Column 0 is fed by the input.
+ */
+/**
+ * Catalog blocks a grid writer can place: on the grid (effect id 37 or above)
+ * and addressable. Feeds the descriptor's `placeable_blocks`.
+ */
+export function gen3PlaceableBlocks(catalog: ModernCatalog, deviceLabel: string): readonly string[] {
+  const FIRST_GRID_EFFECT_ID = 37;
+  const out: string[] = [];
+  for (const slug of Object.keys(catalog.blocks)) {
+    let block;
+    try {
+      ({ block } = catalog.resolveBlockOrThrow(slug, deviceLabel));
+    } catch {
+      continue;
+    }
+    if (block.firstId === null || block.addressable === false || block.firstId < FIRST_GRID_EFFECT_ID) continue;
+    out.push(slug);
+  }
+  return Object.freeze(out.sort());
+}
+
+export function gen3LayoutSnapshot(
+  grid: readonly Gen3GridCellView[],
+  catalog: ModernCatalog,
+  deviceLabel: string,
+): BlockLayoutSnapshot {
+  const FIRST_GRID_EFFECT_ID = 37; // Input 1; IDs below are utilities
+  const slugByEffectId = new Map<number, string>();
+  const placedBlocks = new Set<string>();
+  for (const slug of Object.keys(catalog.blocks)) {
+    let block;
+    try {
+      ({ block } = catalog.resolveBlockOrThrow(slug, deviceLabel));
+    } catch {
+      continue;
+    }
+    if (block.firstId === null) continue;
+    if (block.addressable === false || block.firstId < FIRST_GRID_EFFECT_ID) {
+      placedBlocks.add(slug);
+      continue;
+    }
+    for (let i = 0; i < block.instances; i++) slugByEffectId.set(block.firstId + i, slug);
+  }
+  const routedBySlug = new Map<string, boolean>();
+  for (const cell of grid) {
+    if (cell.is_shunt) continue;
+    const slug = slugByEffectId.get(cell.effect_id);
+    if (slug === undefined) continue;
+    placedBlocks.add(slug);
+    const routed = cell.col === 0 || cell.route_flag !== 0;
+    routedBySlug.set(slug, (routedBySlug.get(slug) ?? false) || routed);
+  }
+  const unroutedBlocks = new Set<string>();
+  for (const [slug, routed] of routedBySlug) if (!routed) unroutedBlocks.add(slug);
+  return { placedBlocks, unroutedBlocks };
+}
+
 /** Map a fully-decoded gen-3 preset to the rich `whole_preset` view. */
 function wholePresetView(
   decoded: Gen3DecodedPreset,
@@ -571,9 +654,19 @@ export function makeReader(opts: {
    * mis-derive a 4-channel dump as flat). Defaults false → legacy ÷4 rule.
    */
   deviceTrueCatalog?: boolean;
+  /**
+   * Per catalog family, the fn=0x1F channel-block wire stride from this
+   * device's OWN editor cache (`<DEV>_RANGE_SECTIONS`). Consulted by
+   * `strideOf` when the catalog-maxPid derivation does not apply (the III's
+   * mined catalog), so a block whose channel count is not 4 is split right
+   * (issue #35: the III Resonator dump is 80 = 2 x 40, and the legacy /4 rule
+   * left paramIds 20..39 unreadable).
+   */
+  wireStrideByFamily?: Readonly<Record<string, { readonly stride: number }>>;
 }): DeviceReader {
   const { codec, catalog, deviceLabel, getResponseTimeoutMs, channelNames } = opts;
   const deviceTrueCatalog = opts.deviceTrueCatalog ?? false;
+  const wireStrideByFamily = opts.wireStrideByFamily;
   const { resolveBlockOrThrow, resolveParamOrThrow } = catalog;
 
   // The gen-3 0x75 state-broadcast is CHANNEL-BLOCKED: the body packs per-
@@ -595,6 +688,21 @@ export function makeReader(opts: {
   // Largest catalog paramId per block slug (memoized) — the floor any
   // candidate stride must clear for the catalog's params to be addressable.
   const maxPidBySlug = new Map<string, number | undefined>();
+  const familyBySlug = new Map<string, string | undefined>();
+  function familyOf(blockSlug: string): string | undefined {
+    if (familyBySlug.has(blockSlug)) return familyBySlug.get(blockSlug);
+    let family: string | undefined;
+    for (const key of Object.keys(catalog.blocks[blockSlug]?.params ?? {})) {
+      try {
+        family = resolveParamOrThrow(blockSlug, key, deviceLabel).family;
+        break;
+      } catch {
+        // try the next param
+      }
+    }
+    familyBySlug.set(blockSlug, family);
+    return family;
+  }
   function maxCatalogPid(blockSlug: string): number | undefined {
     if (maxPidBySlug.has(blockSlug)) return maxPidBySlug.get(blockSlug);
     let max: number | undefined;
@@ -626,7 +734,11 @@ export function makeReader(opts: {
    * dump as 2-channel or flat (wrong-channel reads). The III keeps the
    * legacy rule until its catalog is device-true.
    */
-  function strideOf(bulk: Gen3BlockBulkRead, maxPid: number | undefined): { stride: number; channels: number } {
+  function strideOf(
+    bulk: Gen3BlockBulkRead,
+    maxPid: number | undefined,
+    blockSlug?: string,
+  ): { stride: number; channels: number } {
     if (bulk.itemCount > 0 && bulk.values.length >= bulk.itemCount) {
       // Descending candidate channel counts. On a DEVICE-TRUE catalog
       // stride == maxPid+1 exactly, so the correct channel count is the LARGEST
@@ -641,6 +753,15 @@ export function makeReader(opts: {
             return { stride: bulk.itemCount / c, channels: c };
           }
         }
+      }
+      // The device's own cache names this block's stride: use it when the dump
+      // is a whole number of copies of it. A firmware whose stride moved falls
+      // through to the legacy rule instead of being split wrong.
+      const family = blockSlug !== undefined ? familyOf(blockSlug) : undefined;
+      const cacheStride = family !== undefined ? wireStrideByFamily?.[family]?.stride : undefined;
+      if (cacheStride !== undefined && cacheStride > 0 && bulk.itemCount % cacheStride === 0) {
+        const c = bulk.itemCount / cacheStride;
+        if (c >= 1 && c <= 6) return { stride: cacheStride, channels: c };
       }
       if (bulk.itemCount % LEGACY_NUM_CHANNELS === 0) {
         return { stride: bulk.itemCount / LEGACY_NUM_CHANNELS, channels: LEGACY_NUM_CHANNELS };
@@ -694,7 +815,7 @@ export function makeReader(opts: {
     bulk: Gen3BlockBulkRead,
     channel?: string | number,
   ): ReadResult {
-    const { stride, channels } = strideOf(bulk, maxCatalogPid(blockSlug));
+    const { stride, channels } = strideOf(bulk, maxCatalogPid(blockSlug), blockSlug);
     if (param.paramId >= stride) {
       throw new DispatchError(
         'no_ack',
@@ -783,14 +904,22 @@ export function makeReader(opts: {
       // label it from the bank read in the same bulk dump (FM9 fw 12 hardware:
       // Factory 2 #315 = "4x12 1960A 300W 57" on the panel, issue #23).
       const cabSlot = /^type([12])$/.exec(name);
-      if (codec.modelByte === FM9_MODEL_BYTE && cabSlot !== null) {
+      if ((codec.modelByte === FM9_MODEL_BYTE || codec.modelByte === FM3_MODEL_BYTE) && cabSlot !== null) {
         const bankName = `bank${cabSlot[1]}`;
         const bankSchema = catalog.blocks[blockSlugIn]?.params[bankName];
         if (bankSchema !== undefined) {
           try {
             const { param: bankParam } = resolveParamOrThrow(blockSlugIn, bankName, deviceLabel);
             const bank = projectParam(blockSlugIn, bankName, bankParam, bulk, channel).wire_value;
-            const label = typeof bank === 'number' ? FM9_CAB_ROSTERS_BY_BANK[bank]?.[result.wire_value] : undefined;
+            let label: string | undefined;
+            if (typeof bank === 'number' && codec.modelByte === FM9_MODEL_BYTE) {
+              label = FM9_CAB_ROSTERS_BY_BANK[bank]?.[result.wire_value];
+            } else if (typeof bank === 'number') {
+              const bankLabel = bankSchema.enum_values?.[bank];
+              label = bankLabel !== undefined && FM3_NAMED_CAB_BANKS.has(bankLabel)
+                ? FM3_CAB_IRS[bankLabel]?.[result.wire_value]
+                : undefined;
+            }
             if (label !== undefined) return { ...result, display_value: label };
           } catch {
             // bank not readable: keep the numeric ordinal
@@ -991,7 +1120,7 @@ export function makeReader(opts: {
         // reads the FIRST-CHANNEL copy (paramId < stride) for each param. Per-channel
         // values for a specific channel come from get_param with a channel arg;
         // channel-A is the stable, documented default here.
-        const { stride } = strideOf(bulk, maxCatalogPid(slug));
+        const { stride } = strideOf(bulk, maxCatalogPid(slug), slug);
         for (const key of Object.keys(blockParams)) {
           let paramId: number;
           try {
@@ -1043,6 +1172,16 @@ export function makeReader(opts: {
               'as ordinal labels; uncalibrated continuous params read back as raw wire values. ' +
               'Community beta: the server-driven fn=0x1F poll is not yet hardware-confirmed end to end.',
       );
+      if (options?.include_channel_state === true) {
+        // Issue #35: the flag was silently ignored. Every channel IS in the
+        // bulk dump, but all four copies of every placed block's params would
+        // cross the response delivery ceiling on a full preset, so say so.
+        warnings.push(
+          'include_channel_state is not honoured on this device: slots carry each block\'s channel-A ' +
+            'copy only (four channels of every placed block would exceed the response size limit). ' +
+            'Read another channel with get_params and a channel per query.',
+        );
+      }
       if (liveMeters !== undefined) {
         warnings.push(
           (liveMeters.cpu_percent !== undefined
@@ -1297,5 +1436,17 @@ export function makeReader(opts: {
       };
     },
   };
+
+  // BK-075 / BK-076 pre-flight (issue #35: a write to an unplaced block acked
+  // and read back as the last written value, so nothing told the agent the
+  // block was not in the preset). One live grid read (fn=0x01 sub=0x2E) names
+  // every placed block; the dispatcher caches it for 5 s across a burst of
+  // set_param calls. Grid devices only: the VP4 has no grid.
+  if (codec.modelByte !== VP4_MODEL_ID) {
+    reader.getBlockLayoutSnapshot = async (ctx: DispatchCtx): Promise<BlockLayoutSnapshot> => {
+      const frame = await collectGridLayout(ctx, codec, deviceLabel, getResponseTimeoutMs);
+      return gen3LayoutSnapshot(liveGridView(frame, codec.modelByte), catalog, deviceLabel);
+    };
+  }
   return reader;
 }

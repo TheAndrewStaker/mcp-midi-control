@@ -28,17 +28,21 @@ device.
 |---|---|---|
 | `get_param` / `get_params` | confirmed | A community owner test on firmware 25.04 read back a value matching the front panel |
 | `set_param` continuous knobs | confirmed | The same owner test set amp gain on channel A with a device echo. A later community round-trip then exercised SET then GET across the entire III catalog on hardware |
-| `set_param` discrete set-by-name | hardware-unverified | The discrete wire form is byte-exact against real captures and rides a different sub-action from the continuous drag. Type and model selectors were routed to that discrete form using the catalog round-trip as the oracle (`packages/fractal-gen3/src/configs/axe-fx-iii.ts`) |
+| `set_param` discrete set-by-name | confirmed | A Mk I owner on firmware 32.06 set Amp 1 channel A from 5F1 Tweed to Plexi 100W High by name and saw it in Axe-Edit, with channels B to D and the active channel untouched; a reverb type set by ordinal (45, Music Hall) read back 45 (issue #25). Type and model selectors use the discrete form, routed from the catalog round-trip oracle |
 | `get_preset`, including the live grid read | hardware-unverified | Decoded from the shared gen-3 grid frame |
 | Block list in a stored `get_preset` | hardware-unverified | Blocks are named by pairing the stored block chain with the grid, which holds for all 384 factory presets (fw 28). A fw 32 report had Input shown as Vol/Pan, Output as PEQ and several blocks missing, because the old method named blocks by parameter-table size and those sizes move with firmware. Not yet re-run on a fw 32 unit; if the pairing ever fails the response says so and falls back |
 | `set_block` placement | hardware-unverified | Placement is hardware-confirmed on the sibling FM9 and FM3. Not yet on the III |
 | `set_block` / `set_bypass` on the 15 multi-word blocks | **hardware-unverified, newly reachable** | These never resolved before 2026-08-03: the write path matched display names and group codes against the descriptor SLUG, so `graphic_eq`, `parametric_eq`, `gate_expander`, `volume_pan`, `pan_tremolo`, `multitap_delay`, `megatap_delay`, `ten_tap_delay`, `plex_delay`, `ring_modulator`, `multiband_compressor`, `tone_match`, `ir_capture`, `ir_player` and `real_time_analyzer` returned "unknown block" for a block the device really has. Effect IDs come from the v1.4 spec table and the frame is unchanged, but none of THESE blocks has been placed or bypassed on hardware |
-| `switch_scene` | hardware-unverified | Shared gen-3 wire, confirmed on siblings |
+| `switch_scene`, `set_bypass` | confirmed | The write-verify probe on a Mk I, firmware 32.06: the scene change showed on the front panel and the bypass was accepted, in two runs with identical results (issue #25) |
 | `switch_preset` | hardware-unverified, self-checking | A community sweep on a Mk I (firmware 32.06) showed the III honours bank select on CC0 and ignores CC32, so the old Program Change path could land on the wrong bank and still report success. The switch now goes by SysEx, and the tool reads the current preset number back and reports the switch as not acknowledged when the unit did not move |
 | `scan_locations`, preset names in `get_preset` | hardware-unverified | The stored-name query answers from flash without loading the preset. Same sweep: names used to come back with trailing padding, now cut at the first NUL |
-| `save_preset` | hardware-unverified, self-checking | The tool reads the stored name at the target location after the save and reports the save as not acknowledged on a mismatch. A community owner confirmed the save persists on the sibling FM3 |
+| `save_preset` | confirmed | On a Mk I, firmware 32.06: the overwrite gate refused a save onto an occupied location, the same save with `confirm_overwrite` landed at exactly that location with the edited gain, and the neighbouring locations were untouched (issue #25). The tool also reads the stored name back after a save and reports a mismatch as not acknowledged |
 | Live meters in `get_preset` | output meters only | The CPU figure is omitted on the III: the same sweep read 72 % where the front panel showed 20.0 %, so the sibling formula is falsified here and one reading cannot pin a new one |
-| `export_preset` | hardware-unverified | The preset container is self-validating against the device's own CRC |
+| Writes to a block that is not in the preset | warns, hardware-unverified | The III acknowledges such a write and reads back the last value written, so neither the ack nor a read can tell (issue #35). Since 0.9.1 `set_param` / `set_params` read the live grid once (cached 5 s) and attach a warning when the block is not placed, or is placed with no input cable |
+| Short block names (`vol_pan`, `tremolo`, `megatap`, `ring_mod`, `multi_delay`, "Tone Match") | resolve, hardware-unverified | `set_param`, `get_param` and `set_bypass` take them since 0.9.0; `set_block` takes the same names since 0.9.1 (it needed the full catalog name before, issue #35) |
+| Resonator and Looper reads | hardware-unverified | The same sweep left 20 Resonator and 6 Looper params unreadable: the counts fit a Resonator dump of 2 channels x 40 and a Looper dump of 3 x 24, which the old 4-channel split cut short. Since 0.9.1 the reader splits each block by the stride in the III's own editor cache (issue #13) |
+| `include_channel_state` on the active `get_preset` | not honoured, says so | Slots carry channel A only: all four channels of every placed block would pass the response size limit. The response now says so; read other channels with `get_params` and a `channel` per query |
+| `export_preset` | active buffer: no answer; stored location: hardware-unverified | On a Mk I, firmware 32.06, the active-buffer request (fn 0x43) got no answer (issue #35). An export by location uses the stored dump, which the III answers; its container is self-validating against the device's own CRC |
 | `import_preset` | not implemented (refuses) | The gen-3 writer has no byte-restore path yet; the unified verb returns a capability error rather than emitting an unverified push |
 
 Support tier: `community-beta`. This mirrors `capabilities.support_tier` on the
@@ -53,8 +57,17 @@ fails if the two disagree.
 - A catalog-wide SET then GET round-trip on hardware, which confirmed the read
   and continuous-write paths across the whole III parameter catalog and produced
   the oracle used to correct type and model selectors to discrete routing.
+- On a Mk I, firmware 32.06, macOS (issue #25, 2026-10-29): the read-back probe
+  (patch name, active scene, tempo and status dump answered; 40 of 42 block
+  types returned data), the write-verify probe (continuous set, a reverb type
+  by ordinal, `set_bypass`, `switch_scene`), a set-by-name amp model change,
+  and a `save_preset` behind the overwrite gate. Its `set_block` result was a
+  false pass under 0.8.0 (the block replaced the one at the cursor); 0.9.0
+  sends a cell-select first and is not yet re-tested on the III.
 
-**Please do not re-run these.** Reads and continuous writes are done on the III.
+**Please do not re-run these.** Reads, continuous and discrete writes, scenes,
+bypass and save are done on the III. What is still open is `set_block`
+placement and the live grid read.
 
 ## Blocked, and on what
 
@@ -62,11 +75,18 @@ Nothing on the III is blocked in the strict sense: no capability is refused for
 an undecoded wire shape. Everything above either is confirmed or is
 evidence-backed and shipping while it waits for a key-press.
 
+The community cache from issue #13 (firmware 32.06) now supplies both the
+device-true display ranges (gated by `npm run verify-iii-ranges`) and every
+enum name: since 0.9.1, all 546 III selectors the cache defines are named from
+it (`scripts/gen-gen3-enum-names-from-cache.ts`). That corrected lists the
+family overlay had wrong, so a set by name sent a different value: LFO types
+from ordinal 6, `delay.model` from 22, `pitch.tempo` (no "None" on the device),
+and `inputselect`. Untested on hardware; the names are the editor's own.
+
 One genuine data gap remains, and it is not a wire shape:
 
 | Blocked capability | Missing evidence | Closed by |
 |---|---|---|
-| Device-true enum NAME rosters wired into the catalog | Not donation-blocked anymore. Device-true display ranges SHIPPED 2026-08-11 from the 2026-07-02 community cache (1909 rows / 43 families, gated by `npm run verify-iii-ranges`; where the cache and the 2026-06-18 round-trip oracle disagree, the round-trip wins). That same cache carries the full enum name vocabulary (all 336 amp models named), so mining III-true rosters is queued offline engineering work | Engineering (roster mining); DONATE-1 adds fresher-firmware cross-validation |
 | Exact `ms` and `Hz` landing for log-taper knobs | Whether the normalized float a continuous SET carries is normalized in value space or in knob-position space. The two readings differ a lot mid-range | CAPTURE-1 |
 
 ## Before you start
@@ -75,7 +95,13 @@ Read [../SAFETY.md](../SAFETY.md) once. The device-specific parts:
 
 - **Port exclusivity.** Axe-Edit III and Fractal-Bot hold the USB port. Quit them
   fully before running a probe or driving the server, and quit the MCP host
-  before opening them again. On Windows check the system tray. The exception is
+  before opening them again. On Windows check the system tray. On macOS an open
+  Axe-Edit III made no difference in one owner's runs (two runs, one with the
+  editor open, gave byte-identical results), but quitting it is still the safe
+  default.
+- **Watching a run on a Mk I on macOS.** During the write-verify probe the Mk I
+  front panel showed only the scene changes, not the parameter writes. Keep
+  Axe-Edit III open to watch, then quit it before the next probe. The exception is
   CAPTURE-1, which wants the editor running and this project's server quit.
 - **Firmware updates.** Never run Fractal-Bot's firmware update while the server
   or a probe holds the port.
@@ -84,27 +110,15 @@ Read [../SAFETY.md](../SAFETY.md) once. The device-specific parts:
 
 ## Asks, ranked
 
-### DONATE-1: Send your Axe-Edit III definition cache
-**Tier: DONATE | ~2 minutes | no device time | unlocks: cross-validation of ranges and enum rosters on your firmware**
-
-The 2026-07-02 community cache already delivered the III's device-true display
-ranges (shipped, gated by `npm run verify-iii-ranges`) and carries the full enum
-name vocabulary, so the original ask is closed. A cache from YOUR install still
-helps: a second cache from a different firmware cross-validates the ranges and
-the rosters, exactly how the FM9's fw 11.0 and 12.0 caches caught its amp-roster
-growth, and mechanically double-checks the discrete routing correction that
-rests on the 2026-06-18 round-trip oracle.
-
-Full instructions, including where the file lives and how to tell a real cache
-from a placeholder: [../tools/editor-cache-file.md](../tools/editor-cache-file.md).
-For the III the filename starts `effectDefinitions_10_`.
-
 ### SESSION-1: Run the write-verify probe
-**Tier: SESSION | ~5 minutes | writes to the working buffer, self-restoring | unlocks: discrete set-by-name, `set_bypass`, `switch_scene`, `set_block`**
+**Tier: SESSION | ~5 minutes | writes to the working buffer, self-restoring | unlocks: `set_block` placement**
 
-The fastest way to close every remaining write confirmation except `save_preset`
-in one sitting. It sends each shipped write op against the loaded preset and
-reads the result back.
+Set-by-name, `set_bypass` and `switch_scene` are confirmed (issue #25). What a
+new run on 0.9.1 or later still settles is `set_block`: under 0.8.0 the probe
+reported a pass while the block replaced the one at the cursor, 0.9.0 sends a
+cell-select before every insert, and 0.9.1 lets `set_block` place every III grid
+block (issue #35). Check the grid in Axe-Edit III, not
+only the probe's verdict.
 
 Quit Axe-Edit III first, then:
 
@@ -123,34 +137,35 @@ first.
 
 Send back the JSON it writes, plus a note of anything the front panel did.
 
-### SESSION-2: Confirm a discrete set-by-name write
-**Tier: SESSION | ~3 minutes | writes to the working buffer | unlocks: `set_param` discrete**
+SESSION-2 (set-by-name) and SESSION-3 (save) are closed: both confirmed on a Mk I,
+firmware 32.06 (issue #25).
 
-The conversational form of the one write path still unconfirmed on the III.
-Continuous knob writes are already confirmed; changing a **model by name** rides
-a different sub-action.
 
-With the III connected and Axe-Edit III quit:
+### DONATE-1: Send your Axe-Edit III definition cache
+**Tier: DONATE | ~2 minutes | no device time | unlocks: cross-validation of ranges and enum rosters on your firmware**
 
-> "Set Amp 1 to a Plexi, then read back what model it is on."
+The 2026-07-02 community cache already delivered the III's device-true display
+ranges (shipped, gated by `npm run verify-iii-ranges`) and carries the full enum
+name vocabulary, so the original ask is closed. A cache from YOUR install still
+helps: a second cache from a different firmware cross-validates the ranges and
+the rosters, exactly how the FM9's fw 11.0 and 12.0 caches caught its amp-roster
+growth, and mechanically double-checks the discrete routing correction that
+rests on the 2026-06-18 round-trip oracle.
 
-Report whether the model on the front panel changed, and paste both responses.
-If it reports success and the panel does not change, paste both anyway. That is
-the most valuable outcome.
+Full instructions, including where the file lives and how to tell a real cache
+from a placeholder: [../tools/editor-cache-file.md](../tools/editor-cache-file.md).
+For the III the filename starts `effectDefinitions_10_`.
 
-### SESSION-3: Confirm a save
-**Tier: SESSION | ~5 minutes | writes and then PERSISTS | unlocks: `save_preset`**
-
-The save envelope is confirmed on the FM3 (a save that survived a power cycle) and unconfirmed on the Axe-Fx III. Use a preset location
-you do not care about.
-
-> "Save this preset to location 5."
-
-Then switch away and back, and check the preset name at location 5. Report
-whether it landed.
-
+Five Mk I caches arrived with issue #25 (firmware 21.01, 27.01, 27.02, 32.04 and
+32.06). The 32.06 one agrees with the shipped ranges at 2,847 of 2,850 shared
+records, with no roster name changed; the three that differ are Mk I limits (512
+presets instead of 1024), and the Mk I has no Full-Res IR mode or "USER 3 (FR)"
+bank. A cache from firmware 33 is still worth sending; another 32.x is not.
 ### PROBE-1: Run the read-back probe
 **Tier: PROBE | ~5 minutes | read-only | unlocks: read-path confirmation on your firmware**
+
+Done on a Mk I, firmware 32.06 (issue #25). Worth running again on a Mk II or
+Turbo, or on firmware 33, because the block roster and preset count differ.
 
 A read-only diagnostic. It polls your active preset, runs a set of read-only
 queries, and writes a JSON file. It never writes and never changes a preset.
@@ -160,7 +175,9 @@ Quit Axe-Edit III, then:
 - **Windows release package:** double-click `axefx3-probe.cmd`.
 - **macOS or a source checkout:** `npm run axefx3:probe`.
 
-Send back `axefx3-probe-output.json`.
+Send back the JSON file it writes: `axefx3-probe-output.json` on your Desktop
+from the Windows package, or `axe-fx-iii-probe-output.json` in the checkout
+folder from `npm run`.
 
 If you would rather send everything the device will say about itself in one
 sweep, the read-only [harvest script](../tools/harvest-script.md) covers more
@@ -195,22 +212,10 @@ roughly doubles the value for one extra minute.
 
 Reload the preset afterwards to revert. Nothing is stored.
 
-### CAPTURE-2: The tempo-division selector
-**Tier: CAPTURE | ~3 minutes | sniffer required | unlocks: named tempo divisions**
-
-Named tempo divisions are the one popular request the server cannot send on
-gen-3: the wire encoding for the TEMPO division select is undecoded, so a dotted
-eighth delay falls back to "set it on the device". The editor can set it, so the
-bytes exist.
-
-1. Load a preset with a **Delay** block. Start the capture.
-2. In the editor, open the Delay's **TEMPO** control and select, in order, with
-   about two second pauses, **writing each one down**: `OFF`, then `1/4`, then
-   `1/8 dot`, then `1/2`, then back to the original value.
-3. Stop. Send the capture plus the ordered list of what you selected.
-
-A Reverb or modulation block's TEMPO control in the same recording is a free
-bonus: it confirms the encoding is block-independent.
+CAPTURE-2 (the tempo-division selector) is closed: the division is an ordinal
+into the same 79-entry list the AM4 uses, confirmed on an FM9 (ordinal 12 shows
+"1/8 Dot", issue #23). 0.9.0 ships that list on every gen-3 device, and from
+0.9.1 the agent sets `tempo` by name.
 
 ### CAPTURE-3: Receive one preset with Fractal-Bot
 **Tier: CAPTURE | ~5 minutes | sniffer plus Fractal-Bot | unlocks: frame-count confirmation**

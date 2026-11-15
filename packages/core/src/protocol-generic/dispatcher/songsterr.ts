@@ -71,6 +71,10 @@ import {
   type SongChopPlan,
 } from '../patterns/songChop.js';
 import { resolveClockMaster, type ClockMasterInfo } from '../clockMaster.js';
+import { searchMatchConfidence } from '../patterns/songsterrFetch.js';
+import { canonicalRole } from '../patterns/drumRoles.js';
+import { loadRigManifest } from '../openrig/manifest.js';
+import { getDeviceById } from '../registry.js';
 
 export interface ImportSongsterrArgs {
   /** Songsterr URL (…-s1234567t11) or bare id (1234567 / 1234567t11). */
@@ -203,6 +207,15 @@ export interface TrackRow {
  * mode there IS no selected track, no section list and no tempo map: the part
  * JSON that carries them was deliberately not downloaded.
  */
+/** A low-confidence search match (see `withSearchConfidence`). */
+export interface SearchConfidenceFlag {
+  level: 'low';
+  /** Fraction of the query's words found in the hit's artist + title. */
+  score: number;
+  /** The query words the hit does not contain. */
+  missing: string[];
+}
+
 export interface ImportSongsterrTrackList {
   mode: 'list_tracks';
   song: { songId: number; revisionId: number; title: string; artist: string };
@@ -213,6 +226,8 @@ export interface ImportSongsterrTrackList {
   /** The `t`-selector carried by the input URL, if any. */
   url_track?: number;
   search_results?: SearchHit[];
+  /** Present only when a `query` resolved to a hit that shares too little with it. */
+  search_confidence?: SearchConfidenceFlag;
   /**
    * Scope note: what a drum row and a melodic row each convert to. Present on
    * every roster so the caller knows before choosing.
@@ -234,6 +249,8 @@ export interface ImportSongsterrResult {
   all_tracks?: TrackRow[];
   ambiguous_track?: boolean;
   search_results?: SearchHit[];
+  /** Present only when a `query` resolved to a hit that shares too little with it. */
+  search_confidence?: SearchConfidenceFlag;
   sections: { name: string; measure: number; beat: number }[];
   tempo_map: { measure: number; bpm: number }[];
   /**
@@ -382,6 +399,13 @@ export interface TempoSetupInfo {
   clock_master?: string;
   /** The clock-follower device name(s) slaved to it, when the manifest names them. */
   followers?: string[];
+  /**
+   * Where `clock_master` came from: the rig manifest's `clock_master` ROLE, read
+   * live from this file. It is declared, not sensed from the gear, so if the
+   * user has moved the clock to another device, the role in this file is what
+   * needs changing (edit_rig, or a hand edit).
+   */
+  clock_master_source?: string;
   /** Plain-language instruction to set the tempo before playing. */
   instruction: string;
 }
@@ -424,6 +448,9 @@ export function buildTempoSetup(bpms: number[], cm: ClockMasterInfo): TempoSetup
     bpms,
     ...(masterName ? { clock_master: masterName } : {}),
     ...(cm.followers.length > 0 ? { followers: cm.followers } : {}),
+    ...(masterName && cm.source !== undefined
+      ? { clock_master_source: `clock_master role in the rig manifest ${cm.source}` }
+      : {}),
   };
   if (bpms.length === 1) {
     return {
@@ -449,6 +476,79 @@ function tempoHint(ts: TempoSetupInfo | undefined): string {
   return ts.multi_tempo
     ? ` This song changes tempo: see tempo_setup and set ${where} per section (starts at ${fmtBpm(ts.bpms[0])} BPM).`
     : ` Set the tempo on ${where} to ${fmtBpm(ts.bpms[0])} BPM first (see tempo_setup).`;
+}
+
+/** A pattern target the rig manifest declares, with the melodic voice names its voice_map takes. */
+export interface RigPatternTarget {
+  id: string;
+  name: string;
+  /** voice_map keys that are not drum roles or drum-pad aliases. Empty = a drum-only target. */
+  melodic: string[];
+  /** The realizer modes it advertises (live_stream / ncs_upload / …). */
+  modes: string[];
+  clock_master: boolean;
+}
+
+/**
+ * The pattern targets the configured rig manifest declares, clock master
+ * first. Undefined when no manifest is loaded, so the caller falls back to
+ * generic wording rather than naming a device the rig may not have. Resolved
+ * from the manifest's nodes (`server_device_id`) and each descriptor's own
+ * `pattern_realizers` + `voice_map`, never from a hardcoded device.
+ */
+export function resolveRigPatternTargets(): RigPatternTarget[] | undefined {
+  const manifest = loadRigManifest();
+  if (manifest.status !== 'loaded') return undefined;
+  const out: RigPatternTarget[] = [];
+  const seen = new Set<string>();
+  for (const node of manifest.rig.nodes) {
+    const sid = node.server_device_id ?? undefined;
+    if (sid === undefined || seen.has(sid)) continue;
+    seen.add(sid);
+    const desc = getDeviceById(sid);
+    const modes = desc?.capabilities.pattern_realizers ?? [];
+    if (desc === undefined || modes.length === 0) continue;
+    const melodic = Object.keys(desc.capabilities.voice_map ?? {})
+      .filter((k) => canonicalRole(k) === undefined && !/^drum\d+$/.test(k));
+    out.push({ id: sid, name: desc.display_name, melodic, modes: [...modes], clock_master: node.roles.includes('clock_master') });
+  }
+  return out.sort((a, b) => Number(b.clock_master) - Number(a.clock_master));
+}
+
+/** Where a melodic pitch row can go, from the rig's own targets. */
+export function melodicRoutingAdvice(targets: readonly RigPatternTarget[] | undefined): string {
+  if (targets === undefined) {
+    return 'so route it to a melodic track of your target (list_pattern_recipes({port}) lists its voices_supported)';
+  }
+  const melodic = targets.filter((t) => t.melodic.length > 0);
+  if (melodic.length === 0) {
+    return `but no pattern target in this rig takes a melodic voice (${targets.length > 0
+      ? `${targets.map((t) => t.name).join(', ')} take drum voices only` : 'the manifest declares no pattern target'}), `
+      + 'so play it from a synth with its own voice_map, or with send_sequence';
+  }
+  return `so route it to a melodic track: ${melodic.map((t) => `${t.name}: ${t.melodic.join(' / ')}`).join('; ')}`;
+}
+
+/** Which rig targets take drum voices, and which of them can STORE a pattern. */
+function drumRoutingAdvice(targets: readonly RigPatternTarget[] | undefined): string {
+  if (targets === undefined) {
+    return 'Choose mode by intent: live_stream to audition, ncs_upload (+ ncs_slot/ncs_template) to store on a Circuit Tracks slot.';
+  }
+  if (targets.length === 0) return 'The rig manifest declares no pattern target; pass any connected one as port.';
+  const storing = targets.filter((t) => t.modes.includes('ncs_upload'));
+  return `Pattern targets in this rig: ${targets.map((t) => `${t.name} (${t.modes.join(' / ')})`).join(', ')}. `
+    + 'live_stream auditions'
+    + (storing.length > 0 ? `; ncs_upload (+ ncs_slot/ncs_template) stores on ${storing.map((t) => t.name).join(', ')}.` : '; none of them stores a pattern from here.');
+}
+
+/**
+ * The example window for a discovery call's `next_step`. A tab with no section
+ * markers (`sections: []`) has no name to window on, so the example is a bar
+ * range, never an invented section name that would refuse.
+ */
+export function exampleWindow(sections: readonly { name: string }[], measureCount: number): string {
+  if (sections.length > 0) return `section:"${sections[0].name}"`;
+  return `from_measure:1, to_measure:${Math.max(1, Math.min(4, measureCount))}`;
 }
 
 const hasWindow = (a: ImportSongsterrArgs): boolean =>
@@ -578,14 +678,51 @@ function buildWholeSongBank(
 }
 
 export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise<ImportSongsterrResult | ImportSongsterrTrackList> {
-  let ref = args.url;
-  let searchResults: SearchHit[] | undefined;
-  if (ref === undefined) {
-    if (!args.query) throw new Error('Provide a `url` (Songsterr URL or id) or a `query` (song name to search).');
-    searchResults = await searchSongsterr(args.query);
-    if (searchResults.length === 0) throw new Error(`No Songsterr song found for "${args.query}".`);
-    ref = String(searchResults[0].songId);   // best match; alternatives returned in search_results
-  }
+  if (args.url !== undefined) return importSongsterrRef(args, args.url, undefined);
+  if (!args.query) throw new Error('Provide a `url` (Songsterr URL or id) or a `query` (song name to search).');
+  const searchResults = await searchSongsterr(args.query);
+  if (searchResults.length === 0) throw new Error(`No Songsterr song found for "${args.query}".`);
+  // Best match by Songsterr's own ranking; alternatives returned in search_results.
+  const result = await importSongsterrRef(args, String(searchResults[0].songId), searchResults);
+  return withSearchConfidence(result, args.query, searchResults);
+}
+
+/**
+ * Flag a search hit that shares too little with the query (see
+ * `searchMatchConfidence`). The flag rides on the result, at the FRONT of
+ * `next_step` (the line an agent acts on), and lists the alternatives, so a
+ * wrong song is caught before anything is authored from it.
+ */
+export function withSearchConfidence<R extends ImportSongsterrResult | ImportSongsterrTrackList>(
+  result: R,
+  query: string,
+  hits: readonly SearchHit[],
+): R {
+  const top = hits[0];
+  if (top === undefined) return result;
+  const conf = searchMatchConfidence(query, top);
+  if (!conf.low) return result;
+  const alternatives = hits.slice(1, 5);
+  const altText = alternatives.length > 0
+    ? ` Other hits: ${alternatives.map((h) => `${h.artist} - "${h.title}" (url:"${h.songId}")`).join('; ')}.`
+    : ' Songsterr returned no other hits.';
+  const warning =
+    `LOW-CONFIDENCE MATCH: the search for "${query}" resolved to ${top.artist} - "${top.title}", which shares only `
+    + `${Math.round(conf.score * 100)}% of the query's words (missing: ${conf.missing.join(', ')}). Confirm it is the song `
+    + `the user meant before authoring anything.${altText}`;
+  return {
+    ...result,
+    search_confidence: { level: 'low', score: conf.score, missing: conf.missing },
+    search_results: hits.slice(0, 5),
+    next_step: `${warning} ${result.next_step}`,
+  };
+}
+
+async function importSongsterrRef(
+  args: ImportSongsterrArgs,
+  ref: string,
+  searchResults: SearchHit[] | undefined,
+): Promise<ImportSongsterrResult | ImportSongsterrTrackList> {
 
   // Roster-only dry run. One meta GET, no part download, no selection, and no
   // drum-track requirement, so it also answers for a song that has no drums at
@@ -997,7 +1134,7 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
   }
 
   if (!hasWindow(args)) {
-    const egSection = flat.sections[0]?.name ?? 'Intro';
+    const egWindow = exampleWindow(flat.sections, flat.measures.length);
     // The discovery call is where the caller decides WHICH part to take, so it
     // gets the whole roster. `drum_tracks` alone hid every melodic part and made
     // this tool read as drum-only.
@@ -1009,8 +1146,8 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
     const discoveryWarnings = [...trackWarnings, ...droppedFidelitySummary(base.dropped_fidelity)];
     base.warnings = discoveryWarnings.length ? discoveryWarnings : undefined;
     base.next_step = (base.ambiguous_track
-      ? `This song has ${fetched.drumTracks.length} drum tracks. Confirm with track_name, then call again with a section (e.g. section:"${egSection}") to get the grids.`
-      : `Call again with a window (e.g. section:"${egSection}" or from_measure:N) to get the voice grids, then pass them to apply_pattern. Or call with whole_song:true for the full-song arrangement. all_tracks lists every other part of this song; pass one of its partIds as track to fetch that part instead.`)
+      ? `This song has ${fetched.drumTracks.length} drum tracks. Confirm with track_name, then call again with a window (e.g. ${egWindow}) to get the grids.`
+      : `Call again with a window (e.g. ${egWindow}${flat.sections.length > 0 ? ' or from_measure:N' : '; this tab has no section markers'}) to get the voice grids, then pass them to apply_pattern. Or call with whole_song:true for the full-song arrangement. all_tracks lists every other part of this song; pass one of its partIds as track to fetch that part instead.`)
       + tempoHint(tempoSetup);
     return base;
   }
@@ -1105,8 +1242,8 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
       : `It carries NOTE LENGTHS (":len" in steps), VELOCITIES ("@vel") and ties ("_"), so paste it AS-IS${m.gate_splits > 0 ? `; ${m.gate_splits} long note(s) are already split into tied chains` : ''}.${artNote}`;
     base.next_step =
       `Pass these voices to apply_pattern (port:<device>, voices:<above>, steps:${m.step_count}, bpm:${m.bpm ?? '?'}). ` +
-      `\`${voiceName}\` is a PITCH ROW${m.range ? ` spanning ${m.range.low_name}..${m.range.high_name}` : ''}, so route it to a melodic track ` +
-      '(Circuit Tracks: synth1 / synth2 / midi1 / midi2) and rename the key with voice_name if the target calls it something else. ' +
+      `\`${voiceName}\` is a PITCH ROW${m.range ? ` spanning ${m.range.low_name}..${m.range.high_name}` : ''}, ` +
+      `${melodicRoutingAdvice(resolveRigPatternTargets())}, and rename the key with voice_name if the target calls it something else. ` +
       `${lengthNote} ` +
       'Import the song\'s other parts the same way with track:<partId> and stack them into one apply_pattern call.' +
       tempoHint(tempoSetup);
@@ -1161,7 +1298,7 @@ export async function executeImportSongsterr(args: ImportSongsterrArgs): Promise
   }
   base.dropped_fidelity = q.dropped_fidelity;
   base.warnings = warnings.length ? warnings : undefined;
-  base.next_step = `Pass these voices to apply_pattern (port:<device>, voices:<above>, bpm:${q.bpm ?? '?'}). Choose mode by intent: live_stream to audition, ncs_upload (+ ncs_slot/ncs_template) to store on a Circuit Tracks slot. Drum voices map via the target voice_map.`
+  base.next_step = `Pass these voices to apply_pattern (port:<device>, voices:<above>, bpm:${q.bpm ?? '?'}). ${drumRoutingAdvice(resolveRigPatternTargets())} Drum voices map via the target voice_map.`
     + tempoHint(tempoSetup);
   return base;
 }

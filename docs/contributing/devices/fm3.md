@@ -47,14 +47,19 @@ Two shape differences matter for asks on this page:
 | `set_param` discrete set-by-name | confirmed | A community session sent frames byte-identical to this server's encoder from the tester's own rig |
 | `set_bypass` | confirmed | Same field test |
 | `switch_scene`, `switch_preset` | confirmed | Same field test |
-| Serial transport, discovery and framing | confirmed on macOS, Linux and Windows | The field tests were macOS and Linux. A community session on firmware 12.00, Windows 11, with Fractal's USB serial driver ran reads, writes, preset and scene switching and a save through the release build |
-| `set_block` placement | confirmed | An independent app built on this codec placed blocks on a real FM3 over Linux USB serial. The FM3 needs an extra cell-select frame ahead of the insert, which this server already sends automatically for four-row grids |
+| Serial transport, discovery and framing | confirmed on macOS, Linux and Windows | The field tests were macOS and Linux. A community session on firmware 12.00, Windows 11, with Fractal's USB serial driver ran reads, writes, preset and scene switching and a save through the release build. An earlier firmware 13.00 Windows 11 session (issue #20, COM13) ran reads, continuous `set_param` with an audible A/B/C channel check, and `export_preset` |
+| `set_block` placement | confirmed | An independent app built on this codec placed blocks on a real FM3 over Linux USB serial. The FM3 needs an extra cell-select frame ahead of the insert, which this server sends before every grid insert on every gen-3 grid device |
 | `set_block` / `set_bypass` on the 15 multi-word blocks | **hardware-unverified, newly reachable** | These never resolved before 2026-08-03: the write path matched display names and group codes against the descriptor SLUG, so `graphic_eq`, `parametric_eq`, `gate_expander`, `volume_pan`, `pan_tremolo`, `multitap_delay`, `megatap_delay`, `ten_tap_delay`, `plex_delay`, `ring_modulator`, `multiband_compressor`, `tone_match`, `ir_capture`, `ir_player` and `real_time_analyzer` returned "unknown block" for a block the device really has. The resolver now matches the read path, but none of THESE blocks has been exercised on hardware |
 | Grid routing, cable connect and disconnect | confirmed | Same independent field test |
 | Per-scene channel select (fn=0x0B) and per-scene bypass | confirmed | A 2026-09-14 macOS session on firmware 12 selected each scene, sent SET_CHANNEL and SET_BYPASS, stored, and read every scene's channel and bypass back from the stored preset. This is the sequence `apply_preset` `scenes[]` and `set_param` `channel` now send; before that fix both silently dropped the channel and the scene map |
+| Writes to a block that is not in the preset | warns, hardware-unverified | Since 0.9.1 `set_param` / `set_params` read the live grid once (cached 5 s) and attach a warning when the block is not placed, or is placed with no input cable. An Axe-Fx III acknowledges such a write and reads back the last value written (issue #35), so the ack alone cannot tell |
 | `get_preset` live grid read | hardware-unverified | The four-row grid decode was pinned offline against the field-test capture. Never compared to a real panel |
 | Block list in a stored `get_preset` | hardware-unverified | Named by pairing the stored block chain with the grid. Checked offline against two fw 13 captures, where the older size-based naming dropped Delay, Drive and Chorus |
 | `save_preset` | confirmed | The same Windows session saved to the loaded location; the state survived switching presets and a full power cycle. Saving to a different location than the loaded one is still unrun on the FM3 |
+| Cab IR (`cab.type1` / `type2`) set and read | confirmed | Firmware 13.00, Windows 11 (issue #22): with Factory 2 selected, IR 799 showed "4x12 Recto 57 A" in FM3-Edit, and `get_param` read the live IR number back. 0.9.0 accepts 0..1023 (0.8.0 refused above 188) |
+| Cab IR names in `get_param` | hardware-unverified | Since 0.9.1 a read labels the IR from the FM3's own Factory 1, Factory 2 and Legacy name tables (from its editor cache), so 799 in Factory 2 reads "4x12 Recto 57 A". User and Scratchpad IRs read as the number |
+| Model selection by number (`amp.type`, `drive.type`, `reverb.type`, `delay.model`) | confirmed | Firmware 13.00, on the FM3 screen (issue #22). On the FM3 the delay's model names are on `delay.model`; `delay.type` is the mono, stereo or ping-pong mode |
+| Tempo divisions (`tempo`) | hardware-unverified on the FM3 | The 79-entry list shared by the gen-3 family is confirmed on an FM9 (ordinal 12 shows "1/8 Dot", issue #23) |
 
 Support tier: `community-beta`. This mirrors `capabilities.support_tier` on the
 descriptor at `packages/fractal-gen3/src/configs/fm3.ts`, and preflight fails if
@@ -79,14 +84,14 @@ surface.
 
 ## Blocked, and on what
 
-Nothing on the FM3 is refused for an undecoded wire shape.
+Nothing on the FM3 is refused for an undecoded wire shape. The community cache
+from issue #8 (firmware 12.0) supplies the display ranges and, since 0.9.1, a
+name for every selector it defines (169 that had none, including the per-scene
+Foot Controller modes), with the fw 13 amp names layered on top.
 
 | Blocked capability | Missing evidence | Closed by |
 |---|---|---|
-| Device-true enum NAME rosters wired into the catalog | Not donation-blocked anymore. Device-true display ranges SHIPPED 2026-08-11 from the 2026-06-27 community cache (1831 rows / 39 families, gated by `npm run verify-fm3-ranges`), and that same cache carries the full enum name vocabulary (all 331 amp models named), so mining FM3-true rosters is queued offline engineering work | Engineering (roster mining); DONATE-1 adds fresher-firmware cross-validation |
-
 | Confirmation of the discrete routing classification | The FM3's type and count selectors were classified as discrete by joining sibling evidence on symbol, not on parameter id, because no FM3 catalog round-trip exists yet | SESSION-2 |
-| Named tempo divisions on any gen-3 device | The wire encoding for the TEMPO division select is undecoded | See [axe-fx-iii.md](axe-fx-iii.md) CAPTURE-2 |
 
 ## Before you start
 

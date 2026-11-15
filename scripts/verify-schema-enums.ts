@@ -102,6 +102,17 @@ console.log('\n── Full registry (AM4 + II + III + Hydra) ──');
   check("union excludes III-only 'tuner' (block_types is empty on III)", !union.includes('tuner'),
     `did include — union has ${union.filter(s => s.toLowerCase().includes('tuner')).join(', ')}`);
   check("union excludes Hydra 'osc1' (block_types is empty on Hydra)", !union.includes('osc1'));
+
+  // Issue #35: the III's own grid blocks were refused by the schema whenever
+  // no AM4 / II block shared the name. placeable_blocks feeds them in, with
+  // their short names; utilities (tuner, above) and off-grid blocks stay out.
+  for (const b of ['pan_tremolo', 'ten_tap_delay', 'plex_delay', 'multiplexer', 'ir_player', 'real_time_analyzer', 'volume_pan']) {
+    check(`union INCLUDES III grid block '${b}'`, union.includes(b));
+  }
+  for (const b of ['vol_pan', 'tremolo', 'megatap', 'ring_mod', 'multi_delay']) {
+    check(`union INCLUDES III short name '${b}'`, union.includes(b));
+  }
+  check("union excludes III off-grid 'scene_midi'", !union.includes('scene_midi'));
 }
 
 // ─── Case 3: schema accepts / rejects appropriately ────────────────

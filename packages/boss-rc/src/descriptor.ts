@@ -484,6 +484,8 @@ export function createBossRcDescriptor(config: BossRcConfig): DeviceDescriptor {
           'working buffer over MIDI, so both need the drive mounted.',
       supports_lineage: false,
       preset_location_format: /^([1-9]|[1-9][0-9])$/, // memory 1..99
+      // Storage reads (the memory files on the mounted drive), so all 99 are cheap.
+      scan_default_range: { from: 1, to: 99 },
       // Legal assignable control sources/targets (mk2: CC#64-95 + TRK targets;
       // RC-600: omitted, source map undecoded). Backs the OpenRig compat check.
       ...(controlSources !== undefined ? { control_sources: controlSources } : {}),

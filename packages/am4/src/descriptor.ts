@@ -174,6 +174,9 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
     preset_location_format: /^[A-Z]0?[1-4]$/,
     supports_save: true,
     supports_lineage: true,
+    // 104 locations at ~50-100 ms each is 5-10 s, past the per-call budget, so
+    // the no-range default is the first 12 banks and the result names the rest.
+    scan_default_range: { from: 'A1', to: 'L4', rest: 'M1..Z4' },
     // atomic_read=true: the fn 0x1F wire primitive
     // (`readAllParams` in shared/readOps.ts) returns a per-block u16
     // chunk where position == pidHigh — hardware-validated 53/53 across

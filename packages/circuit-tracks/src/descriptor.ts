@@ -123,6 +123,8 @@ export const CIRCUIT_TRACKS_DESCRIPTOR: DeviceDescriptor = {
       'ignores its number and reverts the live edit (measured 2026-07-27), so get_preset("patch:N") refuses. ' +
       'PATCH slots are distinct from the PROJECT slots switch_preset/import_preset use.',
     supports_lineage: false,
+    // The whole pack's project directory is ONE round trip, so the default is all 64.
+    scan_default_range: { from: 1, to: 64 },
     // Orchestrator axis: the Circuit is a pattern target.
     //  - live_stream: audition a beat live (sound module).
     //  - ncs_upload: write the beat as a real project onto a device slot over

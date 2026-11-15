@@ -28,7 +28,7 @@ import type {
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/descriptor.js';
-import { FM9_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/device.js';
+import { FM9_DESCRIPTOR, VP4_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/device.js';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -818,20 +818,28 @@ const shivaSpec: PresetSpec = {
 }
 
 {
-  // II → FM9 (gen-3): tempo division must strip with a warning.
+  // II → FM9 (gen-3 grid): a named tempo division now carries through, and the
+  // FM9 encodes it to its own division ordinal (fw 12 hardware: 12 = "1/8 Dot",
+  // issue #23). Only the VP4 still strips (its enum set refuses).
   const result = translatePresetSpec(AXEFX2_DESCRIPTOR, shivaSpec, FM9_DESCRIPTOR);
   check('II→FM9 ok=true', result.ok);
   const delay = result.applied_spec.slots.find((s) => s.block_type === 'delay') as PresetSlotSpec;
   const delayCh = delay?.params_by_channel as Record<string, Record<string, unknown>> | undefined;
   const delayParams = delayCh?.A ?? (delay?.params as Record<string, unknown> | undefined);
   check(
-    `II→FM9: tempo division stripped from translated spec, got ${JSON.stringify(delayParams?.tempo)}`,
-    delayParams?.tempo === undefined,
+    `II→FM9: tempo division carried into the translated spec, got ${JSON.stringify(delayParams?.tempo)}`,
+    delayParams?.tempo === '1/2 DOT',
   );
   check(
-    'II→FM9: tempo strip warning present',
-    result.warnings.some((w) => /dropped tempo division/i.test(w)),
+    'II→FM9: no tempo strip warning',
+    !result.warnings.some((w) => /dropped tempo division/i.test(w)),
   );
+  {
+    let ord: unknown;
+    try { ord = FM9_DESCRIPTOR.blocks['delay']?.params['tempo']?.encode?.('1/2 DOT'); } catch (e) { ord = (e as Error).message; }
+    check(`II→FM9: the FM9 encodes "1/2 DOT" to its division ordinal 18, got ${String(ord)}`, ord === 18);
+  }
+  check('VP4 still declares named_tempo_divisions false', VP4_DESCRIPTOR.capabilities.named_tempo_divisions === false);
   check(
     'II→FM9: gain aliased to drive (gen-3 canonical)',
     (() => {

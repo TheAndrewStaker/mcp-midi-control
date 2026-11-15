@@ -202,6 +202,46 @@ export function selectDrumTrack(
   return { partId: popular ? popular.partId : choices[0].partId, ambiguous: true, choices };
 }
 
+// ── Search-match confidence ──────────────────────────────────────────
+
+/** Words that carry no identity in a song search. */
+const SEARCH_STOPWORDS = new Set(['the', 'a', 'an', 'and', 'of', 'by', 'feat', 'ft', 'tab', 'tabs', 'drums', 'bass', 'guitar']);
+
+/** Lower-cased, diacritic-free alphanumeric words of 2+ characters, minus stopwords. */
+export function searchTokens(s: string): string[] {
+  return s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !SEARCH_STOPWORDS.has(w));
+}
+
+/** How well a search hit matches the query that found it. */
+export interface SearchMatchConfidence {
+  /** Fraction of the query's words found in the hit's artist + title, 0..1. */
+  score: number;
+  /** True when too little of the query is in the hit to trust it as the song asked for. */
+  low: boolean;
+  /** The query words the hit does NOT contain. */
+  missing: string[];
+}
+
+/**
+ * Score a search hit against its query. Songsterr's search always returns
+ * SOMETHING, ranked by its own popularity: "Dimension fusion Japan" came back
+ * as King Gizzard's "Nuclear Fusion", sharing one word in three, and the import
+ * went ahead as if it were the song. A word counts as present when it equals a
+ * hit word or one is a prefix of the other (4+ characters, so "zep" does not
+ * match everything). Below half the query's words, the hit is low-confidence.
+ */
+export function searchMatchConfidence(query: string, hit: Pick<SearchHit, 'title' | 'artist'>): SearchMatchConfidence {
+  const q = [...new Set(searchTokens(query))];
+  if (q.length === 0) return { score: 1, low: false, missing: [] };
+  const h = searchTokens(`${hit.artist} ${hit.title}`);
+  const present = (w: string): boolean => h.some((x) =>
+    x === w || (Math.min(x.length, w.length) >= 4 && (x.startsWith(w) || w.startsWith(x))));
+  const missing = q.filter((w) => !present(w));
+  const score = (q.length - missing.length) / q.length;
+  return { score: Math.round(score * 100) / 100, low: score < 0.5, missing };
+}
+
 // ── Network ──────────────────────────────────────────────────────────
 
 /** Search Songsterr by "artist title"; returns the top hits (songId/title/artist). */

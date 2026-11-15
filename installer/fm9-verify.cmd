@@ -48,7 +48,7 @@ set "RC=%ERRORLEVEL%"
 
 echo.
 if "%RC%"=="0" (
-    echo Done. Please email this file to the maintainer:
+    echo Done. Please attach this file to a new GitHub issue:
     echo   %OUT%
 ) else (
     echo The probe could not reach the FM9. See the messages above.

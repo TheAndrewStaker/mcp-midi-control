@@ -32,6 +32,7 @@ import { registerHydrasynthTools } from '@mcp-midi-control/hydrasynth/server.js'
 import { registerDevice as registerMcpDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
 import { registerDeviceResources } from '@mcp-midi-control/core/protocol-generic/resources.js';
 import { registerUnifiedTools } from '@mcp-midi-control/core/protocol-generic/tools.js';
+import { enforceKnownArguments } from '@mcp-midi-control/core/protocol-generic/tools/knownArguments.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR, AX8_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import { AXEFXGEN1_DESCRIPTOR } from '@mcp-midi-control/fractal-gen1/descriptor.js';
@@ -305,6 +306,10 @@ export function createMcpServer(): McpServer {
     instructions: SERVER_INSTRUCTIONS,
     cacheHints: { 'tools/list': { ttlMs: 86_400_000 } },
   });
+  // Every tool registered below REFUSES an unknown argument (naming it and the
+  // valid ones) instead of zod silently stripping it. Must run before the first
+  // registerTool; tools/list is unchanged. See knownArguments.ts.
+  enforceKnownArguments(server);
 
   // -- Generic-MIDI tool families (any device) ------------------------------
   //

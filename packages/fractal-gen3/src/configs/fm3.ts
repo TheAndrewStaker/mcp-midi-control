@@ -10,7 +10,7 @@
  * paramIds are FM3's own (reusing the III's mis-addresses 6.9% of shared
  * params; see `docs/_private/MINING-FINDINGS-FM-VP4.md`). community-beta.
  */
-import { FM3_PARAMS_BY_FAMILY, FM3_ENUM_OVERRIDES_BY_NAME } from 'fractal-midi/gen3/fm3';
+import { FM3_PARAMS_BY_FAMILY, FM3_ENUM_OVERRIDES_BY_NAME, FM3_CACHE_ENUM_NAMES } from 'fractal-midi/gen3/fm3';
 import type { FractalModernConfig, } from '../factory.js';
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 import {
@@ -99,7 +99,9 @@ export const FM3_CONFIG: FractalModernConfig = {
   // joined to this catalog by (family, paramId) and checked against the FM3
   // cache's own enum counts, plus the fw 13 amp delta (issue #22). The ordinal
   // IS the discrete-SET value, so these are read labels AND settable by name.
-  enum_overrides: FM3_ENUM_OVERRIDES_BY_NAME,
+  // The fw 12 cache names every enum (FM3_CACHE_ENUM_NAMES, issue #8); the
+  // imported table plus its fw 13 amp delta wins wherever both carry a symbol.
+  enum_overrides: { ...FM3_CACHE_ENUM_NAMES, ...FM3_ENUM_OVERRIDES_BY_NAME },
   canonical_terms: {
     block: 'block',
     slot: 'grid location (row 1..4, col 1..12)',

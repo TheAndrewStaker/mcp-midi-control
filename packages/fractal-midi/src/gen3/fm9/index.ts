@@ -1,5 +1,6 @@
 export { FM9_PARAMS, FM9_PARAMS_BY_FAMILY, FM9_FAMILIES } from './params.js';
 export { FM9_ENUM_OVERRIDES } from './enumOverrides.js';
+export { FM9_CACHE_ENUM_NAMES } from './enumNames.generated.js';
 export {
   FM9_RANGES,
   FM9_RANGE_SECTIONS,

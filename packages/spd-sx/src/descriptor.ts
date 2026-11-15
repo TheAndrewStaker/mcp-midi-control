@@ -260,6 +260,8 @@ export const SPD_SX_DESCRIPTOR: DeviceDescriptor = {
       'No MIDI save. Kits are authored as files in WAVE MGR storage mode (author_kit / upload_sample), not ' +
       'persisted from a working buffer; the SPD-SX has no editable working buffer over MIDI.',
     supports_lineage: false,
+    // Kits are read from the mounted drive's kit files, so all 100 are cheap.
+    scan_default_range: { from: 1, to: 100 },
     pattern_realizers: ['live_stream'],
     // Derived from SPDSX_PAD_ROLES (the single role → pad-order → note source).
     voice_map: SPDSX_VOICE_MAP,

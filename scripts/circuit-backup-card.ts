@@ -307,17 +307,17 @@ function renderIndex(m: Manifest): string {
   }
   L.push('## How to restore one project');
   L.push('');
-  L.push('Use the **`upload_project` MCP tool**, which is the only pack-aware restore path:');
+  L.push('Use the **`import_preset` MCP tool** (formerly `upload_project`), which is the only pack-aware restore path:');
   L.push('');
   L.push('```');
-  L.push('upload_project(file: "<Project file column>", slot: <Project column>, pack: <Device pack column>,');
-  L.push('               confirm_overwrite: true)');
+  L.push('import_preset(port: "circuit-tracks", file_path: "<Project file column>", target_location: <Project column>,');
+  L.push('              pack: <Device pack column>, save_authorized: true, confirm_overwrite: true)');
   L.push('```');
   L.push('');
-  L.push('Both `slot` and `pack` are **1-based, exactly as the tables below and the front panel show them**.');
+  L.push('Both `target_location` and `pack` are **1-based, exactly as the tables below and the front panel show them**.');
   L.push('The wire-slot column is diagnostic only; do not pass it.');
   L.push('');
-  L.push('- **Check the Structure column first.** `upload_project` now refuses a structurally invalid file, so a');
+  L.push('- **Check the Structure column first.** `import_preset` refuses a structurally invalid file, so a');
   L.push('  bad restore is blocked rather than silently written, but the useful move is to notice before you try.');
   L.push('- The device has **NO erase**, so a restore OVERWRITES whatever is in that slot. `confirm_overwrite`');
   L.push('  is the only safety net; without it the tool reads the slot and refuses if occupied, which is the');

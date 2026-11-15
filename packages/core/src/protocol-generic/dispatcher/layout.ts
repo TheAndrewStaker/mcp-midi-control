@@ -8,12 +8,29 @@
 import {
   DispatchError,
   type BlockChange,
+  type DeviceDescriptor,
   type WriteResult,
 } from '../types.js';
 
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
 import { assertInstanceSupported, requireDevice, withEndpoint, withHandleRetry } from './core.js';
 import { resolveBlockName } from './resolvers.js';
+
+/**
+ * The block name `set_block` hands its writer. A short or typed name the
+ * other block tools accept (vol_pan, "Tone Match") resolves to the catalog
+ * block, as it does on set_param / set_bypass. A name that is no catalog
+ * block ("none", "shunt", a writer-only placement name) passes through
+ * unchanged, so the writer keeps its own handling and refusal text.
+ */
+export function resolveSetBlockType(descriptor: DeviceDescriptor, blockType: string): string {
+  try {
+    return resolveBlockName(descriptor, blockType);
+  } catch (err) {
+    if (err instanceof DispatchError && err.code === 'unknown_block') return blockType;
+    throw err;
+  }
+}
 
 /**
  * Full lifecycle for `set_block(port, slot, { block_type?, bypassed?,
@@ -41,11 +58,14 @@ export async function executeSetBlock(args: {
     args.change.instance,
     args.change.block_type ? `set_block ${args.change.block_type}` : 'set_block',
   );
+  const change: BlockChange = args.change.block_type === undefined
+    ? args.change
+    : { ...args.change, block_type: resolveSetBlockType(descriptor, args.change.block_type) };
   // Phase B: exclusive per-endpoint visit (see dispatcher/core.ts withEndpoint).
   const result = await withEndpoint(descriptor, (ctx) =>
     // Phase A.5 (connection-arbiter.md): reconnect-and-retry-once on a
     // handle-level fault (see dispatcher/core.ts withHandleRetry).
-    withHandleRetry(ctx, (c) => setBlock(c, args.slot, args.change)),
+    withHandleRetry(ctx, (c) => setBlock(c, args.slot, change)),
   { opName: 'set_block' });
   // BK-075: block placement just changed; invalidate the cached layout
   // snapshot so the next set_param pre-flight re-reads.

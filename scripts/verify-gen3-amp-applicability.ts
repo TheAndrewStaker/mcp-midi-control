@@ -32,7 +32,10 @@ check('amp valid-param table has 331 ordinals', AMP_TYPE_VALID_PARAMS.length ===
 // 'drive' is universal — every amp model has a drive knob.
 const drive = fct({ block: 'amp', params: ['drive'] });
 check('amp+drive: applicability_known', drive.applicability_known === true);
-check('amp+drive: all 331 amps expose drive', drive.compatible_types.length === drive.total_types && drive.total_types === 331, `${drive.compatible_types.length}/${drive.total_types}`);
+// The FM9 fw 12 cache names 336 amps; the validity table covers the first 331.
+// The 5 newer ones are named in the note as unfiltered, not counted as compatible.
+check('amp+drive: all 331 covered amps expose drive', drive.compatible_types.length === 331 && drive.total_types === 336, `${drive.compatible_types.length}/${drive.total_types}`);
+check('amp+drive: the 5 uncovered fw 12 amps are named in the note', /not filtered: .*Brit JVM Crunch Red/.test(drive.note ?? ''), String(drive.note));
 
 // 'depth' (sag/depth) is NOT universal — a strict subset of amps expose it.
 const depth = fct({ block: 'amp', params: ['depth'] });

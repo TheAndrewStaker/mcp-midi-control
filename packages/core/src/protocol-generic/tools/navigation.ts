@@ -132,16 +132,14 @@ export function registerNavigationTools(server: McpServer): void {
     description: [
       'Bulk-read stored preset names across a location range. The active location is always restored.',
       'Canonical use: before bulk-applying or restoring a range, scan first to see which locations hold presets vs are empty. Empty locations return is_empty=true; a mid-loop failure returns partial results plus the failure location.',
-      '- Axe-Fx II / AX8 scan by SWITCHING to each preset: unsaved edits are LOST, and 64 slots take ~16 s. Refuses on a dirty buffer unless you pass on_active_preset_edited; announce the wait above ~12 slots. AM4 (~50-100 ms/location) and Circuit Tracks (whole pack in ONE round trip) read without moving, so they are non-destructive and fast.',
+      '- Axe-Fx II / AX8 scan by SWITCHING to each preset: unsaved edits are LOST, and 64 slots take ~16 s; they need explicit from/to. Refuses on a dirty buffer unless you pass on_active_preset_edited; announce the wait above ~12 slots. AM4 (~50-100 ms/location) and Circuit Tracks (whole pack in ONE round trip) read without moving, so they are non-destructive and fast.',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
-      from: z.union([z.string(), z.number()]).describe(
-        'Inclusive start of the scan range. AM4: "A1".."Z4"; Axe-Fx II: 0..383; Circuit Tracks: Project 1..64, as the device numbers it.',
+      from: z.union([z.string(), z.number()]).optional().describe(
+        'Inclusive start. AM4 "A1".."Z4"; Axe-Fx II 0..383; Circuit Project 1..64. Omit from AND to for the whole range (paged when large; `note` says).',
       ),
-      to: z.union([z.string(), z.number()]).describe(
-        'Inclusive end of the scan range. Pass from <= to.',
-      ),
+      to: z.union([z.string(), z.number()]).optional().describe('Inclusive end, from <= to.'),
       pack: z.number().int().min(1).max(32).optional().describe(`Which pack to scan. ${PACK_DESC}`),
       on_active_preset_edited: ON_EDITED_SCHEMA.optional().describe(
         "Navigating scanners (Axe-Fx II / AX8) only. Default 'warn' refuses on unsaved edits; 'discard' scans anyway; 'save_active_first' saves first.",

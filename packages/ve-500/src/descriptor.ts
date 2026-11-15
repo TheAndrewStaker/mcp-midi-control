@@ -107,6 +107,9 @@ export const VE500_DESCRIPTOR: DeviceDescriptor = {
       'HARDWARE-CONFIRMED 2026-07-08 (a set + save + flash-reload round-trip persisted; the device echoes ' +
       'the store, so acked reflects a real device ack).',
     supports_lineage: false,
+    // One SysEx name read per memory; half the user bank keeps a default call
+    // well inside the per-call time budget.
+    scan_default_range: { from: 'U01', to: 'U50', rest: 'U51..U99' },
     // User memories U01–U99 (1–99) and preset P01–P50.
     preset_location_format: /^(U0?[1-9][0-9]?|P0?[1-9][0-9]?|[1-9][0-9]?)$/i,
   },

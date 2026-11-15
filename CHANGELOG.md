@@ -8,6 +8,45 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.9.1] - 2026-11-15
+
+**Fixes for the gen-3 Fractal family (Axe-Fx III, FM3, FM9), from community
+reports.** All untested on hardware unless a report already confirmed it.
+
+- **Set by name sends the right model.** Every selector each device's own
+  editor cache defines is now named from that cache (546 on the III, 507 on
+  the FM9, 508 on the FM3). The III and FM9 lists had named the wrong ordinal
+  in places: every LFO type from ordinal 6, `delay.model` from 22, and
+  `pitch.tempo`, which was one off (issues #13, #8). Tempo divisions such as
+  "1/8 Dot" can be set by name, and `translate_preset` keeps them.
+- **`set_block` places every grid block.** Its list of block names came from
+  the AM4 and Axe-Fx II only, so blocks those two lack (Pan/Tremolo, Ten-Tap
+  Delay, Multiplexer, IR Player, Send / Return and others) were refused before
+  reaching the device, and short names such as "vol_pan" worked everywhere but
+  here (issue #35).
+- **`set_param` encodings** (issue #32): semitone parameters land on the
+  whole step asked for; Phaser Order is set by the stage count the panel
+  shows; parameters the device defines no range for refuse instead of sending
+  a raw number the unit ignored.
+- **Reads** (issue #35): the Resonator and Looper are split by each device's
+  own channel layout, so their last parameters read; knobs whose range is not
+  0..10 no longer claim that unit; a write to a block that is not placed, or
+  has no input cable, carries a warning; `include_channel_state` on the live
+  read says it covers channel A only instead of ignoring the flag. The FM3
+  names cab IRs on read (issue #22).
+- **`find_compatible_types`** names the amps its table does not cover instead
+  of dropping them (issue #20).
+
+**Tool surface.** An unknown tool argument is refused with the valid names.
+`scan_locations` no longer reports a short default page as the first of
+several. An unknown-port refusal lists each device's id. `describe_rig`
+reports ports no device matched.
+
+**Docs.** The 0.6.0 entry below says a macOS `.mcpb` ships; no release has
+attached one, and macOS installs from source (`docs/INSTALL-MAC.md`). The
+probe wrappers ask for a GitHub issue instead of an email, and device pages
+absorb the community hardware reports (issues #20, #22, #23, #25, #31).
+
 ## [0.9.0] - 2026-11-13
 
 **One new device, and much deeper reads on the rest of a live rig.** Each
@@ -569,7 +608,10 @@ setup from one conversation.
   handles. Hardware-validated via Claude Desktop (10 devices listed; the SPD-SX
   resolved as a mounted drive).
 
-- **macOS one-click install (`.mcpb`).** A Claude Desktop Extension installs the
+- **macOS one-click install (`.mcpb`) packaging.** Correction (2026-11-14): this
+  release added the builder (`npm run build:mcpb`), not a published bundle. No
+  release has attached a `.mcpb`, and none has been installed on a Mac yet. As
+  designed, a Claude Desktop Extension installs the
   server from inside Claude Desktop with no Terminal and no config editing:
   the front door for the accessibility use case (driving gear entirely by voice
   / screen reader). The `.mcpb` carries the prebuilt MIDI engine for its build

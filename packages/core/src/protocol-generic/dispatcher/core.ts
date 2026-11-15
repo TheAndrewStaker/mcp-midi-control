@@ -32,8 +32,10 @@ import { listRegisteredDevices, resolveDevice } from '../registry.js';
 export function requireDevice(port: string): DeviceDescriptor {
   const desc = resolveDevice(port);
   if (desc) return desc;
+  // Name AND id: an agent that guessed an id ("akai-mpc-one-g2" for "mpc-one-g2", dogfood
+  // 2026-11-15) learns the real one from the refusal instead of only the display names.
   const known = listRegisteredDevices()
-    .map((d) => d.display_name)
+    .map((d) => `${d.display_name} (${d.id})`)
     .join(', ');
   const details: DispatchErrorDetails = {
     valid_options: listRegisteredDevices().map((d) => d.display_name),

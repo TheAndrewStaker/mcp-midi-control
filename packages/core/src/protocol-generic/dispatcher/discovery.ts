@@ -131,7 +131,7 @@ export function describeDevice(port: string): {
   id: string;
   agent_guidance_withheld?: { topics: readonly string[]; note: string };
   recipes?: readonly RecipeSummaryEntry[];
-  capabilities: Omit<DeviceDescriptor['capabilities'], 'preset_location_format'> & {
+  capabilities: Omit<DeviceDescriptor['capabilities'], 'preset_location_format' | 'scan_default_range'> & {
     preset_location_format?: string;
   };
   canonical_terms: DeviceDescriptor['canonical_terms'];
@@ -147,7 +147,11 @@ export function describeDevice(port: string): {
   // reading describe_device see an empty capability instead of the actual
   // pattern. Surface the regex source as a string so the field is
   // human-readable in the wire response.
-  const { preset_location_format, ...restCapabilities } = desc.capabilities;
+  // `scan_default_range` is a dispatcher knob, not discovery: scan_locations
+  // reports the range it used (and any remainder) in its own `note`, so it is
+  // left out here rather than paid on every describe_device.
+  const { preset_location_format, scan_default_range: _scanDefault, ...restCapabilities } = desc.capabilities;
+  void _scanDefault;
   const recipes = summarizeRecipesForPort(desc.id);
   // FIELD ORDER IS LOAD-BEARING. `describe_device` is the mandatory first call
   // for any device question, and JSON.stringify emits keys in insertion order,
@@ -615,6 +619,12 @@ export function executeDescribeRig(): {
   repertoire?: RepertoireSummary;
   /** External-instrument wiring (host track → device): manifest-derived, else MCP_RIG_LINKS. */
   rig_links?: RigLinks;
+  /**
+   * Visible MIDI port names that NO registered descriptor's port matcher claims.
+   * Without it a plugged-in device the server does not recognise (or a port a
+   * matcher is anchored away from) is simply absent and reads as "nothing here".
+   */
+  unmatched_ports?: string[];
   note: string;
 } {
   // A serial-only environment (no native MIDI binding) makes listMidiPorts throw;
@@ -664,6 +674,10 @@ export function executeDescribeRig(): {
       summary: summary !== undefined ? firstSentence(summary) : undefined,
     };
   });
+
+  const registered = listRegisteredDevices();
+  const unmatchedPorts = [...new Set(ports.map((p) => p.name))]
+    .filter((name) => !registered.some((desc) => portMatches(desc, name)));
 
   const manifest = buildRigManifestSummary(devices);
   const inventory = buildRigInventorySummary();
@@ -743,8 +757,13 @@ export function executeDescribeRig(): {
     ...(inventory !== undefined ? { inventory } : {}),
     ...(repertoire !== undefined ? { repertoire } : {}),
     ...(hasLinks ? { rig_links: rigLinks } : {}),
+    ...(unmatchedPorts.length > 0 ? { unmatched_ports: unmatchedPorts } : {}),
     note:
-      manifestNote
+      (unmatchedPorts.length > 0
+        ? `Visible MIDI ports with no matching device: ${unmatchedPorts.join(', ')} (no registered device claims them; `
+          + 'the send_* primitives still reach them). '
+        : '')
+      + manifestNote
       + inventoryNote
       + (repertoire === undefined
         ? ''

@@ -108,8 +108,15 @@ const EXPECTED = {
   // SURFACE `unit` field flips for cache-enum params. WIRE byte-identity is
   // intact: no wire builder was touched; a discrete SET still emits sub=0x09
   // float32(ordinal), a continuous SET sub=0x52 float32(normalized).
+  //
+  // Re-blessed AGAIN for issue #35 (2026-11-14): 13 params carried an
+  // AM4-inferred `unit: 'knob_0_10'` over a device-cache range that is not
+  // 0..10 (chorus/rotary drive 0.5..500, amp bias 0..100, the -10..10 knobs),
+  // so they now report the generic `unit: 'knob'`. Mapping those 13 back to
+  // knob_0_10 reproduces the previous hash exactly, so nothing else moved.
+  // CATALOG and BLOCKS unchanged; no wire builder touched.
   catalog: { count: 2216, hash: '109f858e07b904de65b8782edb41383d746844b0dce309ffd6628fabd2d30223' },
-  surface: { blockCount: 50, paramCount: 1711, hash: '0ab444bdffea397cd40b10d1d057f5263339db0dadbf5f48229f8a8d75aef553' },
+  surface: { blockCount: 50, paramCount: 1711, hash: '6ab46d43d2707605f76d06249d89d67c1b93bd1f7e59285013ff8e602e08282e' },
   blocks: { count: 50, hash: '07db286053f0f4bd242e14c45697f5bbc612f642c5c7f6c7fdd9dd0e9dd7dd51' },
 };
 

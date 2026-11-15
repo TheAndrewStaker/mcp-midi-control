@@ -137,9 +137,9 @@ under a second.
 ## Requirements
 
 - **Windows 10/11** via the one-click installer ZIP (bundles Node and the
-  MIDI engine; no developer tooling). **macOS** via the one-click Claude
-  Desktop Extension (`.mcpb`) or the one-command source build, see
-  [docs/INSTALL-MAC.md](docs/INSTALL-MAC.md).
+  MIDI engine; no developer tooling). **macOS** via a short Terminal source
+  build, see [docs/INSTALL-MAC.md](docs/INSTALL-MAC.md). A one-click Claude
+  Desktop Extension (`.mcpb`) for Mac is built but not yet published.
 - A Claude client that supports MCP: [Claude Desktop](https://claude.ai/download),
   [Claude Code](https://docs.claude.com/en/docs/claude-code), or any other
   MCP-capable host ([docs/HOST-COMPATIBILITY.md](docs/HOST-COMPATIBILITY.md)).
@@ -223,13 +223,12 @@ Claude Desktop runs the compiled `dist/` output, not the TypeScript
 source. After changes under `src/`, run `npm run setup-claude-desktop`
 again (it rebuilds and rewrites the config) and restart Claude Desktop.
 
-> **macOS:** the easiest path is the one-click Claude Desktop Extension
-> (`.mcpb`) attached to the [latest release](https://github.com/TheAndrewStaker/mcp-midi-control/releases),
-> built per chip (Apple Silicon `darwin-arm64`, Intel `darwin-x64`).
-> Open it in Claude Desktop (Settings → Extensions); no Terminal, no
-> config editing. Prefer the Terminal? `npm run setup-mac` downloads the
-> prebuilt MIDI engine and registers the server. See
-> [docs/INSTALL-MAC.md](docs/INSTALL-MAC.md).
+> **macOS:** run `npm install` then `npm run setup-mac`, which fetch the
+> prebuilt MIDI engine and register the server with Claude Desktop. See
+> [docs/INSTALL-MAC.md](docs/INSTALL-MAC.md). The releases do not yet carry a
+> macOS Claude Desktop Extension (`.mcpb`); the packaging script exists
+> (`npm run build:mcpb`, see [docs/MCPB-EXTENSION.md](docs/MCPB-EXTENSION.md))
+> but has not been run and installed on a Mac.
 
 ---
 
@@ -370,9 +369,9 @@ one short sentence, and safety prompts as plain sentences that name the
 target and the exact word to proceed. Tool output never contains ASCII
 grids or aligned tables (a preflight check enforces this).
 
-Install is the only barrier: macOS installs as a one-click Claude Desktop
-Extension (`.mcpb`) with no Terminal at all, with the one-command source
-build ([docs/INSTALL-MAC.md](docs/INSTALL-MAC.md)) as the fallback. **If
+Install is the only barrier: on macOS it is still a short Terminal source
+build ([docs/INSTALL-MAC.md](docs/INSTALL-MAC.md)). A one-click Claude Desktop
+Extension (`.mcpb`) that needs no Terminal is built but not yet published. **If
 any reply reads badly aloud, or any install step fights your screen
 reader, please
 [open an issue](https://github.com/TheAndrewStaker/mcp-midi-control/issues).

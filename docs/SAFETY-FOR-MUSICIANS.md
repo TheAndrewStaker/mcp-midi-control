@@ -13,11 +13,13 @@ Before you install, here's exactly what the AI can and can't do to your gear.
   making.** If you've been tweaking knobs (in any source: chat, AM4-Edit, or
   the device's own buttons), and the AI tries to change presets, the server
   refuses and asks you whether to save or discard first.
-- **There's a designated scratch slot.** `Z04` on the AM4 is the
-  convention; the AI will use it for try-it-out tones unless you say
-  otherwise.
-- **Factory restore is one tool call away.** If you do clobber something,
-  Fractal's factory presets are loadable straight from the AM4's flash.
+- **Pick a scratch location.** On the AM4 the convention is `Z04`; the AI
+  uses it for try-it-out tones unless you name another. Other devices have no
+  fixed scratch location, so tell the AI which one to use.
+- **Back up before a long session.** Ask the AI to back up your device
+  (`backup_device`) or use the vendor's editor to export everything. On most
+  devices a backup is restored with the vendor's own editor, not by this
+  server.
 - **You can read everything the AI does.** Every tool call shows up in
   Claude Desktop's tool panel, with its arguments. You can refuse any
   call you don't like.
@@ -114,10 +116,10 @@ again to refresh from flash.
 
 **Scenario: AI overwrote a slot you actually cared about.**
 
-Z04 is the convention for "scratch / try-it-out." If you keep your
-personal presets in A-Y (banks A through Y, 4 presets each = 100 slots
-of personal space) and leave Z04 for scratch, the AI defaults align
-with this convention. You can tell the AI "use M03 as your scratch
+On the AM4, Z04 is the convention for "scratch / try-it-out." If you keep
+your personal presets in A-Y (banks A through Y, 4 presets each = 100
+locations of personal space) and leave Z04 for scratch, the AI defaults
+align with this convention. Other devices have no fixed scratch location. You can tell the AI "use M03 as your scratch
 slot" and it'll switch.
 
 If you want extra insurance, AM4-Edit can export a `.syx` backup of
@@ -187,9 +189,10 @@ an audition; with `save_authorized: true` is a persist.
 
 1. The server refuses to save unless you used save-language.
 2. The server refuses to switch presets if you have unsaved edits.
-3. Factory restore is one tool call away if anything goes sideways.
-4. Z04 (AM4) is the scratch slot. Use any letter you want for personal
-   presets; AI follows your convention.
+3. Back up first (`backup_device` or the vendor's editor); restoring is
+   usually done in the vendor's editor.
+4. On the AM4, Z04 is the scratch location. On any device, tell the AI
+   which location to use as scratch; it follows your convention.
 5. Every tool call is visible in Claude Desktop's tool panel. Refuse
    any you don't like.
 

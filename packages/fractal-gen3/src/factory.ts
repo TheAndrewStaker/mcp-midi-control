@@ -43,8 +43,10 @@ import {
   resolveEffectId,
   GEN3_READ_ROSTERS,
   ampOrdinalsExposingParams,
+  AMP_TYPE_VALID_PARAMS,
   III_ROUNDTRIP_DISCRETE,
   III_RANGES,
+  III_RANGE_SECTIONS,
 } from 'fractal-midi/gen3/axe-fx-iii';
 import {
   VP4_MODEL_ID,
@@ -52,8 +54,8 @@ import {
   buildVp4Save,
   buildVp4SetParam,
 } from 'fractal-midi/gen3/vp4';
-import { FM9_RANGES, FM9_ROUNDTRIP_DISCRETE } from 'fractal-midi/gen3/fm9';
-import { FM3_FAMILY_JOIN_DISCRETE, FM3_RANGES } from 'fractal-midi/gen3/fm3';
+import { FM9_RANGES, FM9_RANGE_SECTIONS, FM9_ROUNDTRIP_DISCRETE } from 'fractal-midi/gen3/fm9';
+import { FM3_FAMILY_JOIN_DISCRETE, FM3_RANGES, FM3_RANGE_SECTIONS } from 'fractal-midi/gen3/fm3';
 import { createModernCatalog, type AxeFxIIIParam, type DeviceRangeTable } from './catalog.js';
 
 /** FM9 SysEx model byte: its device-true editor-cache ranges (FM9_RANGES) take
@@ -98,7 +100,17 @@ const DEVICE_RANGES_BY_MODEL: Readonly<Record<number, DeviceRangeTable>> = {
   [FM9_MODEL_ID]: FM9_RANGES,
   [FM3_MODEL_ID]: FM3_RANGES,
 };
-import { makeReader } from './reader.js';
+
+/** Per-family fn=0x1F wire stride from each device's own editor cache (reader strideOf). */
+const WIRE_STRIDES_BY_MODEL: Readonly<Record<number, Readonly<Record<string, { readonly stride: number }>>>> = {
+  // LOOPER: the III cache's section 50 (24 records) stayed unmapped by the
+  // range generator's voting floor; FM3 and FM9 both name section 50 LOOPER
+  // with stride 24, so the III gets that stride (stride only, no ranges).
+  [III_MODEL_ID]: { ...III_RANGE_SECTIONS, LOOPER: { stride: 24 } },
+  [FM9_MODEL_ID]: FM9_RANGE_SECTIONS,
+  [FM3_MODEL_ID]: FM3_RANGE_SECTIONS,
+};
+import { gen3PlaceableBlocks, makeReader } from './reader.js';
 import { makeWriter } from './writer.js';
 
 /** Wire response window — same budget the III device-namespaced tools use. */
@@ -341,12 +353,24 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
     const compatible = ampOrdinalsExposingParams(distortNames)
       .map((ord) => typeEnum[ord])
       .filter((n): n is string => typeof n === 'string');
+    // Models newer than the validity table (it ends at the firmware it was mined
+    // from; the fw 12 / 32 caches name 5 more amps) are UNKNOWN, not
+    // incompatible: name them so the agent can still offer them, unfiltered.
+    const uncovered = Object.entries(typeEnum)
+      .filter(([ord]) => Number(ord) >= AMP_TYPE_VALID_PARAMS.length)
+      .map(([, name]) => name);
+    const notes = [
+      skipped.length > 0 ? `Skipped (not amp params, treated as always-on): ${skipped.join(', ')}.` : undefined,
+      uncovered.length > 0
+        ? `Not covered by the applicability data (newer firmware), so not filtered: ${uncovered.join(', ')}.`
+        : undefined,
+    ].filter((n): n is string => n !== undefined);
     return {
       ...base,
       compatible_types: compatible,
       total_types: totalTypes,
       applicability_known: true,
-      note: skipped.length > 0 ? `Skipped (not amp params, treated as always-on): ${skipped.join(', ')}.` : undefined,
+      note: notes.length > 0 ? notes.join(' ') : undefined,
     };
   }
 
@@ -364,10 +388,12 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
       scene_count: config.scene_count,
       has_channels: true,
       channel_names: config.channel_names,
-      // Named tempo divisions ("1/4 DOT") have no decoded gen-3 wire value;
-      // the codec refuses to fabricate one. translate_preset strips
-      // division strings bound for gen-3 targets with a warning.
-      named_tempo_divisions: false,
+      // Named tempo divisions ("1/8 Dot") ARE addressable on the grid devices:
+      // a _TEMPO param is an ordinal into the device's own division list (FM9
+      // fw 12 hardware: 12 = "1/8 Dot", issue #23; names from each device's
+      // editor cache). The VP4's enum set refuses, so translate_preset still
+      // strips division strings bound for it, with a warning.
+      named_tempo_divisions: isGrid,
       // gen-3 grid exposes up to 4 of each block type (Amp 1..4, Reverb 1..4,
       // Delay 1..2); the `instance` arg addresses them via resolveEffectId.
       // Serial AM4-shape devices (VP4) are single-instance, like the AM4.
@@ -394,6 +420,8 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
     canonical_terms: config.canonical_terms,
     blocks: catalog.blocks,
     block_aliases: shortBlockNames(catalog.blocks),
+    // The serial VP4 refuses set_block, so only grid devices advertise blocks.
+    ...(isGrid ? { placeable_blocks: gen3PlaceableBlocks(catalog, deviceLabel) } : {}),
     reader: makeReader({
       codec, catalog, deviceLabel,
       getResponseTimeoutMs: GET_RESPONSE_TIMEOUT_MS,
@@ -402,6 +430,7 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
       // (the maxPid stride floor is unsound on a mined-superset catalog like
       // the III's) — see reader.ts strideOf.
       deviceTrueCatalog: config.device_true_roster ?? false,
+      wireStrideByFamily: WIRE_STRIDES_BY_MODEL[config.model_byte],
     }),
     writer: makeWriter({
       codec,

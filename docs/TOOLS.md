@@ -13,7 +13,7 @@
 | Read (read-only) | 20 |
 | Write (reversible) | 26 |
 | Write (destructive) | 9 |
-| Average description length | 791 chars |
+| Average description length | 790 chars |
 | Tools over 600 chars | 32 |
 | Tools over 1000 chars | 8 |
 
@@ -36,15 +36,15 @@ No device state changes. `readOnlyHint: true`. Hosts group these as read tools.
 | `get_preset` | Read Preset | 1457 ⚠️ over 1000 | Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. |
 | `import_songsterr` | Import Song | 1851 ⚠️ over 1000 | Fetch a part of a song from Songsterr, ready for apply_pattern. |
 | `list_backups` | List Backups | 731 ⚠ | List the backup files this server has saved, newest first, so a user can find one without knowing where we put them. |
-| `list_midi_ports` | List MIDI Ports | 659 ⚠ | List every MIDI input + output port the OS exposes. |
-| `list_packs` | List Packs | 978 ⚠ | List the storage PACKS a device holds, by name. |
+| `list_midi_ports` | List MIDI Ports | 686 ⚠ | List every MIDI input + output port the OS exposes. |
+| `list_packs` | List Packs | 993 ⚠ | List the storage PACKS a device holds, by name. |
 | `list_params` | List Parameters | 975 ⚠ | Enumerate a device's params with units and display ranges. |
 | `list_pattern_recipes` | List Pattern Recipes | 253 | List the named drum-pattern library (four_on_the_floor, boom_bap, half_time, two_step, amen, trap_hats, …) for use with apply_pattern. |
 | `list_samples` | List Samples | 999 ⚠ | Read a device's named sample pool and return each slot's stored name (the sampler-archetype "what's in the pool" read; the names author_kit / the packer refe... |
 | `lookup_lineage` | Look Up Gear Lineage | 900 ⚠ | Look up authored lineage for a block type: real hardware modeled, manufacturer notes, developer/forum quotes. |
 | `measure_loudness` | Measure Loudness | 899 ⚠ | Measure real loudness (BS.1770 LUFS + true peak) from any OS audio input: a modeler's USB audio (the AM4 is a 4x4 interface), a mic, an interface bus. |
 | `open_rig_editor` | Open Rig Console | 222 | Starts the local Rig Console (read-only web page: the rig, its cabling and checks) and returns its one-launch URL for THIS machine only. |
-| `scan_locations` | Scan Preset Locations | 659 ⚠ | Bulk-read stored preset names across a location range. |
+| `scan_locations` | Scan Preset Locations | 687 ⚠ | Bulk-read stored preset names across a location range. |
 | `show_rig_console` | Show Rig Console | 329 | Opens a live rig panel in hosts that support MCP Apps: registered vs connected devices, read-only. |
 | `translate_preset` | Translate Preset | 980 ⚠ | Translate a preset between layout-class devices (AM4 / Axe-Fx II / III / FM3 / FM9). |
 
@@ -55,7 +55,7 @@ Working-buffer edits and navigation, reversible by switching presets. Not destru
 | Tool | Title | Description length | First sentence |
 |---|---|---|---|
 | `edit_rig` | Edit Rig | 768 ⚠ | Edit the OpenRig manifest (MCP_RIG_MANIFEST): add/remove a DEVICE, or add/remove/enable/disable a CABLE. |
-| `export_preset` | Export Preset | 986 ⚠ | Back up a preset to a byte-exact file on disk. |
+| `export_preset` | Export Preset | 984 ⚠ | Back up a preset to a byte-exact file on disk. |
 | `init_patch` | Initialise Patch | 412 | Reset the active patch to factory INIT state. |
 | `reconnect_midi` | Reconnect MIDI | 812 ⚠ | You almost never need this. |
 | `send_cc` | Send CC | 602 ⚠ | Send a MIDI Control Change to any CC-responsive device. |
@@ -70,7 +70,7 @@ Working-buffer edits and navigation, reversible by switching presets. Not destru
 | `send_reset_controllers` | Reset Controllers | 243 | Reset All Controllers (CC 121) on a channel: pitch bend, mod wheel, expression, channel pressure, etc. |
 | `send_sequence` | Send Sequence | 321 | Play a timed sequence of MIDI notes (arpeggios, riffs, test patterns). |
 | `send_song_position` | Set Song Position | 252 | Send MIDI Song Position Pointer (0xF2): jump a sequencer / drum machine to a specific beat. |
-| `set_block` | Place Block | 698 ⚠ | Place ONE block, or clear a slot (block_type "none"), on a single preset. |
+| `set_block` | Place Block | 605 ⚠ | Place ONE block, or clear a slot (block_type "none"), on a single preset. |
 | `set_bypass` | Bypass Block | 381 | Silence (bypassed=true) or activate (bypassed=false) a block on the currently-active scene. |
 | `set_macro` | Set Macro | 425 | Set a Macro control (CCs 16-23 on the Hydrasynth; CC range varies by device). |
 | `set_macro_route` | Set Macro Route | 998 ⚠ | Assign one of a performance Macro's (1-8) destinations by NAME on the Hydrasynth macro page (up to 8 each); allocates a free slot and writes target + depth +... |

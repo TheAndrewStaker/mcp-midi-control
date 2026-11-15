@@ -48,7 +48,10 @@ import {
 import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { encodeValue, resolveBlockName } from '@mcp-midi-control/core/protocol-generic/dispatcher/resolvers.js';
+import { resolveSetBlockType } from '@mcp-midi-control/core/protocol-generic/dispatcher/layout.js';
 import { assertInstanceSupported } from '@mcp-midi-control/core/protocol-generic/dispatcher/core.js';
+import { collectPhantomParamWarnings } from '@mcp-midi-control/core/protocol-generic/dispatcher/params.js';
+import { _resetBlockLayoutCacheForTests } from '@mcp-midi-control/core/protocol-generic/dispatcher/blockLayoutCache.js';
 import {
   clearRegistry,
   registerDevice,
@@ -1072,6 +1075,31 @@ async function readerChecks(): Promise<void> {
     check('fm9 get_param(cab.type1) labels the IR from its bank', res?.wire_value === 315 && res?.display_value === '4x12 1960A 300W 57', JSON.stringify(res));
   }
 
+  // FM3 cab IR index, same shape (issue #22: FM3-Edit on fw 13 shows Factory 2
+  // #800 = "4x12 Recto 57 A" for bank 1 + ordinal 799). The User bank is the
+  // owner's own IRs, so it keeps the numeric ordinal.
+  for (const [bank, ordinal, want] of [[1, 799, '4x12 Recto 57 A'], [2, 5, 5]] as const) {
+    const enc14 = (n: number) => [n & 0x7f, (n >> 7) & 0x7f];
+    const cabParams = FM3_PARAMS_BY_FAMILY['CABINET'] ?? [];
+    const bankPid = cabParams.find((p) => p.name === 'CABINET_BANK1')!.paramId;
+    const typePid = cabParams.find((p) => p.name === 'CABINET_TYPE1')!.paramId;
+    const cabEffectId = resolveEffectId('cab', 1);
+    const stride = Math.max(bankPid, typePid) + 4;
+    const itemCount = stride * 4;
+    const values = Array.from({ length: itemCount }, (_, idx) =>
+      idx % stride === bankPid ? bank : idx % stride === typePid ? ordinal : 0);
+    const burst = [
+      broadcastFrame(0x11, 0x74, [...enc14(cabEffectId), ...enc14(itemCount), 0x07]),
+      broadcastFrame(0x11, 0x75, [0x00, 0x02, ...values.flatMap((v) => packValue16(v))]),
+      broadcastFrame(0x11, 0x76, []),
+    ];
+    const conn = mockConnect({ responder: (out) => (out[5] === 0x1f ? burst : []), ackLatencyMs: 1 });
+    const ctx = { conn, descriptor: FM3_DESCRIPTOR } as unknown as Parameters<NonNullable<DeviceDescriptor['reader']>['getParam']>[0];
+    let res: Awaited<ReturnType<NonNullable<DeviceDescriptor['reader']>['getParam']>> | undefined;
+    try { res = await FM3_DESCRIPTOR.reader!.getParam(ctx, 'cab', 'type1'); } catch { /* reported below */ }
+    check(`fm3 get_param(cab.type1) bank ${bank} ordinal ${ordinal} reads ${JSON.stringify(want)}`, res?.wire_value === ordinal && res?.display_value === want, JSON.stringify(res));
+  }
+
   // FM3 device-true enum labels (editor UI data + the fw 13 amp delta, issue
   // #22). A complete device roster replaces the family list rather than
   // merging over it, so the FM3's 27 delay models carry no shared tail.
@@ -1346,6 +1374,68 @@ await readerChecks();
 async function liveGridChecks(): Promise<void> {
   console.log('\nGen-3 live grid read + amp applicability (mock connection):');
 
+  // (0) Issue #35: a write to an UNPLACED block acked silently. The gen-3 reader
+  // now exposes getBlockLayoutSnapshot (one grid read), so set_param's existing
+  // phantom-param / routing-mask pre-flight fires on the III / FM3 / FM9.
+  {
+    for (const d of [AXEFX3_DESCRIPTOR, FM3_DESCRIPTOR, FM9_DESCRIPTOR]) {
+      check(`${d.id} reader exposes getBlockLayoutSnapshot`, typeof d.reader?.getBlockLayoutSnapshot === 'function');
+    }
+    check('vp4 reader has no getBlockLayoutSnapshot (no grid)', VP4_DESCRIPTOR.reader?.getBlockLayoutSnapshot === undefined);
+    const conn = mockConnect({
+      // Amp 1 placed + cabled, Reverb 1 placed with no input cable, Delay not placed.
+      responder: makeGen3BroadcastMockResponder({ modelByte: 0x10, placedEffectIds: [58, 66], uncabledEffectIds: [66] }),
+      ackLatencyMs: 1,
+    });
+    const ctx = { conn, descriptor: AXEFX3_DESCRIPTOR } as unknown as Parameters<NonNullable<DeviceDescriptor['reader']>['getParam']>[0];
+    const snap = await AXEFX3_DESCRIPTOR.reader!.getBlockLayoutSnapshot!(ctx);
+    check('III layout: amp, reverb and input placed', snap.placedBlocks.has('amp') && snap.placedBlocks.has('reverb') && snap.placedBlocks.has('input'), [...snap.placedBlocks].join(','));
+    check('III layout: delay not placed', !snap.placedBlocks.has('delay'));
+    check('III layout: off-grid blocks (tuner) never reported unplaced', snap.placedBlocks.has('tuner'),[...snap.placedBlocks].join(','));
+    check('III layout: uncabled reverb is unrouted, amp is not', snap.unroutedBlocks?.has('reverb') === true && snap.unroutedBlocks?.has('amp') === false, [...(snap.unroutedBlocks ?? [])].join(','));
+    _resetBlockLayoutCacheForTests();
+    const phantom = await collectPhantomParamWarnings(AXEFX3_DESCRIPTOR, ctx, 'delay', 'mix');
+    check('III set_param to unplaced delay carries the not-placed warning', phantom.length === 1 && /no 'delay'/.test(phantom[0].info), JSON.stringify(phantom));
+    const placedOk = await collectPhantomParamWarnings(AXEFX3_DESCRIPTOR, ctx, 'amp', 'gain');
+    check('III set_param to placed amp carries no warning', placedOk.length === 0, JSON.stringify(placedOk));
+    _resetBlockLayoutCacheForTests();
+  }
+
+  // (0b) Issue #35: short III Resonator / Looper dumps. The legacy /4 split put
+  // Resonator 80 at 4 x 20 (paramIds 20..39 unreadable: the reported 20) and a
+  // Looper 72 at 4 x 18 (paramIds 18..23: the reported 6). The III's own cache
+  // strides (Resonator 40; Looper 24 via the shared section 50) split them
+  // 2 x 40 and 3 x 24.
+  {
+    const conn = mockConnect({
+      responder: makeGen3BroadcastMockResponder({
+        modelByte: 0x10,
+        placedEffectIds: [162, 166],
+        itemCountFor: (eid) => (eid === 162 ? 80 : eid === 166 ? 72 : undefined),
+        valueAt: (_eid, i) => i * 100,
+      }),
+      ackLatencyMs: 1,
+    });
+    const ctx = { conn, descriptor: AXEFX3_DESCRIPTOR } as unknown as Parameters<NonNullable<DeviceDescriptor['reader']>['getParam']>[0];
+    for (const [slug, chan] of [['resonator', 'A'], ['looper', 'C']] as const) {
+      const keys = Object.keys(AXEFX3_DESCRIPTOR.blocks?.[slug]?.params ?? {});
+      const failed: string[] = [];
+      for (const k of keys) {
+        try {
+          await AXEFX3_DESCRIPTOR.reader!.getParam(ctx, slug, k, chan);
+        } catch (err) {
+          failed.push(`${k}: ${err instanceof Error ? err.message.slice(0, 60) : String(err)}`);
+        }
+      }
+      check(`III ${slug}: every catalog param reads from the short dump (${keys.length})`, keys.length > 0 && failed.length === 0, failed.slice(0, 3).join(' | '));
+    }
+    // Channel B of the Resonator is the second 40-value copy.
+    const resKeys = Object.keys(AXEFX3_DESCRIPTOR.blocks?.resonator?.params ?? {});
+    const a = await AXEFX3_DESCRIPTOR.reader!.getParam(ctx, 'resonator', resKeys[0], 'A');
+    const b = await AXEFX3_DESCRIPTOR.reader!.getParam(ctx, 'resonator', resKeys[0], 'B');
+    check('III resonator channel B reads the second 40-value copy', b.wire_value - a.wire_value === 4000, `A=${a.wire_value} B=${b.wire_value}`);
+  }
+
   // (a) grid available → live_grid positioned, routing_omitted false.
   {
     const conn = mockConnect({
@@ -1390,7 +1480,10 @@ async function liveGridChecks(): Promise<void> {
       check('FM9 find_compatible_types amp+depth: applicability_known', depth.applicability_known === true);
       check('FM9 find_compatible_types amp+depth: a strict subset', depth.compatible_types.length > 0 && depth.compatible_types.length < depth.total_types, `${depth.compatible_types.length}/${depth.total_types}`);
       const drive = fct({ block: 'amp', params: ['drive'] });
-      check('FM9 find_compatible_types amp+drive: universal (all amps)', drive.compatible_types.length === drive.total_types && drive.total_types === 331, `${drive.compatible_types.length}/${drive.total_types}`);
+      // fw 12 cache: 336 amp models; the validity table covers the first 331, and
+      // the 5 newer ones are named in the note as unfiltered, not dropped silently.
+      check('FM9 find_compatible_types amp+drive: universal (every covered amp)', drive.compatible_types.length === 331 && drive.total_types === 336, `${drive.compatible_types.length}/${drive.total_types}`);
+      check('FM9 find_compatible_types names the uncovered fw 12 amps', /not filtered: .*PVH 6160 Block Clean/.test(drive.note ?? ''), String(drive.note));
       const reverb = fct({ block: 'reverb', params: ['time'] });
       check('FM9 find_compatible_types non-amp: applicability_known false', reverb.applicability_known === false);
     }
@@ -1537,6 +1630,36 @@ console.log('\nC11: 0x64 multipurpose-response reject predicate hardening:');
     fm3.isMultipurposeResponse(stream) === false);
 }
 
+console.log('\nCache-derived enum names (III issue #13 cache fw 32.06, FM9 fw 12.0 cache):');
+{
+  // Each case: the device cache's label at an ordinal the family overlay used
+  // to name differently, so set-by-name sent the wrong value.
+  const cases: Array<[string, string, string | number, number]> = [
+    ['delay', 'lfo1type', 'Log', 6],          // overlay had Smooth at 6, Log at 7 (= EXP)
+    ['delay', 'lfo1type', 'Trapezoid', 8],
+    ['chorus', 'lfotype', 'Astable', 9],
+    ['delay', 'model', 'Zephyr', 22],         // overlay had Pan Delay at 22
+    ['delay', 'model', 'Pan Delay', 24],
+    ['pitch', 'tempo', '1/64 Trip', 0],       // PITCH_TEMPO has no "None": the AM4 list was one off
+    ['pitch', 'tempo', '1/64', 1],
+    ['amp', 'inputselect', 'SUM L+R', 2],     // overlay had L+R at 0
+    ['amp', 'type', 'Deluxe Tweed Bright', 283],
+    ['reverb', 'type', 'Small Room', 0],      // shipped spelling kept over "Room: Small Room"
+    ['reverb', 'type', 'Asylum Hall', 36],
+  ];
+  for (const desc of [AXEFX3_DESCRIPTOR, FM9_DESCRIPTOR]) {
+    for (const [block, key, name, ord] of cases) {
+      const schema = desc.blocks[block]?.params[key];
+      let got: unknown;
+      try { got = schema?.encode?.(name); } catch (e) { got = (e as Error).message; }
+      check(`${desc.id} ${block}.${key} "${name}" encodes ordinal ${ord}`, got === ord, String(got));
+    }
+    // A selector that had no names at all now has the device's own.
+    const knee = desc.blocks['compressor']?.params['knee']?.enum_values;
+    check(`${desc.id} compressor.knee is named from the cache`, knee?.[0] === 'HARD', JSON.stringify(knee?.[0]));
+  }
+}
+
 console.log('\nC12: 5-septet float32 codec vs independent captured vectors (ForgeFX / fm3-protocol):');
 {
   // ForgeFX's FractalSysex.cs pins these against the sKuhLight/fm3-protocol
@@ -1578,10 +1701,47 @@ console.log('\nC13: signed-raw-semitone decode (PITCH/PLEX/SYNTH/REVERB shift, i
     for (const [wire, display] of roundtripPairs) {
       check(`${id} decode(${wire}) = ${display} (captured hardware wire)`, schema.decode(wire) === display, `got ${schema.decode(wire)}`);
     }
-    // SET direction is UNCHANGED: the standard normalized-continuous encode
-    // (the roundtrip's sentWire values were themselves the standard sweep).
+    // SET direction: the range ends and zero are the exact linear wire.
     check(`${id} encode(-24) = 0`, schema.encode(-24) === 0, `got ${schema.encode(-24)}`);
     check(`${id} encode(24) = 65534`, schema.encode(24) === 65534, `got ${schema.encode(24)}`);
+    check(`${id} encode(0) = 32767`, schema.encode(0) === 32767, `got ${schema.encode(0)}`);
+    // Issue #32: the unit TRUNCATES toward zero when it rescales the wire onto
+    // its integer register (the sweep above: 16384 -> -11, 49151 -> +12), so
+    // the exact linear wire for +7 landed as 6 and -5 as -4. Every whole
+    // semitone must survive the unit's own law, and must also survive a unit
+    // that rounds instead.
+    const truncated = (wire: number): number => Math.trunc((wire / 65534) * 48 - 24);
+    const rounded = (wire: number): number => Math.round((wire / 65534) * 48 - 24);
+    let landed = true;
+    for (let st = -24; st <= 24; st++) {
+      const wire = schema.encode(st);
+      if (truncated(wire) !== st || rounded(wire) !== st) landed = false;
+    }
+    check(`${id} every semitone -24..+24 lands on itself under truncation and under rounding`, landed,
+      `+7 -> wire ${schema.encode(7)} -> ${truncated(schema.encode(7))}, -5 -> wire ${schema.encode(-5)} -> ${truncated(schema.encode(-5))}`);
+    check(`${id} the old exact-linear wire reproduces the report (+7 -> 6, -5 -> -4)`, truncated(42324) === 6 && truncated(25941) === -4);
+  }
+  // Issue #32: phaser Order is a 6-entry list of stage counts (2..12), not a
+  // 1..12 count. Its display values are the stage counts; the wire is the
+  // ordinal (ordinal 0 = "2", read in Axe-Edit on an Axe-Fx III).
+  for (const desc of [AXEFX3_DESCRIPTOR, FM9_DESCRIPTOR]) {
+    const order = desc.blocks['phaser']?.params['order'];
+    const enc = (v: number | string): number | string => { try { return order!.encode(v); } catch (e) { return (e as Error).message; } };
+    check(`${desc.id} phaser.order "6" stages encodes to ordinal 2`, enc('6') === 2, `got ${enc('6')}`);
+    check(`${desc.id} phaser.order "12" stages encodes to ordinal 5`, enc('12') === 5, `got ${enc('12')}`);
+    check(`${desc.id} phaser.order ordinal 0 decodes to "2"`, order?.decode(0) === '2', `got ${String(order?.decode(0))}`);
+  }
+  // Issue #32: a param the device's editor defines no range for (an all-zero
+  // cache row: graphic_eq.mix on the III) refuses a write instead of sending
+  // the display number as raw wire. Reads still pass through.
+  {
+    const mix = AXEFX3_DESCRIPTOR.blocks['graphic_eq']?.params['mix'];
+    let refused = '';
+    try { mix?.encode(60); } catch (e) { refused = (e as Error).message; }
+    check('axe-fx-iii graphic_eq.mix write is refused, not sent as raw wire', /cannot be written/.test(refused), `got ${refused || 'no refusal'}`);
+    check('axe-fx-iii graphic_eq.mix still reads', mix?.decode(1234) === 1234);
+    const level = AXEFX3_DESCRIPTOR.blocks['reverb']?.params['mix'];
+    check('axe-fx-iii reverb.mix (a real param) still encodes', typeof level?.encode(50) === 'number');
   }
   // FM3 shares the same firmware symbols (family-wide overlay list); no FM3
   // hardware roundtrip exists yet, but the wiring must still be live.
@@ -1658,6 +1818,14 @@ console.log('\nC13: signed-raw-semitone decode (PITCH/PLEX/SYNTH/REVERB shift, i
   let stillRefuses = false;
   try { resolveBlockName(iii, 'wobble'); } catch (e) { stillRefuses = e instanceof DispatchError && e.code === 'unknown_block'; }
   check('axe-fx-iii: a name that is no block still refuses with unknown_block', stillRefuses);
+  // Issue #35: set_block took only the full catalog name while set_param /
+  // set_bypass took the short one. It now resolves the same names, and a
+  // non-block placement word still reaches the writer unchanged.
+  const setBlockWrong = expectations.filter(([typed, want]) => resolveSetBlockType(iii, typed) !== want);
+  check(`axe-fx-iii: set_block resolves the same ${expectations.length} short and typed names`,
+    setBlockWrong.length === 0, setBlockWrong.map(([t, w]) => `${t} -> ${w}`).join(', '));
+  check('axe-fx-iii: set_block passes "none" and "shunt" through to the writer unchanged',
+    resolveSetBlockType(iii, 'none') === 'none' && resolveSetBlockType(iii, 'shunt') === 'shunt');
   for (const d of MODERN_FRACTAL_DESCRIPTORS) {
     const dangling = Object.entries(d.block_aliases ?? {}).filter(([short, full]) => !(full in d.blocks) || short in d.blocks);
     check(`${d.id}: every short name points at a block this device has, and shadows none`,

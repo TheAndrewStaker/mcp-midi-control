@@ -17,7 +17,7 @@
  *   - `docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt`
  */
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
-import { PARAMS_BY_FAMILY } from 'fractal-midi/gen3/axe-fx-iii';
+import { PARAMS_BY_FAMILY, III_CACHE_ENUM_NAMES } from 'fractal-midi/gen3/axe-fx-iii';
 import type { FractalModernConfig } from '../factory.js';
 import { MODERN_AGENT_GUIDANCE } from './shared.js';
 
@@ -155,18 +155,20 @@ export const AXE_FX_III_CONFIG: FractalModernConfig = {
   bank_select: 'msb',
   support_tier: 'community-beta',
   verification:
-    'fn=0x01 SET byte-verified against 10 public captures, and now III-hardware-confirmed ' +
-    'end-to-end (community owner test 2026-06-17: continuous set_param amp gain on channel A ' +
-    'acked with device echo, get_param read-back matched the front panel display). A 2026-06-18 ' +
-    'catalog-wide SET->GET roundtrip then confirmed the read + continuous-write paths across the ' +
-    'whole III catalog on hardware, and became the device oracle for the 2026-06-20 reroute of ' +
-    '~92 type/model/count selectors from continuous floats to discrete ordinals (wire builders ' +
-    'unchanged; byte-identity intact). After a Mk I sweep (fw 32.06): switch_preset goes by SysEx ' +
-    'and save_preset is checked by a name read-back; no CPU figure (sibling formula falsified). ' +
-    'Still beta on real III hardware: discrete set-by-name, save_preset, set_block, and the live ' +
-    'grid read (sub=0x2E).',
+    'fn=0x01 SET byte-verified against 10 public captures. III hardware: get_param and continuous ' +
+    'set_param (2026-06-17, read-back matched the panel); a catalog-wide SET->GET roundtrip ' +
+    '(2026-06-18) that is the oracle routing ~92 type/model/count selectors as discrete ordinals ' +
+    '(byte-identity intact); and on a Mk I, fw 32.06 (2026-10-29): set-by-name, set_bypass, ' +
+    'switch_scene, and save_preset behind the overwrite gate. switch_preset goes by SysEx; no CPU ' +
+    'figure (sibling formula falsified). Still beta here: set_block (a 0.8.0 false pass; the ' +
+    'cell-select now sent first is untested) and the live grid read (sub=0x2E).',
   // The III's own catalog — the byte-identity anchor for the family.
   params_by_family: PARAMS_BY_FAMILY,
+  // Device-true enum names from the community Axe-Edit III cache (fw 32.06,
+  // issue #13), joined by (family, paramId): names 488 selectors that had
+  // none and corrects the family-overlay lists that named the wrong ordinal
+  // (LFO types from 6, delay.model from 22, PITCH_TEMPO, inputselect).
+  enum_overrides: III_CACHE_ENUM_NAMES,
   canonical_terms: {
     block: 'block',
     slot: 'grid location (row 1..6, col 1..14)',

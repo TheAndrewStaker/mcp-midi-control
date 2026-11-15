@@ -176,6 +176,9 @@ export function createMpcDescriptor(config: MpcConfig): DeviceDescriptor {
       save_note:
         'No save over MIDI. A project is saved on the unit (Menu > Save) or written as files to its card.',
       supports_lineage: false,
+      // Card projects are list positions; the reader clamps `to` to the list, so
+      // the default is the first page and anything past it is the next page.
+      scan_default_range: { from: 1, to: SCAN_MAX_ROWS, rest: `${SCAN_MAX_ROWS + 1} onwards, if the card lists more` },
       // A sequence number (MIDI), or a project's folder under Projects/ (card).
       preset_location_format: /^(\d{1,3}|[^\0]+)$/,
       pattern_realizers: ['live_stream'],

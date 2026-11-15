@@ -94,7 +94,11 @@ function writeGridBits(region: number[], bit: number, value: number, n: number):
  * get_preset's active path). Geometry matches gridLayout.ts: cell =
  * u16 id + u16 input mask from bit 45 + col*192 + row*32.
  */
-function buildGridLayoutResponse(modelByte: number, placedEffectIds: readonly number[]): number[] {
+function buildGridLayoutResponse(
+  modelByte: number,
+  placedEffectIds: readonly number[],
+  uncabled: ReadonlySet<number> = new Set(),
+): number[] {
   const region = new Array(391).fill(0);
   // Input (effect id 37) at col 0, then each placed block in its own column, row 0.
   const chain = [37, ...placedEffectIds];
@@ -102,7 +106,8 @@ function buildGridLayoutResponse(modelByte: number, placedEffectIds: readonly nu
     const base = 45 + col * 192;
     writeGridBits(region, base, eid & 0xff, 8); // id low byte
     writeGridBits(region, base + 8, eid >> 8, 8); // id high byte
-    writeGridBits(region, base + 16, col > 0 ? 1 : 0, 8); // input mask: row 0 of the previous column
+    // input mask: row 0 of the previous column (0 for a block left uncabled)
+    writeGridBits(region, base + 16, col > 0 && !uncabled.has(eid) ? 1 : 0, 8);
   });
   const header = [SYSEX_START, ...MFR_PREFIX, modelByte, 0x01, 0x2e];
   const frame = [...header];
@@ -121,15 +126,16 @@ function buildBroadcastBurst(
   modelByte: number,
   effectId: number,
   valueAt?: (effectId: number, index: number) => number,
+  itemCount: number = MOCK_ITEM_COUNT,
 ): number[][] {
   const head = envelope(modelByte, FN_BROADCAST_HEAD, [
     encode14Lo(effectId), encode14Hi(effectId),
-    encode14Lo(MOCK_ITEM_COUNT), encode14Hi(MOCK_ITEM_COUNT),
+    encode14Lo(itemCount), encode14Hi(itemCount),
     0x00, // flag
   ]);
 
   const bodyValues: number[] = [];
-  for (let i = 0; i < MOCK_ITEM_COUNT; i++) {
+  for (let i = 0; i < itemCount; i++) {
     bodyValues.push(...packValue16(valueAt ? valueAt(effectId, i) : MOCK_PARAM_VALUE));
   }
   const body = envelope(modelByte, FN_BROADCAST_BODY, [
@@ -233,6 +239,10 @@ export interface Gen3ParityMockOptions {
    * a constant mid-scale value (every channel equal).
    */
   valueAt?: (effectId: number, index: number) => number;
+  /** Placed effect IDs whose grid cell carries no input cable (mask 0). */
+  uncabledEffectIds?: readonly number[];
+  /** Per-effect-ID head itemCount override (default 256), e.g. a real block's dump size. */
+  itemCountFor?: (effectId: number) => number | undefined;
 }
 
 /**
@@ -259,12 +269,14 @@ export function makeGen3BroadcastMockResponder(opts: Gen3ParityMockOptions = {})
     if (outgoing[5] === FN_REQUEST_PRESET_DUMP) return buildStoredPresetDump(modelByte);
     // Live grid query (get_preset active buffer): fn=0x01 sub=0x2E empty-target.
     if (outgoing[5] === 0x01 && outgoing[6] === 0x2e) {
-      return [buildGridLayoutResponse(modelByte, [...placed])];
+      return [buildGridLayoutResponse(modelByte, [...placed], new Set(opts.uncabledEffectIds ?? []))];
     }
     if (outgoing.length < 10) return [];
     if (outgoing[5] !== FN_BLOCK_BULK_READ) return [];
     const effectId = (outgoing[6] & 0x7f) | ((outgoing[7] & 0x7f) << 7);
-    if (placed.has(effectId)) return buildBroadcastBurst(modelByte, effectId, opts.valueAt);
+    if (placed.has(effectId)) {
+      return buildBroadcastBurst(modelByte, effectId, opts.valueAt, opts.itemCountFor?.(effectId) ?? MOCK_ITEM_COUNT);
+    }
     return [buildNotInUseNack(modelByte)];
   };
 }

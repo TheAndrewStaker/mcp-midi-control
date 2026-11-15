@@ -161,6 +161,8 @@ export const HYDRASYNTH_DESCRIPTOR: DeviceDescriptor = {
     preset_location_format: /^([A-H]\d{1,3}|\d{1,4})$/,
     supports_save: false,
     supports_lineage: false,
+    // One bank (128 names) per default call: the reader caps a call at 4 banks.
+    scan_default_range: { from: 'A001', to: 'A128', rest: 'B001..H128 (up to 4 banks per call)' },
     atomic_read: false,
     // Mod-matrix + macro-page routing authorable by name (set_mod_route /
     // set_macro_route). Source/target wire values resolve through the

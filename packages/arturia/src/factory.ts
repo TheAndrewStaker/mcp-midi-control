@@ -41,6 +41,11 @@ export function createFreakDescriptor(config: FreakConfig): DeviceDescriptor {
           + 'unknown for this model, so the whole surface is absent rather than approximate.',
       supports_lineage: false,
       preset_location_format: /^\d{1,3}$/,
+      // One SysEx name round trip per slot (up to a 400 ms timeout), so the
+      // no-range default is the first 64 slots. Only where names are readable.
+      ...(hasSysex
+        ? { scan_default_range: { from: 1, to: 64, rest: `65..${config.sysex!.preset_count}` } }
+        : {}),
       // BackupPolicy, only when the SysEx dump surface exists (its presence is
       // what makes `reader.dumpStoredPresetBinary` real). Declaring the bounds
       // lets backup_device size a stored sweep without from/to. No

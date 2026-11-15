@@ -128,7 +128,7 @@ function main(): void {
       if (!n.recorded) console.log('      Manifest carries no structurally_valid:false for it. Re-run circuit-backup-card.ts against this directory to record it.');
     }
     console.log('  These are NOT transfer failures. Recapturing fetches the same bytes; the damage is on the card.');
-    console.log('  upload_project refuses them, so the exit code below reports BACKUP integrity only.');
+    console.log('  import_preset refuses them, so the exit code below reports BACKUP integrity only.');
   }
   process.exit(bad === 0 ? 0 : 1);
 }

@@ -1,6 +1,6 @@
 {
   "name": "mcp-midi-control",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "An opinionated open-source MCP server for controlling MIDI gear by conversation: display-first units, safe-by-default writes, and the same guarantees across every device. Generic MIDI for any USB device, with hardware-verified depth on the Fractal AM4, Axe-Fx II, and ASM Hydrasynth (Axe-Fx III, the modern Fractal family, and the original Axe-Fx Standard/Ultra in community beta).",
   "private": true,
   "license": "Apache-2.0",

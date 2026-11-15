@@ -304,6 +304,14 @@ const DIRECT_OVERRIDES: Record<string, EnumOverlayEntry> = {
     provenance: 'iii-spec',
     note: 'Inferred from spring-reverb editor presentation; III-untested.',
   },
+  PHASER_ORDER: {
+    // Stage count, "in twos". The III and FM9 editor caches both carry this as
+    // a 6-entry enum with a display scale of 2 (0..10 + the first stage pair),
+    // and an Axe-Fx III owner saw ordinal 0 read "2" in Axe-Edit (issue #32).
+    values: { 0: '2', 1: '4', 2: '6', 3: '8', 4: '10', 5: '12' },
+    provenance: 'iii-spec',
+    note: 'Editor-cache enumCount 6 with scale 2; ordinal 0 = 2 stages confirmed on an Axe-Fx III (fw 32.06).',
+  },
   PRESET_BAND: {
     values: { 0: 'Low', 1: 'Mid', 2: 'High' },
     provenance: 'iii-spec',
@@ -352,6 +360,16 @@ export function resolveEnumValues(name: string): EnumOverlayEntry | undefined {
  */
 export function resolveEffectTypeEnum(name: string): EnumOverlayEntry | undefined {
   return EFFECT_TYPE_OVERRIDES[name];
+}
+
+/**
+ * Exact-symbol lookup only, no suffix rules. For a param the catalog does not
+ * type as an enum but the device's own editor cache does (PHASER_ORDER is a
+ * "count" in the catalog and a 6-entry list on the device): the suffix rules
+ * are too broad to apply to a param on that evidence alone.
+ */
+export function resolveDirectEnumOverride(name: string): EnumOverlayEntry | undefined {
+  return DIRECT_OVERRIDES[name];
 }
 
 /**

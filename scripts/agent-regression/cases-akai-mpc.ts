@@ -252,4 +252,22 @@ export const AKAI_MPC_CASES: AgentRegressionCase[] = [
       text_contains_any: [['Night Drive'], ['Slow Tide']],
     },
   },
+
+  // list_midi_ports' verdict is device-neutral (2026-11-14 audit): it used to
+  // open with "AM4 not visible ... install the AM4 driver" whatever was asked,
+  // and agents relayed that to MPC owners.
+  {
+    id: 'mpc-connection-check-not-am4-centric',
+    device: 'mpc-one-g2',
+    description:
+      'A "is my MPC connected?" check should read the port list (list_midi_ports or describe_rig) and answer about the MPC. '
+      + 'Catches an agent relaying an AM4 driver hint to someone asking about a different device.',
+    prompt: 'Can you see my MPC One over USB right now?',
+    expectations: {
+      must_call_any: [['list_midi_ports'], ['describe_rig'], ['describe_device']],
+      must_not_call: ['send_program_change', 'switch_preset', 'reconnect_midi'],
+      max_tools: 4,
+      text_not_contains: ['AM4 driver', 'am4-downloads'],
+    },
+  },
 ];

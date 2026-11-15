@@ -4,10 +4,11 @@ A short, one-time setup. It takes ~5–10 minutes, most of it waiting on
 downloads. You do **not** need to be a developer, install a compiler, pay any
 fee, or edit any files by hand.
 
-> **A one-click install is coming.** A Claude Desktop Extension (`.mcpb`) that
-> installs from inside Claude Desktop with no Terminal at all is in progress
-> (see [accessibility plan](design/accessibility-blind-support.md)). Until it
-> ships, the Terminal steps below are the way in, and they are short.
+> **No one-click install for Mac yet.** The server can be packaged as a Claude
+> Desktop Extension (`.mcpb`) that installs with no Terminal at all, but a
+> macOS build is not yet published with the releases (see the
+> [accessibility plan](design/accessibility-blind-support.md)). Until it is,
+> the Terminal steps below are the way in, and they are short.
 
 ## Why this install is friction-free (no compiler, no security prompts)
 
@@ -44,11 +45,13 @@ Mac's chip (Apple Silicon or Intel). Two things follow:
 
    ```
    cd ~/mcp-midi-control
+   npm install
    npm run setup-mac
    ```
 
-   `setup-mac` downloads the prebuilt MIDI engine and registers the server with
-   Claude Desktop for you, so you never touch a config file. (If you prefer, you
+   `npm install` downloads the prebuilt MIDI engine and the rest of the
+   software; `setup-mac` builds the server and registers it with Claude Desktop
+   for you, so you never touch a config file. (If you prefer, you
    can instead double-click **`setup-mac.command`** in the `~/mcp-midi-control`
    folder in Finder; it does the same thing.)
 
@@ -124,9 +127,11 @@ Then fully quit and reopen Claude Desktop.
 ## Notes for the maintainer
 
 **Update:** the native dependency has been swapped from `midi` to
-`@julusian/midi` (API-compatible drop-in, ships N-API prebuilts). Two
-consequences, both pending on-Mac confirmation (validate on the Intel iMac for
-darwin-x64 and a community Apple-Silicon owner for darwin-arm64):
+`@julusian/midi` (API-compatible drop-in, ships N-API prebuilts). An Axe-Fx
+III owner installed on Apple Silicon (darwin-arm64) with `npm install` then
+`npm run setup-mac` on 2026-10-28 and drove the unit end to end, so the
+prebuild fetch is confirmed there; Intel (darwin-x64) is still unconfirmed.
+Two consequences:
 
 1. **The Xcode Command Line Tools step (step 3) is now usually unnecessary.**
    `npm install` fetches a prebuilt binary instead of compiling, so common Macs

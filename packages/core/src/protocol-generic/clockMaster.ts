@@ -24,6 +24,13 @@ export interface ClockMasterInfo {
   masters: string[];
   /** Nodes holding the `clock_follower` role (the devices slaved to the master's clock). */
   followers: string[];
+  /**
+   * The manifest file the roles were read from (re-read on every change to it).
+   * Named in the tempo guidance because the role is DECLARED, not sensed: when
+   * the user moves the clock to another box, the answer is wrong until this
+   * file says so, and the path is where to fix it.
+   */
+  source?: string;
 }
 
 /**
@@ -41,5 +48,5 @@ export function resolveClockMaster(): ClockMasterInfo {
     if (node.roles.includes('clock_master')) masters.push(node.name);
     if (node.roles.includes('clock_follower')) followers.push(node.name);
   }
-  return { masters, followers };
+  return { masters, followers, source: manifest.source };
 }

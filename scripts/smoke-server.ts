@@ -747,6 +747,47 @@ async function main(): Promise<void> {
   );
   console.log(`✓ send_reset_controllers happy path validates input + surfaces port-not-found`);
 
+  // Unknown arguments REFUSE server-wide (knownArguments.ts). Before, zod
+  // stripped them: measure_loudness({path}) answered with the input roster as
+  // if nothing had been passed. The refusal names the key and the valid ones,
+  // and fires before any other validation, so no device or audio is touched.
+  await assertSendError(
+    'unknown argument refuses',
+    'measure_loudness',
+    { path: 'x.wav' },
+    'unknown argument "path". Valid: input_device, seconds, channels, first_channel',
+  );
+  await assertSendError(
+    'unknown argument names a close match',
+    'send_cc',
+    { port: BOGUS_PORT, chanel: 1, controller: 7, value: 100 },
+    '"chanel" -> channel?',
+  );
+  await assertSendError(
+    'unknown argument on a no-argument tool',
+    'open_rig_editor',
+    { verbose: true },
+    'Valid: (none, this tool takes no arguments)',
+  );
+  console.log(`✓ unknown arguments refuse, naming the key, the valid ones, and a close match`);
+
+  // scan_locations from/to are optional now, but a NAVIGATING scanner (the
+  // Axe-Fx II switches presets per slot) never defaults to its whole range.
+  // Refuses at range resolution, before any port is opened.
+  await assertSendError(
+    'navigating scanner refuses a whole-range default',
+    'scan_locations',
+    { port: 'axe-fx-ii' },
+    'needs an explicit from and to',
+  );
+  console.log(`✓ scan_locations without from/to refuses on a navigating scanner (Axe-Fx II)`);
+
+  // list_midi_ports' default verdict is device-neutral, not "AM4 not visible".
+  if (/AM4 not visible/.test(portsText)) {
+    throw new Error(`list_midi_ports default verdict is still AM4-centric:\n${portsText}`);
+  }
+  console.log(`✓ list_midi_ports default verdict is device-neutral`);
+
   child.stdin.end();
   await once(child, 'exit');
   const stderrStr = Buffer.concat(stderrChunks).toString('utf8');

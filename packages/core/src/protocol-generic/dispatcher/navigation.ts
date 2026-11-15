@@ -330,10 +330,10 @@ export async function executeRename(args: { port: string; target: string; name: 
  * Full lifecycle for `scan_locations(port, from, to)`. The reader
  * adapter performs the iteration; this layer just routes.
  */
-export async function executeScanLocations(args: {
+export async function executeScanLocations(rawArgs: {
   port: string;
-  from: string | number;
-  to: string | number;
+  from?: string | number;
+  to?: string | number;
   pack?: number;
   on_active_preset_edited?: 'warn' | 'discard' | 'save_active_first';
 }): Promise<{
@@ -342,8 +342,9 @@ export async function executeScanLocations(args: {
   failed_at?: string;
   failed_reason?: string;
   warning?: string;
+  note?: string;
 }> {
-  const descriptor = requireDevice(args.port);
+  const descriptor = requireDevice(rawArgs.port);
   const scanLocations = descriptor.reader.scanLocations;
   if (scanLocations === undefined) {
     throw new DispatchError(
@@ -352,6 +353,96 @@ export async function executeScanLocations(args: {
       `scan_locations is not implemented for ${descriptor.display_name}.`,
     );
   }
+  const { args, note } = resolveScanRange(descriptor, rawArgs);
+  const result = await executeScanLocationsResolved(descriptor, scanLocations, args);
+  return note !== undefined ? { ...result, note: pageNote(descriptor, rawArgs, args, result, note) } : result;
+}
+
+/**
+ * The default-range note, corrected after the scan: a capped first page that came back SHORT of its
+ * page size holds everything there is, so "the rest is ..." would send the agent paging for nothing
+ * (dogfood 2026-11-15: an 88-project MPC card was reported as "the first page only").
+ */
+export function pageNote(
+  descriptor: Pick<ReturnType<typeof requireDevice>, 'capabilities'>,
+  rawArgs: { from?: string | number; to?: string | number },
+  args: { from: string | number; to: string | number },
+  result: { scanned: readonly unknown[]; failed_at?: string },
+  note: string,
+): string {
+  const def = descriptor.capabilities.scan_default_range;
+  const whole = rawArgs.from === undefined && rawArgs.to === undefined;
+  if (!whole || def?.rest === undefined || result.failed_at !== undefined) return note;
+  if (typeof args.from !== 'number' || typeof args.to !== 'number') return note;
+  const page = args.to - args.from + 1;
+  if (result.scanned.length >= page) return note;
+  return `No from/to given: scanned ${String(args.from)}..${String(args.to)} and it holds everything: `
+    + `${String(result.scanned.length)} entries, no further page.`;
+}
+
+/**
+ * Fill an omitted `from` / `to` from the descriptor's `scan_default_range`.
+ * Pure, exported for the gate. A device with no default (a navigating scanner,
+ * or one whose range is not static) refuses with the range to pass instead.
+ */
+export function resolveScanRange<A extends { from?: string | number; to?: string | number }>(
+  descriptor: Pick<ReturnType<typeof requireDevice>, 'display_name' | 'capabilities'>,
+  args: A,
+): { args: A & { from: string | number; to: string | number }; note?: string } {
+  if (args.from !== undefined && args.to !== undefined) {
+    return { args: args as A & { from: string | number; to: string | number } };
+  }
+  const def = descriptor.capabilities.scan_default_range;
+  if (def === undefined) {
+    const why = descriptor.capabilities.scan_navigates === true
+      ? ` It scans by SWITCHING to each preset (discards unsaved edits, ~250 ms each), so it never defaults to its whole range.`
+      : '';
+    throw new DispatchError(
+      'bad_location',
+      descriptor.display_name,
+      `scan_locations on ${descriptor.display_name} needs an explicit from and to.${why}`,
+    );
+  }
+  const whole = args.from === undefined && args.to === undefined;
+  if (!whole && def.rest !== undefined) {
+    // The default is a capped first page, so its far end is not the device's
+    // last location; pairing it with a caller's other end would scan the wrong
+    // span (or a reversed one). Ask for both rather than guess.
+    throw new DispatchError(
+      'bad_location',
+      descriptor.display_name,
+      `scan_locations on ${descriptor.display_name}: pass both from and to, or neither. With neither it scans `
+      + `${String(def.from)}..${String(def.to)}, and the rest is ${def.rest}.`,
+    );
+  }
+  const from = args.from ?? def.from;
+  const to = args.to ?? def.to;
+  const note = whole
+    ? `No from/to given: scanned ${String(from)}..${String(to)}`
+      + (def.rest !== undefined
+        ? `, the first page only (a whole-range default would exceed the per-call time or size budget). The rest is ${def.rest}; call again with that from/to.`
+        : ', the whole range.')
+    : `${args.from === undefined ? 'from' : 'to'} omitted: defaulted to ${String(args.from === undefined ? from : to)}.`;
+  return { args: { ...args, from, to }, note };
+}
+
+async function executeScanLocationsResolved(
+  descriptor: ReturnType<typeof requireDevice>,
+  scanLocations: NonNullable<ReturnType<typeof requireDevice>['reader']['scanLocations']>,
+  args: {
+    port: string;
+    from: string | number;
+    to: string | number;
+    pack?: number;
+    on_active_preset_edited?: 'warn' | 'discard' | 'save_active_first';
+  },
+): Promise<{
+  device: string;
+  scanned: readonly ScannedLocation[];
+  failed_at?: string;
+  failed_reason?: string;
+  warning?: string;
+}> {
   // `pack` (Circuit Tracks) rides on ctx like every other pack-addressed op, so a
   // scan lists the requested pack's directory. assertPackSupported (inside the
   // ctx build) refuses pack>1 on packless devices.

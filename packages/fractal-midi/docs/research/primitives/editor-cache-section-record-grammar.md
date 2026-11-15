@@ -7,6 +7,7 @@ verified_on:
   - am4-edit-cache-0x15-fw2.0
   - axe-edit-ii-cache-0x07
   - axe-edit-iii-cache-0x10-fw29.0 (editor-shipped, float ranges only)
+  - axe-edit-iii-cache-0x10-fw21.1/27.1/27.2/32.4/32.6 (Mk I, device-synced)
   - fm9-edit-cache-0x12-fw8.1
   - fm9-edit-cache-0x12-fw11.0
   - fm9-edit-cache-0x12-fw75.0
@@ -58,6 +59,13 @@ tableTail := (id in 0xfff0..0xfffe only)
 - **Special ids**: `0xffff` = name table (plain enumTail; e.g. 104 AM4
   preset-location names, 512 FM9 preset names); `0xfff0..0xfffe` = cab/IR
   tables (tableTail: names plus a parallel u32 wire-id array).
+- **Empty names (len = 0)** occur in device-synced caches: entry 0 of an
+  owner's User cab-IR table (III Mk I fw 32.04/32.06) and the last entry of an
+  amp channel-mode list (III fw 21.01). A walker accepts an empty entry after
+  the first one anywhere, an empty FIRST entry only inside a cab/IR table
+  (`0xfff0..0xfffe`), and never a body whose names are ALL empty: that is a
+  float-tailed record (t1 = count, t2 = 0), e.g. the unpopulated VP4 fw 2.47
+  `0xfff0` record that would otherwise read as 256 empty names.
 - **enum x field**: not padding; a bitfield (AM4 mostly 4, FM9 mostly 0x8000,
   bit 15 set on FM9). Semantics undecoded; the u16 after it is always 0.
 - **float t1/t2**: t1 always 0 on every cache walked; t2 small ints
@@ -163,3 +171,11 @@ A primitives-verify golden is the documented follow-up.
   catalog 259/259. Reference Python walker ported to TypeScript with
   structurally identical output on all compared caches. Older fw-9/10 FM9
   revision identified as out of scope (0x8000 markers).
+- 2026-11-14: empty-name rule added (issue #25 donated five III Mk I caches;
+  three failed the strict walk on a len-0 name). The refined walker re-walks
+  every other cache on disk byte-identically and walks all five. Cross-check:
+  the Mk I fw 32.06 cache matches the shipped III ranges (mined from a Mk II/
+  Turbo 32.06 cache) at 2,847 of 2,850 shared records with zero enum renames;
+  every difference is a Mk I hardware limit (512 presets: GLOBAL ids 117/118
+  0..511 vs 0..1023 and id 71 0..383 vs 0..895; no FULL-RES IR mode; no
+  "USER 3 (FR)" cab/IR bank, which is the LAST bank ordinal, so no shift).

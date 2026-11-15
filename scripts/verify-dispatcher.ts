@@ -50,6 +50,8 @@ import {
   resolveDevice,
 } from '@mcp-midi-control/core/protocol-generic/registry.js';
 import { presetShape } from '@mcp-midi-control/core/protocol-generic/tools/shared.js';
+import { unknownArgumentMessage, withKnownArguments } from '@mcp-midi-control/core/protocol-generic/tools/knownArguments.js';
+import { pageNote, resolveScanRange } from '@mcp-midi-control/core/protocol-generic/dispatcher/navigation.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { buildSetParam, checkApplicability } from 'fractal-midi/am4';
@@ -3343,6 +3345,55 @@ await testMultiInstanceSceneRef();
 
   if (priorMockTransport === undefined) delete process.env.MCP_MOCK_TRANSPORT;
   else process.env.MCP_MOCK_TRANSPORT = priorMockTransport;
+}
+
+// ── scan_locations range defaults (2026-11-14 audit) ─────────────────
+{
+  type ScanArgs = { port: string; from?: string | number; to?: string | number };
+  const scanRange = (d: Parameters<typeof resolveScanRange>[0], a: ScanArgs) => resolveScanRange<ScanArgs>(d, a);
+  const whole = scanRange({ display_name: 'X', capabilities: { scan_default_range: { from: 1, to: 64 } } as never }, { port: 'x' });
+  assert('scan default: omitted from/to take the whole declared range', whole.args.from === 1 && whole.args.to === 64
+    && /the whole range/.test(whole.note ?? ''), JSON.stringify(whole));
+  const paged = scanRange(AM4_DESCRIPTOR, { port: 'am4' });
+  assert('scan default: AM4 defaults to a first page and names the rest', paged.args.from === 'A1' && paged.args.to === 'L4'
+    && /first page only/.test(paged.note ?? '') && /M1\.\.Z4/.test(paged.note ?? ''), JSON.stringify(paged));
+  const explicit = scanRange(AM4_DESCRIPTOR, { port: 'am4', from: 'B1', to: 'B4' });
+  assert('scan default: an explicit range is untouched and carries no note', explicit.args.from === 'B1' && explicit.note === undefined);
+  expectThrows('scan default: a paged default refuses a half-given range', () => scanRange(AM4_DESCRIPTOR, { port: 'am4', from: 'M1' }), 'bad_location');
+  expectThrows('scan default: the Axe-Fx II (navigating scan) never defaults its range', () => scanRange(AXEFX2_DESCRIPTOR, { port: 'axe-fx-ii' }), 'bad_location');
+  const half = scanRange({ display_name: 'X', capabilities: { scan_default_range: { from: 1, to: 99 } } as never }, { port: 'x', from: 50 });
+  assert('scan default: a whole-range device fills just the missing end', half.args.from === 50 && half.args.to === 99, JSON.stringify(half));
+  // A capped first page that came back short holds everything (dogfood 2026-11-15, 88-project card).
+  const card = { capabilities: { scan_default_range: { from: 1, to: 200, rest: '201 onwards' } } as never };
+  const cardNote = 'No from/to given: scanned 1..200, the first page only (...). The rest is 201 onwards; call again with that from/to.';
+  const short = pageNote(card, {}, { from: 1, to: 200 }, { scanned: new Array(88).fill({}) }, cardNote);
+  assert('scan default: a short first page says it holds everything', /holds everything: 88 entries/.test(short)
+    && !/rest is/.test(short), short);
+  const full = pageNote(card, {}, { from: 1, to: 200 }, { scanned: new Array(200).fill({}) }, cardNote);
+  assert('scan default: a full first page keeps the rest-is note', full === cardNote, full);
+  const failed = pageNote(card, {}, { from: 1, to: 200 }, { scanned: [], failed_at: '3' }, cardNote);
+  assert('scan default: a scan that failed mid-page keeps the rest-is note', failed === cardNote, failed);
+}
+
+// ── Unknown tool arguments refuse (2026-11-14 audit) ──────────────────
+{
+  const schema = withKnownArguments({ input_device: z.string().optional(), seconds: z.number().optional() }) as {
+    '~standard': { validate: (v: unknown) => { issues?: { message: string }[]; value?: unknown } };
+  };
+  const bad = schema['~standard'].validate({ path: 'x.wav' });
+  assert('known args: an unknown key fails with its name and the valid keys',
+    bad.issues?.[0]?.message === 'unknown argument "path". Valid: input_device, seconds', JSON.stringify(bad));
+  const good = schema['~standard'].validate({ seconds: 4 });
+  assert('known args: valid keys still validate through the inner schema',
+    good.issues === undefined && (good.value as { seconds?: number })?.seconds === 4, JSON.stringify(good));
+  const typed = schema['~standard'].validate({ seconds: 'four' });
+  assert('known args: a known key with a bad value still fails the inner schema', (typed.issues?.length ?? 0) > 0, JSON.stringify(typed));
+  assert('known args: a close misspelling is suggested',
+    /"secnds" -> seconds\?/.test(unknownArgumentMessage({ secnds: 1 }, ['input_device', 'seconds']) ?? ''));
+  const inner = z.object({ a: z.string() });
+  const wrapped = withKnownArguments(inner) as { '~standard': { jsonSchema?: unknown } };
+  assert('known args: the wrapper reuses the inner JSON Schema (tools/list unchanged)',
+    wrapped['~standard'].jsonSchema === inner['~standard'].jsonSchema);
 }
 
 // Reporting ───────────────────────────────────────────────────────

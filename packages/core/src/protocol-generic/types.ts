@@ -194,6 +194,20 @@ export interface DeviceCapabilities {
    * that `switch_preset` runs, honouring `on_active_preset_edited`.
    */
   scan_navigates?: boolean;
+  /**
+   * What `scan_locations` reads when the caller omits `from` / `to`, in the
+   * same address form the reader's `from`/`to` take. Normally the device's
+   * WHOLE range. When the whole range would break the performance budget
+   * (> ~5 s of wire time) or the response ceiling, this is the first page and
+   * `rest` names what it leaves out ("M1..Z4"); the result says so, so a
+   * shortened scan never reads as the whole roster.
+   *
+   * ABSENT means "no default": the dispatcher refuses an omitted from/to and
+   * asks for an explicit range. That is deliberate for a scan that NAVIGATES
+   * (`scan_navigates`, the Axe-Fx II): a whole-range default there would
+   * switch presets for a minute and discard unsaved edits.
+   */
+  scan_default_range?: { from: string | number; to: string | number; rest?: string };
   has_macros?: boolean;
   /**
    * Whether the device exposes an atomic-read primitive that lets
@@ -2914,6 +2928,14 @@ export interface DeviceDescriptor {
   block_aliases?: Readonly<Record<string, string>>;
   /** For `set_block(block_type=...)`. Optional — devices may not expose typed slots. */
   block_types?: Readonly<Record<string, BlockTypeMeta>>;
+  /**
+   * Blocks `set_block` can place on a device that declares no `block_types`
+   * (the gen-3 grid devices, whose placement vocabulary IS the catalog).
+   * Feeds the `set_block` block_type schema together with the short names
+   * in `block_aliases` that point at them. Utilities and off-grid blocks
+   * (Tuner, Controllers, Scene MIDI) are left out.
+   */
+  placeable_blocks?: readonly string[];
 
   // -- adapters --
   reader: DeviceReader;

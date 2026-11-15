@@ -6,7 +6,7 @@
  * Ships in the release so an owner can confirm our gen-3 read path on real
  * hardware in one step (via `installer/<device>-probe.cmd`) — no Wireshark,
  * no editor, no menu clicking. It connects over USB MIDI, polls the active
- * preset's blocks, and writes a JSON file to email back.
+ * preset's blocks, and writes a JSON file to attach to a GitHub issue.
  *
  * Two jobs, both READ-ONLY (this probe NEVER sends a SET / store / save —
  * only bulk-read polls and a value GET, neither of which mutates device
@@ -436,7 +436,7 @@ async function main(): Promise<void> {
   console.error(`  ${placed.length}/${job1.length} block types returned data.`);
   console.error(`  GET experiment: ${job2.verdict}`);
   console.error(`  Enum-list experiment: ${job3Answered}/${job3.length} candidate requests got a reply.`);
-  console.error('\nPlease email me this JSON file. Thank you!');
+  console.error('\nPlease attach this JSON file to a new GitHub issue (see docs/contributing/SUBMITTING.md). Thank you!');
   process.exit(0);
 }
 

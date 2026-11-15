@@ -242,13 +242,10 @@ export const MODERN_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.fr
     'unless the user asks for a specific number, a free-time / slapback feel,',
     'or is playing without a tempo reference.',
     '',
-    'CAVEAT: the core tone knobs ARE display-calibrated (see param_addressing),',
-    'but the delay / modulation TIME params and the tempo-division enums are NOT',
-    'yet display-addressable -- there is no named "1/4" division you can pass.',
-    'Do NOT fabricate a division string; the codec cannot resolve it to a wire',
-    'value yet. State the tempo-first preference to the user and flag that named-',
-    'division writes are pending, rather than guessing a wire index. Pass raw',
-    'wire for time params until they are calibrated.',
+    'On the Axe-Fx III / FM3 / FM9 a block\'s `tempo` param takes the division',
+    'by name ("1/4", "1/8 Dot", "1/4 Trip"; "None" = free time), checked against',
+    'the device\'s own list (FM9 hardware: 1/8 Dot = 12). Set `tempo` rather than',
+    'a raw time. The VP4 cannot take a named division yet: say so to the user.',
   ].join('\n'),
 
   loudness: [

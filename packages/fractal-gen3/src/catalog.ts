@@ -32,6 +32,7 @@ import {
   type AxeFxIIIBlock,
   resolveEnumValues,
   resolveEffectTypeEnum,
+  resolveDirectEnumOverride,
   enumLabelForms,
   normalizeLabel,
 } from 'fractal-midi/gen3/axe-fx-iii';
@@ -209,8 +210,19 @@ function makeEnumEncode(
       if (existing === undefined || ord < existing) reverse.set(form, ord);
     }
   }
+  // A list whose every label is itself a number (phaser stages 2/4/../12,
+  // spring count 1/2/3) is addressed by the DISPLAYED number, never by
+  // ordinal: "6" must mean six stages, not the seventh entry. Display-first,
+  // and it removes a silent wrong write (issue #32: an ordinal read as a count).
+  const labels = Object.values(enumValues);
+  const numericList = labels.length > 0 && labels.every((l) => l.trim() !== '' && Number.isFinite(Number(l)));
   return (value: number | string): number => {
     const asNum = typeof value === 'number' ? value : Number(value);
+    if (numericList) {
+      const hit = Object.entries(enumValues).find(([, label]) => Number(label) === asNum);
+      if (hit !== undefined) return Number(hit[0]);
+      throw new Error(`${family}.${paramKey} expects one of ${labels.join(', ')}: ${value}`);
+    }
     if (typeof value === 'number' || (value.trim() !== '' && Number.isFinite(asNum))) {
       if (!Number.isInteger(asNum) || asNum < 0 || asNum > 65534) {
         throw new Error(`${family}.${paramKey} expects an ordinal 0..65534 or a type name: ${value}`);
@@ -472,6 +484,37 @@ export const SIGNED_RAW_SEMITONE_PARAMS: ReadonlySet<string> = new Set([
   'REVERB_SHIFT1', 'REVERB_SHIFT2',
 ]);
 
+/**
+ * SET side of the same registers. The unit rescales the normalized wire onto
+ * its integer semitone register by TRUNCATING toward zero, so the exact linear
+ * wire for a whole semitone can land one step short: the issue #6 sweep read
+ * 16384 (exactly -12 on a linear -24..+24 scale) back as -11 and 49151 as +12,
+ * and issue #32 (Axe-Fx III fw 32.06, checked in Axe-Edit) saw +7 land as 6
+ * and -5 as -4. The wire is therefore aimed a quarter step past the whole
+ * semitone, away from zero: inside the right bucket whether the unit
+ * truncates or rounds. Zero and the two range ends are sent exactly.
+ */
+function makeSignedRawSemitoneEncode(
+  family: string,
+  paramKey: string,
+  cal: CalibrationOpts,
+): ParamSchema['encode'] {
+  return (value: number | string): number => {
+    const num = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(num)) {
+      throw new Error(`${family}.${paramKey}: expected a number, got "${value}"`);
+    }
+    if (num < cal.displayMin || num > cal.displayMax) {
+      throw new Error(
+        `${family}.${paramKey} out of range [${cal.displayMin}..${cal.displayMax}]: ${num}`,
+      );
+    }
+    const whole = Math.round(num);
+    const aimed = whole + 0.25 * Math.sign(whole);
+    return displayToWire(Math.min(cal.displayMax, Math.max(cal.displayMin, aimed)), cal);
+  };
+}
+
 function makeSignedRawSemitoneDecode(cal: CalibrationOpts): ParamSchema['decode'] {
   return (wire: number): number => {
     const signed = wire > 32767 ? wire - 65536 : wire;
@@ -508,7 +551,8 @@ function buildParamSchema(
   // label + gate a continuous param sharing a suffix (_HOLD/_TEMPO/_SLOPE/...).
   const overlay = param.unit === 'enum'
     ? resolveEnumValues(param.name)
-    : resolveEffectTypeEnum(param.name);
+    : resolveEffectTypeEnum(param.name)
+      ?? (deviceRange?.kind === 'enum' ? resolveDirectEnumOverride(param.name) : undefined);
   // Per-device enum override: a device-true {ordinal -> name} table captured
   // from this specific model's hardware (e.g. the FM9 amp roster, which the
   // family-shared overlay deliberately leaves numeric because amp ordinals
@@ -645,10 +689,28 @@ function buildParamSchema(
     encode = makeOrdinalEncode(family, key, Math.max(observed, cacheOrdinalMax ?? observed));
     decode = (wire: number): number => wire;
   } else if (cal !== undefined) {
-    encode = makeCalibratedEncode(family, key, cal);
+    encode = SIGNED_RAW_SEMITONE_PARAMS.has(param.name)
+      ? makeSignedRawSemitoneEncode(family, key, cal)
+      : makeCalibratedEncode(family, key, cal);
     decode = SIGNED_RAW_SEMITONE_PARAMS.has(param.name)
       ? makeSignedRawSemitoneDecode(cal)
       : makeCalibratedDecode(cal);
+  } else if (
+    deviceRange !== undefined && deviceRange.kind === 'float' &&
+    deviceRange.displayMin === 0 && deviceRange.displayMax === 0
+  ) {
+    // The device's own editor cache carries an ALL-ZERO row for this id: an
+    // unused wire slot (a meter, a spare, or a param this model does not have,
+    // e.g. graphic_eq.mix). A raw-wire write there is acknowledged and changes
+    // nothing (issue #32: every such write read back 0 on an Axe-Fx III), so
+    // it is refused instead of being sent. Reads still pass the wire through.
+    encode = (): number => {
+      throw new Error(
+        `${family}.${key} cannot be written: this device's editor defines no range for it ` +
+          '(a meter, a spare, or a parameter this model does not have).',
+      );
+    };
+    decode = (wire: number): number => wire;
   } else {
     encode = makePassthroughEncode(family, key);
     decode = (wire: number): number => wire;
@@ -661,7 +723,16 @@ function buildParamSchema(
       // A count-known device-cache enum (and a roundtrip-derived discrete
       // selector) reports 'enum' even though its catalog entry was 'unverified' —
       // the device's own behaviour is the authority on kind.
-      unit: deviceEnumNoNames || roundtripDiscrete ? 'enum' : param.unit,
+      // A cache-enum param that gained names through the exact-symbol overlay
+      // (PHASER_ORDER, a 'count' in the catalog) stays 'enum' as well.
+      // A 'knob_0_10' label inferred from the AM4 that the device's own cache
+      // range contradicts (chorus drive 0.5..500, amp bias 0..100, issue #35)
+      // reports the generic 'knob'; display_min/max carry the real span.
+      unit: deviceEnumNoNames || roundtripDiscrete || (enumValues !== undefined && deviceRange?.kind === 'enum')
+        ? 'enum'
+        : param.unit === 'knob_0_10' && useCacheFloatBounds && (displayMin !== 0 || displayMax !== 10)
+          ? 'knob'
+          : param.unit,
       display_min: displayMin,
       display_max: displayMax,
       enum_values: enumValues,

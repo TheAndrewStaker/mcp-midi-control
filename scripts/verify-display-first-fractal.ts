@@ -447,10 +447,17 @@ for (const [device, descriptor] of [
         passthrough++;
         // GATE A for passthrough: encode must be raw-wire too (a display-
         // shaped encode over an identity decode is the one-sided leak).
+        // One exception: a param whose device editor cache row is all zero (an
+        // unused wire slot) REFUSES the write, because a raw write there is
+        // acknowledged and changes nothing (issue #32). That refusal is not a
+        // display-shaped encode, so it is not the leak this gate hunts.
         try {
           if (s.encode(21845) !== 21845) passthroughBad.push(`${key} (encode(21845) → ${s.encode(21845)})`);
         } catch (err) {
-          passthroughBad.push(`${key} (encode(21845) threw: ${err instanceof Error ? err.message : err})`);
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!/cannot be written: this device's editor defines no range/.test(msg)) {
+            passthroughBad.push(`${key} (encode(21845) threw: ${msg})`);
+          }
         }
         if (!trackDebt(device, key)) untracked.push(key);
         continue;

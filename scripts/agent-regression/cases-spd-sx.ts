@@ -58,4 +58,35 @@ export const SPD_SX_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 150,
     },
   },
+
+  // ── scan_locations from/to are optional (2026-11-14 audit) ────────────────
+  {
+    id: 'spdsx-list-kits-whole-range-default',
+    device: 'spd-sx',
+    description:
+      'scan_locations no longer requires from/to: omitted, it scans the device\'s whole declared range (all 100 SPD-SX kits). '
+      + 'A "list all my kits" request should be ONE scan_locations call, either with no range or with the real 1..100, not a '
+      + 'guessed partial range or a loop of get_preset calls. Catches an agent still forced into inventing a range, and one '
+      + 'that passes a wrong argument name (unknown arguments now refuse instead of being dropped).',
+    prompt: 'List every kit on my SPD-SX over the storage connection.',
+    expectations: {
+      must_call: ['scan_locations'],
+      must_not_call: ['upload_sample', 'author_kit', 'set_param'],
+      max_tools: 5,
+      tool_call_validators: [
+        {
+          tool: 'scan_locations',
+          check: (args) => {
+            const port = typeof args.port === 'string' ? args.port.toLowerCase() : '';
+            if (!port.includes('spd')) return `scan_locations should target the SPD-SX, got ${String(args.port)}.`;
+            if (args.from === undefined && args.to === undefined) return true;
+            if (Number(args.from) === 1 && Number(args.to) === 100) return true;
+            return `expected no range (whole-range default) or 1..100, got ${JSON.stringify(args.from)}..${JSON.stringify(args.to)}.`;
+          },
+        },
+      ],
+      text_contains: ['Demo Kit'],
+      max_wall_seconds: 120,
+    },
+  },
 ];

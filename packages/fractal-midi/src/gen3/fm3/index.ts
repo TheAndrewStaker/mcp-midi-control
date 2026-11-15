@@ -27,6 +27,7 @@ export {
 export { FM3_ROSTERS, type Fm3TypeModel } from './rosters.generated.js';
 export { FM3_ENUM_OVERRIDES } from './enumOverrides.js';
 export { FM3_ENUM_OVERRIDES_BY_NAME } from './enumOverridesByName.js';
+export { FM3_CACHE_ENUM_NAMES } from './enumNames.generated.js';
 export { FM3_CAB_IRS } from './cabIrs.generated.js';
 // FM3 effectId <-> family map (the addressing layer: (effectId, paramId) for
 // any block, including virtual/system blocks Global/Controllers/Modifier/FC).

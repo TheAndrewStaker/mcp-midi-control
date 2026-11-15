@@ -1490,6 +1490,11 @@ async function verifyMpc(client: Client, hasMidi: boolean): Promise<void> {
     record('mpc scan_locations without a card says how to mount one', isError(scan) && /card/i.test(extractText(scan)), extractText(scan).slice(0, 200));
   } else {
     record("mpc scan_locations lists the card's projects", true, `${rows.length} project(s)`);
+    const bare = await client.callTool({ name: 'scan_locations', arguments: { port: 'mpc-one-g2' } });
+    let bareRows: unknown[] = [];
+    try { bareRows = (JSON.parse(extractText(bare)) as { scanned?: unknown[] }).scanned ?? []; } catch { /* refusal */ }
+    record('mpc scan_locations with no from/to defaults to the first page of the card', !isError(bare) && bareRows.length === rows.length
+      && /No from\/to given/.test(extractText(bare)), extractText(bare).slice(0, 200));
     const one = await client.callTool({ name: 'get_preset', arguments: { port: 'mpc-one-g2', location: rows[0].location } });
     const t = extractText(one);
     record("mpc get_preset reads a project's sequences", !isError(one) && /"block_type":\s*"sequence"/.test(t), t.slice(0, 200));
@@ -1572,6 +1577,20 @@ async function main(): Promise<void> {
         listShape || gracefulUnavailable,
         text.slice(0, 300),
       );
+      // An unknown argument REFUSES (it used to be stripped, so {path} got the
+      // roster back as if nothing had been passed).
+      const bad = await client.callTool({ name: 'measure_loudness', arguments: { path: 'x.wav' } });
+      const badText = extractText(bad);
+      record(
+        'measure_loudness({path}) refuses, naming the unknown key and the valid ones',
+        isError(bad) && /unknown argument "path"/.test(badText) && /Valid: input_device/.test(badText),
+        badText.slice(0, 300),
+      );
+    }
+    {
+      // list_midi_ports' default verdict is device-neutral (it opened with
+      // "AM4 not visible" whatever device was in question).
+      record('list_midi_ports default verdict is not AM4-centric', !/AM4 not visible/.test(portsText), portsText.slice(0, 300));
     }
 
     if (opts.ports.includes('am4')) {
