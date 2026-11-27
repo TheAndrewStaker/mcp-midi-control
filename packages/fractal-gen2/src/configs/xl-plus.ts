@@ -17,6 +17,9 @@ export const AXE_FX_II_XL_PLUS_CONFIG: AxeFxIIConfig = {
   connectionLabel: 'axe-fx-ii',
   portMatch: [{ pattern: /axe-?fx/i }],
   supportTier: 'verified',
+  // XL / XL+ preset memory: 768 locations (the session-61 capture notes the
+  // XL+ user range as wire 0..767).
+  presetCount: 768,
   verification:
     'Model byte 0x07 hardware-verified on the founder\'s Quantum 8.02 XL+ unit. ' +
     'Every op in this descriptor (set_param, set_block, set_bypass, switch_preset, ' +

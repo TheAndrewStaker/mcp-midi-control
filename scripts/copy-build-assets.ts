@@ -33,6 +33,12 @@ const COPIES: AssetCopy[] = [
     src: 'packages/core/src/fractal-shared/lineage/loudness.json',
     dst: 'packages/core/dist/fractal-shared/lineage/loudness.json',
   },
+  // Gen-3 empty preset templates (fractone, MIT) + their licence text. Loaded
+  // by packages/fractal-gen3/src/emptyPresetTemplates.ts via import.meta.url.
+  {
+    src: 'packages/fractal-gen3/src/assets/empty-presets',
+    dst: 'packages/fractal-gen3/dist/assets/empty-presets',
+  },
 ];
 
 function copyTree(srcDir: string, distDir: string): number {

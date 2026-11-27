@@ -212,6 +212,13 @@ export interface FractalModernConfig {
    */
   switch_preset_via?: 'pc' | 'sysex';
   /**
+   * True when the unit's store op ignores its destination and writes the
+   * LOADED preset in place. save_preset then refuses a target other than the
+   * loaded location before sending anything. FM3 fw 12 (community PR #24,
+   * hardware): a save aimed elsewhere overwrote the loaded preset.
+   */
+  save_targets_loaded_only?: boolean;
+  /**
    * Per-device enum override tables (param firmware symbol -> ordinal -> name),
    * captured + verified from THIS model's hardware. Used where the amp/effect
    * roster is device-specific so the family-shared overlay leaves it numeric
@@ -446,6 +453,7 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
         writesGated: config.writes_gated ?? false,
         writeAllowlist: config.write_allowlist,
         switchPresetViaSysEx: config.switch_preset_via === 'sysex',
+        saveTargetsLoadedOnly: config.save_targets_loaded_only ?? false,
       },
       deviceLabel,
       connectionLabel,

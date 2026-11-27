@@ -8,6 +8,214 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.10.0] - 2026-11-27
+
+**New tool: `set_channel`.** Switches a placed block to another channel on the
+active scene: AM4 (amp / drive / reverb / delay, acked on the device echo) and
+the Axe-Fx III / FM3 / FM9 (the fn=0x0B select the FM3 confirmed, checked by a
+fresh status read). The Axe-Fx II refuses it on purpose, because its channel
+select also moves other scenes; the VP4 keeps it gated.
+
+**Akai MPC One G2: projects on the card.** Untested on the unit.
+
+- **`get_preset` on a project reports the track mix** (`mpc_project`): per
+  track the kind, level in dB, pan, mute, instrument and preset, inserts, the
+  returns it feeds and its MIDI out. An outputs strip whose two stored copies
+  carry different inserts is flagged. A project too big for one response keeps
+  every track and drops the detail from the last ones, and says where.
+- **`apply_preset(target_location = a project)` edits it in place:** track
+  level, pan and mute, sequence name and tempo. Only the listed rows change,
+  and every other byte of the project stays as the unit saved it. Without
+  `save_authorized` it is a preview. A write backs up the old file
+  (`list_backups`), refuses if the file changed since it was read, and checks
+  the re-read before replacing the file. No new tool.
+- `MCP_MIDI_BACKUP_DIR` names another backup folder.
+
+**Gen-3 fixes (Axe-Fx III, FM3, FM9), from community PR #24, FM3 firmware 12
+hardware.** Untested on the III and FM9.
+
+- **Knob tapers follow the editor typecode.** A `0x52` row is a 0..10 knob
+  whatever window it states, and a `0x4X` row is log10 over its window, so
+  about 200 params per device (PEQ frequencies among them) now land where the
+  panel puts them. On the III, 20 knobs that stated another window now read
+  0..10, and the wah Q recipes encode.
+- **Values read at the precision the panel prints**, instead of always two
+  decimals: delay times as whole milliseconds, mixes as `18.4`, input trim
+  as `1.000`. The decimals come from the editor typecode, which matches what
+  the Axe-Fx II's own panel prints on 398 of 413 params. Changes 615 to 724
+  params per device.
+- **FM3 `save_preset` refuses a location other than the loaded one** before
+  sending anything. The FM3 overwrote the loaded preset instead.
+- **`get_param` warns when the block is not placed**, since the value is then
+  only what that block last stored.
+
+**Saving from `apply_preset` is gated like `save_preset`.** With
+`target_location` and `save_authorized`, an occupied location is now refused,
+naming the preset it would replace, until `confirm_overwrite: true`. Nothing is
+sent on a refusal. Before this, an AM4 hardware run showed the build replacing
+a stored preset with no question asked. A fresh build replaces the preset
+even at the loaded location, so that is gated too; an audition never is.
+
+**AM4 fixes, hardware-confirmed on the AM4.** Amp bypass works per scene
+from `set_bypass` and `apply_preset` (the register is a real bypass, not the
+input boost). `import_preset` no longer reports a false mismatch. `set_bypass`
+on a block that is not placed refuses instead of reporting success.
+`get_preset` returns the active channel by default (`include_channel_state`
+for all four). "USA IIC+" and similar amp names resolve. `get_param` echoes the
+channel it read when one is named. A channel that only an unlisted scene uses no longer warns as
+inaudible.
+
+**AM4 `get_preset` reports what is in the working buffer.** `is_dirty` is now
+the AM4's own "edited" flag, the same one the switch-preset guard reads, so it
+sees edits from the front panel, AM4-Edit and other server instances (it used
+to count only this server's own writes). `is_dirty_source` says which answered.
+`name` is the working buffer's name, so an unsaved build shows its own; the
+name stored at the location appears as `stored_name` when the two differ.
+Hardware-confirmed on the AM4.
+
+**Dotted and triplet tempo spellings keep their modifier on every Fractal.**
+On the AM4, `"1/8."` used to resolve to plain `1/8`, silently dropping the dot.
+`"1/8."`, `"1/8 dotted"`, `"dotted eighth"`, `"1/8d"` and `"1/8t"` now resolve
+to the roster's `1/8 DOT` or `1/8 TRIP` on the AM4, Axe-Fx II and the gen-3
+family. A dotted or triplet division the roster does not have is refused.
+
+**AM4 filter, amp, chorus and phaser `mode` no longer replaces the block's
+type in the server's memory.** Setting `filter.mode` to BANDPASS on a Touch-Wah
+made every later wah knob refuse as "not exposed on filter.type wire 1" until
+the type was written again. Only the volume/pan block uses `mode` as its type.
+Hardware-confirmed on the AM4.
+
+**`apply_preset` keeps a device's own param name.** The AM4's `filter.resonance`
+was rewritten to `filter.q` by a cross-device alias and then dropped, so the
+auto-wah recipes never set resonance. A name the block already has now wins
+over an alias, as it already did in `set_param`. The AM4 auto-wah recipes also
+set `mode: BANDPASS` (the LOWPASS default barely sweeps); the Hendrix recipe
+uses values tuned by ear on an AM4.
+
+**A per-channel `color` in an AM4 `apply_preset` amp is accepted**, as the
+guidance says, and sets that channel's LED colour. It was refused as an
+unknown param. Hardware-confirmed on the AM4.
+
+**Axe-Fx II: writing Output, Controllers or Input Noise Gate params no longer
+warns that the block is not placed.** Those blocks are in every preset.
+
+**Axe-Fx II: values read and set the way the front panel shows them,
+hardware-confirmed on an XL+.** The II prints its own display text in every
+parameter read, so the server read every block of all 767 stored presets
+(read-only) and probed the params the presets never varied on the working
+buffer (written, read, restored, nothing stored): 10,631 distinct readings of
+916 params. 508 params were recalibrated to match them: range, log or linear
+taper, unit, and how the device prints the number (decimals or significant
+figures, rounded or truncated). Words the device shows are returned as words
+(`INFINITE` at the top of the compressor ratio, `OFF`, `LFO1 SYNC`) and accepted
+by `set_param`. Whole-number params such as tap count (1..40, the device's own
+limits) refuse a value between steps instead of rounding it. 40 selectors
+gained their names: tempo divisions, resonator modes and chords, scale notes,
+and the cab list (`FACTORY 1`..`189`, `USER 1`..`1024`, `SCRATCHPAD1`). Against
+those readings, scored exactly (our value must be the number the panel
+shows), wrong values drop from 2,396 to 129, wrong `set_param` round-trips
+from 1,333 to 35, wrong selector names from 401 to 16, wrong units from 124
+params to 1, and raw unconverted values from 1,968 to 417. 548 params got
+better. The misses left are one printed step on 21 params, where the device's
+own arithmetic differs from any formula in the fifth digit. A preflight gate holds every recalibrated param
+to the device's readings. The AX8 shares this calibration, measured on the XL+
+only.
+
+**AM4 firmware 2.01 / 2.02 support.** Read from the AM4-Edit 1.00.09 editor
+cache, symbol table and layouts. Every existing parameter id is unchanged.
+- New amp types: Deluxe Tweed Normal, PVH 6160 Block Clean, Brit JVM Crunch.
+- New chorus types: Japan CE-1 Chorus, Japan CH-1, MX234, Small Copy,
+  Japan CE-2 Bass, Rockguy, MX134 Stereo.
+- Types renamed in place keep resolving by their old names: Deluxe Tweed →
+  Deluxe Tweed Bright; Vibrato 1 → Vibrato; Vibrato 2 → Japan CE-1 Vibrato;
+  80s Style → 80'S Style.
+- New chorus controls: Delay Range, Low, High.
+- The flanger's LFO Quantize resolves by that name.
+- Reverb expert values match the 2.02 display: Mic Spacing (`pickup_spacing`,
+  alias `mic_spacing`) reads 0-200 cm and Early Decay 0-200% (it read half the
+  panel value). Hardware-confirmed against AM4-Edit.
+- AM4 reads of small log-scaled values keep their decimals: reverb Q reads
+  0.707 (was 1), High Decay 0.19 (was 0), modulation rate 0.1 Hz (was 0).
+- Six AM4 time controls read their real minimum, not 0: reverb Release Time
+  (1 ms), phaser Attack (10 ms) and Release (1 ms), compressor Time (1 ms),
+  filter Attack (1 ms) and Release (20 ms).
+- Stepped AM4 knobs read their real setting. Reverb Density, Voice 1/2 Shift,
+  Springs and Tone Type, drive Bit Reduce and Diode Quantity, delay Bit
+  Reduction, phaser Feedback Point, filter Order and amp Tubes store a whole
+  number, but reads treated it as a fraction, so Density always read 4 and
+  Voice Shift -24. Hardware-confirmed on Density and Voice Shift. Chorus
+  Number of Voices reads and sets 2, 4, 6 or 8 (it read 1-4).
+- Seven AM4 knobs read the 0-10 position the panel shows: chorus Drive, amp
+  Clarity and Hardness, reverb Dwell, delay Lo-Fi Drive and Sweep Resonance,
+  filter Sensitivity. Reads used a log curve over a wider range while writes
+  already sent the knob position, so a value set did not read back the same
+  (chorus Drive 2.33 read 2.5). Hardware-confirmed on chorus Drive.
+- Chorus Delay Range reads to two decimals (3.85 ms, was 4).
+- Stored-preset reads (`get_preset` with a location) decode the stepped knobs
+  above the same way. A stored Density 8 read 4.
+- AM4 reads keep the decimals AM4-Edit shows: percent to 0.1 (Grid Bias 44.5%,
+  was 45), Hz to 0.1 below 10 kHz (16.8 Hz, was 17), ms to 0.01 below 1 s
+  (B+ Time Constant 7.50 ms, was 7), small-range values to 0.001 (Preamp
+  Bias 0.078 and Harmonics 0.483, were 0) and Negative Feedback 5.30 (was 5).
+- AM4 writes that landed at the wrong value now land where asked. A write of
+  6 to Speaker Low Reso stored 0.25, because a few controls store a different
+  internal range than their unit implies. Fixed: Speaker Low/Hi Reso and
+  Drive, Definition, phaser Tone and Feedback, filter Sweep Shape, tremolo
+  Trigger Phase (0-360°) and cab Distance (0-24 cm, was a 0-100% knob).
+  Drive Sample Rate is 48 Hz to 48 kHz (was 0-100%).
+- AM4 Drive-style knobs now write the value asked for. A write of rotary
+  Drive 4 showed 3.01 in AM4-Edit, because these 15 knobs show a 0-10
+  position over a log range. Fixed: amp Clarity, Hardness and Cab Mic Preamp
+  Drive (now down to 0.00), reverb Dwell, delay Lo-Fi Drive and Sweep
+  Resonance, chorus, flanger, rotary and wah Drive, flanger Bass Focus, wah
+  Resonance, filter Resonance and Sensitivity, and drive Slew Rate.
+- AM4 drive Bias now sets the editor's Bias (-1..1); `drive.bias` used to
+  move Clip Shape. The register is renamed `drive.clip_shape`, the
+  Sample Rate register `drive.sample_rate`, and the old names `drive.bias` /
+  `drive.slew_rate` now reach Bias and Slew Rate as AM4-Edit labels them.
+- AM4 compressor Level reads back correctly (-20..+20 dB; it read 30 dB
+  low). Level is now settable on reverb, tremolo and Parametric EQ, Bypass
+  Mode on reverb, flanger, phaser, filter, tremolo and enhancer, and reverb
+  Kill Dry.
+- AM4 selector names fixed against AM4-Edit 1.00.09: DynaCab cabs 24/25 are
+  2x12 5153 Stealth then 2x12 65 Bassguy (the order changed since the
+  previous AM4-Edit; a request for Bassguy loaded Stealth; front panel
+  confirmed), reverb Low/High Cut Slope are 6 / 12 dB/OCT, Spring Type
+  Parallel / Series-Parallel, Pre-Delay Tap Input / Output, delay Depth
+  Range Low / High, and the gate Detector Type, gate Knee and Vol/Pan Input
+  Select rosters are complete.
+- AM4 `set_param` on the speaker curve (amp Low/High Freq, Low/Hi Reso, Low Q,
+  Hi Slope) warns when DynaMatch is On: the AM4 resets those six to the
+  cab-matched curve the next time the amp block is selected, so set
+  DynaMatch Off to keep a value.
+- Ranges corrected from the AM4-Edit cache: drive Dry Level 0-200%, reverb
+  Size 1-100% and Pre-Delay 0-1000 ms, delay Time 1-8000 ms, flanger
+  Feedback ±99.5%, Stereo Spread ±200%, Min/Max Time 0.34-2 / 2-20 ms,
+  phaser Bias ±1, compressor Dynamics and Transients ±10, duty cycles 1-99%,
+  tremolo Shape 0.1-99.9% and Width 0-400%, gate Attack/Hold/Release and
+  Low Cut, Vol/Pan Threshold, Attack and Release, rotary Drive 0-10.
+- Selectors that were plain numbers or two-way switches now take their real
+  names: phaser Order (2-12), Mode, Direction, Type, LFO Mode, Reset on
+  Bypass, Quantize; flanger Auto Depth (Off/Low/Med/High), Phase Reverse,
+  Thru Zero, Bypass Reset, Cut Slopes, VCO Response, LFO Quantize; filter
+  Order, Mode, Detector Source, Phase Invert, Quantize; enhancer Phase
+  Invert; delay LFO targets, Sweep Filter and a 48 dB/oct cut slope; reverb
+  pitch Direction and Position; PEQ slopes; tremolo Crossover Slope; Vol/Pan
+  Taper.
+- The amp's internal waveshaper high-pass and the gate's sidechain Low Cut
+  use a log curve, as the editor's other frequency controls do. Confirmed
+  on hardware for that control type: amp High Cut Frequency reads 32999 Hz
+  and Depth Freq 250 Hz, matching AM4-Edit.
+- New globals: Home Page Style, the Tap 1+2 / 2+3 / 3+4 footswitch combos,
+  the mode-select CCs and Mode Via CC Value.
+- 26 CC assignments accept "Pedal 1" / "Pedal 2".
+- The new types expose the knobs the editor shows for them.
+
+**Codec (`fractal-midi`).** `buildGetParameter` is removed. Its frame was the
+typed SET with a zero value, so it set the param to 0 instead of reading it.
+Read through the fn=0x1F bulk read. The FM3 live-grid decode gains an inline
+golden from the multi-row "Harmonic Voltage" capture in community PR #10.
+
 ## [0.9.1] - 2026-11-15
 
 **Fixes for the gen-3 Fractal family (Axe-Fx III, FM3, FM9), from community

@@ -29,11 +29,9 @@
  * - PRESETS: 512 total, 64 banks x 8 presets/bank. Source: AX8 Owner's
  *   Manual, "Saving Changes": "The AX8 has 512 preset memory locations
  *   grouped in 64 numbered banks. Each bank contains 8 presets." The wire
- *   format + `parseAxeFxIILocation` ceiling (1..16384, the 14-bit wire
- *   field) are UNCHANGED from the XL+: same as the XL+ descriptor already
- *   doesn't hard-enforce its own 768-preset physical count, this config
- *   doesn't hard-enforce 512 either; the true physical envelope is
- *   documented here and in `verification` for agent narration.
+ *   format is UNCHANGED from the XL+; `presetCount: 512` bounds
+ *   switch_preset / apply_preset / apply_setlist to the physical range
+ *   (contract review H5), as `presetCount: 768` does on the XL+.
  * - SCENES: 8 per preset, same X/Y-plus-bypass model as the XL+. Source: AX8
  *   Owner's Manual, "Selecting Scenes": "Every preset has eight scenes built
  *   in and ready to use," "The on/off state of every block in your preset
@@ -118,6 +116,8 @@ export const AX8_CONFIG: AxeFxIIConfig = {
   connectionLabel: 'ax8',
   portMatch: [{ pattern: /ax8/i }],
   supportTier: 'community-beta',
+  // 512 presets (64 banks x 8), AX8 Owner's Manual "Saving Changes".
+  presetCount: 512,
   verification:
     'No AX8 hardware on hand; every fact is evidence-backed (community-beta, untested end-to-end). ' +
     'Model byte 0x08: Fractal Audio Wiki "MIDI_SysEx" page (cached in this repo\'s SYSEX-MAP.md + ' +
@@ -140,9 +140,8 @@ export const AX8_CONFIG: AxeFxIIConfig = {
       'Gate Expander 2, Pitch 2, Synth 2; Mixer, Vocoder, Megatap Delay, Crossover, Multiband Compressor,',
       'Quad Chorus, Resonator, and the 3rd/4th GEQ/PEQ/Filter/Volume-Pan instances are absent entirely).',
       'Addressing an unavailable block/instance refuses with a clear message rather than silently',
-      'building a frame the device will never answer. 512 presets across 64 banks (8 per bank); the',
-      'wire location format still accepts 1..16384 (the 14-bit wire ceiling, same as the XL+) but only',
-      '1..512 are physically present on the unit.',
+      'building a frame the device will never answer. 512 presets (64 banks of 8); a slot',
+      'above 512 refuses.',
       '',
       'set_param / set_params / get_param / get_params / set_block / set_bypass / switch_preset /',
       'switch_scene / save_preset / scan_locations / get_preset / export_preset / import_preset /',

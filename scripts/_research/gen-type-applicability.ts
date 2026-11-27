@@ -39,7 +39,7 @@ interface JsonBlock {
 }
 
 const data: JsonBlock[] = JSON.parse(
-  readFileSync('samples/captured/decoded/labels/type-applicability.json', 'utf8'),
+  readFileSync(process.env.AM4_APPLICABILITY_JSON ?? 'samples/captured/decoded/labels/type-applicability.json', 'utf8'),
 );
 
 /**
@@ -281,7 +281,7 @@ lines.push('  /** Type-enum gates the parameter has. May be present alongside `a
 lines.push('  readonly gates: readonly ApplicabilityGate[];');
 lines.push('}');
 lines.push('');
-lines.push('export const TYPE_APPLICABILITY_FIRMWARE = \'AM4-Edit Mar 20 2026 build\';');
+lines.push(`export const TYPE_APPLICABILITY_FIRMWARE = '${process.env.AM4_EDITOR_BUILD ?? 'AM4-Edit Mar 20 2026 build'}';`);
 lines.push('');
 lines.push('export const TYPE_APPLICABILITY: Readonly<Record<string, Applicability>> = {');
 for (const k of sortedKeys) {
@@ -298,7 +298,7 @@ for (const k of sortedKeys) {
 lines.push('};');
 lines.push('');
 
-writeFileSync('src/fractal/am4/typeApplicability.ts', lines.join('\n'));
+writeFileSync(process.env.AM4_APPLICABILITY_OUT ?? 'packages/fractal-midi/src/am4/typeApplicability.ts', lines.join('\n'));
 
 console.log(`wrote src/protocol/typeApplicability.ts — ${out.size} entries`);
 console.log(`joined: ${joined}`);

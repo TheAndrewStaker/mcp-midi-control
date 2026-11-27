@@ -123,7 +123,7 @@ async function main() {
             arguments: { port: PORT, block: 'compressor', name: p.name },
           });
           const getJson = extractJson(getResult);
-          console.log(`  wire=${wire.toString().padStart(5)}: display=${JSON.stringify(getJson['value'])} raw_response=${JSON.stringify(getJson['raw_response'] ?? '(none)')}`);
+          console.log(`  wire=${wire.toString().padStart(5)}: display=${JSON.stringify(getJson['value'])} device_label=${JSON.stringify(getJson['device_label'] ?? '(none)')}`);
         } catch (err) {
           console.log(`  wire=${wire.toString().padStart(5)}: ERROR — ${err}`);
         }
@@ -147,7 +147,7 @@ async function main() {
           arguments: { port: PORT, block: 'compressor', name: 'comp' },
         });
         const getJson = extractJson(getResult);
-        console.log(`  display=${dv.toString().padStart(4)}: acked=${setJson['acked']} readback=${JSON.stringify(getJson['value'])} raw=${JSON.stringify(getJson['raw_response'] ?? '(none)')}`);
+        console.log(`  display=${dv.toString().padStart(4)}: acked=${setJson['acked']} readback=${JSON.stringify(getJson['value'])} device_label=${JSON.stringify(getJson['device_label'] ?? '(none)')}`);
       } catch (err) {
         console.log(`  display=${dv.toString().padStart(4)}: ERROR — ${err}`);
       }
@@ -171,7 +171,7 @@ async function main() {
             arguments: { port: PORT, block: 'compressor', name: p.name },
           });
           const getJson = extractJson(getResult);
-          console.log(`  ${p.name}: value=${JSON.stringify(getJson['value'])} raw=${JSON.stringify(getJson['raw_response'] ?? '(none)')}`);
+          console.log(`  ${p.name}: value=${JSON.stringify(getJson['value'])} device_label=${JSON.stringify(getJson['device_label'] ?? '(none)')}`);
         }
       } catch (err) {
         console.log(`  ERROR: ${err}`);

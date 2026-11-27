@@ -81,7 +81,6 @@ export {
   parseGen3SetValueEcho,
   buildSetParameter,
   buildSetParameterContinuous,
-  buildGetParameter,
   buildRequestCurrentTypeName,
   SUB_ACTION_GET_TYPE_NAME,
   buildSetParameterBypass,

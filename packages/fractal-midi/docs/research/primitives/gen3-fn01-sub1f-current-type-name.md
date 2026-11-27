@@ -32,8 +32,9 @@ The modern Fractal editor sends `fn=0x01 sub=0x1F`, targeting
 `(effectId, typeParamId)` with a zero value field. The device replies with the
 long fn=0x01 GET frame whose display-string region carries a model name.
 
-`buildGetParameter`'s `sub=0x09` GET elicits the same display-string reply; the
-`sub=0x1F` form is what the editor sends.
+The `sub=0x09` frame of the `buildGetParameter` removed in 0.10.0 elicits the same
+display-string reply, but it is a SET of value 0 (it changes the param; FM3 fw 12
+hardware, community PR #24), never a read. The `sub=0x1F` form is what the editor sends.
 
 ## Request (host → device), 23 bytes
 

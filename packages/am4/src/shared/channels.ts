@@ -17,7 +17,7 @@
  * reporting stale data across those boundaries.
  */
 
-import { type ParamKey } from 'fractal-midi/am4';
+import { type ParamKey, KNOWN_PARAMS } from 'fractal-midi/am4';
 import {
     checkApplicability,
     describeApplicability,
@@ -115,13 +115,22 @@ export function channelStatusLine(block: string, justSwitched: boolean): string 
  *
  * Throws on validation errors (unknown block without a channel register,
  * out-of-range index). Returns `{ switched: boolean }` — switched=false
- * means the cache already showed the requested channel, so no wire write
- * was issued.
+ * means the write was skipped because `alreadyOn` (a channel THIS batch
+ * already selected and saw acked) matched the target.
+ *
+ * The session-wide `lastKnownChannel` cache is deliberately NOT consulted
+ * (2026-11-25 contract review M10): a footswitch, the front panel or
+ * AM4-Edit can move a block's channel without the server seeing it, so a
+ * stale cache entry silently sent the param write to the wrong channel.
+ * Re-selecting the channel the block is already on is harmless, so an
+ * explicit `channel` always goes out unless the caller proves, within its
+ * own batch, that it just landed that exact select.
  */
 export async function switchBlockChannel(
     conn: MidiConnection,
     block: string,
     channel: string | number,
+    alreadyOn?: number,
 ): Promise<{ switched: boolean }> {
     if (!CHANNEL_BLOCKS.has(block)) {
         throw new Error(
@@ -129,7 +138,7 @@ export async function switchBlockChannel(
         );
     }
     const targetIndex = resolveChannel(channel);
-    if (lastKnownChannel[block] === targetIndex) {
+    if (alreadyOn === targetIndex) {
         return { switched: false };
     }
     const key = `${block}.channel` as ParamKey;
@@ -162,14 +171,25 @@ export async function switchBlockChannel(
  * so the applicability preflight knows the active type without an extra
  * wire read on every set_param call.
  */
+/**
+ * Is `<block>.<paramName>` the block's TYPE selector (the value per-type knob
+ * applicability gates on)? `type` always is. `mode` is only for a block that
+ * has no `type` (volpan): amp, chorus, phaser and filter carry BOTH, and their
+ * `mode` is an ordinary setting. Treating it as the type overwrote the cached
+ * type (2026-11-27: filter.mode BANDPASS = 1 replaced Touch-Wah = 17, and every
+ * wah knob after it was refused as "not exposed on filter.type wire 1").
+ */
+export function isTypeSelectorParam(block: string, paramName: string): boolean {
+    if (paramName === 'type') return true;
+    return paramName === 'mode' && !(`${block}.type` in KNOWN_PARAMS);
+}
+
 export function observeWrittenParam(block: string, paramName: string, numericValue: number): void {
     if (paramName === 'channel' && CHANNEL_BLOCKS.has(block)) {
         const idx = Math.round(numericValue);
         if (idx >= 0 && idx <= 3) lastKnownChannel[block] = idx;
     }
-    if (paramName === 'type' || paramName === 'mode') {
-        // 'type' is the canonical name for block-type enums; volpan uses
-        // 'mode' for historical reasons. Both gate per-type knob visibility.
+    if (isTypeSelectorParam(block, paramName)) {
         lastKnownType[block] = Math.round(numericValue);
     }
 }
@@ -180,7 +200,7 @@ export function observeWrittenParam(block: string, paramName: string, numericVal
  * the cache without requiring a write to have happened first.
  */
 export function observeReadParam(block: string, paramName: string, numericValue: number): void {
-    if (paramName === 'type' || paramName === 'mode') {
+    if (isTypeSelectorParam(block, paramName)) {
         lastKnownType[block] = Math.round(numericValue);
     }
 }

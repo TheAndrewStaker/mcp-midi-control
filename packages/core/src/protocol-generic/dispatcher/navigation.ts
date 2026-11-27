@@ -16,6 +16,7 @@ import {
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
 import { assertInstanceSupported, requireDevice, toWirePack, withEndpoint, withHandleRetry } from './core.js';
 import { resetModRouteState } from './modRouteState.js';
+import { runOverwriteGate } from './overwriteGate.js';
 
 /**
  * Full lifecycle for `switch_preset`. Honors the cross-device safe-edit
@@ -135,51 +136,40 @@ async function savePresetLocked(
   // Refuse ONLY when the target is occupied AND is not the active/edited
   // location AND the caller did not confirm. A read miss degrades (proceed,
   // but flag the unverified overwrite below).
-  let overwritePrecheckFailed = false;
-  if (args.confirm_overwrite !== true && descriptor.reader.checkOverwriteTarget) {
-    let target: Awaited<ReturnType<NonNullable<typeof descriptor.reader.checkOverwriteTarget>>>;
-    try {
-      target = await descriptor.reader.checkOverwriteTarget(ctx, args.location);
-    } catch {
-      target = undefined;
-    }
-    if (target === undefined) {
-      overwritePrecheckFailed = true;
-    } else if (target.occupant_name !== undefined && !target.is_active_location) {
-      return {
-        op: 'save_preset',
-        target: target.target_display,
-        acked: false,
-        warning:
-          `REFUSING TO OVERWRITE: ${target.target_display} already holds "${target.occupant_name}", ` +
-          `and it is not the location you are editing. Saving here would replace that preset. ` +
-          `Confirm with the user, then call save_preset again with confirm_overwrite: true to proceed, ` +
-          `or pick an empty location.`,
-        device: descriptor.display_name,
-      };
-    } else if (target.occupancy_unknown === true && !target.is_active_location) {
-      // The device knows which location is ACTIVE but cannot read whether an
-      // arbitrary target is occupied, so `occupant_name === undefined` means
-      // UNKNOWN, not empty. Refuse rather than save-then-warn: the previous
-      // behaviour put the caution on the receipt of a flash write that had
-      // already happened, which is not a gate.
-      //
-      // The message must not imply a check happened. An agent told "the target
-      // appears free" would relay that to the user as fact; what is true is
-      // that nothing was read.
-      return {
-        op: 'save_preset',
-        target: target.target_display,
-        acked: false,
-        warning:
-          `REFUSING TO SAVE to ${target.target_display}: it is not the location you are editing, and ` +
-          `${descriptor.display_name} has NO decoded way to read what is stored there, so this server cannot ` +
-          `tell you whether that location is empty or holds a preset you would destroy. Nothing was sent. ` +
-          `Ask the user to check ${target.target_display} on the front panel, then call save_preset again with ` +
-          `confirm_overwrite: true. Saving back to the location you are currently editing needs no confirmation.`,
-        device: descriptor.display_name,
-      };
-    }
+  const gate = await runOverwriteGate(descriptor, ctx, args.location, {
+    confirm_overwrite: args.confirm_overwrite,
+    gateActiveLocation: false,
+  });
+  const overwritePrecheckFailed = gate.kind === 'precheck_failed';
+  if (gate.kind === 'occupied') {
+    return {
+      op: 'save_preset',
+      target: gate.target_display,
+      acked: false,
+      warning:
+        `REFUSING TO OVERWRITE: ${gate.target_display} already holds "${gate.occupant_name}", ` +
+        `and it is not the location you are editing. Saving here would replace that preset. ` +
+        `Confirm with the user, then call save_preset again with confirm_overwrite: true to proceed, ` +
+        `or pick an empty location.`,
+      device: descriptor.display_name,
+    };
+  }
+  if (gate.kind === 'unknown') {
+    // The device knows which location is ACTIVE but cannot read whether an
+    // arbitrary target is occupied, so no occupant means UNKNOWN, not empty.
+    // Refuse rather than save-then-warn, and never imply a check happened.
+    return {
+      op: 'save_preset',
+      target: gate.target_display,
+      acked: false,
+      warning:
+        `REFUSING TO SAVE to ${gate.target_display}: it is not the location you are editing, and ` +
+        `${descriptor.display_name} has NO decoded way to read what is stored there, so this server cannot ` +
+        `tell you whether that location is empty or holds a preset you would destroy. Nothing was sent. ` +
+        `Ask the user to check ${gate.target_display} on the front panel, then call save_preset again with ` +
+        `confirm_overwrite: true. Saving back to the location you are currently editing needs no confirmation.`,
+      device: descriptor.display_name,
+    };
   }
 
   // Phase A.5: reconnect-and-retry-once on a handle-level fault. The
@@ -512,7 +502,7 @@ async function scanLocationsLocked(
     ...result,
     device: descriptor.display_name,
     ...(descriptor.capabilities.scan_navigates === true
-      ? { warning: `${descriptor.display_name} scans by switching to each location, so the working buffer now holds ${String(args.from)}'s stored contents, not whatever was in it before. The active location was restored.` }
+      ? { warning: `${descriptor.display_name} scans by switching to each location. The originally active location was reloaded afterwards, from flash: any unsaved edits it had are gone.` }
       : {}),
   };
 }

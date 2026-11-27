@@ -29,6 +29,10 @@ could test here is already done. The remaining asks are narrow and specific.
 | Grid cables (`apply_preset` routing) | confirmed law, tool path untested | The 6-row cable formula was wrong (cables had no effect). The corrected formula was confirmed on firmware 12.0 for same-row connect, disconnect and a cross-row cable (issue #23), and 0.9.0 uses it |
 | `set_block` / `set_bypass` on the 15 multi-word blocks | **hardware-unverified, newly reachable** | These never resolved before 2026-08-03: the write path matched display names and group codes against the descriptor SLUG, so `graphic_eq`, `parametric_eq`, `gate_expander`, `volume_pan`, `pan_tremolo`, `multitap_delay`, `megatap_delay`, `ten_tap_delay`, `plex_delay`, `ring_modulator`, `multiband_compressor`, `tone_match`, `ir_capture`, `ir_player` and `real_time_analyzer` returned "unknown block" for a block the device really has. The resolver now matches the read path. **The effect IDs come from the v1.4 spec table and the frame is the same wire-confirmed insert, but no one has placed one of THESE blocks on hardware.** Treat as untested |
 | `switch_scene`, `switch_preset`, `set_bypass` | confirmed | The firmware 11.0 probe run (scenes), and an owner session on firmware 12.0, Windows 11 (all three, issue #23) |
+| `apply_preset` fresh build | hardware-unverified | New in 0.10.0. It clears the edit buffer by loading an empty template (every frame acked, FM9 evidence; read back and compared), or, failing that, clears cell by cell with 40 ms pacing (third-party reports: the axefx-sysex-maps TOPOLOGY notes and ToneCommand #250) and re-reads to confirm the buffer is empty. Without `routing[]` it lays one row from column 2 and adds Input 1, Output 1, shunts (id 1024 + n) and cables, then writes every scene (unlisted scenes copy scene 1), restores the old name when none is given, and reads the grid and each scene back (the live grid read, else the edit-buffer dump). A mismatch, or no read-back at all, returns `ok:false` and nothing is saved. Channel-nested params put the block back on its planned channel; a 0x64 code 0 or 2 on an insert is left to the read-back, and a shunt answered 2 retries with the next index. Duplicate blocks and instances past the FM9 limit are refused before any write. Built and simulator-tested; not yet run on a FM9 |
+| `set_channel` | hardware-unverified | New in 0.10.0: the gen-3 fn=0x0B channel select, confirmed on the FM3, followed by a fresh status read that reports whether the channel moved |
+| Knob tapers from the editor typecode | hardware-unverified | Since 0.10.0 a row with typecode `0x52` is a 0..10 knob whatever window it states, and a `0x4X` row is log10 over its window (about 200 params per device moved off linear, PEQ frequencies among them). Decoded on an FM3, firmware 12, in community PR #24; the cache grammar and typecodes are shared, so it applies here too |
+| Read precision from the editor typecode | hardware-unverified | Since 0.10.0 a read prints the decimals the panel shows instead of always two: delay times as whole ms, most mixes to 0.1, input trim to 0.001 (618 params changed). The low digit of each row's typecode sets it; on the Axe-Fx II's own cache it matches the panel's decimals on 398 of 413 params. Ask: read one mix and `reverb.reverbdelay` with `get_param` and compare with the front panel |
 | Preset and scene rename | confirmed | The legacy rename frame is rejected on firmware 12.0. The `fn=0x01 sub=0x28` preset rename and `sub=0x2B` scene rename both showed on the panel and persisted through a save (issue #23); 0.9.0 uses them |
 | Reading a block's current type or model | hardware-unverified | Read as the bulk read's ordinal, labeled from the roster. The fn=0x01 sub=0x1F name query this used to rely on answers with the roster's first entry whatever the real type (two independent owners, firmware 11 and 12), so it is no longer used |
 | Enum names for every selector | hardware-unverified | Since 0.9.1 all 507 FM9 selectors its fw 12.0 editor cache defines are named from it. That corrected lists the family overlay had wrong: LFO types from ordinal 6 ("Log" sent EXP), `delay.model` from 22, `pitch.tempo`, `inputselect` |
@@ -90,18 +94,23 @@ Read [../SAFETY.md](../SAFETY.md) once. The device-specific parts:
 
 ## Asks, ranked
 
-### SESSION-1: Build a preset through the tools on 0.9.1
+### SESSION-1: Build a preset through the tools on 0.10.0
 **Tier: SESSION | ~5 minutes | writes to the working buffer | unlocks: the tool path for placement, cables and rename on firmware 12**
 
 The firmware 12.0 fixes in issue #23 were proven with raw frames. What is left is
 the same build driven through the tools. On an empty location, with FM9-Edit
 quit:
 
-> "Build a preset in row 2: Drive, Amp, Cab, Delay, Reverb, wired in order. Name
-> it Test Build and give it three scenes."
+> "Build a preset in row 3: Drive, Amp, Cab, Delay, Reverb, wired in order. Name
+> it Test Build and give it three scenes: clean (drive off), crunch (amp channel
+> B), lead (drive on, delay channel B)."
 
-Report whether every block landed in row 2 at the column asked, whether the
-cables connect, and whether the name shows. Then read it back with `get_preset`
+Since 0.10.0 this is a fresh build: start from a preset that already has blocks
+on it, so the clear is tested too. Report whether the old blocks are gone,
+whether Input 1 is in column 1, the five blocks in columns 2 to 6 and Output 1 in
+column 7, whether the cables connect, whether scenes 1 to 3 show the bypass and
+channel asked and scenes 4 to 8 match scene 1, whether the name shows, and what
+`ok` and `chain_integrity` said. Then read it back with `get_preset`
 for that location and say whether the `blocks` list matches the grid.
 
 ### SESSION-2: Run the write-verify probe on a preset that has a reverb block

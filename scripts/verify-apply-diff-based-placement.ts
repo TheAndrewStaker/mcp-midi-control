@@ -147,6 +147,7 @@ function createMockConn(startingGrid: readonly { row: number; col: number; block
   const sentFrames: number[][] = [];
   let pendingPredicate: ((bytes: number[]) => boolean) | null = null;
   let pendingResolve: ((bytes: number[]) => void) | null = null;
+  let scenePointer = 0;
 
   function fabricateResponse(sentBytes: number[]): number[] | undefined {
     if (sentBytes[0] !== 0xf0 || sentBytes[5] === undefined) return undefined;
@@ -173,6 +174,13 @@ function createMockConn(startingGrid: readonly { row: number; col: number; block
     // op's own expectedChannel in every spec these goldens build.
     if (fn === 0x11) {
       return [0xf0, 0x00, 0x01, 0x74, 0x07, 0x11, sentBytes[6], sentBytes[7], 0x00, 0x00, 0xf7];
+    }
+    // SCENE_NUMBER (fn=0x29): a fresh build now authors every scene and
+    // verifies its landing scene (contract review H3). Track the pointer
+    // and answer the query (0x7F) with it.
+    if (fn === 0x29) {
+      if (sentBytes[6] !== 0x7f) { scenePointer = sentBytes[6] & 0x07; return undefined; }
+      return [0xf0, 0x00, 0x01, 0x74, 0x07, 0x29, scenePointer, 0x00, 0xf7];
     }
     return undefined;
   }
@@ -216,6 +224,20 @@ function sentGridCellFrames(sentFrames: number[][]): { cell: number; blockId: nu
     .map((f) => ({ cell: f[8], blockId: (f[6] & 0x7f) | ((f[7] & 0x7f) << 7) }));
 }
 
+/**
+ * Bypass frames of the BUILD itself, i.e. before the per-scene walk. Since
+ * contract review H3 a fresh build also authors all 8 scenes (one bypass
+ * per block per scene, after a SET_SCENE); those are counted separately by
+ * sceneWalkBypassFrames so these goldens keep asserting the build path.
+ */
+function buildBypassFrames(sentFrames: number[][]): number[][] {
+  const firstSceneSet = sentFrames.findIndex((f) => f[5] === 0x29 && f[6] !== 0x7f);
+  return sentBypassFrames(firstSceneSet === -1 ? sentFrames : sentFrames.slice(0, firstSceneSet));
+}
+function sceneWalkSets(sentFrames: number[][]): number {
+  return sentFrames.filter((f) => f[5] === 0x29 && f[6] !== 0x7f).length;
+}
+
 function sentBypassFrames(sentFrames: number[][]): number[][] {
   // fn=0x02 PARAM_SET with paramId=255 is the bypass envelope (see
   // buildSetBlockBypass in fractal-midi). paramId septet pair is at
@@ -243,6 +265,7 @@ console.log('\nWire-level A: unchanged block (device already holds the exact tar
   // resolved block (design doc: "leave... final bypass state... unchanged").
   // So exactly 1 bypass frame (final engage), not 0 and not 2.
   check('exactly 1 bypass frame (final engage; anti-screech mute skipped)', sentBypassFrames(sentFrames).length === 1, `${sentBypassFrames(sentFrames).length} bypass frames`);
+  check('nothing structural changed → unlisted-scene reset skipped (H3)', sceneWalkSets(sentFrames) === 0, `got ${sceneWalkSets(sentFrames)}`);
   check('summaries note the placement skip', result.summaries.some((s) => s.includes('already correctly placed')));
   check('summaries note the paired bypass skip', result.summaries.some((s) => s.includes('paired placement was unchanged')));
   check('result.ok === true', result.ok === true);
@@ -270,7 +293,8 @@ console.log('\nWire-level B: same-cell REPLACE (device holds a different wire_id
   check('SET_GRID_CELL sent for (2,1) targeting the REVERB wire_id', placedReverb?.blockId === REVERB_ID, JSON.stringify(placedReverb));
   check('exactly 1 SET_GRID_CELL frame for the replace (no separate clear)', gridCells.filter((c) => c.cell === cellIndex(2, 1)).length === 1);
   // Anti-screech pre-bypass (1) + final engage (1) = 2 for the one replaced block.
-  check('bypass fires twice (anti-screech + final) for the replaced block', sentBypassFrames(sentFrames).length === 2, `${sentBypassFrames(sentFrames).length} bypass frames`);
+  check('bypass fires twice (anti-screech + final) for the replaced block', buildBypassFrames(sentFrames).length === 2, `${buildBypassFrames(sentFrames).length} bypass frames`);
+  check('a structural change authors all 8 scenes + the landing (H3)', sceneWalkSets(sentFrames) === 9, `got ${sceneWalkSets(sentFrames)}`);
   check('result.ok === true', result.ok === true);
 }
 
@@ -302,7 +326,7 @@ console.log('\nWire-level C: multi-block — one unchanged skipped, one changed 
   // The changed reverb: anti-screech pre-bypass + final engage = 2.
   // The unchanged amp: anti-screech is skipped, but the flat finalization
   // still asserts its final bypass state unconditionally = 1. Total 3.
-  check('bypass frames: 2 for the changed block + 1 final for the unchanged block = 3', sentBypassFrames(sentFrames).length === 3, `got ${sentBypassFrames(sentFrames).length}`);
+  check('bypass frames: 2 for the changed block + 1 final for the unchanged block = 3', buildBypassFrames(sentFrames).length === 3, `got ${buildBypassFrames(sentFrames).length}`);
   check('result.ok === true', result.ok === true);
 }
 

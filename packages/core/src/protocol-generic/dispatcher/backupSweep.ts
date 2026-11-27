@@ -152,7 +152,7 @@ function assertDurationAcknowledged(
       `Tell the user how long it will take and what it covers, and re-call with acknowledge_duration: true once they agree. ` +
       `To make it quicker, narrow the range with from/to.`,
     {
-      retry_action: 'Relay the duration to the user, then re-call with acknowledge_duration: true.',
+      retry_action: 'End your turn: tell the user the duration and what it covers, and ask. Re-call with acknowledge_duration: true only after they reply yes, never in this same turn.',
     },
   );
 }

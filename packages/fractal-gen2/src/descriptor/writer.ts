@@ -91,6 +91,9 @@ import { KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/gen2/axe-fx-ii';
 import { checkApplicability } from 'fractal-midi/gen2/axe-fx-ii';
 import {
   buildGetBlockChannel,
+  buildGetBlockParameterValue,
+  isGetBlockParameterResponse,
+  parseGetBlockParameterResponse,
   buildGetPresetName,
   buildSetBlockBypass,
   buildSetBlockChannel,
@@ -129,6 +132,7 @@ import {
   type ApplyPresetCabPolish,
   type ApplyPresetInput,
   type ApplyPresetSceneLevels,
+  type RunOpsResult,
 } from '../tools/applyExecutor.js';
 import { checkAudibility } from '../tools/audibility.js';
 import { findParamFuzzy } from 'fractal-midi/gen2/axe-fx-ii';
@@ -141,7 +145,8 @@ import {
   type ResolvedSetParamsOp,
 } from './setParamsAtomic.js';
 import { restorePresetBinaryAxeFxII } from './presetRestore.js';
-import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
+import { getActivePresetNumber } from './patchDumpIo.js';
+import { isDirty, markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 
 import { findBlockBySlug, parseAxeFxIILocation } from './schema.js';
 import type { AxeFxIIConfig } from './config.js';
@@ -305,6 +310,73 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
     );
   }
 
+  // ── Location range + landing confirmation (contract review H5) ─────
+
+  /**
+   * parseAxeFxIILocation bounded to this model's PHYSICAL preset count
+   * (XL+ 768, AX8 512) instead of the wire's 14-bit 16384 ceiling. Used by
+   * switch_preset: a switch to a slot the unit does not have is silently
+   * ignored by the device, so refuse it before anything is sent.
+   */
+  function parseLocationInRange(location: LocationRef): number {
+    return parseAxeFxIILocation(location, DEVICE_LABEL, config.presetCount);
+  }
+
+
+  /**
+   * Read the active preset number (fn 0x14) back after a switch, retrying up
+   * to 3 times 150 ms apart while it still reports another preset (the II
+   * takes ~100-150 ms to load). Returns the wire number it reports, or
+   * `undefined` when the read does not answer.
+   */
+  async function confirmPresetLanding(ctx: DispatchCtx, expected: number): Promise<number | undefined> {
+    let landedOn: number | undefined;
+    for (let attempt = 0; attempt < 3 && landedOn !== expected; attempt++) {
+      if (attempt > 0) await new Promise((res) => setTimeout(res, 150));
+      try {
+        landedOn = await getActivePresetNumber(ctx, config.modelByte);
+      } catch {
+        return undefined;
+      }
+    }
+    return landedOn;
+  }
+
+  /**
+   * Read a block's scene-resolved bypass flag (fn 0x02 GET paramId 255, the
+   * same read get_preset falls back on). `undefined` = no answer, which on
+   * hardware usually means the block is not placed in this preset.
+   */
+  async function readBypassFlag(ctx: DispatchCtx, effectId: number): Promise<boolean | undefined> {
+    const target = { effectId, paramId: 255 };
+    const p = ctx.conn.receiveSysExMatching(
+      (bytes) => isGetBlockParameterResponse(bytes, target, config.modelByte),
+      GET_BLOCK_CHANNEL_TIMEOUT_MS,
+    );
+    try {
+      ctx.conn.send(buildGetBlockParameterValue(target, modelOpts));
+      return parseGetBlockParameterResponse(await p).value !== 0;
+    } catch {
+      p.catch(() => undefined);
+      return undefined;
+    }
+  }
+
+  /** Read the working-buffer preset name (fn 0x0F). `undefined` = no answer. */
+  async function readPresetNameBack(ctx: DispatchCtx): Promise<string | undefined> {
+    const p = ctx.conn.receiveSysExMatching(
+      (bytes) => isGetPresetNameResponse(bytes, config.modelByte),
+      GET_NAME_TIMEOUT_MS,
+    );
+    try {
+      ctx.conn.send(buildGetPresetName(modelOpts));
+      return parseGetPresetNameResponse(await p, config.modelByte);
+    } catch {
+      p.catch(() => undefined);
+      return undefined;
+    }
+  }
+
   // ── Channel resolution helper ───────────────────────────────────────
 
   function normalizeChannel(channel: string | number | undefined): AxeFxIIChannel | undefined {
@@ -362,13 +434,13 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
     },
 
     buildSwitchPreset(location): number[] {
-      return buildSwitchPreset(parseAxeFxIILocation(location, DEVICE_LABEL), modelOpts);
+      return buildSwitchPreset(parseLocationInRange(location), modelOpts);
     },
 
     buildSavePreset(location, _name): number[] {
       // Pure builder returns ONLY the STORE bytes. Rename is a separate
       // wire op handled by the execute path.
-      return buildStorePreset(parseAxeFxIILocation(location, DEVICE_LABEL), modelOpts);
+      return buildStorePreset(parseLocationInRange(location), modelOpts);
     },
 
     buildSwitchScene(scene): number[] {
@@ -646,28 +718,66 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
 
     async switchPreset(ctx, location): Promise<WriteResult> {
       gateWrite('switch_preset');
-      const n = parseAxeFxIILocation(location, DEVICE_LABEL);
+      const n = parseLocationInRange(location);
       const slot = n + 1;
+      // The connection's isCleanOutbound hook marks the buffer clean as the
+      // switch goes out; remember the prior state so an unconfirmed landing
+      // can put it back (the unsaved edits may still be in the buffer).
+      const wasDirty = isDirty(AXEFX_DIRTY_LABEL);
       ctx.conn.send(buildSwitchPreset(n, modelOpts));
-      // Switching loads a stored preset → the working buffer matches flash →
-      // clean. Explicit markClean (belt-and-suspenders with the connection's
-      // isCleanOutbound hook; and the only markClean under MCP_MOCK_TRANSPORT,
-      // whose mock connection has no outbound hook).
-      markClean(AXEFX_DIRTY_LABEL);
       // Switch is fire-and-forget; no ack from the device. Settle window
       // matches the legacy axefx2_apply_preset behavior.
       await new Promise((res) => setTimeout(res, CHANNEL_SWITCH_SETTLE_MS));
+      // Contract review H5: the switch has no ack, and a switch the device
+      // does not act on leaves it where it was (the LSB-first-encoding bug
+      // did exactly that). Read the active preset number back, as the AM4 and
+      // gen-3 do, and mark the buffer clean only on a confirmed landing.
+      if (process.env.MCP_MOCK_TRANSPORT !== undefined) {
+        // The mock answers every preset-number read with wire 0, so there is
+        // nothing to confirm against; keep the pre-read-back receipt there
+        // (and its clean-on-switch: the mock has no outbound hook).
+        markClean(AXEFX_DIRTY_LABEL);
+        return {
+          op: 'switch_preset',
+          target: String(slot),
+          acked: true,
+          info: `Loaded display slot ${slot} (wire ${n}). Any unsaved working-buffer edits were discarded.`,
+        };
+      }
+      const landedOn = await confirmPresetLanding(ctx, n);
+      if (landedOn !== n && wasDirty) markDirty(AXEFX_DIRTY_LABEL);
+      if (landedOn !== undefined && landedOn !== n) {
+        return {
+          op: 'switch_preset',
+          target: String(slot),
+          acked: false,
+          warning: `Switch to display slot ${slot} was sent, but the ${DEVICE_LABEL} is still on slot ${landedOn + 1}: the preset did NOT change. ` +
+            'Check the front panel (a menu or the tuner can block a preset change), then try again.',
+        };
+      }
+      if (landedOn === undefined) {
+        return {
+          op: 'switch_preset',
+          target: String(slot),
+          acked: false,
+          warning: `Switch to display slot ${slot} was sent (the ${DEVICE_LABEL} does not acknowledge a switch), but the active-preset read-back did not answer, so the landing is unconfirmed. ` +
+            'Check the front panel shows that slot before editing; the buffer is not treated as clean until it does.',
+        };
+      }
+      // Confirmed: the stored preset is loaded, so the buffer matches flash.
+      markClean(AXEFX_DIRTY_LABEL);
       return {
         op: 'switch_preset',
         target: String(slot),
         acked: true,
-        info: `Loaded display slot ${slot} (wire ${n}). Any unsaved working-buffer edits were discarded.`,
+        confirmed_by: 'read_back',
+        info: `Loaded display slot ${slot} (wire ${n}); the active preset number read back as ${slot}. Any unsaved working-buffer edits were discarded.`,
       };
     },
 
     async savePreset(ctx, location, name): Promise<WriteResult> {
       gateWrite('save_preset');
-      const n = parseAxeFxIILocation(location, DEVICE_LABEL);
+      const n = parseLocationInRange(location);
       const slot = n + 1;
       // Optional rename FIRST (fire-and-forget; the device persists the
       // rename through the subsequent STORE).
@@ -844,6 +954,24 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
       }
     },
 
+    async setChannel(_ctx, blockSlug): Promise<WriteResult> {
+      // Not sent on purpose. Session 102 observed the II's block-channel SET
+      // moving the channel on other scenes too (see the setParam note above).
+      // Contract review M4: the old text here said apply_preset writes
+      // per-scene channels "through the preset image"; it does not. apply's
+      // scene walk switches to each scene and sends this SAME select (listed
+      // scenes last). Which of the two observations holds is an open owner
+      // hardware test (2-scene X/Y apply, then read each scene's channel on
+      // the front panel), so the text says exactly what apply does.
+      throw new DispatchError(
+        'capability_not_supported',
+        DEVICE_LABEL,
+        `set_channel is refused on ${DEVICE_LABEL}: a block-channel select was seen to change ${blockSlug}'s channel on other ` +
+          'scenes too. apply_preset scenes[].channels sends the same select once per scene (after switching to it, your listed ' +
+          'scenes last); that every scene keeps its own channel is not yet hardware-confirmed, so check each scene on the front panel.',
+      );
+    },
+
     async setBypass(ctx, blockSlug, bypassed, instance?): Promise<WriteResult> {
       gateWrite('set_bypass');
       const block = resolveBlockWithInstance(blockSlug, instance);
@@ -854,13 +982,62 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
           `Block '${block.name}' on ${DEVICE_LABEL} cannot be bypassed (e.g. Mixer / Input / Output blocks).`,
         );
       }
+      const stateWord = bypassed ? 'BYPASSED' : 'ENGAGED';
+      const target = `${block.name}:${bypassed ? 'bypassed' : 'engaged'}`;
+      // 2026-11-25 hardware: on an UNPLACED block the bypass GET still answers
+      // (it reads as bypassed), so the read-back below confirmed a no-op as
+      // "BYPASSED, read back from the device". One grid read (~50 ms) first:
+      // a block absent from the grid refuses with nothing sent. A failed grid
+      // read falls through to the old send + read-back path.
+      let placedIds: Set<number> | undefined;
+      try {
+        const gridPromise = ctx.conn.receiveSysExMatching(
+          (bytes) => isGetGridLayoutResponse(bytes, config.modelByte),
+          800,
+        );
+        ctx.conn.send(buildGetGridLayout(modelOpts));
+        placedIds = new Set(parseGetGridLayoutResponse(await gridPromise, config.modelByte).map((c) => c.blockId));
+      } catch {
+        placedIds = undefined;
+      }
+      if (placedIds !== undefined && !placedIds.has(block.id)) {
+        return {
+          op: 'set_bypass',
+          target,
+          acked: false,
+          warning: `${block.name} is not placed on the active preset's grid, so nothing was sent. Place it with set_block or apply_preset first.`,
+        };
+      }
       ctx.conn.send(buildSetBlockBypass(block.id, bypassed, modelOpts));
-      markDirty(AXEFX_DIRTY_LABEL); // bypass edit dirties the working buffer
+      // Contract review M5: the SET has no ack, so the receipt reads the
+      // block's scene-resolved bypass flag back (~50 ms) instead of claiming
+      // acked:true on silence. The device in-order handler means the GET
+      // answer also proves the SET was processed.
+      const readBack = await readBypassFlag(ctx, block.id);
+      if (readBack === undefined) {
+        return {
+          op: 'set_bypass',
+          target,
+          acked: false,
+          warning: `Sent ${block.name} ${stateWord}, but its bypass read-back did not answer, so the write is unconfirmed. ` +
+            `This usually means ${block.name} is not placed in the active preset; check the grid (get_preset) and the front panel.`,
+        };
+      }
+      markDirty(AXEFX_DIRTY_LABEL); // the device processed a bypass edit
+      if (readBack !== bypassed) {
+        return {
+          op: 'set_bypass',
+          target,
+          acked: false,
+          warning: `Sent ${block.name} ${stateWord}, but it reads back as ${readBack ? 'BYPASSED' : 'ENGAGED'}: the write did not land. Check the front panel.`,
+        };
+      }
       return {
         op: 'set_bypass',
-        target: `${block.name}:${bypassed ? 'bypassed' : 'engaged'}`,
+        target,
         acked: true,
-        info: `${block.name} set to ${bypassed ? 'BYPASSED' : 'ENGAGED'}. ${DEVICE_LABEL} SET is fire-and-forget; verify on the device.`,
+        confirmed_by: 'read_back',
+        info: `${block.name} is ${stateWord} on the active scene (read back from the device).`,
       };
     },
 
@@ -906,10 +1083,18 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
         };
       }
 
+      // Contract review L3: there is no decoded scene-name write on this
+      // device (see rename), so scenes[].name cannot land. Say so instead of
+      // dropping it silently.
+      const namedScenes = (spec.scenes ?? []).filter((s) => typeof s.name === 'string' && s.name.trim().length > 0).map((s) => s.scene);
+      const sceneNameNote = namedScenes.length > 0
+        ? `Scene names were NOT written (scene ${namedScenes.join(', ')}): ${DEVICE_LABEL} has no decoded scene-name write. Name them on the device or in AxeEdit.`
+        : undefined;
+
       if (target !== undefined) {
         // parseAxeFxIILocation returns wire (0-indexed); the executor's
         // internal `preset_number` field IS wire.
-        const presetNumber = parseAxeFxIILocation(target, DEVICE_LABEL);
+        const presetNumber = parseLocationInRange(target);
         let fullOps: ReturnType<typeof buildApplyPresetAtOps>;
         try {
           fullOps = buildApplyPresetAtOps(
@@ -947,37 +1132,20 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
         const result = await runApplyPresetAtOps(ctx.conn, ops, modelOpts);
         console.error(`apply_preset done: device=${config.id} mode=build target=${presetNumber + 1} ok=${result.ok} nacks=${result.nackedSteps.length} elapsed=${result.elapsedMs} ms`);
         const slot = presetNumber + 1;
-        const firstNack = result.nackedSteps[0];
         return {
-          ok: result.ok,
+          ...runResultEvidence(result),
           steps: ops.length,
           duration_ms: result.elapsedMs,
-          saved: shouldSave && result.ok,
+          // Contract review H1 (device-local part): `saved` is the STORE ack,
+          // not "the whole run was ok". A build with an unconfirmed step that
+          // was nonetheless stored reports saved:true and ok:false.
+          saved: shouldSave && result.saveAcked,
           auto_applied: mergeAutoApplied(filterCabPolishForSkippedBlocks(cabPolish, result.skippedInjectedParamBlocks), sceneLevels),
-          failed_step: firstNack
-            ? {
-                index: firstNack.index,
-                description: firstNack.summary,
-                error: `result_code=0x${firstNack.resultCode.toString(16)}`,
-              }
-            : undefined,
-          nacked_steps: result.nackedSteps.length > 0
-            ? result.nackedSteps.map((n) => ({
-                index: n.index,
-                description: n.summary,
-                error: `result_code=0x${n.resultCode.toString(16)}`,
-                kind: n.kind,
-              }))
-            : undefined,
-          warning: !result.ok && result.nackedSteps.length === 0
-            ? `STORE_PRESET did not ack within ${STORE_RESPONSE_TIMEOUT_MS}ms; save state unknown.`
-            : !shouldSave && result.ok
-            ? `Auditioning at display slot ${slot}, working buffer only, not saved. ` +
+          warning: runResultWarning(result, shouldSave
+            ? undefined
+            : `Auditioning at display slot ${slot}, working buffer only, not saved. ` +
               `Reversible by switching presets. Call save_preset({port:'${config.connectionLabel}', location:${slot}}) ` +
-              `when the user explicitly asks to save / keep / persist.`
-            : result.nackedSteps.length > 1
-            ? `${result.nackedSteps.length} mid-sequence wire NACK(s); see nacked_steps[] for full list. Pre-fix versions only surfaced the first; the agent should treat the chain as not fully cabled.`
-            : undefined,
+              `when the user explicitly asks to save / keep / persist.`, sceneNameNote),
         };
       }
 
@@ -1003,32 +1171,12 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
       console.error(`apply_preset start: device=${config.id} mode=build ops=${ops.length} save=false`);
       const result = await runApplyPresetAtOps(ctx.conn, ops, modelOpts);
       console.error(`apply_preset done: device=${config.id} mode=build ok=${result.ok} nacks=${result.nackedSteps.length} elapsed=${result.elapsedMs} ms`);
-      const firstNack = result.nackedSteps[0];
       return {
-        ok: result.ok,
+        ...runResultEvidence(result),
         steps: ops.length,
         duration_ms: result.elapsedMs,
         auto_applied: mergeAutoApplied(filterCabPolishForSkippedBlocks(cabPolish, result.skippedInjectedParamBlocks), sceneLevels),
-        failed_step: firstNack
-          ? {
-              index: firstNack.index,
-              description: firstNack.summary,
-              error: `result_code=0x${firstNack.resultCode.toString(16)}`,
-            }
-          : undefined,
-        nacked_steps: result.nackedSteps.length > 0
-          ? result.nackedSteps.map((n) => ({
-              index: n.index,
-              description: n.summary,
-              error: `result_code=0x${n.resultCode.toString(16)}`,
-              kind: n.kind,
-            }))
-          : undefined,
-        warning: result.ok
-          ? `Working buffer configured. Press SAVE on the device or call save_preset to persist.`
-          : result.nackedSteps.length > 1
-          ? `${result.nackedSteps.length} mid-sequence wire NACK(s); see nacked_steps[] for full list.`
-          : undefined,
+        warning: runResultWarning(result, `Working buffer configured. Press SAVE on the device or call save_preset to persist.`, sceneNameNote),
       };
     },
 
@@ -1098,7 +1246,7 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
         const e = entries[i];
         // parseAxeFxIILocation returns wire (0-indexed); store display
         // slot in the user-facing `location` field.
-        const presetNumber = parseAxeFxIILocation(e.location, DEVICE_LABEL);
+        const presetNumber = parseLocationInRange(e.location);
         const slot = presetNumber + 1;
         if (seenPresets.has(presetNumber)) {
           throw new DispatchError(
@@ -1186,9 +1334,13 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
           } else {
             failed++;
             const errMsg = verifyError
+              ?? result.aborted
               ?? (result.lastNack
                 ? `${result.lastNack.summary} → result=0x${result.lastNack.resultCode.toString(16)}`
-                : 'no STORE_PRESET ack arrived');
+                : result.unconfirmedSteps[0] !== undefined
+                  ? `${result.unconfirmedSteps.length} unconfirmed step(s), first: ${result.unconfirmedSteps[0].summary}: ${result.unconfirmedSteps[0].reason}`
+                  : 'no STORE_PRESET ack arrived')
+              + (result.saveSkipped !== undefined ? ` ${result.saveSkipped}` : '');
             results.push({
               location: entry.location,
               status: 'error',
@@ -1237,11 +1389,30 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
       gateWrite('rename');
       if (target === 'preset') {
         ctx.conn.send(buildSetPresetName(name, modelOpts));
+        // Contract review M5: the SET has no ack; read the name back.
+        const readBack = await readPresetNameBack(ctx);
+        if (readBack === undefined) {
+          return {
+            op: 'rename',
+            target: 'preset',
+            acked: false,
+            warning: `Sent the rename to "${name}", but the name read-back did not answer, so it is unconfirmed. Check the front panel.`,
+          };
+        }
+        if (readBack !== name.trim()) {
+          return {
+            op: 'rename',
+            target: 'preset',
+            acked: false,
+            warning: `Sent the rename to "${name}", but the device reads back "${readBack}": the rename did not land.`,
+          };
+        }
         return {
           op: 'rename',
           target: 'preset',
           acked: true,
-          info: `Working-buffer preset renamed to "${name}". Press SAVE or call save_preset to persist.`,
+          confirmed_by: 'read_back',
+          info: `Working-buffer preset renamed to "${name}" (read back from the device). Press SAVE or call save_preset to persist.`,
         };
       }
       // 'scene:N': no decoded SET_SCENE_NAME on Axe-Fx II yet.
@@ -1263,7 +1434,7 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
     },
 
     async restorePresetBinary(ctx, bytes, options) {
-      return restorePresetBinaryAxeFxII(ctx, bytes, { ...options, modelId: config.modelByte, deviceLabel: DEVICE_LABEL });
+      return restorePresetBinaryAxeFxII(ctx, bytes, { ...options, modelId: config.modelByte, deviceLabel: DEVICE_LABEL, presetCount: config.presetCount });
     },
   };
 
@@ -1283,6 +1454,66 @@ export function createWriter(config: AxeFxIIConfig): DeviceWriter {
   }
 
   return writer;
+}
+
+/**
+ * ok / failed_step / nacked_steps for an ApplyResult, from the runner's
+ * evidence (contract review M3). Unconfirmed steps ride `nacked_steps` with a
+ * `unconfirmed:<kind>` kind (the array's contract is "ok is false when this is
+ * non-empty", which holds for them too), so the agent sees every step whose
+ * outcome is unknown instead of a bare ok:true.
+ */
+function runResultEvidence(result: RunOpsResult): Pick<ApplyResult, 'ok' | 'failed_step' | 'nacked_steps'> {
+  const steps = [
+    ...result.nackedSteps.map((n) => ({
+      index: n.index,
+      description: n.summary,
+      error: `result_code=0x${n.resultCode.toString(16)}`,
+      kind: n.kind,
+    })),
+    ...result.unconfirmedSteps.map((u) => ({
+      index: u.index,
+      description: u.summary,
+      error: `unconfirmed: ${u.reason}`,
+      kind: `unconfirmed:${u.kind}`,
+    })),
+  ];
+  const first = steps[0];
+  return {
+    ok: result.ok,
+    failed_step: result.aborted !== undefined
+      ? { index: 0, description: 'switch_preset', error: result.aborted }
+      : first !== undefined
+        ? { index: first.index, description: first.description, error: first.error }
+        : undefined,
+    nacked_steps: steps.length > 0 ? steps : undefined,
+  };
+}
+
+/** The relay-ready warning for an apply run: what failed, else `okNote`. */
+function runResultWarning(result: RunOpsResult, okNote: string | undefined, extra?: string): string | undefined {
+  let main: string | undefined;
+  if (result.aborted !== undefined) {
+    main = `Apply aborted: ${result.aborted}`;
+  } else if (result.ok) {
+    main = okNote;
+  } else {
+    const parts: string[] = [];
+    if (result.nackedSteps.length > 0) {
+      parts.push(`${result.nackedSteps.length} step(s) were rejected by the device (NACK); treat the chain as not fully built.`);
+    }
+    if (result.unconfirmedSteps.length > 0) {
+      parts.push(`${result.unconfirmedSteps.length} step(s) could not be confirmed (no answer, or a verify still disagreed after a retry); see nacked_steps[] (kind "unconfirmed:*") and check them on the front panel.`);
+    }
+    if (result.saveSkipped !== undefined) parts.push(result.saveSkipped);
+    else if (parts.length === 0) parts.push('The STORE did not ack; save state unknown.');
+    main = parts.join(' ');
+  }
+  const reset = result.sceneReset !== undefined
+    ? `${result.sceneReset.scenes} scene(s) the spec did not list were reset to the fresh-build defaults (every block on X; slot-level bypass, else engaged), costing ${result.sceneReset.ms} ms of wire time.`
+    : undefined;
+  const out = [main, reset, extra].filter((s) => s !== undefined && s.length > 0).join(' ');
+  return out.length > 0 ? out : undefined;
 }
 
 /** The XL+ writer: preserved name/shape for every existing caller. */

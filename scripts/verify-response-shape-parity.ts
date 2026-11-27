@@ -6,7 +6,7 @@
 // class. Concretely, the bug this gate forecloses is a device whose
 // reader silently STOPS declaring a field its sibling device declares
 // (e.g. AM4 omitting `active_scene`, per-slot `bypassed`, `_meta`, or
-// `ReadResult.raw_response` that the Axe-Fx II response includes), so an
+// `ReadResult.device_label` that the Axe-Fx II response includes), so an
 // agent that learned the shape from one device breaks when pointed at the
 // other.
 //
@@ -124,6 +124,10 @@ const PRESET_SNAPSHOT_META_CONTRACT: ShapeContract = {
     'channel_state_hint',
     'current_location',
     'is_dirty',
+    // 2026-11-27: where is_dirty came from (device bit vs this process only),
+    // and the stored location's name when it differs from the buffer's.
+    'is_dirty_source',
+    'stored_name',
     // BK-081 (2026-07-09): Axe-Fx II atomic whole-preset-image read path.
     // 'read_path' names whether the snapshot's params came from the ONE
     // atomic preset-image dump (tear-free across blocks) or the legacy
@@ -139,7 +143,7 @@ const PRESET_SNAPSHOT_META_CONTRACT: ShapeContract = {
 // ReadResult (get_param / get_params element) contract.
 const READ_RESULT_CONTRACT: ShapeContract = {
   required: ['block', 'name', 'wire_value', 'display_value', 'unit'],
-  optional: ['raw_response'],
+  optional: ['device_label'],
 };
 
 // Per-device EXPLICIT allowlist of intentionally-omitted OPTIONAL fields,
@@ -182,18 +186,24 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       category: 'Voice-class patch tag (Hydrasynth byte 8); AM4 presets carry no category byte.',
     },
     presetSnapshotMeta: {
+      stored_name: 'Emitted only when the stored location name differs from the working buffer name; the mock buffer is unedited, so the two match.',
       // BUG-1 (2026-07-04): AM4 get_preset now always returns all four
       // channels, so there is no "channel state omitted" nudge to emit.
       // The hint was the omission signal; with nothing omitted it is
       // correctly absent. II still emits it (its default omits inactive Y).
-      channel_state_hint: 'AM4 get_preset now returns all four channels (BUG-1 fix), so the "channel state omitted" nudge is never applicable.',
+      channel_state_hint: 'AM4 get_preset reports channel_state_omitted instead; its tool description already names include_channel_state (0.10.0 active-channel default).',
       // BK-081 (2026-07-09): the atomic whole-preset-image read path is
       // Axe-Fx-II-specific (the II's 0x77/0x78/0x79 preset-image dump);
       // AM4 has its own atomic read shape and does not emit this field.
       read_path: 'BK-081 atomic-image read-path field is Axe-Fx-II-specific; AM4 does not emit it.',
       image_read_fallback_reason: 'BK-081 atomic-image read-path field is Axe-Fx-II-specific; AM4 does not emit it.',
     },
-    readResult: {},
+    readResult: {
+      // 0.10.0: raw_response (the raw frame) was replaced by device_label. The
+      // AM4 read response is decoded to a value, not a display string, so
+      // there is no device label to report.
+      device_label: 'The AM4 read response decodes to a value with no device-rendered label string; display_value is the decoded value.',
+    },
   },
   'axe-fx-ii': {
     presetSnapshot: {
@@ -225,6 +235,8 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // them. Candidate to add to the II reader in a future pass.
       current_location: 'AM4-only (GAP-1): the II reader does not yet surface the active stored-location pointer.',
       is_dirty: 'AM4-only (GAP-1): the II reader does not yet surface a working-buffer dirty flag.',
+      is_dirty_source: 'Rides is_dirty, which the II reader does not yet surface.',
+      stored_name: 'AM4-only: the II reader does not read the loaded location pointer, so has no stored name to compare.',
     },
     readResult: {},
   },
@@ -260,6 +272,8 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // dirty flag.
       current_location: 'AM4-only (GAP-1): the gen-3 reader does not surface the active stored-location pointer.',
       is_dirty: 'AM4-only (GAP-1): the gen-3 reader does not surface a working-buffer dirty flag.',
+      is_dirty_source: 'Rides is_dirty, which the gen-3 reader does not surface.',
+      stored_name: 'AM4-only: the gen-3 reader does not read the loaded location pointer.',
       // BK-081 (2026-07-09): the atomic whole-preset-image read path is
       // Axe-Fx-II-specific; the gen-3 reader has its own atomic block-
       // inventory read shape and does not emit this field.
@@ -270,7 +284,7 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // The gen-3 reader projects a value out of the bulk-read burst and does
       // not attach the raw device-response frame the AM4 / Axe-Fx II readers
       // include. The wire value is already surfaced as `wire_value`.
-      raw_response: 'Gen-3 projectParam reports wire_value out of the bulk-read burst without attaching the raw device frame; the wire value is surfaced via wire_value.',
+      device_label: 'Gen-3 projectParam reports values out of the bulk-read burst, which carries no device-rendered label string.',
     },
   },
   hydrasynth: {
@@ -292,6 +306,8 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       channel_state_hint: 'Fractal per-block channel concept; the Hydrasynth has no channels.',
       current_location: 'The Hydrasynth has no active-location register readable over MIDI; the read IS location-addressed instead.',
       is_dirty: 'The Hydrasynth emits no dirty signal and the working buffer has no read; nothing to report.',
+      is_dirty_source: 'Rides is_dirty, which the Hydrasynth cannot report.',
+      stored_name: 'The Hydrasynth read is location-addressed; there is no separate working-buffer name.',
       read_path: 'BK-081 atomic-image read-path field is Axe-Fx-II-specific.',
       image_read_fallback_reason: 'BK-081 atomic-image read-path field is Axe-Fx-II-specific.',
     },

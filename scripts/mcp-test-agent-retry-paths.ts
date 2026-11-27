@@ -357,31 +357,20 @@ async function main(): Promise<void> {
       record('list_params(am4, reverb, type) → no loudness offsets (out of scope)', pass, notes);
     }
 
-    // ── AM4 AMP-slot bypass quirk: set_bypass refuses ──
-    // Note: companion toggle_bypass test removed 2026-05-23 — the
-    // tool was cut entirely. set_bypass refusal stays as the canonical
-    // agent-facing AMP-slot quirk message.
-    console.log('\nAM4 AMP-slot bypass quirk refusal');
+    // ── AM4 amp bypass is a real bypass (hardware-confirmed 2026-11-25) ──
+    // The old refusal rested on "amp 0x03 = BOOST", which a hardware test
+    // disproved: 0x003A/0x0003 bypasses the amp per scene. set_bypass(amp)
+    // must no longer refuse as capability_not_supported.
+    console.log('\nAM4 amp bypass is not refused');
     {
-      // set_bypass(am4, amp, true) used to silently write to the BOOST
-      // register. Must now refuse with capability_not_supported and a
-      // retry_action pointing at set_param master/boost.
       const r = await client.callTool({
         name: 'set_bypass',
         arguments: { port: 'am4', block: 'amp', bypassed: true },
       });
       const t = extractText(r);
-      const notes: string[] = [];
-      const isErr = isError(r);
-      const namesQuirk = /no bypass register|always engaged/i.test(t);
-      const pointsAtMaster = /amp\.master|amp\.level/i.test(t);
-      const pointsAtBoost = /boost/i.test(t);
-      notes.push(`isError=${isErr}`);
-      notes.push(`names AMP-slot quirk → ${namesQuirk}`);
-      notes.push(`points at amp.master/level fallback → ${pointsAtMaster}`);
-      notes.push(`mentions boost retarget → ${pointsAtBoost}`);
-      const pass = isErr && namesQuirk && pointsAtMaster && pointsAtBoost;
-      record('set_bypass(am4, amp) → refuses with AMP-slot quirk explanation', pass, notes);
+      const notes = [`isError=${isError(r)}`, `text=${t.slice(0, 160)}`];
+      const refused = /capability_not_supported|is refused|unresolved/i.test(t);
+      record('set_bypass(am4, amp) → not refused (amp bypass is real)', !refused, notes);
     }
     {
       // set_bypass on a non-AMP block must still proceed normally.

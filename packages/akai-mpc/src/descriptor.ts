@@ -6,31 +6,43 @@
  * no parameter surface: the MPC exposes none over MIDI, so reads and param
  * writes refuse with the reason rather than pretending.
  *
- * And the CARD surface, read-only: with the MPC's card in a reader on this
- * computer, `scan_locations` lists the projects on it and `get_preset` reads
- * one project's sequences (number, name, tempo, length) from its `.xpj`. That
+ * And the CARD surface: with the MPC's card in a reader on this computer,
+ * `scan_locations` lists the projects on it and `get_preset` reads one
+ * project's sequences (number, name, tempo, length) and track mix from its
+ * `.xpj`; `apply_preset(target_location)` edits a project's track and
+ * sequence values in place through core's `safeReplaceFile`. That
  * is how an agent learns which sequence number plays which part of a song
  * without the user reading the screen out. The two surfaces are present at the
  * same time (`transport.concurrent`): the card is in the reader while the MPC
  * stays on USB with a project already in memory.
  */
+import { readFileSync } from 'node:fs';
+
 import type {
+  ApplyPresetOptions,
+  ApplyResult,
+  BlockSchema,
   DeviceDescriptor,
   DispatchCtx,
   GetPresetOptions,
   LocationRef,
+  ParamSchema,
   PresetSnapshot,
+  PresetSpec,
   ScannedLocation,
   WriteResult,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { safeReplaceFile, sha256, StorageConflictError } from '@mcp-midi-control/core/storage/safeReplace.js';
 
 import { connect, listMidiPorts, type MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import { registerConnector } from '@mcp-midi-control/core/server-shared/connections.js';
 
 import { MPC_ONE_G2 } from './devices/mpcOneG2.js';
 import type { MpcConfig } from './devices/types.js';
-import { findCardProject, listCardProjects, listMpcProjects, readCardProject, resolveMpcCardRoot, resolveMpcRoots, type CardProject } from './storage/card.js';
+import { cardProjectPath, findCardProject, listCardProjects, listMpcProjects, readCardProjectFile, resolveMpcCardRoot, resolveMpcRoots, type CardProject } from './storage/card.js';
+import { describeTracks, parseXpj, PROGRAM_VOLUME_MAX_DB, summarizeXpj } from './codec/project.js';
+import { editXpj, planProjectEdits, type SequenceEditRequest, type TrackEditRequest } from './codec/projectEdit.js';
 
 const CARD_STEPS =
   'Put the MPC in Controller Mode with USB connected (its card and internal drive then mount on this '
@@ -43,6 +55,48 @@ const CARD_STEPS =
  * card holds. A wider range is refused up front rather than cut short.
  */
 const SCAN_MAX_ROWS = 200;
+
+/**
+ * get_preset's size budget, under the host's 50,000-character delivery limit.
+ * The owner's widest project is about 5,400 characters; a project at the
+ * unit's limits (128 sequences, 128 busy tracks) is about 87,000.
+ */
+const SNAPSHOT_BUDGET = 40_000;
+
+/**
+ * Fit a snapshot to the budget by dropping the bulky detail (instrument,
+ * preset, inserts, sends, MIDI out) from tracks at the end of the list, so
+ * every track still appears with what an edit needs. Says so when it cuts.
+ */
+function fitSnapshot(snap: PresetSnapshot): PresetSnapshot {
+  const mix = snap.mpc_project;
+  if (mix === undefined || JSON.stringify(snap).length <= SNAPSHOT_BUDGET) return snap;
+  const tracks = mix.tracks.map((t) => ({ ...t }));
+  type Row = (typeof tracks)[number];
+  const slim = (t: Row): Row => ({
+    track: t.track, name: t.name, kind: t.kind, level_db: t.level_db,
+    ...(t.pan !== undefined ? { pan: t.pan } : {}),
+    ...(t.muted === true ? { muted: true as const } : {}),
+  });
+  let from = tracks.length;
+  const build = (): PresetSnapshot => ({
+    ...snap,
+    mpc_project: { ...mix, tracks, ...(from < tracks.length ? { detail_omitted_from_track: tracks[from].track } : {}) },
+    read_warnings: [
+      ...(snap.read_warnings ?? []),
+      ...(from < tracks.length
+        ? [`Response size: from track ${tracks[from].track} on, rows list only name, kind, level, pan and mute (instrument, preset, inserts, sends and MIDI out are left out). Every track is listed and can be edited by number.`]
+        : []),
+    ],
+  });
+  let out = build();
+  while (from > 0 && JSON.stringify(out).length > SNAPSHOT_BUDGET) {
+    from--;
+    tracks[from] = slim(tracks[from]);
+    out = build();
+  }
+  return out;
+}
 
 function requireCard(label: string, ctx: DispatchCtx): string {
   if (!ctx.storage) {
@@ -125,6 +179,103 @@ function connectMpc(config: MpcConfig): MidiConnection {
   });
 }
 
+// ── Project edits (apply_preset on a card project) ──────────────────────────
+// A "block" here is one row of a project: a track's mixer strip, or a
+// sequence. apply_preset edits only the rows and values it lists; the rest of
+// the project is left exactly as the unit saved it (codec/projectEdit.ts).
+
+const num = (name: string, min: number, max: number, unit: string, extra: Partial<ParamSchema> = {}): ParamSchema => ({
+  display_name: name,
+  unit,
+  display_min: min,
+  display_max: max,
+  encode: (d): number => {
+    const n = Number(d);
+    if (!Number.isFinite(n) || n < min || n > max) throw new Error(`${name} must be ${min}..${max}, got ${JSON.stringify(d)}`);
+    return n;
+  },
+  decode: (w): number => w,
+  ...extra,
+});
+
+const MPC_PROJECT_BLOCKS: Readonly<Record<string, BlockSchema>> = {
+  track: {
+    display_name: 'Track mixer strip (slot = track number from get_preset mpc_project.tracks)',
+    params: {
+      level_db: {
+        display_name: 'Level',
+        unit: 'db',
+        display_max: PROGRAM_VOLUME_MAX_DB,
+        encode: (d): number => {
+          if (d === '-inf') return 0;
+          const n = Number(d);
+          if (!Number.isFinite(n) || n > PROGRAM_VOLUME_MAX_DB) throw new Error(`level_db must be a number up to +${PROGRAM_VOLUME_MAX_DB}, or "-inf", got ${JSON.stringify(d)}`);
+          return n;
+        },
+        decode: (w): number => w,
+      },
+      pan: num('Pan', -100, 100, 'bipolar_percent'),
+      mute: {
+        display_name: 'Mute',
+        unit: 'enum',
+        enum_values: { 0: 'off', 1: 'on' },
+        encode: (d): number => (d === 'on' || d === 1 ? 1 : d === 'off' || d === 0 ? 0 : (() => { throw new Error(`mute is "on" or "off", got ${JSON.stringify(d)}`); })()),
+        decode: (w): string => (w === 1 ? 'on' : 'off'),
+      },
+    },
+  },
+  sequence: {
+    display_name: 'Sequence (slot = sequence number)',
+    params: {
+      name: {
+        display_name: 'Name',
+        unit: 'opaque',
+        encode: (d): number => {
+          if (typeof d !== 'string' || d.trim() === '') throw new Error('a sequence name is a non-empty string');
+          return 0;
+        },
+        decode: (w): number => w,
+      },
+      bpm: num('Tempo', 30, 300, 'bpm'),
+      bars: num('Length (read-only, must match the project)', 1, 999, 'count'),
+    },
+  },
+};
+
+/** Split an apply_preset spec into track and sequence requests. */
+function editRequests(label: string, spec: PresetSpec): { tracks: TrackEditRequest[]; sequences: SequenceEditRequest[] } {
+  const tracks: TrackEditRequest[] = [];
+  const sequences: SequenceEditRequest[] = [];
+  const seen = new Set<string>();
+  for (const s of spec.slots) {
+    if (typeof s.slot !== 'number' || !Number.isInteger(s.slot) || s.slot < 1) {
+      throw new Error(`${label}: slot is a track or sequence number (1 or more), got ${JSON.stringify(s.slot)}.`);
+    }
+    const key = `${s.block_type}:${s.slot}`;
+    if (seen.has(key)) throw new Error(`${label}: ${s.block_type} ${s.slot} is listed more than once.`);
+    seen.add(key);
+    const p = (s.params ?? {}) as Record<string, number | string>;
+    if (s.block_type === 'track') {
+      tracks.push({
+        track: s.slot,
+        ...(p.level_db !== undefined ? { level_db: p.level_db === '-inf' ? '-inf' as const : Number(p.level_db) } : {}),
+        ...(p.pan !== undefined ? { pan: Number(p.pan) } : {}),
+        ...(p.mute !== undefined ? { mute: p.mute === 'on' || p.mute === 1 } : {}),
+      });
+    } else if (s.block_type === 'sequence') {
+      sequences.push({
+        sequence: s.slot,
+        ...(p.name !== undefined ? { name: String(p.name) } : {}),
+        ...(p.bpm !== undefined ? { bpm: Number(p.bpm) } : {}),
+        ...(p.bars !== undefined ? { bars: Number(p.bars) } : {}),
+      });
+    } else {
+      throw new Error(`${label}: a project row is "track" or "sequence", got "${s.block_type}".`);
+    }
+  }
+  return { tracks, sequences };
+}
+
 /**
  * The projects readable right now. The storage root the dispatcher resolved is
  * the first volume; when it is one of the discovered volumes, every mounted
@@ -187,16 +338,17 @@ export function createMpcDescriptor(config: MpcConfig): DeviceDescriptor {
       ),
     },
     canonical_terms: {
-      block: 'n/a (no parameters over MIDI)',
+      block: 'a project row on the card: a track (mixer strip) or a sequence',
       slot: 'pad',
       preset: 'sequence',
       scene: 'n/a',
       channel: 'MIDI channel',
       location: `sequence 1-${config.sequence_count} in the loaded project`,
     },
-    // No blocks: nothing on this device is a parameter. get_preset reports a
-    // project's sequences as slots of type "sequence", read from the card.
-    blocks: {},
+    // Nothing here is a MIDI parameter. The two blocks are rows of a project on
+    // the card: get_preset reports its sequences as "sequence" slots (and its
+    // tracks in mpc_project), and apply_preset(target_location) edits them.
+    blocks: MPC_PROJECT_BLOCKS,
     reader: {
       async scanLocations(ctx, from, to): Promise<{ scanned: readonly ScannedLocation[] }> {
         const projects = projectsOn(requireCard(label, ctx));
@@ -233,15 +385,18 @@ export function createMpcDescriptor(config: MpcConfig): DeviceDescriptor {
             + (found.candidates.length > 0 ? `Projects: ${found.candidates.join('; ')}.` : 'It holds no projects.'));
         }
         let sum;
+        let mix;
         try {
-          sum = readCardProject(root, found);
+          const file = readCardProjectFile(root, found);
+          sum = summarizeXpj(file);
+          mix = describeTracks(file);
         } catch (e) {
           throw new DispatchError('bad_location', label, `${found.file} could not be read: ${(e as Error).message}`);
         }
         const playlists = sum.songs
           .filter((sg) => sg.items.length > 0)
           .map((sg) => `"${sg.name}": ${sg.items.map((it) => `${it.sequenceIndex + 1}${it.repeats > 1 ? `x${it.repeats}` : ''}`).join(' ')}`);
-        return {
+        return fitSnapshot({
           name: found.name,
           slots: sum.sequences.map((q) => ({
             slot: q.number,
@@ -259,8 +414,9 @@ export function createMpcDescriptor(config: MpcConfig): DeviceDescriptor {
             ...(playlists.length > 0 ? [`Song-mode playlists (sequence numbers in play order): ${playlists.join(' | ')}.`] : []),
             ...(sum.masterTempo !== undefined ? [`Project tempo ${sum.masterTempo} BPM; saved on MPC software ${sum.appVersion}.`] : []),
           ],
+          mpc_project: mix,
           _meta: { device: label, read_at_ms: Date.now(), active_scene_only: false, routing_omitted: true },
-        };
+        });
       },
       async getParam() {
         return noParams();
@@ -289,6 +445,94 @@ export function createMpcDescriptor(config: MpcConfig): DeviceDescriptor {
             + 'Stopped: the MPC moves now. Playing: it is queued and taken when the current sequence ends. '
             + 'Needs Preferences > MIDI / Sync > Program Change = Sequence. No readback, confirm on the screen.',
         };
+      },
+      // Pre-file validation: a project edit names its project and its rows.
+      validatePreset(spec: PresetSpec, target?: LocationRef): void {
+        if (target === undefined) {
+          throw new Error(`${label}: apply_preset edits a project on the card; pass target_location (its path from scan_locations). There is no working buffer to build into.`);
+        }
+        if (typeof target === 'number' || /^\d+$/.test(String(target).trim())) {
+          throw new Error(`${label}: name the project to edit by its path or name, not its list position (positions move when projects are added).`);
+        }
+        if (spec.name !== undefined) {
+          throw new Error(`${label}: renaming a project is not done here. Leave out spec.name; rows are edited in place.`);
+        }
+        editRequests(label, spec);
+      },
+      // Edit the listed rows of a project file in place. Only the values asked
+      // for change. Without save_authorized this is a preview that reads the
+      // project and reports what would change, touching nothing.
+      async applyPreset(ctx: DispatchCtx, spec: PresetSpec, target?: LocationRef, options?: ApplyPresetOptions): Promise<ApplyResult> {
+        const started = Date.now();
+        const root = requireCard(label, ctx);
+        if (target === undefined) {
+          throw new DispatchError('bad_request', label, `${label}: apply_preset edits a project on the card; pass target_location.`);
+        }
+        const found = findCardProject(projectsOn(root), String(target));
+        if ('candidates' in found) {
+          throw new DispatchError('bad_location', label, `No single project on the mounted MPC storage matches '${target}'. `
+            + (found.candidates.length > 0 ? `Projects: ${found.candidates.join('; ')}.` : 'It holds no projects.'));
+        }
+        const path = cardProjectPath(root, found);
+        const before = readFileSync(path);
+        const planned = sha256(before);
+        let plan;
+        let next;
+        try {
+          const { tracks, sequences } = editRequests(label, spec);
+          plan = planProjectEdits(parseXpj(before), tracks, sequences);
+          next = plan.edits.length > 0 ? editXpj(before, plan.edits) : undefined;
+        } catch (e) {
+          throw new DispatchError('value_out_of_range', label, `${found.file}: ${(e as Error).message}. Nothing was written.`);
+        }
+        const save = options?.save === true;
+        const base = {
+          ok: true,
+          steps: plan.edits.length,
+          applied_spec: spec,
+        };
+        const edit = { file: found.file, changes: plan.changes, ...(plan.unchanged.length > 0 ? { unchanged: plan.unchanged } : {}) };
+        if (next === undefined) {
+          return { ...base, duration_ms: Date.now() - started, saved: false, file_edit: edit,
+            info: `${found.file} already holds every value asked for. Nothing was written.` } as ApplyResult;
+        }
+        if (!save) {
+          return {
+            ...base,
+            duration_ms: Date.now() - started,
+            saved: false,
+            file_edit: edit,
+            warning: `PREVIEW only (save_authorized not set): ${plan.changes.length} change(s) to ${found.file}, NOTHING was written. `
+              + 'Re-call with save_authorized to write it (the current file is backed up first).',
+          } as ApplyResult;
+        }
+        let receipt;
+        try {
+          receipt = safeReplaceFile({
+            path,
+            bytes: next.bytes,
+            expectSha256: planned,
+            backup: { device: label, device_id: config.id, unit: 'project', location: found.location, name: found.name, tool: 'apply_preset' },
+            verify: (written) => { parseXpj(written); },
+          });
+        } catch (e) {
+          throw new DispatchError(e instanceof StorageConflictError ? 'bad_request' : 'no_ack', label, (e as Error).message);
+        }
+        return {
+          ...base,
+          duration_ms: Date.now() - started,
+          saved: true,
+          file_edit: { ...edit, receipt },
+          info: `Wrote ${plan.changes.length} change(s) to ${found.file}; the previous copy is in ${receipt.backup_path}. `
+            + 'The MPC plays this once the project is loaded again. If it is open on the MPC now, reload it there '
+            + 'before saving on the unit: a save from the unit writes back the copy it has in memory.',
+        } as ApplyResult;
+      },
+      // The apply_preset(target_location) gate needs a store; the MPC has none
+      // over MIDI, and a card project is edited through apply_preset itself.
+      async savePreset(): Promise<WriteResult> {
+        throw new DispatchError('capability_not_supported', label,
+          `${label} saves on the unit (Menu > Save). To change a project on its card, use apply_preset(target_location = the project, save_authorized).`);
       },
     },
     agent_guidance: config.agent_guidance,

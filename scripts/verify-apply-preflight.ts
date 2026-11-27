@@ -19,6 +19,7 @@ import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.j
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/descriptor.js';
+import { isTypeSelectorParam, lastKnownType, observeWrittenParam } from '@mcp-midi-control/am4/shared/channels.js';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -736,6 +737,49 @@ check(
   preflight19.errors.length === 0
     && preflight19.info.some((i) => i.level === 'warning' && i.dropped_param === "time"),
   JSON.stringify({ errors: preflight19.errors, info: preflight19.info }),
+);
+
+console.log('\nCase 20: AM4 native filter.resonance is NOT rewritten to filter.q (2026-11-27)');
+const am4Resonance: PresetSpec = {
+  slots: [{ slot: 1, block_type: 'filter', params: { type: 'Touch-Wah', resonance: 8, sensitivity: 5 } }],
+};
+const preflight20 = collectApplyPresetPreflight(am4Resonance, AM4_DESCRIPTOR);
+const slot20 = preflight20.normalized_spec.slots[0]?.params as Record<string, unknown> | undefined;
+check(
+  'filter.resonance stays resonance (exact native name beats a concept-key)',
+  preflight20.errors.length === 0 && slot20?.resonance === 8 && slot20?.q === undefined
+    && !preflight20.info.some((i) => /-> filter\.q/.test(i.info ?? '')),
+  JSON.stringify({ errors: preflight20.errors, info: preflight20.info, params: slot20 }),
+);
+
+console.log('\nCase 21: AM4 per-channel amp `color` maps to channel_<letter>_color (2026-11-27)');
+const am4Color: PresetSpec = {
+  slots: [{
+    slot: 1,
+    block_type: 'amp',
+    params_by_channel: { A: { type: 'Plexi 100W High', color: 'Purple' }, B: { gain: 4, color: 'Green' } },
+  } as PresetSpec['slots'][number]],
+};
+const preflight21 = collectApplyPresetPreflight(am4Color, AM4_DESCRIPTOR);
+const nested21 = preflight21.normalized_spec.slots[0]?.params as Record<string, Record<string, unknown>> | undefined;
+check(
+  'color validates and routes per channel',
+  preflight21.errors.length === 0
+    && nested21?.A?.channel_a_color === 'Purple' && nested21?.B?.channel_b_color === 'Green',
+  JSON.stringify({ errors: preflight21.errors, params: nested21 }),
+);
+
+console.log('\nCase 22: AM4 `mode` is the type selector only on volpan (2026-11-27)');
+// filter.mode BANDPASS (1) used to overwrite the cached filter.type (Touch-Wah
+// 17), so every wah knob after it was refused as "not exposed on type wire 1".
+observeWrittenParam('filter', 'type', 17);
+observeWrittenParam('filter', 'mode', 1);
+check('filter.mode write leaves the cached filter.type alone', lastKnownType.filter === 17, `cached ${lastKnownType.filter}`);
+check(
+  'amp/chorus/phaser/filter mode are settings; volpan mode is its type',
+  !isTypeSelectorParam('amp', 'mode') && !isTypeSelectorParam('chorus', 'mode')
+    && !isTypeSelectorParam('phaser', 'mode') && !isTypeSelectorParam('filter', 'mode')
+    && isTypeSelectorParam('volpan', 'mode') && isTypeSelectorParam('filter', 'type'),
 );
 
 console.log('');

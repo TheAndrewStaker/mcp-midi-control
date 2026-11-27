@@ -156,22 +156,39 @@ const cases: KindCase[] = [
     device: 'axe-fx-ii',
     block: 'drive',
     name: 'middle',
+    // Device-label tier (deviceLabelCalibration.generated.ts): the II prints
+    // drive Middle as -12..+12 dB ("0.00 dB" at wire 32767), not the AM4-shared
+    // 0..10 knob the overlay carried (2026-11-26 label sweep).
     expectedSource: 'overlay',
+    expectedUnit: 'db',
     expectsClosures: true,
-    displayMin: 0,
-    displayMax: 10,
-    rtDisplay: 5,
+    displayMin: -12,
+    displayMax: 12,
+    rtDisplay: 0,
   },
 
   // ── Axe-Fx II ── suffix_rule (fractal-convention)
-  // Pick params whose canonical knob name matches a suffix rule but
-  // are not in AM4_SHARED / EDITOR_OBSERVED. Levels are universal.
+  // Pick params whose canonical knob name matches a suffix rule but are not
+  // in AM4_SHARED / EDITOR_OBSERVED or the device-label tier. Controllers is
+  // not a grid block, so no preset sweep measures it.
+  {
+    device: 'axe-fx-ii',
+    block: 'controllers',
+    name: 'level',
+    expectedSource: 'suffix_rule',
+    expectedUnit: 'knob',
+    expectsClosures: true,
+    displayMin: -80,
+    displayMax: 20,
+    rtDisplay: 0,
+  },
+  // Block levels the II itself prints in dB (device-label tier, 2026-11-26).
   {
     device: 'axe-fx-ii',
     block: 'amp',
     name: 'level',
-    expectedSource: 'suffix_rule',
-    expectedUnit: 'knob',
+    expectedSource: 'overlay',
+    expectedUnit: 'db',
     expectsClosures: true,
     displayMin: -80,
     displayMax: 20,
@@ -181,7 +198,7 @@ const cases: KindCase[] = [
     device: 'axe-fx-ii',
     block: 'reverb',
     name: 'level',
-    expectedSource: 'suffix_rule',
+    expectedSource: 'overlay',
     expectsClosures: true,
     displayMin: -80,
     displayMax: 20,
@@ -213,7 +230,7 @@ const cases: KindCase[] = [
     device: 'axe-fx-ii',
     block: 'delay',
     name: 'level',
-    expectedSource: 'suffix_rule',
+    expectedSource: 'overlay',
     expectsClosures: true,
     displayMin: -80,
     displayMax: 20,

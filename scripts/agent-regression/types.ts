@@ -98,6 +98,13 @@ export interface Expectations {
    * the not-always-called path. The validator silently passes when
    * the agent took the other path.
    */
+  /**
+   * Tools that must be CALLED, where an is_error result still counts. Use when
+   * the correct outcome is a gate refusal the agent relays to the user (a
+   * duration or overwrite handshake): `must_call` requires success and so can
+   * only pass when the agent bypasses the gate.
+   */
+  must_attempt?: readonly string[];
   must_call_any?: readonly (readonly string[])[];
   /** Tools that MUST NOT be called. Bare names. */
   must_not_call?: readonly string[];
@@ -190,6 +197,13 @@ export interface AgentRegressionCase {
    */
   requiresHardware?: boolean;
   /**
+   * The case's prompt asks for (or would tempt a wrong agent into) a write that
+   * PERSISTS on the device, such as a save over an occupied stored location. On
+   * the mock that write lands in memory; on real hardware it overwrites the
+   * owner's preset. `--real-hardware` skips it. A non-empty string states why.
+   */
+  mockOnly?: string;
+  /**
    * Mock-transport fixture profile.
    * When set, the runner injects `MOCK_FIXTURE=<value>` into the per-case
    * `claude -p` spawn so the MCP server child picks it up at module load.
@@ -206,6 +220,12 @@ export interface AgentRegressionCase {
    * rig never leaks into a sweep.
    */
   rigFixture?: string;
+  /**
+   * Mount a fresh MPC card holding one song project ("Night Drive": tracks
+   * Drums, Bass at -2 dB, Keys, Lead; sequences 01 Verse, 02 Chorus), rebuilt
+   * for every run because the case may edit it. Backups go beside it.
+   */
+  mpcCard?: boolean;
   /**
    * Optional state-seeding hook. Fires BEFORE the agent
    * prompt runs: the runner connects to the same MCP server `claude -p`

@@ -36,7 +36,8 @@ F0 00 01 74 14 cc dd ... cs F7
 
 VP4-Edit reads every parameter with `fn=0x01` and **no sub-action** (this differs
 from the III SET frame, which carries a `09 00`/`52 00` sub-action at pos 6-7, and
-from `fractal-midi`'s `buildGetParameter`, which injects `09 00`). 16-byte query
+from the `buildGetParameter` removed in 0.10.0, which injected `09 00` and was
+in fact a SET of 0). 16-byte query
 (18 with F0/F7):
 
 ```

@@ -25,6 +25,9 @@ import {
   buildGetBlockChannel,
   buildGetBlockParameterValue,
   buildGetGridLayout,
+  buildGetPresetNumber,
+  isGetPresetNumberResponse,
+  parseGetPresetNumberResponse,
   buildGetSceneNumber,
   buildSetBlockBypass as buildSetBlockBypassEnvelope,
   buildSetBlockChannel,
@@ -270,6 +273,21 @@ export interface ApplyPresetAtOp {
   expectedChannel?: AxeFxIIChannel;
   /** For scene_verify ops: the expected scene (1..8 display) after the switch. */
   expectedScene?: number;
+  /**
+   * For the leading 'switch_preset' op: the wire preset number the device
+   * must report (fn 0x14) before any build write goes out (contract review
+   * M11). A mismatch aborts the run before anything lands in the wrong preset.
+   */
+  expectedPreset?: number;
+  /**
+   * H3 (contract review): true on the ops that author a scene the spec did
+   * NOT list (and, when the spec lists no scenes at all, the closing landing
+   * switch). They reset that scene to the fresh-build defaults. The runtime
+   * skips them when nothing in this apply structurally changed the grid, the
+   * same "not a fresh build" signal that gates scene-level init, so a
+   * param-only diff apply never wipes the user's scene setup.
+   */
+  unlistedSceneDefault?: boolean;
   /**
    * For 'clear_cell' ops, the (row, col) being cleared. The runtime uses
    * this to skip clears for cells the device's GET_GRID_LAYOUT read
@@ -547,6 +565,26 @@ export interface BuildOptions {
  * no I/O, no connection required. Throws on validation errors (unknown
  * block name, unknown param, out-of-range value).
  */
+/**
+ * Block groups that carry X/Y channels on the Axe-Fx II XL / XL+ (and the
+ * AX8, same engine). Source: Axe-Fx II Owner's Manual §4.4 "X/Y Switching"
+ * ("Mark II: Amp, Cab, Chorus, Delay, Drive, Flanger, Pitch Shifter, Phaser,
+ * Reverb, and Wahwah. XL/XL+: all of the above, plus Compressor,
+ * Gate/Expander, Graphic EQ, PEQ, Trem/Pan, and Mixer"), plus the per-block
+ * "supports X/Y Switching" notes, which add Rotary. Blocks outside this set
+ * (FX Loop, Looper, Volume/Pan, Enhancer, Crossover, Tone Match, Multi Delay,
+ * Filter, ...) are bypassable but have one parameter set: a block-channel
+ * select or GET on them is never answered, so emitting one only cost an
+ * 800 ms verify timeout per scene and a false "unconfirmed" step (review H3).
+ */
+const XY_GROUP_CODES: ReadonlySet<string> = new Set([
+  'AMP', 'CAB', 'CHO', 'DLY', 'DRV', 'FLG', 'PIT', 'PHA', 'REV', 'WAH',
+  'CPR', 'GTE', 'GEQ', 'PEQ', 'TRM', 'MIX', 'ROT',
+]);
+export function hasXYChannels(block: AxeFxIIBlock): boolean {
+  return block.canBypass && XY_GROUP_CODES.has(block.groupCode);
+}
+
 export function buildApplyPresetAtOps(
   input: ApplyPresetAtInput,
   opts: BuildOptions = {},
@@ -961,9 +999,11 @@ export function buildApplyPresetAtOps(
       for (const [chKey, paramMap] of Object.entries(r.paramsByChannel)) {
         const ch = chKey as AxeFxIIChannel;
         if (!paramMap) continue;
-        if (!r.target.canBypass) {
+        // A single-set block takes its params under X (the only set); Y has
+        // nothing to land on.
+        if (!hasXYChannels(r.target) && ch !== 'X') {
           throw new Error(
-            `${r.target.name}: paramsByChannel specifies channel ${ch} but this block does not expose X/Y channels on Axe-Fx II.`,
+            `${r.target.name}: paramsByChannel specifies channel ${ch} but this block does not expose X/Y channels on Axe-Fx II (pass its params under X or flat).`,
           );
         }
         for (const [paramName, value] of Object.entries(paramMap)) {
@@ -985,6 +1025,7 @@ export function buildApplyPresetAtOps(
     kind: 'switch_preset',
     bytes: buildSwitchPreset(preset_number, { modelId }),
     summary: `LOAD_PRESET → ${preset_number} (target slot)`,
+    expectedPreset: preset_number,
   });
 
   // Clear ALL 48 cells (4 rows × 12 cols) BEFORE placing the chain.
@@ -1304,14 +1345,16 @@ export function buildApplyPresetAtOps(
         if (ch === 'X' || ch === 'Y') channelsInOrder.push(ch);
       }
       for (const ch of channelsInOrder) {
-        ops.push({
-          kind: 'channel',
-          bytes: buildSetBlockChannel(r.target.id, ch, { modelId }),
-          summary: `${r.target.name}: channel=${ch}`,
-          awaitResponse: 'channel_verify',
-          effectId: r.target.id,
-          expectedChannel: ch,
-        });
+        if (hasXYChannels(r.target)) {
+          ops.push({
+            kind: 'channel',
+            bytes: buildSetBlockChannel(r.target.id, ch, { modelId }),
+            summary: `${r.target.name}: channel=${ch}`,
+            awaitResponse: 'channel_verify',
+            effectId: r.target.id,
+            expectedChannel: ch,
+          });
+        }
         for (const pp of pendingParams.filter((p) => p.blockIdx === i && p.channel === ch)) {
           ops.push({
             kind: 'param',
@@ -1334,7 +1377,7 @@ export function buildApplyPresetAtOps(
           effectId: r.target.id,
           expectedChannel: r.channel,
         });
-      } else if (blockParams.length > 0 && r.target.canBypass) {
+      } else if (blockParams.length > 0 && hasXYChannels(r.target)) {
         // BUG-4 fix (AM4/II parity): flat params with no explicit `channel`
         // must land somewhere deterministic, not whatever channel the
         // device happens to have active. Default to channel X; the
@@ -1405,18 +1448,44 @@ export function buildApplyPresetAtOps(
   // AxeEdit but the SET envelope isn't documented in any OSS corpus.
   // Add later once decoded.
 
-  if (input.scenes !== undefined && input.scenes.length > 0) {
+  // ── H3 (contract review 2026-11-25): every scene is authored ──────────
+  //
+  // A fresh build resets the scenes the spec does not list (the documented
+  // contract: "unlisted scenes reset", AM4 parity). Pre-fix only the listed
+  // scenes were walked, so an unlisted scene kept whatever the previous
+  // occupant's bypass/channel state was for these block ids, and the scene
+  // that was ACTIVE during the build kept every block in the build-safe
+  // BYPASS above (a silent scene) whenever the spec did not list it.
+  //
+  // Unlisted scenes get the AM4-executor defaults: every placed block on
+  // channel X, bypass = its slot-level `bypassed` intent else ENGAGED. Not a
+  // copy of scene 1: "reset" is what the guidance and the apply_preset
+  // description promise. Unlisted scenes are walked FIRST and the listed ones
+  // after, so the listed scenes' channel selects are the last ones sent: the
+  // set_channel refusal records a hardware observation that the II's block-
+  // channel select can move a block's channel on other scenes too, and
+  // ordering the spec's own scenes last keeps them winning if it does.
+  // Default-scene ops carry `unlistedSceneDefault`, so a diff apply that
+  // changed nothing structurally leaves the user's scenes alone.
+  const listedScenes = input.scenes ?? [];
+  const hasBypassableBlock = resolved.some((r) => r.target.canBypass);
+  if (listedScenes.length > 0 || hasBypassableBlock) {
     // Pre-validate scene indices to fail fast (rather than mid-wire).
-    for (const s of input.scenes) {
+    const seenSceneIndices = new Set<number>();
+    for (const s of listedScenes) {
       if (!Number.isInteger(s.index) || s.index < 1 || s.index > 8) {
         throw new Error(
           `scenes[].index must be 1..8 (display scene number), got ${s.index}`,
         );
       }
+      if (seenSceneIndices.has(s.index)) {
+        throw new Error(`scenes[]: scene ${s.index} is listed twice; each scene may appear at most once per call`);
+      }
+      seenSceneIndices.add(s.index);
     }
     // Resolve all referenced block names up front, fail before any wire.
     const sceneBlockResolutions = new Map<string, AxeFxIIBlock>();
-    for (const s of input.scenes) {
+    for (const s of listedScenes) {
       for (const blockKey of Object.keys({ ...(s.bypass ?? {}), ...(s.channels ?? {}) })) {
         if (sceneBlockResolutions.has(blockKey)) continue;
         const sceneTarget = findBlock(blockKey);
@@ -1424,12 +1493,20 @@ export function buildApplyPresetAtOps(
         sceneBlockResolutions.set(blockKey, sceneTarget);
       }
     }
-    for (const s of input.scenes) {
+    const walk: Array<{ index: number; bypass?: Record<string, boolean>; channels?: Record<string, 'X' | 'Y'>; isDefault: boolean }> = [];
+    for (let index = 1; index <= 8; index++) {
+      if (!seenSceneIndices.has(index)) walk.push({ index, isDefault: true });
+    }
+    for (const s of listedScenes) walk.push({ ...s, isDefault: false });
+    for (const s of walk) {
       const wireScene = s.index - 1;
+      const flag = s.isDefault ? { unlistedSceneDefault: true } : {};
+      const tag = s.isDefault ? ' (unlisted: reset to defaults)' : '';
       ops.push({
         kind: 'switch_scene',
         bytes: buildSetSceneNumber(wireScene, { modelId }),
-        summary: `SET_SCENE → ${wireScene} (display: scene ${s.index}), per-scene state walk`,
+        summary: `SET_SCENE → ${wireScene} (display: scene ${s.index}), per-scene state walk${tag}`,
+        ...flag,
       });
       // Author this scene's COMPLETE bypass state. Every block was build-
       // safe-bypassed at placement (anti-screech), so we set each placed
@@ -1457,13 +1534,14 @@ export function buildApplyPresetAtOps(
           kind: 'bypass',
           bytes: buildSetBlockBypassEnvelope(r.target.id, bypassed, { modelId }),
           summary: `[scene ${s.index}] ${r.target.name}: bypass=${bypassed ? 'BYPASSED' : 'ENGAGED'}`,
+          ...flag,
         });
       }
       // Walk this scene's channel map.
       const explicitlyMappedChannelIds = new Set<number>();
       for (const [blockKey, channel] of Object.entries(s.channels ?? {})) {
         const target = sceneBlockResolutions.get(blockKey)!;
-        if (!target.canBypass) {
+        if (!hasXYChannels(target)) {
           throw new Error(
             `scenes[${s.index}].channels: block '${blockKey}' does not expose X/Y channels on Axe-Fx II`,
           );
@@ -1484,7 +1562,7 @@ export function buildApplyPresetAtOps(
       // from the previous preset/scene. Mirrors the bypass-completeness
       // pass above.
       for (const r of resolved) {
-        if (!r.target.canBypass) continue;
+        if (!hasXYChannels(r.target)) continue;
         if (explicitlyMappedChannelIds.has(r.target.id)) continue;
         ops.push({
           kind: 'channel',
@@ -1493,6 +1571,7 @@ export function buildApplyPresetAtOps(
           awaitResponse: 'channel_verify',
           effectId: r.target.id,
           expectedChannel: 'X',
+          ...flag,
         });
       }
     }
@@ -1515,6 +1594,9 @@ export function buildApplyPresetAtOps(
       summary: `SET_SCENE → ${landing - 1} (display: scene ${landing}), landing scene`,
       awaitResponse: 'scene_verify',
       expectedScene: landing,
+      // With no listed scenes the landing only exists because the default
+      // walk moved the scene pointer; skipped together with that walk.
+      ...(listedScenes.length === 0 ? { unlistedSceneDefault: true } : {}),
     });
   }
 
@@ -1700,6 +1782,15 @@ export interface NackedStep {
   kind: 'set_grid_cell' | 'set_cell_routing' | 'store_preset';
 }
 
+export interface UnconfirmedStep {
+  /** Index in the ops[] array (-1 = the runtime's own Output-level safety restore). */
+  index: number;
+  summary: string;
+  /** What could not be confirmed, in display terms. */
+  reason: string;
+  kind: string;
+}
+
 export interface RunOpsResult {
   ok: boolean;
   totalBytes: number;
@@ -1723,6 +1814,32 @@ export interface RunOpsResult {
   nackedSteps: NackedStep[];
   /** @deprecated use nackedSteps; this is the last entry kept for back-compat. */
   lastNack?: { summary: string; resultCode: number };
+  /**
+   * Contract review M3: every step whose outcome the run could NOT confirm
+   * (an ack or verify that timed out, a channel / scene verify that still
+   * disagreed after its retry, an Output-level restore that did not read
+   * back). Pre-fix these went to `summaries` only and `ok` stayed true. Any
+   * entry flips `ok` false; the writer returns them to the agent.
+   */
+  unconfirmedSteps: UnconfirmedStep[];
+  /** True only when a STORE_PRESET op ran AND the device acked it 0x00. */
+  saveAcked: boolean;
+  /**
+   * Set when the run stopped before the build (the leading switch landed on
+   * a different preset, so nothing was written). `ok` is false.
+   */
+  aborted?: string;
+  /**
+   * Set when a STORE op was in the plan but deliberately not sent (a NACK
+   * or an unconfirmed structural step; contract review H1). Relay-ready.
+   */
+  saveSkipped?: string;
+  /**
+   * H3: how many unlisted scenes this run reset to the fresh-build defaults,
+   * and the measured wall time those ops cost (the per-scene bypass writes
+   * and channel verifies). Absent when no reset ran.
+   */
+  sceneReset?: { scenes: number; ms: number };
   /**
    * BK-084 mode-collapse: block display names (e.g. "Cab 1") that had AT
    * LEAST ONE auto-injected (cab-polish) param op skipped this run
@@ -1786,6 +1903,12 @@ export async function runApplyPresetAtOps(
   let acks = 0;
   let lastNack: { summary: string; resultCode: number } | undefined;
   const nackedSteps: NackedStep[] = [];
+  const unconfirmedSteps: UnconfirmedStep[] = [];
+  let aborted: string | undefined;
+  let saveSkipped: string | undefined;
+  const unconfirmed = (index: number, summary: string, kind: string, reason: string): void => {
+    unconfirmedSteps.push({ index, summary, kind, reason });
+  };
   const skippedInjectedParamBlocks = new Set<string>();
   // Working-buffer sequences (buildApplyPresetOps) have no `save` op,
   // for those, `ok` reduces to "no non-recoverable failures along the
@@ -1885,6 +2008,27 @@ export async function runApplyPresetAtOps(
   const OUTPUT_LEVEL_PARAM = { effectId: 140, paramId: 0 } as const;
   const SAFETY_SETTLE_MS = 60;
 
+  /**
+   * GET the active preset number (fn 0x14) after a switch: settle, then up to
+   * 3 reads 150 ms apart while it still reports another preset. undefined =
+   * the read never answered.
+   */
+  async function readActivePresetNumber(expected: number): Promise<number | undefined> {
+    let got: number | undefined;
+    for (let attempt = 0; attempt < 3 && got !== expected; attempt++) {
+      await new Promise((res) => setTimeout(res, POST_SWITCH_SETTLE_MS));
+      const p = conn.receiveSysExMatching(isGetPresetNumberResponse, GET_RESPONSE_TIMEOUT_MS);
+      try {
+        conn.send(buildGetPresetNumber({ modelId }));
+        got = parseGetPresetNumberResponse(await p).presetNumber;
+      } catch {
+        p.catch(() => undefined);
+        return undefined;
+      }
+    }
+    return got;
+  }
+
   /** GET the Output level (dB). undefined on timeout / unparseable label. */
   async function readOutputLevelDb(): Promise<number | undefined> {
     const p = conn.receiveSysExMatching(
@@ -1911,7 +2055,7 @@ export async function runApplyPresetAtOps(
    * restore lands only after the chain has settled.
    */
   const SAFETY_MAX_ATTEMPTS = 2;
-  async function setOutputLevelVerified(targetDb: number, what: string): Promise<void> {
+  async function setOutputLevelVerified(targetDb: number, what: string): Promise<boolean> {
     for (let attempt = 1; attempt <= SAFETY_MAX_ATTEMPTS; attempt++) {
       const bytes = buildSetBlockParameterValue(OUTPUT_LEVEL_PARAM, targetDb, { modelId });
       conn.send(bytes);
@@ -1922,7 +2066,7 @@ export async function runApplyPresetAtOps(
       const tag = attempt > 1 ? ` [retry ${attempt - 1}]` : '';
       if (confirmed) {
         summaries.push(`  SAFETY: ${what} (output level_1 = ${targetDb} dB)${tag} ✓  (${bytes.length}B)`);
-        return;
+        return true;
       }
       const lastAttempt = attempt === SAFETY_MAX_ATTEMPTS;
       if (!lastAttempt) {
@@ -1942,7 +2086,20 @@ export async function runApplyPresetAtOps(
           ? `  SAFETY: ${what} (output level_1 = ${targetDb} dB)${tag} (unverified — verify timed out after retry)  (${bytes.length}B)`
           : `  SAFETY: ${what} STILL unconfirmed (device reads ${got} dB) after retry`,
       );
-      return;
+      return false;
+    }
+    return false;
+  }
+  /** Restore the Output level; an unconfirmed restore is an unconfirmed step (M3). */
+  async function restoreOutputLevel(targetDb: number, what: string): Promise<void> {
+    const ok = await setOutputLevelVerified(targetDb, what);
+    if (!ok) {
+      unconfirmed(
+        -1,
+        `SAFETY: ${what}`,
+        'output_level_restore',
+        `the Output level restore to ${targetDb} dB did not read back after a retry; the rig may still be muted (-80 dB). Check the Output block level on the front panel.`,
+      );
     }
   }
 
@@ -1967,9 +2124,17 @@ export async function runApplyPresetAtOps(
     await applySafetyMute();
   }
 
+  // H3 cost accounting: wall time spent on the unlisted-scene reset ops.
+  let sceneResetMs = 0;
+  let sceneResetCount = 0;
+  let pendingResetStart: number | undefined;
   try {
     for (let opIndex = 0; opIndex < ops.length; opIndex++) {
       const op = ops[opIndex];
+      if (pendingResetStart !== undefined) {
+        sceneResetMs += Date.now() - pendingResetStart;
+        pendingResetStart = undefined;
+      }
       // After the switch_preset op (if it ran), do a grid read so we can
       // skip clear_cell ops that target already-empty cells. This is the
       // "merge empty values" optimization, one ~100ms read replaces up
@@ -1980,6 +2145,23 @@ export async function runApplyPresetAtOps(
         conn.send(op.bytes);
         totalBytes += op.bytes.length;
         summaries.push(`  ${op.summary}  (${op.bytes.length}B)`);
+        // Contract review M11: the switch has no ack. Read the active preset
+        // number back BEFORE anything is written; a mismatch means every build
+        // write (and a STORE) would land in the wrong preset, so stop here.
+        if (op.expectedPreset !== undefined && process.env.MCP_MOCK_TRANSPORT === undefined) {
+          const landedOn = await readActivePresetNumber(op.expectedPreset);
+          if (landedOn !== undefined && landedOn !== op.expectedPreset) {
+            aborted = `the switch to display slot ${op.expectedPreset + 1} did not land (the device is still on slot ${landedOn + 1}), so nothing was written. Check the front panel, then retry.`;
+            summaries.push(`  ${op.summary}  ❌ device still on slot ${landedOn + 1}; build aborted`);
+            break;
+          }
+          if (landedOn === undefined) {
+            unconfirmed(opIndex, op.summary, 'switch_preset',
+              `the active-preset read-back did not answer, so the switch to display slot ${op.expectedPreset + 1} is unconfirmed; check the front panel shows it.`);
+          } else {
+            summaries.push(`    ✓ verified active preset ${landedOn + 1}`);
+          }
+        }
         await readGridIntoSkipSet(/* afterSwitch */ true);
         // Mute NOW (post-switch): the target preset is loaded, so priorOutputDb
         // captures the target's real Output level and the mute survives (the
@@ -2062,6 +2244,17 @@ export async function runApplyPresetAtOps(
       // the op sequence (after every placement decision), so by the time
       // we reach the first one, `anyStructuralChange` already holds its
       // final value for this apply.
+      // H3: the unlisted-scene reset is part of a FRESH build. Same gate as
+      // scene-level init below (every default-scene op follows every
+      // placement decision, so `anyStructuralChange` is final here).
+      if (op.unlistedSceneDefault === true && !anyStructuralChange) {
+        summaries.push(`  ${op.summary}  ⊘ unlisted-scene reset skipped (nothing in this apply structurally changed)`);
+        continue;
+      }
+      if (op.unlistedSceneDefault === true) {
+        pendingResetStart = Date.now();
+        if (op.kind === 'switch_scene' && op.awaitResponse !== 'scene_verify') sceneResetCount++;
+      }
       if (op.kind === 'scene_level' && !anyStructuralChange) {
         summaries.push(`  ${op.summary}  ⊘ scene-level-init skipped (nothing in this apply structurally changed)`);
         continue;
@@ -2088,6 +2281,7 @@ export async function runApplyPresetAtOps(
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           summaries.push(`  ${op.summary}  ⚠ no ACK (${msg})`);
+          unconfirmed(opIndex, op.summary, 'set_grid_cell', `no grid-cell ACK within ${GET_RESPONSE_TIMEOUT_MS} ms, so this placement is unconfirmed.`);
         }
       } else if (op.awaitResponse === 'set_cell_routing') {
         const ackPromise = conn.receiveSysExMatching(
@@ -2110,6 +2304,7 @@ export async function runApplyPresetAtOps(
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           summaries.push(`  ${op.summary}  ⚠ no ACK (${msg})`);
+          unconfirmed(opIndex, op.summary, 'set_cell_routing', `no cable ACK within ${GET_RESPONSE_TIMEOUT_MS} ms, so this cable is unconfirmed (the chain may not pass signal).`);
         }
       } else if (op.awaitResponse === 'store_preset') {
         // Restore the Output level BEFORE storing. The safety mute holds
@@ -2121,8 +2316,25 @@ export async function runApplyPresetAtOps(
         // in its final stable state, so this is the same unmute the working-
         // buffer path does in `finally` (which then becomes a no-op).
         if (muteApplied) {
-          await setOutputLevelVerified(priorOutputDb ?? 0, 'restoring output before save');
+          await restoreOutputLevel(priorOutputDb ?? 0, 'restoring output before save');
           muteApplied = false;
+        }
+        // Contract review H1: never persist a known-partial build. A NACK, or
+        // an unconfirmed STRUCTURAL step (a placement, a cable, the switch
+        // landing, the Output-level restore that would bake -80 dB into the
+        // saved preset), means the buffer may not be the preset the spec
+        // describes; leave it unsaved and say why.
+        const STRUCTURAL = new Set(['set_grid_cell', 'set_cell_routing', 'switch_preset', 'output_level_restore']);
+        const structuralUnconfirmed = unconfirmedSteps.filter((u) => STRUCTURAL.has(u.kind));
+        if (nackedSteps.length > 0 || structuralUnconfirmed.length > 0) {
+          saveSkipped =
+            `The STORE was NOT sent, so nothing was saved: ` +
+            (nackedSteps.length > 0 ? `${nackedSteps.length} step(s) were rejected (NACK)` : '') +
+            (nackedSteps.length > 0 && structuralUnconfirmed.length > 0 ? ' and ' : '') +
+            (structuralUnconfirmed.length > 0 ? `${structuralUnconfirmed.length} structural step(s) could not be confirmed` : '') +
+            `. The build is in the working buffer only; check it on the device, then call save_preset to keep it, or retry the apply.`;
+          summaries.push(`  ${op.summary}  ⊘ skipped (${saveSkipped})`);
+          continue;
         }
         const ackPromise = conn.receiveSysExMatching(
           isStorePresetResponse,
@@ -2145,6 +2357,7 @@ export async function runApplyPresetAtOps(
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           summaries.push(`  ${op.summary}  ⚠ no ACK (${msg}) (SAVE STATE UNKNOWN)`);
+          unconfirmed(opIndex, op.summary, 'store_preset', `no STORE_PRESET ACK within ${GET_RESPONSE_TIMEOUT_MS} ms, so whether the preset was saved is unknown; reload the location on the device to check.`);
         }
       } else if (op.awaitResponse === 'scene_verify' && op.expectedScene !== undefined) {
         // Send the SET_SCENE, settle, then GET_SCENE_NUMBER to confirm the
@@ -2190,16 +2403,41 @@ export async function runApplyPresetAtOps(
                 summaries.push(`    retry ✓ verified scene ${retryActual}`);
               } else {
                 summaries.push(`    retry ⚠ device still on scene ${retryActual}`);
+                unconfirmed(opIndex, op.summary, 'scene_verify', `the device is on scene ${retryActual}, not scene ${op.expectedScene}, after a retry.`);
               }
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               summaries.push(`    retry verify timeout (${msg})`);
+              unconfirmed(opIndex, op.summary, 'scene_verify', `the scene read-back did not answer after a retry, so landing on scene ${op.expectedScene} is unconfirmed.`);
             }
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          summaries.push(`  ${op.summary}  ⚠ verify timeout (${msg}), settling 100ms`);
+          summaries.push(`  ${op.summary}  ⚠ verify timeout (${msg}), settling 100ms and re-reading once`);
+          // M3 follow-up: a busy device can miss one GET while it is still
+          // processing the scene walk; settle, re-send, read once more.
           await new Promise((res) => setTimeout(res, 100));
+          conn.send(op.bytes);
+          totalBytes += op.bytes.length;
+          await new Promise((res) => setTimeout(res, 50));
+          const retryPromise = conn.receiveSysExMatching(
+            (bytes) => isSceneNumberResponse(bytes, modelId),
+            GET_RESPONSE_TIMEOUT_MS,
+          );
+          conn.send(buildGetSceneNumber({ modelId }));
+          totalBytes += 11;
+          try {
+            const retryActual = parseSceneNumberResponse(await retryPromise, modelId) + 1;
+            if (retryActual === op.expectedScene) {
+              acks++;
+              summaries.push(`    retry ✓ verified scene ${retryActual}`);
+            } else {
+              summaries.push(`    retry ⚠ device on scene ${retryActual}`);
+              unconfirmed(opIndex, op.summary, 'scene_verify', `the device is on scene ${retryActual}, not scene ${op.expectedScene}, after a retry.`);
+            }
+          } catch {
+            unconfirmed(opIndex, op.summary, 'scene_verify', `the scene read-back did not answer (also after a retry), so landing on scene ${op.expectedScene} is unconfirmed.`);
+          }
         }
       } else if (op.awaitResponse === 'channel_verify' && op.effectId !== undefined && op.expectedChannel !== undefined) {
         // Channel-switch serialization barrier: send SET, then GET to
@@ -2227,10 +2465,32 @@ export async function runApplyPresetAtOps(
             conn.send(op.bytes);
             totalBytes += op.bytes.length;
             await new Promise((res) => setTimeout(res, 50));
+            // Re-verify the retry (pre-fix the retry was never checked).
+            const retryPromise = conn.receiveSysExMatching(
+              (bytes) => isGetBlockChannelResponse(bytes, op.effectId!, modelId),
+              GET_RESPONSE_TIMEOUT_MS,
+            );
+            conn.send(buildGetBlockChannel(op.effectId, { modelId }));
+            totalBytes += 11;
+            try {
+              const retryActual = parseGetBlockChannelResponse(await retryPromise);
+              if (retryActual === op.expectedChannel) {
+                acks++;
+                summaries.push(`    retry ✓ verified`);
+              } else {
+                summaries.push(`    retry ⚠ still ${retryActual}`);
+                unconfirmed(opIndex, op.summary, 'channel_verify', `the block reads back on channel ${retryActual}, not ${op.expectedChannel}, after a retry.`);
+              }
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              summaries.push(`    retry verify timeout (${msg})`);
+              unconfirmed(opIndex, op.summary, 'channel_verify', `the channel read-back did not answer after a retry, so channel ${op.expectedChannel} is unconfirmed.`);
+            }
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           summaries.push(`  ${op.summary}  ⚠ verify timeout (${msg}), settling 100ms`);
+          unconfirmed(opIndex, op.summary, 'channel_verify', `the channel read-back did not answer, so channel ${op.expectedChannel} is unconfirmed.`);
           await new Promise((res) => setTimeout(res, 100));
         }
       } else {
@@ -2242,6 +2502,7 @@ export async function runApplyPresetAtOps(
         }
       }
     }
+    if (pendingResetStart !== undefined) sceneResetMs += Date.now() - pendingResetStart;
   } finally {
     // Safety unmute: restore the Output level after all ops, even on error.
     // Restore the EXACT pre-apply level when we captured it (no surprise mix
@@ -2252,7 +2513,7 @@ export async function runApplyPresetAtOps(
     // nothing to restore and priorOutputDb was never captured.
     if (muteApplied) {
       const restoreDb = priorOutputDb ?? 0;
-      await setOutputLevelVerified(
+      await restoreOutputLevel(
         restoreDb,
         priorOutputDb !== undefined
           ? `restoring output to pre-apply level`
@@ -2269,7 +2530,8 @@ export async function runApplyPresetAtOps(
   // failure side).
   const hadMidSequenceNack = nackedSteps.length > 0;
   return {
-    ok: finalSaveOk && !hadMidSequenceNack,
+    // M3: an unconfirmed step is not a success either.
+    ok: finalSaveOk && !hadMidSequenceNack && unconfirmedSteps.length === 0 && aborted === undefined,
     totalBytes,
     acks,
     elapsedMs: Date.now() - startMs,
@@ -2277,5 +2539,10 @@ export async function runApplyPresetAtOps(
     nackedSteps,
     lastNack,
     skippedInjectedParamBlocks,
+    unconfirmedSteps,
+    saveAcked: expectsSave && finalSaveOk,
+    ...(aborted !== undefined ? { aborted } : {}),
+    ...(saveSkipped !== undefined ? { saveSkipped } : {}),
+    ...(sceneResetCount > 0 ? { sceneReset: { scenes: sceneResetCount, ms: sceneResetMs } } : {}),
   };
 }

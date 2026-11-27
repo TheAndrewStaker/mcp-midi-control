@@ -9,7 +9,8 @@ import { MPC_ONE_G2_DESCRIPTOR, resolveChannel } from '@mcp-midi-control/akai-mp
 import { MPC_ONE_G2 } from '@mcp-midi-control/akai-mpc/devices/mpcOneG2.js';
 import type { DispatchCtx } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { safeReplaceFile } from '@mcp-midi-control/core/storage/safeReplace.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findCardProject, isMpcCardRoot, listCardProjects, listMpcProjects, readCardProject, MPC_CARD_ROOT_ENV, resolveMpcCardRoot } from '@mcp-midi-control/akai-mpc/storage/card.js';
@@ -24,8 +25,8 @@ import {
 } from '@mcp-midi-control/akai-mpc/codec/drumProgram.js';
 import { PAD_COLOUR, padColour, programPads, programPadsElement, type PadRole } from '@mcp-midi-control/akai-mpc/codec/padColour.js';
 import { expansionXml, formatSha256Sums, parseSha256Sums } from '@mcp-midi-control/akai-mpc/codec/expansion.js';
-import { gzipSync } from 'node:zlib';
-import { parseXpj, sequenceTitle, summarizeXpj } from '@mcp-midi-control/akai-mpc/codec/project.js';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { describeTracks, parseXpj, programVolumeDb, programVolumeFromDb, sequenceTitle, summarizeXpj } from '@mcp-midi-control/akai-mpc/codec/project.js';
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = ''): void {
@@ -265,6 +266,46 @@ check('fader: 1.0 is +6 dB (the 40 log10 law)', Math.abs(xpmVolumeToDb(1.0) - 6.
   check('xpj: a wrong header refuses, quoting it', refuses(pack(['RIFF', '1', 'x', 'json', 'Linux'], '{}'), /header is/));
   check('xpj: a body that is not JSON refuses', refuses(pack(header, 'nope'), /not JSON/));
   check('xpj: a document with no data refuses', refuses(pack(header, '{"other":1}'), /no "data"/));
+
+  // Per-track mix state. Field paths and type codes are the ones read from
+  // the 87 projects on a One G2 card (2026-11-15).
+  const insert = (index: number, name: string) => ({ index, plugin: { description: { name } } });
+  const strip = (name: string, type: number, mixable: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    name, volume: 1, program: { name, type, mixable: { volume: 0.707946, pan: 0.5, mute: false, sends: [0, 0, 0, 0], inserts: { insertsEnabled: true, effects: [] }, ...mixable }, ...extra },
+  });
+  const mixDoc = {
+    data: {
+      mixer: { outputs: [strip('Outputs 1/2', 9, { inserts: { insertsEnabled: true, effects: [insert(0, 'AIR Kill EQ')] } }).program, strip('Outputs 3/4', 9, {}).program] },
+      tracks: [
+        strip('Kit', 0, { volume: 0.5, pan: 0.25, sends: [0.4, 0, 0, 0], inserts: { insertsEnabled: true, effects: [insert(1, 'Compressor'), insert(0, 'EQ')] } }),
+        strip('Lead', 3, { mute: true }, { plugin: { plugin: { description: { name: 'Jura' }, presetName: 'Shimmer' } } }),
+        { ...strip('Ext', 4, { volume: 0 }), midiOutputRoute: { outputPort: { deviceName: 'Hydrasynth' }, outputChannel: 2 } },
+        strip('Return 1', 7, {}),
+        strip('Submix 1', 8, {}),
+        strip('Outputs 1/2', 9, {}),
+        strip('Outputs 3/4', 9, {}),
+      ],
+    },
+  };
+  const mix = describeTracks({ header, doc: mixDoc as never });
+  const byName = (n: string) => mix.tracks.find((t) => t.name === n);
+  check('xpj mix: program volume reads as mixer dB (0.5 -> -6 dB, unity -> 0)',
+    programVolumeDb(0.707946) === 0 && byName('Kit')?.level_db === -6 && programVolumeDb(0) === '-inf', JSON.stringify(byName('Kit')));
+  check('xpj mix: kind from the type code, pan in -100..100, inserts in slot order, sends name the return',
+    byName('Kit')?.kind === 'drum' && byName('Kit')?.pan === -50 && byName('Kit')?.inserts?.join() === 'EQ,Compressor'
+      && byName('Kit')?.sends_to?.join() === 'Return 1');
+  check('xpj mix: plugin instrument and preset, mute',
+    byName('Lead')?.kind === 'plugin' && byName('Lead')?.instrument === 'Jura' && byName('Lead')?.preset === 'Shimmer' && byName('Lead')?.muted === true);
+  check('xpj mix: MIDI track reports its out device and 1-based channel, a closed fader reads -inf',
+    byName('Ext')?.kind === 'midi' && byName('Ext')?.midi_out?.device === 'Hydrasynth' && byName('Ext')?.midi_out?.channel === 3
+      && byName('Ext')?.level_db === '-inf');
+  check('xpj mix: default bus strips are left out and counted',
+    byName('Return 1') === undefined && byName('Submix 1') === undefined && byName('Outputs 3/4') === undefined && mix.omitted_default_buses === 3,
+    `omitted ${mix.omitted_default_buses}`);
+  check('xpj mix: an outputs strip whose mixer copy carries other inserts is kept and flagged',
+    byName('Outputs 1/2')?.inserts_differ_from_mixer_copy?.join() === 'AIR Kill EQ');
+  check('xpj mix: includeDefaultBuses lists every strip',
+    describeTracks({ header, doc: mixDoc as never }, true).tracks.length === 7);
 }
 
 // ── the card surface: project list + one project's sequences, read-only ──
@@ -348,6 +389,8 @@ check('fader: 1.0 is +6 dB (the 40 log10 law)', Math.abs(xpmVolumeToDb(1.0) - 6.
       /on the SD card, not from the MPC's memory/.test(snap.read_warnings?.[0] ?? '') && /"Night Drive": 1 4x2/.test(snap.read_warnings?.[1] ?? ''),
       JSON.stringify(snap.read_warnings));
     check('card: a card read opens no MIDI port', opened === 0);
+    check('card: a small project is not cut for size', snap.mpc_project?.detail_omitted_from_track === undefined
+      && !(snap.read_warnings ?? []).some((w) => w.startsWith('Response size')));
 
     // Internal storage: the same two folders one level down, in "MPC Documents",
     // with projects saved straight into Projects/ as the MPC does by default.
@@ -385,6 +428,188 @@ check('fader: 1.0 is +6 dB (the 40 log10 law)', Math.abs(xpmVolumeToDb(1.0) - 6.
       /card mounted on this computer/.test(await refusal(() => d.reader.scanLocations!(midiOnly, 1, 5))));
   } finally {
     if (prior === undefined) delete process.env[MPC_CARD_ROOT_ENV]; else process.env[MPC_CARD_ROOT_ENV] = prior;
+    rmSync(card, { recursive: true, force: true });
+  }
+}
+
+// ── project edits: apply_preset(target_location) on a card project ──
+//
+// The JSON is written by hand in the unit's own style (doubles keep ".0"),
+// since a parse-and-stringify rewrite would drop those and change every
+// line. The edit must leave every byte outside the edited values as it was.
+{
+  const card = mkdtempSync(join(tmpdir(), 'mpc-edit-'));
+  const home = mkdtempSync(join(tmpdir(), 'mpc-home-'));
+  const priorCard = process.env[MPC_CARD_ROOT_ENV];
+  const priorBackups = process.env.MCP_MIDI_BACKUP_DIR;
+  const outputsStrip = (fx: string): string =>
+    `{"name":"Outputs 1/2","type":9,"mixable":{"volume":0.707946,"pan":0.5,"mute":false,"sends":[0.0,0.0,0.0,0.0],"inserts":{"insertsEnabled":true,"effects":[${fx}]}}}`;
+  const body = '{"version":28,"data":{"masterTempo":120.0,'
+    + '"sequences":[{"key":0,"value":{"name":"01 Intro","bpm":120.0,"lengthBars":8}},{"key":1,"value":{"name":"02 Verse","bpm":120.0,"lengthBars":16}}],'
+    + '"mixer":{"outputs":[' + outputsStrip('') + ']},'
+    + '"tracks":['
+    + '{"name":"Kit","volume":1,"program":{"name":"Kit","type":0,"mixable":{"volume":0.707946,"pan":0.5,"mute":false,"controlValue":0.0}}},'
+    + '{"name":"Bass","volume":1,"program":{"name":"Bass","type":1,"mixable":{"volume":0.5,"pan":0.5,"mute":true,"controlValue":0.0}}},'
+    + '{"name":"Outputs 1/2","volume":1,"program":' + outputsStrip('') + '}'
+    + ']}}';
+  const head = 'ACVS\n3.9.1.1\nSerialisableProjectData\njson\nLinux\n';
+  const file = join(card, 'Projects', '_Tests', 'Edit Me', 'Edit Me.xpj');
+  const textOf = (): string => (gunzipSync(readFileSync(file)).toString('utf8'));
+  const refusal = async (fn: () => Promise<unknown>): Promise<string> => { try { await fn(); return ''; } catch (e) { return (e as Error).message; } };
+  try {
+    mkdirSync(join(card, 'Expansions'), { recursive: true });
+    mkdirSync(join(file, '..'), { recursive: true });
+    writeFileSync(file, gzipSync(Buffer.from(head + body, 'utf8')));
+    process.env[MPC_CARD_ROOT_ENV] = card;
+    process.env.MCP_MIDI_BACKUP_DIR = join(home, 'mcp-midi-backups');
+    const d = MPC_ONE_G2_DESCRIPTOR;
+    const ctx = { conn: createLazyMidiConnection(() => { throw new Error('no MIDI in an edit'); }), storage: { root: card }, descriptor: d } as unknown as DispatchCtx;
+    const spec = {
+      slots: [
+        { slot: 1, block_type: 'track', params: { level_db: -3, pan: -20 } },
+        { slot: 2, block_type: 'track', params: { mute: 'off' } },
+        { slot: 3, block_type: 'track', params: { level_db: 6 } },
+        { slot: 2, block_type: 'sequence', params: { name: '02 Verse A', bpm: 98, bars: 16 } },
+      ],
+    };
+    const original = readFileSync(file);
+
+    const validate = (s: unknown, target?: string | number): string => { try { d.writer.validatePreset!(s as never, target); return ''; } catch (e) { return (e as Error).message; } };
+    check('edit: no target_location refuses (there is no buffer to build into)', /pass target_location/.test(validate(spec)));
+    check('edit: a list position as target refuses (positions move)', /not its list position/.test(validate(spec, 3)));
+    check('edit: a project rename in spec.name refuses', /renaming a project/.test(validate({ ...spec, name: 'X' }, 'Edit Me')));
+    check('edit: an unknown row kind refuses', /"track" or "sequence"/.test(validate({ slots: [{ slot: 1, block_type: 'amp', params: {} }] }, 'Edit Me')));
+
+    const preview = await d.writer.applyPreset!(ctx, spec as never, '_Tests/Edit Me', { save: false });
+    check('edit: a preview lists every change and writes nothing',
+      preview.saved === false && /PREVIEW only/.test(preview.warning ?? '') && preview.file_edit?.changes.length === 6
+      && Buffer.compare(readFileSync(file), original) === 0, JSON.stringify(preview.file_edit));
+    check('edit: the change lines read in display units',
+      preview.file_edit?.changes.some((c) => /track 1 "Kit": level 0\.0 dB -> -3\.0 dB/.test(c)) === true
+      && preview.file_edit?.changes.some((c) => /tempo 120 -> 98 BPM/.test(c)) === true, JSON.stringify(preview.file_edit?.changes));
+
+    const saved = await d.writer.applyPreset!(ctx, spec as never, 'Edit Me', { save: true });
+    const after = textOf();
+    const expectBody = body
+      .replace('"name":"Kit","type":0,"mixable":{"volume":0.707946,"pan":0.5,', `"name":"Kit","type":0,"mixable":{"volume":${String(Number(programVolumeFromDb(-3).toPrecision(9)))},"pan":0.4,`)
+      .replace('"name":"Bass","type":1,"mixable":{"volume":0.5,"pan":0.5,"mute":true', '"name":"Bass","type":1,"mixable":{"volume":0.5,"pan":0.5,"mute":false')
+      .replace('"name":"02 Verse","bpm":120.0', '"name":"02 Verse A","bpm":98.0')
+      .split(outputsStrip('')).join(outputsStrip('').replace('"volume":0.707946', '"volume":1.0'));
+    check('edit: the saved text differs from the original only at the edited values (".0" doubles kept)',
+      saved.saved === true && after === head + expectBody, after.length !== (head + expectBody).length ? `${after.length} vs ${(head + expectBody).length}` : after.slice(0, 400));
+    check('edit: an outputs strip edit lands on both copies (the track and mixer.outputs)',
+      (after.match(/"name":"Outputs 1\/2","type":9,"mixable":\{"volume":1\.0,/g) ?? []).length === 2);
+    const r = saved.file_edit?.receipt;
+    check('edit: the receipt carries both hashes and a backup that holds the old bytes',
+      r !== undefined && r.sha256_before === createHash('sha256').update(original).digest('hex')
+      && r.sha256_after === createHash('sha256').update(readFileSync(file)).digest('hex')
+      && Buffer.compare(readFileSync(r.backup_path), original) === 0 && r.backup_path.startsWith(join(home, 'mcp-midi-backups')));
+    check('edit: the backup is indexed for list_backups',
+      /"tool":"apply_preset"/.test(readFileSync(join(home, 'mcp-midi-backups', 'index.jsonl'), 'utf8')));
+    check('edit: the edited project reads back with the new values',
+      (() => {
+        const mix = describeTracks(parseXpj(readFileSync(file)), true).tracks;
+        return mix[0].level_db === -3 && mix[0].pan === -20 && mix[1].muted === undefined && mix[2].level_db === 6;
+      })());
+    check('edit: the receipt tells the user to reload before saving on the unit', /reload it there/.test(saved.info ?? ''));
+    check('edit: no temporary file is left beside the project',
+      readdirSync(join(file, '..')).every((n) => !n.endsWith('.tmp')));
+
+    const again = await d.writer.applyPreset!(ctx, spec as never, 'Edit Me', { save: true });
+    check('edit: asking again for the values already there writes nothing',
+      again.file_edit?.receipt === undefined && /Nothing was written/.test(again.info ?? '') && (again.file_edit?.unchanged?.length ?? 0) === 6);
+
+    const bytesBefore = readFileSync(file);
+    check('edit: changing a sequence length refuses, naming the length',
+      /length is 16 bars/.test(await refusal(() => d.writer.applyPreset!(ctx, { slots: [{ slot: 2, block_type: 'sequence', params: { bars: 4 } }] } as never, 'Edit Me', { save: true }))));
+    check('edit: a track past the end refuses, with the track count',
+      /has 3 tracks/.test(await refusal(() => d.writer.applyPreset!(ctx, { slots: [{ slot: 9, block_type: 'track', params: { pan: 0 } }] } as never, 'Edit Me', { save: true }))));
+    check('edit: a level above +6 dB refuses',
+      /above the fader's top/.test(await refusal(() => d.writer.applyPreset!(ctx, { slots: [{ slot: 1, block_type: 'track', params: { level_db: 7 } }] } as never, 'Edit Me', { save: true }))));
+    check('edit: refused edits leave the file as it was', Buffer.compare(readFileSync(file), bytesBefore) === 0);
+
+    // A write from somewhere else between the read and the replace.
+    const conflictBytes = gzipSync(Buffer.from(head + body.replace('"masterTempo":120.0', '"masterTempo":121.0'), 'utf8'));
+    let conflict = '';
+    try {
+      safeReplaceFile({
+        path: file,
+        bytes: conflictBytes,
+        expectSha256: createHash('sha256').update(original).digest('hex'),
+        backup: { device: 'test', device_id: 'test', unit: 'project', location: 'Edit Me', tool: 'verify' },
+      });
+    } catch (e) { conflict = (e as Error).message; }
+    check('safe replace: a file that changed since it was read is not written', /changed on disk after it was read/.test(conflict)
+      && Buffer.compare(readFileSync(file), bytesBefore) === 0);
+    let verifyFail = '';
+    try {
+      safeReplaceFile({
+        path: file,
+        bytes: Buffer.from('not a project'),
+        expectSha256: createHash('sha256').update(bytesBefore).digest('hex'),
+        backup: { device: 'test', device_id: 'test', unit: 'project', location: 'Edit Me', tool: 'verify' },
+        verify: (w) => { parseXpj(w); },
+      });
+    } catch (e) { verifyFail = (e as Error).message; }
+    check('safe replace: bytes that fail the device check are not renamed into place, and the temp file is removed',
+      /not gzip/.test(verifyFail) && Buffer.compare(readFileSync(file), bytesBefore) === 0
+      && readdirSync(join(file, '..')).every((n) => !n.endsWith('.tmp')));
+    check('save_preset on the MPC refuses and points at apply_preset',
+      /apply_preset\(target_location/.test(await refusal(() => d.writer.savePreset!(ctx, 'Edit Me'))));
+  } finally {
+    if (priorCard === undefined) delete process.env[MPC_CARD_ROOT_ENV]; else process.env[MPC_CARD_ROOT_ENV] = priorCard;
+    if (priorBackups === undefined) delete process.env.MCP_MIDI_BACKUP_DIR; else process.env.MCP_MIDI_BACKUP_DIR = priorBackups;
+    rmSync(card, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+// ── response size: get_preset at the widest project the unit allows ──
+//
+// The widest project on the owner's card measures about 5,400 characters
+// (13 mixer rows, 24 sequences). The unit allows 128 sequences; give every
+// one a long name, add 128 busy tracks, and the response must still fit the
+// 40,000-character page budget under the 50,000 delivery limit.
+{
+  const card = mkdtempSync(join(tmpdir(), 'mpc-wide-'));
+  const priorCard = process.env[MPC_CARD_ROOT_ENV];
+  try {
+    mkdirSync(join(card, 'Expansions'), { recursive: true });
+    mkdirSync(join(card, 'Projects', 'Wide'), { recursive: true });
+    const long = (s: string): string => `${s} ${'x'.repeat(40 - s.length)}`;
+    const fx = (k: number) => ({ index: k, plugin: { description: { name: long(`Insert ${k}`) } } });
+    const wide = {
+      data: {
+        masterTempo: 120,
+        sequences: Array.from({ length: 128 }, (_x, key) => ({ key, value: { name: long(`${key + 1} Section`), bpm: 120, lengthBars: 16 } })),
+        songs: [{ name: 'Set', items: Array.from({ length: 128 }, (_x, k) => ({ 'item.sequenceIndex': k, 'item.repeats': 2 })) }],
+        tracks: Array.from({ length: 128 }, (_x, k) => ({
+          name: long(`Track ${k + 1}`),
+          program: {
+            name: long(`Track ${k + 1}`), type: 3,
+            plugin: { plugin: { description: { name: long('Plugin') }, presetName: long('Preset') } },
+            mixable: { volume: 0.5, pan: 0.2, mute: true, sends: [0.3, 0.3, 0.3, 0.3], inserts: { effects: [fx(0), fx(1), fx(2), fx(3)] } },
+          },
+          midiOutputRoute: { outputPort: { deviceName: long('Device') }, outputChannel: 3 },
+        })),
+      },
+    };
+    writeFileSync(join(card, 'Projects', 'Wide', 'Wide.xpj'),
+      gzipSync(Buffer.from(`ACVS\n3.9.1.1\nSerialisableProjectData\njson\nLinux\n${JSON.stringify(wide)}`, 'utf8')));
+    process.env[MPC_CARD_ROOT_ENV] = card;
+    const d = MPC_ONE_G2_DESCRIPTOR;
+    const ctx = { conn: createLazyMidiConnection(() => { throw new Error('no MIDI'); }), storage: { root: card }, descriptor: d } as unknown as DispatchCtx;
+    const snap = await d.reader.getPreset!(ctx, { location: 'Wide' });
+    const size = JSON.stringify(snap).length;
+    check('budget: get_preset on a 128-sequence, 128-track project fits 40,000 characters', size <= 40_000, `${size} characters`);
+    const rows = snap.mpc_project?.tracks ?? [];
+    const from = snap.mpc_project?.detail_omitted_from_track;
+    check('budget: every track is still listed, the cut says where detail stops, and rows before it keep their detail',
+      rows.length === 128 && from !== undefined && from > 1
+      && rows[from - 2].inserts?.length === 4 && rows[from - 1].inserts === undefined && rows[127].level_db === -6
+      && (snap.read_warnings ?? []).some((w) => w.includes(`from track ${from} on`)), `from ${from}`);
+  } finally {
+    if (priorCard === undefined) delete process.env[MPC_CARD_ROOT_ENV]; else process.env[MPC_CARD_ROOT_ENV] = priorCard;
     rmSync(card, { recursive: true, force: true });
   }
 }

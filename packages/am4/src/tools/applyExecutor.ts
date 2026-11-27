@@ -46,6 +46,7 @@ import {
     invalidateChannelCache,
     lastKnownChannel,
     lastKnownType,
+    isTypeSelectorParam,
     observeWrittenParam,
     preflightApplicabilityWarning,
     resolveChannel,
@@ -55,6 +56,7 @@ import { checkApplicability } from 'fractal-midi/am4';
 import { EnumAmbiguityError, resolveValue } from 'fractal-midi/am4';
 import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
 import { sendAndAwaitAck } from '../shared/wireOps.js';
+import { sendReadAndParse } from '../shared/readOps.js';
 import {
     buildSaveToLocation,
     buildSetBlockBypass,
@@ -113,6 +115,12 @@ export interface ApplyPresetSlotInput {
     channel?: string | number;
     params?: Record<string, number | string>;
     channels?: Record<string, Record<string, number | string>>;
+    /**
+     * Slot-level bypass intent (PresetSpec `slots[].bypassed`). The default
+     * bypass state of this block on every scene whose `bypass` map does not
+     * name it (Axe-Fx II parity). Omitted = active.
+     */
+    bypassed?: boolean;
 }
 
 export interface ApplyPresetSceneInput {
@@ -249,6 +257,10 @@ export function prepareApplyPresetWrites(
     // implies the user wants it ACTIVE in the configured scenes, defaulting
     // to active matches that intent and avoids stale-state leakage.
     const placedBlocks = new Map<string, number>();
+    // Slot-level `bypassed` per placed block: the default for every scene
+    // whose bypass map does not name the block (contract review H2; the
+    // Axe-Fx II already honours it this way).
+    const slotBypassDefault = new Map<string, boolean>();
 
     // In-batch type-gating context: when the same apply_preset call
     // contains `params.type` AND knob writes, the agent's intent is the
@@ -326,7 +338,7 @@ export function prepareApplyPresetWrites(
         // of the apply continue. The skip list surfaces in the response
         // so the agent can honestly report what didn't land instead of
         // pretending the silent no-op was a successful write.
-        if (paramName !== 'type' && paramName !== 'mode') {
+        if (!isTypeSelectorParam(canonicalBlock, paramName)) {
             const effectiveTypes: Record<string, number> = {
                 ...lastKnownType,
                 ...inBatchTypes,
@@ -351,7 +363,7 @@ export function prepareApplyPresetWrites(
         }
         // Record type writes for downstream applicability checks in the
         // same batch. Resolved value is the post-encode wire enum index.
-        if (paramName === 'type' || paramName === 'mode') {
+        if (isTypeSelectorParam(canonicalBlock, paramName)) {
             inBatchTypes[canonicalBlock] = Math.round(resolved);
         }
         const enumNameFor = (idx: number): string | undefined =>
@@ -410,6 +422,24 @@ export function prepareApplyPresetWrites(
             wireIdx
         ];
 
+    // FRESH-BUILD CLEARING - unlisted slots (Session 52, Mortal Kombat G03 fix).
+    // Emitted BEFORE any placement (contract review L1). The AM4 holds one
+    // instance of each block, and its behaviour when a block is placed into a
+    // second slot while still sitting in another is not captured. With the
+    // clears last, a block moving from an unlisted slot to a listed one would
+    // be deleted if the device leaves it in the old slot; with the clears
+    // first, every unlisted slot is empty before placement starts, so no
+    // clear can ever touch a block this spec places, whatever the device does.
+    for (const position of [1, 2, 3, 4] as const) {
+        if (slots.some((s) => s.position === position)) continue;
+        prepared.push({
+            kind: 'place',
+            position,
+            blockName: 'none',
+            bytes: buildSetBlockType(position, BLOCK_TYPE_VALUES.none),
+        });
+    }
+
     slots.forEach((slot, i) => {
         const at = `slots[${i}] (position ${slot.position}, ${slot.block_type})`;
         if (seenPositions.has(slot.position)) {
@@ -432,6 +462,12 @@ export function prepareApplyPresetWrites(
         });
         if (canonicalBlock !== 'none') {
             placedBlocks.set(canonicalBlock, blockTypeValue);
+        }
+        if (slot.bypassed !== undefined) {
+            if (canonicalBlock === 'none') {
+                throw new Error(`${at}: bypassed supplied but block_type is "none" (empty slot). Remove bypassed.`);
+            }
+            slotBypassDefault.set(canonicalBlock, slot.bypassed);
         }
 
         // BK-103b: a fresh amp-bearing build gets the mix-ready cab
@@ -611,17 +647,6 @@ export function prepareApplyPresetWrites(
             pushCabPolish(at, letter);
         }
     });
-
-    // FRESH-BUILD CLEARING - unlisted slots (Session 52, Mortal Kombat G03 fix):
-    for (const position of [1, 2, 3, 4] as const) {
-        if (seenPositions.has(position)) continue;
-        prepared.push({
-            kind: 'place',
-            position,
-            blockName: 'none',
-            bytes: buildSetBlockType(position, BLOCK_TYPE_VALUES.none),
-        });
-    }
 
     type PreparedScene = {
         sceneIndex: number;
@@ -846,12 +871,15 @@ export function prepareApplyPresetWrites(
             }
             for (const [block, blockValue] of placedBlocks) {
                 if (explicitlyBypassedBlocks.has(block)) continue;
+                // A scene that does not name the block takes the slot-level
+                // `bypassed` intent, else active (H2; Axe-Fx II parity).
+                const bypassed = slotBypassDefault.get(block) ?? false;
                 prepared.push({
                     kind: 'bypass',
                     block,
-                    bypassed: false,
+                    bypassed,
                     sceneIndex: ps.sceneIndex,
-                    bytes: buildSetBlockBypass(blockValue, false),
+                    bytes: buildSetBlockBypass(blockValue, bypassed),
                 });
             }
             if (ps.name !== undefined) {
@@ -985,8 +1013,32 @@ export async function runApplyPresetWires(
         else if (w.kind === 'bypass') label = `scene ${w.sceneIndex + 1}: ${w.block} → ${w.bypassed ? 'bypassed' : 'active'}`;
         else if (w.kind === 'scene_name') label = `scene ${w.sceneIndex + 1} rename → "${w.name}"`;
         else label = `${w.key} = ${w.display}`;
+        let ackedNow = false;
+        let retried = false;
         try {
             await echoPromise;
+            ackedNow = true;
+        } catch {
+            // Contract review H1: re-send an unacked write ONCE, right here,
+            // while the scene / channel context it was prepared for is still
+            // the active one (a later re-send could land on another scene).
+            // Every write is an absolute set, so a duplicate is harmless.
+            if (Date.now() - startMs <= APPLY_BUDGET_MS) {
+                retried = true;
+                const retryPromise = conn.receiveSysExMatching(
+                    (resp) => predicate(w.bytes, resp),
+                    WRITE_ECHO_TIMEOUT_MS,
+                );
+                conn.send(w.bytes);
+                try {
+                    await retryPromise;
+                    ackedNow = true;
+                } catch {
+                    /* still unacked */
+                }
+            }
+        }
+        if (ackedNow) {
             acked++;
             markDirty(AM4_DIRTY_LABEL);
             recordAckOutcome(true);
@@ -1003,11 +1055,11 @@ export async function runApplyPresetWires(
                 const warning = preflightApplicabilityWarning(`${w.block}.${w.paramName}`);
                 if (warning) applicabilityNote = ' ⚠ type-gated; current ' + w.block + '.type may not expose this knob.';
             }
-            lines.push(`  ✓ ${label}${applicabilityNote}`);
-        } catch {
+            lines.push(`  ✓ ${label}${applicabilityNote}${retried ? ' (acked on re-send)' : ''}`);
+        } else {
             unacked++;
             recordAckOutcome(false);
-            lines.push(`  ? ${label}, no ack within ${WRITE_ECHO_TIMEOUT_MS} ms`);
+            lines.push(`  ? ${label}, no ack within ${WRITE_ECHO_TIMEOUT_MS} ms${retried ? ' (also after one re-send)' : ''}`);
             // FIX F: per-miss tally to stderr (the MCP log panel) so a reader
             // can watch the device go dark in real time instead of seeing a
             // silent hang with no output at all (the incident's worst part).
@@ -1081,6 +1133,11 @@ export type ApplyPresetAtSuccess = {
     /** True when the save step ran AND acked. False = audition only (working buffer at target). */
     saved: boolean;
     /**
+     * Set when a save was requested but deliberately NOT sent because build
+     * writes stayed unacked (contract review H1). Relay-ready reason.
+     */
+    saveSkipped?: string;
+    /**
      * Param writes the validator dropped because their applies_only_when
      * gate excluded the active (or in-batch) block type. Empty list =
      * everything in the spec landed. Non-empty = those params were not
@@ -1093,6 +1150,21 @@ export type ApplyPresetAtSuccess = {
     cabPolish?: ApplyPresetCabPolish;
     /** Scene-level initialization the executor always performs on a fresh build. */
     sceneLevels?: ApplyPresetSceneLevels;
+    /**
+     * Wire evidence for the build itself (contract review H1, AM4 part): how
+     * many of the prepared writes the AM4 echoed. `ok: true` here only means
+     * the sequence ran to the end; a caller reporting success must also see
+     * `unacked === 0`.
+     */
+    acked: number;
+    unacked: number;
+    totalWrites: number;
+    /**
+     * How the switch to the target was confirmed: 'read_back' = the loaded
+     * location was read back and matched; 'ack_only' = the AM4 echoed the
+     * switch but the location read did not answer (or the mock transport).
+     */
+    landing: 'read_back' | 'ack_only';
     wallTimeMs: number;
 };
 export type ApplyPresetAtFailure = {
@@ -1171,6 +1243,23 @@ export async function runApplyPresetAt(
             wallTimeMs: Date.now() - startMs,
         };
     }
+    // The echo only proves the AM4 received the switch (2026-11-12: three
+    // echoed switches that never moved). Read the loaded location back, as
+    // switch_preset does (contract review M11), and refuse to build into
+    // whatever preset is actually loaded when it reports a different one.
+    const landedOn = await confirmLanding(conn, locationIndex);
+    if (landedOn !== undefined && landedOn !== locationIndex) {
+        console.error(`apply_preset done: location=${shortLocation} FAILED step=switch (still on ${formatLocationDisplay(landedOn)}), elapsed=${Date.now() - startMs} ms`);
+        return {
+            ok: false,
+            location: shortLocation,
+            step: 'switch',
+            error: `The AM4 echoed the switch to ${shortLocation} but is still on ${formatLocationDisplay(landedOn)}, so nothing was written. ` +
+                'Check the AM4 display (a menu or the tuner can block a preset change), then try again.',
+            wallTimeMs: Date.now() - startMs,
+        };
+    }
+    const landing: ApplyPresetAtSuccess['landing'] = landedOn === locationIndex ? 'read_back' : 'ack_only';
 
     let wireResult: ApplyPresetWireResult;
     try {
@@ -1214,6 +1303,36 @@ export async function runApplyPresetAt(
             skipped,
             cabPolish,
             sceneLevels,
+            acked: wireResult.acked,
+            unacked: wireResult.unacked,
+            totalWrites: wireResult.totalWrites,
+            landing,
+            wallTimeMs: Date.now() - startMs,
+        };
+    }
+
+    // Contract review H1: never persist a build the AM4 did not fully ack
+    // (each unacked write was already re-sent once above). The buffer stays
+    // at the target, unsaved and reversible; the receipt says why.
+    if (wireResult.unacked > 0) {
+        console.error(`apply_preset done: location=${shortLocation} acked=${wireResult.acked} unacked=${wireResult.unacked} elapsed=${Date.now() - startMs} ms step=save-skipped`);
+        return {
+            ok: true,
+            location: shortLocation,
+            applied: {
+                slots: preset.slots,
+                scenes: preset.scenes ?? [],
+                name: preset.name ?? '',
+            },
+            saved: false,
+            saveSkipped: `${wireResult.unacked} of ${wireResult.totalWrites} build writes did not ack (each was re-sent once), so the save was NOT sent: ${shortLocation} still holds its previous contents.`,
+            skipped,
+            cabPolish,
+            sceneLevels,
+            acked: wireResult.acked,
+            unacked: wireResult.unacked,
+            totalWrites: wireResult.totalWrites,
+            landing,
             wallTimeMs: Date.now() - startMs,
         };
     }
@@ -1251,6 +1370,36 @@ export async function runApplyPresetAt(
         skipped,
         cabPolish,
         sceneLevels,
+        acked: wireResult.acked,
+        unacked: wireResult.unacked,
+        totalWrites: wireResult.totalWrites,
+        landing,
         wallTimeMs: Date.now() - startMs,
     };
+}
+
+/**
+ * Read the AM4's loaded location back after a switch (up to 3 tries, 150 ms
+ * apart) and return what it reports, or `undefined` when the read does not
+ * answer. Shared by switch_preset and apply_preset(target_location) so both
+ * confirm a landing the same way (contract review M11). The mock transport
+ * answers every location read with one fixed value, so there is nothing to
+ * confirm against it and this returns `undefined` there.
+ */
+const LOCATION_STATE_PID_LOW = 0x00ce;
+const LOCATION_STATE_PID_HIGH = 0x000a;
+export async function confirmLanding(conn: MidiConnection, locationIndex: number): Promise<number | undefined> {
+    if (process.env.MCP_MOCK_TRANSPORT === '1') return undefined;
+    let landedOn: number | undefined;
+    for (let attempt = 0; attempt < 3 && landedOn !== locationIndex; attempt++) {
+        try {
+            const idx = (await sendReadAndParse(conn, LOCATION_STATE_PID_LOW, LOCATION_STATE_PID_HIGH)).asUInt32LE();
+            landedOn = idx >= 0 && idx <= 103 ? idx : undefined;
+        } catch {
+            landedOn = undefined;
+        }
+        if (landedOn === undefined) break;
+        if (landedOn !== locationIndex) await new Promise((r) => setTimeout(r, 150));
+    }
+    return landedOn;
 }

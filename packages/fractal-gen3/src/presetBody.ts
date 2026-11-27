@@ -24,12 +24,30 @@
  * value-scale ground truth to validate it against, and wrong body offsets give
  * plausible-but-wrong values. Amp knobs ARE decoded (FM3/FM9), because the
  * reference decoder extracts them and so they are cross-validated.
+ *
+ * DELIBERATE DIVERGENCE (2026-11-25): modifiers and scene-controller values
+ * are decoded in presetModifiers.ts and no longer match the reference
+ * decoder, which reports freed (source NONE) modifier slots as live and reads
+ * scene controllers from a window that holds LFO parameters on the III. The
+ * evidence for the corrected layout is in that module; the gate checks it
+ * against the reference by explaining every difference.
  */
 
 import { TYPE_BINARY_IDS } from './gen3BodyTables.js';
 import { decodeRawPatch } from './presetHuffman.js';
 import { parsePresetDump } from './presetDump.js';
 import { GEN3_READ_ROSTERS } from 'fractal-midi/gen3/axe-fx-iii';
+import { effectFamily, effectName, UNNAMED_202 } from './presetEffectIds.js';
+import {
+  extractModifiers,
+  extractSceneControllers,
+  findRecordWalkStart,
+  RECORD_SIGNATURE_GAP,
+} from './presetModifiers.js';
+import type { Gen3Modifier, Gen3SceneController } from './presetModifiers.js';
+
+export { effectName };
+export type { Gen3Modifier, Gen3SceneController };
 
 // ── Device model ids (raw_patch / SysEx model byte) ───────────────────
 export const MODEL_AXE_FX_III = 0x10;
@@ -225,18 +243,6 @@ export function typeFieldByteOffset(
   return block.params_offset + off * 2; // shared across channels
 }
 
-// Grid effect-id -> block family base. Instances 1..4 are base..base+3.
-const EFFECT_BASES: Record<number, string> = {
-  37: 'Input', 42: 'Output', 46: 'Comp', 50: 'GEQ', 54: 'PEQ', 58: 'Amp',
-  62: 'Cab', 66: 'Reverb', 70: 'Delay', 74: 'MultiTap', 78: 'Chorus',
-  82: 'Flanger', 86: 'Rotary', 90: 'Phaser', 94: 'Wah', 98: 'Formant',
-  102: 'Vol/Pan', 106: 'Tremolo', 110: 'Pitch', 114: 'Filter', 118: 'Drive',
-  122: 'Enhancer', 126: 'Mixer', 130: 'Synth', 138: 'Megatap', 142: 'Crossover', 146: 'Gate',
-  150: 'RingMod', 154: 'MultiComp', 158: 'Ten-Tap', 162: 'Resonator',
-  166: 'Looper', 170: 'Tone Match', 174: 'RTA', 178: 'Plex Delay', 182: 'Send', 186: 'Return',
-  191: 'Multiplexer', 195: 'IR Player',
-};
-
 /**
  * The order the unit writes a preset's blocks into the stored block chain.
  *
@@ -254,9 +260,6 @@ const EFFECT_BASES: Record<number, string> = {
  * the same way. Pairs of families that never share a factory preset are in
  * `CHAIN_ORDER_UNSETTLED`: their relative order here is unproven.
  */
-/** Effect id 202 is placed in two factory presets and named by no published list; it sorts last. */
-const UNNAMED_202 = 'eid_202';
-
 const CHAIN_ORDER: readonly string[] = [
   'Amp', 'Cab', 'Chorus', 'Comp', 'Crossover', 'Delay', 'Enhancer', 'Return', 'Send',
   'Filter', 'Flanger', 'Formant', 'Drive', 'Gate', 'GEQ', 'MultiTap', 'Input', 'Megatap',
@@ -276,42 +279,6 @@ const CHAIN_ORDER_UNSETTLED: ReadonlyArray<readonly [string, string]> = [
   ['Tone Match', 'RTA'], ['Tone Match', UNNAMED_202], ['RTA', 'Looper'], ['RTA', UNNAMED_202],
   ['Looper', UNNAMED_202],
 ];
-
-/** Split an effect id into its family and 1-based instance. */
-function effectFamily(eid: number): { family: string; instance: number } | undefined {
-  for (const [baseStr, family] of Object.entries(EFFECT_BASES)) {
-    const d = eid - Number(baseStr);
-    // Four instances per family, except Input, which has five (37..41).
-    if (d >= 0 && d <= (family === 'Input' ? 4 : 3)) return { family, instance: d + 1 };
-  }
-  if (eid === 202) return { family: UNNAMED_202, instance: 1 };
-  return undefined;
-}
-
-/**
- * Resolve a gen-3 effect ID to its display name + instance (e.g. 58 → "Amp 1",
- * 119 → "Drive 2"). Exported so the LIVE grid reader (sub=0x2E) labels cells
- * with the SAME convention as the stored-dump grid decode.
- */
-export function effectName(eid: number): string | undefined {
-  if (eid in EFFECT_BASES) return `${EFFECT_BASES[eid]} 1`;
-  for (const [baseStr, name] of Object.entries(EFFECT_BASES)) {
-    const base = Number(baseStr);
-    const d = eid - base;
-    if (d > 0 && d <= (name === 'Input' ? 4 : 3)) return `${name} ${d + 1}`;
-  }
-  return undefined;
-}
-
-const MODIFIER_SOURCE_NAMES: Record<number, string> = {
-  1: 'LFO 1A', 2: 'LFO 1B', 3: 'LFO 2A', 4: 'LFO 2B', 5: 'ADSR 1', 6: 'ADSR 2',
-  7: 'Sequencer', 8: 'Envelope Follower', 9: 'Pitch Follower', 10: 'Pedal 1',
-  14: 'External 1', 15: 'External 2', 16: 'External 3', 17: 'External 4',
-  18: 'External 5', 30: 'Scene Controller 1', 31: 'Scene Controller 2',
-  32: 'Scene Controller 3', 33: 'Scene Controller 4', 34: 'FC Pedal 1',
-  35: 'FC Pedal 2', 50: 'Control Switch 1', 51: 'Control Switch 2',
-  56: 'Manual 1', 57: 'Manual 2', 58: 'Manual 3', 59: 'Manual 4', 60: 'Manual 5',
-};
 
 const CAB_BANK_NAMES: Record<number, string> = { 0: 'FACTORY 1', 1: 'FACTORY 2', 3: 'LEGACY' };
 const CAB_MODE_NAMES: Record<number, string> = { 0: 'LEGACY', 1: 'DYNA-CAB' };
@@ -419,26 +386,17 @@ export interface Gen3Block {
   cab2?: number;
   channels?: Record<string, Gen3BlockChannel>;
 }
-export interface Gen3Modifier {
-  source: string;
-  target: string;
-  param: number;
-  origin: 'pre-chain' | 'chain';
-}
-export interface Gen3SceneController {
-  controller: string;
-  values: number[];
-  raw: number[];
-}
 export interface Gen3PresetBody {
   scene_names?: string[];
   grid?: Gen3GridCell[];
   blocks?: Gen3Block[];
   /**
-   * How `blocks` were named. 'grid': paired with the grid's effect ids by the
-   * fixed chain order, so every placed block is present and correctly named
-   * whatever the firmware. 'table-size': the pairing did not hold and blocks
-   * were named by parameter-table size, which can miss or mislabel blocks.
+   * How `blocks` were named. 'grid': named from the grid's effect ids, by each
+   * chain record's own effect-id signature (or, failing that, by pairing with
+   * the fixed chain order), so every placed block is present and correctly
+   * named whatever the firmware. An empty grid is 'grid' with no blocks.
+   * 'table-size': neither held and blocks were named by parameter-table size,
+   * which can miss or mislabel blocks.
    */
   blocks_identified_by?: 'grid' | 'table-size';
   /** Family pairs present whose relative order is unproven; their two entries may be swapped. */
@@ -476,19 +434,6 @@ function parseGrid(data: Uint8Array, rows: number, cols: number): Gen3GridCell[]
     }
   }
   return out;
-}
-
-// ── block-chain start: first of two consecutive 25x1 modifier blocks ───
-function findBlockChainStart(data: Uint8Array): number {
-  const size = (BLOCK_HEADER_WORDS + 25) * 2;
-  for (let off = 0x200; off < data.length - 70; off += 2) {
-    if (u16(data, off + 30) !== 25 || u16(data, off + 32) !== 1) continue;
-    const next = off + size;
-    if (next + 34 <= data.length && u16(data, next + 30) === 25 && u16(data, next + 32) === 1) {
-      return off;
-    }
-  }
-  return -1;
 }
 
 // cols=37 disambiguation: MultiComp / Filter / Comp (reference _classify_cols37)
@@ -541,6 +486,42 @@ function labelsFromGrid(entries: readonly ChainEntry[], grid: readonly Gen3GridC
   return labels.sort((a, b) => CHAIN_ORDER.indexOf(a.family) - CHAIN_ORDER.indexOf(b.family) || a.effectId - b.effectId);
 }
 
+/**
+ * Name the chain entries by each record's own effect-id SIGNATURE: the u16
+ * twelve bytes before the record header (RECORD_SIGNATURE_GAP), gated to the
+ * effect ids the grid places. Returns one label per entry (undefined for an
+ * entry whose signature is not a placed block, i.e. the trailing system
+ * record), or undefined when the signatures do not name every placed block
+ * exactly once (the caller then falls back to the chain-order pairing).
+ *
+ * Evidence: on all 414 non-empty bodies on disk (384 III factory presets, FM9
+ * / FM3 exports and captures, the fractone / forgefx-midi fixtures) the
+ * signature agrees with the chain-order pairing on every one of 4,973 blocks,
+ * each placed block has exactly one signed record, and exactly one record per
+ * body carries a non-placed signature. Unlike the pairing it needs no family
+ * order, so it also settles the CHAIN_ORDER_UNSETTLED pairs. Same rule as
+ * forgefx-midi (Apache-2.0) commit ee48f18; fractone reads Amp records the
+ * same way (Fm9PresetWriteVerifier.AmpRecords).
+ */
+function labelsFromSignatures(
+  data: Uint8Array,
+  entries: readonly ChainEntry[],
+  grid: readonly Gen3GridCell[] | undefined,
+): (GridLabel | undefined)[] | undefined {
+  if (!grid) return undefined;
+  const placed = new Set(grid.filter((c) => !c.is_shunt).map((c) => c.effect_id));
+  const seen = new Set<number>();
+  const out: (GridLabel | undefined)[] = [];
+  for (const { pos } of entries) {
+    const sig = pos >= RECORD_SIGNATURE_GAP ? u16(data, pos - RECORD_SIGNATURE_GAP) : 0;
+    const f = placed.has(sig) ? effectFamily(sig) : undefined;
+    if (!f || seen.has(sig)) { out.push(undefined); continue; }
+    seen.add(sig);
+    out.push({ ...f, effectId: sig });
+  }
+  return seen.size === placed.size ? out : undefined;
+}
+
 function walkBlocks(
   data: Uint8Array,
   chainStart: number,
@@ -550,11 +531,15 @@ function walkBlocks(
   const { blockColsMap, typeLocations } = profile;
   const results: Gen3Block[] = [];
   const entries = chainEntries(data, chainStart);
-  const labels = labelsFromGrid(entries, grid);
   const unsettled: string[] = [];
-  if (labels) {
-    const present = new Set(labels.map((l) => l.family));
-    for (const [a, b] of CHAIN_ORDER_UNSETTLED) if (present.has(a) && present.has(b)) unsettled.push(`${a} / ${b}`);
+  let labels = labelsFromSignatures(data, entries, grid);
+  if (!labels) {
+    const ordered = labelsFromGrid(entries, grid);
+    if (ordered) {
+      labels = entries.map((_, i) => ordered[i]);
+      const present = new Set(ordered.map((l) => l.family));
+      for (const [a, b] of CHAIN_ORDER_UNSETTLED) if (present.has(a) && present.has(b)) unsettled.push(`${a} / ${b}`);
+    }
   }
   for (let i = 0; i < entries.length; i++) {
     const { pos, cols, rows } = entries[i];
@@ -694,80 +679,6 @@ function walkBlocks(
   return { blocks: results, identifiedBy: labels ? 'grid' : 'table-size', unsettled };
 }
 
-// ── modifiers ─────────────────────────────────────────────────────────
-const MODIFIER_PRE_CHAIN_START = 0x240;
-const MODIFIER_FIRST_WORD = 502;
-const MODIFIER_ENTRY_SIZE = 48;
-const MODIFIER_MAX_ENTRIES = 12;
-
-function extractPreChainModifiers(data: Uint8Array): Gen3Modifier[] {
-  const out: Gen3Modifier[] = [];
-  for (let i = 0; i < MODIFIER_MAX_ENTRIES; i++) {
-    const wordStart = MODIFIER_FIRST_WORD + i * MODIFIER_ENTRY_SIZE;
-    const abs = MODIFIER_PRE_CHAIN_START + wordStart * 2;
-    if (abs + 12 * 2 > data.length) break;
-    if (u16(data, abs) !== 25) break; // marker
-    const sourceId = u16(data, abs + 2 * 2);
-    const targetEid = u16(data, abs + 10 * 2);
-    const paramNum = u16(data, abs + 11 * 2);
-    if (targetEid === 0 && paramNum === 0 && sourceId === 0) continue;
-    out.push({
-      source: MODIFIER_SOURCE_NAMES[sourceId] ?? `source_${sourceId}`,
-      target: effectName(targetEid) ?? `eid_${targetEid}`,
-      param: paramNum,
-      origin: 'pre-chain',
-    });
-  }
-  return out;
-}
-
-function extractChainModifiers(data: Uint8Array, chainStart: number): Gen3Modifier[] {
-  const out: Gen3Modifier[] = [];
-  let pos = chainStart;
-  while (pos + BLOCK_HEADER_WORDS * 2 + 2 <= data.length) {
-    const cols = u16(data, pos + 30);
-    const rows = u16(data, pos + 32);
-    if (cols === 0 || rows === 0 || cols > 500 || rows > 8) break;
-    const size = (BLOCK_HEADER_WORDS + cols * rows) * 2;
-    if (cols === 25 && rows === 1) {
-      const paramsStart = pos + BLOCK_HEADER_WORDS * 2;
-      const targetEid = u16(data, paramsStart + 2 * 2);
-      if (targetEid !== 0) {
-        const sourceId = u16(data, pos + 17 * 2);
-        out.push({
-          source: MODIFIER_SOURCE_NAMES[sourceId] ?? `source_${sourceId}`,
-          target: effectName(targetEid) ?? `eid_${targetEid}`,
-          param: u16(data, paramsStart + 3 * 2),
-          origin: 'chain',
-        });
-      }
-    }
-    pos += size;
-  }
-  return out;
-}
-
-// ── scene controllers: pre-chain block 0, 4 controllers x 8 scenes ─────
-const SCENE_CTRL_BLOCK_START = 0x240;
-const SCENE_CTRL_VALUE_OFFSET = 42;
-function extractSceneControllers(data: Uint8Array): Gen3SceneController[] {
-  const out: Gen3SceneController[] = [];
-  for (let sc = 0; sc < 4; sc++) {
-    const off = SCENE_CTRL_BLOCK_START + (SCENE_CTRL_VALUE_OFFSET + sc * 8) * 2;
-    if (off + 16 > data.length) break;
-    const raw: number[] = [];
-    for (let i = 0; i < 8; i++) raw.push(u16(data, off + i * 2));
-    if (raw.some((v) => v !== 0)) {
-      out.push({
-        controller: `Scene Controller ${sc + 1}`,
-        values: raw.map((v) => Math.round((v / 65535) * 1000) / 10),
-        raw,
-      });
-    }
-  }
-  return out;
-}
-
 function asciiName(data: Uint8Array, start: number, len: number): string {
   let s = '';
   for (let i = 0; i < len; i++) {
@@ -795,7 +706,9 @@ export function decodeGen3Body(body: Uint8Array, modelId: number): Gen3PresetBod
 
   if (body.length >= 0x1c4) out.grid = parseGrid(body, profile.gridRows, profile.gridCols);
 
-  const chainStart = findBlockChainStart(body);
+  // The record walk starts with the modifier table (25x1 records), then the
+  // block chain; chainEntries skips the 25x1 records.
+  const chainStart = findRecordWalkStart(body);
   if (chainStart >= 0) {
     const walked = walkBlocks(body, chainStart, profile, out.grid);
     out.blocks = walked.blocks;
@@ -805,21 +718,14 @@ export function decodeGen3Body(body: Uint8Array, modelId: number): Gen3PresetBod
     if (amp?.channels) out.amp1 = amp.channels;
   }
 
-  // Merge pre-chain + chain modifiers, de-duping on (target, param).
-  const pre = extractPreChainModifiers(body);
-  const chain = chainStart >= 0 ? extractChainModifiers(body, chainStart) : [];
-  const seen = new Set(pre.map((m) => `${m.target} ${m.param}`));
-  const merged = [...pre];
-  for (const m of chain) {
-    const key = `${m.target} ${m.param}`;
-    if (!seen.has(key)) { merged.push(m); seen.add(key); }
-  }
-  if (merged.length) out.modifiers = merged;
+  // Modifiers in use (source != NONE, target resolves) and scene-controller
+  // values: presetModifiers.ts carries the layout and its evidence.
+  const placed = out.grid ? new Set(out.grid.filter((c) => !c.is_shunt).map((c) => c.effect_id)) : undefined;
+  const modifiers = chainStart >= 0 ? extractModifiers(body, modelId, chainStart, placed) : [];
+  if (modifiers.length) out.modifiers = modifiers;
 
-  if (body.length >= SCENE_CTRL_BLOCK_START + SCENE_CTRL_VALUE_OFFSET * 2 + 64) {
-    const sc = extractSceneControllers(body);
-    if (sc.length) out.scene_controllers = sc;
-  }
+  const sc = extractSceneControllers(body, modelId);
+  if (sc.length) out.scene_controllers = sc;
 
   return out;
 }

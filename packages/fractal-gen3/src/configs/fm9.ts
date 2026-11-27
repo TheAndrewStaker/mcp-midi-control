@@ -18,6 +18,7 @@
 import { FM9_PARAMS_BY_FAMILY, FM9_ENUM_OVERRIDES, FM9_CACHE_ENUM_NAMES } from 'fractal-midi/gen3/fm9';
 import type { FractalModernConfig } from '../factory.js';
 import {
+  GRID_BUILD_GUIDANCE,
   MODERN_AGENT_GUIDANCE,
   MODERN_BLOCK_PARAMS_SUMMARY,
   WIDE_GRID_EXAMPLE_SPEC,
@@ -82,6 +83,7 @@ export const FM9_CONFIG: FractalModernConfig = {
   },
   agent_guidance: {
     ...MODERN_AGENT_GUIDANCE,
+    ...GRID_BUILD_GUIDANCE,
     device_note: [
       'This is the Fractal FM9 (community beta). It shares the Axe-Fx III',
       'gen-3 SysEx protocol and a 6×14 grid with 8 scenes and A–D channels.',

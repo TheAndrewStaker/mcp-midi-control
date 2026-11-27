@@ -213,5 +213,65 @@ if (existsSync(FM3_CAP)) {
   console.log(`  (capture ${FM3_CAP} absent — skipped FM3 cross-validation)`);
 }
 
+// ── FM3 multi-row golden (always runs) ─────────────────────────────
+// A sub=0x2E reply from a real FM3 (fw 12.0) for the preset "Harmonic Voltage":
+// parallel rows, a shunt, and cross-row cables. Frame and expected cells were
+// contributed by sKuhLight in community PR #10, where the expected grid is the
+// same preset's whole-preset dump decode. Unlike the field-test capture above,
+// this one is inline, so it gates every run.
+const FM3_HV_FRAME = [
+  'f0 00 01 74 11 01 2e 00 00 00 00 00 00 00 00 00 00 00 00 70 03 53 00 20 00 00 00 00 00 00 00 00',
+  '00 00 03 6c 76 58 10 29 06 0b 49 5a 6f 37 1a 2c 32 02 59 5e 6c 3a 18 2c 76 29 00 40 20 10 08 04',
+  '02 01 00 40 20 10 08 04 02 01 00 00 49 37 1d 0e 26 79 00 40 20 10 08 04 02 01 00 40 20 10 08 04',
+  '02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 00 04 6b 05 52 6e 10 08 04 02 01 00 40 20 10 08 04',
+  '02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 00 29 5e 2d 67 23 20 40 32 10 08 04',
+  '02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 00 02 4d 5e 6c 37 48 04',
+  '02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 00 08 04',
+  '02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04',
+  '02 00 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04',
+  '02 01 00 40 20 10 00 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04',
+  '02 01 00 40 20 10 08 04 02 01 00 00 20 10 08 04 02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 04',
+  '02 01 00 40 20 10 08 04 02 01 00 40 20 10 08 00 00 00 00 00 00 00 00 00 00 01 14 00 00 00 00 00',
+  '00 00 00 00 00 00 00 07 20 00 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00',
+  '40 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 10 00 08 00 00 00 00 00 00 00 00 00 00 00 00',
+  '00 00 00 7c 00 02 00 10 20 00 10 00 00 00 00 00 00 00 00 00 00 39 40 01 40 00 00 00 00 00 13 40',
+  '00 20 00 00 00 00 00 00 00 00 00 00 32 00 01 00 00 00 00 00 00 00 00 00 00 02 18 00 09 00 00 00',
+  '00 00 00 00 00 00 00 00 00 00 00 00 42 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0b 60',
+  '00 20 00 00 00 00 00 00 00 00 00 00 00 00 00 00 07 50 00 08 00 00 00 00 00 00 00 00 00 00 00 00',
+  '00 00 00 54 00 02 00 00 00 00 00 00 59 f7',
+].join(' ').split(/\s+/).map((h) => parseInt(h, 16));
+// [col, row, effect id or shunt index, isShunt, fed-from rows]
+const FM3_HV_EXPECTED: ReadonlyArray<readonly [number, number, number, boolean, readonly number[]]> = [
+  [0, 2, 37, false, []],
+  [1, 1, 58, false, [2]],
+  [2, 2, 0, true, [1]],
+  [3, 2, 146, false, [2]],
+  [4, 2, 62, false, [2]],
+  [4, 3, 130, false, [2]],
+  [5, 2, 115, false, [2, 3]],
+  [6, 0, 78, false, [2]],
+  [6, 3, 50, false, [2]],
+  [7, 2, 70, false, [0, 3]],
+  [8, 2, 66, false, [2]],
+  [9, 2, 47, false, [2]],
+  [10, 2, 122, false, [2]],
+  [11, 2, 42, false, [2]],
+];
+{
+  check('fm3 golden: frame is 590 bytes', FM3_HV_FRAME.length === 590, `got ${FM3_HV_FRAME.length}`);
+  const hv = parseGen3GridLayout(FM3_HV_FRAME, FM3);
+  check('fm3 golden: 14 placed cells', hv.length === FM3_HV_EXPECTED.length, `got ${hv.length}`);
+  for (const [col, row, id, isShunt, fromRows] of FM3_HV_EXPECTED) {
+    const c = hv.find((x) => x.col === col && x.row === row);
+    const gotId = c ? (c.isShunt ? c.shuntIndex : c.effectId) : undefined;
+    const gotRows = c ? [0, 1, 2, 3].filter((r) => c.cableInputMask & (1 << r)) : [];
+    check(
+      `fm3 golden: c${col} r${row} ${isShunt ? 'shunt ' : 'eid '}${id} from [${fromRows}]`,
+      !!c && c.isShunt === isShunt && gotId === id && JSON.stringify(gotRows) === JSON.stringify(fromRows),
+      c ? `got ${c.isShunt ? 'shunt ' + c.shuntIndex : 'eid ' + c.effectId} from [${gotRows}]` : 'missing',
+    );
+  }
+}
+
 console.log(`gen3-grid-layout: ${ok} ok, ${fail} fail`);
 if (fail > 0) process.exit(1);

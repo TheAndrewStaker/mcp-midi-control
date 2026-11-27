@@ -17,7 +17,9 @@
  * Run:  npx tsx scripts/verify-dispatcher.ts
  */
 
+import { AMP_TYPES } from 'fractal-midi/am4';
 import { execSync } from 'node:child_process';
+import { createGen3Sim } from './_lib/gen3-stateful-sim.js';
 import { existsSync, readFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -480,7 +482,7 @@ assert(
   `param=${ampMasterParamScope.applies_only_when?.length} block=${ampMasterBlockScope?.applies_only_when?.length}`,
 );
 
-// The prose and the predicate must agree. `amp.fat` is exposed on 9 of 248 amp
+// The prose and the predicate must agree. `amp.fat` is exposed on 9 of the amp
 // types; it read "applies to any type (special-cased on: ...)" until
 // 2026-08-02 while `set_param` refused the write as type-gated. 112 AM4 knobs
 // carried that contradiction. Never assert on the old wording again.
@@ -489,7 +491,8 @@ assert(
   'a strictly type-gated knob is NOT described as universal',
   ampFat?.applies_only_when !== undefined
     && !/applies to any/.test(ampFat.applies_only_when)
-    && /9 of 248/.test(ampFat.applies_only_when),
+    // Denominator follows the roster (248 on fw 2.00, 251 since fw 2.02).
+    && new RegExp(`9 of ${AMP_TYPES.length}`).test(ampFat.applies_only_when),
   `got ${ampFat?.applies_only_when}`,
 );
 // ...and the converse, added 2026-08-04 after the founder caught it on
@@ -2553,18 +2556,20 @@ function buildMockIIICtx(): {
   ctx: import('@mcp-midi-control/core/protocol-generic/types.js').DispatchCtx;
   captured: CapturedFrame[];
 } {
+  // Since the 2026-11-25 fresh build, a gen-3 apply clears the buffer and
+  // verifies the result from a grid read-back, so a mock that never answers
+  // fails the build (correctly). The stateful sim answers reads like a unit;
+  // it does not echo parameter writes, so those stay unconfirmed.
   const captured: CapturedFrame[] = [];
-  const mockConn: import('@mcp-midi-control/core/midi/transport.js').MidiConnection = {
+  const sim = createGen3Sim({ modelByte: 0x10, rows: 6, cols: 14 });
+  const inner = sim.ctx.conn;
+  const mockConn = {
+    ...inner,
     send: (bytes: number[]) => {
       captured.push({ bytes: [...bytes], fn: bytes[5] });
+      inner.send(bytes);
     },
-    receiveSysEx: () => Promise.reject(new Error('mock: no inbound')),
-    // Always time out → III's sendAndWatchForError treats as "accepted".
-    receiveSysExMatching: () => Promise.reject(new Error('mock: timeout (= accepted)')),
-    onMessage: () => () => {},
-    hasInput: false,
-    close: () => {},
-  };
+  } as unknown as import('@mcp-midi-control/core/midi/transport.js').MidiConnection;
   return {
     ctx: { conn: mockConn, descriptor: AXEFX3_DESCRIPTOR },
     captured,
@@ -2609,8 +2614,10 @@ async function testIIIChannelNestedApply(): Promise<void> {
   const channelFrames = captured.filter((f) => f.fn === FN_SET_GET_CHANNEL);
   const paramFrames = captured.filter(isSetParamFrame);
   assert(
-    'III channel-nested apply emits 2 SET_CHANNEL frames (one per channel A, B)',
-    channelFrames.length === 2,
+    // A, B, then the restore to scene 1's planned channel A (a nested write
+    // selects channels on the ACTIVE scene; the build puts it back).
+    'III channel-nested apply emits 3 SET_CHANNEL frames (A, B, restore A)',
+    channelFrames.length === 3 && channelFrames[2].bytes[8] === 0,
     `expected 2 channel frames, got ${channelFrames.length}: ${captured.map((f) => '0x' + f.fn.toString(16)).join(',')}`,
   );
   assert(
@@ -2626,8 +2633,8 @@ async function testIIIChannelNestedApply(): Promise<void> {
     .filter((f) => f.fn === FN_SET_GET_CHANNEL || isSetParamFrame(f))
     .map((f) => f.fn);
   assert(
-    'III channel-nested apply interleaves: [CHANNEL, PARAM, CHANNEL, PARAM]',
-    fnSequenceAfterSetBlock.length === 4 &&
+    'III channel-nested apply interleaves: [CHANNEL, PARAM, CHANNEL, PARAM, CHANNEL(restore)]',
+    fnSequenceAfterSetBlock.length === 5 && fnSequenceAfterSetBlock[4] === FN_SET_GET_CHANNEL &&
       fnSequenceAfterSetBlock[0] === FN_SET_GET_CHANNEL &&
       fnSequenceAfterSetBlock[1] === FN_PARAMETER_SETGET &&
       fnSequenceAfterSetBlock[2] === FN_SET_GET_CHANNEL &&
@@ -2652,8 +2659,10 @@ async function testIIIChannelNestedApply(): Promise<void> {
     `result.ok=${result.ok}, warning=${result.warning ?? '(none)'}`,
   );
   assert(
-    'III channel-nested apply: result.steps counts both channels (set_block + 2×set_channel + 2×set_param = 5)',
-    result.steps === 5,
+    // Fresh build: clear + Input/drive/Output inserts + 2 cables + 2 set_channel
+    // + 2 set_param (+ name restore / verify bookkeeping) = at least 9.
+    'III channel-nested apply: result.steps counts the build plus both channels (>= 9)',
+    result.steps >= 9,
     `result.steps=${result.steps}`,
   );
 }

@@ -143,6 +143,7 @@ const VERBS: readonly Verb[] = [
   { tool: 'apply_preset', archetype: 'layout', guard: 'preset.ts:684', needs: [{ side: 'writer', method: 'applyPreset' }] },
   { tool: 'set_block', archetype: 'layout', guard: 'layout.ts:31', needs: [{ side: 'writer', method: 'setBlock' }] },
   { tool: 'set_bypass', archetype: 'layout', guard: 'layout.ts:68', needs: [{ side: 'writer', method: 'setBypass' }] },
+  { tool: 'set_channel', archetype: 'layout', guard: 'layout.ts:118', needs: [{ side: 'writer', method: 'setChannel' }] },
   // TWO guards: has_scenes is checked FIRST (navigation.ts:244), then the
   // method (navigation.ts:251). A device with switchScene but has_scenes:false
   // still refuses, so the capability precondition is not decorative.

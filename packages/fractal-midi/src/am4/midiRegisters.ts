@@ -51,7 +51,23 @@ const NONE_ALIASES = new Set(['none', 'off']);
  * separate class and return false here (the reader handles them on its
  * own enum branch).
  */
+/**
+ * Block knobs whose read register holds a literal integer too: every
+ * stepped control the AM4-Edit cache records with typecode 16 and step 1
+ * (2p2 cache). Hardware-confirmed 2026-11-25 on fw 2.02: reverb Density 4
+ * read u32 = 4 (and 8 = 8), Voice 1 Shift +12 read u32 = 12; the Q16 path
+ * clamped both to their minimum. chorus.number_of_voices (cache step 2)
+ * stores 1..4 and displays 2..8 via `rawIntStep` (stored 1 shows "2").
+ */
+const STEPPED_INT_KEYS: ReadonlySet<string> = new Set([
+  'drive.bit_reduce', 'drive.diode_quantity_pdqty', 'drive.diode_quantity',
+  'reverb.springs', 'reverb.basetype', 'reverb.voice_1_shift', 'reverb.voice_2_shift',
+  'reverb.tonetype', 'reverb.density', 'delay.bit_reduction', 'phaser.feedback_point',
+  'filter.order', 'amp.tubes', 'chorus.number_of_voices',
+]);
+
 export function isRawIntRegister(param: Param): boolean {
+  if (STEPPED_INT_KEYS.has(`${param.block}.${param.name}`)) return true;
   if (param.unit !== 'count') return false;
   if (param.block === 'global') {
     // The MIDI-config registers are all non-negative integer configs (CC
@@ -80,7 +96,7 @@ export function rawIntRegisterHasNone(param: Param): boolean {
     // 0..127 global registers are VALUE registers (e.g. ext_startval_begin,
     // an external-controller start value) — they have no None state, so we
     // must not accept 'None'→128 there or mislabel a read of 128 as 'None'.
-    param.name.endsWith('_cc') &&
+    (param.name.endsWith('_cc') || SEL_CC_PID_HIGHS.has(param.pidHigh)) &&
     param.displayMin === 0 &&
     param.displayMax === 127
   );
@@ -92,9 +108,38 @@ export function rawIntRegisterHasNone(param: Param): boolean {
  * unassigned sentinel on a CC-assignment register.
  */
 export function decodeRawIntRegister(param: Param, u32: number): number | string {
-  const raw = Math.round(u32);
+  // Signed knobs (Voice Shift -24..24) come back 16-bit two's-complement:
+  // fw 2.02 hardware 2026-11-25, Voice 2 Shift -12 read u32 = 65524.
+  const raw = Math.round(param.displayMin < 0 && u32 >= 0x8000 ? u32 - 0x10000 : u32);
   if (rawIntRegisterHasNone(param) && raw === RAW_INT_NONE_SENTINEL) return 'None';
-  return raw;
+  if (rawIntRegisterHasPedal(param)) {
+    const pedal = RAW_INT_PEDAL_VALUES.indexOf(raw);
+    if (pedal >= 0) return `Pedal ${pedal + 1}`;
+  }
+  return param.rawIntStep !== undefined ? raw * param.rawIntStep : raw;
+}
+
+/**
+ * CC-assignment registers whose roster also offers a PEDAL jack: in the AM4-Edit
+ * caches these rosters end `CC #127 (127) | NONE (128) | PEDAL 1 (129) |
+ * PEDAL 2 (130)`, ordinals anchored by the hardware-confirmed NONE = 128
+ * sentinel. The set is read off effectDefinitions_15_2p2 (fw 2.02): every
+ * roster whose 129th entry is "PEDAL 1". Nine of them (73, 75, 76, 93, 94,
+ * 111-114: tuner, scene +/-1, preset +/-1, FX1-4 bypass) gained the pedal in
+ * fw 2.01; the rest (volumes, tap tempo, metronome, ...) already had it in 2.00.
+ * 166-170 are the fw 2.01 mode-select registers.
+ */
+export const RAW_INT_PEDAL_VALUES: readonly number[] = Object.freeze([129, 130]);
+const PEDAL_CAPABLE_PID_HIGHS: ReadonlySet<number> = new Set([
+  70, 71, 72, 73, 75, 76, 93, 94, 110, 111, 112, 113, 114, 119, 120, 121, 122, 131, 153, 159, 161,
+  166, 167, 168, 169, 170,
+]);
+/** fw 2.01 mode-select CC registers: named `*_sel`, not `*_cc`, but they are CC assignments with a NONE state. */
+const SEL_CC_PID_HIGHS: ReadonlySet<number> = new Set([166, 167, 168, 169, 170]);
+
+/** True when a CC-assignment register also accepts 'Pedal 1' / 'Pedal 2' (fw 2.01+). */
+export function rawIntRegisterHasPedal(param: Param): boolean {
+  return rawIntRegisterHasNone(param) && PEDAL_CAPABLE_PID_HIGHS.has(param.pidHigh);
 }
 
 /**
@@ -113,6 +158,15 @@ export function encodeRawIntRegister(param: Param, value: number | string): numb
     }
     return RAW_INT_NONE_SENTINEL;
   }
+  if (typeof value === 'string') {
+    const m = /^\s*pedal\s*([12])\s*$/i.exec(value);
+    if (m) {
+      if (!rawIntRegisterHasPedal(param)) {
+        throw new Error(`${param.block}.${param.name} cannot be assigned to a pedal (valid: ${param.displayMin}..${param.displayMax} or 'None').`);
+      }
+      return RAW_INT_PEDAL_VALUES[Number(m[1]) - 1];
+    }
+  }
   const num = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(num)) {
     const noneHint = rawIntRegisterHasNone(param) ? ` or 'None'` : '';
@@ -120,8 +174,11 @@ export function encodeRawIntRegister(param: Param, value: number | string): numb
   }
   const rounded = Math.round(num);
   if (rounded < param.displayMin || rounded > param.displayMax) {
-    const noneHint = rawIntRegisterHasNone(param) ? ` (or 'None')` : '';
+    const noneHint = rawIntRegisterHasPedal(param) ? ` (or 'None', 'Pedal 1', 'Pedal 2')` : rawIntRegisterHasNone(param) ? ` (or 'None')` : '';
     throw new Error(`${param.block}.${param.name} out of range [${param.displayMin}..${param.displayMax}]${noneHint}: ${num}`);
+  }
+  if (param.rawIntStep !== undefined && rounded % param.rawIntStep !== 0) {
+    throw new Error(`${param.block}.${param.name} moves in steps of ${param.rawIntStep} (${param.displayMin}..${param.displayMax}): ${num}`);
   }
   return rounded;
 }

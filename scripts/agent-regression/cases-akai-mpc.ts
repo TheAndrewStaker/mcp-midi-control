@@ -15,6 +15,11 @@
  *     must say so and point at the front panel, not hunt for a CC and report a
  *     blind write as done.
  *
+ *   - CARD EDITS THROUGH THE SHARED VERB. A project on the card is edited by
+ *     apply_preset(target_location = the project), not by a device tool. The
+ *     mpc-card-* cases measure whether an agent finds that, reads before it
+ *     writes, and writes only on save language.
+ *
  * Every write here is fire-and-forget on real hardware too (the MPC sends
  * nothing back), so the cases run on the shared mock in
  * packages/core/src/midi/transport.ts with no hardware attached.
@@ -250,6 +255,104 @@ export const AKAI_MPC_CASES: AgentRegressionCase[] = [
       must_not_call: ['switch_preset', 'switch_scene', 'apply_preset', 'save_preset', 'edit_rig', 'import_songsterr'],
       max_tools: 6,
       text_contains_any: [['Night Drive'], ['Slow Tide']],
+    },
+  },
+
+  // ── Project edits on the card: apply_preset(target_location = a project) ──
+  //
+  // These run against a fresh card (mpcCard) holding "Night Drive": tracks
+  // Drums 0 dB, Bass -2 dB, Keys 0 dB, Lead -4 dB. They measure whether an agent
+  // finds the edit through the shared apply_preset verb (there is no MPC tool),
+  // reads the project first, and writes only on save language.
+
+  // §9 A relative level change: read first, then write the absolute value
+  {
+    id: 'mpc-card-edit-track-level-and-save',
+    device: 'mpc-one-g2',
+    mpcCard: true,
+    description:
+      'Asked to turn a track down 3 dB and save it, the agent reads the project (get_preset) to find '
+      + 'the Bass track and its level (-2 dB), then calls apply_preset on that project with '
+      + 'track 2 level_db -5 and save_authorized. Catches an agent that says the MPC has no parameters, '
+      + 'writes -3 instead of -5, guesses the track number, or saves without being asked.',
+    prompt: 'In the Night Drive project on my MPC card, turn the Bass track down 3 dB and save that to the card.',
+    expectations: {
+      must_call: ['get_preset', 'apply_preset'],
+      must_not_call: ['send_cc', 'send_sysex', 'save_preset', 'send_program_change'],
+      max_tools: 8,
+      tool_call_validators: [
+        {
+          tool: 'apply_preset',
+          call_index: 'last',
+          check: (args) => {
+            if (!isMpcPort(args.port)) return `apply_preset should target the MPC, got ${String(args.port)}`;
+            if (!String(args.target_location ?? '').toLowerCase().includes('night')) return `target_location should be the Night Drive project, got ${JSON.stringify(args.target_location)}`;
+            if (args.save_authorized !== true) return 'the user asked to save; save_authorized should be true';
+            const slots = ((args.spec as { slots?: unknown[] } | undefined)?.slots ?? []) as Array<{ slot?: unknown; block_type?: unknown; params?: Record<string, unknown> }>;
+            const bass = slots.find((s) => s.block_type === 'track' && Number(s.slot) === 2);
+            if (bass === undefined) return `expected a track 2 (Bass) row, got ${JSON.stringify(slots)}`;
+            const db = Number(bass.params?.level_db);
+            if (!(Math.abs(db + 5) <= 0.15)) return `Bass is at -2 dB, so 3 dB down is -5; got level_db ${JSON.stringify(bass.params?.level_db)}`;
+            if (slots.length !== 1) return `only the Bass row should be listed, got ${slots.length} rows`;
+            return true;
+          },
+        },
+      ],
+    },
+  },
+
+  // §10 No save language: a preview, or nothing, but never a write
+  {
+    id: 'mpc-card-edit-preview-without-save',
+    device: 'mpc-one-g2',
+    mpcCard: true,
+    description:
+      'Asked what a change would do and told not to write, the agent may preview with apply_preset '
+      + 'but must not pass save_authorized. Catches an agent that writes the card on a question.',
+    prompt: 'If I muted the Keys track in my MPC project Night Drive, what exactly would change in the file? Do not change anything yet.',
+    expectations: {
+      must_not_call: ['save_preset', 'send_cc', 'send_sysex'],
+      min_tools: 0,
+      max_tools: 8,
+      tool_call_validators: [
+        {
+          tool: 'apply_preset',
+          optional: true,
+          check: (args) => (args.save_authorized === true ? 'the user said not to change anything; save_authorized must not be set' : true),
+        },
+      ],
+      text_contains_any: [['Keys', 'mute'], ['Keys', 'muted']],
+    },
+  },
+
+  // §11 Rename a sequence by the number get_preset shows
+  {
+    id: 'mpc-card-rename-sequence',
+    device: 'mpc-one-g2',
+    mpcCard: true,
+    description:
+      'A sequence rename on the card goes through apply_preset with a "sequence" row: slot = the '
+      + 'sequence number, params.name = the new name, saved because the user asked. Catches an agent '
+      + 'that renames the project instead, or reports it cannot be done.',
+    prompt: 'On my MPC card, rename the chorus sequence in Night Drive to "02 Big Chorus" and write it to the card.',
+    expectations: {
+      must_call: ['apply_preset'],
+      must_not_call: ['save_preset', 'send_sysex'],
+      max_tools: 8,
+      tool_call_validators: [
+        {
+          tool: 'apply_preset',
+          call_index: 'last',
+          check: (args) => {
+            if (args.save_authorized !== true) return 'the user asked to write it; save_authorized should be true';
+            const spec = (args.spec ?? {}) as { name?: unknown; slots?: Array<{ slot?: unknown; block_type?: unknown; params?: Record<string, unknown> }> };
+            if (spec.name !== undefined) return `spec.name renames the project; the sequence is a row. Got spec.name ${JSON.stringify(spec.name)}`;
+            const row = (spec.slots ?? []).find((s) => s.block_type === 'sequence');
+            if (row === undefined || Number(row.slot) !== 2) return `expected a sequence row for sequence 2, got ${JSON.stringify(spec.slots)}`;
+            return row.params?.name === '02 Big Chorus' ? true : `expected name "02 Big Chorus", got ${JSON.stringify(row.params?.name)}`;
+          },
+        },
+      ],
     },
   },
 

@@ -11,7 +11,7 @@
  *
  *   AM4 path:
  *     - describe_device(am4).capabilities.atomic_read === false
- *     - set_bypass(amp) refuses with AMP-slot-quirk explanation
+ *     - set_bypass(amp) bypasses and re-engages the amp (self-restoring)
  *     - F5 (alpha.11): every channel-bearing get_preset slot uses
  *       params_by_channel (never flat params)
  *
@@ -174,33 +174,21 @@ async function main(): Promise<void> {
       record('describe_device(am4).capabilities.atomic_read', false, [], true);
     }
 
-    // ── AM4 AMP-slot refusal: set_bypass ────────────
-    // Note: toggle_bypass and nudge_param removed entirely 2026-05-23.
-    // The historical tests for those tools were deleted; this scenario
-    // now only validates set_bypass's AMP-slot quirk refusal. If
-    // toggle_bypass or nudge_param ever come back, write fresh tests
-    // against the new behavior (don't resurrect the old ones — the
-    // contract may have changed).
+    // ── AM4 amp bypass round-trip (self-restoring) ──────────────────
+    // Hardware-confirmed 2026-11-25: 0x003A/0x0003 is the amp's real
+    // per-scene bypass. Bypass then re-engage the amp on the active scene
+    // and check both receipts read back; ends engaged (the usual state).
     if (am4Available) {
-      console.log('\nAM4 AMP-slot refusal (no wire writes expected)');
-      const r = await client.callTool({
-        name: 'set_bypass',
-        arguments: { port: 'am4', block: 'amp', bypassed: true },
-      });
-      const t = extractText(r);
-      const isErr = isError(r);
-      const namesQuirk = /no bypass register|always engaged/i.test(t);
-      const pointsAtMaster = /amp\.master|amp\.level/i.test(t);
-      const notes = [
-        `isError=${isErr}`,
-        `names AMP-slot quirk → ${namesQuirk}`,
-        `points at amp.master fallback → ${pointsAtMaster}`,
-        ...debugOnFail('set_bypass(amp)', r),
-      ];
-      record('set_bypass(am4, amp) refuses with quirk + retry hint',
-        isErr && namesQuirk && pointsAtMaster, notes);
+      console.log('\nAM4 amp bypass round-trip (ends engaged)');
+      const on = await client.callTool({ name: 'set_bypass', arguments: { port: 'am4', block: 'amp', bypassed: true } });
+      const off = await client.callTool({ name: 'set_bypass', arguments: { port: 'am4', block: 'amp', bypassed: false } });
+      const onSc = structured(on);
+      const offSc = structured(off);
+      record('set_bypass(am4, amp) on/off both confirmed by read-back',
+        !isError(on) && !isError(off) && onSc?.['acked'] === true && offSc?.['acked'] === true,
+        [...debugOnFail('set_bypass(amp,true)', on), ...debugOnFail('set_bypass(amp,false)', off)]);
     } else {
-      record('AM4 AMP-slot refusals', false, [], true);
+      record('AM4 amp bypass round-trip', false, [], true);
     }
 
     // ── Axe-Fx II atomic_read flag ──────────────────────────────────
@@ -265,6 +253,36 @@ async function main(): Promise<void> {
       }
     } else {
       record('get_preset(axe-fx-ii) live', false, [], true);
+    }
+
+    // ── Axe-Fx II contract review 2026-11-25 (H5 range, M5 receipts) ──
+    // Self-restoring: the range refusal sends nothing; the bypass write sets
+    // a placed block to the state get_preset just read (idempotent), so the
+    // device ends exactly where it started, and checks the read-back receipt.
+    if (axefx2Available) {
+      console.log('\nAxe-Fx II contract fixes (H5 range refusal, M5 bypass read-back)');
+      const sw = await client.callTool({ name: 'switch_preset', arguments: { port: 'axe-fx-ii', location: 769 } });
+      record('switch_preset(axe-fx-ii, 769) refuses: the XL+ has 768 presets',
+        isError(sw) && /out of range/i.test(extractText(sw)), debugOnFail('switch_preset(769)', sw));
+
+      const gp = structured(await client.callTool({ name: 'get_preset', arguments: { port: 'axe-fx-ii' } }));
+      const placed = ((gp?.['slots'] as Array<Record<string, unknown>> | undefined) ?? [])
+        .find((s) => typeof s['bypassed'] === 'boolean' && typeof s['block_type'] === 'string' && s['block_type'] !== 'shunt');
+      if (placed) {
+        const block = String(placed['block_type']);
+        const r = await client.callTool({
+          name: 'set_bypass',
+          arguments: { port: 'axe-fx-ii', block, bypassed: placed['bypassed'] },
+        });
+        const sc = structured(r);
+        record(`set_bypass(axe-fx-ii, ${block}, unchanged) is confirmed by read-back`,
+          !isError(r) && sc?.['confirmed_by'] === 'read_back',
+          [`block=${block} bypassed=${placed['bypassed']}`, ...debugOnFail('set_bypass(read-back)', r)]);
+      } else {
+        record('set_bypass read-back (no bypassable block placed in the active preset)', false, [], true);
+      }
+    } else {
+      record('Axe-Fx II contract fixes', false, [], true);
     }
 
     // ── AM4 get_preset succeeds (atomic_read shipped Session 122) ────

@@ -323,7 +323,14 @@ function validateParamMap(
     // Step 2: concept-key resolution. If the agent typed a concept-key
     // (either fully-qualified `block.concept` or just `concept` for the
     // current block), rewrite to the device-local name.
-    const conceptResult = resolveDescriptorConceptKey(descriptor.concept_keys, blockKey, paramName);
+    // A name the block already owns is never rewritten: an exact native
+    // match wins over a concept-key, as it does in resolveParamName
+    // (set_param / set_params). 2026-11-27: AM4 filter.resonance (a real
+    // knob on the wah types) was rewritten to filter.q and then dropped as
+    // not applicable, so every auto_wah recipe lost its resonance.
+    const conceptResult = block.params[paramName] !== undefined
+      ? undefined
+      : resolveDescriptorConceptKey(descriptor.concept_keys, blockKey, paramName);
     if (
       conceptResult !== undefined
       && conceptResult.localName !== paramName.toLowerCase()
@@ -796,13 +803,28 @@ export function collectApplyPresetPreflight(
         }
         if (paramMap !== null && typeof paramMap === 'object' && !Array.isArray(paramMap)) {
           const innerNormalized: Record<string, unknown> = {};
+          // A per-channel `color` names THIS channel's LED colour, which a
+          // device may store as a letter-keyed param (AM4
+          // amp.channel_a_color..channel_d_color). Map it to that param so
+          // the documented `channels:{A:{color:"Purple"}}` form validates
+          // (2026-11-27: it was refused as an unknown param, and the agent
+          // dropped the colour on retry).
+          const channelColorParam = `channel_${upperCh.toLowerCase()}_color`;
+          const channelMap: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(paramMap as Record<string, unknown>)) {
+            const isColorKey = k === 'color' || k === 'led_color' || k === 'channel_color';
+            const target = isColorKey && block?.params[k] === undefined && block?.params[channelColorParam] !== undefined
+              ? channelColorParam
+              : k;
+            channelMap[target] = v;
+          }
           validateParamMap(
             descriptor,
             blockKey,
             `slots[${i}].params.${chKey}`,
             i,
             `${slotContext} channels.${chKey}`,
-            paramMap as Record<string, unknown>,
+            channelMap,
             errors,
             info,
             innerNormalized,
@@ -923,9 +945,9 @@ export function collectApplyPresetPreflight(
       // when unambiguous. Symmetric with scenes[].channels/bypassed.
       //
       // ADDITIONAL SENTINEL (2026-05-23): the reserved id "OUTPUT"
-      // marks the device output column terminator. The executor uses
-      // it to auto-emit shunts + cables through col 12 when the chain
-      // would otherwise end short of the hardware output sink. Pre-
+      // marks the device output. Each grid writer terminates the chain
+      // there its own way (Axe-Fx II: shunts through its fixed output
+      // column; gen-3: an Output block after the right-most block). Pre-
       // existing scene-ref resolver doesn't know about it, so we
       // gate the lookup with an explicit OUTPUT short-circuit here.
       for (let i = 0; i < spec.routing.length; i++) {
@@ -953,7 +975,7 @@ export function collectApplyPresetPreflight(
               path: `routing[${i}].to`,
               error: toRef.ambiguous
                 ? `bare block_type "${edge.to}" is ambiguous on this spec (${toRef.matches.length} ${edge.to} blocks placed). Use a slot id to disambiguate.`
-                : `routing edge references unknown block id "${edge.to}". Scene/routing maps key by slot id (explicit slot.id, auto-derived <block_type> or <block_type>_<instance>). For the device output sink, use the reserved id "OUTPUT" — the writer auto-extends with shunts through col 12.`,
+                : `routing edge references unknown block id "${edge.to}". Scene/routing maps key by slot id (explicit slot.id, or the bare block type, <block_type>_<instance> from instance 2). For the device output use the reserved id "OUTPUT" as a destination only (Axe-Fx II: shunts through its output column; gen-3: Output 1 after the right-most block).`,
               suggestions: toRef.ambiguous
                 ? (toRef.matches as string[])
                 : closest(edge.to, [...slotIds, 'OUTPUT', ...Object.keys(descriptor.blocks)]),
@@ -964,16 +986,51 @@ export function collectApplyPresetPreflight(
     }
   }
 
-  // Stitch the normalized spec. We only rewrote `slots[].block_type`
-  // (when a block alias resolved) and `slots[].params` (alias +
-  // enum-tolerance substitutions). Scenes, routing, name, and
-  // landingScene pass through verbatim.
+  // Stitch the normalized spec: `slots[].block_type` / `params` as rewritten
+  // above, and CANONICAL slot ids everywhere. Each slot carries the id the
+  // references were validated against (explicit, or derived from the block
+  // type the caller wrote), and every scene-map key and routing endpoint is
+  // rewritten to that id. Writers derive ids from the NORMALIZED block type,
+  // so an aliased block_type ("Plexi" -> "amp") used to validate here and
+  // then miss in the writer.
+  const canonicalRef = (ref: string): string => {
+    if (ref === 'OUTPUT') return ref;
+    const r = resolveSceneRef(ref, slotIds, spec);
+    return r.resolved ?? ref;
+  };
+  // Two spellings of one block in one map ("amp" and "amp_1") would collapse
+  // to one key and silently drop a value: refuse it instead.
+  const rekey = <V>(m: Readonly<Record<string, V>> | undefined, path: string): Record<string, V> | undefined => {
+    if (m === undefined) return undefined;
+    const out: Record<string, V> = {};
+    const from: Record<string, string> = {};
+    for (const [k, v] of Object.entries(m)) {
+      const c = canonicalRef(k);
+      if (c in out) {
+        errors.push({ path: `${path}.${k}`, error: `"${k}" and "${from[c]}" both name block "${c}"; give it once.` });
+        continue;
+      }
+      out[c] = v;
+      from[c] = k;
+    }
+    return out;
+  };
   const normalized_spec: PresetSpec = {
-    slots: normalizedSlots,
-    ...(spec.scenes !== undefined ? { scenes: spec.scenes } : {}),
+    slots: normalizedSlots.map((s, i) => (s.id === undefined && slotIds[i] !== undefined ? { ...s, id: slotIds[i] } : s)),
+    ...(spec.scenes !== undefined
+      ? {
+          scenes: spec.scenes.map((sc, si) => ({
+            ...sc,
+            channels: rekey(sc.channels, `scenes[${si}].channels`) ?? {},
+            ...(sc.bypassed !== undefined ? { bypassed: rekey(sc.bypassed, `scenes[${si}].bypassed`) } : {}),
+          })),
+        }
+      : {}),
     ...(spec.name !== undefined ? { name: spec.name } : {}),
     ...(spec.landingScene !== undefined ? { landingScene: spec.landingScene } : {}),
-    ...(spec.routing !== undefined ? { routing: spec.routing } : {}),
+    ...(spec.routing !== undefined
+      ? { routing: spec.routing.map((e) => ({ ...e, from: canonicalRef(e.from), to: canonicalRef(e.to) })) }
+      : {}),
   };
 
   return { errors, info, normalized_spec };

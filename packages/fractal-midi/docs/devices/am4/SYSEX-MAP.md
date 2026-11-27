@@ -1075,7 +1075,13 @@ and SET_PARAM writes; see  / ).
   `src/protocol/blockTypes.ts`). Confirmed identical across amp, drive,
   and reverb captures, the `0x0003` pidHigh is shared by every block
   type that can be bypassed.
-- **pidHigh** `0x0003`, per-block bypass flag.
+- **pidHigh** `0x0003`, per-block bypass flag. **The amp included**
+  (hardware-confirmed 2026-11-25): the amp-bypass-ON golden below set the
+  decoded working-buffer amp scene-bypass word `0000 → 1000` and the OFF
+  golden set it back, with `amp.in_boost_sw` / `amp.out_boost` OFF before
+  and after. This supersedes the older "amp `0x03` = BOOST" note in
+  `am4edit-action-table.md`. Captures: `samples/hw-test-0.10.0/ampbyp-on/`,
+  `ampbyp-off/` (local).
 - **action** `0x0001` (WRITE).
 
 ### Value
@@ -2489,6 +2495,32 @@ const decode16 = (b0: number, b1: number, b2: number): number =>
 
 5 bytes, split 7+7+7+7+4, rarely needed on AM4 since the integer form
 (`0x02`) is simpler and covers the same parameters.
+
+### Editor-cache record → display/write rules 🟢 (fw 2.02, 2026-11-25/26)
+
+Each AM4-Edit cache float record carries `(a, b, c, d)` = (internal min,
+internal max, display scale, step) plus a typecode. Confirmed against
+AM4-Edit 1.00.09 panel readings and live reads (preset Y2/G3, fw 2.02):
+
+| Rule | Evidence |
+|---|---|
+| Display range = `[a*c, b*c]`; the read register is Q16-normalized over that range | every amp expert-page value on Y2 (2026-11-26) |
+| WRITE value (MESSAGE_SET) = display / `c`, NOT display / the unit's default scale. Where `c` differs from the unit default the codec carries `encodeScale` | Speaker Low Reso (`c` = 10/24): writing display 6 as 0.6 read back 0.25; `c` gives 14.4 |
+| Typecode 0x42 (66, Hz family) is log10 | amp High Cut Frequency wire 0.958 = 32999 Hz on the panel (linear: 38345); Depth Freq wire 0.699 = 250 Hz (linear: 364) |
+| Typecode 16 with step 1 = stepped integer: the read u32 / chunk word IS the value, negative as int16 | reverb Density 4/8, Voice Shift ±12 (65524 = -12) |
+| Typecode 80 = the 0..10 knob position (wire × 10), whatever `a..b` say | chorus Drive 0.233 shows 2.33 |
+| Typecode 0 with `c` = 0 or `a..b` = 0..1 and no label = placeholder record | amp Dynamic Presence/Depth (0x5b/0x5c) in the 2p2 cache; the Plexi expert pages show neither |
+| Cab DynaCab Distance (`0x003e`/0x47, 0x48) is 0..24 cm (`c` = 24) | wire 0.105 shows 2.52 cm |
+
+Cut Q (reverb `0x0042`/0x47, 0x48) is only live when that cut's slope is
+"Resonant" on base types 0/5; on other settings a write is ignored and the
+per-param read and the fn 0x1F chunk return unrelated leftovers (0.707/0.5
+vs 0.1/0.1). Not a decode error.
+
+An audit of all 502 numeric catalog params against the 2p2 cache records
+(2026-11-26) leaves 4 known, explained differences: the two placeholders
+above, chorus Number of Voices (`rawIntStep` 2), and amp Room Size
+(typecode 75, reads match the panel).
 
 ---
 

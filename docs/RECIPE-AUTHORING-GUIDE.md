@@ -193,6 +193,13 @@ my_recipe_id: {
 },
 ```
 
+**Gen-3 grids (Axe-Fx III / FM3 / FM9) start at column 2.** Their
+`apply_preset` is a fresh build that puts Input 1 in column 1 and Output 1
+after the last block, and refuses a block in column 1. Lay a gen-3 recipe on
+one row from `{ row: 2, col: 2 }` (the `gen3([...])` helper in
+`recipes/blockStack.ts` fans one layout to all three), and keep the last block
+at or before column 11 so the FM3's 12th column holds the Output.
+
 `signature_params_per_device` is REQUIRED and CI-validated:
 - Every key must be a `<block_type>.<param_name>` dot-path.
 - The value must match the corresponding param in `slots_per_device`

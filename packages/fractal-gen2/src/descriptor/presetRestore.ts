@@ -19,10 +19,12 @@ import type {
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import {
+  buildEditBufferDumpRequest,
   buildStorePreset,
   isStorePresetResponse,
   parseStorePresetResponse,
 } from 'fractal-midi/gen2/axe-fx-ii';
+import { collectPatchDump } from './patchDumpIo.js';
 
 import { parsePresetDump, extractPresetName, PRESET_DUMP_LEN } from '../presetDump.js';
 import { parseAxeFxIILocation } from './schema.js';
@@ -53,7 +55,20 @@ function splitSysEx(bytes: Uint8Array): number[][] {
 export async function restorePresetBinaryAxeFxII(
   ctx: DispatchCtx,
   bytes: Uint8Array,
-  options?: { target_location?: LocationRef; save_authorized?: boolean; modelId?: number; deviceLabel?: string },
+  options?: {
+    target_location?: LocationRef;
+    save_authorized?: boolean;
+    modelId?: number;
+    deviceLabel?: string;
+    /** The model's physical preset count; bounds target_location. */
+    presetCount?: number;
+    /**
+     * Skip the post-push edit-buffer read-back. Only for a caller that runs
+     * its OWN verify dump right after (the atomic image apply), so the buffer
+     * is not dumped twice. `ok` then rests on NACKs + the STORE ack alone.
+     */
+    skipReadBack?: boolean;
+  },
 ): Promise<RestorePresetResult> {
   const deviceLabel = options?.deviceLabel ?? DEVICE_LABEL;
   const modelId = options?.modelId; // undefined -> buildStorePreset falls back to its own XL+ default
@@ -98,11 +113,24 @@ export async function restorePresetBinaryAxeFxII(
     }
   }
 
+  // Evidence (contract review L2): the push is fire-and-forget, so dump the
+  // edit buffer back (the sentinel request, no side effect) and compare its
+  // 64 body frames with the file's. HW-132 showed a push restores the buffer
+  // byte for byte, so a difference means the restore did not land as sent.
+  const verdict: RestoreVerdict = options?.skipReadBack === true
+    ? { kind: 'match' }
+    : await verifyRestoredFrames(ctx, messages, modelId);
+
   // Optional persist to a stored location (dispatcher gates save_authorized).
+  // Never STORE a buffer the device rejected frames of, or one that reads
+  // back different from the file: that would persist a corrupt preset.
   let saved_to_location: string | number | undefined;
   let storeOk = true;
-  if (options?.save_authorized && options?.target_location !== undefined) {
-    const wire = parseAxeFxIILocation(options.target_location, deviceLabel);
+  const wantsStore = options?.save_authorized === true && options?.target_location !== undefined;
+  const storeBlocked = wantsStore && (nacks.length > 0 || verdict.kind === 'mismatch');
+  if (storeBlocked) storeOk = false;
+  if (wantsStore && !storeBlocked && options?.target_location !== undefined) {
+    const wire = parseAxeFxIILocation(options.target_location, deviceLabel, options.presetCount);
     const ackP = ctx.conn.receiveSysExMatching(isStorePresetResponse, STORE_TIMEOUT_MS);
     ctx.conn.send(modelId !== undefined ? buildStorePreset(wire, { modelId }) : buildStorePreset(wire));
     try {
@@ -114,13 +142,78 @@ export async function restorePresetBinaryAxeFxII(
     }
   }
 
+  const warnings: string[] = [];
+  if (verdict.kind !== 'match') warnings.push(verdict.warning);
+  if (storeBlocked) {
+    warnings.push(
+      nacks.length > 0
+        ? 'The STORE was NOT sent, so nothing was saved: the device rejected frames of the push.'
+        : 'The STORE was NOT sent, so nothing was saved: the read-back differs from the file. If the preset sounds right on the device, call save_preset to keep it.',
+    );
+  } else if (wantsStore && !storeOk) {
+    warnings.push('The STORE did not ack; whether it saved is unknown. Reload the location on the device to check.');
+  } else if (wantsStore && saved_to_location !== undefined && verdict.kind === 'unconfirmed') {
+    warnings.push(`It WAS saved to slot ${saved_to_location} (the STORE acked), though the read-back could not confirm the contents.`);
+  }
+
   return {
-    ok: nacks.length === 0 && storeOk,
+    ok: nacks.length === 0 && verdict.kind === 'match' && storeOk,
     frames_sent: messages.length,
     acks_received: responses.length,
     nacks,
     name,
     saved_to_location,
     format: 'axe-fx-ii-patch-dump',
+    ...(warnings.length > 0
+      ? { warning: warnings.join(' ') }
+      : options?.skipReadBack === true
+        ? {}
+        : { info: 'A read-back of the edit buffer matches the file byte for byte.' }),
+  };
+}
+
+type RestoreVerdict = { kind: 'match' } | { kind: 'mismatch' | 'unconfirmed'; warning: string };
+
+/** Compare the 64 body frames (0x78) of a fresh edit-buffer dump with the pushed ones. */
+export async function verifyRestoredFrames(
+  ctx: DispatchCtx,
+  pushed: readonly number[][],
+  modelId?: number,
+): Promise<RestoreVerdict> {
+  let frames: number[][];
+  try {
+    frames = await (async () => {
+      const p = collectPatchDump(ctx, modelId !== undefined ? { modelId } : undefined);
+      ctx.conn.send(buildEditBufferDumpRequest(modelId !== undefined ? { modelId } : {}));
+      return p;
+    })();
+  } catch (err) {
+    return {
+      kind: 'unconfirmed',
+      warning: `The file was sent, but the edit-buffer read-back failed (${err instanceof Error ? err.message : String(err)}), so the restore is unconfirmed. Check the front panel, or call get_preset to compare.`,
+    };
+  }
+  const body = (list: readonly number[][]) => list.filter((f) => f[5] === 0x78);
+  const want = body(pushed);
+  const got = body(frames);
+  if (got.length !== want.length) {
+    return {
+      kind: 'unconfirmed',
+      warning: `The file was sent, but the edit-buffer read-back returned ${got.length} body frames, not ${want.length}, so the restore is unconfirmed.`,
+    };
+  }
+  let differing = 0;
+  for (let i = 0; i < want.length; i++) {
+    const a = want[i];
+    const b = got[i];
+    // Compare payloads (the model byte and checksum are envelope, not content).
+    const same = a.length === b.length && a.every((v, k) => k === 4 || k === a.length - 2 || v === b[k]);
+    if (!same) differing++;
+  }
+  if (differing === 0) return { kind: 'match' };
+  return {
+    kind: 'mismatch',
+    warning: `The file was sent, but the edit buffer reads back different from it (${differing} of ${want.length} body frames differ). ` +
+      'That can be the firmware converting a file saved on other firmware, or a push that did not land; check the preset on the front panel.',
   };
 }

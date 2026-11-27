@@ -31,6 +31,13 @@ export interface AxeFxIIConfig {
   /** One-line note on what is hardware-confirmed vs spec/manual-only for THIS model. */
   verification: string;
   /**
+   * Physical preset count (XL+ 768, AX8 512). The wire's 14-bit field
+   * reaches 16384; `switch_preset` refuses a display slot above this count
+   * instead of sending a number the unit has no preset for (contract review
+   * H5). Undefined = only the wire ceiling applies.
+   */
+  presetCount?: number;
+  /**
    * Per-block-INSTANCE availability filter. Undefined (XL+) = every block in
    * `AXE_FX_II_BLOCKS` is available (unchanged behavior). AX8 passes
    * `(block) => block.availableOnAX8` (the wiki-sourced per-block flag

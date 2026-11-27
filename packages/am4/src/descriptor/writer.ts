@@ -73,6 +73,7 @@ import {
   sceneBlockStates,
 } from '../shared/bufferState.js';
 import {
+  confirmLanding,
   mergeAutoApplied,
   prepareApplyPresetWrites,
   runApplyPresetAt,
@@ -81,29 +82,25 @@ import {
   type ApplyPresetSceneInput,
   type ApplyPresetSlotInput,
 } from '../tools/applyExecutor.js';
-import { sendReadAndParse } from '../shared/readOps.js';
 import { readSaveSnapshot } from './reader.js';
 import { guardActiveAM4BufferOrSave, AM4_DIRTY_LABEL } from '../tools/safeEdit.js';
 import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
-import { readPresetName } from '../shared/readOps.js';
+import { readPresetName, sendReadAndParseRaw } from '../shared/readOps.js';
 import { recordInbound, sendAndAwaitAck } from '../shared/wireOps.js';
 import {
   CHANNEL_BLOCKS,
   channelLetter,
   invalidateChannelCache,
+  lastKnownChannel,
   lastKnownType,
+  isTypeSelectorParam,
   observeWrittenParam,
+  resolveChannel,
   switchBlockChannel,
 } from '../shared/channels.js';
 import { checkApplicability } from 'fractal-midi/am4';
 import type { ApplyPresetSkippedParam } from '../tools/applyExecutor.js';
 
-// Active-location state register (mirrors safeEdit.ts / reader.ts). Reads the
-// index of the location currently loaded into the working buffer. The save
-// overwrite gate compares this against the save target to tell a refresh
-// (target == active) from an overwrite of a different stored preset.
-const LOCATION_STATE_PID_LOW = 0x00ce;
-const LOCATION_STATE_PID_HIGH = 0x000a;
 
 /**
  * Decode the current wire value from a 64-byte structured ack response
@@ -270,6 +267,7 @@ function specToApplyInput(spec: PresetSpec): ApplyPresetInput {
       block_type: s.block_type,
       params: flatParams,
       channels: nestedChannels,
+      bypassed: s.bypassed,
     };
   });
 
@@ -340,6 +338,90 @@ async function runPostSaveSwitch(
   return undefined;
 }
 
+/**
+ * One set_param write. `alreadyOn` is the channel index the caller's OWN
+ * batch already selected for this block and saw acked; only then is the
+ * channel re-select skipped. The session-wide channel cache is never trusted
+ * (2026-11-25 contract review M10: a footswitch or AM4-Edit moves channels
+ * without the server seeing it).
+ */
+async function setParamOnce(
+  ctx: DispatchCtx,
+  block: string,
+  name: string,
+  value: number,
+  channel?: string | number,
+  alreadyOn?: number,
+): Promise<WriteResult> {
+  const key = `${block}.${name}` as ParamKey;
+  const param: Param = KNOWN_PARAMS[key];
+  const bytes = buildSetParam(key, value);
+  let channelIndex: number | undefined;
+  if (channel !== undefined && CHANNEL_BLOCKS.has(block)) {
+    channelIndex = resolveChannel(channel);
+    await switchBlockChannel(ctx.conn, block, channel, alreadyOn);
+  }
+  const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
+  if (result.acked) {
+    markDirty(AM4_DIRTY_LABEL);
+    // Keep lastKnownType / lastKnownChannel current so cross-call
+    // applicability checks (set_param after a separate amp.type write)
+    // and channel tracking see fresh values. Type-gated refusal logic
+    // lives in setParams (in-batch context); this observer is the only
+    // thing that catches a type write done in an isolated call.
+    observeWrittenParam(block, name, value);
+  }
+  const dynaMatchNote = result.acked && DYNAMATCH_CURVE_PARAMS.has(`${block}.${name}`)
+    ? await dynaMatchOverrideNote(ctx, name)
+    : undefined;
+  const enumName = param.unit === 'enum'
+    ? (param.enumValues as Record<number, string> | undefined)?.[value]
+    : undefined;
+  const display: number | string = param.unit === 'enum'
+    ? (enumName ?? value)
+    : value;
+  return {
+    op: 'set_param',
+    target: `${block}.${name}`,
+    block,
+    name,
+    // No `wire_value` on the AM4 set echo. The dispatcher hands the writer
+    // `encodeValue(...)`, and AM4's encode is effectively identity (the
+    // device applies its own scaling), so `value` here is the DISPLAY value,
+    // not a wire byte. `display_value` carries the truth; get_param stays
+    // authoritative for any wire read.
+    display_value: display,
+    acked: result.acked,
+    channel: channelIndex !== undefined ? channelLetter(channelIndex) : undefined,
+    warning: result.acked
+      ? dynaMatchNote
+      : `Sent, but the device did not confirm it; it may not have landed; check the AM4 display. If it didn't take, the MIDI handle may be stale (try reconnect_midi) or the block may not be placed in the chain.`,
+  };
+}
+
+/**
+ * The speaker impedance-curve knobs DynaMatch drives. With amp.dynamatch ON the
+ * AM4 puts these back to the cab-matched curve when the amp block is selected
+ * again (front panel or AM4-Edit), so a write to them does not stick. The
+ * XFormer freqs, Cab Resonance, Speaker Impedance and the Speaker section are
+ * NOT overridden. fw 2.02 hardware sweep 2026-11-26 (all 14 Speaker-tab knobs
+ * written with DynaMatch On, amp reselected in AM4-Edit, read back).
+ */
+const DYNAMATCH_CURVE_PARAMS = new Set([
+  'amp.low_freq', 'amp.low_reso', 'amp.low_q', 'amp.high_freq', 'amp.hi_reso', 'amp.hi_slope',
+]);
+
+async function dynaMatchOverrideNote(ctx: DispatchCtx, name: string): Promise<string | undefined> {
+  const dm = KNOWN_PARAMS['amp.dynamatch'];
+  try {
+    const { parsed } = await sendReadAndParseRaw(ctx.conn, dm.pidLow, dm.pidHigh);
+    if (parsed.asUInt32LE() === 0) return undefined;
+  } catch {
+    return undefined;
+  }
+  return `amp.dynamatch is ON, so the AM4 resets amp.${name} to the cab-matched speaker curve the next time the amp block is selected (front panel or AM4-Edit). To keep this value, set amp.dynamatch to OFF first.`;
+}
+
 export const writer: DeviceWriter = {
   buildSetParam(block, name, displayValue): number[] {
     const key = `${block}.${name}` as ParamKey;
@@ -378,53 +460,7 @@ export const writer: DeviceWriter = {
     value: number,
     channel?: string | number,
   ): Promise<WriteResult> {
-    const key = `${block}.${name}` as ParamKey;
-    const param: Param = KNOWN_PARAMS[key];
-    const bytes = buildSetParam(key, value);
-    let channelSwitched: boolean | undefined;
-    if (channel !== undefined && CHANNEL_BLOCKS.has(block)) {
-      const switchResult = await switchBlockChannel(ctx.conn, block, channel);
-      channelSwitched = switchResult.switched;
-    }
-    const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
-    if (result.acked) {
-      markDirty(AM4_DIRTY_LABEL);
-      // Keep lastKnownType / lastKnownChannel current so cross-call
-      // applicability checks (set_param after a separate amp.type write)
-      // and channel tracking see fresh values. Type-gated refusal logic
-      // lives below in setParams (in-batch context); this observer is
-      // the only thing that catches a type write done in an isolated
-      // call.
-      observeWrittenParam(block, name, value);
-    }
-    const enumName = param.unit === 'enum'
-      ? (param.enumValues as Record<number, string> | undefined)?.[value]
-      : undefined;
-    const display: number | string = param.unit === 'enum'
-      ? (enumName ?? value)
-      : value;
-    const channelName = channelSwitched && typeof channel === 'number'
-      ? channelLetter(channel)
-      : (typeof channel === 'string' ? channel.toUpperCase() : undefined);
-    return {
-      op: 'set_param',
-      target: `${block}.${name}`,
-      block,
-      name,
-      // No `wire_value` on the AM4 set echo. The dispatcher hands the writer
-      // `encodeValue(...)`, and AM4's encode is effectively identity (the
-      // device applies its own scaling), so `value` here is the DISPLAY value,
-      // not a wire byte. Echoing it as `wire_value` was dishonest and meant
-      // the field carried different things across devices (a genuine wire int
-      // on the Axe-Fx II vs the display value on AM4). `display_value` already
-      // carries the truth; get_param stays authoritative for any wire read.
-      display_value: display,
-      acked: result.acked,
-      channel: channelName,
-      warning: result.acked
-        ? undefined
-        : `Sent, but the device did not confirm it; it may not have landed; check the AM4 display. If it didn't take, the MIDI handle may be stale (try reconnect_midi) or the block may not be placed in the chain.`,
-    };
+    return setParamOnce(ctx, block, name, value, channel);
   },
 
   async setParams(ctx, ops): Promise<BatchWriteResult> {
@@ -446,9 +482,13 @@ export const writer: DeviceWriter = {
     // setParam above; an isolated knob write only sees a warning, not
     // a refusal, because the cache may be stale.
     const inBatchTypes: Record<string, number> = {};
+    // Channels THIS batch selected and saw acked, so a run of writes on one
+    // channel sends the select once. Never seeded from the session cache (M10).
+    const inBatchChannels: Record<string, number> = {};
 
     for (const op of ops) {
-      const isTypeOp = op.name === 'type' || op.name === 'mode';
+      // filter/amp/chorus/phaser `mode` is a setting, not the type: see isTypeSelectorParam.
+      const isTypeOp = isTypeSelectorParam(op.block, op.name);
 
       // Refusal gate runs BEFORE the wire op. Skipped for type writes
       // themselves (they're never type-gated against themselves), and
@@ -484,8 +524,22 @@ export const writer: DeviceWriter = {
       }
 
       try {
-        const r = await writer.setParam!(ctx, op.block, op.name, op.value as number, op.channel);
+        const r = await setParamOnce(ctx, op.block, op.name, op.value as number, op.channel, inBatchChannels[op.block]);
         writes.push(r);
+        if (op.channel !== undefined && CHANNEL_BLOCKS.has(op.block)) {
+          // The select went out (or matched this batch's last one) and its
+          // echo arrived, else switchBlockChannel threw.
+          inBatchChannels[op.block] = resolveChannel(op.channel);
+        }
+        if (op.name === 'channel') {
+          // A direct `<block>.channel` write moves the block too (review
+          // M10 follow-up): track it when it acked, forget it otherwise, so
+          // a later op's select is never skipped against a stale index.
+          let written: number | undefined;
+          try { written = resolveChannel(op.value as string | number); } catch { written = undefined; }
+          if (r.acked && written !== undefined) inBatchChannels[op.block] = written;
+          else delete inBatchChannels[op.block];
+        }
         if (r.acked) {
           acked_count++;
           if (isTypeOp) {
@@ -520,21 +574,7 @@ export const writer: DeviceWriter = {
     // The echo only proves the unit received the command. On 2026-11-12 an AM4
     // echoed three switches and stayed where it was, so the receipt reads the
     // loaded location back. `undefined` = the read did not answer.
-    let landedOn: number | undefined;
-    // The mock transport answers every location read with one fixed value, so
-    // there is nothing to confirm against it.
-    if (result.acked && process.env.MCP_MOCK_TRANSPORT !== '1') {
-      for (let attempt = 0; attempt < 3 && landedOn !== locationIndex; attempt++) {
-        try {
-          const idx = (await sendReadAndParse(ctx.conn, LOCATION_STATE_PID_LOW, LOCATION_STATE_PID_HIGH)).asUInt32LE();
-          landedOn = idx >= 0 && idx <= 103 ? idx : undefined;
-        } catch {
-          landedOn = undefined;
-        }
-        if (landedOn === undefined) break;
-        if (landedOn !== locationIndex) await new Promise((r) => setTimeout(r, 150));
-      }
-    }
+    const landedOn = result.acked ? await confirmLanding(ctx.conn, locationIndex) : undefined;
     if (result.acked && landedOn !== undefined && landedOn !== locationIndex) {
       return {
         op: 'switch_preset',
@@ -707,6 +747,41 @@ export const writer: DeviceWriter = {
     };
   },
 
+  async setChannel(ctx, block, channel): Promise<WriteResult> {
+    if (!CHANNEL_BLOCKS.has(block)) {
+      throw new DispatchError(
+        'capability_not_supported',
+        'Fractal AM4',
+        `Block '${block}' has no channels on Fractal AM4; only amp, drive, reverb and delay do.`,
+      );
+    }
+    // The channel cache is a hint, not device state (a footswitch or AM4-Edit
+    // can move it), so drop it and always send: an explicit select must land.
+    // Validate first: a bad channel is the caller's input, not a wire fault.
+    let index: number;
+    try {
+      index = resolveChannel(channel);
+    } catch (err) {
+      throw new DispatchError('value_out_of_range', 'Fractal AM4', err instanceof Error ? err.message : String(err));
+    }
+    delete lastKnownChannel[block];
+    try {
+      await switchBlockChannel(ctx.conn, block, index);
+    } catch (err) {
+      throw new DispatchError('no_ack', 'Fractal AM4', err instanceof Error ? err.message : String(err));
+    }
+    markDirty(AM4_DIRTY_LABEL);
+    const name = channelLetter(index);
+    return {
+      op: 'set_channel',
+      target: block,
+      acked: true,
+      channel: name,
+      display_value: name,
+      info: `${block} is on channel ${name} in the active scene (device echoed the write). The scene keeps it only once the preset is saved.`,
+    };
+  },
+
   async setBypass(ctx, block, bypassed): Promise<WriteResult> {
     // Pure-logic refusals first, BEFORE any wire op or connection
     // warmup, so the agent gets the helpful redirect even when the
@@ -721,29 +796,31 @@ export const writer: DeviceWriter = {
         `Block '${block}' is not valid on Fractal AM4 (cannot bypass 'none'). Known: ${known}.`,
       );
     }
-    // AM4 AMP-slot quirk (hardware-verified). AM4's AMP slot has no
-    // bypass register; pidHigh=0x03 on the AMP block is the BOOST
-    // register. buildSetBlockBypass(amp, true) writes value 1 to
-    // pidHigh=0x03 of AMP, which silently toggles BOOST instead of
-    // bypassing the amp. AMP is always engaged on AM4; "silence the
-    // amp" requires a different action (drop level/master to zero, or
-    // bypass an earlier block). Refuse rather than silently misroute.
-    if (block === 'amp') {
-      throw new DispatchError(
-        'capability_not_supported',
-        'Fractal AM4',
-        `Fractal AM4's AMP slot has no bypass register: a set_bypass(amp) write would silently toggle the BOOST knob instead. AMP is always engaged on AM4. To silence the amp, drop amp.master or amp.level to 0, or bypass an upstream block. To control boost, use set_param(port:'am4', block:'amp', name:'boost', value:0|1).`,
-        {
-          retry_action: `Call set_param({port:'am4', block:'amp', name:'master', value:0}) to mute the amp, or set_param({port:'am4', block:'amp', name:'boost', value:0|1}) to control boost.`,
-        },
-      );
+    // The amp bypasses like every block: pidHigh 0x0003 on its own pidLow
+    // (hardware-confirmed 2026-11-25 with the SYSEX-MAP §6h golden; boost is
+    // amp.in_boost_sw / amp.out_boost, which stayed OFF across the test).
+    const stateWord = bypassed ? 'bypassed' : 'active';
+    // Placement check (hardware finding 2026-11-25): the AM4 acks a bypass
+    // write to an UNPLACED block and its bypass read-back echoes the value,
+    // so ack + read-back alone falsely confirmed it. One working-buffer dump
+    // (~80 ms) names the placed blocks; when it validates and the block is
+    // absent, refuse to claim anything and send nothing. Best-effort: a dump
+    // that does not answer falls through to the normal write.
+    const placedBody = await readActiveBufferBody(ctx.conn);
+    if (placedBody !== undefined && !placedBody.blocks.some((b) => b.block === block)) {
+      const placed = placedBody.blocks.map((b) => `${b.block ?? `effect_${b.effectId}`} (slot ${b.slot})`).join(', ') || 'none';
+      return {
+        op: 'set_bypass',
+        target: `${block}:${stateWord}`,
+        acked: false,
+        warning: `No '${block}' block is placed in the active preset on Fractal AM4 (placed: ${placed}), so nothing was sent. Place it with set_block first.`,
+      };
     }
     const bytes = buildSetBlockBypass(wire, bypassed);
     const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
     if (result.acked) {
       markDirty(AM4_DIRTY_LABEL);
     }
-    const stateWord = bypassed ? 'bypassed' : 'active';
     // Receipt: read the block's bypass flag back (one ~50 ms read) so both
     // directions report the same evidence: the ack AND what the device holds.
     const readBack = result.acked ? await readBypassState(ctx.conn, block) : undefined;
@@ -800,16 +877,29 @@ export const writer: DeviceWriter = {
         if (result.saved) {
           markClean(AM4_DIRTY_LABEL);
         }
-        const auditionNote = result.saved
+        const auditionNote = result.saved || result.saveSkipped !== undefined
           ? undefined
           : `Auditioning at ${formatLocationDisplay(locationIndex)}, working buffer only, not saved. ` +
             `Reversible by switching presets. Call save_preset({port:'am4', location:'${formatLocationDisplay(locationIndex)}'}) ` +
             `when the user explicitly asks to save / keep / persist.`;
         const skipNote = formatSkippedNote(result.skipped);
-        const warning = [auditionNote, skipNote].filter((s) => s !== undefined).join(' ');
+        // Contract review H1 (AM4 part): a write the AM4 never echoed is not
+        // a success. Count it into ok and say what happened to the save.
+        const ackNote = result.saveSkipped !== undefined
+          ? `${result.saveSkipped} Retry the same call; the writes are idempotent.`
+          : result.unacked > 0
+            ? `${result.unacked} of ${result.totalWrites} build writes did not ack (each was re-sent once), so the preset may be incomplete. ` +
+              'Retry the same call once (cold-start acks drop on the first burst), then check the AM4 display.'
+            : undefined;
+        // The mock transport never answers the location read; no noise there.
+        const landingNote = result.landing === 'ack_only' && process.env.MCP_MOCK_TRANSPORT !== '1'
+          ? `The switch to ${formatLocationDisplay(locationIndex)} was acknowledged but the loaded location did not read back; check the AM4 display shows it.`
+          : undefined;
+        const warning = [ackNote, landingNote, auditionNote, skipNote].filter((s) => s !== undefined).join(' ');
         return {
-          ok: true,
-          steps: spec.slots.length + (spec.scenes?.length ?? 0) + (shouldSave ? 2 : 1),
+          ok: result.unacked === 0,
+          // The real wire count: the switch, every prepared build write, and the save when it ran.
+          steps: 1 + result.totalWrites + (result.saved ? 1 : 0),
           duration_ms: result.wallTimeMs,
           saved: result.saved,
           warning: warning.length > 0 ? warning : undefined,
@@ -945,6 +1035,21 @@ export const writer: DeviceWriter = {
             location: r.shortLocation,
             status: 'error',
             error: `${result.step}: ${result.error}`,
+            wallTimeMs: result.wallTimeMs,
+          });
+          if (onError === 'stop') {
+            stopIndex = i;
+            break;
+          }
+          continue;
+        }
+        if (result.unacked > 0) {
+          // Saved, but some build writes were never echoed: not a clean entry.
+          failed++;
+          results.push({
+            location: r.shortLocation,
+            status: 'error',
+            error: result.saveSkipped ?? `${result.unacked} of ${result.totalWrites} build writes did not ack. Re-apply this entry.`,
             wallTimeMs: result.wallTimeMs,
           });
           if (onError === 'stop') {

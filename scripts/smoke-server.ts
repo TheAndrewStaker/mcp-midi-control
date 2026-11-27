@@ -131,6 +131,7 @@ async function main(): Promise<void> {
     'scan_locations',
     'set_block',
     'set_bypass',
+    'set_channel',
     'set_param',
     'set_params',
     'switch_preset',

@@ -416,8 +416,7 @@ export function buildBlockTypeKnobEnums(): ReadonlyMap<string, ReadonlyMap<strin
 // so a future tweak doesn't require touching every variant in lockstep.
 const SLOT_LOCATION_DESC =
   'Slot location. Linear devices (AM4): 1-based slot index 1..4. ' +
-  'Grid devices (Axe-Fx II): {row,col} 1-based, or a bare number as ' +
-  'shorthand for {row:2, col:N} (row-2 linear chain).';
+  'Grid devices (Axe-Fx II / III / FM3 / FM9): {row,col} 1-based; a bare number N means {row:2, col:N}.';
 
 const PARAMS_BY_CHANNEL_DESC =
   'Per-channel param maps for channel blocks (`{ A: { gain: 6 }, D: { gain: 8 } }` on AM4; `X` / `Y` on II / III). ' +
@@ -426,9 +425,8 @@ const PARAMS_BY_CHANNEL_DESC =
   'Non-channel blocks reject this field; use `params` (flat) there.';
 
 const ID_DESC =
-  'v0.4: stable identifier for this block, used by routing edges and scene maps. ' +
-  'Default: auto-derived `<block_type>_<instance>` (e.g. amp_1). ' +
-  'Required when two blocks of the same type exist in the same preset.';
+  'Id for routing edges and scene maps. Default: the block type (`amp`), ' +
+  '`<block_type>_<instance>` from instance 2 (`amp_2`).';
 
 const INSTANCE_DESC =
   'v0.4: instance number on grid devices that support multiple of the same block type ' +
@@ -478,7 +476,7 @@ function commonSlotFields(
   return {
     slot: z.union([
       z.number().int().min(1),
-      z.object({ row: z.number().int().min(1), col: z.number().int().min(1) }),
+      z.looseObject({ row: z.number().int().min(1), col: z.number().int().min(1) }),
     ]).describe(SLOT_LOCATION_DESC),
     params_by_channel: z.record(
       z.string(),
@@ -501,7 +499,9 @@ export function buildPresetSlotShape(): z.ZodTypeAny {
   // device's full enum catalog (~180k chars per tool using this shape).
   // The union consumed ~100k context tokens before the user typed a
   // word, triggering "conversation too long" on Claude Desktop.
-  return z.object({
+  // Loose, like the top-level spec: z.object would STRIP a misnamed key
+  // ("bypass" for "bypassed") before rejectUnknownSpecKeys can name it.
+  return z.looseObject({
     ...commonSlotFields(),
     block_type: z.string().describe(
       'Block to place (e.g. "amp", "drive", "reverb", "none"). See describe_device.block_types.',
@@ -510,7 +510,7 @@ export function buildPresetSlotShape(): z.ZodTypeAny {
   });
 }
 
-export const presetSceneShape = z.object({
+export const presetSceneShape = z.looseObject({
   scene: z.number().int().min(1).describe('Scene number (1-indexed).'),
   channels: z.record(z.string(), z.union([z.string(), z.number()])).optional().describe(
     'Per-block channel selection: { "amp": "A", "drive": "A" }. Optional; supply at least one of channels / bypassed / name per entry.',
@@ -521,7 +521,7 @@ export const presetSceneShape = z.object({
   name: z.string().max(32).optional(),
 });
 
-export const routingEdgeShape = z.object({
+export const routingEdgeShape = z.looseObject({
   from: z.string().describe(
     'Source block id. Either the explicit `id` on a slots[] entry, or the auto-derived id: the BARE block type for a single instance (`amp`, `delay`; `amp_1` is accepted as an alias), `<block_type>_<instance>` from the second instance up (`amp_2`).',
   ),
@@ -556,7 +556,7 @@ export function buildPresetShape(): z.ZodObject {
       '(e.g. land on solo scene for an immediate lead test). Devices without scenes ignore this.',
     ),
     routing: z.array(routingEdgeShape).optional().describe(
-      'v0.4: explicit routing edges for grid devices (parallel chains, FX loops, wet/dry splits). When omitted on a grid device, the descriptor infers a row-2 linear chain. Linear devices (AM4) reject this field; they route implicitly by slot order. See docs/FRACTAL-PRESET-SCHEMA.md for worked examples.',
+      'Cables for grid devices (splits, FX loops). Omitted: one row, left to right; gen-3 adds Input 1 at col 1, Output 1 after the last block, shunts in gaps. {to:"OUTPUT"} ends a chain. AM4 rejects it.',
     ),
   });
 }

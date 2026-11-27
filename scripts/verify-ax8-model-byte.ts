@@ -207,6 +207,7 @@ function createModelByteMockConn(modelByte: number): { conn: DispatchCtx['conn']
   // Device state the fabrications echo back.
   let outputSetCount = 0;                 // fn 0x2e SETs seen on Output (effectId 140)
   let lastScene = 0;                      // last fn 0x29 SET value (wire 0..7)
+  let lastPreset = 0;                     // last fn 0x3C switch (wire), read back via fn 0x14
   const chanByEffect = new Map<number, number>(); // fn 0x11 SET action=1
 
   function fabricate(sent: number[]): number[] | undefined {
@@ -236,6 +237,11 @@ function createModelByteMockConn(modelByte: number): { conn: DispatchCtx['conn']
       const eff = (sent[6] & 0x7f) | ((sent[7] & 0x7f) << 7);
       return [0xf0, 0x00, 0x01, 0x74, modelByte, FN_CHANNEL, sent[6], sent[7], chanByEffect.get(eff) ?? 0, 0x00, 0xf7];
     }
+    // GET_PRESET_NUMBER (fn 0x14): apply_setlist confirms its leading
+    // switch before building (contract review M11). MSB-first payload.
+    if (fn === 0x14 && sent.length < 10) {
+      return [0xf0, 0x00, 0x01, 0x74, modelByte, 0x14, (lastPreset >> 7) & 0x7f, lastPreset & 0x7f, 0x00, 0xf7];
+    }
     if (fn === FN_SCENE && (sent[6] & 0x7f) === 0x7f) {
       // 0x7F sentinel = scene query; SETs are recorded in send().
       return [0xf0, 0x00, 0x01, 0x74, modelByte, FN_SCENE, lastScene, 0x00, 0xf7];
@@ -257,6 +263,8 @@ function createModelByteMockConn(modelByte: number): { conn: DispatchCtx['conn']
           chanByEffect.set(eff, bytes[8] & 0x7f);
         } else if (bytes[5] === FN_SCENE && (bytes[6] & 0x7f) <= 0x07) {
           lastScene = bytes[6] & 0x7f;
+        } else if (bytes[5] === 0x3c) {
+          lastPreset = ((bytes[6] & 0x7f) << 7) | (bytes[7] & 0x7f);
         }
       }
       if (pendingPredicate && pendingResolve) {

@@ -619,13 +619,13 @@ async function main(): Promise<void> {
 
       // At the cap, on a real device: the largest batch the contract permits
       // must actually fit. This is the number that would move if a reader
-      // grew its per-read payload (`raw_response` is roughly 40% of a row).
+      // grew its per-read payload (0.10.0 dropped `raw_response`, ~40% of a row).
       const atCap = all.slice(0, Math.min(GET_PARAMS_MAX_QUERIES, all.length));
       const shapeCap = `get_params({port:"${d.id}", queries: ${atCap.length} = the ${GET_PARAMS_MAX_QUERIES}-query cap})`;
       const nCap = size('get_params', shapeCap, await call('get_params', { port: d.id, queries: atCap }), true);
       checkCliff('get_params', shapeCap, nCap,
         `The cap is set at ${GET_PARAMS_MAX_QUERIES} against a measured ~167 chars/read on the AM4 and ~185 on the Axe-Fx II, which left about 2x of margin. `
-        + 'If the largest permitted batch no longer fits, the per-read payload grew (`raw_response` is the bulk of a row) and the cap has to come down with it.');
+        + 'If the largest permitted batch no longer fits, the per-read payload grew and the cap has to come down with it.');
 
       const anchorBlocks = ['amp', 'drive', 'delay', 'reverb'].filter((b) => blocks.includes(b));
       const anchor = all.filter((q) => anchorBlocks.includes(q.block)).slice(0, GET_PARAMS_MAX_QUERIES);
@@ -633,10 +633,8 @@ async function main(): Promise<void> {
         const shape = `get_params({port:"${d.id}", queries: ${anchor.length} x params of ${anchorBlocks.join('+')}, capped})`;
         const n = size('get_params', shape, await call('get_params', { port: d.id, queries: anchor }), true);
         checkCliff('get_params', `${shape} (the tone-build state anchor its own description names)`, n,
-          'Note what is IN each row: `raw_response` carries the full SysEx byte array per read, which is wire-format detail the '
-          + 'display-first contract says never leaks through tool I/O, and it is roughly 40% of the payload. Moving it behind a '
-          + 'flag is the cheapest remaining saving and costs no capability, but it is a contract change with a live consumer '
-          + '(scripts/probe-ii-pitch-domain.ts decodes the II pitch map out of exactly that frame), so it needs a caller audit first.');
+          'Each row is block, name, wire_value, display_value, unit and an optional device_label (0.10.0 replaced the raw '
+          + 'SysEx frame, ~40% of a row, with the label its only consumer needed).');
       }
 
       // Measured, not gated. See MEASURED_NOT_GATED.

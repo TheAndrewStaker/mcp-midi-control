@@ -4,6 +4,7 @@
  * Tools registered here:
  *   - `set_block(port, slot, block_type)`, place / clear a block at a slot
  *   - `set_bypass(port, block, bypassed)`, silence / activate a placed block
+ *   - `set_channel(port, block, channel)`, pick a placed block's channel
  *
  * `set_block` mutates the signal-chain layout; `set_bypass` mutates the
  * active scene's per-block bypass register. To set bypass on a non-active
@@ -13,7 +14,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
-import { executeSetBlock, executeSetBypass } from '../dispatcher.js';
+import { executeSetBlock, executeSetBypass, executeSetChannel } from '../dispatcher.js';
 
 import { PORT_DESC, asError, asText, blockTypeSchema } from './shared.js';
 
@@ -26,7 +27,7 @@ export function registerLayoutTools(server: McpServer): void {
   server.registerTool('set_block', {
     title: 'Place Block',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    description: 'Place ONE block, or clear a slot (block_type "none"), on a single preset. Surgical primitive. For grid devices (Axe-Fx II / III / FM3 / FM9) or ANY multi-block build, use apply_preset, NOT set_block: set_block does not cable cells, propagate routing, or terminate the chain at the device output, whereas apply_preset auto-cables row 2 and terminates at col 12. On grid, set_block is safe only for post-apply_preset cleanup (e.g. swapping one cell\'s block_type). 60% of agent set_block failures were reaching for it on a grid device when apply_preset was right. To silence without removing, use set_bypass.',
+    description: 'Place ONE block, or clear a slot (block_type "none"), on a single preset. Surgical primitive. For grid devices (Axe-Fx II / III / FM3 / FM9) or ANY multi-block build, use apply_preset, NOT set_block: set_block does not cable cells or terminate the chain at the device output; apply_preset lays and cables the whole chain. On grid, set_block is safe only for post-apply_preset cleanup (e.g. swapping one cell\'s block_type). 60% of agent set_block failures were reaching for it on a grid device when apply_preset was right. To silence without removing, use set_bypass.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       slot: z.union([
@@ -71,6 +72,27 @@ export function registerLayoutTools(server: McpServer): void {
   }, async ({ port, block, bypassed, instance }) => {
     try {
       const result = await executeSetBypass({ port, block, bypassed, instance });
+      return asText(result);
+    } catch (err) {
+      return asError(err);
+    }
+  });
+
+  server.registerTool('set_channel', {
+    title: 'Select Block Channel',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    description:
+      'Switch a placed block to another channel (A-D) on the active scene, so it plays the settings stored on that channel. ' +
+      'To edit a channel without switching to it, pass channel to set_param instead. Kept on the scene only after save_preset.',
+    inputSchema: {
+      port: z.string().describe(PORT_DESC),
+      block: z.string().describe('Block name, e.g. "amp", "drive".'),
+      channel: z.union([z.string(), z.number().int().min(0)]).describe('Channel letter, or 0-based index.'),
+      instance: z.number().int().min(1).optional().describe('Block instance on grid devices (Amp 2 = 2). Default 1.'),
+    },
+  }, async ({ port, block, channel, instance }) => {
+    try {
+      const result = await executeSetChannel({ port, block, channel, instance });
       return asText(result);
     } catch (err) {
       return asError(err);

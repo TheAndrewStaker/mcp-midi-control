@@ -179,7 +179,7 @@ export function createAtomicImageApply(
     sourceWords: Uint16Array,
   ): Promise<'original-restored' | 'unknown'> {
     try {
-      const recovery = await restorePresetBinaryAxeFxII(ctx, dumpBytes, { modelId, deviceLabel });
+      const recovery = await restorePresetBinaryAxeFxII(ctx, dumpBytes, { modelId, deviceLabel, skipReadBack: true });
       if (!recovery.ok) return 'unknown';
     } catch {
       return 'unknown';
@@ -254,7 +254,7 @@ export function createAtomicImageApply(
 
     // Safeguard #4a: push to the WORKING BUFFER ONLY. Never pass save
     // options to this call; STORE only happens after read-back verify below.
-    const pushResult = await restorePresetBinaryAxeFxII(ctx, patch.patchedBytes, { modelId, deviceLabel });
+    const pushResult = await restorePresetBinaryAxeFxII(ctx, patch.patchedBytes, { modelId, deviceLabel, skipReadBack: true });
     if (!pushResult.ok) {
       // Graft 1: probe-classify BEFORE any recovery. One fast-fail re-dump.
       const probe = await tryDumpWords(ctx, modelId, 900);

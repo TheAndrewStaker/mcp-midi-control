@@ -30,6 +30,7 @@ stored in a slot.
 | `set_param` / `set_params` | confirmed | Hardware-verified on the maintainer's unit. Capture-cited decodes live in the codec package at `packages/fractal-midi/docs/devices/am4/SYSEX-MAP.md` |
 | `get_param` / `get_params` | confirmed | Same. The atomic read primitive returns a per-block chunk, hardware-validated across 17 audio blocks (`packages/am4/src/descriptor.ts`, the `atomic_read` note) |
 | `set_block`, `set_bypass` | confirmed | Same |
+| `set_channel` | confirmed frame, new tool | New in 0.10.0. Sends the same `<block>.channel` write that `set_param` with a channel already sends, and acks on the device echo. Amp, drive, reverb and delay only |
 | `switch_preset`, `switch_scene`, `save_preset` | confirmed | Same. `switch_preset` reads the loaded location back, so a switch the unit echoed but did not perform is reported as not changed |
 | `apply_preset` | confirmed | Same |
 | `get_preset` on the active working buffer | confirmed | A full four-slot snapshot in roughly 250 ms, round-tripping through `get_param` byte-exactly. A second instance of a block (two drives) reads as `drive_2`, and a `channel` on `get_param` reads that channel without switching to it |

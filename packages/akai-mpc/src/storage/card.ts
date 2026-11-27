@@ -22,7 +22,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { parseXpj, summarizeXpj, type XpjSummary } from '../codec/project.js';
+import { parseXpj, summarizeXpj, type XpjFile, type XpjSummary } from '../codec/project.js';
 
 export const MPC_CARD_ROOT_ENV = 'MCP_MPC_CARD_ROOT';
 const PROJECTS_DIR = 'Projects';
@@ -171,7 +171,17 @@ export function findCardProject(projects: readonly CardProject[], query: string 
   return { candidates: (partial.length > 0 ? partial : projects).slice(0, 20).map((p) => p.location) };
 }
 
+/** The absolute path of a project's `.xpj`. */
+export function cardProjectPath(root: string, project: CardProject): string {
+  return join(project.root ?? root, PROJECTS_DIR, project.file);
+}
+
+/** Open one project file. Throws SyntaxError when it is not an MPC project. */
+export function readCardProjectFile(root: string, project: CardProject): XpjFile {
+  return parseXpj(readFileSync(cardProjectPath(root, project)));
+}
+
 /** Read and summarise one project file. Throws SyntaxError when it is not an MPC project. */
 export function readCardProject(root: string, project: CardProject): XpjSummary {
-  return summarizeXpj(parseXpj(readFileSync(join(project.root ?? root, PROJECTS_DIR, project.file))));
+  return summarizeXpj(readCardProjectFile(root, project));
 }

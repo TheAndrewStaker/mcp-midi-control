@@ -103,3 +103,30 @@ export async function executeSetBypass(args: {
   return { ...result, device: descriptor.display_name };
 }
 
+/**
+ * Full lifecycle for `set_channel(port, block, channel)`. Devices without a
+ * `writer.setChannel` (no per-block channels, or not decoded) refuse.
+ */
+export async function executeSetChannel(args: {
+  port: string;
+  block: string;
+  channel: string | number;
+  instance?: number;
+}): Promise<WriteResult & { device: string }> {
+  const descriptor = requireDevice(args.port);
+  const setChannel = descriptor.writer.setChannel;
+  if (setChannel === undefined) {
+    throw new DispatchError(
+      'capability_not_supported',
+      descriptor.display_name,
+      `set_channel is not available for ${descriptor.display_name}: it has no per-block channel select this server can send.`,
+    );
+  }
+  assertInstanceSupported(descriptor, args.instance, `set_channel ${args.block}`);
+  const canonical_block = resolveBlockName(descriptor, args.block);
+  const result = await withEndpoint(descriptor, (ctx) =>
+    withHandleRetry(ctx, (c) => setChannel(c, canonical_block, args.channel, args.instance)),
+  { opName: 'set_channel' });
+  return { ...result, device: descriptor.display_name };
+}
+

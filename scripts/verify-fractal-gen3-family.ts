@@ -12,6 +12,8 @@
  * Run:  npx tsx scripts/verify-fractal-gen3-family.ts
  */
 
+import { createGen3Sim } from './_lib/gen3-stateful-sim.js';
+import { buildGen3StatusDumpFrame } from '../packages/fractal-gen3/dist/simResponders.js';
 import {
   AXEFX3_DESCRIPTOR,
   FM3_DESCRIPTOR,
@@ -19,6 +21,7 @@ import {
   VP4_DESCRIPTOR,
   MODERN_FRACTAL_DESCRIPTORS,
 } from '@mcp-midi-control/fractal-gen3/device.js';
+import { devicePrintDecimals, SIGNED_RAW_SEMITONE_PARAMS } from '@mcp-midi-control/fractal-gen3/catalog.js';
 import {
   encode16to3,
   huffmanCompress,
@@ -50,7 +53,7 @@ import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js'
 import { encodeValue, resolveBlockName } from '@mcp-midi-control/core/protocol-generic/dispatcher/resolvers.js';
 import { resolveSetBlockType } from '@mcp-midi-control/core/protocol-generic/dispatcher/layout.js';
 import { assertInstanceSupported } from '@mcp-midi-control/core/protocol-generic/dispatcher/core.js';
-import { collectPhantomParamWarnings } from '@mcp-midi-control/core/protocol-generic/dispatcher/params.js';
+import { collectPhantomParamWarnings, unplacedReadWarning } from '@mcp-midi-control/core/protocol-generic/dispatcher/params.js';
 import { _resetBlockLayoutCacheForTests } from '@mcp-midi-control/core/protocol-generic/dispatcher/blockLayoutCache.js';
 import {
   clearRegistry,
@@ -427,8 +430,12 @@ async function writerChecks(): Promise<void> {
     // the FM3 ignores the insert's cell without the prior cursor move (ForgeFX
     // live-confirmed on hardware 2026-06-27). The sub-action is payload byte 0
     // (frame index 6); both frames carry the FM3 model byte 0x11.
-    const { ctx: ctx3, sent: sent3 } = fakeCtx();
+    // Since 2026-11-25 set_block reads the live grid (sub=0x2E) before and
+    // after the insert; drop those reads so the write frames compare alone.
+    const { ctx: ctx3, sent: sent3All } = fakeCtx();
     await FM3_DESCRIPTOR.writer.setBlock!(ctx3, { row: 2, col: 3 }, { block_type: 'reverb' });
+    const sent3 = sent3All.filter((f) => f[6] !== 0x2e);
+    check('FM3 set_block reads the grid before and after the insert', sent3All.filter((f) => f[6] === 0x2e).length === 2);
     check('FM3 set_block emits sub=0x30 select THEN sub=0x32 insert (two frames)',
       sent3.length === 2 && sent3[0][6] === 0x30 && sent3[1][6] === 0x32,
       JSON.stringify(sent3.map((f) => `0x${f[6]?.toString(16)}`)));
@@ -438,8 +445,9 @@ async function writerChecks(): Promise<void> {
   // Axe-Fx III (6-row): select THEN insert too. The FM9 fw 12 inserts at the
   // edit cursor without the select (issue #23), and the editors always send it.
   {
-    const { ctx, sent } = fakeCtx();
+    const { ctx, sent: sentAll } = fakeCtx();
     try { await AXEFX3_DESCRIPTOR.writer.setBlock!(ctx, { row: 1, col: 1 }, { block_type: 'reverb' }); } catch { /* ignore */ }
+    const sent = sentAll.filter((f) => f[6] !== 0x2e);
     check('III set_block emits sub=0x30 select THEN sub=0x32 insert (two frames)',
       sent.length === 2 && sent[0][6] === 0x30 && sent[1][6] === 0x32, JSON.stringify(sent.map((f) => `0x${f[6]?.toString(16)}`)));
   }
@@ -453,7 +461,7 @@ async function writerChecks(): Promise<void> {
       ok = r.acked === true || r.unconfirmed === true; // sent, not rejected (no positive ack)
     } catch { ok = false; }
     check('FM9 set_block {row:1,col:14} accepted (within 6x14 grid)', ok);
-    check('FM9 in-grid set_block emitted model-0x12 select + insert', sent.length === 2 && sent.every((f) => f[4] === 0x12), JSON.stringify(sent.map((f) => f.slice(0, 7))));
+    check('FM9 in-grid set_block emitted model-0x12 select + insert', sent.filter((f) => f[6] !== 0x2e).length === 2 && sent.every((f) => f[4] === 0x12), JSON.stringify(sent.map((f) => f.slice(0, 7))));
   }
 
   // apply_preset(target_location) honors save_authorization: the store envelope
@@ -468,10 +476,18 @@ async function writerChecks(): Promise<void> {
     check('FM9 apply_preset(target, save_authorized:false) = audition: NO store envelope',
       sent.filter(isStore).length === 0, `store frames: ${sent.filter(isStore).length}`);
 
-    const { ctx: ctx2, sent: sent2 } = fakeCtx();
-    await FM9_DESCRIPTOR.writer.applyPreset!(ctx2, emptySpec, 5, { save: true });
+    // A save now needs a build that verified, so this leg runs against the
+    // stateful sim (a silent mock correctly never saves). Location 5 is empty.
+    const sim = createGen3Sim({ modelByte: 0x12, rows: 6, cols: 14, presetNumber: 2, stored: { 5: '<EMPTY>' } });
+    const saveSpec = { slots: [{ slot: { row: 2, col: 2 }, block_type: 'amp' }] } as Parameters<NonNullable<DeviceDescriptor['writer']['applyPreset']>>[1];
+    await FM9_DESCRIPTOR.writer.applyPreset!(sim.ctx, saveSpec, 5, { save: true });
+    const sent2 = sim.sent.map((x) => x.bytes);
     check('FM9 apply_preset(target, save_authorized:true) emits exactly one store envelope (fn=0x01 sub=0x26)',
       sent2.filter(isStore).length === 1, `store frames: ${sent2.filter(isStore).length}`);
+    const { ctx: ctx3, sent: sent3 } = fakeCtx();
+    await FM9_DESCRIPTOR.writer.applyPreset!(ctx3, saveSpec, 5, { save: true });
+    check('FM9 apply_preset with save against a silent unit: NO store (the build never verified)',
+      sent3.filter(isStore).length === 0, `store frames: ${sent3.filter(isStore).length}`);
   }
 
   // The gen-3 grid is 6 rows (wire-confirmed on FM9 + III over loopMIDI, and
@@ -489,16 +505,18 @@ async function writerChecks(): Promise<void> {
     // envelope byte 12 (effectId is at bytes 8-9), so read byte 12.
     const { ctx: ctx2, sent: sent2 } = fakeCtx();
     let gridPos = -1;
-    try { await FM9_DESCRIPTOR.writer.setBlock!(ctx2, { row: 1, col: 2 }, { block_type: 'reverb' }); gridPos = sent2[0]?.[12] ?? -1; } catch { /* threw */ }
+    try { await FM9_DESCRIPTOR.writer.setBlock!(ctx2, { row: 1, col: 2 }, { block_type: 'reverb' }); gridPos = sent2.find((f) => f[6] === 0x32)?.[12] ?? -1; } catch { /* threw */ }
     check('FM9 set_block {row:1,col:2} emits gridPos=6 (6-row stride)', gridPos === 6, `gridPos=${gridPos}`);
   }
 
   // switchScene bounds: 8 ok (→ wire scene 7), 9 rejected, 0 rejected.
   {
     const codec = createModernFractalCodec(0x11);
-    const { ctx, sent } = fakeCtx();
+    const { ctx, sent: sentAll } = fakeCtx();
     const r = await FM3_DESCRIPTOR.writer.switchScene!(ctx, 8);
-    check('FM3 switchScene(8) acked', r.acked === true);
+    // The switch is read back (fn=0x0C GET 7F); a silent unit leaves it unconfirmed.
+    const sent = sentAll.filter((f) => !(f[5] === 0x0c && f[6] === 0x7f));
+    check('FM3 switchScene(8) on a silent unit: sent, unconfirmed (read-back unanswered)', r.acked === false && r.unconfirmed === true);
     check('FM3 switchScene(8) emits buildSetScene(7) with model 0x11',
       sent.length === 1 && JSON.stringify(sent[0]) === JSON.stringify(codec.buildSetScene(7)),
       JSON.stringify(sent[0]));
@@ -575,7 +593,7 @@ async function writerChecks(): Promise<void> {
     check('FM3 switch_preset with a silent device says UNCONFIRMED',
       /UNCONFIRMED/.test(r.warning ?? ''), r.warning);
     const sent = sentAll.filter((m) => !isNameQuery(m));
-    check('FM3 switch_preset(475) acked', r.acked === true);
+    check('FM3 switch_preset(475) on a silent unit: unconfirmed, not acked', r.acked === false && r.unconfirmed === true);
     check('FM3 switch_preset emits exactly ONE frame', sent.length === 1, `sent ${sent.length}`);
     const f = sent[0] ?? [];
     check('FM3 switch_preset frame = SysEx model 0x11, fn=0x01, sub=0x27',
@@ -653,8 +671,10 @@ async function renameChecks(): Promise<void> {
     { desc: FM9_DESCRIPTOR, modelByte: 0x12 },
   ]) {
     {
-      const { ctx, sent } = fakeCtx();
+      // The rename is read back with one fn=0x0D query; drop it to compare.
+      const { ctx, sent: sentAll } = fakeCtx();
       const r = await desc.writer.rename!(ctx, 'preset', 'Test Name');
+      const sent = sentAll.filter((f) => f[5] !== 0x0d);
       const want = buildRenamePreset('Test Name', modelByte);
       check(`${desc.id} rename(preset) emits buildRenamePreset byte-identical (sub=0x28, model 0x${modelByte.toString(16)})`,
         sent.length === 1 && JSON.stringify(sent[0]) === JSON.stringify(want),
@@ -1398,6 +1418,12 @@ async function liveGridChecks(): Promise<void> {
     check('III set_param to unplaced delay carries the not-placed warning', phantom.length === 1 && /no 'delay'/.test(phantom[0].info), JSON.stringify(phantom));
     const placedOk = await collectPhantomParamWarnings(AXEFX3_DESCRIPTOR, ctx, 'amp', 'gain');
     check('III set_param to placed amp carries no warning', placedOk.length === 0, JSON.stringify(placedOk));
+    // Reads: an unplaced block still answers with its last stored value
+    // (issues #23 / #35), so get_param says the value is not the preset's.
+    const readUnplaced = await unplacedReadWarning(AXEFX3_DESCRIPTOR, ctx, 'delay');
+    check('III get_param on unplaced delay carries a not-placed warning', /No 'delay' block is placed/.test(readUnplaced ?? ''), String(readUnplaced));
+    const readPlaced = await unplacedReadWarning(AXEFX3_DESCRIPTOR, ctx, 'amp');
+    check('III get_param on placed amp carries no warning', readPlaced === undefined, String(readPlaced));
     _resetBlockLayoutCacheForTests();
   }
 
@@ -1775,7 +1801,9 @@ console.log('\nC13: signed-raw-semitone decode (PITCH/PLEX/SYNTH/REVERB shift, i
     const refusedWithReason: string[] = [];
     for (const slug of slugs) {
       try {
-        const conn = mockConnect({ responder: () => [], ackLatencyMs: 0 });
+        // Answer the post-write status read (an empty dump) so each slug costs
+        // one round-trip instead of a read timeout.
+        const conn = mockConnect({ responder: (b: number[]) => (b[5] === 0x13 ? [buildGen3StatusDumpFrame(b[4], [])] : []), ackLatencyMs: 0 });
         await d.writer.setBypass!({ conn, descriptor: d } as never, slug, true);
       } catch (err) {
         const code = err instanceof DispatchError ? err.code : '(plain Error)';
@@ -1796,6 +1824,210 @@ console.log('\nC13: signed-raw-semitone decode (PITCH/PLEX/SYNTH/REVERB shift, i
     // Self-coverage: if the roster ever came back empty this leg would pass
     // having checked nothing, which is precisely how the original defect hid.
     check(`${d.id}: the slug roster is non-empty (this leg measured something)`, slugs.length >= 20, `got ${slugs.length}`);
+  }
+
+  // Editor-typecode tapers (community PR #24, FM3 fw 12 panel text): class 0x4X
+  // rows are log10 and 0x52 rows are a 0..10 knob. Before, PEQ frequencies and
+  // ~200 other wide-range knobs per device encoded linear, so "200 Hz" on a
+  // 20..2000 band landed near 20 Hz. The geometric mean of a log10 window must
+  // sit at mid-wire; a 0x52 knob reports 0..10 with 5 at mid-wire.
+  console.log('\nEditor-typecode tapers (log10 class 0x4X, 0..10 knob 0x52):');
+  {
+    const midFrac = (p: { encode?: (v: number) => unknown }, a: number, z: number, m: number): number => {
+      const lo = Number(p.encode!(a)), hi = Number(p.encode!(z));
+      return (Number(p.encode!(m)) - lo) / (hi - lo);
+    };
+    for (const d of MODERN_FRACTAL_DESCRIPTORS) {
+      if (d.id === 'vp4') continue;
+      const peq = d.blocks.parametric_eq?.params.freq1 as { encode?: (v: number) => unknown; display_min?: number; display_max?: number } | undefined;
+      check(`${d.id}: parametric_eq.freq1 is a 20..2000 Hz window`,
+        peq?.display_min === 20 && peq?.display_max === 2000, `got ${peq?.display_min}..${peq?.display_max}`);
+      if (peq?.encode) {
+        const f = midFrac(peq, 20, 2000, 200);
+        check(`${d.id}: parametric_eq.freq1 200 Hz encodes at mid-wire (log10)`, Math.abs(f - 0.5) < 0.01, `fraction ${f.toFixed(3)}`);
+      }
+      const drv = d.blocks.chorus?.params.drive as { encode?: (v: number) => unknown; display_min?: number; display_max?: number; unit?: string } | undefined;
+      check(`${d.id}: chorus.drive is a 0..10 knob (typecode 0x52)`,
+        drv?.display_min === 0 && drv?.display_max === 10 && drv?.unit === 'knob_0_10',
+        `got ${drv?.unit} ${drv?.display_min}..${drv?.display_max}`);
+      if (drv?.encode) {
+        const f = midFrac(drv, 0, 10, 5);
+        check(`${d.id}: chorus.drive 5 encodes at mid-wire (linear knob)`, Math.abs(f - 0.5) < 0.01, `fraction ${f.toFixed(3)}`);
+      }
+      const lowcut = d.blocks.reverb?.params.lowcut as { encode?: (v: number) => unknown; display_min?: number; display_max?: number } | undefined;
+      if (lowcut?.encode && (lowcut.display_min ?? 0) > 0) {
+        const a = lowcut.display_min!, z = lowcut.display_max!;
+        const f = midFrac(lowcut, a, z, Math.sqrt(a * z));
+        check(`${d.id}: reverb.lowcut stays log10 (the BK-096 field point)`, Math.abs(f - 0.5) < 0.01, `fraction ${f.toFixed(3)}`);
+      }
+    }
+  }
+
+  // Print precision from the device cache (2026-11-26): the low nibble of the
+  // row's editor typecode is the decimals the panel prints. In-device on the
+  // Axe-Fx II (its own cache vs its own panel text): 398 of 413. FM3 panel
+  // text (PR #24): input trim "1.000" = DISTORT_TRIM 0x43.
+  // (scripts/_research/review-typecode-decimals.ts)
+  console.log('\nPrint precision from the editor typecode nibble:');
+  {
+    const row = (typecode: number | undefined, displayMin = 0, displayMax = 1000) =>
+      ({ kind: 'float' as const, displayMin, displayMax, step: 1, scale: 1, typecode });
+    const cases: Array<[string, number, number]> = [
+      ['0x430 (delay "300 ms") -> 0', devicePrintDecimals(row(0x430)), 0],
+      ['0x431 (reverb delay "12.5 ms"; a step of 1 must not make it 0) -> 1', devicePrintDecimals(row(0x431)), 1],
+      ['0x562 -> 2', devicePrintDecimals(row(0x562)), 2],
+      ['0x43 (FM3 input trim "1.000") -> 3', devicePrintDecimals(row(0x43, 0.1, 10)), 3],
+      ['nibble 4 caps at 3', devicePrintDecimals(row(0x434)), 3],
+      ['0x52 knob (window remapped to 0..10) keeps 2', devicePrintDecimals(row(0x52)), 2],
+      ['0x152 knob keeps 2 even with a fine step',
+        devicePrintDecimals({ kind: 'float', displayMin: 0, displayMax: 1000, step: 0.001, scale: 1, typecode: 0x152 }), 2],
+      ['no typecode keeps 2', devicePrintDecimals(row(undefined)), 2],
+      ['nibble 0 on a 0..1 window (2 readings) keeps 2', devicePrintDecimals(row(0x570, 0, 1)), 2],
+      ['nibble 1 on a 0..1 window (10 steps) -> 1', devicePrintDecimals(row(0x571, 0, 1)), 1],
+      ['0x570 mix stepping 0.1 % (II chorus.mix prints "25.2 %") -> 1',
+        devicePrintDecimals({ kind: 'float', displayMin: 0, displayMax: 100, step: 0.001, scale: 100, typecode: 0x570 }), 1],
+      ['a coarser step never lowers the nibble (0x431 stepping 1) -> 1',
+        devicePrintDecimals({ kind: 'float', displayMin: 0, displayMax: 1000, step: 1, scale: 1, typecode: 0x431 }), 1],
+      ['enum row keeps 2', devicePrintDecimals({ kind: 'enum', displayMin: 0, displayMax: 3, step: 1, scale: 1, typecode: 0x10 }), 2],
+    ];
+    for (const [label, got, want] of cases) check(`devicePrintDecimals ${label}`, got === want, `got ${got}`);
+    for (const d of MODERN_FRACTAL_DESCRIPTORS) {
+      if (d.id === 'vp4') continue;
+      // Real params at each precision: the most decimals any read shows.
+      const maxDec = (block: string, name: string): number | undefined => {
+        const s = d.blocks[block]?.params[name];
+        if (!s) return undefined;
+        let m = 0;
+        for (let w = 0; w <= 65534; w += 257) {
+          const v = s.decode(w);
+          if (typeof v === 'number') m = Math.max(m, (String(v).split('.')[1] ?? '').length);
+        }
+        return m;
+      };
+      for (const [block, name, want, why] of [
+        ['amp', 'trim', 3, 'FM3 panel "1.000", typecode 0x43'],
+        ['reverb', 'mix', 1, 'typecode 0x571'],
+        ['delay', 'time', 0, 'FM3 panel "300 ms", typecode 0x430'],
+        ['chorus', 'mix', 1, 'typecode 0x570, step 0.1 %'],
+      ] as const) {
+        const got = maxDec(block, name);
+        check(`${d.id}: ${block}.${name} reads ${want} decimals (${why})`, got === want, `got ${got}`);
+      }
+      // A read must survive a write and re-read at its own precision, and the
+      // decode endpoints must sit on the advertised bounds.
+      let bad = 0, n = 0; const ex: string[] = [];
+      for (const [slug, b] of Object.entries(d.blocks)) for (const [name, s] of Object.entries(b.params)) {
+        if (s.wire_kind !== 'continuous' || s.display_min === undefined || s.enum_values) continue;
+        if (SIGNED_RAW_SEMITONE_PARAMS.has((s as { parameter_name?: string }).parameter_name ?? '')) continue;
+        // pass-through meters and spares refuse writes and carry no calibration
+        try { s.encode(s.display_min); } catch { continue; }
+        for (const w of [0, 65534]) {
+          const v = (() => { try { return s.decode(w); } catch { return undefined; } })();
+          if (typeof v === 'number' && v !== (w === 0 ? s.display_min : s.display_max)) { bad++; if (ex.length < 3) ex.push(`${slug}.${name} decode(${w}) ${v}`); }
+        }
+        for (let w = 0; w <= 65534; w += 997) {
+          let v: unknown; try { v = s.decode(w); } catch { continue; }
+          if (typeof v !== 'number') continue;
+          let wire: number; try { wire = Number(s.encode(v)); } catch { continue; }
+          n++;
+          const back = s.decode(wire);
+          if (back !== v) { bad++; if (ex.length < 3) ex.push(`${slug}.${name} ${v} -> ${back}`); }
+        }
+      }
+      check(`${d.id}: every continuous read survives a write + re-read, and decodes its bounds exactly (${n} reads)`, bad === 0, ex.join('; '));
+    }
+  }
+
+  // FM3 store ignores its destination and overwrites the LOADED preset
+  // (community PR #24, fw 12 hardware). save_preset to another location must
+  // refuse before anything but the location query goes out.
+  console.log('\nFM3 save_preset refuses a target other than the loaded location:');
+  {
+    const fm3 = MODERN_FRACTAL_DESCRIPTORS.find((d) => d.id === 'fm3')!;
+    const nameFrame = (preset: number, name: string): number[] => {
+      const body = [0xf0, 0x00, 0x01, 0x74, 0x11, 0x0d, preset & 0x7f, (preset >> 7) & 0x7f,
+        ...name.padEnd(32, ' ').split('').map((c) => c.charCodeAt(0))];
+      return [...body, body.reduce((a, b) => a ^ b, 0) & 0x7f, 0xf7];
+    };
+    const run = async (target: number): Promise<{ code?: string; sent: number[][] }> => {
+      const sent: number[][] = [];
+      const ctx = {
+        conn: {
+          send: (b: number[]) => { sent.push(b); },
+          receiveSysExMatching: (m: (b: number[]) => boolean) => {
+            const f = nameFrame(100, 'Loaded One');
+            return m(f) ? Promise.resolve(f) : Promise.reject(new Error('mock-timeout'));
+          },
+          onMessage: () => () => {},
+          close: () => {},
+        },
+        descriptor: fm3,
+      } as never;
+      try { await fm3.writer.savePreset!(ctx, target as never, 'New Name'); return { sent }; }
+      catch (e) { return { code: e instanceof DispatchError ? e.code : String(e), sent }; }
+    };
+    const away = await run(200);
+    check('fm3: save to 200 while 100 is loaded refuses (capability_not_supported)', away.code === 'capability_not_supported', `got ${away.code}`);
+    check('fm3: the refusal sent only the location query (no rename, no store)',
+      away.sent.length === 1 && away.sent[0][5] === 0x0d, `sent ${away.sent.length} frame(s)`);
+    const home = await run(100);
+    check('fm3: save to the loaded location 100 is not refused by this guard', home.code !== 'capability_not_supported' && home.sent.length > 1,
+      `got ${home.code ?? 'ok'}, sent ${home.sent.length}`);
+  }
+
+  // set_channel: fn=0x0B select, verified by a fresh fn=0x13 status read. The
+  // mock device holds Amp 1 (effect 58) and moves its channel on a 0x0B frame.
+  console.log('\nset_channel selects a channel and confirms it from the status dump:');
+  {
+    const fm3 = MODERN_FRACTAL_DESCRIPTORS.find((d) => d.id === 'fm3')!;
+    const run = async (start: number, channel: string | number, block = 'amp', ignoreSelect = false) => {
+      let current = start;
+      const sent: number[][] = [];
+      const status = (): number[] => {
+        const body = [0xf0, 0x00, 0x01, 0x74, 0x11, 0x13, 58 & 0x7f, 58 >> 7, (4 << 4) | (current << 1)];
+        return [...body, body.reduce((a, b) => a ^ b, 0) & 0x7f, 0xf7];
+      };
+      const ctx = {
+        conn: {
+          send: (b: number[]) => { sent.push(b); if (b[5] === 0x0b && !ignoreSelect) current = b[8]; },
+          receiveSysExMatching: (m: (b: number[]) => boolean) => {
+            const f = status();
+            return m(f) ? Promise.resolve(f) : Promise.reject(new Error('mock-timeout'));
+          },
+          onMessage: () => () => {},
+          close: () => {},
+        },
+        descriptor: fm3,
+      } as never;
+      try {
+        const r = await fm3.writer.setChannel!(ctx, block, channel);
+        return { r, sent, current };
+      } catch (e) {
+        return { code: e instanceof DispatchError ? e.code : String(e), sent, current };
+      }
+    };
+    const toB = await run(0, 'B');
+    check('fm3 set_channel: A -> B sends one 0x0B frame and acks on the fresh read',
+      toB.r?.acked === true && toB.r?.channel === 'B' && toB.current === 1 &&
+        toB.sent.filter((f) => f[5] === 0x0b).length === 1,
+      JSON.stringify(toB.r));
+    const same = await run(2, 'c');
+    check('fm3 set_channel: already on C sends no select', same.r?.acked === true && same.sent.every((f) => f[5] !== 0x0b));
+    const byIndex = await run(0, 3);
+    check('fm3 set_channel: 0-based index 3 selects D', byIndex.r?.channel === 'D' && byIndex.current === 3);
+    const ignored = await run(0, 'B', 'amp', true);
+    check('fm3 set_channel: a select the device did not take reports acked:false',
+      ignored.r?.acked === false && /reports channel A/.test(ignored.r?.warning ?? ''), JSON.stringify(ignored.r));
+    const bad = await run(0, 'E');
+    check('fm3 set_channel: channel E refuses with bad_channel before sending', bad.code === 'bad_channel' && bad.sent.length === 0);
+    const absent = await run(0, 'B', 'reverb');
+    check('fm3 set_channel: a block absent from the status dump refuses, nothing selected',
+      absent.code === 'capability_not_supported' && absent.sent.every((f) => f[5] !== 0x0b), `got ${absent.code}`);
+    const vp4 = MODERN_FRACTAL_DESCRIPTORS.find((d) => d.id === 'vp4')!;
+    let vp4Code: string | undefined;
+    try { await vp4.writer.setChannel!({ conn: {} as never, descriptor: vp4 } as never, 'drive', 'B'); }
+    catch (e) { vp4Code = e instanceof DispatchError ? e.code : String(e); }
+    check('vp4 set_channel: gated (not in write_allowlist)', vp4Code === 'capability_not_supported', `got ${vp4Code}`);
   }
 
   // A III owner's sweep tried the names a person reaches for (vol_pan, tremolo,
@@ -1849,8 +2081,11 @@ console.log('\nC13: signed-raw-semitone decode (PITCH/PLEX/SYNTH/REVERB shift, i
     shuntCode = err instanceof DispatchError ? err.code : '(plain Error)';
     shuntMsg = err instanceof Error ? err.message : '';
   }
-  check('set_block refuses "shunt" rather than clearing the cell', shuntCode === 'capability_not_supported', `got ${shuntCode}`);
-  check('the shunt refusal explains it is not an empty cell', /not an empty cell/i.test(shuntMsg), shuntMsg.slice(0, 90));
+  // Since 2026-11-25 set_block PLACES a shunt (id 1024 + the lowest free
+  // index from a live grid read). With no grid answer it refuses, never
+  // guessing an index and never sending blockId 0.
+  check('set_block "shunt" with no grid read refuses (no_ack)', shuntCode === 'no_ack', `got ${shuntCode}`);
+  check('the shunt refusal says it needs a live grid read', /free shunt index from a live grid read/i.test(shuntMsg), shuntMsg.slice(0, 90));
 }
 
 console.log('');

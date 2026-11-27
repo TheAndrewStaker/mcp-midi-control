@@ -441,8 +441,10 @@ const cases: { label: string; built: number[]; expected: string }[] = [
     expected: 'f0000174150142001800010000000400000018040052f7',
   },
   {
-    label: 'buildSetParam("reverb.dwell", 4.741) — session-30 HW-018 spring capture (action=0x0001 vs cap 0x0002, see SYSEX-MAP §6i)',
-    built: buildSetParam('reverb.dwell', 4.741138458251953),
+    // Captured internal 0.4741 is knob position 8.38 on Dwell's typecode-80
+    // log range 0.01..1 (2026-11-26 knobLogRange); bytes unchanged.
+    label: 'buildSetParam("reverb.dwell", 8.38) — session-30 HW-018 spring capture (action=0x0001 vs cap 0x0002, see SYSEX-MAP §6i)',
+    built: buildSetParam('reverb.dwell', 10 * Math.log10(0.4741138458251953 / 0.01) / 2),
     expected: 'f0000174150142002400010000000400066f7e237036f7',
   },
   {
@@ -481,8 +483,10 @@ const cases: { label: string; built: number[]; expected: string }[] = [
     expected: 'f0000174150152000e00010000000400420220237873f7',
   },
   {
-    label: 'buildSetParam("phaser.feedback", 50.2%) — session-29-phaser-feedback',
-    built: buildSetParam('phaser.feedback', 50.15915632247925),
+    // Captured float 0.5015915632247925; the panel scale is the cache's
+    // c = 111.1 (fw 2.02 audit 2026-11-26), so display = float x 111.1.
+    label: 'buildSetParam("phaser.feedback", 55.73%) — session-29-phaser-feedback',
+    built: buildSetParam('phaser.feedback', 0.5015915632247925 * 111.1),
     expected: 'f000017415015a001000010000000400271a00037818f7',
   },
   // HW-019 / HW-020 / HW-021 (Session 30, 2026-04-25): drive + delay +
@@ -695,14 +699,16 @@ const cases: { label: string; built: number[]; expected: string }[] = [
   // HW-043 partial (Session 45, 2026-05-02) — Drive Expert-Edit ADVANCED
   // panel knobs from `session-45-drive-expert-blackglass.pcapng`.
   {
-    label: 'buildSetParam("drive.slew_rate", 3.577%) — session-45 HW-043 drive-blackglass',
-    // Captured wire = 0.03577083349227905 (× 100 for percent display).
-    built: buildSetParam('drive.slew_rate', 3.5770833492279053),
+    label: 'buildSetParam("drive.sample_rate", 1717 Hz) — session-45 HW-043 drive-blackglass',
+    // Captured wire = 0.03577083349227905. Sample Rate is 48 Hz..48 kHz with
+    // cache scale c = 48000 (fw 2.02 audit 2026-11-26): 0.0357708 x 48000 =
+    // 1717.0 Hz exactly, a round panel value (the old percent reading was 3.577%).
+    built: buildSetParam('drive.sample_rate', 0.03577083349227905 * 48000),
     expected: 'f0000174150176001a00010000000400382102236828f7',
   },
   {
-    label: 'buildSetParam("drive.bias", 2.23) — session-45 HW-043 drive-blackglass',
-    built: buildSetParam('drive.bias', 2.23),
+    label: 'buildSetParam("drive.clip_shape", 2.23) — session-45 HW-043 drive-blackglass (register 0x1b, Clip Shape per the 2026-11-26 editor read-back)',
+    built: buildSetParam('drive.clip_shape', 2.23),
     expected: 'f0000174150176001b000100000004000e564c43705ef7',
   },
   // HW-029 + HW-039 (Session 35, 2026-04-29) — Drive Expert-Edit page
@@ -1729,8 +1735,9 @@ const decodeRuleCases: DecodeCase[] = [
   // but accidentally agrees with old code because displayMin=0 + scale=10.
   { key: 'amp.gain',             internal: 0.300, expect: 3,     tol: 0.01 },
   { key: 'amp.bass',             internal: 0.500, expect: 5,     tol: 0.01 },
-  // Log10 sanity at midpoint internal — geometric mean of [min, max].
-  { key: 'volpan.attack',        internal: 0.500, expect: 70.71, tol: 0.1  },
+  // Log10 sanity at midpoint internal — geometric mean of [min, max]
+  // (volpan.attack is 10..1000 ms per the 2p2 cache record).
+  { key: 'volpan.attack',        internal: 0.500, expect: 100,   tol: 0.1  },
   { key: 'rotary.mic_distance',  internal: 0.500, expect: 0.1,   tol: 0.01 },
 ];
 let decodeRulePass = 0;
@@ -1795,7 +1802,7 @@ const ghostReadCases: {
   { key: 'amp.offset1',     resp: fromHex('f000017415013a001b000e0000000400192460000067f7'), expectedPidHigh: 0x001b, expectedU32: 37682, expect: [0.15, 0.001] },
   { key: 'amp.cliptype2',   resp: fromHex('f000017415013a001c000e0000000400050000000038f7'), expectedPidHigh: 0x001c, expectedU32: 10,    expect: 'TRIODE' },
   { key: 'amp.drivetype',   resp: fromHex('f000017415013a0025000e0000000400000000000004f7'), expectedPidHigh: 0x0025, expectedU32: 0,     expect: 'NORMAL' },
-  { key: 'amp.wshpf',       resp: fromHex('f000017415013a0027000e0000000400025b6000003ff7'), expectedPidHigh: 0x0027, expectedU32: 28421, expect: [868.5, 0.6] },
+  { key: 'amp.wshpf',       resp: fromHex('f000017415013a0027000e0000000400025b6000003ff7'), expectedPidHigh: 0x0027, expectedU32: 28421, expect: [40.0, 0.05] }, // tc 0x42 = log10 (2..2000 Hz), hardware-confirmed for that typecode 2026-11-26
   { key: 'amp.tonetype',    resp: fromHex('f000017415013a0029000e0000000400004000000048f7'), expectedPidHigh: 0x0029, expectedU32: 1,     expect: 'DEFAULT' },
   { key: 'amp.fbtype',      resp: fromHex('f000017415013a002c000e000000040011000000001cf7'), expectedPidHigh: 0x002c, expectedU32: 34,    expect: 'SHIVER NEW' },
   { key: 'amp.pi_ratio',    resp: fromHex('f000017415013a002d000e000000040029586000001df7'), expectedPidHigh: 0x002d, expectedU32: 25427, expect: [0.388, 0.001] },

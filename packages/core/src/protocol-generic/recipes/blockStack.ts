@@ -160,8 +160,9 @@ const p = <T extends Readonly<Record<string, number | string>>>(params: T): Read
 // discrete SET carrying float32(read-ordinal), but is left to a separate step
 // so one voicing fits any model). The slot layout + values are identical across
 // the three, so fan one value across all three port keys rather than
-// triplicating the literal. FM3 is a 4×4 grid, so gen-3 recipes stay within
-// cols 1..3 (row 2 audio chain) to fit every device in the family.
+// triplicating the literal. Gen-3 recipes sit in cols 2..4 of row 2: the
+// fresh build puts Input 1 in col 1 and Output 1 after the last block, which
+// fits every device in the family (the FM3 is 4x12).
 const gen3 = <T>(value: T): Readonly<Record<'axe-fx-iii' | 'fm3' | 'fm9', T>> =>
   Object.freeze({ 'axe-fx-iii': value, fm3: value, fm9: value });
 const GEN3_DEVICES = ['axe-fx-iii', 'fm3', 'fm9'] as const;
@@ -1086,17 +1087,17 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
         'Clean pedal-platform gain-staging convention (low drive for headroom, slight treble lift, medium reverb). Amp model is user-selected; gen-3 model-by-name works.',
       slots_per_device: gen3([
         {
-          slot: { row: 2, col: 1 },
+          slot: { row: 2, col: 2 },
           block_type: 'compressor',
           params: p({ ratio: 2, thresh: -24, level: 5 }),
         },
         {
-          slot: { row: 2, col: 2 },
+          slot: { row: 2, col: 3 },
           block_type: 'amp',
           params: p({ drive: 2, bass: 5, mid: 5, treble: 6, master: 6 }),
         },
         {
-          slot: { row: 2, col: 3 },
+          slot: { row: 2, col: 4 },
           block_type: 'reverb',
           params: p({ mix: 18, size: 55 }),
         },
@@ -1118,12 +1119,12 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
         'Edge-of-breakup rhythm gain-staging convention (mid drive, mid push, light reverb). Amp model is user-selected; gen-3 model-by-name works.',
       slots_per_device: gen3([
         {
-          slot: { row: 2, col: 1 },
+          slot: { row: 2, col: 2 },
           block_type: 'amp',
           params: p({ drive: 5, bass: 5, mid: 6, treble: 6, master: 6 }),
         },
         {
-          slot: { row: 2, col: 2 },
+          slot: { row: 2, col: 3 },
           block_type: 'reverb',
           params: p({ mix: 12, size: 45 }),
         },
@@ -1145,12 +1146,12 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
         'Modern metal rhythm gain-staging convention (high drive, scooped mids, tight short reverb). Amp model is user-selected; gen-3 model-by-name works.',
       slots_per_device: gen3([
         {
-          slot: { row: 2, col: 1 },
+          slot: { row: 2, col: 2 },
           block_type: 'amp',
           params: p({ drive: 8, bass: 6, mid: 4, treble: 6, presence: 6, master: 5 }),
         },
         {
-          slot: { row: 2, col: 2 },
+          slot: { row: 2, col: 3 },
           block_type: 'reverb',
           params: p({ mix: 8, size: 35 }),
         },

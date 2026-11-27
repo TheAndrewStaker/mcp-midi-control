@@ -18,6 +18,7 @@
  */
 
 import type { MidiConnection } from '../midi/transport.js';
+import type { SafeReplaceReceipt } from '../storage/safeReplace.js';
 
 // ── Canonical vocabulary ────────────────────────────────────────────
 
@@ -692,7 +693,8 @@ export interface RealizeResult {
  *   'bipolar_percent' | 'opaque'
  *
  * Device-native values are accepted unchanged. AM4 ships with
- * 'knob_0_10', 'knob_0_20', 'pf', 'rotary_mic_spacing', 'amp_geq_band'
+ * 'knob_0_10', 'knob_0_20', 'pf', 'rotary_mic_spacing', 'amp_geq_band',
+ * 'reverb_mic_spacing_cm'
  * which the manual / front panel use directly — the LLM should see
  * those words, not a coarsened generic substitute. The encode/decode
  * closures on each `ParamSchema` handle the scaling correctly
@@ -844,6 +846,12 @@ export interface BlockTypeMeta {
   /** Wire value for `set_block(block_type=...)`. */
   wire_value: number;
   display_name: string;
+  /**
+   * True for a block every preset carries that never sits in a grid
+   * location (Axe-Fx II Output, Controllers, Input Noise Gate). Its params
+   * always land, so the "block not placed" / "unrouted" pre-flights skip it.
+   */
+  fixed?: boolean;
 }
 
 // ── Slot / location refs ────────────────────────────────────────────
@@ -920,8 +928,14 @@ export interface ReadResult {
   wire_value: number;
   display_value: number | string;
   unit: Unit;
-  /** Raw wire bytes that produced this read, for diagnostics. */
-  raw_response?: number[];
+  /**
+   * The value exactly as the device's own display renders it ("6.00",
+   * "DELUXE VERB VIB"), when its read response carries a label. Ground truth
+   * per the project's verification order (front panel, then this echo).
+   * Replaced `raw_response` (the raw frame bytes) in 0.10.0: wire bytes are
+   * not display-first, and every consumer of them only wanted this label.
+   */
+  device_label?: string;
 }
 
 export interface BatchReadResult {
@@ -1317,6 +1331,20 @@ export interface ApplyResult {
    */
   saved?: boolean;
   /**
+   * Storage devices that edit a file in place (an MPC project on its card):
+   * what changed and, once written, the receipt from `safeReplaceFile`
+   * (hashes before and after, the backup path). A preview carries `changes`
+   * with no receipt.
+   */
+  file_edit?: {
+    file: string;
+    changes: readonly string[];
+    unchanged?: readonly string[];
+    receipt?: SafeReplaceReceipt;
+  };
+  /** Relay-ready note on a successful apply (e.g. the MPC card edit: reload the project before saving on the unit). */
+  info?: string;
+  /**
    * BK-059: structured pre-flight validation errors. Populated when the
    * dispatcher's spec walk surfaces any of unknown block, unknown param,
    * out-of-range enum value, bad channel letter, malformed slot ref, or
@@ -1532,6 +1560,33 @@ export interface PresetSnapshot {
   category?: string;
   slots: readonly PresetSnapshotSlot[];
   /**
+   * MPC projects only: the mix and instrument state of each track, read from
+   * the project file on the card. Return / submix / outputs strips still at
+   * their defaults are left out and counted.
+   */
+  mpc_project?: {
+    tracks: readonly {
+      track: number;
+      name: string;
+      kind: string;
+      level_db: number | '-inf';
+      pan?: number;
+      muted?: true;
+      instrument?: string;
+      preset?: string;
+      inserts?: readonly string[];
+      sends_to?: readonly string[];
+      midi_out?: { device: string; channel: number };
+      inserts_differ_from_mixer_copy?: readonly string[];
+    }[];
+    omitted_default_buses: number;
+    /**
+     * Set when the snapshot would pass the response budget: from this track
+     * on, rows carry only number, name, kind, level, pan and mute.
+     */
+    detail_omitted_from_track?: number;
+  };
+  /**
    * Loop stations only: the memory tempo and, per track, whether a loop is
    * recorded and how long it is. Read from the stored memory, not the audio.
    */
@@ -1736,13 +1791,25 @@ export interface PresetSnapshotMeta {
   current_location?: string;
   /**
    * True when the working buffer has unsaved edits relative to the last
-   * loaded/saved state, per the server's dirty tracker. False when known
-   * clean; absent when the device provides no dirty signal. On the AM4
-   * this reflects the in-memory edit tracker (the device emits no dirty
-   * push), so it is authoritative for edits made THROUGH this server but
-   * cannot see front-panel edits.
+   * loaded/saved state. False when known clean; absent when the device
+   * provides no dirty signal. On the AM4 it is the device's own "edited"
+   * bit (the same verdict the navigation gate uses), so it sees edits from
+   * the front panel, AM4-Edit and other server instances; see
+   * `is_dirty_source`.
    */
   is_dirty?: boolean;
+  /**
+   * Where `is_dirty` came from: `device` (the unit reported it) or
+   * `this_server_only` (the device read failed, so only this process's own
+   * writes are counted and edits made elsewhere are invisible).
+   */
+  is_dirty_source?: 'device' | 'this_server_only';
+  /**
+   * The name stored at `current_location`, present only when it differs
+   * from the working buffer's own name in `name` (an unsaved build or
+   * rename).
+   */
+  stored_name?: string;
 }
 
 /**
@@ -1822,6 +1889,8 @@ export interface Gen3ModifierView {
   target: string;
   param: number;
   origin: 'pre-chain' | 'chain';
+  /** 1-based modifier slot (slot 1 = modifier effect id 3). */
+  slot?: number;
 }
 
 export interface Gen3SceneControllerView {
@@ -2566,6 +2635,13 @@ export interface DeviceWriter {
   setParams?(ctx: DispatchCtx, ops: readonly WriteOp[]): Promise<BatchWriteResult>;
   setBlock?(ctx: DispatchCtx, slot: SlotRef, change: BlockChange): Promise<WriteResult>;
   setBypass?(ctx: DispatchCtx, block: string, bypassed: boolean, instance?: number): Promise<WriteResult>;
+  /**
+   * Select which channel (A..D, X/Y) a placed block uses on the ACTIVE scene.
+   * Persistent until the next scene/preset change, unlike the transient
+   * select-write-restore that `setParam(..., channel)` performs. Optional:
+   * devices without per-block channels omit it and the tool refuses.
+   */
+  setChannel?(ctx: DispatchCtx, block: string, channel: string | number, instance?: number): Promise<WriteResult>;
   applyPreset?(
     ctx: DispatchCtx,
     spec: PresetSpec,
@@ -2755,6 +2831,18 @@ export interface DeviceWriter {
     ctx: DispatchCtx,
     mode: 'warn' | 'discard' | 'save_active_first',
   ): Promise<GuardResult>;
+
+  /**
+   * Optional read-only check of an apply_preset target BEFORE the dirty-buffer
+   * guard runs, so `save_active_first` never saves the active preset and then
+   * has the apply refuse (e.g. a save over an occupied location). Returns the
+   * refusal as validation errors (zero writes), or undefined to proceed.
+   */
+  preflightApplyTarget?(
+    ctx: DispatchCtx,
+    target: LocationRef,
+    options?: ApplyPresetOptions,
+  ): Promise<ValidationError[] | undefined>;
 
   /**
    * Push a byte-exact preset dump (produced by `export_preset` /
@@ -3148,5 +3236,17 @@ export class DispatchError extends Error {
   ) {
     super(message);
     this.name = 'DispatchError';
+  }
+}
+
+/**
+ * Thrown by `DeviceWriter.validatePreset` to report EVERY spec problem at
+ * once; the apply_preset dispatcher returns `errors` as `validation_errors[]`
+ * (zero writes). A plain Error from validatePreset still yields one entry.
+ */
+export class SpecValidationError extends Error {
+  constructor(public readonly errors: readonly ValidationError[]) {
+    super(errors.map((e) => `${e.path}: ${e.error}`).join('; '));
+    this.name = 'SpecValidationError';
   }
 }

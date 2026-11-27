@@ -200,6 +200,9 @@ export const AUTO_WAH_RECIPES: Readonly<Record<string, AutoWahRecipeSpec>> = Obj
     params_per_device: {
       am4: {
         type: 'Touch-Wah',
+        // A wah peak, not the LOWPASS default's soft tone sweep (see the
+        // ear-tested auto_wah_hendrix note, 2026-11-27).
+        mode: 'BANDPASS',
         start_frequency: 300,
         stop_frequency: 2200,
         // 65 % of knob travel on the 0.1..40 log taper. See the header.
@@ -245,6 +248,7 @@ export const AUTO_WAH_RECIPES: Readonly<Record<string, AutoWahRecipeSpec>> = Obj
     params_per_device: {
       am4: {
         type: 'Touch-Wah',
+        mode: 'BANDPASS',
         start_frequency: 700,
         stop_frequency: 2400,
         // 55 % of knob travel on the 0.1..40 log taper. See the header.
@@ -289,15 +293,23 @@ export const AUTO_WAH_RECIPES: Readonly<Record<string, AutoWahRecipeSpec>> = Obj
     },
     params_per_device: {
       am4: {
+        // Owner ear-tested on the AM4, 2026-11-27 (Hendrix touch-wah build):
+        // the earlier values left mode at its LOWPASS default with emphasis 0,
+        // a soft tone sweep that "doesn't open". BANDPASS + emphasis + a
+        // higher resonance give the vocal "wow"; +3 dB makes up the level a
+        // bandpass loses. Sensitivity 5 is the top of the dynamic window the
+        // owner liked (4..5: soft picks stay low, hard picks open fully).
         type: 'Touch-Wah',
-        start_frequency: 400,
-        stop_frequency: 2800,
-        // 60 % of knob travel on the 0.1..40 log taper. See the header.
-        sensitivity: 3.6,
-        attack_time: 25,
-        release_time: 200,
-        resonance: 5,
+        mode: 'BANDPASS',
+        start_frequency: 300,
+        stop_frequency: 3200,
+        sensitivity: 5,
+        emphasis: 6,
+        attack_time: 15,
+        release_time: 220,
+        resonance: 8,
         mix: 100,
+        level: 3,
       },
       'axe-fx-ii': {
         // VX846: the roster's Vox V846, the wah of the Hendrix era.

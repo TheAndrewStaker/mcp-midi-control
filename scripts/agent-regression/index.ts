@@ -9,6 +9,7 @@
  *   npx tsx scripts/agent-regression/index.ts --device=am4          # one device
  *   npx tsx scripts/agent-regression/index.ts --case=am4-h1-...     # single case
  *   npx tsx scripts/agent-regression/index.ts --model=opus          # override model
+ *   npx tsx scripts/agent-regression/index.ts --max-retries=0       # no flake retry (cheaper)
  *   npx tsx scripts/agent-regression/index.ts --verbose             # echo events
  *   npx tsx scripts/agent-regression/index.ts --real-hardware       # USB transport
  *
@@ -91,6 +92,8 @@ interface CliArgs {
   model?: string;
   verbose: boolean;
   realHardware: boolean;
+  /** Retries after a failed attempt (runner default 1). 0 halves the cost of a failing case. */
+  maxRetries?: number;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -101,6 +104,7 @@ function parseArgs(argv: readonly string[]): CliArgs {
     else if (raw.startsWith('--device=')) out.device = raw.slice('--device='.length) as Device;
     else if (raw.startsWith('--case=')) out.caseId = raw.slice('--case='.length);
     else if (raw.startsWith('--model=')) out.model = raw.slice('--model='.length);
+    else if (raw.startsWith('--max-retries=')) out.maxRetries = Number(raw.slice('--max-retries='.length));
   }
   return out;
 }
@@ -196,6 +200,19 @@ async function main(): Promise<void> {
     } else {
       console.log(`✗ ${verdict.cliVersion}, MCP ${verdict.status}, ${verdict.toolCount} tools.`);
       console.error('');
+      if (verdict.status === 'disabled') {
+        // Seen 2026-11-27: `/mcp` > disable in an interactive session in this
+        // folder writes the server name to the project's disabledMcpServers
+        // (~/.claude.json), and the child claude honours it even under
+        // --strict-mcp-config, because the sweep's server has the same name.
+        console.error('The mcp-midi-control server is DISABLED for this project folder');
+        console.error('(~/.claude.json, projects > this path > disabledMcpServers), and the');
+        console.error('sweep\'s child claude honours that even with its own --mcp-config.');
+        console.error('Re-enable it with /mcp in a Claude Code session here, then make no');
+        console.error('device tool calls in that session while the sweep runs, so its');
+        console.error('server never takes the MIDI ports.');
+        process.exit(2);
+      }
       console.error('Agent sweep would fail every case: the claude CLI is not waiting for');
       console.error('the MCP server to connect before emitting the init event. The agent');
       console.error('sees an empty tool surface and hallucinates <function_calls> XML in prose.');
@@ -264,6 +281,10 @@ async function main(): Promise<void> {
     // module never activates, the fixture has no effect, and the case's
     // pre-conditions ("Z01 carries 'My Clean Build'", "scene read returns
     // 0x7fff") cannot hold. Skip cleanly rather than false-fail.
+    if (args.realHardware && c.mockOnly !== undefined) {
+      skipped.push({ case: c, reason: `mockOnly: ${c.mockOnly}` });
+      continue;
+    }
     if (args.realHardware && c.mockFixture !== undefined) {
       skipped.push({ case: c, reason: `mockFixture requires mock transport; skip in --real-hardware` });
       continue;
@@ -315,7 +336,7 @@ async function main(): Promise<void> {
 
   for (const testCase of cases) {
     if (completed > 0) await sleep(INTER_CASE_MS);
-    const result = await runCase({ case: testCase, model: args.model, verbose: args.verbose });
+    const result = await runCase({ case: testCase, model: args.model, verbose: args.verbose, max_retries: args.maxRetries });
     completed += 1;
     const verdict = result.environmental
       ? '⊘ ENV (OS spawn refusal — not run)'

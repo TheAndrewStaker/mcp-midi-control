@@ -22,6 +22,7 @@ import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import { createModernFractalDescriptor } from '../packages/fractal-gen3/src/factory.js';
 import { FM3_CONFIG } from '../packages/fractal-gen3/src/configs/fm3.js';
 import { GEN3_MODEL_FM3, recomputeGen3Checksum } from '../packages/fractal-gen3/src/simResponders.js';
+import { createGen3Sim } from './_lib/gen3-stateful-sim.js';
 
 let failures = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -37,7 +38,6 @@ const FN_SET_BYPASS = 0x0a;
 const FN_SET_CHANNEL = 0x0b;
 const FN_SET_SCENE = 0x0c;
 const EFFECT_AMP_1 = 58;
-const EFFECT_AMP_2 = 59;
 const EFFECT_DRIVE_1 = 118;
 const EFFECT_REVERB_1 = 66;
 
@@ -193,59 +193,72 @@ console.log('Case 4: channel index outside A..D is refused before sending');
 }
 
 // ── Case 5: apply_preset walks scenes[] and lands on landingScene ──
-console.log('Case 5: apply_preset sends each scene as SET_SCENE -> SET_CHANNEL -> SET_BYPASS');
+// Since the 2026-11-25 fresh build, apply_preset clears the buffer, lays the
+// chain (Input c1 .. Output after the last block), then walks EVERY scene:
+// select it, read the status dump, send only the differences, re-read. The
+// recorder above never answers a read, so this case runs against the
+// stateful sim and asserts the per-scene state the unit ends up holding (the
+// stronger check than the op sequence the old case pinned).
+console.log('Case 5: apply_preset writes each scene\'s channel + bypass and lands on landingScene');
 {
-  const { ctx, sent } = recorder();
-  const result = await writer.applyPreset!(ctx, {
+  const sim = createGen3Sim({ modelByte: GEN3_MODEL_FM3, rows: 4, cols: 12 });
+  const result = await writer.applyPreset!(sim.ctx, {
     slots: [
-      { slot: { row: 2, col: 1 }, block_type: 'drive', id: 'lead_drive' },
-      { slot: { row: 2, col: 2 }, block_type: 'amp' },
-      { slot: { row: 2, col: 3 }, block_type: 'amp', instance: 2 },
+      { slot: { row: 2, col: 2 }, block_type: 'drive', id: 'lead_drive' },
+      { slot: { row: 2, col: 3 }, block_type: 'amp' },
       { slot: { row: 2, col: 4 }, block_type: 'reverb' },
     ],
     scenes: [
       { scene: 1, name: 'Clean', channels: { amp: 'A', reverb: 'C' }, bypassed: { lead_drive: true } },
-      { scene: 4, channels: { amp_2: 'D', lead_drive: 1 }, bypassed: { lead_drive: false, reverb: true } },
+      { scene: 4, channels: { amp: 'D', lead_drive: 1 }, bypassed: { lead_drive: false, reverb: true } },
     ],
     landingScene: 4,
   });
-
-  const sceneOps = sent.filter((f) => [FN_SET_SCENE, FN_SET_CHANNEL, FN_SET_BYPASS].includes(f[5]));
-  const shape = sceneOps.map((f) =>
-    f[5] === FN_SET_SCENE ? `S${f[6] + 1}` : `${f[5] === FN_SET_CHANNEL ? 'ch' : 'byp'}:${effectIdOf(f)}=${f[8]}`,
-  );
-  const expected = [
-    'S1', `ch:${EFFECT_AMP_1}=0`, `ch:${EFFECT_REVERB_1}=2`, `byp:${EFFECT_DRIVE_1}=1`,
-    'S4', `ch:${EFFECT_AMP_2}=3`, `ch:${EFFECT_DRIVE_1}=1`, `byp:${EFFECT_DRIVE_1}=0`, `byp:${EFFECT_REVERB_1}=1`,
-    'S4',
-  ];
-  check('scene op sequence', shape.join(' ') === expected.join(' '), `got ${shape.join(' ')}`);
-  check('scene ops come after block placement and params', sent.indexOf(sceneOps[0]) > 0);
-  check('apply reports ok', result.ok === true, result.failed_step?.error);
-  const sceneNameFrames = sent.filter((f) => f[5] === 0x01 && f[6] === 0x2b);
-  check('scene 1 name goes out as one SET_SCENE_NAME (sub 0x2b)', sceneNameFrames.length === 1);
+  const st = (scene: number, id: number) => sim.scenes[scene - 1].get(id);
+  check('apply reports ok', result.ok === true, result.failed_step?.error ?? result.warning);
+  check('scene 1: amp A, reverb C, drive bypassed', st(1, EFFECT_AMP_1)?.channel === 0 && st(1, EFFECT_REVERB_1)?.channel === 2 && st(1, EFFECT_DRIVE_1)?.bypassed === true);
+  check('scene 4: amp D, drive B engaged, reverb bypassed (reverb channel C from scene 1)',
+    st(4, EFFECT_AMP_1)?.channel === 3 && st(4, EFFECT_DRIVE_1)?.channel === 1 && st(4, EFFECT_DRIVE_1)?.bypassed === false
+    && st(4, EFFECT_REVERB_1)?.bypassed === true && st(4, EFFECT_REVERB_1)?.channel === 2);
+  check('unauthored scene 2 copies scene 1', st(2, EFFECT_REVERB_1)?.channel === 2 && st(2, EFFECT_DRIVE_1)?.bypassed === true);
+  check('lands on scene 4', sim.state.activeScene === 3);
+  const firstScene = sim.sent.findIndex((s) => s.bytes[5] === FN_SET_SCENE);
+  const lastInsert = sim.sent.map((s) => s.bytes[6]).lastIndexOf(0x32);
+  check('scene ops come after block placement', firstScene > lastInsert && lastInsert > 0);
+  check('scene 1 name goes out (SET_SCENE_NAME sub 0x2b)', sim.state.sceneNames[0] === 'Clean');
   check('no not-written note', !/NOT written/.test(result.warning ?? ''), result.warning);
 }
 
-// ── Case 6: an unknown channel letter fails the apply without sending it ──
-console.log('Case 6: apply_preset refuses an unknown channel letter');
+// ── Case 6: an unknown channel letter is a validation error, zero writes ──
+console.log('Case 6: apply_preset refuses an unknown channel letter before sending');
 {
   const { ctx, sent } = recorder();
   const result = await writer.applyPreset!(ctx, {
-    slots: [{ slot: { row: 2, col: 1 }, block_type: 'amp' }],
+    slots: [{ slot: { row: 2, col: 2 }, block_type: 'amp' }],
     scenes: [{ scene: 2, channels: { amp: 'X' } }],
   });
   check('apply not ok', result.ok === false);
-  check('no SET_CHANNEL sent for the bad letter', ofFn(sent, FN_SET_CHANNEL).length === 0);
-  check('still lands on scene 1', sent.at(-1)?.[5] === FN_SET_SCENE && sent.at(-1)?.[6] === 0);
+  check('validation error names the channel', result.validation_errors?.some((e) => e.path === 'scenes[0].channels.amp') === true, JSON.stringify(result.validation_errors));
+  check('nothing sent', sent.length === 0, `${sent.length} frame(s)`);
 }
 
 // ── Case 7: no scenes and no landingScene means no scene traffic ──
 console.log('Case 7: apply_preset without scenes sends no scene ops');
 {
+  const sim = createGen3Sim({ modelByte: GEN3_MODEL_FM3, rows: 4, cols: 12 });
+  const result = await writer.applyPreset!(sim.ctx, { slots: [{ slot: { row: 2, col: 2 }, block_type: 'amp' }] });
+  const sent = sim.sent.map((s) => s.bytes);
+  check('apply ok', result.ok === true, result.warning);
+  // The default build reads the active scene once (SET_SCENE with 0x7F = GET); no scene writes.
+  check('no SET_SCENE / SET_BYPASS writes', ofFn(sent, FN_SET_SCENE).filter((f) => f[6] !== 0x7f).length === 0 && ofFn(sent, FN_SET_BYPASS).length === 0);
+}
+
+// ── Case 8: Amp 2 on an FM3 (one amp) is refused before sending ──
+console.log('Case 8: an instance the FM3 does not have is a validation error');
+{
   const { ctx, sent } = recorder();
-  await writer.applyPreset!(ctx, { slots: [{ slot: { row: 2, col: 1 }, block_type: 'amp' }] });
-  check('no SET_SCENE / SET_BYPASS frames', ofFn(sent, FN_SET_SCENE).length === 0 && ofFn(sent, FN_SET_BYPASS).length === 0);
+  const result = await writer.applyPreset!(ctx, { slots: [{ slot: { row: 2, col: 2 }, block_type: 'amp', instance: 2 }] });
+  check('not ok, instance error, nothing sent', result.ok === false && /allows 1 amp/.test(result.validation_errors?.[0]?.error ?? '') && sent.length === 0, JSON.stringify(result.validation_errors));
 }
 
 if (failures > 0) {

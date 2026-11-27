@@ -36,6 +36,7 @@ device would never answer.
 | Model byte `0x08` | hardware-unverified | The Fractal Audio wiki's SysEx page, plus an independently-surfaced AX8 capture whose checksum byte matches this codec's own formula exactly, which is self-validating |
 | Grid shape, preset count, scene count | hardware-unverified | Cited from the AX8 Owner's Manual |
 | `set_param` / `set_params`, `get_param` / `get_params` | hardware-unverified | Shares the gen-2 codec that is hardware-confirmed on the Axe-Fx II XL+. Every frame is correctly model-byte-addressed |
+| Display values (ranges, tapers, units, selector names) | hardware-unverified | Inherited from the Axe-Fx II XL+, where they were fitted to that device's own display text (Ares 2.00, 2026-11-26). The AX8 runs other firmware and may print some ranges differently; a `get_param` read shows the AX8's own label next to the decoded value, so a mismatch is visible |
 | `set_block`, `set_bypass` | hardware-unverified | Same |
 | `switch_preset`, `switch_scene`, `save_preset`, `scan_locations` | hardware-unverified | Same |
 | `get_preset`, `export_preset`, `import_preset` | hardware-unverified | Same |

@@ -193,6 +193,20 @@ const validationErrorShape = z.looseObject({
       channels: z.array(z.string()).optional(),
       note: z.string(),
     }).optional(),
+    // Storage-device file edits (MPC card): what changed + the safeReplace receipt.
+    file_edit: z.looseObject({
+      file: z.string(),
+      changes: z.array(z.string()),
+      unchanged: z.array(z.string()).optional(),
+      receipt: z.looseObject({
+        path: z.string(),
+        bytes: z.number(),
+        sha256_before: z.string(),
+        sha256_after: z.string(),
+        backup_path: z.string(),
+      }).optional(),
+    }).optional(),
+    info: z.string().optional(),
   };
 
 /**
@@ -414,7 +428,7 @@ export function registerPresetTools(server: McpServer): void {
   server.registerTool('apply_preset', {
     title: 'Build Preset',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-    description: 'Build or replace the entire working-buffer preset in one call. Single-knob tweak: use set_param. Several knobs on the CURRENT tone: use set_params. One block on a linear device: use set_block. Re-apply a byte-exact backup: use import_preset. RECIPES FIRST: scan describe_device(port).recipes[] for a block_stack match and apply via `recipe_id` (+ `overrides`); pasting recipe slots by hand is the dominant failure mode. PITFALLS: FRESH-BUILD, unlisted blocks are removed and unlisted scenes reset. Axe-Fx II applies as a DIFF (placed blocks untouched, unlisted params keep their value); other devices reset params to defaults, restate knobs to keep. Slot is integer 1..4 (linear) or {row,col} (grid). Multi-instance blocks use canonical id (`amp`, `amp_2`), not display names. Grid routing[] must end with `{to:"OUTPUT"}`. Type-gated knobs silently drop; when the user names specific knobs, call find_compatible_types first. RESPONSE: ok:true succeeded, do NOT retry. validation_info[] level:"warning" needs action. ok:false with validation_errors[] = zero writes fired, fix and re-invoke. (1-3 s, +250 ms with save.)',
+    description: 'Build or replace the entire working-buffer preset in one call. Single-knob tweak: use set_param. Several knobs on the CURRENT tone: use set_params. One block on a linear device: use set_block. Re-apply a byte-exact backup: use import_preset. RECIPES FIRST: scan describe_device(port).recipes[] for a block_stack match and apply via `recipe_id` (+ `overrides`); pasting recipe slots by hand is the dominant failure mode. PITFALLS: FRESH-BUILD, unlisted blocks are removed and unlisted scenes reset. On the Axe-Fx II a listed block keeps its unlisted knob values; other devices rebuild from an empty preset; restate knobs to keep. Slot is integer 1..4 (linear) or {row,col} (grid). Multi-instance blocks use canonical id (`amp`, `amp_2`), not display names. Explicit grid routing[] ends with `{to:"OUTPUT"}`. Type-gated knobs silently drop; when the user names specific knobs, call find_compatible_types first. RESPONSE: ok:true succeeded, do NOT retry. validation_info[] level:"warning" needs action. ok:false with validation_errors[] = zero writes fired, fix and re-invoke. (1-3 s; gen-3 grids 5-15 s, say so first; +250 ms with save.)',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       spec: presetShape.optional().describe(
@@ -427,18 +441,21 @@ export function registerPresetTools(server: McpServer): void {
         'Knob / slot / scene / name overrides merged on top of `recipe_id`. SAME SHAPE AS `spec` (slots[]/scenes/name/landingScene/routing), never flat `"amp.type"` keys: an unrecognised key is REFUSED, not applied. Per-slot deep merge keyed by `slot` ref (linear int OR {row,col}): overrides win on conflicting keys, recipe keys not in overrides survive. A slot ref matching NO recipe slot is APPENDED, not merged, so a guessed ref silently adds a block instead of changing one; read the recipe\'s real refs first from describe_device({port, recipe:id}).slots. Scenes / name / landingScene / routing in overrides REPLACE the recipe\'s values entirely (recipes today don\'t author scenes). Ignored when `recipe_id` is not set.',
       ),
       target_location: z.union([z.string(), z.number()]).optional().describe(
-        'Optional navigation target. With save_authorized=false (default): navigate + apply (audition, no save). With save_authorized=true: navigate + apply + save (destructive). Omit to apply at the current working-buffer location.',
+        'Navigate here first. Alone: audition, no save. With save_authorized: also save (destructive). Omit to apply in place.',
+      ),
+      confirm_overwrite: z.boolean().optional().describe(
+        'A save over an occupied location refuses, naming the occupant, until true. Pass only after the user agrees.',
       ),
       save_authorized: SAVE_AUTHORIZED_SCHEMA.describe(
-        'Set true ONLY for explicit save vocab: "save", "store", "keep", "put on", "persist". AUDITION language (NOT save): "build a preset at X", "make me a tone on X", "design a preset at X", "make X look/sound like Y". State descriptions ("I want X to be Z") are audition unless save vocab is added. When ambiguous, audition (false) and ASK before saving; saves are destructive, auditions are reversible by switching presets.',
+        'Set true ONLY for explicit save vocab: "save", "store", "keep", "put on", "persist". AUDITION language (NOT save): "build a preset at X", "make me a tone on X", "design a preset at X", "make X look/sound like Y". State descriptions ("I want X to be Z") are audition unless save vocab is added. When ambiguous, audition (false) and ASK before saving.',
       ),
       on_active_preset_edited: ON_EDITED_SCHEMA.describe(ON_EDITED_DESCRIPTION),
       verify_chain: z.boolean().optional().describe(
-        'Run a read-after-write chain integrity check after the apply ops ack. DEFAULTS ON when the spec includes explicit routing[] edges (a non-linear path is where a broken cable is most likely); otherwise defaults off. Pass true/false to override either way. On the Axe-Fx II the check reads the working-buffer grid and surfaces any cell past col 1 with `routing_mask == 0` (broken cable, signal won\'t flow). Devices without an implemented chain read (AM4, Hydrasynth, and the gen-3 family for now) return a trivial pass. On a returned chain_break, surface the broken cells to the user (with their row/col) BEFORE claiming the preset is ready to play. Adds ~50-100 ms per call on grid devices.',
+        'Read the grid back after the build and check every cable. Default: on with routing[], else off; gen-3 (III/FM3/FM9) always reads back; a mismatch or no read makes ok:false. On a chain break, tell the user the broken cells (row/col) before calling the preset ready. ~50-100 ms.',
       ),
     },
     outputSchema: APPLY_PRESET_OUTPUT_SCHEMA,
-  }, async ({ port, spec, recipe_id, overrides, target_location, save_authorized, on_active_preset_edited, verify_chain }) => {
+  }, async ({ port, spec, recipe_id, overrides, target_location, save_authorized, confirm_overwrite, on_active_preset_edited, verify_chain }) => {
     try {
       const result = await executeApplyPreset({
         port,
@@ -447,6 +464,7 @@ export function registerPresetTools(server: McpServer): void {
         overrides: overrides as unknown as Partial<PresetSpec> | undefined,
         target_location,
         save_authorized,
+        confirm_overwrite,
         on_active_preset_edited,
         verify_chain,
       });

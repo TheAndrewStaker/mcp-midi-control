@@ -103,6 +103,9 @@ export function runAm4MidiRegisterTests(): void {
     ['global.scene_cc', 'none', RAW_INT_NONE_SENTINEL],  // case-insensitive
     ['global.scene_cc', 34.4, 34],                       // rounds to integer
     ['preset.scene_1_midi_1_channel', 16, 16],
+    // fw 2.01+: PEDAL 1/2 at 129/130 on the pedal-capable CC registers (2p2 cache roster).
+    ['global.tuner_cc', 'Pedal 1', 129],
+    ['global.bypass_fx4_cc', 'pedal 2', 130],
   ];
   for (const [key, value, want] of encodeCases) {
     const got = encodeRawIntRegister(KNOWN_PARAMS[key], value);
@@ -113,7 +116,28 @@ export function runAm4MidiRegisterTests(): void {
   expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['global.scene_cc'], 200), 'scene_cc 200 out of range', failed);
   expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['preset.scene_1_midi_1_channel'], 'None'), "scene MIDI channel 'None' (no sentinel)", failed);
   expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['preset.scene_1_midi_1_channel'], 0), 'scene MIDI channel 0 below min', failed);
+  expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['global.scene_cc'], 'Pedal 1'), 'scene_cc has no pedal setting', failed);
+  for (const [key, u32, want] of [['global.scene_incr_cc', 129, 'Pedal 1'], ['global.preset_decr_cc', 130, 'Pedal 2']] as const) {
+    const got = decodeRawIntRegister(KNOWN_PARAMS[key], u32);
+    if (got !== want) failed.push(`decodeRawIntRegister(${key}, ${u32}): expected ${want}, got ${got}`);
+  }
   expectThrows(() => encodeRawIntRegister(KNOWN_PARAMS['global.ext_startval_begin'], 'None'), "ext_startval_begin 'None' (value register, no sentinel)", failed);
+
+  // fw 2.02 hardware (2026-11-25): stepped block knobs read a literal integer.
+  for (const [key, u32, want] of [
+    ['reverb.density', 4, 4], ['reverb.density', 8, 8],
+    ['reverb.voice_1_shift', 12, 12], ['reverb.voice_1_shift', 65524, -12],
+  ] as const) {
+    if (!isRawIntRegister(KNOWN_PARAMS[key])) failed.push(`${key} should be a raw-int register`);
+    const got = decodeRawIntRegister(KNOWN_PARAMS[key], u32);
+    if (got !== want) failed.push(`decodeRawIntRegister(${key}, ${u32}): expected ${want}, got ${got}`);
+  }
+  if (isRawIntRegister(KNOWN_PARAMS['reverb.size'])) failed.push('reverb.size is a Q16 knob, not raw-int');
+  // chorus Number of Voices: stored 1 shows "2" (step 2, hardware 2026-11-25).
+  const voices = KNOWN_PARAMS['chorus.number_of_voices'];
+  if (decodeRawIntRegister(voices, 1) !== 2) failed.push(`number_of_voices raw 1 should read 2, got ${decodeRawIntRegister(voices, 1)}`);
+  if (encodeRawIntRegister(voices, 8) !== 8) failed.push('number_of_voices 8 should pass the range check');
+  expectThrows(() => encodeRawIntRegister(voices, 5), 'number_of_voices 5 is not a step of 2', failed);
 
   if (failed.length > 0) {
     throw new Error(`${failed.length} AM4 MIDI-register case(s) failed:\n` + failed.join('\n'));
@@ -121,4 +145,4 @@ export function runAm4MidiRegisterTests(): void {
 }
 
 export const AM4_MIDI_REGISTER_CASE_COUNT =
-  11 /* classification */ + 7 /* hasNone */ + 7 /* decode */ + 5 /* encode */ + 4 /* rejections */;
+  11 /* classification */ + 7 /* hasNone */ + 7 /* decode */ + 7 /* encode */ + 4 /* rejections */ + 3 /* fw 2.01 pedal */ + 5 /* fw 2.02 stepped knobs */ + 3 /* voices step */;

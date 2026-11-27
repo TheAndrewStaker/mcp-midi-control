@@ -265,3 +265,47 @@ export function parseBurstHead(bytes: readonly number[]): { blockId: number; ite
 }
 
 export { encode14 as gen3Encode14, decode14 as gen3Decode14 };
+
+/**
+ * Build a live grid reply (fn=0x01 sub=0x2E) carrying `cells` (0-based row /
+ * col, effect id or 1024 + shunt index, input mask) - the inverse of
+ * fractal-midi's parseGen3GridLayout: a 361-byte header then the
+ * tail-anchored bit region (u16 id + u16 mask per cell, LSB byte first,
+ * MSB-first bits, 7 bits per byte). FM9 / III frames come out 755 bytes,
+ * the captured length.
+ */
+export function buildGen3GridLayoutFrame(
+  modelByte: number,
+  cells: ReadonlyArray<{ row: number; col: number; id: number; mask: number }>,
+): number[] {
+  const rows = modelByte === GEN3_MODEL_FM3 ? 4 : 6;
+  const cols = modelByte === GEN3_MODEL_FM3 ? 12 : 14;
+  const BASE_BIT = 46;
+  const CELL_BIT = 45;
+  const ROW_STRIDE = 32;
+  const regionBytes = Math.ceil((BASE_BIT + cols * rows * ROW_STRIDE) / 7);
+  const region = new Array<number>(regionBytes).fill(0);
+  const put = (bit: number, n: number, v: number): void => {
+    for (let i = 0; i < n; i++) {
+      const b = bit + i;
+      if ((v >> (n - 1 - i)) & 1) region[Math.floor(b / 7)] |= 1 << (6 - (b % 7));
+    }
+  };
+  for (const c of cells) {
+    const base = CELL_BIT + c.col * rows * ROW_STRIDE + c.row * ROW_STRIDE;
+    put(base, 8, c.id & 0xff); put(base + 8, 8, (c.id >> 8) & 0xff);
+    put(base + 16, 8, c.mask & 0xff); put(base + 24, 8, (c.mask >> 8) & 0xff);
+  }
+  const header = new Array<number>(361).fill(0);
+  header.splice(0, 6, 0x00, 0x01, 0x74, modelByte, FN_PARAMETER_SETGET, SUB_LAYOUT_MAP);
+  return recomputeGen3Checksum([0xf0, ...header.slice(0, 361), ...region, 0x00, 0xf7]);
+}
+
+/** Build a fn=0x13 status dump reply: `id lo, id hi, dd` per block (dd: bit0 bypass, bits 1-3 channel, bits 4-6 channel count). */
+export function buildGen3StatusDumpFrame(
+  modelByte: number,
+  entries: ReadonlyArray<{ effectId: number; bypassed: boolean; channel: number; channelCount?: number }>,
+): number[] {
+  const body = entries.flatMap((e) => [e.effectId & 0x7f, (e.effectId >> 7) & 0x7f, ((e.channelCount ?? 4) << 4) | (e.channel << 1) | (e.bypassed ? 1 : 0)]);
+  return recomputeGen3Checksum([0xf0, 0x00, 0x01, 0x74, modelByte, 0x13, ...body, 0x00, 0xf7]);
+}

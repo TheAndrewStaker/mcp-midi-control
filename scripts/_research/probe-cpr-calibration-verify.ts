@@ -28,14 +28,6 @@ function extractJson(callResult: unknown): Record<string, unknown> {
   return JSON.parse(text);
 }
 
-function decodeAsciiFromRaw(raw: number[]): string {
-  const asciiStart = 18;
-  const bytes = raw.slice(asciiStart);
-  const nullIdx = bytes.indexOf(0);
-  const textBytes = nullIdx >= 0 ? bytes.slice(0, nullIdx) : bytes;
-  return String.fromCharCode(...textBytes).trim();
-}
-
 let passed = 0;
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string) {
@@ -126,8 +118,7 @@ async function main() {
           arguments: { port: PORT, block: 'compressor', name: t.name },
         });
         const getJson = extractJson(getResult);
-        const rawResp = getJson['raw_response'] as number[] | undefined;
-        const asciiLabel = rawResp ? decodeAsciiFromRaw(rawResp) : '(no raw)';
+        const asciiLabel = (getJson['device_label'] as string | undefined) ?? '(no device label)';
         const matches = t.expectPattern.test(asciiLabel);
         check(
           t.description,

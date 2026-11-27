@@ -16,9 +16,10 @@
  */
 
 import { spawn, execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
@@ -41,6 +42,36 @@ import type {
  * and KIT (pad→wave) XML — not the WAV DATA — so a PRM + KIT fixture is enough
  * (mirrors the verify-spdsx hybrid-descriptor golden). Three waves + one kit.
  */
+/**
+ * A fresh MPC card for a case that edits a project: Projects/ and Expansions/
+ * at the top and one song project, "Night Drive", with four tracks and two
+ * sequences, its doubles written with ".0" as the unit writes them. Built per
+ * run (the case may write it), with its own backup folder beside it so a
+ * sweep never adds to the operator's real backups.
+ */
+function makeMpcCardFixture(): { root: string; backups: string } {
+  const base = mkdtempSync(path.join(tmpdir(), 'agent-regression-mpc-'));
+  const root = path.join(base, 'card');
+  const project = path.join(root, 'Projects', 'Songs', 'Night Drive (Nobody)');
+  mkdirSync(path.join(root, 'Expansions'), { recursive: true });
+  mkdirSync(project, { recursive: true });
+  const strip = (name: string, type: number, volume: string, extra = ''): string =>
+    `{"name":"${name}","volume":1,"program":{"name":"${name}","type":${type}${extra},"mixable":{"volume":${volume},"pan":0.5,"mute":false,"sends":[0.0,0.0,0.0,0.0]}}}`;
+  const body = '{"version":28,"data":{"masterTempo":96.0,'
+    + '"sequences":[{"key":0,"value":{"name":"01 Verse","bpm":96.0,"lengthBars":8}},{"key":1,"value":{"name":"02 Chorus","bpm":96.0,"lengthBars":8}}],'
+    + '"songs":[],"tracks":['
+    + [
+      strip('Drums', 0, '0.707946'),
+      strip('Bass', 1, '0.630957'),
+      strip('Keys', 3, '0.707946', ',"plugin":{"plugin":{"description":{"name":"Jura"},"presetName":"Warm Pad"}}'),
+      strip('Lead', 3, '0.562341'),
+    ].join(',')
+    + ']}}';
+  writeFileSync(path.join(project, 'Night Drive.xpj'),
+    gzipSync(Buffer.from(`ACVS\n3.9.1.1\nSerialisableProjectData\njson\nLinux\n${body}`, 'utf8')));
+  return { root, backups: path.join(base, 'backups') };
+}
+
 let spdsxFixtureRoot: string | undefined;
 function getSpdsxFixtureRoot(): string {
   if (spdsxFixtureRoot !== undefined) return spdsxFixtureRoot;
@@ -353,6 +384,11 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
   // reports. Name a root that is not a card, which resolves to "not mounted".
   if (process.env.AGENT_REGRESSION_REAL_HARDWARE !== '1') {
     childEnv.MCP_MPC_CARD_ROOT = path.resolve('scripts', 'agent-regression', 'fixtures');
+  }
+  if (testCase.mpcCard === true && process.env.AGENT_REGRESSION_REAL_HARDWARE !== '1') {
+    const card = makeMpcCardFixture();
+    childEnv.MCP_MPC_CARD_ROOT = card.root;
+    childEnv.MCP_MIDI_BACKUP_DIR = card.backups;
   }
   // Sampler archetype (SPD-SX, storage transport): point the server at a
   // deterministic on-disk fixture instead of a real mounted drive.
@@ -759,6 +795,13 @@ export function applyAssertions(
     if (!succeededByName.has(tool)) {
       failures.push(`must_call: \`${tool}\` did not succeed (${describeMissing(tool)})`);
     }
+  }
+
+  // must_attempt: the tool must be CALLED; an is_error result counts. For cases
+  // whose correct path is a gate refusal the agent relays (a duration or
+  // overwrite handshake), where must_call's success test can never pass.
+  for (const tool of exp.must_attempt ?? []) {
+    if (!callsByName.has(tool)) failures.push(`must_attempt: \`${tool}\` was never called`);
   }
 
   // must_call_any (OR-of-AND). The agent must satisfy at least

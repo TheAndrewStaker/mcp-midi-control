@@ -34,7 +34,7 @@ export function registerNavigationTools(server: McpServer): void {
     description: [
       'Load a stored preset into the working buffer. Same effect as turning the device\'s preset knob.',
       'WARNING: discards unsaved working-buffer edits. The on_active_preset_edited gate refuses by default if the buffer is dirty; pass "discard" or "save_active_first" to override.',
-      '- Location format is per-device. See describe_device.capabilities.preset_location_format (AM4: A1..Z4; II: 1..16384; III/FM3/FM9: integer preset #; Hydra: A1..H8).',
+      '- Location format is per-device. See describe_device.capabilities.preset_location_format (AM4: A1..Z4; II: 1..768 (AX8 512); III/FM3/FM9: integer preset #; Hydra: A1..H8).',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
@@ -137,7 +137,7 @@ export function registerNavigationTools(server: McpServer): void {
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       from: z.union([z.string(), z.number()]).optional().describe(
-        'Inclusive start. AM4 "A1".."Z4"; Axe-Fx II 0..383; Circuit Project 1..64. Omit from AND to for the whole range (paged when large; `note` says).',
+        'Inclusive start. AM4 "A1".."Z4"; Axe-Fx II 1..768; Circuit Project 1..64. Omit from AND to for the whole range (paged when large; `note` says).',
       ),
       to: z.union([z.string(), z.number()]).optional().describe('Inclusive end, from <= to.'),
       pack: z.number().int().min(1).max(32).optional().describe(`Which pack to scan. ${PACK_DESC}`),

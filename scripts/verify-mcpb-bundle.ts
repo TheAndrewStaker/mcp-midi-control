@@ -144,6 +144,12 @@ async function main(): Promise<void> {
       dir,
     );
   }
+  // Runtime data assets read with readFileSync (not imported, so a missing copy
+  // only fails on first use): the gen-3 empty preset templates a fresh build loads.
+  for (const f of ['gen3-fm9-12.00-empty.syx', 'gen3-fm3-13.00-empty.syx', 'gen3-axe3-32.06-empty.syx', 'LICENSE-fractone.txt']) {
+    const p = path.join(nodeModules, '@mcp-midi-control', 'fractal-gen3', 'dist', 'assets', 'empty-presets', f);
+    check(`gen-3 empty preset asset staged: ${f}`, existsSync(p), p);
+  }
   for (const pkg of derived.bare) {
     // Bare packages are installed from local tarballs — `openrig` and
     // `roland-midi` are private:true and unreachable from the registry, so

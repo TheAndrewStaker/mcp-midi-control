@@ -49,11 +49,13 @@
 //   npx tsx scripts/verify-axe-fx-ii-display-units.ts
 
 import {
+  DEVICE_LABEL_CALIBRATION,
   KNOWN_PARAMS,
   displayToWire,
   wireToDisplay,
   type AxeFxIIParam,
 } from 'fractal-midi/gen2/axe-fx-ii';
+import { displayWriteTarget } from 'fractal-midi/shared';
 
 import {
   calibrationEntries,
@@ -134,6 +136,14 @@ interface ResolvedCalibration {
 }
 
 function resolveForVerify(param: AxeFxIIParam): ResolvedCalibration | undefined {
+  // The device-label tier outranks the catalog and the overlay (the resolver
+  // checks it first). Its ordinal entries are not a 0..65534 field, so they are
+  // verified by verify-display-first-fractal over their own wire domain.
+  const measured = DEVICE_LABEL_CALIBRATION[`${param.block}.${param.name}`];
+  if (measured !== undefined) {
+    if (measured.scale === 'ordinal') return undefined;
+    return { displayMin: measured.displayMin, displayMax: measured.displayMax, displayScale: measured.scale };
+  }
   if (param.displayMin !== undefined && param.displayMax !== undefined) {
     return {
       displayMin: param.displayMin,
@@ -348,7 +358,11 @@ function rangeSpan(cal: ResolvedCalibration): number {
       if (ORDINAL_OFFSET_PARAMS.has(`${blockSlug}.${paramName}`)) continue;
       const cal = resolveForVerify(param);
       if (cal === undefined) continue;
-      const expected = displayToWire(mid, cal);
+      // A truncating device-label entry aims a write at the middle of the
+      // printed step (displayWriteTarget), so the read-back prints the value.
+      const measured = DEVICE_LABEL_CALIBRATION[`${blockSlug}.${paramName}`];
+      const target = measured ? Math.min(cal.displayMax, Math.max(cal.displayMin, displayWriteTarget(mid, measured))) : mid;
+      const expected = displayToWire(target, cal);
       check(
         `${blockSlug}.${paramName}: descriptor.encode(midpoint) === displayToWire(midpoint)`,
         encoded === expected,

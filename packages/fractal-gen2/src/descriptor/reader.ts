@@ -507,7 +507,7 @@ export function createReader(config: AxeFxIIConfig): DeviceReader {
         wire_value: wire,
         display_value: display,
         unit: unitFor(param),
-        raw_response: response,
+        ...(parsed.label ? { device_label: parsed.label } : {}),
       };
     },
 
@@ -553,7 +553,7 @@ export function createReader(config: AxeFxIIConfig): DeviceReader {
      * than refusing a save the user asked for on the strength of a failed read.
      */
     async checkOverwriteTarget(ctx: DispatchCtx, location): Promise<OverwriteTargetInfo | undefined> {
-      const n = parseAxeFxIILocation(location, DEVICE_LABEL);
+      const n = parseAxeFxIILocation(location, DEVICE_LABEL, config.presetCount);
       const target_display = String(n + 1); // display slot is 1-based (BK-084)
       let activeWire: number | undefined;
       try {
@@ -1090,8 +1090,8 @@ export function createReader(config: AxeFxIIConfig): DeviceReader {
     },
 
     async scanLocations(ctx, from, to) {
-      const fromN = parseAxeFxIILocation(from, DEVICE_LABEL);
-      const toN = parseAxeFxIILocation(to, DEVICE_LABEL);
+      const fromN = parseAxeFxIILocation(from, DEVICE_LABEL, config.presetCount);
+      const toN = parseAxeFxIILocation(to, DEVICE_LABEL, config.presetCount);
       if (fromN > toN) {
         throw new DispatchError(
           'bad_location',

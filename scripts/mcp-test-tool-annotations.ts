@@ -87,6 +87,7 @@ const ADDITIVE_TOOLS = new Set([
   'set_params',
   'set_block',
   'set_bypass',
+  'set_channel',
   'switch_preset',
   'switch_scene',
   'reconnect_midi',

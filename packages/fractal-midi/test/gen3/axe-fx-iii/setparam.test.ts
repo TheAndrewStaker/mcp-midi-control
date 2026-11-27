@@ -35,7 +35,6 @@ import {
   buildSwitchPresetSysEx,
   buildSetParameter,
   buildSetParameterContinuous,
-  buildGetParameter,
   buildSetParameterBypass,
   buildRequestPresetDump,
   packValue16,
@@ -165,11 +164,6 @@ const cases: Case[] = [
     label: 'buildSetParameter(66, 11, 32767) — Reverb 1 paramId 11 mid',
     built: buildSetParameter(66, 11, 32767),
     expected: 'f00001741001090042000b00007c7f37040000000064f7',
-  },
-  {
-    label: 'buildGetParameter(66, 0) — Reverb 1 query paramId 0',
-    built: buildGetParameter(66, 0),
-    expected: 'f000017410010900420000000000000000000000005ff7',
   },
   {
     label: 'buildSetParameterBypass(66, true) — Reverb 1 bypass via fn=0x01',

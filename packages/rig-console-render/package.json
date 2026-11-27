@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/rig-console-render",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Pure renderer for the Rig Console: signal-flow SVG diagram, self-contained HTML page, and the text peer views. No file I/O, no MIDI, no server: callers load the sources and pass the model in.",
   "private": true,
   "license": "Apache-2.0",

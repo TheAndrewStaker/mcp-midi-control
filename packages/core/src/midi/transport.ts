@@ -138,6 +138,13 @@ export interface MidiConnection {
    * (reads as falsy, no change in behavior).
    */
   slowSendSuspect?: boolean;
+  /**
+   * 'serial' when `send` writes to a raw byte stream (the FM3's USB-CDC port,
+   * serialTransport.ts), where a long SysEx may be written in paced slices;
+   * absent or 'midi' for a USB-MIDI port, where a SysEx must go out whole.
+   * Read by the gen-3 preset-dump load to pace FM3 writes.
+   */
+  transportKind?: 'midi' | 'serial';
   close: () => void;
 }
 

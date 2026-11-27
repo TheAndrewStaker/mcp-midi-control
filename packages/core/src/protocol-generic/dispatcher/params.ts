@@ -59,8 +59,11 @@ function isPseudoBlock(descriptor: DeviceDescriptor, canonicalBlock: string): bo
   // each block_types key before comparing — otherwise every real II block
   // reads as a pseudo-block and its unplaced/unrouted warnings are lost.
   const slug = canonicalBlock.trim().toLowerCase();
-  for (const key of Object.keys(descriptor.block_types)) {
-    if (key.trim().toLowerCase().replace(/\s+\d+$/, '') === slug) return false;
+  for (const [key, meta] of Object.entries(descriptor.block_types)) {
+    // A fixed block (II Output / Controllers / Input Noise Gate) is in every
+    // preset and never on the grid, so it behaves like a pseudo-block here:
+    // 2026-11-27, output.scene_2_main acked but warned "Output not placed".
+    if (key.trim().toLowerCase().replace(/\s+\d+$/, '') === slug) return meta.fixed === true;
   }
   return true;
 }
@@ -263,7 +266,7 @@ export async function executeGetParam(args: {
   channel?: string | number;
   instance?: number;
   include_description?: boolean;
-}): Promise<ReadResult & { device: string; aliased_param_from?: string; description?: string }> {
+}): Promise<ReadResult & { device: string; aliased_param_from?: string; description?: string; warning?: string }> {
   const descriptor = requireDevice(args.port);
   assertInstanceSupported(descriptor, args.instance, `${args.block}.${args.name}`);
   const canonical_block = resolveBlockName(descriptor, args.block);
@@ -274,13 +277,14 @@ export async function executeGetParam(args: {
   // several devices is by arrival order (no correlation id on the wire), so
   // two concurrent reads on one port can swap answers; the lock is what
   // makes that structurally impossible.
-  const result = await withEndpoint(descriptor, (ctx) =>
+  const { result, warning } = await withEndpoint(descriptor, async (ctx) => {
     // Phase A.5: same handle-fault reconnect-and-retry-once as executeSetParam,
     // on the read side (the exact "list_samples succeeded, next call threw"
     // hardware repro applies equally to a bare get_param after a replug).
-    withHandleRetry(ctx, (c) =>
-      descriptor.reader.getParam(c, canonical_block, canonical_name, channel, instance)),
-  { opName: 'get_param' });
+    const r = await withHandleRetry(ctx, (c) =>
+      descriptor.reader.getParam(c, canonical_block, canonical_name, channel, instance));
+    return { result: r, warning: await unplacedReadWarning(descriptor, ctx, canonical_block) };
+  }, { opName: 'get_param' });
   const description = args.include_description
     ? getParamDescription(args.port, canonical_block, canonical_name)
     : undefined;
@@ -289,7 +293,34 @@ export async function executeGetParam(args: {
     device: descriptor.display_name,
     aliased_param_from: aliased_from,
     description,
+    ...(warning !== undefined ? { warning } : {}),
   };
+}
+
+/**
+ * A read of a block that is not placed still answers on some devices (the
+ * Axe-Fx III / FM9 return the last value stored for the block, issues #23 and
+ * #35), so the value says nothing about the preset. Uses the same cached grid
+ * snapshot as the write pre-flight; undefined when the device has no layout
+ * read, the block is placed, or the layout read fails (advisory only).
+ */
+export async function unplacedReadWarning(
+  descriptor: DeviceDescriptor,
+  ctx: DispatchCtx,
+  canonicalBlock: string,
+): Promise<string | undefined> {
+  if (descriptor.reader.getBlockLayoutSnapshot === undefined) return undefined;
+  if (isPseudoBlock(descriptor, canonicalBlock)) return undefined;
+  try {
+    const snapshot = await getCachedBlockLayout(descriptor.id, ctx, () =>
+      descriptor.reader.getBlockLayoutSnapshot!(ctx));
+    if (snapshot.placedBlocks.has(canonicalBlock)) return undefined;
+  } catch {
+    return undefined;
+  }
+  return `No '${canonicalBlock}' block is placed in the active preset on ${descriptor.display_name}, ` +
+    `so this is the last value stored for that block, not a setting the preset uses. ` +
+    `Place it with set_block or apply_preset before relying on it.`;
 }
 
 /**

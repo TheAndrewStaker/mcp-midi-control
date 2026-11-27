@@ -15,7 +15,9 @@
  * Compares: preset name, scene names, routing grid (every cell), the placed
  * block chain (block id, cols/rows, body offsets, per-channel effect types,
  * scene channel/bypass state, amp model + amp knobs, cab banks/dynacab),
- * modifier routing, and scene-controller values. Floats compare with a small
+ * modifier routing (every difference from the reference must be a freed,
+ * source-NONE slot; see compareModifiers), and the Controllers record holding
+ * the scene-controller values. Floats compare with a small
  * epsilon (banker's vs half-up rounding at the last decimal).
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -34,7 +36,14 @@ import {
   FM3_CAB_PROXIMITY_FREQUENCY_BODY_INDEX,
   FM3_CAB_PROXIMITY_FREQUENCY_PARAM_ID,
   typeName,
+  effectName,
 } from '../packages/fractal-gen3/dist/presetBody.js';
+import {
+  controllersRecordPresent,
+  findRecordWalkStart,
+  readModifierSlots,
+  readSceneControllerRaw,
+} from '../packages/fractal-gen3/dist/presetModifiers.js';
 import { gen3WholePresetToSpec } from '../packages/core/dist/protocol-generic/gen3-source.js';
 import { translatePresetSpec } from '../packages/core/dist/protocol-generic/port-preset.js';
 import type { Gen3WholePresetView } from '../packages/core/dist/protocol-generic/types.js';
@@ -187,15 +196,24 @@ function runOracleBank(py: string, bankPath: string, modelId: number): OraclePre
   try { return JSON.parse(r.stdout) as OraclePreset[]; } catch { return undefined; }
 }
 
-function compareOne(ref: OraclePreset, tsBody: ReturnType<typeof decodeGen3Body>, tsName: string, label: string): void {
+function compareOne(
+  ref: OraclePreset,
+  tsBody: ReturnType<typeof decodeGen3Body>,
+  tsName: string,
+  label: string,
+  rawBody: Uint8Array,
+  modelId: number,
+): void {
   check(`${label}: preset name`, ref.preset_name === tsName, `ref="${ref.preset_name}" got="${tsName}"`);
   const rp = ref.params ?? {};
-  // Only the fields the oracle emits are compared; the oracle is the authority.
-  for (const field of ['scene_names', 'grid', 'amp1', 'modifiers', 'scene_controllers'] as const) {
+  // Only the fields the oracle emits are compared; the oracle is the authority
+  // for these. Modifiers and scene controllers are NOT: see compareModifiers.
+  for (const field of ['scene_names', 'grid', 'amp1'] as const) {
     if (!(field in rp)) continue;
     const d = diff(rp[field], oracleVocabulary((tsBody as Record<string, unknown>)[field]), field);
     check(`${label}: ${field}`, d === '', d);
   }
+  compareModifiers(rp.modifiers as OracleModifier[] | undefined, tsBody, label, rawBody, modelId);
   if ('blocks' in rp) {
     const d = diffBlocks(rp.blocks as OracleBlock[], tsBody.blocks ?? []);
     check(`${label}: blocks`, d === '', d);
@@ -207,6 +225,58 @@ function compareOne(ref: OraclePreset, tsBody: ReturnType<typeof decodeGen3Body>
   check(`${label}: blocks are named from the grid, one per placed block`,
     tsBody.blocks_identified_by === 'grid' && JSON.stringify(placed) === JSON.stringify(named),
     `by=${tsBody.blocks_identified_by} grid=${placed.join(',')} blocks=${named.join(',')}`);
+}
+
+interface OracleModifier { source: string; target: string; param: number; origin: string }
+
+/**
+ * Modifiers + scene controllers diverge from the reference on purpose
+ * (presetModifiers.ts): the reference reports freed modifier slots (source
+ * NONE, target words left behind) as live. Instead of equality this checks
+ * that EVERY difference is explained:
+ *  - each modifier we report is also in the reference (by target + param),
+ *    has a resolvable source, and targets a block placed on the grid;
+ *  - each reference modifier we do NOT report sits in a modifier slot whose
+ *    source is NONE (or whose target does not resolve).
+ * Scene controllers: the Controllers record header is where the layout says,
+ * and every scene controller a live modifier uses has a non-trivial value row.
+ */
+function compareModifiers(
+  refMods: OracleModifier[] | undefined,
+  tsBody: ReturnType<typeof decodeGen3Body>,
+  label: string,
+  rawBody: Uint8Array,
+  modelId: number,
+): void {
+  const ours = tsBody.modifiers ?? [];
+  const placed = new Set((tsBody.grid ?? []).filter((c) => !c.is_shunt).map((c) => c.name));
+  // The reference prints families it does not know as a bare id (eid_170).
+  const key = (target: string, param: number): string => `${String(oracleVocabulary(target))}|${param}`;
+  const refKeys = new Set((refMods ?? []).map((m) => key(m.target, m.param)));
+  const ourKeys = new Set(ours.map((m) => key(m.target, m.param)));
+  for (const m of ours) {
+    check(`${label}: modifier ${m.target}.${m.param} is in the reference`, refKeys.has(key(m.target, m.param)));
+    check(`${label}: modifier ${m.target}.${m.param} targets a placed block`, placed.has(m.target));
+    check(`${label}: modifier ${m.target}.${m.param} has a named source`, !/^source_/.test(m.source) && m.source !== 'NONE', m.source);
+  }
+  const slots = readModifierSlots(rawBody, findRecordWalkStart(rawBody));
+  check(`${label}: modifier table holds 1..32 slot records`, slots.length >= 1 && slots.length <= 32, String(slots.length));
+  for (const r of refMods ?? []) {
+    if (ourKeys.has(key(r.target, r.param))) continue;
+    const explained = slots.some((s) => s.targetParam === r.param
+      && key(effectName(s.targetEffectId) ?? `eid_${s.targetEffectId}`, s.targetParam) === key(r.target, r.param)
+      && (s.sourceId === 0 || effectName(s.targetEffectId) === undefined));
+    check(`${label}: reference-only modifier ${r.target}.${r.param} is a freed (source NONE) slot`, explained);
+  }
+  check(`${label}: Controllers record present`, controllersRecordPresent(rawBody, modelId));
+  const rows = readSceneControllerRaw(rawBody, modelId) ?? [];
+  for (const m of ours) {
+    const n = /^Scene Controller (\d)$/.exec(m.source)?.[1];
+    if (!n) continue;
+    const row = rows[Number(n) - 1] ?? [];
+    check(`${label}: used Scene Controller ${n} has a non-trivial value row`,
+      new Set(row).size > 1 || row.some((v) => v > 1), JSON.stringify(row));
+  }
 }
 
 /**
@@ -298,7 +368,7 @@ if (!samplesPresent) {
       let name = '';
       for (let k = 0x08; k < 0x28; k++) { const b = decoded.rawPatch[k]; if (!b) break; name += String.fromCharCode(b); }
       name = name.trim();
-      compareOne(oracle[i], body, name, `III ${bank.includes('BANK_A') ? 'A' : bank.includes('BANK_B') ? 'B' : 'C'}[${i}]`);
+      compareOne(oracle[i], body, name, `III ${bank.includes('BANK_A') ? 'A' : bank.includes('BANK_B') ? 'B' : 'C'}[${i}]`, decoded.body, 0x10);
       presets++;
     }
   }
@@ -316,7 +386,8 @@ if (!samplesPresent) {
       const ref = JSON.parse(r.stdout) as OraclePreset;
       check('FM9 152 export: model id', tsAll.model_id === 0x12);
       check('FM9 152 export: CRC valid', tsAll.crc_valid);
-      compareOne(ref, tsAll, tsAll.preset_name, 'FM9 152');
+      const fm9Body = decodeRawPatch(parsePresetDump(bytes, 0, 0x12).chunkPayloads).body;
+      compareOne(ref, tsAll, tsAll.preset_name, 'FM9 152', fm9Body, 0x12);
     } else {
       console.log(`  (oracle FM9 decode failed): ${(r.stderr || '').split('\n')[0]}`);
     }

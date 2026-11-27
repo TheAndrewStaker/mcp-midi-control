@@ -9,6 +9,7 @@
 
 import {
   DispatchError,
+  SpecValidationError,
   type ApplyResult,
   type ApplySetlistResult,
   type DeviceDescriptor,
@@ -29,6 +30,7 @@ import { backupProjectSlot } from './backup.js';
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
 import { requireDevice, toWirePack, withEndpoint, withHandleRetry } from './core.js';
 import { collectApplyPresetPreflight } from './preflight.js';
+import { runOverwriteGate } from './overwriteGate.js';
 import { translatePresetSpec, type TranslatePresetResult } from '../port-preset.js';
 import { gen3WholePresetToSpec } from '../gen3-source.js';
 import {
@@ -150,6 +152,16 @@ export function collectChannelYInactiveWarnings(
       }
       sceneRefs.push({ scene: sc.scene, channel: entry.channel });
     }
+    // apply_preset is a fresh build: a scene the spec does not list, or a
+    // listed scene that does not name this block's channel, plays the
+    // first channel (AM4 A, II X; gen-3 copies scene 1, itself A unless
+    // listed). Confirmed on AM4 hardware 2026-11-25 (scene_channels
+    // A,B,A,A for a spec listing only scene 2 -> B).
+    const firstCh = channelNamesUpper[0];
+    const listed = new Set(spec.scenes.map((s) => s.scene));
+    const sceneCount = cap.scene_count ?? 0;
+    const hasUnlisted = Array.from({ length: sceneCount }, (_, k) => k + 1).some((n) => !listed.has(n));
+    const defaultsToFirst = sceneRefs.some((s) => s.channel === undefined) || hasUnlisted;
 
     // Only warn when at least one scene explicitly constrains this
     // block's channel. An empty `referencedChannels` means no scene in
@@ -159,6 +171,7 @@ export function collectChannelYInactiveWarnings(
 
     for (const [paramCh, paramMap] of paramChannels) {
       if (referencedChannels.has(paramCh)) continue;
+      if (paramCh === firstCh && defaultsToFirst) continue;
       const droppedParams = Object.keys(paramMap);
       if (droppedParams.length === 0) continue;
       const head = droppedParams.slice(0, 5);
@@ -636,6 +649,40 @@ const PRESET_SPEC_KEYS: readonly string[] = [
  * function (recipe+spec conflict, neither supplied) and surfaces as
  * `isError: true`, which an agent cannot read as success.
  */
+/** Keys each nested spec entry accepts (the slot / scene / routing schemas are loose so a misnamed key reaches here). */
+const NESTED_SPEC_KEYS: Readonly<Record<'slots' | 'scenes' | 'routing', readonly string[]>> = {
+  slots: ['slot', 'block_type', 'params', 'params_by_channel', 'bypassed', 'id', 'instance'],
+  scenes: ['scene', 'channels', 'bypassed', 'name'],
+  routing: ['from', 'to', 'connect'],
+};
+
+/** Refuse unknown keys inside slots[] / scenes[] / routing[] entries and slot {row,col} refs. */
+function rejectUnknownNestedKeys(descriptor: DeviceDescriptor, field: 'spec' | 'overrides', value: unknown): void {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return;
+  const problems: string[] = [];
+  for (const list of ['slots', 'scenes', 'routing'] as const) {
+    const arr = (value as Record<string, unknown>)[list];
+    if (!Array.isArray(arr)) continue;
+    arr.forEach((entry, i) => {
+      if (entry === null || typeof entry !== 'object') return;
+      const bad = Object.keys(entry).filter((k) => !NESTED_SPEC_KEYS[list].includes(k));
+      if (bad.length) problems.push(`${field}.${list}[${i}] has ${bad.map((k) => `"${k}"`).join(', ')} (valid: ${NESTED_SPEC_KEYS[list].join(', ')})`);
+      const ref = (entry as Record<string, unknown>).slot;
+      if (list === 'slots' && ref !== null && typeof ref === 'object') {
+        const badRef = Object.keys(ref).filter((k) => k !== 'row' && k !== 'col');
+        if (badRef.length) problems.push(`${field}.slots[${i}].slot has ${badRef.map((k) => `"${k}"`).join(', ')} (valid: row, col)`);
+      }
+    });
+  }
+  if (problems.length === 0) return;
+  throw new DispatchError(
+    'value_out_of_range',
+    descriptor.display_name,
+    `apply_preset: ${problems.join('; ')}. NOTHING was sent to the device: an unrecognised key is refused rather than dropped, ` +
+      'so a setting you never see applied is never reported as applied.',
+  );
+}
+
 function rejectUnknownSpecKeys(
   descriptor: DeviceDescriptor,
   field: 'spec' | 'overrides',
@@ -690,6 +737,8 @@ export async function executeApplyPreset(args: {
   overrides?: Partial<PresetSpec>;
   target_location?: string | number;
   save_authorized?: boolean;
+  /** Overwrite gate (overwriteGate.ts): true once the user agreed to replace an occupied target. */
+  confirm_overwrite?: boolean;
   on_active_preset_edited?: 'warn' | 'discard' | 'save_active_first';
   /**
    * BK-057: when true, the dispatcher runs `writer.verifyChain` after a
@@ -725,6 +774,8 @@ export async function executeApplyPreset(args: {
 
   rejectUnknownSpecKeys(descriptor, 'overrides', args.overrides);
   rejectUnknownSpecKeys(descriptor, 'spec', args.spec);
+  rejectUnknownNestedKeys(descriptor, 'overrides', args.overrides);
+  rejectUnknownNestedKeys(descriptor, 'spec', args.spec);
 
   // Recipe materialization (Step 2/3 of the 2026-05-22 MCP migration).
   // Resolves `recipe_id` + `overrides` into a full PresetSpec, then
@@ -821,12 +872,18 @@ export async function executeApplyPreset(args: {
       descriptor.writer.validatePreset(normalizedSpec, args.target_location);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const fallback: ValidationError = { path: 'spec', error: message };
+      // A writer may throw a SpecValidationError carrying every problem it
+      // found (gen-3 build planner: layout, duplicates, instance limits,
+      // scene keys), so the agent fixes them in one follow-up call.
+      const carried = err instanceof SpecValidationError ? err.errors : undefined;
+      const errorsOut: ValidationError[] = carried !== undefined && carried.length > 0
+        ? [...carried]
+        : [{ path: 'spec', error: message }];
       return {
         ok: false,
         steps: 0,
         duration_ms: Date.now() - preflightStart,
-        validation_errors: [fallback],
+        validation_errors: errorsOut,
         ...(args.recipe_id !== undefined ? { recipe_id: args.recipe_id } : {}),
         applied_spec: normalizedSpec,
         device: descriptor.display_name,
@@ -880,6 +937,57 @@ export async function executeApplyPreset(args: {
   // interleave between the gate's answer and the writes it authorized, and
   // the chain check reads the state THIS apply produced.
   const { result, chain_integrity } = await withEndpoint(descriptor, async (ctx) => {
+    // A target the writer would refuse is refused BEFORE the dirty guard, so
+    // save_active_first never persists the active preset for an apply that
+    // then sends nothing.
+    if (args.target_location !== undefined && descriptor.writer.preflightApplyTarget) {
+      const refusal = await descriptor.writer.preflightApplyTarget(ctx, args.target_location, { save: args.save_authorized === true });
+      if (refusal !== undefined && refusal.length > 0) {
+        const refused: ApplyResult = {
+          ok: false,
+          steps: 0,
+          duration_ms: 0,
+          validation_errors: refusal,
+          warning: `apply_preset refused before any write (nothing was sent, the active preset was not saved): ${refusal.map((e) => e.error).join(' ')}`,
+        };
+        return { result: refused, chain_integrity: undefined as ApplyResult['chain_integrity'] };
+      }
+    }
+    // Overwrite gate, shared with save_preset (overwriteGate.ts). Runs only when
+    // this apply will PERSIST, and before the dirty guard so save_active_first
+    // never fires for an apply that is then refused. A fresh build replaces the
+    // stored preset even at the active location, so that is gated too.
+    let overwriteNote: string | undefined;
+    if (args.target_location !== undefined && args.save_authorized === true) {
+      const gate = await runOverwriteGate(descriptor, ctx, args.target_location, {
+        confirm_overwrite: args.confirm_overwrite,
+        gateActiveLocation: true,
+      });
+      if (gate.kind === 'occupied' || gate.kind === 'unknown') {
+        const what = gate.kind === 'occupied'
+          ? `${gate.target_display} already holds "${gate.occupant_name}"${gate.is_active_location ? ' (the preset you have loaded)' : ''}, and saving this build there would replace it.`
+          : `${descriptor.display_name} has no decoded way to read what is stored at ${gate.target_display}, so this server cannot tell whether it is empty or holds a preset the save would destroy.`;
+        const refused: ApplyResult = {
+          ok: false,
+          steps: 0,
+          duration_ms: 0,
+          validation_errors: [{
+            path: 'target_location',
+            error: `REFUSING TO OVERWRITE: ${what} Nothing was sent.`,
+            suggestions: ['confirm_overwrite: true (after the user agrees)', 'an empty target_location', 'save_authorized: false (audition only)'],
+          }],
+          warning:
+            `apply_preset refused before any write (nothing was sent, the active preset was not saved): ${what} ` +
+            'Confirm with the user, then call again with confirm_overwrite: true, pick an empty location, or audition without save_authorized.',
+        };
+        return { result: refused, chain_integrity: undefined as ApplyResult['chain_integrity'] };
+      }
+      if (gate.kind === 'precheck_failed') {
+        overwriteNote = 'NOTE: could not pre-check the target for an existing preset before saving (the read failed); confirm with the user that nothing important was overwritten.';
+      } else if (gate.kind === 'no_precheck' && args.confirm_overwrite !== true) {
+        overwriteNote = `NOTE: ${descriptor.display_name} has no overwrite pre-check, so the target location was not scanned for an existing preset before saving. Confirm with the user that the target was free or intended.`;
+      }
+    }
     if (args.target_location !== undefined && descriptor.writer.guardActiveBufferOrSave) {
       const mode = args.on_active_preset_edited ?? 'warn';
       const guard = await descriptor.writer.guardActiveBufferOrSave(ctx, mode);
@@ -916,19 +1024,36 @@ export async function executeApplyPreset(args: {
       && ((wireSpec as { routing?: readonly unknown[] }).routing?.length ?? 0) > 0;
     const verifyChainRequested = args.verify_chain ?? specHasRouting;
     let chain = undefined as ApplyResult['chain_integrity'];
-    if (verifyChainRequested && applied.ok) {
+    if (applied.chain_integrity !== undefined) {
+      // The writer already read the result back as part of the build (gen-3
+      // fresh build); do not pay for a second read.
+      chain = applied.chain_integrity;
+    } else if (verifyChainRequested && applied.ok) {
       if (descriptor.writer.verifyChain !== undefined) {
         chain = await descriptor.writer.verifyChain(ctx, normalizedSpec);
       } else {
         chain = {
           ok: true,
           breaks: [],
-          summary: `verify_chain: not applicable on ${descriptor.display_name} (no chain-routing semantics).`,
+          summary: `verify_chain: NOT VERIFIED on ${descriptor.display_name}: it has no read-after-write chain check (no chain-routing semantics, or no read-back wired).`,
           extra_round_trips: 0,
         };
       }
     }
-    return { result: applied, chain_integrity: chain };
+    // A broken chain is a failed apply: the build sent, but the signal path
+    // the spec asked for is not there.
+    const chainChecked = chain !== undefined && !chain.ok && applied.ok
+      ? {
+          ...applied,
+          ok: false,
+          warning: `${applied.warning ? `${applied.warning} ` : ''}verify_chain FAILED: ${chain.summary}` +
+            (applied.saved === true ? ' The preset WAS saved before this check ran; fix the routing and save again.' : ''),
+        }
+      : applied;
+    const result = overwriteNote !== undefined && chainChecked.saved === true
+      ? { ...chainChecked, info: [chainChecked.info, overwriteNote].filter((s): s is string => Boolean(s)).join(' ') }
+      : chainChecked;
+    return { result, chain_integrity: chain };
   }, { opName: 'apply_preset' });
 
   // Surface any BK-065 alias substitutions + BK-066 case/whitespace

@@ -181,6 +181,13 @@ function collectAutoAliases(param: AxeFxIIParam, canonicalName: string): string[
 // `set_block` lets the LLM pass either the display name ("Amp 1") or
 // the block-slug ("amp"); the descriptor maps both → effectId.
 
+/**
+ * Blocks every II preset carries that never occupy a grid location: Input
+ * Noise Gate (139), Output (140, the per-scene output levels) and Controllers
+ * (141). Marked `fixed` so placement pre-flights do not warn on their params.
+ */
+const FIXED_BLOCK_IDS: ReadonlySet<number> = new Set([139, 140, 141]);
+
 export function buildBlockTypes(isBlockAvailable?: (block: AxeFxIIBlock) => boolean): Record<string, BlockTypeMeta> {
   const result: Record<string, BlockTypeMeta> = {};
   for (const block of AXE_FX_II_BLOCKS) {
@@ -189,6 +196,7 @@ export function buildBlockTypes(isBlockAvailable?: (block: AxeFxIIBlock) => bool
     result[slug] = {
       wire_value: block.id,
       display_name: block.name,
+      ...(FIXED_BLOCK_IDS.has(block.id) ? { fixed: true } : {}),
     };
   }
   return result;
@@ -236,7 +244,12 @@ export function findBlockBySlug(slug: string): AxeFxIIBlock | undefined {
 // Accepts integer or all-digits string. No letter codes (that's the
 // AM4 A01..Z04 encoding).
 
-export function parseAxeFxIILocation(location: string | number, deviceLabel = 'Fractal Axe-Fx II XL+'): number {
+export function parseAxeFxIILocation(
+  location: string | number,
+  deviceLabel = 'Fractal Axe-Fx II XL+',
+  /** The model's physical preset count (XL+ 768, AX8 512); bounds the slot when given. */
+  presetCount?: number,
+): number {
   let n: number;
   if (typeof location === 'number') {
     n = location;
@@ -246,7 +259,7 @@ export function parseAxeFxIILocation(location: string | number, deviceLabel = 'F
       throw new DispatchError(
         'bad_location',
         deviceLabel,
-        `Slot '${location}' is not valid on ${deviceLabel}; expected a 1-indexed display slot (1..16384), not a bank/letter code.`,
+        `Slot '${location}' is not valid on ${deviceLabel}; expected a 1-indexed display slot (1..${presetCount ?? 16384}), not a bank/letter code.`,
         { retry_action: 'Pass an integer or string-of-digits slot number (e.g. 700 for display slot 700).' },
       );
     }
@@ -257,6 +270,13 @@ export function parseAxeFxIILocation(location: string | number, deviceLabel = 'F
       'bad_location',
       deviceLabel,
       `Slot ${n} is out of range on ${deviceLabel} (valid: 1..16384, 1-indexed display slot matching the device front panel; the wire's 14-bit ceiling, see the device's own preset-count note for its PHYSICAL capacity).`,
+    );
+  }
+  if (presetCount !== undefined && n > presetCount) {
+    throw new DispatchError(
+      'bad_location',
+      deviceLabel,
+      `Slot ${n} is out of range on ${deviceLabel} (it has ${presetCount} presets: valid 1..${presetCount}, as shown on the front panel).`,
     );
   }
   return n - 1;

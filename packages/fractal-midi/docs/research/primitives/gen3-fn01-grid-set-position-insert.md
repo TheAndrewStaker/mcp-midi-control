@@ -191,3 +191,18 @@ and the septet effect-id field.
   `F0 00 01 74 12 01 30 00 00 00 00 00 07 00 00 00 00 00 00 00 00 21 F7`
   then `F0 00 01 74 12 01 32 00 76 00 00 00 07 00 00 00 00 00 00 00 00 55 F7`
   (`test/gen3/axe-fx-iii/subactions.test.ts`).
+- 2026-11-25: shunt numbering and clearing pinned for the fresh-build
+  `apply_preset`. Shunt n = id `1024 + n` (byte 9 = `0x08` is the high septet
+  of 1024; STRONG, it is the same u16 id the live grid read `sub=0x2E` reports
+  for shunt n). The writer takes the lowest n the live grid shows free; unique
+  per preset is the working rule, unconfirmed on hardware. Id `0` clears the
+  cell at the cursor. The paced per-cell clear (right to left, >= 40 ms between
+  select and the id-0 insert, then a grid re-read that must come back empty) is
+  a fallback for when the empty-template load is unavailable; its pacing comes
+  from a third-party report (the CC BY 4.0 `axefx-sysex-maps` TOPOLOGY notes,
+  III fw 32.02), and ToneCommand issue #250 (a clear-then-relay going silent on
+  an FM9) is why the grid is re-read; both UNVERIFIED here. Those TOPOLOGY notes
+  show the III's own shunt pool as 1027, 1029, ...; lowest-free is this writer's
+  pick, untested.
+  Golden: shunt and clear fixtures added to
+  `case-gen3-fn01-grid-set-position-insert`.

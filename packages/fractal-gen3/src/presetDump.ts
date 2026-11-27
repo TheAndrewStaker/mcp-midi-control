@@ -77,9 +77,16 @@
  * parse the captured bytes directly. Evidence:
  * `docs/_private/FM9-CAPTURE-RECEIVE+SWEEP-2026-06-04.md`.
  *
- * WRITE-BACK (host→device 0x77/0x78/0x79) is still NOT captured; treat
- * `serializePresetDump` output as file-backup bytes, not a verified
- * device-bound restore stream, until that direction is captured.
+ * WRITE-BACK (host→device 0x77/0x78/0x79) to the EDIT BUFFER: not captured
+ * by us, but implemented by two independent open-source projects that agree
+ * byte for byte on the frames (fractone, MIT, hardware-loaded on FM9 fw 12;
+ * forgefx-midi, Apache-2.0, an un-acked paced load on an FM3): retarget header
+ * bytes 0-1 to `7F 7F` and send frame by frame. The per-frame `64 [fn] 00`
+ * ack is FM9-only evidence (fractone); FM3 / III loads are sent un-acked and
+ * judged by a read-back compare. That path lives in presetDumpEditBuffer.ts /
+ * presetDumpSend.ts / presetDumpLoad.ts (community-beta, untested by us).
+ * A dump still addressed to a STORED preset is file-backup bytes: no
+ * stored-preset write-back has been evidenced, and nothing here sends one.
  */
 
 import { fractalChecksum } from 'fractal-midi/shared';

@@ -49,7 +49,7 @@ import type { Unit } from 'fractal-midi/am4';
 // built dist).
 const _scriptDir = dirname(fileURLToPath(import.meta.url));
 const FRACTAL_MIDI_REPO = resolve(_scriptDir, '..', 'packages', 'fractal-midi');
-const CACHE_PARAMS_OUT = join(FRACTAL_MIDI_REPO, 'src', 'am4', 'cacheParams.ts');
+const CACHE_PARAMS_OUT = process.env.AM4_PARAMS_OUT ?? join(FRACTAL_MIDI_REPO, 'src', 'am4', 'cacheParams.ts');
 
 if (!existsSync(FRACTAL_MIDI_REPO)) {
     console.error(
@@ -113,7 +113,8 @@ interface CacheRec {
   values?: string[];
 }
 
-const DECODED_DIR = 'samples/captured/decoded';
+// AM4_CACHE_OUT_DIR: read a parse-cache.ts output for another firmware's cache.
+const DECODED_DIR = process.env.AM4_CACHE_OUT_DIR ?? 'samples/captured/decoded';
 const s2: CacheRec[] = JSON.parse(readFileSync(join(DECODED_DIR, 'cache-section2.json'), 'utf8'));
 const s3: CacheRec[] = JSON.parse(readFileSync(join(DECODED_DIR, 'cache-section3.json'), 'utf8')).records;
 

@@ -80,6 +80,7 @@ const FM3_MODEL_BYTE = 0x11;
  */
 const FM3_NAMED_CAB_BANKS: ReadonlySet<string> = new Set(['FACTORY 1', 'FACTORY 2', 'LEGACY']);
 import { parsePresetDump, extractPresetName } from './presetDump.js';
+import { collectPresetDumpFrames } from './presetDumpRead.js';
 import { decodeGen3PresetDump, effectName, Gen3EmptyPresetError } from './presetBody.js';
 import type { Gen3DecodedPreset } from './presetBody.js';
 import type { ModernCatalog } from './catalog.js';
@@ -180,7 +181,7 @@ const EDIT_BUFFER_QUIET_MS = 250;
  * tail frame (unlike the stored dump's 0x79), so the burst is terminated by
  * "read until quiet": once the head has arrived, each new dump frame re-arms an
  * inter-frame timer, and the burst is complete when no new dump frame lands
- * within `EDIT_BUFFER_QUIET_MS` (or when a non-dump inbound frame arrives).
+ * within `EDIT_BUFFER_QUIET_MS`. Non-dump inbound frames are ignored.
  * This reads only what the device sends, so it emits no speculative bytes and
  * cannot truncate early (it stops only when the 0x52 frames stop).
  *
@@ -226,10 +227,10 @@ function collectEditBufferDump(
       } else if (headSeen && codec.isEditBufferDumpBody(bytes)) {
         frames.push([...bytes]);
         armQuietTimer();
-      } else if (headSeen) {
-        finish(); // a non-dump inbound frame after the burst started ends it
       }
-      // Frames before the head are ignored (stray broadcasts).
+      // Anything else (before the head, a stray 0x64 status/tempo frame, another
+      // device's SysEx) is ignored; the quiet timer ends the burst. Ending on the
+      // first non-dump frame truncated reads when a broadcast interleaved.
     });
     const headTimer = setTimeout(finish, headTimeoutMs);
   });
@@ -253,55 +254,9 @@ function collectStoredPresetDump(
   deviceLabel: string,
   timeoutMs: number,
 ): Promise<number[][]> {
-  // fn bytes for the stored-preset dump triple.
-  const FN_HEAD = 0x77;
-  const FN_BODY = 0x78;
-  const FN_TAIL = 0x79;
-  const isHead = (b: number[]): boolean => b[5] === FN_HEAD;
-  const isBody = (b: number[]): boolean => b[5] === FN_BODY;
-  const isTail = (b: number[]): boolean => b[5] === FN_TAIL;
-
-  return new Promise<number[][]>((resolve, reject) => {
-    const frames: number[][] = [];
-    let headSeen = false;
-    let settled = false;
-    const finish = (err?: Error): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(headTimer);
-      unsubscribe();
-      if (err !== undefined) {
-        reject(err);
-      } else if (!headSeen) {
-        reject(new Error(`no fn=0x77 stored-preset dump head from ${deviceLabel} within ${timeoutMs}ms`));
-      } else if (frames.length < 2) {
-        reject(new Error(`stored-preset dump head arrived with no fn=0x78 body frames from ${deviceLabel}`));
-      } else {
-        resolve(frames);
-      }
-    };
-    const unsubscribe = ctx.conn.onMessage((bytes) => {
-      const arr = [...bytes];
-      if (isHead(arr)) {
-        if (headSeen) return; // unexpected second head; ignore
-        headSeen = true;
-        clearTimeout(headTimer);
-        frames.push(arr);
-      } else if (headSeen && isBody(arr)) {
-        frames.push(arr);
-      } else if (headSeen && isTail(arr)) {
-        frames.push(arr);
-        finish();
-      } else if (headSeen && !isBody(arr) && !isTail(arr)) {
-        // A non-dump inbound frame after the burst started ends it.
-        finish();
-      }
-      // Frames before the head are ignored (stray broadcasts).
-    });
-    const headTimer = setTimeout(() => finish(), timeoutMs);
-    // Send AFTER subscribing.
-    ctx.conn.send(buildRequestPresetDump(presetNum, codec.modelByte));
-  });
+  // The collector lives in presetDumpRead.ts (shared with the edit-buffer
+  // read-back of the dump load); this wrapper keeps the reader's call shape.
+  return collectPresetDumpFrames(ctx.conn, codec.modelByte, presetNum, deviceLabel, timeoutMs);
 }
 
 /**
@@ -1364,6 +1319,17 @@ export function makeReader(opts: {
       ctx: DispatchCtx,
       location: LocationRef,
     ): Promise<OverwriteTargetInfo | undefined> {
+      if (codec.modelByte === 0x14) {
+        // VP4: its store saves the ACTIVE preset in place (no decoded
+        // destination) and fn=0x0D is not wired, so neither the target's
+        // occupancy nor which location is loaded can be read. Report that
+        // honestly: the dispatcher then refuses unless confirm_overwrite.
+        return {
+          target_display: `${String(location)} (the VP4 saves the LOADED preset in place, whatever location is named)`,
+          is_active_location: false,
+          occupancy_unknown: true,
+        };
+      }
       const n = typeof location === 'number' ? location : Number(location);
       if (!Number.isInteger(n) || n < 0) return undefined;
       const queryName = async (preset: number | 'current') => {
@@ -1388,7 +1354,8 @@ export function makeReader(opts: {
         }
         return {
           target_display: `preset ${n}`,
-          occupant_name: occupant.length > 0 ? occupant : undefined,
+          // "<EMPTY>" is the unit's (and the bundled template's) empty-preset name.
+          occupant_name: occupant.length > 0 && occupant !== '<EMPTY>' ? occupant : undefined,
           is_active_location: isActive,
         };
       } catch {

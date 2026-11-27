@@ -49,6 +49,7 @@ import {
   KNOWN_PARAMS as AXEFX2_KNOWN_PARAMS,
   AXE_FX_II_BLOCKS,
   PARAM_ALIASES_AXEFX2,
+  DEVICE_LABEL_CALIBRATION as AXEFX2_DEVICE_LABEL_CALIBRATION,
 } from '../src/gen2/axe-fx-ii/index.js';
 import {
   PARAMS as AXEFX3_PARAMS,
@@ -143,11 +144,14 @@ const CATALOGS: DeviceCatalog[] = [
     support_status: 'hardware-verified (XL+, firmware Quantum 8.02)',
     source:
       'fractal-midi/src/gen2/axe-fx-ii — wiki SysEx tables + Axe-Edit __block_layout.xml + ' +
-      'Ghidra param-table scan; enum values inline per param (enumValues)',
+      'Ghidra param-table scan; enum values inline per param (enumValues). ' +
+      'DEVICE_LABEL_CALIBRATION: display range / taper / unit / printed decimals measured against the ' +
+      "device's own display labels; where present it supersedes the param's displayMin/displayMax",
     data: {
       KNOWN_PARAMS: AXEFX2_KNOWN_PARAMS,
       AXE_FX_II_BLOCKS,
       PARAM_ALIASES_AXEFX2,
+      DEVICE_LABEL_CALIBRATION: AXEFX2_DEVICE_LABEL_CALIBRATION,
     },
   },
   {

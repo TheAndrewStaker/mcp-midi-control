@@ -259,4 +259,36 @@ export const FM9_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 240,
     },
   },
+  {
+    id: 'fm9-fresh-build-layout',
+    device: 'fm9',
+    description:
+      'Fresh-build layout rules (2026-11-25): with no routing[], the gen-3 build adds Input 1 at ' +
+      'col 1 and Output 1 after the last block, so the agent must lay the blocks on ONE row from ' +
+      'col 2 and must not repeat a block. Proves the routing / slot descriptions and the ' +
+      'grid_build guidance teach that before the first call (a col-1 block is refused).',
+    prompt:
+      "On my FM9 working buffer, build a simple chain: compressor, amp, cab, delay, reverb. Don't save.",
+    expectations: {
+      must_call: ['apply_preset'],
+      max_tools: 10,
+      max_repeats: { apply_preset: 2 },
+      tool_call_validators: [{
+        tool: 'apply_preset',
+        call_index: 0,
+        check: (args) => {
+          const spec = (args.spec ?? {}) as { slots?: Array<{ slot?: unknown; block_type?: string; instance?: number }>; routing?: unknown };
+          const slots = Array.isArray(spec.slots) ? spec.slots : [];
+          const cells = slots.map((s) => (typeof s.slot === 'object' && s.slot !== null ? s.slot as { row: number; col: number } : { row: 2, col: Number(s.slot) }));
+          if (cells.some((c) => c.col === 1)) return 'a block was placed in column 1; Input 1 goes there.';
+          if (spec.routing === undefined && new Set(cells.map((c) => c.row)).size > 1) return 'blocks span two rows without routing[].';
+          const keys = slots.map((s) => `${String(s.block_type).toLowerCase()}#${s.instance ?? 1}`);
+          if (new Set(keys).size !== keys.length) return `a block repeats: ${keys.join(', ')}.`;
+          return true;
+        },
+      }],
+      text_not_contains: ['I saved', 'I stored'],
+      max_wall_seconds: 240,
+    },
+  },
 ];

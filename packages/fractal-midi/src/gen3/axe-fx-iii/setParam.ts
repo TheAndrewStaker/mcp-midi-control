@@ -415,31 +415,11 @@ export function buildSetParameterContinuous(
   return buildSetParameterFloat(effectId, paramId, normalized, SUB_ACTION_SET_CONTINUOUS, modelByte);
 }
 
-/**
- * GET PARAMETER (function 0x01, sub-action 0x09 0x00 with value=0).
- *
- * 🟡 Hypothesis only — no public GET capture exists. The send shape
- * mirrors SET with the value field zeroed, on the theory that the III
- * either echoes the param's current value or emits a `04 01`
- * STATE_BROADCAST asynchronously. Callers should treat a missing
- * response within ~250 ms as "GET not supported on this firmware,"
- * not as a tool error, and fall back to 0x13 STATUS_DUMP or
- * STATE_BROADCAST listening.
- */
-export function buildGetParameter(
-  effectId: number,
-  paramId: number,
-  modelByte: number = AXE_FX_III_MODEL_ID,
-): number[] {
-  return buildEnvelope(FN_PARAMETER_SETGET, [
-    ...SUB_ACTION_SET_TYPED,
-    ...encode14(effectId),
-    ...encode14(paramId),
-    0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00,
-  ], modelByte);
-}
+// buildGetParameter was removed in 0.10.0. It built the typed SET (sub 09 00)
+// with an all-zero value field, so it SET the param to 0 rather than reading it
+// (FM3 fw 12 hardware, community PR #24). Read a param through the fn=0x1F bulk
+// read, or a type name through buildRequestCurrentTypeName.
+
 
 /**
  * GET CURRENT TYPE NAME (function 0x01, sub-action 0x1F 0x00).
@@ -450,7 +430,7 @@ export function buildGetParameter(
  * region carries the model name — decode the reply with `parseGetParameterResponse`
  * (`.displayString`). Byte-confirmed on FM9 fw 11.0 (capture 2026-06-19): the
  * reverb/amp/drive type reads returned "Small Room" / "59 Bassguy Bright" /
- * "Rat Distortion". (`buildGetParameter`'s `09 00` GET elicits the same
+ * "Rat Distortion". (The removed buildGetParameter's `09 00` frame, a SET of 0, elicits the same
  * display-string reply; this `1F 00` form matches what the editor sends.)
  *
  * DO NOT use it to read the CURRENT type: the reply is the roster's FIRST
@@ -727,8 +707,15 @@ export function buildBlockBulkReadPoll(
 // little-endian misreading gives nonsense (e.g. 6272). The trailing 0x00
 // is a fixed third payload byte present in every captured request.
 //
-// Write-back (host → device 0x77/0x78/0x79) is NOT yet captured; do not
-// add a device-bound preset-write builder until that direction is verified.
+// presetNumber 0x3FFF (`03 7F 7F 00`) requests the EDIT BUFFER as the same
+// 0x77/0x78/0x79 dump (fractone reads back every FM9 fw 12 load this way).
+//
+// Write-back to the EDIT BUFFER (host → device 0x77/0x78/0x79, header
+// retargeted to `7F 7F`, each frame acked `64 [fn] 00`) is evidenced by two
+// independent open-source implementations and lives in fractal-gen3
+// (presetDumpEditBuffer.ts); see the primitive
+// gen3-edit-buffer-preset-dump-write. A STORED-preset write-back is not
+// evidenced; do not add one.
 
 export const FN_REQUEST_PRESET_DUMP = 0x03;
 
@@ -2106,7 +2093,7 @@ export function parseMultipurposeResponse(
  */
 export function describeMultipurposeResultCode(code: number): string | undefined {
   switch (code & 0x7f) {
-    case 0x00: return 'bad checksum (MIDI_ERROR_BAD_CHKSUM)';
+    case 0x00: return 'code 0 (ambiguous: MIDI_ERROR_BAD_CHKSUM in the Axe-Edit III table, success on FM9 dump-frame acks)';
     case 0x01: return 'wrong SysEx manufacturer ID (MIDI_ERROR_WRONG_SYSEX_ID)';
     case 0x02: return 'wrong model number (MIDI_ERROR_WRONG_MODEL_NUM)';
     case 0x03: return 'bad argument (MIDI_ERROR_BAD_ARGUMENT)';
@@ -2294,7 +2281,6 @@ export interface ModernFractalCodec {
   buildSetParameter(effectId: number, paramId: number, value: number): number[];
   /** CONTINUOUS SET (sub 52 00): `normalized` in [0,1] → float32(normalized) @pos12. */
   buildSetParameterContinuous(effectId: number, paramId: number, normalized: number): number[];
-  buildGetParameter(effectId: number, paramId: number): number[];
   /** GET CURRENT TYPE NAME (sub 1F 00): reply decodes via parseGetParameterResponse().displayString. */
   buildRequestCurrentTypeName(effectId: number, typeParamId: number): number[];
   isGetParameterResponse(bytes: readonly number[]): boolean;
@@ -2366,7 +2352,6 @@ export function createModernFractalCodec(
     modelByte,
     buildSetParameter: (e, p, v) => buildSetParameter(e, p, v, modelByte),
     buildSetParameterContinuous: (e, p, v) => buildSetParameterContinuous(e, p, v, modelByte),
-    buildGetParameter: (e, p) => buildGetParameter(e, p, modelByte),
     buildRequestCurrentTypeName: (e, p) => buildRequestCurrentTypeName(e, p, modelByte),
     buildSetBypass: (e, b) => buildSetBypass(e, b, modelByte),
     buildSetChannel: (e, c) => buildSetChannel(e, c, modelByte),

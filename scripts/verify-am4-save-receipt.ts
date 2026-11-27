@@ -218,6 +218,64 @@ async function main(): Promise<void> {
         [`acked=${sc.acked}`, `saved_snapshot present=${(sc.saved_snapshot ?? undefined) !== undefined}`],
       );
     }
+
+    // ── Cases 6-9: the SAME gate on apply_preset(target_location + save). ──
+    // 2026-11-25 hardware finding: apply_preset with save to an occupied,
+    // non-active AM4 location replaced the stored preset with no refusal,
+    // while save_preset refused. Both now run dispatcher/overwriteGate.ts.
+    const applyAt = (target_location: string, save: boolean, confirm_overwrite?: boolean) =>
+      client.callTool({
+        name: 'apply_preset',
+        arguments: {
+          port: 'am4',
+          spec: { name: 'Gate Test', slots: [{ slot: 1, block_type: 'amp', params: { gain: 5 } }] },
+          target_location,
+          on_active_preset_edited: 'discard',
+          ...(save ? { save_authorized: true } : {}),
+          ...(confirm_overwrite !== undefined ? { confirm_overwrite } : {}),
+        },
+      });
+    {
+      const r = await applyAt('A01', true);
+      const text = extractText(r);
+      const sc = extractStructured(r);
+      record(
+        'APPLY GATE: apply_preset + save to occupied A01 (no confirm) REFUSES before any write, naming the occupant',
+        sc.ok === false && sc.steps === 0 && sc.saved !== true
+          && OVERWRITE_REFUSAL.test(text) && /Factory 001/.test(text),
+        [`ok=${sc.ok} steps=${sc.steps} saved=${sc.saved}`, `text: ${text.slice(0, 200)}`],
+      );
+    }
+    {
+      const r = await applyAt('A01', true, true);
+      const text = extractText(r);
+      const sc = extractStructured(r);
+      record(
+        'APPLY GATE: confirm_overwrite:true clears it (apply + save to A01 proceeds)',
+        sc.ok === true && sc.saved === true && !OVERWRITE_REFUSAL.test(text),
+        [`ok=${sc.ok} saved=${sc.saved}`, `text: ${text.slice(0, 160)}`],
+      );
+    }
+    {
+      const r = await applyAt('Z03', true);
+      const text = extractText(r);
+      const sc = extractStructured(r);
+      record(
+        'APPLY GATE: apply_preset + save to an EMPTY location (Z03) proceeds with no refusal',
+        sc.ok === true && sc.saved === true && !OVERWRITE_REFUSAL.test(text),
+        [`ok=${sc.ok} saved=${sc.saved}`, `text: ${text.slice(0, 160)}`],
+      );
+    }
+    {
+      const r = await applyAt('A01', false);
+      const text = extractText(r);
+      const sc = extractStructured(r);
+      record(
+        'APPLY GATE: an AUDITION at occupied A01 (no save) is not gated (reversible)',
+        sc.ok === true && sc.saved !== true && !OVERWRITE_REFUSAL.test(text),
+        [`ok=${sc.ok} saved=${sc.saved}`, `text: ${text.slice(0, 160)}`],
+      );
+    }
   } finally {
     await client.close();
   }

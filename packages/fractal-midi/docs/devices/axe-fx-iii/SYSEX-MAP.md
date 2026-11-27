@@ -336,8 +336,9 @@ families, 2216 paramIds, mined ).
 
 - `buildSetParameter(effectId, paramId, value)`, emits the 23-byte
   typed-input SET (sub-action `09 00`). 🟢 verified.
-- `buildGetParameter(effectId, paramId)`, same envelope with value
-  zeroed, hypothesis-only.
+- `buildGetParameter` was removed in 0.10.0: the same envelope with the
+  value zeroed is a SET of 0, not a read (FM3 fw 12 hardware, community
+  PR #24). Reads go through the fn=0x1F bulk read.
 - `buildSetParameterBypass(effectId, bypassed)`, paramId 255
   convenience; the v1.4 PDF's `0x0A SET_BYPASS` is preferred for
   production bypass writes.
@@ -952,8 +953,9 @@ same positional body); see primitive [[am4-fn1f-atomic-read]] and the new
 A 2026-06-04 FM9 capture (fw 11.00 / FM9-Edit 1.03.19; Fractal-Bot "Receive" of a
 run of presets) is the **first hardware confirmation of the device→host preset dump**
 and its trigger. The 0x77/0x78/0x79 envelope previously documented below (under the
-"PRESET-SAVE" community-RE rows) is confirmed in the **read** direction; the host→device
-**write-back** direction is still NOT captured (the editor received, never sent).
+"PRESET-SAVE" community-RE rows) is confirmed in the **read** direction. The host→device
+direction is not captured by us (the editor received, never sent); the EDIT-BUFFER write
+is evidenced by third-party implementations, see the next section.
 
 ```
 OUT  F0 00 01 74 [model] 03 [preset#:14b BIG-ENDIAN septet] [cs] F7   (10 B) REQUEST_PRESET_DUMP
@@ -984,6 +986,47 @@ IN   F0 00 01 74 [model] 79 [3B] [cs] F7                              (11 B) DUM
   (1290 B) body + `fn=0x7c` tail. Empty slots are all-`0x7F`. Bonus IR-backup capability,
   not yet wired.
 - Full decode + evidence is in the maintainer's private session notes.
+
+### Edit-buffer preset dump WRITE (host→device 0x77/0x78/0x79, community-beta, untested by us)
+
+Load a whole preset into the edit buffer by sending the dump back with the 0x77 header
+re-addressed to the edit buffer. Nothing is stored.
+
+```
+OUT  F0 00 01 74 [model] 77 7F 7F [hdr2..4 as read] [cs] F7   header, preset 0x3FFF
+IN   F0 00 01 74 [model] 64 77 00 [cs] F7                     per-frame ack (FM9 evidence only)
+OUT  F0 00 01 74 [model] 78 [00 08][3072 B] [cs] F7  x N      chunks (III 16, FM3/FM9 8)
+IN   F0 00 01 74 [model] 64 78 00 [cs] F7                     after each chunk (FM9)
+OUT  F0 00 01 74 [model] 79 [3 B] [cs] F7                     footer
+IN   F0 00 01 74 [model] 64 79 00 [cs] F7                     (FM9)
+```
+
+- The per-frame ack is FM9-only evidence (fractone, fw 12). FM3 / III: unknown. Our
+  sender probes the header ~400 ms on those; silence sends the rest un-acked 150 ms
+  apart and the edit-buffer read-back compare is the judge.
+
+- Only header bytes 6-7 (`7F 7F`) and the header checksum change: the chunks, the
+  raw-patch CRC and the footer XOR do not cover the header. Header bytes 8-10 stay as
+  read (III `00 00 01`, FM3/FM9 `00 40 00`).
+- A nonzero result code on any frame is a refusal; retry the whole transfer (fractone: 3
+  attempts, 150 ms apart; 300 ms settle after the footer ack).
+- Send nothing before the header (a fn=0x01 sub=0x27 switch first left the FM9 on preset
+  #0, per fractone). FM3 serial: 64-byte slices at ForgeFX's 64 B / 3 ms average rate
+  (we pause 12 ms per 4 slices; a 3 ms Windows timer lasts ~15.6 ms).
+- Read back with `fn=0x03 7F 7F 00`; the FM9 answers with header `7F 00`. The unit
+  recalculates some Amp words on load, so compare word for word with that allowlist
+  (`packages/fractal-gen3/src/presetDumpCompare.ts`); FM9 allowlist hardware-proven by
+  fractone, FM3/III unverified.
+- Evidence: fractone (GreyManSoftware, MIT; FM9 fw 12 hardware, including a read-back
+  fixture our compare accepts) and forgefx-midi (sKuhLight, Apache-2.0; FM3 un-acked load validated),
+  byte-identical on the retarget. The Axe-Edit III store flow mined from Ghidra (below)
+  likewise re-emits the file bytes, patching only the header preset field. Not captured or
+  run by us. Primitive: [`gen3-edit-buffer-preset-dump-write`](../../research/primitives/gen3-edit-buffer-preset-dump-write.md).
+- **Result code 0x00 conflict:** the fn=0x64 table labels 0x00 BAD_CHKSUM, but for dump
+  frames fractone treats `64 [fn] 00` as success on FM9 hardware (as the Axe-Fx II does
+  for its writes). Code 0 is AMBIGUOUS. The dump path follows the hardware report and
+  never goes through the fn=0x01 rejection watch; fn=0x01 live writes have never drawn
+  `64 01 00` on success, so that watch keeps treating it as a rejection.
 
 ### Stored preset body: which chain entry is which block (2026-11-12)
 
@@ -1098,6 +1141,24 @@ high septet) = `0x08`. Full decode + golden: primitives
 `docs/capture-guides/loopmidi-editor-emulation.md`. The codec's `set_block`
 now emits this confirmed `sub=0x32` insert op (was the ported, untested
 `fn=0x05`); device-side persistence remains the hardware-verification step.
+
+**Shunts, clearing, and pacing (2026-11-25).** A shunt is the same `sub=0x32`
+insert with id `1024 + n` (byte 8 = n low septet, byte 9 = `0x08` for n < 128):
+STRONG, the id matches the live grid read's u16 id field (`1024 + n` for shunt
+n) and the editor capture's byte 9. The index n is chosen by the writer as the
+lowest index the live grid read shows free; uniqueness per preset is the
+working rule (not yet confirmed on hardware). Id `0` clears the cell at the
+cursor. When the empty-template load cannot be used, this server clears cell by
+cell, right to left, with >= 40 ms between each `sub=0x30` select and its
+`sub=0x32` id-0 insert, then re-reads the grid and refuses to build on a buffer
+that is not empty. The 40 ms pacing is a third-party report (the CC BY 4.0
+`axefx-sysex-maps` TOPOLOGY notes, III fw 32.02: faster deletes drop), and
+ToneCommand issue #250 reports a per-cell clear-then-relay going silent on an
+FM9 (fw 11), which is why the result is re-read and the build refuses on a
+non-empty buffer. Both UNVERIFIED by this project. The same TOPOLOGY notes list
+the III's own shunt pool as 1027, 1029, ...; this writer's lowest-free choice is
+a different pick and is untested on hardware.
+Golden: primitive `gen3-fn01-grid-set-position-insert` (shunt + clear fixtures).
 
 #### sub=0x35 SET_GRID_ROUTING: full decode
 
@@ -1421,6 +1482,14 @@ full extraction evidence.
 | 0x19 | MIDI_ERROR_CMD_NOT_SUPPORTED | command not supported |
 | 0x1A | MIDI_ERROR_NULL_DATA | null data |
 | 0x1B | MIDI_ERROR_FLASH_WRITE_FAILED | flash write failed |
+
+**Open question on 0x00 (2026-11-25).** fractone (MIT) accepts `64 [fn] 00` as the
+per-frame SUCCESS of an edit-buffer preset dump on FM9 fw 12 hardware, and the Axe-Fx II
+answers successful writes with result 0x00 too. The single bad-checksum capture above
+may therefore show a unit that ignored the checksum and acknowledged, rather than a
+label at index 0. The preset-dump path treats 0x00 as ack; the generic SET bracket
+(`sendAndWatchForError`) still reports any echoed 0x64 as a rejection. Unresolved until a
+capture pairs a known-bad and a known-good frame on gen-3.
 
 Notable for our use: 0x05 INVALID_FXID supersedes a previously
 mis-labeled "NACK" entry. 0x06 INVALID_PARAMID is the code we will

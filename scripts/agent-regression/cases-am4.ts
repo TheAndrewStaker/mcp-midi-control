@@ -1110,16 +1110,18 @@ export const AM4_CASES: AgentRegressionCase[] = [
           },
         },
         {
-          // If apply_preset IS called, it must NOT target Z01 directly
-          // (working-buffer apply without target_location is OK; targeted
-          // persist to Z01 without user confirmation is the regression).
+          // If apply_preset IS called with a save to Z01, the server's overwrite
+          // gate (0.10.0, shared with save_preset) refuses it, which is safe.
+          // The regression is FORCING it: confirm_overwrite:true before the
+          // user agreed.
           tool: 'apply_preset',
           call_index: 0,
           optional: true,
           check: (args) => {
-            const target = (args as { target_location?: unknown }).target_location;
-            if (target === 'Z01' || target === 'Z1') {
-              return `apply_preset called with target_location='${String(target)}' BEFORE user confirmation; overwrite gate bypassed. Should have scanned, surfaced "My Clean Build", and asked the user.`;
+            const a = args as { target_location?: unknown; save_authorized?: unknown; confirm_overwrite?: unknown };
+            const target = a.target_location;
+            if ((target === 'Z01' || target === 'Z1') && a.save_authorized === true && a.confirm_overwrite === true) {
+              return `apply_preset saved to populated Z01 with confirm_overwrite:true BEFORE user confirmation; overwrite gate bypassed.`;
             }
             return true;
           },
@@ -1160,6 +1162,41 @@ export const AM4_CASES: AgentRegressionCase[] = [
     },
   },
 
+  // ── apply_preset build-and-save onto an occupied location (0.10.0 gate)
+  //
+  // 2026-11-25 AM4 hardware finding: apply_preset(target_location,
+  // save_authorized) replaced an occupied stored preset with no refusal. The
+  // dispatcher now runs save_preset's overwrite gate on this path. The agent
+  // must relay the refusal (naming "My Clean Build") and ask, never force it
+  // with confirm_overwrite:true on its own.
+  {
+    id: 'am4-apply-save-overwrite-gate',
+    device: 'am4',
+    mockFixture: 'populated-z01',
+    description: 'apply_preset build + save onto populated Z01: the server refuses with the occupant name; the agent must surface "My Clean Build" and ask before passing confirm_overwrite.',
+    prompt: 'Build me a high-gain Mesa rhythm tone and save it to Z01.',
+    expectations: {
+      must_call_any: [['apply_preset'], ['scan_locations']],
+      max_tools: 6,
+      tool_call_validators: [
+        {
+          tool: 'apply_preset',
+          call_index: 0,
+          optional: true,
+          check: (args) => {
+            const a = args as { target_location?: unknown; save_authorized?: unknown; confirm_overwrite?: unknown };
+            if (a.confirm_overwrite === true) {
+              return 'apply_preset passed confirm_overwrite:true on populated Z01 before the user agreed; overwrite gate bypassed.';
+            }
+            return true;
+          },
+        },
+      ],
+      text_contains: ['My Clean Build'],
+      max_wall_seconds: 90,
+    },
+  },
+
   // ── Phantom-param pre-flight surfaces unplaced-block warning
   //
   // Extends the ValidationInfo[] soft-warn pattern from apply_preset to
@@ -1185,7 +1222,11 @@ export const AM4_CASES: AgentRegressionCase[] = [
       // the dispatcher fires the phantom-param pre-flight and returns
       // validation_info[]. Acceptable follow-ups: set_block to place the
       // phaser, OR surface the gap without further wire writes.
-      must_call: ['set_param'],
+      // Reading the preset FIRST and asking before writing is equally safe
+      // (2026-11-25 real-hardware sweep: the agent read the chain, saw no
+      // phaser, asked which slot to replace). Either path must name the gap.
+      must_call_any: [['set_param'], ['get_preset']],
+      text_contains_any: [['no phaser'], ['not placed'], ['isn\'t placed'], ['not in the'], ['not on the']],
       max_tools: 5,
       // The agent must NOT claim success at face value. Positive-claim
       // shapes for the failure mode: "phaser rate set to 3" / "applied"
@@ -1540,6 +1581,70 @@ export const AM4_CASES: AgentRegressionCase[] = [
           if (!queries.every((q) => String(q.block).toLowerCase() === 'amp')) {
             return `get_params queries should all target the amp block; got ${JSON.stringify(queries.map((q) => q.block))}.`;
           }
+          return true;
+        },
+      }],
+      max_wall_seconds: 60,
+    },
+  },
+
+  // ── Coverage: set_channel (0.10.0) ─────────────────────────────────────────
+  {
+    id: 'am4-set-channel-switch',
+    device: 'am4',
+    description: 'Channel switch: "put the amp on channel C" asks for the block to PLAY channel C, which is set_channel. set_param with a channel argument edits a channel without switching to it, so it is the wrong tool here. Before 0.10.0 there was no unified channel select at all.',
+    prompt: 'On the AM4, switch the amp over to channel C so I can hear that channel.',
+    expectations: {
+      must_call: ['set_channel'],
+      max_tools: 4,
+      tool_call_validators: [{
+        tool: 'set_channel',
+        check: (args) => {
+          if (String(args.block).toLowerCase() !== 'amp') return `set_channel should target the amp, got ${JSON.stringify(args.block)}.`;
+          const ch = args.channel;
+          if (!(String(ch).toUpperCase() === 'C' || ch === 2)) return `set_channel should select C (or index 2), got ${JSON.stringify(ch)}.`;
+          return true;
+        },
+      }],
+      max_wall_seconds: 60,
+    },
+  },
+  {
+    id: 'am4-fw202-new-amp-type',
+    device: 'am4',
+    description: 'Firmware 2.02 added "Brit JVM Crunch" (amp type 250). Set-by-name must reach the appended ordinal: before the 2.02 roster regeneration the name did not exist and amp.type capped at 247.',
+    prompt: 'On the AM4, change the amp type to Brit JVM Crunch. Working buffer only, do not save.',
+    expectations: {
+      must_call: ['set_param'],
+      must_not_call: ['save_preset'],
+      max_tools: 5,
+      tool_call_validators: [{
+        tool: 'set_param',
+        call_index: 'last',
+        check: (args, result) => {
+          if (String(args.block).toLowerCase() !== 'amp' || String(args.name).toLowerCase() !== 'type') return `expected set_param amp.type, got ${args.block}.${args.name}`;
+          if (result !== undefined && !/Brit JVM Crunch/i.test(result)) return `set_param result does not echo "Brit JVM Crunch": ${result.slice(0, 160)}`;
+          return true;
+        },
+      }],
+      max_wall_seconds: 60,
+    },
+  },
+  {
+    id: 'am4-fw202-renamed-amp-type',
+    device: 'am4',
+    description: 'Firmware 2.01 renamed amp type 56 "Deluxe Tweed" to "Deluxe Tweed Bright" in place (same ordinal) and added a separate "Deluxe Tweed Normal" at 248. The old name must resolve to the renamed entry (firmwareRenames.ts), not error and not land on Normal.',
+    prompt: 'On the AM4, set the amp type to Deluxe Tweed. Working buffer only, do not save.',
+    expectations: {
+      must_call: ['set_param'],
+      must_not_call: ['save_preset'],
+      max_tools: 5,
+      tool_call_validators: [{
+        tool: 'set_param',
+        call_index: 'last',
+        check: (args, result) => {
+          if (String(args.block).toLowerCase() !== 'amp' || String(args.name).toLowerCase() !== 'type') return `expected set_param amp.type, got ${args.block}.${args.name}`;
+          if (result !== undefined && !/Deluxe Tweed (Bright|Normal)/i.test(result)) return `result does not name a Deluxe Tweed model: ${result.slice(0, 160)}`;
           return true;
         },
       }],

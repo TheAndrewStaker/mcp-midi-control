@@ -166,7 +166,8 @@ function buildProbeList(filters: {
   const seen = new Set<string>();
   for (const p of Object.values(KNOWN_PARAMS) as ReadonlyArray<AxeFxIIParam>) {
     if (p.controlType !== 'select') continue;
-    if (!p.enumValues || Object.keys(p.enumValues).length === 0) continue;
+    // --include-unrostered: also dump selects the catalog has no roster for.
+    if ((!p.enumValues || Object.keys(p.enumValues).length === 0) && !process.argv.includes('--include-unrostered')) continue;
     if (filters.block && p.block !== filters.block) continue;
     if (filters.paramId !== undefined && p.paramId !== filters.paramId) continue;
     const effectId = firstInstanceByGroup.get(p.groupCode);
@@ -174,7 +175,7 @@ function buildProbeList(filters: {
     const key = `${p.block}.${p.paramId}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const catalogStrings = Object.entries(p.enumValues)
+    const catalogStrings = Object.entries(p.enumValues ?? {})
       .map(([k, v]) => [Number(k), v] as [number, string])
       .sort((a, b) => a[0] - b[0])
       .map(([, v]) => v);

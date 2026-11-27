@@ -42,10 +42,10 @@ id, so a device that exists in the server always has a page here.
 | Fractal AX8 | [`ax8`](devices/ax8.md) | `community-beta` | Build a small preset in one step, the first AX8 hardware run of any kind | SESSION |
 | Fractal Axe-Fx Standard / Ultra | [`axe-fx-gen1`](devices/axe-fx-gen1.md) | `community-beta` | One structural editing-session capture, which unlocks preset authoring and save | CAPTURE |
 | Fractal Axe-Fx II XL+ | [`axe-fx-ii`](devices/axe-fx-ii.md) | `verified` | Tell us if you own a Mark I, Mark II or non-plus XL | REPORT |
-| Fractal Axe-Fx III | [`axe-fx-iii`](devices/axe-fx-iii.md) | `community-beta` | Re-run the write-verify probe on 0.9.1 (`set_block` placement) | SESSION |
+| Fractal Axe-Fx III | [`axe-fx-iii`](devices/axe-fx-iii.md) | `community-beta` | Re-run the write-verify probe on 0.10.0 (`set_block` placement) | SESSION |
 | Novation Circuit Tracks | [`circuit-tracks`](devices/circuit-tracks.md) | `verified` | Confirm a synth parameter write by ear | SESSION |
 | Fractal FM3 | [`fm3`](devices/fm3.md) | `community-beta` | Your FM3-Edit definition cache | DONATE |
-| Fractal FM9 | [`fm9`](devices/fm9.md) | `community-beta` | Build a preset through the tools on 0.9.1 | SESSION |
+| Fractal FM9 | [`fm9`](devices/fm9.md) | `community-beta` | Build a preset through the tools on 0.10.0 | SESSION |
 | ASM Hydrasynth | [`hydrasynth`](devices/hydrasynth.md) | `verified` | Tell us if you have a Deluxe or a Keyboard | REPORT |
 | Arturia MicroFreak | [`microfreak`](devices/microfreak.md) | `verified` | Run the Arturia discovery probe, which validates the method that unblocks its siblings | PROBE |
 | Arturia MiniFreak | [`minifreak`](devices/minifreak.md) | `generic-only` | **Recover the Arturia device-code byte.** One read-only minute, one byte, and the entire SysEx surface unblocks | PROBE |

@@ -16,7 +16,7 @@
  *                        `executeLookupLineage`. Pure introspection.
  *   - `params.ts`      — `executeSetParam`, `executeGetParam`,
  *                        `executeSetParams`, `executeGetParams`.
- *   - `layout.ts`      — `executeSetBlock`, `executeSetBypass`.
+ *   - `layout.ts`      — `executeSetBlock`, `executeSetBypass`, `executeSetChannel`.
  *   - `navigation.ts`  — `executeSwitchPreset`, `executeSavePreset`,
  *                        `executeSwitchScene`, `executeRename`,
  *                        `executeScanLocations`.
@@ -102,7 +102,7 @@ export {
   executeSetParams,
   GET_PARAMS_MAX_QUERIES,
 } from './dispatcher/params.js';
-export { executeSetBlock, executeSetBypass } from './dispatcher/layout.js';
+export { executeSetBlock, executeSetBypass, executeSetChannel } from './dispatcher/layout.js';
 export {
   executeDeleteProject,
   MAX_DELETES_PER_CALL,

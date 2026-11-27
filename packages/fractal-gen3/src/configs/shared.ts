@@ -45,6 +45,16 @@ export const MODERN_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly strin
 // same 8-scene / A-D-channel model). Each device adds a `device_note`
 // topic naming itself + its grid so the agent knows which unit it's on.
 
+/** apply_preset on the gen-3 GRID devices (III / FM3 / FM9; not the VP4). */
+export const GRID_BUILD_GUIDANCE: Readonly<Record<string, string>> = Object.freeze({
+  grid_build: [
+    'apply_preset REPLACES the whole edit buffer (unsaved edits are lost) and takes',
+    '~5-15 s: tell the user first. No routing[]: one row from col 2 (a bare slot N is',
+    'col N); Input 1, Output 1, shunts, cables added. Read back; a mismatch or no',
+    'read is ok:false and unsaved.',
+  ].join('\n'),
+});
+
 export const MODERN_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.freeze({
   diagnostic_isolation: [
     'When the user reports an unwanted artifact in a tone, isolate via',
@@ -102,10 +112,7 @@ export const MODERN_AGENT_GUIDANCE: Readonly<Record<string, string>> = Object.fr
     "label, it does not unlock the tool. Drive the tools normally; verify",
     "by the user's ear and front panel, not by withholding the write.",
     '',
-    'The modern Fractal protocol layer is partly community-derived. Some',
-    'operations are documented in the Fractal third-party MIDI spec;',
-    'others are ported from the Axe-Fx II family with this device\'s model',
-    'byte. When an op is rejected, the device returns an error frame',
+    'When an op is rejected, the device returns an error frame',
     'with a named result code; report it verbatim to the user so they',
     'can confirm by ear / by panel.',
     '',
@@ -293,7 +300,7 @@ export const WIDE_GRID_EXAMPLE_SPEC: PresetSpec = {
   slots: [
     {
       // The user-facing Drive / OD pedal (ID_FUZZ family): drive/tone/level.
-      slot: { row: 2, col: 1 },
+      slot: { row: 2, col: 2 },
       block_type: 'drive',
       params_by_channel: {
         A: { type: 3, drive: 5, tone: 5, level: 5 },
@@ -301,16 +308,16 @@ export const WIDE_GRID_EXAMPLE_SPEC: PresetSpec = {
     },
     {
       // The Amp block (ID_DISTORT family) carries the tone stack.
-      slot: { row: 2, col: 2 },
+      slot: { row: 2, col: 3 },
       block_type: 'amp',
       params_by_channel: {
         A: { type: 3, bass: 5, mid: 5, treble: 5, master: 5 },
       },
     },
-    { slot: { row: 2, col: 3 }, block_type: 'amp', instance: 2 },
-    { slot: { row: 2, col: 4 }, block_type: 'cab' },
+    { slot: { row: 2, col: 4 }, block_type: 'amp', instance: 2 },
+    { slot: { row: 2, col: 5 }, block_type: 'cab' },
     {
-      slot: { row: 2, col: 5 },
+      slot: { row: 2, col: 6 },
       block_type: 'reverb',
       params_by_channel: {
         A: { type: 3, time: 5, mix: 25 },

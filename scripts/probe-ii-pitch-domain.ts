@@ -11,7 +11,7 @@
  * the tool boundary and why no downward interval is expressible on the II.
  *
  * WHY THIS LEG NEEDS NO HUMAN. The device puts its OWN rendered label in the
- * GET response, and `get_param` hands the raw bytes back as `raw_response`. So
+ * GET response, and `get_param` returns it as `device_label`. So
  * the read path can be adjudicated automatically: parse the label the device
  * sent, and compare it against what our decode produced for the same wire
  * value. They should agree. Where they do not, the DEVICE is right
@@ -37,7 +37,6 @@ import readline from 'node:readline';
 
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { parseGetBlockParameterResponse } from 'fractal-midi/gen2/axe-fx-ii';
 
 const SERVER_ENTRY = path.resolve(process.cwd(), 'packages', 'server-all', 'dist', 'server', 'index.js');
 const DO_WRITE = process.argv.includes('--write');
@@ -89,15 +88,12 @@ async function main(): Promise<void> {
         rows.push({ target: label, wire: undefined, ourDisplay: undefined, deviceLabel: undefined, note: text.slice(0, 120) });
         continue;
       }
-      let parsed: { wire_value?: number; display_value?: unknown; raw_response?: number[] } = {};
+      let parsed: { wire_value?: number; display_value?: unknown; device_label?: string } = {};
       try { parsed = JSON.parse(text) as typeof parsed; } catch { /* fall through */ }
 
-      // The device's OWN label, recovered from the raw frame. This is the
+      // The device's OWN label (get_param's device_label). This is the
       // adjudicating value; our decode is the thing on trial.
-      let deviceLabel: string | undefined;
-      if (Array.isArray(parsed.raw_response)) {
-        try { deviceLabel = parseGetBlockParameterResponse(parsed.raw_response).label; } catch { /* leave undefined */ }
-      }
+      const deviceLabel: string | undefined = parsed.device_label;
       rows.push({
         target: label,
         wire: parsed.wire_value,
@@ -189,9 +185,9 @@ async function main(): Promise<void> {
           const rd = await client.callTool({ name: 'get_param', arguments: { port: PORT, block: t.block, name: t.name } }) as { content?: { text?: string }[] };
           let wire: number | undefined; let lbl: string | undefined;
           try {
-            const j = JSON.parse(rd.content?.[0]?.text ?? '{}') as { wire_value?: number; raw_response?: number[] };
+            const j = JSON.parse(rd.content?.[0]?.text ?? '{}') as { wire_value?: number; device_label?: string };
             wire = j.wire_value;
-            if (Array.isArray(j.raw_response)) lbl = parseGetBlockParameterResponse(j.raw_response).label;
+            lbl = j.device_label;
           } catch { /* leave undefined */ }
           obs.push(`sent ${v} -> wire ${fmt(wire)}, device says "${fmt(lbl)}"`);
         }

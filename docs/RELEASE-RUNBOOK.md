@@ -1,209 +1,141 @@
-# Release Runbook: v0.1.0 (and future versions)
+# Release Runbook
 
-End-to-end checklist for shipping a public release. Walk this top to
-bottom; each step has acceptance criteria and a "what could go wrong"
-note. Audience-specific announce work is tracked in the project's own
-private launch plan.
+End-to-end checklist for cutting a release. Walk it top to bottom. Each step
+names what "done" looks like and what has gone wrong before.
 
-> v0.1.0 ships **unsigned**. Users will see a Windows SmartScreen
-> "unrecognized publisher" warning. Decision logged 2026-05-03.
+The release model (see `CLAUDE.md`, "Versioning and releases"): one squashed
+commit per release on top of the previous release commit, carrying the version
+bump, an annotated `v<x.y.z>` tag, one `CHANGELOG.md` entry, the GitHub release
+the tag push triggers, and the `fractal-midi` npm publish at the same version.
 
----
-
-## 0. Pre-flight (everything must be green before starting)
-
-- [ ] `npm run preflight` exits zero (`tsc --noEmit` + all golden
-      verifiers + `smoke-server`).
-- [ ] No uncommitted changes that won't ship in this release.
-- [ ] Any release-readiness gates that live in a local launch plan
-      are ticked off (or every unticked item is consciously deferred).
-- [ ] `README.md` install section reflects the installer flow (not
-      clone-and-run).
-- [ ] No personal credentials, API keys, or secrets tracked in git
-      (re-grep `.env`, `secret`, `credential`, `password`, `token`,
-      `api_key` against `git ls-files` if it has been a while).
+> The assistant never pushes `main` and never publishes. It prepares the
+> release commit, the tag and a push checklist; the maintainer runs the push
+> and the publish.
 
 ---
 
-## 1. Build the release bundle and ZIP
+## 0. Scope
+
+- [ ] Decide the version. Patch = fixes only; minor = a new tool, capability
+      or device. Read `git log <last release commit>..HEAD` against the
+      `[Unreleased]` CHANGELOG entry so nothing shipped is missing from it and
+      nothing in it is overstated.
+- [ ] Every device whose behaviour changed has its asks and status updated on
+      `docs/contributing/devices/<id>.md` (preflight checks the tier and
+      transport, not the prose).
+
+## 1. Gates that need no device
+
+`npm run release-gate` chains everything below plus the hardware gates; run
+the parts separately so a hardware absence does not hide a software failure.
+
+| Command | Notes |
+|---|---|
+| `npm run preflight` | Build, typecheck, every test, the size and docs gates. Also rebuilds `dist/`, which Claude Desktop runs |
+| `npx tsx scripts/primitives-verify.ts --strict` | Strict corpus check |
+| `npx tsx scripts/verify-re-ledger.ts --strict` | Fails on research items older than 60 days unless re-mined or marked `(deferred: YYYY-MM-DD reason)` with a real reason |
+| `npm run test:release-extras` | Verify chain, lineage resources, coverage audit |
+| `npm run build:installer` then `npm run verify-release-zip` | **Not in preflight, but the tag workflow runs it.** Extracts the ZIP into a clean temp dir, boots the bundled node, `describe_device` on every device, and a mock Axe-Fx II apply / read / export / translate. It has caught a release-breaking failure two releases running; never tag without it |
+| `npm run build:mcpb` then `npm run verify-mcpb-bundle` | The Claude Desktop extension (win32-x64 only today) |
+
+A push to a `release/**` branch also runs `.github/workflows/release-bundle.yml`,
+which builds and verifies the ZIP on a clean Windows runner before any tag
+exists.
+
+## 2. Hardware pass
+
+Run with the devices whose behaviour changed. Each harness skips absent
+devices.
+
+**Free the ports first.** The harnesses start their own server, so nothing
+else may be using the devices:
+
+- Fully quit Claude Desktop (from the tray; closing the window leaves its
+  server running). Close AM4-Edit, Axe-Edit and the other vendor editors.
+- A Claude Code session in this folder may stay connected **if it makes no
+  device tool call** during the run: the server opens a port only on a device
+  call. The Axe-Fx II is the exception: once any call touches it, that server
+  keeps its port for the rest of its life, so restart that session's server
+  first (`/mcp` > reconnect) and leave it untouched.
+- Do **not** use `/mcp` > disable to free the ports. It is saved per folder,
+  and the agent sweep's own `claude -p` children then start with the server
+  disabled; the sweep's preflight refuses with "MCP disabled".
+
+| Command | What it does |
+|---|---|
+| `npm run launch-verify` | Reads plus self-restoring writes on every connected device. No saves |
+| `npm run live-regression` | Reads, identity writes and refused writes |
+| `npm run agent-sweep:<device>:real` | A real agent drives the device through its regression cases; working-buffer edits only. Costs model usage |
+
+Then exercise each new behaviour once through the real MCP tools in a session
+(the shipped path), against the front panel. Use scratch locations only, and
+never save over a preset that is not yours to replace.
+
+## 3. Release prep (on the development branch)
+
+- [ ] Bump `version` in the root and every workspace `package.json`
+      (including `packages/fractal-midi`) to the release version.
+- [ ] Rename `[Unreleased]` in `CHANGELOG.md` to `[x.y.z] - YYYY-MM-DD`. The
+      tag workflow copies this section into the GitHub release, matching the
+      heading exactly.
+- [ ] `npm run preflight` again after the bump.
+- [ ] Rebuild and re-verify both artifacts from this exact tree
+      (`build:installer` + `verify-release-zip`, `build:mcpb` +
+      `verify-mcpb-bundle`). Artifacts built before the last code change do
+      not count.
+
+## 4. Squash and tag (local)
+
+- [ ] Back up the pre-squash history on a branch named
+      `backup/pre-<x.y.z>-squash`. Never push it.
+- [ ] Create one commit on `main`, parent = the previous release commit,
+      whose tree is byte-identical to the verified development tip. Verify
+      with `git diff <dev tip> main` (empty).
+- [ ] Annotated tag: `git tag -a v<x.y.z> -m "<x.y.z>: <summary>"` on that
+      commit.
+- [ ] Write the push checklist for the maintainer: the commit, its parent,
+      the tag, the gates that ran and their results, what was NOT run, and the
+      known issues for the release notes.
+
+## 5. Push and publish (maintainer)
 
 ```
-npm run build:installer
+git push origin main
+git push origin v<x.y.z>
+cd packages/fractal-midi && npm publish
 ```
 
-Acceptance:
+The tag push runs `.github/workflows/release.yml`: it checks the tag against
+`package.json`, runs preflight, builds and verifies the ZIP, and creates the
+GitHub release with the versioned and stable-named Windows ZIPs, the SHA256
+and the CHANGELOG section. Watch it to the end. macOS and Linux users install
+from `main`, so the branch push matters as much as the tag.
 
-- Last line says `OK release bundle ready`.
-- `build/staging/node.exe` reports the pinned Node version when run
-  with `--version`.
-- `@julusian/midi` loads + enumerates under the bundled node (the build
-  script load-tests this; the prebuilt binary lives at
-  `build/staging/node_modules/@julusian/midi/prebuilds/midi-<plat>-<arch>/node-napi-v7.node`).
-- `build/staging/dist/server/index.js` exists.
-- `build/staging/setup.cmd`, `build/staging/uninstall.cmd`, and
-  `build/staging/install/{merge,unmerge}-mcp-config.ps1` all present.
-- `build/dist/mcp-midi-control-v0.1.0.zip` exists (typically 25-40 MB
-  compressed; staging is 50-80 MB uncompressed).
+## 6. After the release
 
-If it fails:
+- [ ] Confirm the release page, the download, and `npm view fractal-midi
+      version`.
+- [ ] Follow up on the GitHub issues the release closes (owner-approved text).
+- [ ] Watch for install reports in the first days.
 
-- **Native module missing**: bundled Node and PATH Node are
-  ABI-mismatched. The build script uses bundled npm to avoid this, but
-  a corrupt cache can defeat it. Re-run with `npm run build:installer -- --clean`.
-- **Network error on Node download**: check connectivity and retry. The
-  Node ZIP is cached locally; subsequent builds skip the download.
-- **Compress-Archive errors**: PowerShell's Compress-Archive has a
-  ~2 GB limit, well above what we ship. If it fails for permission
-  reasons, ensure `build/dist/` is not held open by another process
-  (closing any explorer window viewing it usually fixes it).
+## Clean-machine smoke test
 
----
+When the installer, `setup.cmd`, the bundled Node version or the config merge
+changes, also test the ZIP on a Windows 11 machine with no Node or developer
+tools: extract (to a path with spaces too), run `setup.cmd`, check the
+`mcp-midi-control` entry in `claude_desktop_config.json`, relaunch Claude
+Desktop, list the MIDI ports, build one tone, then run `uninstall.cmd` and
+confirm only our entry is removed.
 
-## 2. Smoke-test the ZIP on a clean Windows 11 VM
+## Rollback
 
-This is the gate that decides whether the release ships. The dev
-machine is too contaminated (Node on PATH, prior MCP servers, debug
-state) to be a meaningful test.
+If a release ships with a critical bug:
 
-VM requirements: Windows 11, no Node, no developer tooling. Claude
-Desktop installed (direct download from claude.ai/download is
-preferred; the Microsoft Store variant works too but lives at a
-different config path that the merge script also handles).
+1. Mark the GitHub release as a draft or withdrawn, which removes the
+   download link.
+2. Say so wherever the release was announced. Do not update silently.
+3. Fix, and run this runbook for the next patch version.
+4. Do not delete the tag. It is history; mark the release "(withdrawn)".
 
-Test sequence:
-
-- [ ] Copy `mcp-midi-control-v0.1.0.zip` to the VM (or download it from
-      a draft GitHub release).
-- [ ] Right-click the ZIP -> Properties -> tick **Unblock** -> OK. Verify
-      the warning behavior matches what `instructions.txt` describes.
-- [ ] Extract to a folder of your choice (test both
-      `C:\Users\<you>\Apps\` and a path with spaces like
-      `C:\Users\<you>\Documents\My Apps\` so we know spaces work).
-- [ ] Double-click `setup.cmd`. A console window opens, runs the
-      merge script, and waits for a key.
-- [ ] Open `%APPDATA%\Claude\claude_desktop_config.json` in a text
-      editor. Confirm `mcpServers["mcp-midi-control"]` entry exists with
-      `command` pointing at the extracted `node.exe` and `args[0]` at
-      the extracted `dist\server\index.js`. Paths must match the
-      actual extract location.
-- [ ] Open Claude Desktop. Start a new chat. The MCP MIDI Control
-      connector appears in the tools panel.
-- [ ] Plug in the AM4 (or have it plugged in beforehand).
-- [ ] Ask Claude: *"Using mcp-midi-control, list the MIDI ports you can
-      see."* Expect AM4 to be detected.
-- [ ] Ask Claude one full iconic-tone prompt (e.g. *"Build me a clean
-      Fender tone with a touch of spring reverb on Z04."*). Watch the
-      AM4 display update.
-- [ ] Verify uninstall: double-click `uninstall.cmd`, confirm the
-      `mcp-midi-control` entry is gone from
-      `claude_desktop_config.json` (other MCP servers intact), then
-      delete the extracted folder.
-- [ ] Optional: rerun setup.cmd from a different extracted folder
-      and confirm the config gets re-pointed at the new location
-      (idempotency check).
-
-If anything in this list falls over, do not ship. Fix and re-test.
-
----
-
-## 3. Tag and prepare the GitHub release
-
-> Reminder: `origin/main` is never pushed by Claude. Tagging and
-> pushing are maintainer actions. Claude can prepare the commands but
-> the maintainer runs them.
-
-- [ ] Confirm `package.json` version matches the release (currently
-      `0.1.0`).
-- [ ] Tag the release locally:
-      ```
-      git tag -a v0.1.0 -m "v0.1.0 public launch"
-      ```
-- [ ] Push the tag:
-      ```
-      git push origin v0.1.0
-      ```
-
----
-
-## 4. Repo flip private -> public
-
-Until this step, the repo is private and the world can't see it.
-After this step, every prior commit and doc is public. Last chance to
-review.
-
-- [ ] Walk `git log --all --pretty=oneline | head -50` for any commits
-      with sensitive content in the message.
-- [ ] Confirm `git ls-files` does not include any `.env`, captures with
-      sensitive data, or scratch files that shouldn't be public.
-- [ ] On GitHub: Settings -> Danger Zone -> Change visibility -> Public.
-      Confirm.
-
----
-
-## 5. Create the GitHub release
-
-- [ ] On GitHub: Releases -> Draft a new release.
-- [ ] Choose tag `v0.1.0`. Title: `v0.1.0 public launch`.
-- [ ] Attach `build/dist/mcp-midi-control-v0.1.0.zip`.
-- [ ] Body: short release notes (what's in, what's not, link to any
-      community thread once posted). Draft is fine; it can be edited
-      after publishing.
-- [ ] Publish the release.
-- [ ] Verify the download URL works from a fresh browser (incognito)
-      and the ZIP downloads with the correct Mark-of-the-Web behavior
-      (right-click Properties shows the Unblock checkbox).
-
----
-
-## 6. Announce per your project's launch strategy
-
-The actual announce (community thread, social posts, demo video,
-talking points) is project-strategic and lives outside this runbook;
-keep it in a local launch plan that you maintain separately. From
-this runbook's perspective, the steps are:
-
-- [ ] Post wherever your audience reads (forum thread, mailing list,
-      social) per your launch plan.
-- [ ] Link the GitHub release artefacts from the post.
-- [ ] Watch the channel for replies in the first 24 hours.
-
----
-
-## 7. Monitor early adopters (first 24 hours)
-
-- [ ] If install bug reports come in, file them as GitHub issues with
-      the OS / Claude Desktop variant. Patch in v0.1.1 if blocking.
-- [ ] If SmartScreen friction is hurting adoption (multiple users
-      report bouncing on the warning), surface that as the trigger to
-      revisit the cert decision.
-
----
-
-## Rollback / hotfix procedure
-
-If the release goes out and a critical bug is found:
-
-1. **Pull the GitHub release** (mark it as a draft or delete it). This
-   removes the download link.
-2. **Update wherever you announced** with a clear "v0.1.0 has been
-   pulled, fix in progress" notice. Do not silently update; be
-   explicit.
-3. Patch the bug. Run the full runbook for v0.1.1.
-4. **Do not delete the v0.1.0 git tag.** It is part of the project
-   history. Mark the GitHub release as "v0.1.0 (withdrawn)" rather
-   than removing the tag.
-
-Catastrophic case (e.g. installer corrupts user environment):
-
-1. Pull the release immediately.
-2. Post a public advisory with steps to manually clean up.
-3. File a public post-mortem in the repo before shipping any further
-   versions.
-
----
-
-## Versions
-
-| Version | Date | Notes |
-|---|---|---|
-| 0.1.0 | TBD | First public release. AM4 working-buffer support; unsigned ZIP. |
+If the installer damages a user's environment, pull the release immediately,
+publish manual clean-up steps, and file a post-mortem before the next release.

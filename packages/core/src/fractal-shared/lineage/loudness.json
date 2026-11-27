@@ -47,6 +47,11 @@
       "relative_loudness_dB": -3,
       "notes": "Tweed Deluxe (5E3 / 5C3 era). Non-master amp; 15W. Famously breaks up early."
     },
+    "Deluxe Tweed Bright": {
+      "master_sweet_spot_display": 10.0,
+      "relative_loudness_dB": -3,
+      "notes": "AM4 fw 2.01+ name for the same model as 'Deluxe Tweed' (renamed in place, same ordinal). Tweed Deluxe (5E3 / 5C3 era). Non-master amp; 15W. Famously breaks up early."
+    },
     "Class-A 30W": {
       "master_sweet_spot_display": 10.0,
       "relative_loudness_dB": -2,

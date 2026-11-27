@@ -370,6 +370,7 @@ export const CROSS_DEVICE_CASES: AgentRegressionCase[] = [
   {
     id: 'cross-axefx2-save-preset-explicit',
     device: 'axe-fx-ii',
+    mockOnly: 'the passing path overwrites stored slot 666',
 
     description: 'save_preset positive path: explicit save vocabulary PLUS explicit overwrite authorization should route to save_preset with confirm_overwrite and actually persist. The pair to axefx2-save-overwrite-gate, which covers the same tool WITHOUT overwrite authorization and requires the agent to relay rather than self-confirm. Together they pin both sides of the gate: the user authorizes, the agent passes it through; the user does not, the agent asks.',
     // The prompt carries EXPLICIT overwrite authorization, added 2026-08-03,
@@ -465,7 +466,9 @@ export const CROSS_DEVICE_CASES: AgentRegressionCase[] = [
     description: 'backup_device duration gate: a sweep large enough to trip the gate must be relayed to the USER with its estimate, not silently re-sent with acknowledge_duration:true. The agent should call backup_device once, get duration_acknowledgement_required, and answer with how long it will take plus a request to confirm. Catches the failure where an agent treats a user-consent gate as a retry instruction it can satisfy itself.',
     prompt: 'Back up presets 0 through 30 on my AM4 to disk before we start changing things.',
     expectations: {
-      must_call: ['backup_device'],
+      // The refusal IS the correct first result; must_call would only pass an
+      // agent that re-called with acknowledge_duration (2026-11-25 sweep).
+      must_attempt: ['backup_device'],
       max_tools: 5,
       max_repeats: { backup_device: 1 },
       // The agent must surface a time cost and ask, rather than just reporting

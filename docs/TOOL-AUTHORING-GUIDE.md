@@ -205,9 +205,12 @@ alternative**. Do not silently misroute; the wire ack does not mean
 audible effect.
 
 Examples in the codebase:
-- AM4 AMP slot has no bypass register (pidHigh=0x03 is BOOST).
-  `set_bypass(amp)` refuses with a clear redirect to
-  `set_param(amp, master, 0)` or `set_param(amp, boost)`.
+- (Superseded 2026-11-25.) The AM4 amp was once refused for
+  `set_bypass` on the belief that its pidHigh 0x03 is BOOST. A hardware
+  test disproved it: 0x003A/0x0003 bypasses the amp per scene like every
+  block, and boost (`in_boost_sw` / `out_boost`) stays untouched. The
+  lesson stands: a refusal is only as good as its evidence, so cite the
+  capture that justifies it.
 - Axe-Fx II channel pointer is shared across scenes. When
   `set_param` is called with explicit `channel` ≠ active channel, the
   writer refuses with a `switch_scene` redirect rather than silently

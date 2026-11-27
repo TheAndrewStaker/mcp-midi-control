@@ -115,8 +115,15 @@ const EXPECTED = {
   // so they now report the generic `unit: 'knob'`. Mapping those 13 back to
   // knob_0_10 reproduces the previous hash exactly, so nothing else moved.
   // CATALOG and BLOCKS unchanged; no wire builder touched.
+  //
+  // Re-blessed AGAIN for the editor-typecode taper rule (community PR #24,
+  // 2026-11-15): typecode-0x52 rows are a 0..10 panel knob, so 5 of those 13
+  // (amp clarity, chorus / flanger / rotary / wah drive) are knob_0_10 again
+  // with a 0..10 range. A dump of every surface row before and after differs
+  // in exactly the 20 0x52 rows (range -> 0..10), and only those 5 change unit;
+  // the 8 non-0x52 params of the 13 keep `knob`. CATALOG and BLOCKS unchanged.
   catalog: { count: 2216, hash: '109f858e07b904de65b8782edb41383d746844b0dce309ffd6628fabd2d30223' },
-  surface: { blockCount: 50, paramCount: 1711, hash: '6ab46d43d2707605f76d06249d89d67c1b93bd1f7e59285013ff8e602e08282e' },
+  surface: { blockCount: 50, paramCount: 1711, hash: '9685c8d904b897e3887f61b6c8735f01c34f0241604624e255c8992b97169367' },
   blocks: { count: 50, hash: '07db286053f0f4bd242e14c45697f5bbc612f642c5c7f6c7fdd9dd0e9dd7dd51' },
 };
 

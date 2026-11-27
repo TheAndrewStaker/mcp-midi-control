@@ -27,6 +27,8 @@ export {
   RAW_INT_NONE_SENTINEL,
   isRawIntRegister,
   rawIntRegisterHasNone,
+  rawIntRegisterHasPedal,
+  RAW_INT_PEDAL_VALUES,
   decodeRawIntRegister,
   encodeRawIntRegister,
 } from './midiRegisters.js';
@@ -191,6 +193,7 @@ export {
   TEMPO_DIVISIONS_VALUES,
   LFO_WAVEFORMS_VALUES,
 } from './cacheEnums.js';
+export { AM4_FIRMWARE_RENAMED_TYPES, am4RenamedTypeName } from './firmwareRenames.js';
 export {
   TYPE_APPLICABILITY,
   TYPE_APPLICABILITY_FIRMWARE,

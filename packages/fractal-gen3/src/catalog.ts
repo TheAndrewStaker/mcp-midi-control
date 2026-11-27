@@ -37,7 +37,7 @@ import {
   normalizeLabel,
 } from 'fractal-midi/gen3/axe-fx-iii';
 import { type Param as AxeFxIIIParam } from 'fractal-midi/gen3/axe-fx-iii';
-import { displayToWire, wireToDisplay } from 'fractal-midi/shared';
+import { displayToWire, wireToDisplay, roundDisplay, spellTempoDivision } from 'fractal-midi/shared';
 
 export type { AxeFxIIIBlock, AxeFxIIIParam };
 
@@ -229,6 +229,16 @@ function makeEnumEncode(
       }
       return asNum;
     }
+    // Tempo divisions: "1/8.", "dotted eighth", "1/8t" -> the roster's own
+    // "1/8 DOT" / "1/8 TRIP", the same speller as the AM4 and II. A modifier
+    // the roster cannot place is refused, never dropped.
+    const tempo = spellTempoDivision(value, labels);
+    if (tempo !== undefined) {
+      if (tempo.canonical === undefined) {
+        throw new Error(`${family}.${paramKey} has no ${tempo.modifier === 'TRIP' ? 'triplet' : 'dotted'} form of "${value}"`);
+      }
+      value = tempo.canonical;
+    }
     let ord = reverse.get(normalizeLabel(value));
     if (ord === undefined) {
       for (const f of enumLabelForms(value)) {
@@ -278,6 +288,8 @@ interface CalibrationOpts {
   readonly displayMin: number;
   readonly displayMax: number;
   readonly displayScale: 'linear' | 'log10';
+  /** decimals a decoded value is rounded to (2 unless the device cache pins its printed step) */
+  readonly decimals?: number;
 }
 
 /**
@@ -303,6 +315,89 @@ export interface DeviceParamRange {
   readonly enumCount?: number;
   /** Display scale of the cache row (1 = display units equal the stored value). */
   readonly scale?: number;
+  /** The editor's per-row type bitfield; its low byte carries the taper (see deviceFloatView). */
+  readonly typecode?: number;
+  /** Front-panel increment in pre-scale units (display step = step * scale). */
+  readonly step?: number;
+}
+
+/**
+ * Decimals a float cache row's value prints with: the LOW NIBBLE of its editor
+ * typecode ("500 ms" 0x430 -> 0, "18.4 %" 0x531 -> 1, "1.000" 0x43 -> 3),
+ * capped at 3. 0x52 knobs keep 2 (their window is remapped to 0..10), as does a
+ * row without a typecode.
+ *
+ * Evidence, measured 2026-11-26:
+ *   - In-device, on the Axe-Fx II: its own editor cache, joined to the
+ *     decimals its front panel prints (fitted from 10,631 device labels), has
+ *     nibble == printed decimals on 398 of 413 params. The misses are mostly
+ *     log-frequency rows (0x24x) the panel prints with one digit fewer; the
+ *     only one that would lose a digit the panel shows is chorus.mix (0x570),
+ *     which the step override below fixes.
+ *     (`scripts/_research/review-typecode-decimals.ts`)
+ *   - FM3 fw 12 panel text (community PR #24): input trim "1.000" is
+ *     DISTORT_TRIM 0x43 (nibble 3); delay "300 ms" is 0x430 (0).
+ *   - Gen-3 rows against the II's decimals for the same (block, name): 89/93
+ *     (III, FM9), 87/91 (FM3). Fixed 2 decimals matched 18/93.
+ * The cache `step` was tried first and rejected: a step of 1 on 0x431 rows
+ * (pitch delay/splice, multitap times, reverb delay) would print "12.5 ms" as
+ * 13 where the II prints 1 decimal (`review-ii-step-rule.ts`).
+ *
+ * Guard: a nibble that leaves fewer than 10 printed steps across the row's
+ * window is not taken as the print (a 0..1 "percent" row with nibble 0 would
+ * read only 0 or 1); such rows keep 2 decimals, exactly as before.
+ */
+export function devicePrintDecimals(deviceRange: DeviceParamRange): number {
+  if (deviceRange.kind !== 'float' || deviceRange.typecode === undefined) return 2;
+  if ((deviceRange.typecode & 0xff) === 0x52) return 2;
+  let d = Math.min(3, deviceRange.typecode & 0xf);
+  // A clean power-of-ten panel increment finer than the nibble wins: the 0x570
+  // mixes (CHORUS/FILTER/PLEX) step 0.1 % like every 0x571 mix, and the II's own
+  // 0x570 chorus.mix prints "25.2 %".
+  if (deviceRange.step !== undefined && deviceRange.scale !== undefined && deviceRange.step * deviceRange.scale > 0) {
+    const exp = Math.log10(deviceRange.step * deviceRange.scale);
+    const sd = -Math.round(exp);
+    if (Math.abs(exp + sd) < 1e-9 && sd > d && sd <= 3) d = sd;
+  }
+  const steps = Math.abs(deviceRange.displayMax - deviceRange.displayMin) * 10 ** d;
+  return steps >= 10 ? d : 2;
+}
+
+/** Digits after the point `x` needs (0..3; 3 for anything finer). */
+function decimalsOf(x: number): number {
+  for (let d = 0; d < 3; d++) if (Math.abs(Math.round(x * 10 ** d) - x * 10 ** d) < 1e-9) return d;
+  return 3;
+}
+
+/**
+ * The display window and taper a float cache row implies, from its editor
+ * typecode (rule from community PR #24, FM3 fw 12 hardware):
+ *   - low byte 0x52: a 0..10 knob, linear, whatever window the row states
+ *     (every 0x52 row spans exact decades, e.g. 0.5..500; FM3 panel text
+ *     matched 0..10 on 8 of 8 such params);
+ *   - class 0x4X: log10 over the row's window (cross-checked against the FM3
+ *     catalog flags 37/37, FM9 catalog vs cache 24/24, the published III word
+ *     laws 39/39, and 354 of 364 FM3 panel readings). The 0xD0 class matches a
+ *     looser bit-6 test but has no evidence, so it stays as the catalog says.
+ * `log10` here only ADDS a taper: on every gen-3 cache no param the catalog
+ * already tags log10 sits outside 0x4X / 0x52, so nothing evidenced as log10
+ * becomes linear. A log10 window needs a positive minimum, else it is skipped.
+ */
+export function deviceFloatView(deviceRange: DeviceParamRange): {
+  displayMin: number;
+  displayMax: number;
+  forceScale?: 'linear' | 'log10';
+} {
+  const tc = deviceRange.typecode;
+  if (tc !== undefined && (tc & 0xff) === 0x52) return { displayMin: 0, displayMax: 10, forceScale: 'linear' };
+  // bounds keep at least 2 decimals, 3 where the row prints 3 (0.316, not 0.32)
+  const boundDecimals = Math.max(2, devicePrintDecimals(deviceRange));
+  const displayMin = roundDisplay(deviceRange.displayMin, boundDecimals);
+  const displayMax = roundDisplay(deviceRange.displayMax, boundDecimals);
+  if (tc !== undefined && (tc & 0xf0) === 0x40 && displayMin > 0 && displayMax > displayMin) {
+    return { displayMin, displayMax, forceScale: 'log10' };
+  }
+  return { displayMin, displayMax };
 }
 
 /** Device-true ranges keyed family → paramId → range (e.g. `FM9_RANGES`). */
@@ -389,9 +484,9 @@ function resolveCalibration(
   // the endpoint round-trip gate against.
   let displayMin = param.displayMin;
   let displayMax = param.displayMax;
+  let forceScale: 'linear' | 'log10' | undefined;
   if (deviceRange !== undefined && deviceRange.kind === 'float') {
-    displayMin = roundDisplay(deviceRange.displayMin);
-    displayMax = roundDisplay(deviceRange.displayMax);
+    ({ displayMin, displayMax, forceScale } = deviceFloatView(deviceRange));
   } else {
     // Catalog-inferred bounds get the SAME precision rounding as cache rows:
     // the mined tables carry float32 artifacts (III/FM3 DISTORT_TREMFREQ
@@ -413,21 +508,16 @@ function resolveCalibration(
   // Taper: the catalog's own scaling tag, plus the BK-096 Hz-cut log10
   // reclassification (evidence-backed by the FM3 REVERB_LOWCUT field point +
   // the II hardware-confirmed low/high-cut precedent; see HZ_CUT_LOG10_PARAMS).
-  const displayScale: 'linear' | 'log10' =
-    scaling === 'log10' || HZ_CUT_LOG10_PARAMS.has(param.name) ? 'log10' : 'linear';
+  // The device's typecode (deviceFloatView) wins where it says something.
+  const displayScale: 'linear' | 'log10' = forceScale
+    ?? (scaling === 'log10' || HZ_CUT_LOG10_PARAMS.has(param.name) ? 'log10' : 'linear');
   if (displayScale === 'log10' && (displayMin <= 0 || displayMax <= 0)) return undefined;
-  return { displayMin, displayMax, displayScale };
-}
-
-/**
- * Round a decoded display value to the panel's natural resolution, stripping
- * the float noise the wire→display inverse leaves behind (7.0000305 → 7).
- * Mirrors the Axe-Fx II decode boundary; two decimals preserves every
- * observed panel resolution.
- */
-function roundDisplay(value: number): number {
-  const rounded = Math.round(value * 100) / 100;
-  return Object.is(rounded, -0) ? 0 : rounded;
+  // Print precision: the cache row's clean step, but never fewer decimals than
+  // the bounds carry, so decode(0) and decode(65534) land exactly on them.
+  const decimals = deviceRange !== undefined && deviceRange.kind === 'float'
+    ? Math.max(devicePrintDecimals(deviceRange), decimalsOf(displayMin), decimalsOf(displayMax))
+    : 2;
+  return { displayMin, displayMax, displayScale, decimals };
 }
 
 function makeCalibratedEncode(
@@ -450,7 +540,7 @@ function makeCalibratedEncode(
 }
 
 function makeCalibratedDecode(cal: CalibrationOpts): ParamSchema['decode'] {
-  return (wire: number): number => roundDisplay(wireToDisplay(wire, cal));
+  return (wire: number): number => roundDisplay(wireToDisplay(wire, cal), cal.decimals ?? 2);
 }
 
 /**
@@ -645,8 +735,9 @@ function buildParamSchema(
   // range (the cache float row is exactly what the oracle contradicted).
   const routedDiscrete = enumValues !== undefined || deviceEnumNoNames || roundtripDiscrete;
   const useCacheFloatBounds = deviceRange?.kind === 'float' && !routedDiscrete;
-  const displayMin = useCacheFloatBounds ? roundDisplay(deviceRange!.displayMin) : param.displayMin;
-  const displayMax = useCacheFloatBounds ? roundDisplay(deviceRange!.displayMax) : param.displayMax;
+  const cacheView = useCacheFloatBounds ? deviceFloatView(deviceRange!) : undefined;
+  const displayMin = cacheView ? cacheView.displayMin : param.displayMin;
+  const displayMax = cacheView ? cacheView.displayMax : param.displayMax;
 
   let encode: ParamSchema['encode'];
   let decode: ParamSchema['decode'];

@@ -15,7 +15,10 @@ export interface ResolverEntry {
     readonly parameterName: string;
 }
 
-export const VARIANT_RESOLVER_FIRMWARE = 'AM4-Edit Mar 20 2026 build';
+// Extracted from the Mar 20 2026 build; the 13 symbols AM4-Edit 1.00.09 (fw 2.02)
+// added are appended by hand (2026-11-25), and every pre-existing symbol was
+// checked to resolve to the same id in 1.00.09.
+export const VARIANT_RESOLVER_FIRMWARE = 'AM4-Edit Mar 20 2026 build + 1.00.09 additions';
 
 /** Per-effectType resolver tables. Multiple effectTypes may share a table. */
 export const VARIANT_RESOLVER_BY_EFFECT_TYPE: Readonly<Record<number, readonly ResolverEntry[]>> = {
@@ -119,6 +122,17 @@ export const VARIANT_RESOLVER_BY_EFFECT_TYPE: Readonly<Record<number, readonly R
         { cache_id: 160, parameterName: "GLOBAL_METRONOME" },
         { cache_id: 161, parameterName: "GLOBAL_METRONOME_CC" },
         { cache_id: 162, parameterName: "GLOBAL_INSPDIF_CONFIG" },
+        // AM4-Edit 1.00.09 (fw 2.02) additions, same symbol table:
+        { cache_id: 163, parameterName: "GLOBAL_FS_1_2" },
+        { cache_id: 164, parameterName: "GLOBAL_FS_2_3" },
+        { cache_id: 165, parameterName: "GLOBAL_FS_3_4" },
+        { cache_id: 166, parameterName: "GLOBAL_MODE_SEL" },
+        { cache_id: 167, parameterName: "GLOBAL_PRESET_SEL" },
+        { cache_id: 168, parameterName: "GLOBAL_SCENE_SEL" },
+        { cache_id: 169, parameterName: "GLOBAL_EFFECT_SEL" },
+        { cache_id: 170, parameterName: "GLOBAL_AMP_SEL" },
+        { cache_id: 171, parameterName: "GLOBAL_MODE_VIA_CC" },
+        { cache_id: 172, parameterName: "GLOBAL_HOMEPAGE_STYLE" },
     ],
     2: [
         { cache_id: 10, parameterName: "CONTROLLERS_LFO1TYPE" },
@@ -935,6 +949,10 @@ export const VARIANT_RESOLVER_BY_EFFECT_TYPE: Readonly<Record<number, readonly R
         { cache_id: 29, parameterName: "CHORUS_DEPTHC" },
         { cache_id: 30, parameterName: "CHORUS_DEPTHR" },
         { cache_id: 31, parameterName: "CHORUS_TEMPO2" },
+        // AM4-Edit 1.00.09 (fw 2.01 chorus expert params):
+        { cache_id: 32, parameterName: "CHORUS_DELAYRANGE" },
+        { cache_id: 33, parameterName: "CHORUS_BASS" },
+        { cache_id: 34, parameterName: "CHORUS_TREBLE" },
     ],
     17: [
         { cache_id: 10, parameterName: "FLANGER_TYPE" },
@@ -2218,6 +2236,9 @@ export const PARAMETER_NAME_TO_CACHE_ID: Readonly<Record<string, Readonly<Record
         "CHORUS_DEPTHC": [29],
         "CHORUS_DEPTHL": [28],
         "CHORUS_DEPTHR": [30],
+        "CHORUS_DELAYRANGE": [32],
+        "CHORUS_BASS": [33],
+        "CHORUS_TREBLE": [34],
         "CHORUS_DRIVE": [24],
         "CHORUS_HICUT": [15],
         "CHORUS_LFOPHASE": [17],
@@ -2804,6 +2825,16 @@ export const PARAMETER_NAME_TO_CACHE_ID: Readonly<Record<string, Readonly<Record
         "GLOBAL_TUNER_CC": [73],
         "GLOBAL_TUNER_ON_VOLUME": [110],
         "GLOBAL_TUNER_SOURCE": [83],
+        "GLOBAL_FS_1_2": [163],
+        "GLOBAL_FS_2_3": [164],
+        "GLOBAL_FS_3_4": [165],
+        "GLOBAL_MODE_SEL": [166],
+        "GLOBAL_PRESET_SEL": [167],
+        "GLOBAL_SCENE_SEL": [168],
+        "GLOBAL_EFFECT_SEL": [169],
+        "GLOBAL_AMP_SEL": [170],
+        "GLOBAL_MODE_VIA_CC": [171],
+        "GLOBAL_HOMEPAGE_STYLE": [172],
         "GLOBAL_TUNINGREF": [13],
         "GLOBAL_USB78_SOURCE": [98],
         "GLOBAL_USBLEVEL1": [99],

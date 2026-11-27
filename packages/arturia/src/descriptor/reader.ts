@@ -124,7 +124,6 @@ async function readGlobal(config: FreakConfig, name: string, ctx: DispatchCtx): 
     wire_value: wire,
     display_value: display,
     unit: g.channel === true ? 'count' : (g.values !== undefined ? 'enum' : 'count'),
-    raw_response: [...reply],
   };
 }
 

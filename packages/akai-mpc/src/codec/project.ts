@@ -3,7 +3,7 @@
  *
  * Owns: opening the container and summarising what a song layer needs from it
  * (sequences in order, tempo, the Song playlists, track names). Read-only: this
- * file never builds or rewrites a project.
+ * file never builds or rewrites a project (`projectEdit.ts` does the edits).
  *
  * Container: gzip of a 5-line text header (`ACVS`, the app version, the data
  * kind, `json`, the platform) followed by one JSON document. Its sequences are
@@ -19,6 +19,8 @@
  * version 3.7.0.56), read 2026-11-11.
  */
 import { gunzipSync } from 'node:zlib';
+
+import { dbToXpmVolume, XPM_UNITY_VOLUME } from './drumProgram.js';
 
 export interface XpjFile {
   /** The five header lines, in order. */
@@ -126,6 +128,134 @@ export function summarizeXpj(file: XpjFile): XpjSummary {
     songs,
     tracks,
   };
+}
+
+/**
+ * Track kind, from the program `type` code. Every code below was seen across
+ * the 87 projects on an MPC One G2 card (MPC OS 3.7 to 3.9.1), read 2026-11-15.
+ */
+const TRACK_KINDS: Readonly<Record<number, string>> = {
+  0: 'drum', 1: 'keygroup', 3: 'plugin', 4: 'midi', 6: 'audio', 7: 'return', 8: 'submix', 9: 'outputs',
+};
+const BUS_KINDS = new Set(['return', 'submix', 'outputs']);
+/** Program volume at 0 dB. */
+const UNITY = XPM_UNITY_VOLUME;
+/** The top of the fader: program volume 1.0, +6 dB (the largest value on the card is 0.9921875). */
+export const PROGRAM_VOLUME_MAX_DB = 6;
+
+/** dB as the mixer shows it to program volume, the inverse of {@link programVolumeDb}. */
+export function programVolumeFromDb(db: number | '-inf'): number {
+  if (db === '-inf') return 0;
+  return Math.min(1, dbToXpmVolume(db));
+}
+
+/**
+ * Program volume to the dB the mixer shows: 40 * log10(v / 0.707946). Measured
+ * on the device 2026-11-02 and confirmed within 0.3 dB on five keygroup
+ * programs 2026-11-15. The track-level `volume` field is not the fader (it is
+ * 1 on every track seen).
+ */
+export function programVolumeDb(v: number): number | '-inf' {
+  if (!(v > 0)) return '-inf';
+  return Math.round(40 * Math.log10(v / UNITY) * 10) / 10;
+}
+
+export interface XpjTrack {
+  /** 1-based position in the project's track list. */
+  track: number;
+  name: string;
+  kind: string;
+  level_db: number | '-inf';
+  /** -100 (left) .. 100 (right); omitted at centre. */
+  pan?: number;
+  muted?: true;
+  /** Instrument plugin, and the preset loaded in it. */
+  instrument?: string;
+  preset?: string;
+  /** Insert effects in slot order. */
+  inserts?: string[];
+  /** Returns this track feeds (non-zero send). */
+  sends_to?: string[];
+  midi_out?: { device: string; channel: number };
+  /**
+   * Outputs strips only: the project stores the strip twice, in the track and
+   * in `mixer.outputs`, and the unit plays the track copy. Set when the two
+   * copies carry different inserts.
+   */
+  inserts_differ_from_mixer_copy?: string[];
+}
+
+type Obj = Record<string, unknown>;
+const obj = (v: unknown): Obj | undefined => (typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Obj : undefined);
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
+
+function insertNames(mixable: Obj | undefined): string[] {
+  const effects = obj(mixable?.inserts)?.effects;
+  if (!Array.isArray(effects)) return [];
+  return effects
+    .map((e) => obj(e))
+    .filter((e): e is Obj => e !== undefined)
+    .sort((a, b) => (num(a.index) ?? 0) - (num(b.index) ?? 0))
+    .map((e) => str(obj(obj(obj(e.plugin)?.description))?.name) ?? str(obj(e.plugin)?.name) ?? '?');
+}
+
+/**
+ * Per-track mix and instrument state. `includeDefaultBuses` false (the default)
+ * leaves out return / submix / outputs strips still at unity, centred, unmuted
+ * and with no inserts; the count left out is returned beside the rows.
+ */
+export function describeTracks(file: XpjFile, includeDefaultBuses = false): { tracks: XpjTrack[]; omitted_default_buses: number } {
+  const data = file.doc.data;
+  const raw = Array.isArray(data.tracks) ? data.tracks as unknown[] : [];
+  const returns = raw.map((t) => obj(t)).filter((t) => num(obj(t?.program)?.type) === 7).map((t) => str(t?.name) ?? 'Return');
+  const mixerOutputs = Array.isArray(obj(data.mixer)?.outputs) ? obj(data.mixer)!.outputs as unknown[] : [];
+  const tracks: XpjTrack[] = [];
+  let omitted = 0;
+  raw.forEach((t0, i) => {
+    const t = obj(t0) ?? {};
+    const program = obj(t.program) ?? {};
+    const mixable = obj(program.mixable);
+    const code = num(program.type);
+    const kind = code !== undefined ? (TRACK_KINDS[code] ?? `type ${code}`) : 'unknown';
+    const name = str(t.name) ?? str(program.name) ?? `Track ${i + 1}`;
+    const volume = num(mixable?.volume) ?? UNITY;
+    const panRaw = num(mixable?.pan);
+    const pan = panRaw !== undefined ? Math.round((panRaw - 0.5) * 200) : 0;
+    const muted = mixable?.mute === true;
+    const inserts = insertNames(mixable);
+    const sends = Array.isArray(mixable?.sends) ? (mixable!.sends as unknown[]).map((s) => num(s) ?? 0) : [];
+    const sendsTo = sends.map((s, k) => (s > 0 ? returns[k] ?? `Return ${k + 1}` : undefined)).filter((s): s is string => s !== undefined);
+    const level = programVolumeDb(volume);
+    let twinDiff: string[] | undefined;
+    if (kind === 'outputs') {
+      const twin = mixerOutputs.map((m) => obj(m)).find((m) => str(m?.name) === name);
+      const twinInserts = twin !== undefined ? insertNames(obj(twin.mixable)) : undefined;
+      if (twinInserts !== undefined && JSON.stringify(twinInserts) !== JSON.stringify(inserts)) twinDiff = twinInserts;
+    }
+    if (!includeDefaultBuses && BUS_KINDS.has(kind) && level === 0 && pan === 0 && !muted
+      && inserts.length === 0 && sendsTo.length === 0 && twinDiff === undefined) {
+      omitted++;
+      return;
+    }
+    const pluginDesc = obj(obj(obj(program.plugin)?.plugin)?.description);
+    const instrument = str(pluginDesc?.name);
+    const preset = str(obj(obj(program.plugin)?.plugin)?.presetName) ?? str(obj(program.plugin)?.presetName);
+    const route = obj(t.midiOutputRoute);
+    const device = str(obj(route?.outputPort)?.deviceName);
+    const row: XpjTrack = {
+      track: i + 1, name, kind, level_db: level,
+      ...(pan !== 0 ? { pan } : {}),
+      ...(muted ? { muted: true as const } : {}),
+      ...(instrument !== undefined ? { instrument } : {}),
+      ...(preset !== undefined ? { preset } : {}),
+      ...(inserts.length > 0 ? { inserts } : {}),
+      ...(sendsTo.length > 0 ? { sends_to: sendsTo } : {}),
+      ...(device !== undefined && device !== '<none>' ? { midi_out: { device, channel: (num(route?.outputChannel) ?? 0) + 1 } } : {}),
+    };
+    if (twinDiff !== undefined) row.inserts_differ_from_mixer_copy = twinDiff;
+    tracks.push(row);
+  });
+  return { tracks, omitted_default_buses: omitted };
 }
 
 /**

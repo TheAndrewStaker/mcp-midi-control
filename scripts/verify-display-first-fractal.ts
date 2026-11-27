@@ -60,7 +60,7 @@ import {
   roundDisplayValue as am4Round,
   type Param as Am4Param,
 } from 'fractal-midi/am4';
-import { KNOWN_PARAMS as II_PARAMS, type AxeFxIIParam } from 'fractal-midi/gen2/axe-fx-ii';
+import { KNOWN_PARAMS as II_PARAMS, DEVICE_LABEL_CALIBRATION as II_DEVICE_LABEL, type AxeFxIIParam } from 'fractal-midi/gen2/axe-fx-ii';
 import { resolveAxeFxIIParamKind } from '@mcp-midi-control/fractal-gen2/calibration.js';
 import {
   AXEFX3_DESCRIPTOR,
@@ -106,15 +106,15 @@ const PARITY_PENDING_ALLOWLIST: AllowlistEntry[] = [
     pattern:
       /^(drive\.slew_rate_slew|reverb\.release_time|flanger\.(drive|bass_focus)|phaser\.(attack|release)|wah\.(q_resonance|drive)|compressor\.time|filter\.(resonance|attack_time|release_time)|gate\.(attack|hold|release))$/,
     reason:
-      "cache typecode tagged scaling:'log10' but displayMin=0, so decode's degenerate-range guard silently treats them LINEAR. Taper-vs-range contradiction (same family as the HW-131 contradicted Hz tapers) — needs a hardware knob reading to pick taper or range. Round-trip still holds in the linear fallback branch (GATE B covers them).",
-    max_hits: 15,
+      "cache typecode tagged scaling:'log10' but displayMin=0, so decode's degenerate-range guard silently treats them LINEAR. Taper-vs-range contradiction (same family as the HW-131 contradicted Hz tapers) — needs a hardware knob reading to pick taper or range. Round-trip still holds in the linear fallback branch (GATE B covers them). Ceiling tightened 15 to 0 (2026-11-26): the AM4 fw 2.02 AM4-Edit read-back pinned every one.",
+    max_hits: 0,
   },
   {
     device: 'axe-fx-ii',
     pattern: /.*/,
     reason:
-      'uncalibrated II params (no wiki/AM4-shared/editor/hardware-swept calibration): raw 16-bit wire by design — the BK-060 long tail. encodeDisplay/decodeWire are absent TOGETHER (no one-sided leak, enforced by GATE A); the tool layer surfaces them as opaque-wire knobs with a clear message.',
-    max_hits: 377,
+      'uncalibrated II params (no wiki/AM4-shared/editor/hardware-swept calibration): raw 16-bit wire by design — the BK-060 long tail. encodeDisplay/decodeWire are absent TOGETHER (no one-sided leak, enforced by GATE A); the tool layer surfaces them as opaque-wire knobs with a clear message. Ceiling tightened 377 to 181 (2026-11-26): the device-label table (deviceLabelCalibration.generated.ts, the device GET labels) calibrated the rest.',
+    max_hits: 181,
   },
   {
     device: 'axe-fx-iii',
@@ -188,11 +188,6 @@ function wireGrid(wmax: number, n = 33): number[] {
   }
   return out;
 }
-
-const round2 = (v: number): number => {
-  const r = Math.round(v * 100) / 100;
-  return Object.is(r, -0) ? 0 : r;
-};
 
 // ════════════════════════════════════════════════════════════════════
 // AM4 (fractal-midi/am4) — normalized Q read-register space
@@ -343,10 +338,15 @@ console.log('\n[display-first] Axe-Fx II — GATE A + GATE B via resolveAxeFxIIP
     // Sweeping wire 2048 at it is sweeping a value the device cannot emit, and
     // the round-trip "failure" that produces is the GATE being wrong about the
     // domain, not the codec being wrong about the mapping.
-    if (ORDINAL_OFFSET_WIRE_MAX[key] !== undefined) {
-      const wmax = ORDINAL_OFFSET_WIRE_MAX[key];
+    // Device-label ordinals (deviceLabelCalibration.generated.ts) carry their
+    // own domain: display displayMin..displayMax = wire + offset.
+    const measuredOrdinal = II_DEVICE_LABEL[key]?.scale === 'ordinal' ? II_DEVICE_LABEL[key] : undefined;
+    if (ORDINAL_OFFSET_WIRE_MAX[key] !== undefined || measuredOrdinal !== undefined) {
+      const f = measuredOrdinal?.factor ?? 1;
+      const wmin = measuredOrdinal ? Math.ceil((measuredOrdinal.displayMin - (measuredOrdinal.offset ?? 0)) / f) : 0;
+      const wmax = measuredOrdinal ? Math.floor((measuredOrdinal.displayMax - (measuredOrdinal.offset ?? 0)) / f) : ORDINAL_OFFSET_WIRE_MAX[key];
       const bad: string[] = [];
-      for (let u = 0; u <= wmax; u++) {
+      for (let u = wmin; u <= wmax; u++) {
         const d = kind.decodeWire!(u);
         if (typeof d !== 'number') { bad.push(`wire ${u} decoded to non-number "${d}"`); break; }
         let u2: number;
@@ -357,7 +357,7 @@ console.log('\n[display-first] Axe-Fx II — GATE A + GATE B via resolveAxeFxIIP
         if (u2 !== u) { bad.push(`wire ${u} -> "${d}" -> wire ${u2}`); break; }
       }
       check(
-        `axe-fx-ii ${key}: offset-ordinal round-trips exactly over its OWN wire domain 0..${wmax}`,
+        `axe-fx-ii ${key}: offset-ordinal round-trips exactly over its OWN wire domain ${wmin}..${wmax}`,
         bad.length === 0,
         bad.join(' | '),
       );
@@ -367,6 +367,14 @@ console.log('\n[display-first] Axe-Fx II — GATE A + GATE B via resolveAxeFxIIP
     // GATE B: exact display stability over the wire grid.
     for (const u of wireGrid(65534)) {
       const d = kind.decodeWire!(u);
+      // A word the device prints at this wire ("INFINITE", "OFF"; measured
+      // labels in deviceLabelCalibration.generated.ts) must encode back to it.
+      if (typeof d === 'string' && II_DEVICE_LABEL[key]?.labels?.[u] === d) {
+        let back: number | undefined;
+        try { back = kind.encodeDisplay!(d); } catch { back = undefined; }
+        if (back !== u) gridBad.push(`${key} (word "${d}" at wire ${u} encodes to ${back})`);
+        continue;
+      }
       if (typeof d !== 'number') {
         gridBad.push(`${key} (wire ${u} decoded to non-number "${d}")`);
         break;
@@ -479,15 +487,17 @@ for (const [device, descriptor] of [
         if (bad.length > 0) endpointBad.push(`${key} (signed-raw semitone: ${bad.join('; ')})`);
         continue;
       }
-      // GATE A: calibrated closures must decode the wire endpoints onto the
-      // schema's advertised display bounds (panel-rounded).
+      // GATE A: calibrated closures must decode the wire endpoints EXACTLY onto
+      // the schema's advertised display bounds. The catalog rounds both to the
+      // param's print precision (2 decimals by default, 3 on a 0x43 row such as
+      // multitap_delay.mstrfreq 0.316..3.162), so no rounding happens here.
       const dMin = s.decode(0);
       const dMax = s.decode(65534);
       if (
         s.display_min === undefined ||
         s.display_max === undefined ||
-        dMin !== round2(s.display_min) ||
-        dMax !== round2(s.display_max)
+        dMin !== s.display_min ||
+        dMax !== s.display_max
       ) {
         endpointBad.push(`${key} (decode(0)=${dMin} vs min=${s.display_min}; decode(65534)=${dMax} vs max=${s.display_max})`);
       }

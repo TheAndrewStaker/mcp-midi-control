@@ -51,7 +51,10 @@ same OS (Live, Key, X) would be further configs on the same factory
 | `scan_locations` (projects on the card) | confirmed | Run through this server against a real card written by a One G2 on MPC OS 3.9: 62 projects listed. Read-only |
 | Projects on the internal storage | **confirmed** | Run through this server against a One G2 on MPC OS 3.9.1 in Controller Mode: the 7 projects saved on its internal storage listed beside the 69 on the card |
 | `get_preset` (a project's sequences) | confirmed for the file read | The `.xpj` container (gzip, a five-line header, then JSON) was read off 28 real song projects; sequence number = the file's key + 1, the same numbering Program Change uses. It reports the FILE, not what the MPC holds in memory |
-| Writing kits, programs or projects to the card | not implemented | A drum program writer exists in the codec, byte-identical to its reference, and is not reachable from any tool yet |
+| `get_preset` track mix (`mpc_project`) | hardware-unverified | New in 0.10.0. Per track: kind, level in dB, pan, mute, instrument and preset, inserts, the returns it feeds, MIDI out. Track kinds come from the program type codes seen across the 87 projects on a One G2 card; the level is the program volume through the fader law measured on the device (40 log10(v / 0.707946), within 0.3 dB on five programs). Return, submix and outputs strips still at their defaults are left out and counted. An outputs strip is flagged when its second copy in the project carries different inserts |
+| `apply_preset` on a card project (track level, pan, mute; sequence name, tempo) | hardware-unverified | New in 0.10.0. Edits only the rows listed and leaves the rest of the project as the unit saved it: the new values are spliced into the project text, so every other byte survives (a parse-and-rewrite fails on all 87 card projects, which keep `.0` on doubles). An outputs strip's second copy gets the same edit. Without `save_authorized` it is a preview. A write backs up the old file (`list_backups`), refuses if the file changed since it was read, and byte-compares the re-read before it replaces the file. In-memory splice checked on all 87 card projects; no edited project has been loaded on the unit yet |
+| Keygroup velocity sensitivity and release on the card | not implemented | The fields are in every keygroup track (`keygroup.synthSection`), but how their stored values map to what the MPC shows is not measured |
+| Writing kits, programs or new projects to the card | not implemented | A drum program writer exists in the codec, byte-identical to its reference, and is not reachable from any tool yet |
 
 Support tier: `generic-only`. This mirrors `capabilities.support_tier` on the
 descriptor at `packages/akai-mpc/src/devices/mpcOneG2.ts`, and preflight fails
@@ -78,6 +81,7 @@ if the two disagree.
 | Port names on other systems | The standalone and Controller Mode port names were read on one unit on Windows. macOS and Linux may name them differently | SESSION-1 |
 | Pad triggering with a known map | Which pad sounds for each General MIDI note on a given kit | SESSION-2 |
 | Program Change channel | Whether the MPC takes a Program Change on any channel or only on one | SESSION-1 |
+| Card project edits | An edited project loaded on the MPC, showing the new level, pan, mute and sequence name | SESSION-3 |
 
 ## Before you start
 
@@ -118,6 +122,18 @@ Put a drum program on the current track. In your MCP host:
 
 Report which pads lit for the kick, the snare and the hats, and which kit was
 loaded.
+
+### SESSION-3: Edit a copy of a project on the card
+**Tier: SESSION | ~10 minutes | writes one project file you copied first | unlocks: `apply_preset` on the card**
+
+On the MPC, Save As a project of yours under a new name, so the test touches a
+copy. Put the MPC in Controller Mode. In your MCP host:
+
+> "In my MPC project <the copy's name>, set track 1 to -6 dB, pan it 30 left,
+> mute track 2, rename sequence 1 to Test Edit, and save that to the card."
+
+Leave Controller Mode, load the copy on the MPC, and report the tool response
+and what the mixer and the sequence list show.
 
 ## Submitting
 

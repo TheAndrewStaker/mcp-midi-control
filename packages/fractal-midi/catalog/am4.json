@@ -31,7 +31,7 @@
         "pidHigh": 10,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 247,
+        "displayMax": 250,
         "enumValues": {
           "0": "1959SLP Normal",
           "1": "1987X Normal",
@@ -89,7 +89,7 @@
           "53": "Comet Concourse",
           "54": "Cornfed M50",
           "55": "Das Metall",
-          "56": "Deluxe Tweed",
+          "56": "Deluxe Tweed Bright",
           "57": "Deluxe Verb Normal",
           "58": "Diamante Fire",
           "59": "Dirty Shirley 1",
@@ -280,7 +280,10 @@
           "244": "Supro Black Magick",
           "245": "SV Bass 2",
           "246": "Triple Crest 3",
-          "247": "Deluxe 6G3"
+          "247": "Deluxe 6G3",
+          "248": "Deluxe Tweed Normal",
+          "249": "PVH 6160 Block Clean",
+          "250": "Brit JVM Crunch"
         }
       },
       "amp.gain": {
@@ -382,7 +385,8 @@
         "pidHigh": 34,
         "unit": "knob_0_10",
         "displayMin": 0,
-        "displayMax": 10
+        "displayMax": 10,
+        "encodeScale": 0.4166666666666667
       },
       "amp.master_vol_cap": {
         "block": "amp",
@@ -403,7 +407,8 @@
         "pidHigh": 51,
         "unit": "knob_0_10",
         "displayMin": 0,
-        "displayMax": 10
+        "displayMax": 10,
+        "encodeScale": 0.4166666666666667
       },
       "amp.input_trim": {
         "block": "amp",
@@ -424,7 +429,8 @@
         "pidHigh": 57,
         "unit": "knob_0_10",
         "displayMin": 0,
-        "displayMax": 10
+        "displayMax": 10,
+        "encodeScale": 2
       },
       "amp.geq_band_1": {
         "block": "amp",
@@ -533,9 +539,12 @@
         "pidLow": 58,
         "pidHigh": 77,
         "unit": "knob_0_10",
-        "displayMin": 0.1,
+        "displayMin": 0,
         "displayMax": 10,
-        "scaling": "log10"
+        "knobLogRange": [
+          0.01,
+          1
+        ]
       },
       "amp.input_eq_frequency": {
         "block": "amp",
@@ -598,7 +607,8 @@
         "pidHigh": 86,
         "unit": "count",
         "displayMin": -10,
-        "displayMax": 10
+        "displayMax": 10,
+        "encodeScale": 31.623
       },
       "amp.compression": {
         "block": "amp",
@@ -994,7 +1004,10 @@
         "unit": "knob_0_10",
         "displayMin": 0,
         "displayMax": 10,
-        "scaling": "log10"
+        "knobLogRange": [
+          0.1,
+          10
+        ]
       },
       "drive.low_cut": {
         "block": "drive",
@@ -1201,7 +1214,7 @@
         "pidHigh": 43,
         "unit": "percent",
         "displayMin": 0,
-        "displayMax": 100
+        "displayMax": 200
       },
       "drive.bass_bass": {
         "block": "drive",
@@ -1376,7 +1389,7 @@
         "pidLow": 66,
         "pidHigh": 15,
         "unit": "percent",
-        "displayMin": 0,
+        "displayMin": 1,
         "displayMax": 100
       },
       "reverb.reverbdelay": {
@@ -1472,12 +1485,12 @@
       "reverb.pickup_spacing": {
         "block": "reverb",
         "name": "pickup_spacing",
-        "displayLabel": "Pickup Spacing",
+        "displayLabel": "Mic Spacing",
         "pidLow": 66,
         "pidHigh": 29,
-        "unit": "percent",
+        "unit": "reverb_mic_spacing_cm",
         "displayMin": 0,
-        "displayMax": 100
+        "displayMax": 200
       },
       "reverb.frequency_1": {
         "block": "reverb",
@@ -1583,7 +1596,7 @@
         "pidLow": 66,
         "pidHigh": 42,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 1,
         "displayMax": 1000,
         "scaling": "log10"
       },
@@ -1615,7 +1628,7 @@
         "pidHigh": 45,
         "unit": "percent",
         "displayMin": 0,
-        "displayMax": 100
+        "displayMax": 200
       },
       "reverb.late_input_mix": {
         "block": "reverb",
@@ -1843,7 +1856,7 @@
         "pidLow": 70,
         "pidHigh": 12,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 1,
         "displayMax": 8000
       },
       "delay.lr_time_ratio": {
@@ -1872,7 +1885,7 @@
         "pidLow": 70,
         "pidHigh": 15,
         "unit": "percent",
-        "displayMin": 0,
+        "displayMin": -100,
         "displayMax": 100
       },
       "delay.feedback_r": {
@@ -1986,7 +1999,7 @@
         "pidLow": 70,
         "pidHigh": 30,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 1,
         "displayMax": 8000
       },
       "delay.master_feedback": {
@@ -2188,10 +2201,13 @@
         "displayLabel": "Sweep Resonance",
         "pidLow": 70,
         "pidHigh": 62,
-        "unit": "count",
-        "displayMin": 0.2,
-        "displayMax": 20,
-        "scaling": "log10"
+        "unit": "knob_0_10",
+        "displayMin": 0,
+        "displayMax": 10,
+        "knobLogRange": [
+          0.2,
+          20
+        ]
       },
       "delay.eq_q_high_low": {
         "block": "delay",
@@ -2428,7 +2444,7 @@
         "pidHigh": 10,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 19,
+        "displayMax": 26,
         "enumValues": {
           "0": "Digital Mono",
           "1": "Digital Stereo",
@@ -2436,7 +2452,7 @@
           "3": "Analog Stereo",
           "4": "Japan CE-2",
           "5": "Warm Stereo",
-          "6": "80s Style",
+          "6": "80'S Style",
           "7": "Triangle Chorus",
           "8": "8-Voice Stereo",
           "9": "Tape Chorus",
@@ -2448,8 +2464,15 @@
           "15": "Stereo Tri-Chorus",
           "16": "Dual Chorus",
           "17": "Tape Flanger",
-          "18": "Vibrato 1",
-          "19": "Vibrato 2"
+          "18": "Vibrato",
+          "19": "Japan CE-1 Vibrato",
+          "20": "Japan CE-1 Chorus",
+          "21": "Japan CH-1",
+          "22": "MX234",
+          "23": "Small Copy",
+          "24": "Japan CE-2 Bass",
+          "25": "Rockguy",
+          "26": "MX134 Stereo"
         }
       },
       "chorus.number_of_voices": {
@@ -2459,8 +2482,9 @@
         "pidLow": 78,
         "pidHigh": 11,
         "unit": "count",
-        "displayMin": 1,
-        "displayMax": 4
+        "displayMin": 2,
+        "displayMax": 8,
+        "rawIntStep": 2
       },
       "chorus.rate": {
         "block": "chorus",
@@ -2532,9 +2556,12 @@
         "pidLow": 78,
         "pidHigh": 24,
         "unit": "knob_0_10",
-        "displayMin": 0.5,
-        "displayMax": 500,
-        "scaling": "log10"
+        "displayMin": 0,
+        "displayMax": 10,
+        "knobLogRange": [
+          0.05,
+          50
+        ]
       },
       "chorus.low_cut": {
         "block": "chorus",
@@ -2676,8 +2703,8 @@
         "pidLow": 82,
         "pidHigh": 14,
         "unit": "bipolar_percent",
-        "displayMin": -99,
-        "displayMax": 99
+        "displayMin": -99.5,
+        "displayMax": 99.5
       },
       "flanger.dry_delay": {
         "block": "flanger",
@@ -2720,7 +2747,10 @@
         "unit": "knob_0_10",
         "displayMin": 0,
         "displayMax": 10,
-        "scaling": "log10"
+        "knobLogRange": [
+          0.005,
+          5
+        ]
       },
       "flanger.low_cut": {
         "block": "flanger",
@@ -2740,8 +2770,8 @@
         "pidLow": 82,
         "pidHigh": 26,
         "unit": "percent",
-        "displayMin": 0,
-        "displayMax": 100
+        "displayMin": -200,
+        "displayMax": 200
       },
       "flanger.bass_focus": {
         "block": "flanger",
@@ -2752,7 +2782,10 @@
         "unit": "knob_0_10",
         "displayMin": 0,
         "displayMax": 10,
-        "scaling": "log10"
+        "knobLogRange": [
+          20,
+          2000
+        ]
       },
       "flanger.min_time": {
         "block": "flanger",
@@ -2761,7 +2794,7 @@
         "pidLow": 82,
         "pidHigh": 32,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 0.34,
         "displayMax": 2
       },
       "flanger.max_time": {
@@ -2771,7 +2804,7 @@
         "pidLow": 82,
         "pidHigh": 33,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 2,
         "displayMax": 20
       },
       "flanger.vpo_exponent": {
@@ -2849,8 +2882,9 @@
         "pidLow": 90,
         "pidHigh": 16,
         "unit": "bipolar_percent",
-        "displayMin": -90,
-        "displayMax": 90
+        "displayMin": -99.99,
+        "displayMax": 99.99,
+        "encodeScale": 111.1
       },
       "phaser.min_frequency": {
         "block": "phaser",
@@ -2880,9 +2914,9 @@
         "displayLabel": "Bias",
         "pidLow": 90,
         "pidHigh": 20,
-        "unit": "bipolar_percent",
-        "displayMin": -100,
-        "displayMax": 100
+        "unit": "count",
+        "displayMin": -1,
+        "displayMax": 1
       },
       "phaser.feedback_point": {
         "block": "phaser",
@@ -2944,7 +2978,7 @@
         "pidLow": 90,
         "pidHigh": 32,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 10,
         "displayMax": 1000,
         "scaling": "log10"
       },
@@ -2955,7 +2989,7 @@
         "pidLow": 90,
         "pidHigh": 33,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 1,
         "displayMax": 100,
         "scaling": "log10"
       },
@@ -3050,7 +3084,10 @@
         "unit": "knob_0_10",
         "displayMin": 0,
         "displayMax": 10,
-        "scaling": "log10"
+        "knobLogRange": [
+          2,
+          20
+        ]
       },
       "wah.q_tracking": {
         "block": "wah",
@@ -3091,7 +3128,10 @@
         "unit": "knob_0_10",
         "displayMin": 0,
         "displayMax": 10,
-        "scaling": "log10"
+        "knobLogRange": [
+          0.01,
+          1
+        ]
       },
       "wah.inductor_bias": {
         "block": "wah",
@@ -3333,7 +3373,7 @@
         "pidLow": 46,
         "pidHigh": 24,
         "unit": "knob_0_10",
-        "displayMin": 0,
+        "displayMin": -10,
         "displayMax": 10
       },
       "compressor.sidechain_high_cut": {
@@ -3407,7 +3447,7 @@
         "pidLow": 46,
         "pidHigh": 37,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 1,
         "displayMax": 1000,
         "scaling": "log10"
       },
@@ -3418,7 +3458,7 @@
         "pidLow": 46,
         "pidHigh": 38,
         "unit": "knob_0_10",
-        "displayMin": 0,
+        "displayMin": -10,
         "displayMax": 10
       },
       "compressor.sidechain_emphasis_freq": {
@@ -3769,8 +3809,8 @@
         "pidLow": 114,
         "pidHigh": 25,
         "unit": "percent",
-        "displayMin": 0,
-        "displayMax": 100
+        "displayMin": 1,
+        "displayMax": 99
       },
       "filter.mod_frequency": {
         "block": "filter",
@@ -3802,7 +3842,10 @@
         "unit": "knob_0_10",
         "displayMin": 0,
         "displayMax": 10,
-        "scaling": "log10"
+        "knobLogRange": [
+          1,
+          20
+        ]
       },
       "filter.start_frequency": {
         "block": "filter",
@@ -3832,10 +3875,13 @@
         "displayLabel": "Sensitivity",
         "pidLow": 114,
         "pidHigh": 33,
-        "unit": "count",
-        "displayMin": 0.1,
-        "displayMax": 40,
-        "scaling": "log10"
+        "unit": "knob_0_10",
+        "displayMin": 0,
+        "displayMax": 10,
+        "knobLogRange": [
+          0.1,
+          40
+        ]
       },
       "filter.attack_time": {
         "block": "filter",
@@ -3844,7 +3890,7 @@
         "pidLow": 114,
         "pidHigh": 34,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 1,
         "displayMax": 1000,
         "scaling": "log10"
       },
@@ -3855,7 +3901,7 @@
         "pidLow": 114,
         "pidHigh": 35,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 20,
         "displayMax": 2000,
         "scaling": "log10"
       },
@@ -3933,8 +3979,8 @@
         "pidLow": 106,
         "pidHigh": 14,
         "unit": "percent",
-        "displayMin": 0,
-        "displayMax": 100
+        "displayMin": 1,
+        "displayMax": 99
       },
       "tremolo.crossover_freq": {
         "block": "tremolo",
@@ -3964,8 +4010,8 @@
         "pidLow": 106,
         "pidHigh": 23,
         "unit": "percent",
-        "displayMin": 0,
-        "displayMax": 100
+        "displayMin": 0.1,
+        "displayMax": 99.9
       },
       "enhancer.mix": {
         "block": "enhancer",
@@ -4087,7 +4133,7 @@
         "pidLow": 146,
         "pidHigh": 11,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 0.1,
         "displayMax": 1000,
         "scaling": "log10"
       },
@@ -4098,7 +4144,7 @@
         "pidLow": 146,
         "pidHigh": 12,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 1,
         "displayMax": 1000,
         "scaling": "log10"
       },
@@ -4109,7 +4155,7 @@
         "pidLow": 146,
         "pidHigh": 13,
         "unit": "ms",
-        "displayMin": 0,
+        "displayMin": 1,
         "displayMax": 1000,
         "scaling": "log10"
       },
@@ -4167,7 +4213,7 @@
         "pidLow": 102,
         "pidHigh": 16,
         "unit": "db",
-        "displayMin": -100,
+        "displayMin": -80,
         "displayMax": 0
       },
       "volpan.attack": {
@@ -4177,8 +4223,8 @@
         "pidLow": 102,
         "pidHigh": 17,
         "unit": "ms",
-        "displayMin": 1,
-        "displayMax": 5000,
+        "displayMin": 10,
+        "displayMax": 1000,
         "scaling": "log10"
       },
       "peq.mix": {
@@ -4487,9 +4533,12 @@
         "pidLow": 86,
         "pidHigh": 21,
         "unit": "knob_0_10",
-        "displayMin": 0.5,
-        "displayMax": 500,
-        "scaling": "log10"
+        "displayMin": 0,
+        "displayMax": 10,
+        "knobLogRange": [
+          0.05,
+          50
+        ]
       },
       "rotary.mic_distance": {
         "block": "rotary",
@@ -4570,7 +4619,8 @@
         "pidHigh": 39,
         "unit": "hz",
         "displayMin": 2,
-        "displayMax": 2000
+        "displayMax": 2000,
+        "scaling": "log10"
       },
       "amp.tonetype": {
         "block": "amp",
@@ -5315,9 +5365,12 @@
         "pidLow": 58,
         "pidHigh": 95,
         "unit": "knob_0_10",
-        "displayMin": 2.5,
-        "displayMax": 40,
-        "scaling": "log10"
+        "displayMin": 0,
+        "displayMax": 10,
+        "knobLogRange": [
+          0.25,
+          4
+        ]
       },
       "amp.cathode_time_const": {
         "block": "amp",
@@ -5515,9 +5568,12 @@
         "pidLow": 62,
         "pidHigh": 26,
         "unit": "knob_0_10",
-        "displayMin": 0.01,
+        "displayMin": 0,
         "displayMax": 10,
-        "scaling": "log10"
+        "knobLogRange": [
+          0.001,
+          1
+        ]
       },
       "amp.cab_mic_preamp_saturation": {
         "block": "amp",
@@ -5950,8 +6006,8 @@
           "20": "1x15 Vibroverb",
           "21": "2x10 Heart Key",
           "22": "2x10 Super 6G4",
-          "23": "2x12 65 Bassguy",
-          "24": "2x12 5153 Stealth",
+          "23": "2x12 5153 Stealth",
+          "24": "2x12 65 Bassguy",
           "25": "2x12 Chiefman",
           "26": "2x12 Class-A 30W",
           "27": "2x12 Double Verb",
@@ -6007,8 +6063,8 @@
           "20": "1x15 Vibroverb",
           "21": "2x10 Heart Key",
           "22": "2x10 Super 6G4",
-          "23": "2x12 65 Bassguy",
-          "24": "2x12 5153 Stealth",
+          "23": "2x12 5153 Stealth",
+          "24": "2x12 65 Bassguy",
           "25": "2x12 Chiefman",
           "26": "2x12 Class-A 30W",
           "27": "2x12 Double Verb",
@@ -6190,19 +6246,22 @@
           "2": "PRE"
         }
       },
-      "drive.slew_rate": {
+      "drive.sample_rate": {
         "block": "drive",
-        "name": "slew_rate",
+        "name": "sample_rate",
         "displayLabel": "Sample Rate",
         "pidLow": 118,
         "pidHigh": 26,
-        "unit": "percent",
-        "displayMin": 0,
-        "displayMax": 100
+        "unit": "hz",
+        "displayMin": 48,
+        "displayMax": 48000,
+        "encodeScale": 48000,
+        "scaling": "log10"
       },
-      "drive.bias": {
+      "drive.clip_shape": {
         "block": "drive",
-        "name": "bias",
+        "name": "clip_shape",
+        "displayLabel": "Clip Shape",
         "pidLow": 118,
         "pidHigh": 27,
         "unit": "knob_0_10",
@@ -6217,7 +6276,7 @@
         "pidHigh": 19,
         "unit": "ms",
         "displayMin": 0,
-        "displayMax": 250
+        "displayMax": 1000
       },
       "reverb.high_cut": {
         "block": "reverb",
@@ -6268,9 +6327,12 @@
         "pidLow": 66,
         "pidHigh": 36,
         "unit": "knob_0_10",
-        "displayMin": 0.1,
+        "displayMin": 0,
         "displayMax": 10,
-        "scaling": "log10"
+        "knobLogRange": [
+          0.01,
+          1
+        ]
       },
       "reverb.stereo_spread": {
         "block": "reverb",
@@ -6393,9 +6455,12 @@
         "pidLow": 70,
         "pidHigh": 26,
         "unit": "knob_0_10",
-        "displayMin": 0.5,
-        "displayMax": 500,
-        "scaling": "log10"
+        "displayMin": 0,
+        "displayMax": 10,
+        "knobLogRange": [
+          0.05,
+          50
+        ]
       },
       "delay.high_cut_slope": {
         "block": "delay",
@@ -6405,12 +6470,13 @@
         "pidHigh": 45,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 3,
+        "displayMax": 4,
         "enumValues": {
           "0": "6 dB/OCT",
           "1": "12 dB/OCT",
           "2": "24 dB/OCT",
-          "3": "36 dB/OCT"
+          "3": "36 dB/OCT",
+          "4": "48 dB/OCT"
         }
       },
       "delay.phase_reverse": {
@@ -6437,12 +6503,13 @@
         "pidHigh": 74,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 3,
+        "displayMax": 4,
         "enumValues": {
           "0": "6 dB/OCT",
           "1": "12 dB/OCT",
           "2": "24 dB/OCT",
-          "3": "36 dB/OCT"
+          "3": "36 dB/OCT",
+          "4": "48 dB/OCT"
         }
       },
       "delay.compander": {
@@ -7184,7 +7251,7 @@
         "pidLow": 46,
         "pidHigh": 0,
         "unit": "db",
-        "displayMin": -80,
+        "displayMin": -20,
         "displayMax": 20
       },
       "compressor.auto_makeup": {
@@ -7318,7 +7385,7 @@
         "pidHigh": 17,
         "unit": "percent",
         "displayMin": 0,
-        "displayMax": 100
+        "displayMax": 400
       },
       "tremolo.center": {
         "block": "tremolo",
@@ -7392,8 +7459,9 @@
         "pidLow": 146,
         "pidHigh": 16,
         "unit": "hz",
-        "displayMin": 20,
-        "displayMax": 2000
+        "displayMin": 10,
+        "displayMax": 1000,
+        "scaling": "log10"
       },
       "gate.sidechain_high_cut": {
         "block": "gate",
@@ -7429,7 +7497,8 @@
         "displayMin": 0,
         "displayMax": 1,
         "enumValues": {
-          "0": "RMS"
+          "0": "RMS",
+          "1": "Peak"
         }
       },
       "gate.knee": {
@@ -7442,6 +7511,10 @@
         "displayMin": 0,
         "displayMax": 4,
         "enumValues": {
+          "0": "Hard",
+          "1": "Med-Hard",
+          "2": "Medium",
+          "3": "Med-Soft",
           "4": "Soft"
         }
       },
@@ -7501,10 +7574,15 @@
         "pidHigh": 11,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 10,
+        "displayMax": 6,
         "enumValues": {
-          "1": "Log 30A",
-          "5": "Log 50"
+          "0": "LINEAR",
+          "1": "LOG 30A",
+          "2": "LOG 20A",
+          "3": "LOG 15A",
+          "4": "LOG 10A",
+          "5": "LOG 5A",
+          "6": "S-TAPER"
         }
       },
       "volpan.input_select": {
@@ -7518,6 +7596,7 @@
         "displayMax": 2,
         "enumValues": {
           "0": "Stereo",
+          "1": "Left Only",
           "2": "Right Only"
         }
       },
@@ -7542,7 +7621,7 @@
         "pidHigh": 18,
         "unit": "ms",
         "displayMin": 1,
-        "displayMax": 5000,
+        "displayMax": 100,
         "scaling": "log10"
       },
       "volpan.hysteresis": {
@@ -10660,8 +10739,8 @@
         "displayMin": 0,
         "displayMax": 1,
         "enumValues": {
-          "0": "Normal",
-          "1": "Steep"
+          "0": "6 dB/OCT",
+          "1": "12 dB/OCT"
         }
       },
       "reverb.high_cut_slope": {
@@ -10674,8 +10753,8 @@
         "displayMin": 0,
         "displayMax": 1,
         "enumValues": {
-          "0": "Normal",
-          "1": "Steep"
+          "0": "6 dB/OCT",
+          "1": "12 dB/OCT"
         }
       },
       "reverb.spring_type": {
@@ -10688,8 +10767,8 @@
         "displayMin": 0,
         "displayMax": 1,
         "enumValues": {
-          "0": "A",
-          "1": "B"
+          "0": "PARALLEL",
+          "1": "SERIES-PARALLEL"
         }
       },
       "reverb.predly_tap": {
@@ -10698,6 +10777,139 @@
         "displayLabel": "Pre-Delay Tap",
         "pidLow": 66,
         "pidHigh": 70,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 1,
+        "enumValues": {
+          "0": "INPUT",
+          "1": "OUTPUT"
+        }
+      },
+      "reverb.level": {
+        "block": "reverb",
+        "name": "level",
+        "displayLabel": "Level",
+        "pidLow": 66,
+        "pidHigh": 0,
+        "unit": "db",
+        "displayMin": -80,
+        "displayMax": 20
+      },
+      "tremolo.level": {
+        "block": "tremolo",
+        "name": "level",
+        "displayLabel": "Level",
+        "pidLow": 106,
+        "pidHigh": 0,
+        "unit": "db",
+        "displayMin": -80,
+        "displayMax": 20
+      },
+      "peq.level": {
+        "block": "peq",
+        "name": "level",
+        "displayLabel": "Level",
+        "pidLow": 54,
+        "pidHigh": 0,
+        "unit": "db",
+        "displayMin": -80,
+        "displayMax": 20
+      },
+      "reverb.bypass_mode": {
+        "block": "reverb",
+        "name": "bypass_mode",
+        "displayLabel": "Bypass Mode",
+        "pidLow": 66,
+        "pidHigh": 4,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 4,
+        "enumValues": {
+          "0": "Thru",
+          "1": "Mute FX Out",
+          "2": "Mute Out",
+          "3": "Mute FX In",
+          "4": "Mute In"
+        }
+      },
+      "flanger.bypass_mode": {
+        "block": "flanger",
+        "name": "bypass_mode",
+        "displayLabel": "Bypass Mode",
+        "pidLow": 82,
+        "pidHigh": 4,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 2,
+        "enumValues": {
+          "0": "Thru",
+          "1": "Mute FX Out",
+          "2": "Mute Out"
+        }
+      },
+      "phaser.bypass_mode": {
+        "block": "phaser",
+        "name": "bypass_mode",
+        "displayLabel": "Bypass Mode",
+        "pidLow": 90,
+        "pidHigh": 4,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 2,
+        "enumValues": {
+          "0": "Thru",
+          "1": "Mute FX Out",
+          "2": "Mute Out"
+        }
+      },
+      "filter.bypass_mode": {
+        "block": "filter",
+        "name": "bypass_mode",
+        "displayLabel": "Bypass Mode",
+        "pidLow": 114,
+        "pidHigh": 4,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 1,
+        "enumValues": {
+          "0": "Thru",
+          "1": "Mute"
+        }
+      },
+      "tremolo.bypass_mode": {
+        "block": "tremolo",
+        "name": "bypass_mode",
+        "displayLabel": "Bypass Mode",
+        "pidLow": 106,
+        "pidHigh": 4,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 1,
+        "enumValues": {
+          "0": "Thru",
+          "1": "Mute"
+        }
+      },
+      "enhancer.bypass_mode": {
+        "block": "enhancer",
+        "name": "bypass_mode",
+        "displayLabel": "Bypass Mode",
+        "pidLow": 122,
+        "pidHigh": 4,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 1,
+        "enumValues": {
+          "0": "Thru",
+          "1": "Mute"
+        }
+      },
+      "reverb.kill_dry": {
+        "block": "reverb",
+        "name": "kill_dry",
+        "displayLabel": "Kill Dry",
+        "pidLow": 66,
+        "pidHigh": 7,
         "unit": "enum",
         "displayMin": 0,
         "displayMax": 1,
@@ -10727,9 +10939,15 @@
         "displayLabel": "Pitch Direction",
         "pidLow": 66,
         "pidHigh": 59,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 3
+        "displayMax": 3,
+        "enumValues": {
+          "0": "FORWARD",
+          "1": "REVERSE",
+          "2": "FOR/REV",
+          "3": "REV/FOR"
+        }
       },
       "reverb.pitch_position": {
         "block": "reverb",
@@ -10737,9 +10955,14 @@
         "displayLabel": "Pitch Position",
         "pidLow": 66,
         "pidHigh": 61,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 2
+        "displayMax": 2,
+        "enumValues": {
+          "0": "INPUT",
+          "1": "MATRIX",
+          "2": "FEEDBACK"
+        }
       },
       "delay.tempo_r": {
         "block": "delay",
@@ -11322,8 +11545,8 @@
         "displayMin": 0,
         "displayMax": 1,
         "enumValues": {
-          "0": "OFF",
-          "1": "ON"
+          "0": "LOW",
+          "1": "HIGH"
         }
       },
       "delay.lfo_1_target": {
@@ -11332,9 +11555,14 @@
         "displayLabel": "LFO 1 Target",
         "pidLow": 70,
         "pidHigh": 52,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 2
+        "displayMax": 2,
+        "enumValues": {
+          "0": "BOTH",
+          "1": "LEFT",
+          "2": "RIGHT"
+        }
       },
       "delay.lfo_2_target": {
         "block": "delay",
@@ -11342,9 +11570,14 @@
         "displayLabel": "LFO 2 Target",
         "pidLow": 70,
         "pidHigh": 53,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 2
+        "displayMax": 2,
+        "enumValues": {
+          "0": "BOTH",
+          "1": "LEFT",
+          "2": "RIGHT"
+        }
       },
       "delay.lfo_4_target": {
         "block": "delay",
@@ -11352,9 +11585,15 @@
         "displayLabel": "LFO 4 Target",
         "pidLow": 70,
         "pidHigh": 86,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 3
+        "displayMax": 3,
+        "enumValues": {
+          "0": "NONE",
+          "1": "LEVEL",
+          "2": "PAN",
+          "3": "SPREAD"
+        }
       },
       "delay.sweep_filter": {
         "block": "delay",
@@ -11362,9 +11601,45 @@
         "displayLabel": "Sweep Filter",
         "pidLow": 70,
         "pidHigh": 89,
-        "unit": "count",
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 2,
+        "enumValues": {
+          "0": "LOWPASS",
+          "1": "BANDPASS",
+          "2": "HIGHPASS"
+        }
+      },
+      "chorus.delay_range": {
+        "block": "chorus",
+        "name": "delay_range",
+        "displayLabel": "Delay Range",
+        "pidLow": 78,
+        "pidHigh": 32,
+        "unit": "ms",
         "displayMin": 1,
-        "displayMax": 3
+        "displayMax": 40,
+        "displayDecimals": 2
+      },
+      "chorus.low": {
+        "block": "chorus",
+        "name": "low",
+        "displayLabel": "Low",
+        "pidLow": 78,
+        "pidHigh": 33,
+        "unit": "knob_0_10",
+        "displayMin": 0,
+        "displayMax": 10
+      },
+      "chorus.high": {
+        "block": "chorus",
+        "name": "high",
+        "displayLabel": "High",
+        "pidLow": 78,
+        "pidHigh": 34,
+        "unit": "knob_0_10",
+        "displayMin": 0,
+        "displayMax": 10
       },
       "flanger.lfo_type": {
         "block": "flanger",
@@ -11396,10 +11671,12 @@
         "pidHigh": 20,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 1,
+        "displayMax": 3,
         "enumValues": {
           "0": "OFF",
-          "1": "ON"
+          "1": "LOW",
+          "2": "MED",
+          "3": "HIGH"
         }
       },
       "flanger.phase_reverse": {
@@ -11410,10 +11687,12 @@
         "pidHigh": 21,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 1,
+        "displayMax": 3,
         "enumValues": {
-          "0": "OFF",
-          "1": "ON"
+          "0": "NONE",
+          "1": "RIGHT",
+          "2": "LEFT",
+          "3": "BOTH"
         }
       },
       "flanger.thru_zero": {
@@ -11424,10 +11703,11 @@
         "pidHigh": 22,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 1,
+        "displayMax": 2,
         "enumValues": {
           "0": "OFF",
-          "1": "ON"
+          "1": "AUTO",
+          "2": "MANUAL (SET DEPTH TO 0)"
         }
       },
       "flanger.bypass_reset": {
@@ -11438,10 +11718,13 @@
         "pidHigh": 27,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 1,
+        "displayMax": 4,
         "enumValues": {
           "0": "OFF",
-          "1": "ON"
+          "1": "0 DEG",
+          "2": "90 DEG",
+          "3": "180 DEG",
+          "4": "270 DEG"
         }
       },
       "flanger.high_cut_slope": {
@@ -11450,9 +11733,17 @@
         "displayLabel": "High Cut Slope",
         "pidLow": 82,
         "pidHigh": 28,
-        "unit": "count",
-        "displayMin": 1,
-        "displayMax": 12
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 5,
+        "enumValues": {
+          "0": "6 dB/OCT",
+          "1": "12 dB/OCT",
+          "2": "18 dB/OCT",
+          "3": "24 dB/OCT",
+          "4": "30 dB/OCT",
+          "5": "36 dB/OCT"
+        }
       },
       "flanger.low_cut_slope": {
         "block": "flanger",
@@ -11460,9 +11751,13 @@
         "displayLabel": "Low Cut Slope",
         "pidLow": 82,
         "pidHigh": 29,
-        "unit": "count",
-        "displayMin": 1,
-        "displayMax": 12
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 1,
+        "enumValues": {
+          "0": "6 dB/OCT",
+          "1": "12 dB/OCT"
+        }
       },
       "flanger.vco_response": {
         "block": "flanger",
@@ -11470,19 +11765,58 @@
         "displayLabel": "VCO Response",
         "pidLow": 82,
         "pidHigh": 31,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 10
+        "displayMax": 2,
+        "enumValues": {
+          "0": "LINEAR",
+          "1": "EXPONENTIAL",
+          "2": "SQUARE-LAW"
+        }
       },
       "flanger.steps": {
         "block": "flanger",
         "name": "steps",
-        "displayLabel": "Steps",
+        "displayLabel": "LFO Quantize",
         "pidLow": 82,
         "pidHigh": 34,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 32
+        "displayMax": 31,
+        "enumValues": {
+          "0": "OFF",
+          "1": "2",
+          "2": "3",
+          "3": "4",
+          "4": "5",
+          "5": "6",
+          "6": "7",
+          "7": "8",
+          "8": "9",
+          "9": "10",
+          "10": "11",
+          "11": "12",
+          "12": "13",
+          "13": "14",
+          "14": "15",
+          "15": "16",
+          "16": "17",
+          "17": "18",
+          "18": "19",
+          "19": "20",
+          "20": "21",
+          "21": "22",
+          "22": "23",
+          "23": "24",
+          "24": "25",
+          "25": "26",
+          "26": "27",
+          "27": "28",
+          "28": "29",
+          "29": "30",
+          "30": "31",
+          "31": "32"
+        }
       },
       "phaser.order": {
         "block": "phaser",
@@ -11490,9 +11824,17 @@
         "displayLabel": "Order",
         "pidLow": 90,
         "pidHigh": 11,
-        "unit": "count",
-        "displayMin": 1,
-        "displayMax": 12
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 5,
+        "enumValues": {
+          "0": "2",
+          "1": "4",
+          "2": "6",
+          "3": "8",
+          "4": "10",
+          "5": "12"
+        }
       },
       "phaser.lfo_type": {
         "block": "phaser",
@@ -11522,9 +11864,14 @@
         "displayLabel": "Mode",
         "pidLow": 90,
         "pidHigh": 21,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 3
+        "displayMax": 2,
+        "enumValues": {
+          "0": "NORMAL",
+          "1": "VIBE",
+          "2": "BARBERPOLE"
+        }
       },
       "phaser.tone": {
         "block": "phaser",
@@ -11533,8 +11880,9 @@
         "pidLow": 90,
         "pidHigh": 23,
         "unit": "knob_0_10",
-        "displayMin": 0,
-        "displayMax": 10
+        "displayMin": -10,
+        "displayMax": 10,
+        "encodeScale": 31.623
       },
       "phaser.direction": {
         "block": "phaser",
@@ -11542,9 +11890,13 @@
         "displayLabel": "Direction",
         "pidLow": 90,
         "pidHigh": 24,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 2
+        "displayMax": 1,
+        "enumValues": {
+          "0": "UP",
+          "1": "DOWN"
+        }
       },
       "phaser.reset_on_bypass": {
         "block": "phaser",
@@ -11554,10 +11906,13 @@
         "pidHigh": 26,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 1,
+        "displayMax": 4,
         "enumValues": {
           "0": "OFF",
-          "1": "ON"
+          "1": "0 DEG",
+          "2": "90 DEG",
+          "3": "180 DEG",
+          "4": "270 DEG"
         }
       },
       "phaser.quantize": {
@@ -11568,10 +11923,40 @@
         "pidHigh": 27,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 1,
+        "displayMax": 31,
         "enumValues": {
           "0": "OFF",
-          "1": "ON"
+          "1": "2",
+          "2": "3",
+          "3": "4",
+          "4": "5",
+          "5": "6",
+          "6": "7",
+          "7": "8",
+          "8": "9",
+          "9": "10",
+          "10": "11",
+          "11": "12",
+          "12": "13",
+          "13": "14",
+          "14": "15",
+          "15": "16",
+          "16": "17",
+          "17": "18",
+          "18": "19",
+          "19": "20",
+          "20": "21",
+          "21": "22",
+          "22": "23",
+          "23": "24",
+          "24": "25",
+          "25": "26",
+          "26": "27",
+          "27": "28",
+          "28": "29",
+          "29": "30",
+          "30": "31",
+          "31": "32"
         }
       },
       "phaser.vcr_curve": {
@@ -11580,9 +11965,15 @@
         "displayLabel": "Type",
         "pidLow": 90,
         "pidHigh": 28,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 3
+        "displayMax": 3,
+        "enumValues": {
+          "0": "LINEAR",
+          "1": "EXPONENTIAL",
+          "2": "JFET",
+          "3": "PHOTOCELL"
+        }
       },
       "phaser.lfo_mode": {
         "block": "phaser",
@@ -11590,9 +11981,13 @@
         "displayLabel": "Mode",
         "pidLow": 90,
         "pidHigh": 37,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 3
+        "displayMax": 1,
+        "enumValues": {
+          "0": "NORMAL",
+          "1": "UNIVIBE"
+        }
       },
       "filter.order_2": {
         "block": "filter",
@@ -11600,9 +11995,13 @@
         "displayLabel": "Order",
         "pidLow": 114,
         "pidHigh": 14,
-        "unit": "count",
-        "displayMin": 1,
-        "displayMax": 12
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 1,
+        "enumValues": {
+          "0": "2nd",
+          "1": "4th"
+        }
       },
       "filter.phase_invert": {
         "block": "filter",
@@ -11612,10 +12011,12 @@
         "pidHigh": 17,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 1,
+        "displayMax": 3,
         "enumValues": {
-          "0": "OFF",
-          "1": "ON"
+          "0": "NONE",
+          "1": "RIGHT",
+          "2": "LEFT",
+          "3": "BOTH"
         }
       },
       "filter.enable": {
@@ -11662,10 +12063,40 @@
         "pidHigh": 27,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 1,
+        "displayMax": 31,
         "enumValues": {
           "0": "OFF",
-          "1": "ON"
+          "1": "2",
+          "2": "3",
+          "3": "4",
+          "4": "5",
+          "5": "6",
+          "6": "7",
+          "7": "8",
+          "8": "9",
+          "9": "10",
+          "10": "11",
+          "11": "12",
+          "12": "13",
+          "13": "14",
+          "14": "15",
+          "15": "16",
+          "16": "17",
+          "17": "18",
+          "18": "19",
+          "19": "20",
+          "20": "21",
+          "21": "22",
+          "22": "23",
+          "23": "24",
+          "24": "25",
+          "25": "26",
+          "26": "27",
+          "27": "28",
+          "28": "29",
+          "29": "30",
+          "30": "31",
+          "31": "32"
         }
       },
       "filter.mode": {
@@ -11674,9 +12105,15 @@
         "displayLabel": "Mode",
         "pidLow": 114,
         "pidHigh": 29,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 3
+        "displayMax": 3,
+        "enumValues": {
+          "0": "LOWPASS",
+          "1": "BANDPASS",
+          "2": "HIGHPASS",
+          "3": "MIX"
+        }
       },
       "filter.sweep_shape": {
         "block": "filter",
@@ -11686,7 +12123,8 @@
         "pidHigh": 36,
         "unit": "count",
         "displayMin": 0,
-        "displayMax": 10
+        "displayMax": 10,
+        "encodeScale": 5
       },
       "filter.detector_source": {
         "block": "filter",
@@ -11694,9 +12132,13 @@
         "displayLabel": "Detector Source",
         "pidLow": 114,
         "pidHigh": 37,
-        "unit": "count",
+        "unit": "enum",
         "displayMin": 0,
-        "displayMax": 3
+        "displayMax": 1,
+        "enumValues": {
+          "0": "BLOCK IN",
+          "1": "MAIN IN"
+        }
       },
       "filter.detect": {
         "block": "filter",
@@ -13390,6 +13832,158 @@
           "3": "Sum L+R"
         }
       },
+      "global.fs_1_2": {
+        "block": "global",
+        "name": "fs_1_2",
+        "displayLabel": "Tap 1+2",
+        "pidLow": 1,
+        "pidHigh": 163,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 13,
+        "enumValues": {
+          "0": "Disabled",
+          "1": "Mode Select",
+          "2": "Preset Mode",
+          "3": "Scene Mode",
+          "4": "Effects Mode",
+          "5": "Tuner Mode",
+          "6": "Bank -1",
+          "7": "Bank +1",
+          "8": "Preset -1",
+          "9": "Preset +1",
+          "10": "Scene -1",
+          "11": "Scene +1",
+          "12": "Amp Mode",
+          "13": "AM4 Bypass"
+        }
+      },
+      "global.fs_2_3": {
+        "block": "global",
+        "name": "fs_2_3",
+        "displayLabel": "Tap 2+3",
+        "pidLow": 1,
+        "pidHigh": 164,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 13,
+        "enumValues": {
+          "0": "Disabled",
+          "1": "Mode Select",
+          "2": "Preset Mode",
+          "3": "Scene Mode",
+          "4": "Effects Mode",
+          "5": "Tuner Mode",
+          "6": "Bank -1",
+          "7": "Bank +1",
+          "8": "Preset -1",
+          "9": "Preset +1",
+          "10": "Scene -1",
+          "11": "Scene +1",
+          "12": "Amp Mode",
+          "13": "AM4 Bypass"
+        }
+      },
+      "global.fs_3_4": {
+        "block": "global",
+        "name": "fs_3_4",
+        "displayLabel": "Tap 3+4",
+        "pidLow": 1,
+        "pidHigh": 165,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 13,
+        "enumValues": {
+          "0": "Disabled",
+          "1": "Mode Select",
+          "2": "Preset Mode",
+          "3": "Scene Mode",
+          "4": "Effects Mode",
+          "5": "Tuner Mode",
+          "6": "Bank -1",
+          "7": "Bank +1",
+          "8": "Preset -1",
+          "9": "Preset +1",
+          "10": "Scene -1",
+          "11": "Scene +1",
+          "12": "Amp Mode",
+          "13": "AM4 Bypass"
+        }
+      },
+      "global.mode_sel": {
+        "block": "global",
+        "name": "mode_sel",
+        "displayLabel": "Mode Select",
+        "pidLow": 1,
+        "pidHigh": 166,
+        "unit": "count",
+        "displayMin": 0,
+        "displayMax": 127
+      },
+      "global.preset_sel": {
+        "block": "global",
+        "name": "preset_sel",
+        "displayLabel": "Preset Mode",
+        "pidLow": 1,
+        "pidHigh": 167,
+        "unit": "count",
+        "displayMin": 0,
+        "displayMax": 127
+      },
+      "global.scene_sel": {
+        "block": "global",
+        "name": "scene_sel",
+        "displayLabel": "Scene Mode",
+        "pidLow": 1,
+        "pidHigh": 168,
+        "unit": "count",
+        "displayMin": 0,
+        "displayMax": 127
+      },
+      "global.effect_sel": {
+        "block": "global",
+        "name": "effect_sel",
+        "displayLabel": "Effects Mode",
+        "pidLow": 1,
+        "pidHigh": 169,
+        "unit": "count",
+        "displayMin": 0,
+        "displayMax": 127
+      },
+      "global.amp_sel": {
+        "block": "global",
+        "name": "amp_sel",
+        "displayLabel": "Amp Mode",
+        "pidLow": 1,
+        "pidHigh": 170,
+        "unit": "count",
+        "displayMin": 0,
+        "displayMax": 127
+      },
+      "global.mode_via_cc": {
+        "block": "global",
+        "name": "mode_via_cc",
+        "displayLabel": "Mode Via CC Value",
+        "pidLow": 1,
+        "pidHigh": 171,
+        "unit": "count",
+        "displayMin": 0,
+        "displayMax": 127
+      },
+      "global.homepage_style": {
+        "block": "global",
+        "name": "homepage_style",
+        "displayLabel": "Home Page Style",
+        "pidLow": 1,
+        "pidHigh": 172,
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 1,
+        "enumValues": {
+          "0": "Unified",
+          "1": "Large Names"
+        }
+      },
       "amp.cab_proximity_2": {
         "block": "amp",
         "name": "cab_proximity_2",
@@ -13420,9 +14014,11 @@
         "displayLabel": "Distance",
         "pidLow": 62,
         "pidHigh": 71,
-        "unit": "percent",
+        "unit": "count",
         "displayMin": 0,
-        "displayMax": 100
+        "displayMax": 24,
+        "encodeScale": 24,
+        "displayUnit": "cm"
       },
       "amp.cab_dynacab_z_2": {
         "block": "amp",
@@ -13430,9 +14026,11 @@
         "displayLabel": "Distance",
         "pidLow": 62,
         "pidHigh": 72,
-        "unit": "percent",
+        "unit": "count",
         "displayMin": 0,
-        "displayMax": 100
+        "displayMax": 24,
+        "encodeScale": 24,
+        "displayUnit": "cm"
       },
       "amp.in_boost_sw": {
         "block": "amp",
@@ -14150,9 +14748,17 @@
         "displayLabel": "Slope 1",
         "pidLow": 54,
         "pidHigh": 35,
-        "unit": "count",
-        "displayMin": 1,
-        "displayMax": 12
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 5,
+        "enumValues": {
+          "0": "6 dB/OCT",
+          "1": "12 dB/OCT",
+          "2": "18 dB/OCT",
+          "3": "24 dB/OCT",
+          "4": "30 dB/OCT",
+          "5": "36 dB/OCT"
+        }
       },
       "peq.channel_5_slope": {
         "block": "peq",
@@ -14160,9 +14766,17 @@
         "displayLabel": "Slope 5",
         "pidLow": 54,
         "pidHigh": 36,
-        "unit": "count",
-        "displayMin": 1,
-        "displayMax": 12
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 5,
+        "enumValues": {
+          "0": "6 dB/OCT",
+          "1": "12 dB/OCT",
+          "2": "18 dB/OCT",
+          "3": "24 dB/OCT",
+          "4": "30 dB/OCT",
+          "5": "36 dB/OCT"
+        }
       },
       "compressor.knee_type": {
         "block": "compressor",
@@ -14371,7 +14985,8 @@
         "pidHigh": 19,
         "unit": "degrees",
         "displayMin": 0,
-        "displayMax": 180
+        "displayMax": 360,
+        "encodeScale": 114.59156
       },
       "tremolo.crossover_slope": {
         "block": "tremolo",
@@ -14379,9 +14994,14 @@
         "displayLabel": "Crossover Slope",
         "pidLow": 106,
         "pidHigh": 20,
-        "unit": "count",
-        "displayMin": 1,
-        "displayMax": 12
+        "unit": "enum",
+        "displayMin": 0,
+        "displayMax": 2,
+        "enumValues": {
+          "0": "6 dB/oct",
+          "1": "12 dB/oct",
+          "2": "24 dB/oct"
+        }
       },
       "enhancer.phase_invert": {
         "block": "enhancer",
@@ -14391,14 +15011,24 @@
         "pidHigh": 15,
         "unit": "enum",
         "displayMin": 0,
-        "displayMax": 1,
+        "displayMax": 3,
         "enumValues": {
-          "0": "OFF",
-          "1": "ON"
+          "0": "NONE",
+          "1": "RIGHT",
+          "2": "LEFT",
+          "3": "BOTH"
         }
       }
     },
     "PARAM_ALIASES": {
+      "drive.bias": "drive.bias_bias",
+      "drive.slew_rate": "drive.slew_rate_slew",
+      "flanger.lfo_quantize": "flanger.steps",
+      "flanger.quantize": "flanger.steps",
+      "reverb.mic_spacing": "reverb.pickup_spacing",
+      "chorus.lfo_phase": "chorus.mod_phase",
+      "chorus.bass": "chorus.low",
+      "chorus.treble": "chorus.high",
       "reverb.decay": "reverb.time",
       "reverb.length": "reverb.time",
       "delay.length": "delay.time",
@@ -14538,7 +15168,7 @@
         "53": "Comet Concourse",
         "54": "Cornfed M50",
         "55": "Das Metall",
-        "56": "Deluxe Tweed",
+        "56": "Deluxe Tweed Bright",
         "57": "Deluxe Verb Normal",
         "58": "Diamante Fire",
         "59": "Dirty Shirley 1",
@@ -14729,7 +15359,10 @@
         "244": "Supro Black Magick",
         "245": "SV Bass 2",
         "246": "Triple Crest 3",
-        "247": "Deluxe 6G3"
+        "247": "Deluxe 6G3",
+        "248": "Deluxe Tweed Normal",
+        "249": "PVH 6160 Block Clean",
+        "250": "Brit JVM Crunch"
       },
       "DRIVE_TYPES_VALUES": {
         "0": "Rat Distortion",
@@ -14930,7 +15563,7 @@
         "3": "Analog Stereo",
         "4": "Japan CE-2",
         "5": "Warm Stereo",
-        "6": "80s Style",
+        "6": "80'S Style",
         "7": "Triangle Chorus",
         "8": "8-Voice Stereo",
         "9": "Tape Chorus",
@@ -14942,8 +15575,15 @@
         "15": "Stereo Tri-Chorus",
         "16": "Dual Chorus",
         "17": "Tape Flanger",
-        "18": "Vibrato 1",
-        "19": "Vibrato 2"
+        "18": "Vibrato",
+        "19": "Japan CE-1 Vibrato",
+        "20": "Japan CE-1 Chorus",
+        "21": "Japan CH-1",
+        "22": "MX234",
+        "23": "Small Copy",
+        "24": "Japan CE-2 Bass",
+        "25": "Rockguy",
+        "26": "MX134 Stereo"
       },
       "FLANGER_TYPES_VALUES": {
         "0": "Digital Mono",

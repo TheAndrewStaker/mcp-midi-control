@@ -23,6 +23,7 @@ import type {
   ParamSchema,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { resolveEnumAlias } from '@mcp-midi-control/core/protocol-generic/cross-device-enums.js';
 
 import {
   KNOWN_PARAMS,
@@ -32,7 +33,9 @@ import {
   findEnumCandidates,
   resolveEnumValue,
   isRawIntRegister,
+  decodeRawIntRegister,
   encodeRawIntRegister,
+  am4RenamedTypeName,
   type Param,
   type ParamKey,
 } from 'fractal-midi/am4';
@@ -68,7 +71,7 @@ import { describeApplicability } from 'fractal-midi/am4';
 export function makeEncode(param: Param): ParamSchema['encode'] {
   return (value: number | string): number => {
     if (param.unit === 'enum') {
-      const resolved = resolveEnumValue(param, value);
+      const resolved = resolveEnumValue(param, value) ?? resolveEnumByVocabulary(param, value);
       if (resolved === undefined) {
         const candidates = typeof value === 'string'
           ? findEnumCandidates(param, value)
@@ -97,12 +100,45 @@ export function makeEncode(param: Param): ParamSchema['encode'] {
   };
 }
 
+/** Lowercased, whitespace-collapsed, with the standalone "MK" / "MARK" token dropped. */
+function vocabularyKey(name: string): string {
+  return name.trim().toLowerCase().split(/\s+/).filter((t) => t !== 'mk' && t !== 'mark').join(' ');
+}
+
+/**
+ * Second chance for an enum name another device spells differently, so a
+ * set_param keeps the promise its tool description makes ("USA IIC+" <->
+ * "USA MK IIC+"; hardware finding 2026-11-25: set_param refused "usa iic+").
+ * First the cross-device concept table (the same one apply_preset uses),
+ * then a match that ignores the "MK" token, accepted only when exactly one
+ * AM4 name matches. `undefined` when neither resolves.
+ */
+export function resolveEnumByVocabulary(param: Param, value: number | string): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  // A name a firmware release renamed in place (same ordinal): old presets,
+  // recipes and habits keep resolving. See fractal-midi/am4 firmwareRenames.ts.
+  const renamed = am4RenamedTypeName(param.block, param.name, value);
+  if (renamed !== undefined) {
+    const viaRename = resolveEnumValue(param, renamed);
+    if (viaRename !== undefined) return viaRename;
+  }
+  const alias = resolveEnumAlias('am4', param.block, param.name, value);
+  if (alias.aliasUsed !== undefined) {
+    const viaAlias = resolveEnumValue(param, alias.canonical);
+    if (viaAlias !== undefined) return viaAlias;
+  }
+  const key = vocabularyKey(value);
+  const hits = Object.entries(param.enumValues ?? {}).filter(([, n]) => vocabularyKey(String(n)) === key);
+  return hits.length === 1 ? Number(hits[0][0]) : undefined;
+}
+
 export function makeDecode(param: Param): ParamSchema['decode'] {
   return (wire: number): number | string => {
     if (param.unit === 'enum') {
       const idx = Math.round(wire);
       return param.enumValues?.[idx] ?? idx;
     }
+    if (isRawIntRegister(param)) return decodeRawIntRegister(param, wire);
     return roundDisplayValue(param, am4Decode(param, wire));
   };
 }

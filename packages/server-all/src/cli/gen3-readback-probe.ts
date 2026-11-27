@@ -51,7 +51,6 @@ import {
   buildBlockBulkReadPoll,
   assembleGen3BlockBulkRead,
   isGen3BroadcastFrame,
-  buildGetParameter,
   isSetGetParameterResponse,
   parseSetGetParameterResponse,
   buildQueryPatchName,
@@ -247,58 +246,16 @@ interface GetExperiment {
   verdict: string;
 }
 
+// JOB 2 used to send the sub=0x09 "GET" frame (buildGetParameter) to see if
+// the unit answers it as a read. It does not: that frame is the typed SET with
+// a zero value, so it SET the loaded preset's Reverb 1 type to ordinal 0 (FM3
+// fw 12 hardware, community PR #24). A read-only probe must never send it, so
+// Job 2 now sends nothing and records why; the JSON shape is unchanged.
 async function runJob2(): Promise<GetExperiment> {
-  console.error(`\nJOB 2 — GET experiment on Reverb 1 TYPE (eff ${REVERB_EFFECT_ID}, pid ${REVERB_TYPE_PARAM_ID})…`);
-  const req = buildGetParameter(REVERB_EFFECT_ID, REVERB_TYPE_PARAM_ID, MODEL);
-  const frames = await sendAndCollect(req, GET_WINDOW_MS);
-  const decoded: GetExperiment['frames'] = [];
-  const carriedValues: number[] = [];
-
-  for (const f of frames) {
-    if (isSetGetParameterResponse(f, MODEL)) {
-      try {
-        const p = parseSetGetParameterResponse(f, MODEL);
-        decoded.push({ kind: `fn01:${p.kind}`, hex: toHex(f), effectId: p.effectId, paramId: p.paramId, value: p.value });
-        carriedValues.push(p.value);
-      } catch {
-        decoded.push({ kind: 'fn01:unparsed', hex: toHex(f) });
-      }
-    } else if (
-      isGen3BroadcastFrame(f, 0x74, MODEL)
-      || isGen3BroadcastFrame(f, 0x75, MODEL)
-      || isGen3BroadcastFrame(f, 0x76, MODEL)
-    ) {
-      decoded.push({ kind: 'broadcast', hex: toHex(f) });
-    } else {
-      decoded.push({ kind: 'other', hex: toHex(f) });
-    }
-  }
-
-  // If the GET triggered a broadcast burst, the reverb-type ordinal lives at
-  // record[REVERB_TYPE_PARAM_ID] (the device-true catalog id — 0 on FM3/III,
-  // 10 on FM9). Pull it so the verdict can compare against ground truth too.
-  // CAVEAT: broadcast positional index == catalog paramId is only verified for
-  // REVERB_MIX (paramId 0). It is FALSIFIED for the amp/DISTORT block (paramId
-  // 2 -> index 149; FM9 capture 2026-06-04). This probe's verdict cross-checks
-  // multiple candidate values, so it tolerates the index being off, but do not
-  // copy `values[paramId]` into a shipping read path — see reader.ts guard.
-  if (frames.some((f) => isGen3BroadcastFrame(f, 0x74, MODEL))) {
-    try {
-      const burst = assembleGen3BlockBulkRead(frames, MODEL);
-      if (burst.values[REVERB_TYPE_PARAM_ID] !== undefined) carriedValues.push(burst.values[REVERB_TYPE_PARAM_ID]);
-    } catch { /* not a clean burst — ignore */ }
-  }
-
-  let verdict: string;
-  if (frames.length === 0) {
-    verdict = 'NO RESPONSE — sub=0x09 GET not honored on this firmware. Read path is broadcast-only (fn=0x1f).';
-  } else if (carriedValues.includes(GROUND_TRUTH.ordinal)) {
-    verdict = `ORDINAL ${GROUND_TRUTH.ordinal} carried — the GET response reports the read ordinal (which IS the set-by-name value; no raw-id space). Read-back confirmed.`;
-  } else {
-    verdict = `RESPONDED but did not carry ordinal ${GROUND_TRUTH.ordinal} — current reverb type differs, or a new field layout. Inspect frames.`;
-  }
-  console.error(`  ${frames.length} frame(s). ${verdict}`);
-  return { effectId: REVERB_EFFECT_ID, paramId: REVERB_TYPE_PARAM_ID, request: toHex(req), framesReceived: frames.length, frames: decoded, verdict };
+  const verdict = 'SKIPPED: the sub=0x09 frame this job used to send is a SET of value 0, not a GET (it changed the reverb type). Not sent.';
+  console.error(`
+JOB 2 — skipped. ${verdict}`);
+  return { effectId: REVERB_EFFECT_ID, paramId: REVERB_TYPE_PARAM_ID, request: '', framesReceived: 0, frames: [], verdict };
 }
 
 // ── JOB 0: documented-query sweep ──────────────────────────────────
@@ -413,7 +370,7 @@ async function main(): Promise<void> {
     capturedAt: new Date().toISOString(),
     modelByte: MODEL,
     groundTruth: GROUND_TRUTH,
-    note: 'READ-ONLY diagnostic. Job0 = documented-query sweep (raw replies). Job1 = fn=0x1F poll → 0x74/0x75/0x76 burst decode. Job2 = sub=0x09 GET-response experiment on reverb type. Job3 = EXPERIMENTAL enum value-list dump (candidate sub=0x2e/0x1f) — raw replies for offline {raw-id→name} decode toward set-by-name.',
+    note: 'READ-ONLY diagnostic. Job0 = documented-query sweep (raw replies). Job1 = fn=0x1F poll → 0x74/0x75/0x76 burst decode. Job2 = retired (its sub=0x09 frame was a SET of 0, not a GET); nothing is sent. Job3 = EXPERIMENTAL enum value-list dump (candidate sub=0x2e/0x1f) — raw replies for offline {raw-id→name} decode toward set-by-name.',
     summary: {
       documentedQueriesAnswered: answeredQueries,
       blocksPolled: job1.length,

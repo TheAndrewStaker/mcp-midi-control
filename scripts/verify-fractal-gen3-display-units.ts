@@ -108,6 +108,15 @@ function verifyDevice(descriptor: DeviceDescriptor): DeviceResult {
 
       // 2. Round-trip + monotonicity across interior sample points.
       const samples = [lo, lo + span * 0.25, lo + span * 0.5, lo + span * 0.75, hi];
+      // Reads round to the param's print precision (0..3 decimals, from the
+      // device typecode), so a quarter-point such as 47.5 on a whole-number
+      // param can only come back as 47 or 48: allow half a printed step.
+      let printDecimals = 0;
+      for (let w = 0; w <= 65534; w += 257) {
+        const v = schema.decode(w);
+        if (typeof v === 'number') printDecimals = Math.max(printDecimals, (String(v).split('.')[1] ?? '').length);
+      }
+      const halfPrintStep = 0.5 * 10 ** -printDecimals;
       let prevWire = -1;
       let monotonic = true;
       for (const d of samples) {
@@ -124,7 +133,7 @@ function verifyDevice(descriptor: DeviceDescriptor): DeviceResult {
         const back = schema.decode(wire);
         // Tolerance scales with the span; log10 ranges over decades need a
         // proportional tolerance, so use 0.5% of span (min 0.01).
-        const tol = Math.max(Math.abs(span) * 0.005, 0.01);
+        const tol = Math.max(Math.abs(span) * 0.005, 0.01, halfPrintStep + 1e-9);
         check(`${id}: decode(encode(${d})) ≈ ${d}`, typeof back === 'number' && approxEq(back, d, tol), `got ${back}`);
       }
       check(`${id}: encode is monotonic across the range`, monotonic);

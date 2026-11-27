@@ -66,13 +66,14 @@ import {
   roundDisplayValue,
   type Param,
 } from './params.js';
+import { decodeRawIntRegister, isRawIntRegister } from './midiRegisters.js';
 import { AMP_TYPES } from './cacheEnums.js';
 import { BLOCK_NAMES_BY_VALUE, BLOCK_TYPE_VALUES, type BlockTypeName } from './blockTypes.js';
 
 /** amp effectId marker (== amp pidLow) in the decoded body. */
 const AMP_MARKER = BLOCK_TYPE_VALUES.amp; // 0x003a
 /** Amp TYPE ordinal bound — a valid marker's 4 channel types are all < this. */
-const AMP_TYPE_ORDINAL_COUNT = AMP_TYPES.length; // 248
+const AMP_TYPE_ORDINAL_COUNT = AMP_TYPES.length; // 251 since fw 2.02
 
 /** Per-channel record stride (A -> B -> C -> D), in BYTES. */
 export const AM4_BODY_CHANNEL_STRIDE = 0x130;
@@ -148,6 +149,10 @@ function decodeAmpChunkValue(param: Param, wire: number): number | string {
     const enumValues = param.enumValues as Record<number, string> | undefined;
     return enumValues?.[wire] ?? wire;
   }
+  // Stepped integer knobs (Density, Voice Shift, Springs, ...) store the
+  // integer itself, a negative one as 16-bit two's complement. Without this
+  // a stored Density 8 read back as 4 (its minimum): fw 2.02, Y2, 2026-11-26.
+  if (isRawIntRegister(param)) return decodeRawIntRegister(param, wire);
   const internal = wire / 65534;
   return roundDisplayValue(param, am4Decode(param, internal));
 }

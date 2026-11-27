@@ -14,18 +14,20 @@ import { FM3_PARAMS_BY_FAMILY, FM3_ENUM_OVERRIDES_BY_NAME, FM3_CACHE_ENUM_NAMES 
 import type { FractalModernConfig, } from '../factory.js';
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 import {
+  GRID_BUILD_GUIDANCE,
   MODERN_AGENT_GUIDANCE,
   MODERN_BLOCK_PARAMS_SUMMARY,
 } from './shared.js';
 
 // FM3's grid is 4×12 (wire-confirmed 4 rows; 12 cols per FM3-Edit). The
-// example below keeps every slot within cols 1..4, which is valid.
+// example keeps every block within cols 2..5 (Input 1 takes col 1, Output 1
+// lands in col 6), which is valid.
 const FM3_EXAMPLE_SPEC: PresetSpec = {
   name: 'Demo',
   slots: [
     {
       // The user-facing Drive / OD pedal (ID_FUZZ family): drive/tone/level.
-      slot: { row: 2, col: 1 },
+      slot: { row: 2, col: 2 },
       block_type: 'drive',
       params_by_channel: {
         A: { type: 3, drive: 5, tone: 5, level: 5 },
@@ -33,15 +35,15 @@ const FM3_EXAMPLE_SPEC: PresetSpec = {
     },
     {
       // The Amp block (ID_DISTORT family) carries the tone stack.
-      slot: { row: 2, col: 2 },
+      slot: { row: 2, col: 3 },
       block_type: 'amp',
       params_by_channel: {
         A: { type: 3, bass: 5, mid: 5, treble: 5, master: 5 },
       },
     },
-    { slot: { row: 2, col: 3 }, block_type: 'cab' },
+    { slot: { row: 2, col: 4 }, block_type: 'cab' },
     {
-      slot: { row: 2, col: 4 },
+      slot: { row: 2, col: 5 },
       block_type: 'reverb',
       params_by_channel: {
         A: { type: 3, time: 5, mix: 25 },
@@ -77,6 +79,7 @@ export const FM3_CONFIG: FractalModernConfig = {
   // field test 2026-06-12), i.e. the FM3 reads the bank from CC0 like the FM9.
   // 'msb' kept correct for any residual PC use (e.g. send_program_change docs).
   switch_preset_via: 'sysex',
+  save_targets_loaded_only: true,
   bank_select: 'msb',
   support_tier: 'community-beta',
   verification:
@@ -112,6 +115,7 @@ export const FM3_CONFIG: FractalModernConfig = {
   },
   agent_guidance: {
     ...MODERN_AGENT_GUIDANCE,
+    ...GRID_BUILD_GUIDANCE,
     device_note: [
       'This is the Fractal FM3 (community beta). It shares the Axe-Fx III',
       'gen-3 SysEx protocol with 8 scenes and A-D channels, but uses a',

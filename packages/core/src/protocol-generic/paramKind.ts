@@ -70,6 +70,7 @@ export type ParamUnit =
   | 'pf'
   | 'rotary_mic_spacing'
   | 'amp_geq_band'
+  | 'reverb_mic_spacing_cm'
   // Allow extension by string for any future device-native unit.
   | (string & {});
 

@@ -28,6 +28,7 @@ almost anything you do here is new information.
 | `get_preset`, whole-preset structure read | hardware-unverified | Decoded from the same captures: preset name, all four scene names, the current scene index, and the four-slot chain including empty slots, in one round-trip. Oracle-matched against an annotated move cascade in both captured presets |
 | `set_param` / `set_params`, continuous knobs only | hardware-unverified | The VP4's write frame is its own shape, not the other gen-3 devices': no sub-action, a `tc` sub-opcode, and a swapped-septet float. Decoded byte-exact from a community capture on firmware 4.03. Raw wire values only, calibration pending |
 | `set_bypass` | hardware-unverified | Same capture |
+| `set_channel` | gated | Not in the VP4 write allowlist; no VP4 capture of a channel select exists yet |
 | `set_bypass` on the 15 multi-word blocks | **hardware-unverified, newly reachable** | Same defect as the grid siblings: until 2026-08-03 the write path resolved the descriptor SLUG against display names and group codes, so `graphic_eq`, `gate_expander`, `volume_pan` and twelve others refused as unknown blocks. `set_block` stays gated on this device regardless (placement math undecoded), so only `set_bypass` changes here |
 | `save_preset` | hardware-unverified | Same capture |
 | `set_param` on an enum or TYPE selector | gated | Refuses. No discrete type-select example exists in any VP4 capture |

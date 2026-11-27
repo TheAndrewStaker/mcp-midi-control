@@ -66,17 +66,31 @@ export const AM4_DIRTY_LABEL = AM4_LABEL;
  */
 const DIRTY_MARK_TRUST_WINDOW_MS = 2000;
 
-async function isActiveBufferDirty(conn: MidiConnection): Promise<boolean> {
+/**
+ * The navigation gate's dirty verdict plus where it came from: `device` when
+ * the edited-bit read answered (it sees edits from the front panel, AM4-Edit
+ * and other server instances), `this_server_only` when it failed and only
+ * this process's own write tracker could answer. get_preset reports the same
+ * verdict, so the snapshot and the gate can never disagree.
+ */
+export async function readActiveBufferDirtyState(
+  conn: MidiConnection,
+): Promise<{ dirty: boolean; source: 'device' | 'this_server_only' }> {
   try {
     const deviceBit = await readActiveBufferEditedBit(conn);
-    if (deviceBit) return true;
+    if (deviceBit) return { dirty: true, source: 'device' };
     const sinceMark = msSinceMarkedDirty(AM4_DIRTY_LABEL);
-    return isDirty(AM4_DIRTY_LABEL)
+    const recentOwnWrite = isDirty(AM4_DIRTY_LABEL)
       && sinceMark !== undefined
       && sinceMark < DIRTY_MARK_TRUST_WINDOW_MS;
+    return { dirty: recentOwnWrite, source: 'device' };
   } catch {
-    return isDirty(AM4_DIRTY_LABEL);
+    return { dirty: isDirty(AM4_DIRTY_LABEL), source: 'this_server_only' };
   }
+}
+
+async function isActiveBufferDirty(conn: MidiConnection): Promise<boolean> {
+  return (await readActiveBufferDirtyState(conn)).dirty;
 }
 
 const LOCATION_STATE_PID_LOW = 0x00ce;

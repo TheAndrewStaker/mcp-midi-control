@@ -158,7 +158,7 @@ async function readOne(ctx: DispatchCtx, block: string, name: string): Promise<R
     wire_value: parsed.value,
     display_value,
     unit,
-    raw_response: resp,
+    ...(parsed.label !== '' ? { device_label: parsed.label } : {}),
   };
 }
 

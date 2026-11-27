@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/arturia",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Arturia device descriptors (MicroFreak) + the shared Arturia SysEx codec for the unified MCP surface.",
   "private": true,
   "license": "Apache-2.0",

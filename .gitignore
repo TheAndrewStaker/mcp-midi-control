@@ -161,3 +161,6 @@ scripts/fixtures/*/
 !scripts/fixtures/akai-mpc/
 # verify-song-author*: the recipe + device-call golden of an invented song (not a tab dump).
 !scripts/fixtures/synthetic-song/
+
+# Stray probe logs at the repo root
+/*.out

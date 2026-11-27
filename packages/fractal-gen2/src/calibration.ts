@@ -77,11 +77,14 @@ import type {
   ResolvedParamKind,
 } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
 import {
+  DEVICE_LABEL_CALIBRATION,
   KNOWN_PARAMS,
   displayToWire,
   wireToDisplay,
   type AxeFxIIParam,
+  type DeviceLabelCalibration,
 } from 'fractal-midi/gen2/axe-fx-ii';
+import { printDisplayValue, displayWriteTarget, roundDisplay, spellTempoDivision } from 'fractal-midi/shared';
 
 export type CalibrationProvenance =
   | 'am4-shared'
@@ -195,10 +198,12 @@ const ORDINAL_OFFSET: Readonly<Record<string, OrdinalOffsetEntry>> = {
  * used by the golden).
  */
 const AM4_SHARED: Record<string, CalibrationEntry> = {
-  'amp.bright_cap': { displayMin: 10, displayMax: 10000, provenance: 'am4-shared' },
+  // bright_cap / input_trim are log10 on the II: the device's own label reads
+  // wire 14682 as "47.0 pF" (10*1000^0.224) and 33215 as "1.032" (2026-11-26).
+  'amp.bright_cap': { displayMin: 10, displayMax: 10000, displayScale: 'log10', unit: 'pf', provenance: 'hardware-swept' },
   'amp.definition': { displayMin: -10, displayMax: 10, provenance: 'am4-shared' },
   'amp.dynimp': { displayMin: 0, displayMax: 10, provenance: 'am4-shared' },
-  'amp.input_trim': { displayMin: 0.1, displayMax: 10, provenance: 'am4-shared' },
+  'amp.input_trim': { displayMin: 0.1, displayMax: 10, displayScale: 'log10', provenance: 'hardware-swept' },
   'amp.overdrive': { displayMin: 0, displayMax: 10, provenance: 'am4-shared' },
   'amp.tremdepth': { displayMin: 0, displayMax: 100, provenance: 'am4-shared' },
   // amp.tremfreq: AM4 reports unit='db' min=0.2 max=20 — that's an AM4
@@ -338,7 +343,7 @@ const EDITOR_OBSERVED: Record<string, CalibrationEntry> = {
   // it as Hz with a log scale similar to chorus.rate. Use the same
   // range AM4 reports (0.2..20) but tagged log10 since tremolo rate
   // is a perceptual frequency knob.
-  'amp.tremfreq': { displayMin: 0.2, displayMax: 20, displayScale: 'log10', provenance: 'editor-observed' },
+  'amp.tremfreq': { displayMin: 0.2, displayMax: 20, displayScale: 'log10', unit: 'hz', provenance: 'hardware-swept' },
   // chorus.drive: AM4 0.5..500 knob_0_10 is the AM4's particular wire
   // mapping. The Axe-Fx II's chorus drive knob displays as 0..10 in
   // AxeEdit, with internal scaling absorbed into the wire mapping.
@@ -809,6 +814,12 @@ export const resolveAxeFxIIParamKind: ParamKindResolver = (
     };
   }
 
+  // Device-label calibration outranks every other tier: each entry prints
+  // every label the II itself rendered for that param (see
+  // deviceLabelCalibration.generated.ts for the evidence and the rule).
+  const measured = DEVICE_LABEL_CALIBRATION[`${param.block}.${param.name}`];
+  if (measured !== undefined) return measuredKind(block, name, param, measured);
+
   // Offset-ordinal params come FIRST, ahead of the catalog, because the
   // catalog's declared range for them is the wire domain rather than the
   // panel's and the generic path below would spread it across 0..65534.
@@ -915,9 +926,71 @@ export const resolveAxeFxIIParamKind: ParamKindResolver = (
  * param ever appears. Encode (display→wire) is untouched, so the
  * calibration round-trip goldens (tolerance-based) stay green.
  */
-function roundDisplay(value: number): number {
-  const rounded = Math.round(value * 100) / 100;
-  return Object.is(rounded, -0) ? 0 : rounded;
+/** Resolved kind for a device-label calibration entry. */
+function measuredKind(block: string, name: string, param: AxeFxIIParam, m: DeviceLabelCalibration): ResolvedParamKind {
+  const { displayMin, displayMax } = m;
+  const scale = m.scale === 'log10' ? 'log10' : 'linear';
+  const unit = (m.unit as ResolvedParamKind['unit'] | undefined)
+    ?? classifyUnit(param.controlType, displayMin, displayMax, m.scale === 'ordinal' ? 'linear' : scale);
+  // The device prints its ends rounded to `decimals` (a 0.3162 minimum reads
+  // "0.316"), so a reading within half a printed digit of an end is that end.
+  const slack = m.scale === 'ordinal' ? 0 : 0.5 * Math.pow(10, -m.decimals);
+  // Word labels the device prints at specific wires ("INFINITE", "OFF",
+  // "LFO1 SYNC"): decode returns the word, encode accepts it.
+  const words = m.labels ?? {};
+  const wordWire = (value: number | string): number | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const want = value.trim().toLowerCase();
+    const hit = Object.entries(words).find(([, w]) => w.toLowerCase() === want);
+    return hit ? Number(hit[0]) : undefined;
+  };
+  const toNumber = (value: number | string): number => {
+    // Number('') is 0 and Number('0x10') is 16: accept only a plain decimal
+    if (typeof value === 'string' && !/^\s*[-+]?(\d+\.?\d*|\.\d+)\s*$/.test(value)) {
+      throw new Error(`Expected a number for ${block}.${name}, got "${value}"`);
+    }
+    const num = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(num)) throw new Error(`Expected a number for ${block}.${name}, got "${value}"`);
+    if (num < displayMin - slack || num > displayMax + slack) {
+      throw new Error(`${block}.${name} out of range [${displayMin}..${displayMax}]: ${num}`);
+    }
+    return Math.min(displayMax, Math.max(displayMin, num));
+  };
+  if (m.scale === 'ordinal') {
+    const offset = m.offset ?? 0;
+    const factor = m.factor ?? 1;
+    return {
+      unit, displayMin, displayMax, source: 'overlay',
+      encodeDisplay: (value) => {
+        const named = wordWire(value);
+        if (named !== undefined) return named;
+        const num = toNumber(value);
+        const step = (num - offset) / factor;
+        if (Math.abs(step - Math.round(step)) > 1e-9) {
+          throw new Error(`${block}.${name} takes whole values${factor !== 1 ? ` in steps of ${factor}` : ''} from ${displayMin} to ${displayMax}: ${num}`);
+        }
+        return Math.round(step);
+      },
+      // the device clamps a written ordinal to its range, and so does the read
+      decodeWire: (wire) => words[Math.round(wire)] ?? Math.min(displayMax, Math.max(displayMin, Math.round(wire) * factor + offset)),
+    };
+  }
+  return {
+    unit, displayMin, displayMax, source: 'overlay',
+    encodeDisplay: (value) => {
+      const named = wordWire(value);
+      if (named !== undefined) return named;
+      // aim at the reading's printed step (its middle, on truncating params)
+      const num = Math.min(displayMax, Math.max(displayMin, displayWriteTarget(toNumber(value), m)));
+      return displayToWire(num, { displayMin, displayMax, displayScale: scale });
+    },
+    decodeWire: (wire) => {
+      const word = words[Math.round(wire)];
+      if (word !== undefined) return word;
+      const v = printDisplayValue(wireToDisplay(wire, { displayMin, displayMax, displayScale: scale }), m);
+      return Object.is(v, -0) ? 0 : v;
+    },
+  };
 }
 
 function resolveEnumWire(param: AxeFxIIParam, value: number | string): number {
@@ -931,7 +1004,17 @@ function resolveEnumWire(param: AxeFxIIParam, value: number | string): number {
     }
     return value;
   }
-  const lower = value.trim().toLowerCase();
+  // Tempo divisions: "1/8.", "dotted eighth", "1/8t" -> the roster's own
+  // "1/8 DOT" / "1/8 TRIP" (same speller as the AM4, so every Fractal accepts
+  // the same spellings). A modifier the roster cannot place is refused, never
+  // dropped.
+  const tempo = spellTempoDivision(value, Object.values(enumValues));
+  if (tempo !== undefined && tempo.canonical === undefined) {
+    throw new Error(
+      `"${value}" names a ${tempo.modifier === 'TRIP' ? 'triplet' : 'dotted'} division that ${param.block}.${param.name} does not offer (call list_params for the full list).`,
+    );
+  }
+  const lower = (tempo?.canonical ?? value).trim().toLowerCase();
   const matches: Array<{ idx: number; label: string }> = [];
   for (const [idxStr, label] of Object.entries(enumValues)) {
     if (label.toLowerCase() === lower) return Number(idxStr);

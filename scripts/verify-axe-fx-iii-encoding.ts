@@ -31,7 +31,6 @@ import {
   buildGetTempo,
   buildStatusDump,
   buildSetParameter,
-  buildGetParameter,
   buildSetParameterBypass,
   packValue16,
   unpackValue16,
@@ -224,11 +223,6 @@ check('buildSetParameter(66, 0, 65534) — Reverb 1, paramId 0, ordinal 65534',
 check('buildSetParameter(66, 11, 32767) — Reverb 1, paramId 11, ordinal 32767',
   buildSetParameter(66, 11, 32767),
   'f00001741001090042000b00007c7f37040000000064f7');
-
-// buildGetParameter(66, 0) — value field zeroed (same as ordinal-0 SET):
-check('buildGetParameter(66, 0) — Reverb 1 query paramId 0',
-  buildGetParameter(66, 0),
-  'f000017410010900420000000000000000000000005ff7');
 
 // buildSetParameterBypass(66, true) = buildSetParameter(66, 255, 1) → float32(1.0):
 check('buildSetParameterBypass(66, true) — Reverb 1 bypass via fn=0x01 path',
@@ -498,7 +492,7 @@ console.log('\nmultipurpose_response (function 0x64):');
     parseMultipurposeResponse(captured),
     { echoedFn: 0x0e, resultCode: 0x00 });
   checkEqual('describeMultipurposeResultCode(0x00)',
-    describeMultipurposeResultCode(0x00), 'bad checksum (MIDI_ERROR_BAD_CHKSUM)');
+    describeMultipurposeResultCode(0x00), 'code 0 (ambiguous: MIDI_ERROR_BAD_CHKSUM in the Axe-Edit III table, success on FM9 dump-frame acks)');
   // 0x05 was previously labeled "NACK" from a loose community report.
   // The AxeEdit III 1.14.31 binary's MIDI_ERROR_* string table
   // (indexed by result_code) reveals it as MIDI_ERROR_INVALID_FXID.

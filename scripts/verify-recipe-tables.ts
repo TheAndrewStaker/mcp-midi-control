@@ -32,7 +32,7 @@
  */
 
 import { KNOWN_PARAMS as AXE_FX_II_KNOWN_PARAMS } from 'fractal-midi/gen2/axe-fx-ii';
-import { CACHE_PARAMS as AM4_CACHE_PARAMS } from 'fractal-midi/am4';
+import { CACHE_PARAMS as AM4_CACHE_PARAMS, KNOWN_PARAMS as AM4_KNOWN_PARAMS } from 'fractal-midi/am4';
 import { PARAM_BY_KEY as AXE_FX_III_PARAM_BY_KEY } from 'fractal-midi/gen3/axe-fx-iii';
 import { FM3_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm3';
 import { FM9_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm9';
@@ -135,8 +135,12 @@ function hasIIParam(block: string, name: string): boolean {
 }
 
 function hasAM4Param(block: string, name: string): boolean {
+  // The registered catalog (KNOWN_PARAMS, as the II check uses) plus the
+  // editor-cache table: params registered from wire captures rather than the
+  // cache (filter.level, wire-verified; filter.mode) are real and writable.
   const key = `${block}.${name}`;
-  return Object.prototype.hasOwnProperty.call(AM4_CACHE_PARAMS, key);
+  return Object.prototype.hasOwnProperty.call(AM4_CACHE_PARAMS, key)
+    || Object.prototype.hasOwnProperty.call(AM4_KNOWN_PARAMS, key);
 }
 
 function hasIIIParam(family: string, name: string): boolean {
@@ -715,17 +719,15 @@ console.log('\n[encodability] every recipe value encodes on every device it clai
 // III/FM9 wah Q range (settles 20..200 vs 2.0..20.0), then either a recipe
 // value map or a scale fix in the ranges generator. Do NOT guess a x10
 // conversion.
-const ENCODABILITY_DEBT = new Set<string>([
-  'wah/wah_cocked_low/axe-fx-ii:wah.control',
-  'wah/wah_cocked_high/axe-fx-ii:wah.control',
-  'wah/wah_cocked_low/axe-fx-iii:wah.q',
-  'wah/wah_cocked_mid/axe-fx-iii:wah.q',
-  'wah/wah_cocked_high/axe-fx-iii:wah.q',
-  'auto_wah/auto_wah_funk/axe-fx-iii:wah.q',
-  'auto_wah/auto_wah_cantrell/axe-fx-iii:wah.q',
-  'auto_wah/auto_wah_hendrix/axe-fx-iii:wah.q',
-  'auto_wah/auto_wah_subtle/axe-fx-iii:wah.q',
-]);
+// 0.10.0: the III wah.q rows came OFF. WAH_Q carries editor typecode 0x52 on
+// III/FM3/FM9, the class community PR #24 decoded on FM3 fw 12 hardware as a
+// 0..10 panel knob whatever the stated window (20..200 is an exact decade).
+// That matches the AM4's own screenshot-verified wah resonance (knob_0_10,
+// 4.44 at wire 0.444), the domain these recipes' 3..7 were authored in.
+// 2026-11-26: the II wah.control rows came OFF. The II's own display labels
+// (deviceLabelCalibration.generated.ts) read it as a 0..10 knob, the domain
+// these recipes' 2.5 / 7.5 were authored in.
+const ENCODABILITY_DEBT = new Set<string>([]);
 const debtSeen = new Set<string>();
 
 for (const entry of entries) {
@@ -1044,16 +1046,12 @@ console.log('\n[block_stack] type-gate (no knob suppressed by its own slot type)
 const TYPE_GATE_DEBT = new Set<string>([
   'eighties_clean_shimmer/am4:amp.mid',
   'eighties_clean_shimmer/am4:amp.master',
-  'eighties_clean_shimmer/am4:chorus.rate',
-  'eighties_clean_shimmer/am4:chorus.depth',
   'texas_blues_crunch/am4:amp.mid',
   'texas_blues_crunch/am4:amp.master',
   'glassy_clean/am4:amp.mid',
   'glassy_clean/am4:amp.master',
   'gilmour_phaser_clean/am4:phaser.rate',
   'gilmour_phaser_clean/am4:phaser.depth',
-  'progressive_clean/am4:chorus.rate',
-  'progressive_clean/am4:chorus.depth',
   'classic_rock_plexi/am4:amp.master',
   'modern_metal_recto/am4:filter.q',
   'modern_metal_recto/am4:filter.gain',

@@ -486,6 +486,26 @@ async function verifyAm4(client: Client): Promise<void> {
     });
   }
 
+  // set_channel (0.10.0): a channel block takes an explicit select and the
+  // echo acks it; a block without channels refuses before any wire op.
+  {
+    const okR = await client.callTool({
+      name: 'set_channel',
+      arguments: { port: 'am4', block: 'amp', channel: 'B' },
+    });
+    const okText = extractText(okR);
+    record('set_channel amp B acks with channel B', !isError(okR) && /"channel":\s*"B"/.test(okText), okText.slice(0, 300));
+    const noR = await client.callTool({
+      name: 'set_channel',
+      arguments: { port: 'am4', block: 'chorus', channel: 'B' },
+    });
+    record('set_channel refuses a block without channels', isError(noR) && /no channels/i.test(extractText(noR)), extractText(noR).slice(0, 300));
+    await client.callTool({
+      name: 'switch_preset',
+      arguments: { port: 'am4', location: 'Z3', on_active_preset_edited: 'discard' },
+    });
+  }
+
   // AM4 type-applicability pre-flight (BK-071, Session 109): when a slot
   // specifies a `type` enum AND knobs that type doesn't expose, the
   // dispatcher ACCEPTS the write but surfaces each dropped knob on

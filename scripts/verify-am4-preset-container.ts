@@ -397,7 +397,7 @@ if (reader.getPreset !== undefined && bank.length >= PRESET_DUMP_LEN) {
   const ctx: DispatchCtx = { conn: makeStoredDumpConn(firstDump), descriptor: AM4_DESCRIPTOR };
   let snap: PresetSnapshot | undefined;
   try {
-    snap = await reader.getPreset(ctx, { location: 'A01' });
+    snap = await reader.getPreset(ctx, { location: 'A01', include_channel_state: true });
   } catch (err) {
     check('get_preset(A01) resolves via mock stored dump', false, err instanceof Error ? err.message : String(err));
   }
@@ -420,15 +420,21 @@ if (reader.getPreset !== undefined && bank.length >= PRESET_DUMP_LEN) {
         (snap.read_warnings ?? []).some((w) => /community-beta/i.test(w)),
       `warnings=${JSON.stringify(snap.read_warnings)}`,
     );
-    check('get_preset(A01): every slot carries all four channels',
+    check('get_preset(A01, include_channel_state): every slot carries all four channels',
       snap.slots.every((s) => s.channel_status === 'all_channels' &&
         ['A', 'B', 'C', 'D'].every((ch) => s.params_by_channel?.[ch] !== undefined)));
     const amp = snap.slots.find((s) => s.block_type === 'amp');
     check('get_preset(A01): amp channel D is the IIC+ and carries its cab section',
       amp?.params_by_channel?.D?.type === 'USA JP IIC+ Red' && amp.params_by_channel.D.cab_1_blend !== undefined,
       JSON.stringify(amp?.params_by_channel?.D?.type));
-    check('get_preset(A01): amp has scene channels and no scene_bypass (no amp bypass on the AM4)',
-      amp?.scene_channels?.join('') === 'ABCD' && amp.scene_bypass === undefined);
+    // Hardware-confirmed 2026-11-25: the amp's bypass word is a real per-scene
+    // bypass (0x003A/0x0003), so the amp reports scene_bypass like every block.
+    check('get_preset(A01): amp has scene channels and a 4-scene scene_bypass',
+      amp?.scene_channels?.join('') === 'ABCD' && amp.scene_bypass?.length === 4, JSON.stringify(amp?.scene_bypass));
+    const active = await reader.getPreset({ conn: makeStoredDumpConn(firstDump), descriptor: AM4_DESCRIPTOR }, { location: 'A01' });
+    check('get_preset(A01) default: one channel per block (the stored active scene), channel_status active',
+      active.slots.every((s) => s.channel_status === 'active' && Object.keys(s.params_by_channel ?? {}).length === 1),
+      JSON.stringify(active.slots.map((s) => [s.block_type, s.channel_status, Object.keys(s.params_by_channel ?? {})])));
     const drive = snap.slots.find((s) => s.block_type === 'drive');
     check('get_preset(A01): drive scene_bypass is true,true,true,false',
       drive?.scene_bypass?.map(Number).join('') === '1110', JSON.stringify(drive?.scene_bypass));
@@ -446,7 +452,8 @@ if (reader.getPreset !== undefined && bank.length >= PRESET_DUMP_LEN) {
   for (let i = 0; i < 104; i++) {
     const dump = bank.subarray(i * PRESET_DUMP_LEN, (i + 1) * PRESET_DUMP_LEN);
     const c: DispatchCtx = { conn: makeStoredDumpConn(dump), descriptor: AM4_DESCRIPTOR };
-    const s = await reader.getPreset(c, { location: i });
+    // Widest shape: all four channels per block.
+    const s = await reader.getPreset(c, { location: i, include_channel_state: true });
     const chars = JSON.stringify(s).length;
     if (chars > maxChars) { maxChars = chars; maxName = s.name ?? ''; }
     fingerprints.add(String(s.whole_preset?.content_fingerprint));

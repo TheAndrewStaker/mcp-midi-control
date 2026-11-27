@@ -21,3 +21,4 @@ export * from './opcodes.js';
 export * from './typeApplicability.js';
 export * from './applicability.js';
 export * from './presetImage/index.js';
+export * from './deviceLabelCalibration.generated.js';

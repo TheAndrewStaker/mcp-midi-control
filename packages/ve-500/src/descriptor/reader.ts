@@ -153,7 +153,6 @@ async function readOne(
     wire_value: wire,
     display_value,
     unit,
-    raw_response: resp,
   };
 }
 

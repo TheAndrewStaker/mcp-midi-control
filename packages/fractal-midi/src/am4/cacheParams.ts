@@ -68,7 +68,7 @@ export const CACHE_PARAMS = {
   'amp.type': {
     block: 'amp', name: 'type',
     pidLow: 0x003a, pidHigh: 0x000a,
-    unit: 'enum', displayMin: 0, displayMax: 247,
+    unit: 'enum', displayMin: 0, displayMax: 250,
     enumValues: AMP_TYPES_VALUES,
   },
   'amp.gain': {
@@ -122,6 +122,7 @@ export const CACHE_PARAMS = {
     block: 'amp', name: 'low_reso',
     pidLow: 0x003a, pidHigh: 0x0022,
     unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    encodeScale: 10 / 24,
   },
   'amp.master_vol_cap': {
     block: 'amp', name: 'master_vol_cap',
@@ -133,6 +134,7 @@ export const CACHE_PARAMS = {
     block: 'amp', name: 'hi_reso',
     pidLow: 0x003a, pidHigh: 0x0033,
     unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    encodeScale: 10 / 24,
   },
   'amp.input_trim': {
     block: 'amp', name: 'input_trim',
@@ -144,6 +146,7 @@ export const CACHE_PARAMS = {
     block: 'amp', name: 'spkr_drive',
     pidLow: 0x003a, pidHigh: 0x0039,
     unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    encodeScale: 2,
   },
   'amp.geq_band_1': {
     block: 'amp', name: 'geq_band_1',
@@ -202,11 +205,12 @@ export const CACHE_PARAMS = {
   // double-registered the same registers the hand-authored params.ts
   // entries own; old names alias in PARAM_ALIASES. paramNames.ts renamed
   // in the same session.
+  // TC80-KNOB: AM4-Edit typecode 80 shows the 0..10 knob position (wire x 10);
+  // fw 2.02 hardware 2026-11-25: chorus Drive 0.233 shows 2.33. Writes already sent display/10.
   'amp.clarity': {
     block: 'amp', name: 'clarity',
     pidLow: 0x003a, pidHigh: 0x004d,
-    unit: 'knob_0_10', displayMin: 0.1, displayMax: 10,
-    scaling: 'log10',
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [0.01, 1],
   },
   'amp.input_eq_frequency': {
     block: 'amp', name: 'input_eq_frequency',
@@ -239,6 +243,7 @@ export const CACHE_PARAMS = {
     block: 'amp', name: 'definition',
     pidLow: 0x003a, pidHigh: 0x0056,
     unit: 'count', displayMin: -10, displayMax: 10,
+    encodeScale: 31.623,
   },
   'amp.compression': {
     block: 'amp', name: 'compression',
@@ -408,8 +413,7 @@ export const CACHE_PARAMS = {
   'drive.slew_rate_slew': {
     block: 'drive', name: 'slew_rate_slew',
     pidLow: 0x0076, pidHigh: 0x000f,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
-    scaling: 'log10',
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [0.1, 10],
   },
   'drive.low_cut': {
     block: 'drive', name: 'low_cut',
@@ -517,7 +521,7 @@ export const CACHE_PARAMS = {
   'drive.dry_level': {
     block: 'drive', name: 'dry_level',
     pidLow: 0x0076, pidHigh: 0x002b,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 0, displayMax: 200,
   },
   'drive.bass_bass': {
     block: 'drive', name: 'bass_bass',
@@ -569,7 +573,7 @@ export const CACHE_PARAMS = {
   'reverb.size': {
     block: 'reverb', name: 'size',
     pidLow: 0x0042, pidHigh: 0x000f,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 1, displayMax: 100,
   },
   'reverb.reverbdelay': {
     block: 'reverb', name: 'reverbdelay',
@@ -620,7 +624,7 @@ export const CACHE_PARAMS = {
   'reverb.pickup_spacing': {
     block: 'reverb', name: 'pickup_spacing',
     pidLow: 0x0042, pidHigh: 0x001d,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'reverb_mic_spacing_cm', displayMin: 0, displayMax: 200,
   },
   'reverb.frequency_1': {
     block: 'reverb', name: 'frequency_1',
@@ -677,7 +681,7 @@ export const CACHE_PARAMS = {
   'reverb.release_time': {
     block: 'reverb', name: 'release_time',
     pidLow: 0x0042, pidHigh: 0x002a,
-    unit: 'ms', displayMin: 0, displayMax: 1000,
+    unit: 'ms', displayMin: 1, displayMax: 1000,
     scaling: 'log10',
   },
   'reverb.early_diffusion': {
@@ -693,7 +697,7 @@ export const CACHE_PARAMS = {
   'reverb.early_decay': {
     block: 'reverb', name: 'early_decay',
     pidLow: 0x0042, pidHigh: 0x002d,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 0, displayMax: 200,
   },
   'reverb.late_input_mix': {
     block: 'reverb', name: 'late_input_mix',
@@ -800,7 +804,7 @@ export const CACHE_PARAMS = {
   'delay.time': {
     block: 'delay', name: 'time',
     pidLow: 0x0046, pidHigh: 0x000c,
-    unit: 'ms', displayMin: 0, displayMax: 8000,
+    unit: 'ms', displayMin: 1, displayMax: 8000,
   },
   'delay.lr_time_ratio': {
     block: 'delay', name: 'lr_time_ratio',
@@ -815,7 +819,7 @@ export const CACHE_PARAMS = {
   'delay.tempo_1': {
     block: 'delay', name: 'tempo_1',
     pidLow: 0x0046, pidHigh: 0x000f,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: -100, displayMax: 100,
   },
   'delay.feedback_r': {
     block: 'delay', name: 'feedback_r',
@@ -874,7 +878,7 @@ export const CACHE_PARAMS = {
   'delay.time_r': {
     block: 'delay', name: 'time_r',
     pidLow: 0x0046, pidHigh: 0x001e,
-    unit: 'ms', displayMin: 0, displayMax: 8000,
+    unit: 'ms', displayMin: 1, displayMax: 8000,
   },
   'delay.master_feedback': {
     block: 'delay', name: 'master_feedback',
@@ -978,11 +982,12 @@ export const CACHE_PARAMS = {
     unit: 'hz', displayMin: 500, displayMax: 5000,
     scaling: 'log10',
   },
+  // TC80-KNOB: AM4-Edit typecode 80 shows the 0..10 knob position (wire x 10);
+  // fw 2.02 hardware 2026-11-25: chorus Drive 0.233 shows 2.33. Writes already sent display/10.
   'delay.sweep_resonance': {
     block: 'delay', name: 'sweep_resonance',
     pidLow: 0x0046, pidHigh: 0x003e,
-    unit: 'count', displayMin: 0.2, displayMax: 20,
-    scaling: 'log10',
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [0.2, 20],
   },
   'delay.eq_q_high_low': {
     block: 'delay', name: 'eq_q_high_low',
@@ -1107,13 +1112,13 @@ export const CACHE_PARAMS = {
   'chorus.type': {
     block: 'chorus', name: 'type',
     pidLow: 0x004e, pidHigh: 0x000a,
-    unit: 'enum', displayMin: 0, displayMax: 19,
+    unit: 'enum', displayMin: 0, displayMax: 26,
     enumValues: CHORUS_TYPES_VALUES,
   },
   'chorus.number_of_voices': {
     block: 'chorus', name: 'number_of_voices',
     pidLow: 0x004e, pidHigh: 0x000b,
-    unit: 'count', displayMin: 1, displayMax: 4,
+    unit: 'count', displayMin: 2, displayMax: 8, rawIntStep: 2,
   },
   'chorus.rate': {
     block: 'chorus', name: 'rate',
@@ -1154,11 +1159,12 @@ export const CACHE_PARAMS = {
     pidLow: 0x004e, pidHigh: 0x0017,
     unit: 'percent', displayMin: 0, displayMax: 100,
   },
+  // TC80-KNOB: AM4-Edit typecode 80 shows the 0..10 knob position (wire x 10);
+  // fw 2.02 hardware 2026-11-25: chorus Drive 0.233 shows 2.33. Writes already sent display/10.
   'chorus.drive': {
     block: 'chorus', name: 'drive',
     pidLow: 0x004e, pidHigh: 0x0018,
-    unit: 'knob_0_10', displayMin: 0.5, displayMax: 500,
-    scaling: 'log10',
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [0.05, 50],
   },
   'chorus.low_cut': {
     block: 'chorus', name: 'low_cut',
@@ -1216,7 +1222,7 @@ export const CACHE_PARAMS = {
   'flanger.feedback': {
     block: 'flanger', name: 'feedback',
     pidLow: 0x0052, pidHigh: 0x000e,
-    unit: 'bipolar_percent', displayMin: -99, displayMax: 99,
+    unit: 'bipolar_percent', displayMin: -99.5, displayMax: 99.5,
   },
   'flanger.dry_delay': {
     block: 'flanger', name: 'dry_delay',
@@ -1238,8 +1244,7 @@ export const CACHE_PARAMS = {
   'flanger.drive': {
     block: 'flanger', name: 'drive',
     pidLow: 0x0052, pidHigh: 0x0018,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
-    scaling: 'log10',
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [0.005, 5],
   },
   'flanger.low_cut': {
     block: 'flanger', name: 'low_cut',
@@ -1250,23 +1255,22 @@ export const CACHE_PARAMS = {
   'flanger.stereo_spread': {
     block: 'flanger', name: 'stereo_spread',
     pidLow: 0x0052, pidHigh: 0x001a,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: -200, displayMax: 200,
   },
   'flanger.bass_focus': {
     block: 'flanger', name: 'bass_focus',
     pidLow: 0x0052, pidHigh: 0x001e,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
-    scaling: 'log10',
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [20, 2000],
   },
   'flanger.min_time': {
     block: 'flanger', name: 'min_time',
     pidLow: 0x0052, pidHigh: 0x0020,
-    unit: 'ms', displayMin: 0, displayMax: 2,
+    unit: 'ms', displayMin: 0.34, displayMax: 2,
   },
   'flanger.max_time': {
     block: 'flanger', name: 'max_time',
     pidLow: 0x0052, pidHigh: 0x0021,
-    unit: 'ms', displayMin: 0, displayMax: 20,
+    unit: 'ms', displayMin: 2, displayMax: 20,
   },
   'flanger.vpo_exponent': {
     block: 'flanger', name: 'vpo_exponent',
@@ -1299,7 +1303,8 @@ export const CACHE_PARAMS = {
   'phaser.feedback': {
     block: 'phaser', name: 'feedback',
     pidLow: 0x005a, pidHigh: 0x0010,
-    unit: 'bipolar_percent', displayMin: -90, displayMax: 90,
+    unit: 'bipolar_percent', displayMin: -99.99, displayMax: 99.99,
+    encodeScale: 111.1,
   },
   'phaser.min_frequency': {
     block: 'phaser', name: 'min_frequency',
@@ -1316,7 +1321,7 @@ export const CACHE_PARAMS = {
   'phaser.bias': {
     block: 'phaser', name: 'bias',
     pidLow: 0x005a, pidHigh: 0x0014,
-    unit: 'bipolar_percent', displayMin: -100, displayMax: 100,
+    unit: 'count', displayMin: -1, displayMax: 1,
   },
   'phaser.feedback_point': {
     block: 'phaser', name: 'feedback_point',
@@ -1349,13 +1354,13 @@ export const CACHE_PARAMS = {
   'phaser.attack': {
     block: 'phaser', name: 'attack',
     pidLow: 0x005a, pidHigh: 0x0020,
-    unit: 'ms', displayMin: 0, displayMax: 1000,
+    unit: 'ms', displayMin: 10, displayMax: 1000,
     scaling: 'log10',
   },
   'phaser.release': {
     block: 'phaser', name: 'release',
     pidLow: 0x005a, pidHigh: 0x0021,
-    unit: 'ms', displayMin: 0, displayMax: 100,
+    unit: 'ms', displayMin: 1, displayMax: 100,
     scaling: 'log10',
   },
   'phaser.low_cut': {
@@ -1404,8 +1409,7 @@ export const CACHE_PARAMS = {
   'wah.q_resonance': {
     block: 'wah', name: 'q_resonance',
     pidLow: 0x005e, pidHigh: 0x000d,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
-    scaling: 'log10',
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [2, 20],
   },
   'wah.q_tracking': {
     block: 'wah', name: 'q_tracking',
@@ -1425,8 +1429,7 @@ export const CACHE_PARAMS = {
   'wah.drive': {
     block: 'wah', name: 'drive',
     pidLow: 0x005e, pidHigh: 0x0011,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
-    scaling: 'log10',
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [0.01, 1],
   },
   'wah.inductor_bias': {
     block: 'wah', name: 'inductor_bias',
@@ -1546,7 +1549,7 @@ export const CACHE_PARAMS = {
   'compressor.dynamics': {
     block: 'compressor', name: 'dynamics',
     pidLow: 0x002e, pidHigh: 0x0018,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    unit: 'knob_0_10', displayMin: -10, displayMax: 10,
   },
   'compressor.sidechain_high_cut': {
     block: 'compressor', name: 'sidechain_high_cut',
@@ -1585,13 +1588,13 @@ export const CACHE_PARAMS = {
   'compressor.time': {
     block: 'compressor', name: 'time',
     pidLow: 0x002e, pidHigh: 0x0025,
-    unit: 'ms', displayMin: 0, displayMax: 1000,
+    unit: 'ms', displayMin: 1, displayMax: 1000,
     scaling: 'log10',
   },
   'compressor.transients': {
     block: 'compressor', name: 'transients',
     pidLow: 0x002e, pidHigh: 0x0026,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    unit: 'knob_0_10', displayMin: -10, displayMax: 10,
   },
   'compressor.sidechain_emphasis_freq': {
     block: 'compressor', name: 'sidechain_emphasis_freq',
@@ -1758,7 +1761,7 @@ export const CACHE_PARAMS = {
   'filter.lfo_duty': {
     block: 'filter', name: 'lfo_duty',
     pidLow: 0x0072, pidHigh: 0x0019,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 1, displayMax: 99,
   },
   'filter.mod_frequency': {
     block: 'filter', name: 'mod_frequency',
@@ -1774,8 +1777,7 @@ export const CACHE_PARAMS = {
   'filter.resonance': {
     block: 'filter', name: 'resonance',
     pidLow: 0x0072, pidHigh: 0x001e,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
-    scaling: 'log10',
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [1, 20],
   },
   'filter.start_frequency': {
     block: 'filter', name: 'start_frequency',
@@ -1789,22 +1791,23 @@ export const CACHE_PARAMS = {
     unit: 'hz', displayMin: 100, displayMax: 10000,
     scaling: 'log10',
   },
+  // TC80-KNOB: AM4-Edit typecode 80 shows the 0..10 knob position (wire x 10);
+  // fw 2.02 hardware 2026-11-25: chorus Drive 0.233 shows 2.33. Writes already sent display/10.
   'filter.sensitivity': {
     block: 'filter', name: 'sensitivity',
     pidLow: 0x0072, pidHigh: 0x0021,
-    unit: 'count', displayMin: 0.1, displayMax: 40,
-    scaling: 'log10',
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [0.1, 40],
   },
   'filter.attack_time': {
     block: 'filter', name: 'attack_time',
     pidLow: 0x0072, pidHigh: 0x0022,
-    unit: 'ms', displayMin: 0, displayMax: 1000,
+    unit: 'ms', displayMin: 1, displayMax: 1000,
     scaling: 'log10',
   },
   'filter.release_time': {
     block: 'filter', name: 'release_time',
     pidLow: 0x0072, pidHigh: 0x0023,
-    unit: 'ms', displayMin: 0, displayMax: 2000,
+    unit: 'ms', displayMin: 20, displayMax: 2000,
     scaling: 'log10',
   },
   'filter.emphasis': {
@@ -1842,7 +1845,7 @@ export const CACHE_PARAMS = {
   'tremolo.duty': {
     block: 'tremolo', name: 'duty',
     pidLow: 0x006a, pidHigh: 0x000e,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 1, displayMax: 99,
   },
   'tremolo.crossover_freq': {
     block: 'tremolo', name: 'crossover_freq',
@@ -1858,7 +1861,7 @@ export const CACHE_PARAMS = {
   'tremolo.shape': {
     block: 'tremolo', name: 'shape',
     pidLow: 0x006a, pidHigh: 0x0017,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 0.1, displayMax: 99.9,
   },
   'enhancer.mix': {
     block: 'enhancer', name: 'mix',
@@ -1921,19 +1924,19 @@ export const CACHE_PARAMS = {
   'gate.attack': {
     block: 'gate', name: 'attack',
     pidLow: 0x0092, pidHigh: 0x000b,
-    unit: 'ms', displayMin: 0, displayMax: 1000,
+    unit: 'ms', displayMin: 0.1, displayMax: 1000,
     scaling: 'log10',
   },
   'gate.hold': {
     block: 'gate', name: 'hold',
     pidLow: 0x0092, pidHigh: 0x000c,
-    unit: 'ms', displayMin: 0, displayMax: 1000,
+    unit: 'ms', displayMin: 1, displayMax: 1000,
     scaling: 'log10',
   },
   'gate.release': {
     block: 'gate', name: 'release',
     pidLow: 0x0092, pidHigh: 0x000d,
-    unit: 'ms', displayMin: 0, displayMax: 1000,
+    unit: 'ms', displayMin: 1, displayMax: 1000,
     scaling: 'log10',
   },
   'gate.type': {
@@ -1961,12 +1964,12 @@ export const CACHE_PARAMS = {
   'volpan.threshold': {
     block: 'volpan', name: 'threshold',
     pidLow: 0x0066, pidHigh: 0x0010,
-    unit: 'db', displayMin: -100, displayMax: 0,
+    unit: 'db', displayMin: -80, displayMax: 0,
   },
   'volpan.attack': {
     block: 'volpan', name: 'attack',
     pidLow: 0x0066, pidHigh: 0x0011,
-    unit: 'ms', displayMin: 1, displayMax: 5000,
+    unit: 'ms', displayMin: 10, displayMax: 1000,
     scaling: 'log10',
   },
   'peq.mix': {
@@ -2130,8 +2133,8 @@ export const CACHE_PARAMS = {
   'rotary.drive': {
     block: 'rotary', name: 'drive',
     pidLow: 0x0056, pidHigh: 0x0015,
-    unit: 'knob_0_10', displayMin: 0.5, displayMax: 500,
-    scaling: 'log10',
+    // TC80-KNOB: typecode 80 shows the 0..10 knob position.
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10, knobLogRange: [0.05, 50],
   },
   'rotary.mic_distance': {
     block: 'rotary', name: 'mic_distance',

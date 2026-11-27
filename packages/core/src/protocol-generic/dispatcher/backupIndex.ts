@@ -39,8 +39,13 @@ import * as path from 'node:path';
 
 import type { BackupPolicy, DeviceDescriptor } from '../types.js';
 
+/** Names another backup root (tests, or a user who keeps backups elsewhere). */
+export const BACKUP_DIR_ENV = 'MCP_MIDI_BACKUP_DIR';
+
 /** Default backup root. One folder, every device, so "where are my backups" has one answer. */
 export function defaultBackupDir(): string {
+  const override = process.env[BACKUP_DIR_ENV];
+  if (override !== undefined && override.trim() !== '') return override.trim();
   return path.join(homedir(), 'mcp-midi-backups');
 }
 
@@ -48,7 +53,7 @@ export function defaultBackupDir(): string {
 export const BACKUP_INDEX_FILE = 'index.jsonl';
 
 /** Extensions we recognise as backup artifacts when scanning a directory. */
-const BACKUP_EXTENSIONS = new Set(['.syx', '.ncs', '.rc0', '.spd', '.bin']);
+const BACKUP_EXTENSIONS = new Set(['.syx', '.ncs', '.rc0', '.spd', '.bin', '.xpj']);
 
 export interface BackupIndexEntry {
   /** Filename inside the backup directory (not a full path, the directory can move). */

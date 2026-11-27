@@ -82,6 +82,12 @@ async function main(): Promise<void> {
   check('bundled node.exe present', existsSync(nodeExe), nodeExe);
   check('server entry point present', existsSync(entry), entry);
   check('setup.cmd present', existsSync(path.join(bundleRoot, 'setup.cmd')));
+  // Gen-3 empty preset templates (fractone, MIT) are loaded at runtime from
+  // fractal-gen3's dist/assets (copy-build-assets.ts), not compiled in.
+  const templatesDir = path.join(bundleRoot, 'node_modules', '@mcp-midi-control', 'fractal-gen3', 'dist', 'assets', 'empty-presets');
+  for (const f of ['gen3-fm9-12.00-empty.syx', 'gen3-fm3-13.00-empty.syx', 'gen3-axe3-32.06-empty.syx', 'LICENSE-fractone.txt']) {
+    check(`gen-3 empty preset asset bundled: ${f}`, existsSync(path.join(templatesDir, f)), templatesDir);
+  }
   const nodeV = execFileSync(nodeExe, ['--version']).toString().trim();
   check(`bundled node runs (${nodeV})`, /^v\d+\./.test(nodeV));
   // @julusian/midi ships per-platform N-API prebuilds (path varies by

@@ -512,15 +512,24 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
   const buildEmptyGridResponse = buildGridResponse;
 
   // BK-070 mock: GET_PRESET_NAME response so `get_preset` can fill
-  // `name`. Returns "Mock Preset" + null terminator. Body is null-
-  // terminated ASCII per parseGetPresetNameResponse.
+  // `name`. Returns "Mock Preset" (or the last SET_PRESET_NAME, fn 0x09, so
+  // rename's read-back receipt sees what it wrote) + null terminator. Body is
+  // null-terminated ASCII per parseGetPresetNameResponse.
+  let mockPresetName = 'Mock Preset';
+  const FUNC_SET_PRESET_NAME_MOCK = 0x09;
+  const recordPresetNameSet = (outgoing: number[]): void => {
+    if (outgoing.length < 8 || outgoing[0] !== SYSEX_START_BYTE) return;
+    if (outgoing[1] !== 0x00 || outgoing[2] !== 0x01 || outgoing[3] !== 0x74) return;
+    if (outgoing[5] !== FUNC_SET_PRESET_NAME_MOCK) return;
+    mockPresetName = String.fromCharCode(...outgoing.slice(6, outgoing.length - 2)).trim();
+  };
   const buildPresetNameResponse = (outgoing: number[]): number[] | undefined => {
     if (outgoing.length < 7) return undefined;
     if (outgoing[0] !== SYSEX_START_BYTE) return undefined;
     if (outgoing[1] !== 0x00 || outgoing[2] !== 0x01 || outgoing[3] !== 0x74) return undefined;
     if (outgoing[5] !== FUNC_GET_PRESET_NAME) return undefined;
     const modelId = outgoing[4];
-    const nameBytes = Array.from('Mock Preset', (c) => c.charCodeAt(0));
+    const nameBytes = Array.from(mockPresetName, (c) => c.charCodeAt(0));
     const head = [
       SYSEX_START_BYTE, 0x00, 0x01, 0x74,
       modelId, FUNC_GET_PRESET_NAME,
@@ -585,20 +594,30 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
   // wire value with a representative label; shape parity asserts the envelope
   // keys, not the value, and the value is plausible for any continuous knob.
   const MOCK_PARAM_WIRE_VALUE = 32767; // ~mid-scale on the 0..65534 range
+  // Bypass (paramId 255) is modelled per effectId so set_bypass's read-back
+  // receipt sees what it wrote (default 0 = engaged), like the live device.
+  const BYPASS_PARAM_ID = 255;
+  const bypassState = new Map<number, number>();
   const buildGetBlockParameterMockResponse = (outgoing: number[]): number[] | undefined => {
     if (outgoing.length < 14) return undefined;
     if (outgoing[0] !== SYSEX_START_BYTE) return undefined;
     if (outgoing[1] !== 0x00 || outgoing[2] !== 0x01 || outgoing[3] !== 0x74) return undefined;
     if (outgoing[5] !== FUNC_BLOCK_PARAM) return undefined;
-    if (outgoing[13] !== ACTION_QUERY) return undefined; // SET (0x01) → no reply
     const modelId = outgoing[4];
     const effLo = outgoing[6] ?? 0;
     const effHi = outgoing[7] ?? 0;
     const paramLo = outgoing[8] ?? 0;
     const paramHi = outgoing[9] ?? 0;
-    const v = MOCK_PARAM_WIRE_VALUE;
+    const effectId = effLo | (effHi << 7);
+    const isBypass = (paramLo | (paramHi << 7)) === BYPASS_PARAM_ID;
+    if (outgoing[13] !== ACTION_QUERY) {
+      // SET (0x01) → no reply; record a bypass write.
+      if (isBypass) bypassState.set(effectId, (outgoing[10] ?? 0) !== 0 ? 1 : 0);
+      return undefined;
+    }
+    const v = isBypass ? (bypassState.get(effectId) ?? 0) : MOCK_PARAM_WIRE_VALUE;
     const valSeptets = [v & 0x7f, (v >> 7) & 0x7f, (v >> 14) & 0x03];
-    const labelBytes = Array.from('5.00', (c) => c.charCodeAt(0));
+    const labelBytes = Array.from(isBypass ? (v !== 0 ? 'ON' : 'OFF') : '5.00', (c) => c.charCodeAt(0));
     const head = [
       SYSEX_START_BYTE, 0x00, 0x01, 0x74,
       modelId, FUNC_BLOCK_PARAM,
@@ -679,6 +698,25 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
     return frames;
   };
 
+  // SET_GRID_CELL (fn 0x05) and SET_CELL_ROUTING (fn 0x06) responder: the
+  // device answers both with a MULTIPURPOSE_RESPONSE `64 [fn] [result]`
+  // (setParam.ts, Q8.02 XL+). The apply executor waits for that ACK and
+  // reports an unanswered placement or cable as unconfirmed (ok:false), so
+  // without this an apply_preset with a chain could never succeed under the
+  // mock. Always answers 0x00 OK: the mock does not model a rejection.
+  const FUNC_MULTIPURPOSE_RESPONSE_MOCK = 0x64;
+  const buildGridWriteAckMockResponse = (outgoing: number[]): number[] | undefined => {
+    if (outgoing.length < 8) return undefined;
+    if (outgoing[0] !== SYSEX_START_BYTE) return undefined;
+    if (outgoing[1] !== 0x00 || outgoing[2] !== 0x01 || outgoing[3] !== 0x74) return undefined;
+    const fn = outgoing[5];
+    if (fn !== 0x05 && fn !== 0x06) return undefined;
+    const modelId = outgoing[4];
+    const head = [SYSEX_START_BYTE, 0x00, 0x01, 0x74, modelId, FUNC_MULTIPURPOSE_RESPONSE_MOCK, fn, 0x00];
+    const cs = head.reduce((a, b) => a ^ b, 0) & 0x7f;
+    return [...head, cs, SYSEX_END_BYTE];
+  };
+
   return {
     send: (bytes) => {
       // Multi-frame responders first (a dump request answers with a
@@ -692,6 +730,7 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
         });
         return;
       }
+      recordPresetNameSet(bytes);
       // Synthesize an inbound response when the outgoing frame matches a
       // known shape the mock can answer. Each responder returns undefined
       // when the outgoing frame isn't its shape, so we just walk the
@@ -706,7 +745,8 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
         ?? buildSceneNumberMockResponse(bytes)
         ?? buildEmptyGridResponse(bytes)
         ?? buildPresetNameResponse(bytes)
-        ?? buildPresetNumberMockResponse(bytes);
+        ?? buildPresetNumberMockResponse(bytes)
+        ?? buildGridWriteAckMockResponse(bytes);
       if (response !== undefined) {
         // Dispatch on next tick so the sender's await/receive setup has
         // time to register its predicate handler before the response

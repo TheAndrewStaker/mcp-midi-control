@@ -21,7 +21,7 @@
  *   - tc unit-family 7 (tuner offsets): "cents" display suffix is an
  *     inference, the unit family byte is unmapped.
  *   - Taper: scaling 'log10' only for hardware-confirmed typecodes
- *     {0x40,0x44,0x48,0x50}; 0x42/0x43/0x45 are taper-OPEN (predicted log10
+ *     {0x40,0x42,0x44,0x48,0x50}; 0x43/0x45 are taper-OPEN (predicted log10
  *     by the 0x40-and-not-0x20 rule, kept linear until confirmed).
  *
  * Cross-checks against the shipped catalog (contradictions are NOT resolved
@@ -88,11 +88,11 @@ export const AMP_GHOST_PARAMS = {
   },
   // DISTORT_WSHPF -- cache: section 10 id 39, tc=0x42, display [2..2000] step 0 (scale 1)
   // HW-129 Tier-1: continuous no-UI advanced register (device ACKs; no front-panel display).
-  // taper OPEN: tc=0x42 predicts log10 under the 0x40-and-not-0x20 rule (unconfirmed); linear until verified
   'amp.wshpf': {
     block: 'amp', name: 'wshpf',
     pidLow: 0x003a, pidHigh: 0x0027,
     unit: 'hz', displayMin: 2, displayMax: 2000,
+    scaling: 'log10',
   },
   // DISTORT_TONETYPE -- cache: section 10 id 41, tc=0x10, enum n=138
   // HW-129 Tier-2: amp-model-internal type code. Labels are AM4-native (cache oracle),

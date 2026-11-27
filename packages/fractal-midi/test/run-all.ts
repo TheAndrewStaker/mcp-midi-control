@@ -8,9 +8,11 @@ import { runPackValueTests, runChecksumTests } from './shared/packvalue.test.js'
 import { runLineageTests } from './shared/lineage.test.js';
 import { runDisplayScaleTests, DISPLAYSCALE_CASE_COUNT } from './shared/displayscale.test.js';
 import { runEffectIdTests, EFFECTID_CASE_COUNT } from './shared/effectid.test.js';
+import { runTempoSpellingTests, TEMPOSPELLING_CASE_COUNT } from './shared/tempospelling.test.js';
 import { runAm4SetParamTests, AM4_GOLDEN_CASE_COUNT } from './am4/setparam.test.js';
 import { runAm4BlockLayoutTests, AM4_BLOCK_LAYOUT_CASE_COUNT } from './am4/blocklayout.test.js';
 import { runAm4DecodeTests, AM4_DECODE_CASE_COUNT } from './am4/decode.test.js';
+import { runAm4Fw202ScaleTests, AM4_FW202_SCALE_CASE_COUNT } from './am4/fw202scales.test.js';
 import { runAm4MidiRegisterTests, AM4_MIDI_REGISTER_CASE_COUNT } from './am4/midiregisters.test.js';
 import {
   runAm4PresetBinaryTests,
@@ -62,9 +64,11 @@ const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
   { name: 'shared/lineage-load', run: runLineageTests },
   { name: `shared/displayscale (${DISPLAYSCALE_CASE_COUNT} goldens)`, run: runDisplayScaleTests },
   { name: `shared/effectid (${EFFECTID_CASE_COUNT} goldens)`, run: runEffectIdTests },
+  { name: `shared/tempospelling (${TEMPOSPELLING_CASE_COUNT} cases)`, run: runTempoSpellingTests },
   { name: `am4/setparam (${AM4_GOLDEN_CASE_COUNT} goldens)`, run: runAm4SetParamTests },
   { name: `am4/blocklayout (${AM4_BLOCK_LAYOUT_CASE_COUNT} cases)`, run: runAm4BlockLayoutTests },
   { name: `am4/decode (${AM4_DECODE_CASE_COUNT} cases)`, run: runAm4DecodeTests },
+  { name: `am4/fw202-scales (${AM4_FW202_SCALE_CASE_COUNT} cases)`, run: runAm4Fw202ScaleTests },
   { name: `am4/midiregisters (${AM4_MIDI_REGISTER_CASE_COUNT} cases)`, run: runAm4MidiRegisterTests },
   {
     name: `am4/presetBinary (${AM4_PRESET_BINARY_CASE_COUNT} cases)`,

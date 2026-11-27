@@ -61,6 +61,32 @@ data derived from:
     derived from its data, independently cross-validated against our
     own hardware captures.
 
+  - fractone  (MIT License)
+    Copyright (c) 2026 GreyManSoftware
+    https://github.com/GreyManSoftware/fractone  (commit cb2d0b9)
+    The three bundled gen-3 empty preset templates
+    (packages/fractal-gen3/src/assets/empty-presets/*.syx, redistributed
+    unmodified with the MIT licence text alongside), and the evidence for
+    the edit-buffer preset dump load: the 7F 7F retarget, the per-frame
+    64 [fn] 00 acknowledgement, the retry / settle / resend timing, and
+    the recalculated-Amp-word allowlist of the read-back compare. The
+    sender and compare are reimplemented here, not copied.
+
+  - forgefx-midi  (Apache License, Version 2.0)
+    Copyright (c) 2026 sKuhLight
+    https://github.com/sKuhLight/forgefx-midi  (commit 3335ba7; f916875,
+    ee48f18)
+    A fork of this project's fractal-midi codec. Evidence for the edit-
+    buffer retarget (FM3 validated), the modifier-slot layout (a slot
+    whose source is NONE is unused) and block identification by the
+    record's effect-id signature. Reimplemented here, not copied.
+
+  - ForgeFX  (MIT License)
+    Copyright (c) 2026 sKuhLight
+    https://github.com/sKuhLight/ForgeFX  (commit 7163831)
+    The FM3 USB-CDC serial pacing (64-byte slices, 3 ms apart) used for
+    the preset dump load. Reimplemented here, not copied.
+
 Additional development-only dependencies (TypeScript, tsx, jest,
 etc.) are not redistributed in Object form and are listed in
 package.json.

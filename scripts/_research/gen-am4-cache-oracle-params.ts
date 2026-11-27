@@ -111,10 +111,12 @@ const AMP_NAME: Record<number, string> = {
 };
 
 /** Typecodes hardware-confirmed log10 (gen-params-from-cache.ts history).
- * Other 0x40-bit codes (0x42/0x43/0x45) are taper-OPEN: the 0x40-bit-and-
- * not-0x20-bit rule predicts log10 (fits every hardware anchor) but is not
- * confirmed, so they stay linear here with a comment. */
-const LOG10_CONFIRMED = new Set([0x40, 0x44, 0x48, 0x50]);
+ * 0x42 confirmed 2026-11-26 (fw 2.02): amp High Cut Frequency wire 0.958
+ * reads 32999 Hz in AM4-Edit (log10; linear would be 38345) and Depth Freq
+ * wire 0.699 reads 250 Hz (linear 364). 0x43/0x45 stay taper-OPEN: the
+ * 0x40-bit-and-not-0x20-bit rule predicts log10 but is not confirmed, so
+ * they stay linear here with a comment. */
+const LOG10_CONFIRMED = new Set([0x40, 0x42, 0x44, 0x48, 0x50]);
 
 // ---------------------------------------------------------------------------
 // Unit inference: typecode low nibble = unit family (1=dB 2=Hz 3=s 4=ms
@@ -345,7 +347,7 @@ const header = `/**
  *   - tc unit-family 7 (tuner offsets): "cents" display suffix is an
  *     inference, the unit family byte is unmapped.
  *   - Taper: scaling 'log10' only for hardware-confirmed typecodes
- *     {0x40,0x44,0x48,0x50}; 0x42/0x43/0x45 are taper-OPEN (predicted log10
+ *     {0x40,0x42,0x44,0x48,0x50}; 0x43/0x45 are taper-OPEN (predicted log10
  *     by the 0x40-and-not-0x20 rule, kept linear until confirmed).
  *
  * Cross-checks against the shipped catalog (contradictions are NOT resolved

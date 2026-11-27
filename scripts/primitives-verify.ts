@@ -1592,6 +1592,11 @@ function caseGen3Fn01GridSetPositionInsert(): string | null {
     // r4c12 -> (12-1)*4 + (4-1) = 47. A third model byte for the cross-family axis.
     ['FM3 Amp r1c1', buildInsert(0x11, 58, 0), 'f0 00 01 74 11 01 32 00 3a 00 00 00 00 00 00 00 00 00 00 00 00 1d f7'],
     ['FM3 Cab r4c12', buildInsert(0x11, 62, 47), 'f0 00 01 74 11 01 32 00 3e 00 00 00 2f 00 00 00 00 00 00 00 00 36 f7'],
+    // Shunt n rides the same op with id 1024 + n (byte 9 = 0x08), and id 0
+    // clears the cell (gridPos 32 = r3c6). The shipped builder is pinned to these
+    // bytes in fractal-midi test/gen3 (byte-exact insert golden).
+    ['FM9 Shunt 0 r3c6 (local)', buildInsert(0x12, 1024, gp(5, 2)), 'f0 00 01 74 12 01 32 00 00 08 00 00 20 00 00 00 00 00 00 00 00 0c f7'],
+    ['FM9 clear r3c6 (id 0)', buildInsert(0x12, 0, gp(5, 2)), 'f0 00 01 74 12 01 32 00 00 00 00 00 20 00 00 00 00 00 00 00 00 04 f7'],
   ];
   for (const [label, got, wantHex] of fixtures) {
     const want = parseHex(wantHex);
@@ -1855,7 +1860,54 @@ function caseGen1NibbleSplit(): string | null {
   return null;
 }
 
+// gen-3 edit-buffer preset dump write: retarget the 0x77 header's preset
+// number to 7F 7F (header checksum recomputed, nothing else changes) and
+// accept `64 [fn] 00` per frame. The retargeted header must equal the header
+// of the committed fractone templates byte for byte (device-written files
+// addressed to the edit buffer), on all three models.
+function caseGen3EditBufferPresetDumpWrite(): string | null {
+  const xor7f = (b: readonly number[]): number => b.reduce((x, c) => x ^ c, 0) & 0x7f;
+  const header = (model: number, payload: number[]): number[] => {
+    const body = [0xf0, 0x00, 0x01, 0x74, model, 0x77, ...payload];
+    return [...body, xor7f(body), 0xf7];
+  };
+  const retarget = (frame: readonly number[]): number[] => header(frame[4], [0x7f, 0x7f, ...frame.slice(8, 11)]);
+  const dir = path.join(MCP_ROOT, 'packages', 'fractal-gen3', 'src', 'assets', 'empty-presets');
+  const cases: Array<[number, string, number[]]> = [
+    [0x12, 'gen3-fm9-12.00-empty.syx', [0x01, 0x17, 0x00, 0x40, 0x00]], // FM9 export of stored preset 151
+    [0x11, 'gen3-fm3-13.00-empty.syx', [0x00, 0x05, 0x00, 0x40, 0x00]],
+    [0x10, 'gen3-axe3-32.06-empty.syx', [0x00, 0x05, 0x00, 0x00, 0x01]],
+  ];
+  for (const [model, file, storedPayload] of cases) {
+    const p = path.join(dir, file);
+    if (!existsSync(p)) return `template ${file} missing`;
+    const tplHeader = [...readFileSync(p).subarray(0, 13)];
+    const got = retarget(header(model, storedPayload));
+    if (JSON.stringify(got) !== JSON.stringify(tplHeader)) {
+      return `0x${model.toString(16)}: retargeted header ${got.map((x) => x.toString(16)).join(' ')} != template ${tplHeader.map((x) => x.toString(16)).join(' ')}`;
+    }
+  }
+  // Per-frame ack: 0x64, echoed fn, result 0 (2..4-byte payload).
+  const ack = (f: readonly number[], model: number, fn: number): 'ack' | 'refused' | undefined => {
+    if (f[0] !== 0xf0 || f[4] !== model || f[5] !== 0x64 || f[6] !== fn) return undefined;
+    const payload = f.length - 8;
+    if (payload < 2 || payload > 4) return undefined;
+    return f[7] === 0 ? 'ack' : 'refused';
+  };
+  const resp = (model: number, payload: number[]): number[] => {
+    const body = [0xf0, 0x00, 0x01, 0x74, model, 0x64, ...payload];
+    return [...body, xor7f(body), 0xf7];
+  };
+  const a = resp(0x12, [0x78, 0x00]);
+  if (a.map((x) => x.toString(16).padStart(2, '0')).join(' ') !== 'f0 00 01 74 12 64 78 00 0b f7') return 'ack frame bytes';
+  if (ack(a, 0x12, 0x78) !== 'ack') return '64 78 00 must ack a 0x78 frame';
+  if (ack(a, 0x12, 0x77) !== undefined) return 'an ack must echo the sent fn';
+  if (ack(resp(0x12, [0x78, 0x12]), 0x12, 0x78) !== 'refused') return '64 78 12 must be a refusal';
+  return null;
+}
+
 const FUNCTIONAL_CASES: Record<string, () => string | null> = {
+  'gen3-edit-buffer-preset-dump-write': caseGen3EditBufferPresetDumpWrite,
   'gen3-editor-sync-read-surface': caseGen3EditorSyncReadSurface,
   'gen3-sub01-block-definition-response': caseGen3Sub01BlockDefinitionResponse,
   'gen3-fn01-grid-set-position-insert': caseGen3Fn01GridSetPositionInsert,

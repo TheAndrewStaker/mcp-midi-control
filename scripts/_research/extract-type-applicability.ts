@@ -29,7 +29,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const XML_DIR = 'samples/captured/decoded/binarydata/extracted';
+// AM4_LAYOUT_XML_DIR: layouts extracted from another AM4-Edit build
+// (extract-editor-layout-xml.ts); AM4_APPLICABILITY_JSON: where to write.
+const XML_DIR = process.env.AM4_LAYOUT_XML_DIR ?? 'samples/captured/decoded/binarydata/extracted';
+const APPLICABILITY_JSON = process.env.AM4_APPLICABILITY_JSON ?? 'samples/captured/decoded/labels/type-applicability.json';
 
 interface ControlGate {
   parameterName: string;
@@ -266,7 +269,7 @@ for (const [blockName, recs] of merged) {
 }
 
 writeFileSync(
-  'samples/captured/decoded/labels/type-applicability.json',
+  APPLICABILITY_JSON,
   JSON.stringify(result, null, 2),
 );
 

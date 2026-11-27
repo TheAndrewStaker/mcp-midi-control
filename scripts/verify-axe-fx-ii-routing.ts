@@ -322,7 +322,7 @@ const channelY: ApplyPresetAtInput = {
 
 const channelYOps = buildApplyPresetAtOps(channelY, { wire: true });
 
-const channelOps = channelYOps.filter((o) => o.kind === 'channel');
+const channelOps = channelYOps.filter((o) => o.kind === 'channel' && o.unlistedSceneDefault !== true);
 const paramOps = channelYOps.filter((o) => o.kind === 'param');
 
 check(

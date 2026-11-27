@@ -201,9 +201,11 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
       unit_label: 'preset',
       first_location: 0,
       last_location: TOTAL_LOCATIONS - 1,
-      // Stored-dump request + container decode land in well under this;
-      // quoted pessimistically per the BackupPolicy contract.
-      seconds_per_unit: 0.6,
+      // Measured 2026-11-25 on fw 2.02 over USB: 31 stored presets in 380 ms
+      // (~12 ms each, real-hardware agent sweep). 0.05 s keeps ~4x headroom
+      // per the pessimistic BackupPolicy contract without quoting the user a
+      // fictional wait (0.6 s/unit quoted "about 20 seconds" for that sweep).
+      seconds_per_unit: 0.05,
       restore_tool: 'import_preset',
     },
   },

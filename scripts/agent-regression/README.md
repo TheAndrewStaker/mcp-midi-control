@@ -200,6 +200,10 @@ cascade; the ceiling is specific to large unscoped runs starting dirty.
      from every sweep): a requiresHardware case is live, just gated to the
      bench. Mock-friendly fire-and-forget / storage / introspection cases
      leave it unset.
+   - `mockOnly`: the reverse. A string naming the persistent write the case
+     makes (or tempts a failing agent into) on a real device, e.g. a save
+     over an occupied stored location. `--real-hardware` skips it so a bench
+     sweep never overwrites the owner's presets. The mock runs it as usual.
 
 ### Two failures that fire on EVERY case, with no opt-out
 

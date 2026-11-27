@@ -518,7 +518,10 @@ function parseSection3(buf: Buffer, dividerOff: number): Section3Result {
 
 const appdata = process.env.APPDATA;
 if (!appdata) throw new Error('APPDATA not set');
-const cachePath = join(appdata, 'Fractal Audio', 'AM4-Edit', 'effectDefinitions_15_2p0.cache');
+// AM4_CACHE_FILE picks another firmware's cache (e.g. effectDefinitions_15_2p2.cache
+// for firmware 2.02); AM4_CACHE_OUT_DIR writes the JSON elsewhere, so two
+// firmwares can be parsed side by side and diffed.
+const cachePath = join(appdata, 'Fractal Audio', 'AM4-Edit', process.env.AM4_CACHE_FILE ?? 'effectDefinitions_15_2p0.cache');
 const buf = readFileSync(cachePath);
 
 console.log(`cache: ${cachePath}`);
@@ -555,7 +558,7 @@ for (const r of records.slice(0, 15)) {
   console.log(`  @0x${r.offset.toString(16).padStart(5, '0')}  id=0x${r.id.toString(16).padStart(4, '0')}  tc=0x${r.typecode.toString(16).padStart(4, '0')}  kind=${r.kind}  min=${r.min}  max=${r.max}  def=${r.default}  step=${r.step}${extra}`);
 }
 
-const outDir = 'samples/captured/decoded';
+const outDir = process.env.AM4_CACHE_OUT_DIR ?? 'samples/captured/decoded';
 const outPath = join(outDir, 'cache-records.json');
 writeFileSync(outPath, JSON.stringify(records, null, 2));
 console.log(`\nwrote ${outPath}`);

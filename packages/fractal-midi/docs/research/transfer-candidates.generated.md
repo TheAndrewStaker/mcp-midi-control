@@ -13,7 +13,7 @@
 > against the entry body before spending a session on it.
 
 Family groups: gen-3 = {III, FM3, FM9, VP4}; Fractal-wide = {AM4, II, gen-3, gen-1}.
-Positive entries scanned: 60.
+Positive entries scanned: 61.
 
 ## Cross-family gaps (status: matched)
 
@@ -54,6 +54,7 @@ Positive entries scanned: 60.
 - **wire-id-pairs-per-placed-block**: verified II; untested on AM4 / gen-3 (III/FM3/FM9/VP4) / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **ii-fn0e-query-states**: verified II; untested on AM4 / gen-3 (III/FM3/FM9/VP4) / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **display-log10-scaling**: verified II; untested on AM4 / gen-3 (III/FM3/FM9/VP4) / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
+- **gen3-editor-typecode-taper**: verified FM3; untested on III / FM9 / VP4 / AM4 / II / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **ii-compressor-calibration-divergence**: verified II; untested on AM4 / gen-3 (III/FM3/FM9/VP4) / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **fn28-enum-dump**: verified II; untested on AM4 / gen-3 (III/FM3/FM9/VP4) / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex
 - **ii-axeedit-opcode-table**: verified II; untested on AM4 / gen-3 (III/FM3/FM9/VP4) / gen-1 (Standard/Ultra); transfer hypothesis per RE-WORKFLOW cross-device reflex

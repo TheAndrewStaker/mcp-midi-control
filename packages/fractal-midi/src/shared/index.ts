@@ -12,6 +12,8 @@ export { resolveEffectId, FRACTAL_MODEL_BYTES } from './effectId.js';
 export { encode14, decode14, packValue16, unpackValue16 } from './septet16.js';
 export { displayToWire, wireToDisplay } from './displayScale.js';
 export type { DisplayScale, DisplayToWireOptions } from './displayScale.js';
+export { roundDisplay, displayPrintStep, printDisplayValue, displayWriteTarget } from './displayPrint.js';
+export type { DisplayPrintRule } from './displayPrint.js';
 export {
   packValue,
   unpackValue,
@@ -71,3 +73,5 @@ export type {
   LineageLookupHit,
   LineageLookupResult,
 } from './lineageLookup.js';
+export { spellTempoDivision, isTempoRoster } from './tempoSpelling.js';
+export type { TempoSpelling } from './tempoSpelling.js';

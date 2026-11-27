@@ -164,6 +164,13 @@ const maximalApplyResult: Required<ApplyResult> & { device: string } = {
     channels: ['A'],
     note: 'THE SERVER auto-applied ...',
   },
+  file_edit: {
+    file: 'Song.xpj',
+    changes: ['track 1 level -3 dB'],
+    unchanged: ['track 2 pan'],
+    receipt: { path: 'D:/Projects/Song.xpj', bytes: 10, sha256_before: 'a', sha256_after: 'b', backup_path: 'C:/b/Song.xpj' },
+  },
+  info: 'Reload the project on the unit before saving there.',
   device: 'Fractal AM4',
 };
 

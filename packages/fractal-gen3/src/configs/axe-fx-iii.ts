@@ -19,7 +19,7 @@
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { PARAMS_BY_FAMILY, III_CACHE_ENUM_NAMES } from 'fractal-midi/gen3/axe-fx-iii';
 import type { FractalModernConfig } from '../factory.js';
-import { MODERN_AGENT_GUIDANCE } from './shared.js';
+import { GRID_BUILD_GUIDANCE, MODERN_AGENT_GUIDANCE } from './shared.js';
 
 // ── Curated top-N first-page knob list per block ──────────────────
 //
@@ -61,6 +61,7 @@ const AXEFX3_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> =
 // tempo guidance correct and consistent across III / FM3 / FM9 / VP4.
 const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
   ...MODERN_AGENT_GUIDANCE,
+  ...GRID_BUILD_GUIDANCE,
   device_note: [
     'This is the Axe-Fx III (community beta): the gen-3 byte-identity anchor.',
     '6x14 grid, 8 scenes, A-D channels. get_param and continuous set_param are',
@@ -95,7 +96,7 @@ const AXEFX3_EXAMPLE_SPEC: PresetSpec = {
   slots: [
     {
       // The user-facing Drive / OD pedal (ID_FUZZ family): drive/tone/level.
-      slot: { row: 2, col: 1 },
+      slot: { row: 2, col: 2 },
       block_type: 'drive',
       params_by_channel: {
         A: { type: 3, drive: 5, tone: 5, level: 5 },
@@ -103,16 +104,16 @@ const AXEFX3_EXAMPLE_SPEC: PresetSpec = {
     },
     {
       // The Amp block (ID_DISTORT family) carries the tone stack.
-      slot: { row: 2, col: 2 },
+      slot: { row: 2, col: 3 },
       block_type: 'amp',
       params_by_channel: {
         A: { type: 3, bass: 5, mid: 5, treble: 5, master: 5 },
       },
     },
-    { slot: { row: 2, col: 3 }, block_type: 'amp', instance: 2 },
-    { slot: { row: 2, col: 4 }, block_type: 'cab' },
+    { slot: { row: 2, col: 4 }, block_type: 'amp', instance: 2 },
+    { slot: { row: 2, col: 5 }, block_type: 'cab' },
     {
-      slot: { row: 2, col: 5 },
+      slot: { row: 2, col: 6 },
       block_type: 'reverb',
       params_by_channel: {
         A: { type: 3, time: 5, mix: 25 },

@@ -154,9 +154,11 @@ try {
 //
 // The clear/place/cable ops for the grid come first; the per-block
 // channel + param ops come after. We filter to just channel + param ops
-// and assert on their relative ordering.
+// and assert on their relative ordering. The per-scene walk's channel
+// resets (H3: every scene is authored on a fresh build, flagged
+// `unlistedSceneDefault`) come after and are out of scope here.
 
-const chanAndParamOps = ops.filter((op) => op.kind === 'channel' || op.kind === 'param');
+const chanAndParamOps = ops.filter((op) => (op.kind === 'channel' || op.kind === 'param') && op.unlistedSceneDefault !== true);
 
 // Identify the two channel ops (carry expectedChannel) and the param ops.
 const channelOps = chanAndParamOps.filter((op) => op.kind === 'channel');

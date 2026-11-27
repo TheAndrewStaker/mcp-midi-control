@@ -22,27 +22,19 @@ import type {
   RenameTarget,
   ApplyResult,
   ApplyPresetOptions,
+  ChainIntegrityResult,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
-import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { DispatchError, SpecValidationError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
-import { resolveEffectId, parseGen3SetValueEcho, ROUTING_OP_CONNECT, ROUTING_OP_DISCONNECT, type ModernFractalCodec } from 'fractal-midi/gen3/axe-fx-iii';
+import { parseGen3SetValueEcho, type ModernFractalCodec } from 'fractal-midi/gen3/axe-fx-iii';
 import { parseLocationCode } from 'fractal-midi/am4';
 import type { ModernCatalog } from './catalog.js';
-import { injectGen3CabPolish } from './cabPolish.js';
 import { makeGuard } from './guard.js';
-
-/**
- * Hard ceiling on total wall-clock for one gen-3 apply_preset wire burst.
- * Each write waits up to its reject window (120-250 ms) for a 0x64; if the
- * device goes silent mid-burst those waits pile up, so apply_preset aborts
- * with a structured partial result rather than walking every remaining write.
- * Mirrors the AM4 apply budget (the v0.1.0 multi-minute-hang incident) and
- * shares its env override, MCP_APPLY_BUDGET_MS (tests set a tiny value).
- */
-const GEN3_APPLY_BUDGET_MS = (() => {
-  const env = Number(process.env.MCP_APPLY_BUDGET_MS);
-  return Number.isFinite(env) && env > 0 ? env : 50_000;
-})();
+import { runGen3Build, planForDevice, checkGen3ApplyTarget, type BuildDeps } from './applyBuild.js';
+import { verifyGen3Chain } from './buildVerify.js';
+import { readLiveGrid, readStatus, readActiveScene } from './liveGrid.js';
+import { instanceLimitFor } from './instanceLimits.js';
+import { SHUNT_EFFECT_ID_BASE } from './buildPlan.js';
 
 export interface WriterShape {
   id: string;
@@ -75,6 +67,8 @@ export interface WriterShape {
    * CC32 — field-confirmed 2026-06-12). Default false (PC path).
    */
   switchPresetViaSysEx?: boolean;
+  /** save_preset refuses a target other than the loaded location (see factory `save_targets_loaded_only`). */
+  saveTargetsLoadedOnly?: boolean;
 }
 
 export function makeWriter(opts: {
@@ -189,7 +183,7 @@ export function makeWriter(opts: {
     }
   }
 
-  async function readActiveChannel(ctx: DispatchCtx, effectId: number): Promise<number> {
+  async function readActiveChannel(ctx: DispatchCtx, effectId: number, op = 'set_param'): Promise<number> {
     const reply = ctx.conn.receiveSysExMatching(
       (bytes) => codec.isStatusDumpResponse(bytes),
       getResponseTimeoutMs,
@@ -202,7 +196,7 @@ export function makeWriter(opts: {
       throw new DispatchError(
         'no_ack',
         deviceLabel,
-        `${shape.id} set_param: could not read the active block channel before a targeted write: ` +
+        `${shape.id} ${op}: could not read the active block channel: ` +
           `${error instanceof Error ? error.message : String(error)}. No parameter write was sent.`,
       );
     }
@@ -211,7 +205,8 @@ export function makeWriter(opts: {
       throw new DispatchError(
         'capability_not_supported',
         deviceLabel,
-        `${shape.id} set_param: effect ${effectId} is absent from the live status dump. No parameter write was sent.`,
+        `${shape.id} ${op}: effect ${effectId} is absent from the live status dump, so the block is not ` +
+          `placed in the active preset. No parameter write was sent.`,
       );
     }
     return entry.channel;
@@ -259,7 +254,7 @@ export function makeWriter(opts: {
     ctx: DispatchCtx,
     n: number,
     how: string,
-  ): Promise<{ acked: boolean; warning: string; display_value: string }> {
+  ): Promise<{ acked: boolean; unconfirmed?: boolean; warning: string; display_value: string }> {
     // The unit needs a moment to load before fn=0x0D reports the new number.
     let active: { presetNumber: number; name: string } | undefined;
     for (const waitMs of [60, 150, 300]) {
@@ -271,8 +266,10 @@ export function makeWriter(opts: {
       `Preset numbers here are the 0-based wire number; the unit's screen shows ${n} or ${n + 1} ` +
       `depending on its Display Offset setting.`;
     if (active === undefined) {
+      // No read-back is not an ack: report sent-but-unconfirmed.
       return {
-        acked: true,
+        acked: false,
+        unconfirmed: true,
         display_value: String(n),
         warning:
           `${shape.id} switch_preset: ${how}. ${deviceLabel} did not answer the active-preset query, ` +
@@ -583,7 +580,16 @@ export function makeWriter(opts: {
       let unackedCount = 0;
       for (const op of ops) {
         const wireValue = typeof op.value === 'number' ? op.value : Number(op.value);
-        const result = await writer.setParam!(ctx, op.block, op.name, wireValue, op.channel, op.instance);
+        let result: WriteResult;
+        try {
+          result = await writer.setParam!(ctx, op.block, op.name, wireValue, op.channel, op.instance);
+        } catch (err) {
+          // One bad op must not abort the batch or hide the writes before it.
+          result = {
+            op: 'set_param', target: `${op.block}.${op.name}`, acked: false,
+            warning: `set_param failed: ${err instanceof Error ? err.message : String(err)}`,
+          };
+        }
         writes.push(result);
         if (result.acked) ackedCount += 1;
         else unackedCount += 1;
@@ -655,22 +661,11 @@ export function makeWriter(opts: {
       if (blockType === 'none' || blockType === 'empty' || blockType === '') {
         blockId = 0; // 0 clears the cell per II convention
       } else if (blockType === 'shunt') {
-        // A shunt is NOT a cleared cell, and this refusal replaces an error
-        // message that used to offer "shunt" as a synonym for "none". The
-        // decoded grid word puts the block TYPE in bits 8-15 with 0x08 marking
-        // a shunt and 0x00 a real block, and the shunt's sequential index in
-        // the low byte (gridLayout.ts, SYSEX-MAP "grid word"). So a shunt has
-        // its own encoding AND an index we do not assign; sending blockId 0
-        // would empty the cell instead, which breaks the row rather than
-        // connecting it. The read path already decodes shunts correctly.
-        throw new DispatchError(
-          'capability_not_supported',
-          deviceLabel,
-          `${shape.id} setBlock cannot place a shunt yet. A shunt is not an empty cell: the grid word carries `
-          + 'block type 0x08 plus a sequential shunt index, and assigning that index is undecoded, so there is no '
-          + 'frame to send. Clearing a cell ("none" / "empty") empties it rather than connecting through it. '
-          + 'get_preset DOES report existing shunts, so you can read a row you cannot yet author.',
-        );
+        // A shunt is id 1024 + n with n unique on the grid (our FM9-Edit
+        // capture inserts them as sub=0x32 with id hi byte 0x08, lo byte
+        // 0, 1, 2; ai-tone-assistant numbers from 0). The index is assigned
+        // below from a live grid read (lowest free).
+        blockId = -1;
       } else {
         // Resolve through the CATALOG, exactly as every read path does.
         // Passing the raw descriptor slug to `resolveEffectId` (which matches
@@ -694,49 +689,96 @@ export function makeWriter(opts: {
           throw new DispatchError('unknown_block', deviceLabel, err instanceof Error ? err.message : String(err));
         }
       }
+      const target = `r${slot.row}c${slot.col}`;
+      if (blockId > 0 && blockType !== 'shunt') {
+        const limit = instanceLimitFor(codec.modelByte, blockType);
+        if (limit !== undefined && (change.instance ?? 1) > limit.limit) {
+          throw new DispatchError(
+            'value_out_of_range',
+            deviceLabel,
+            `${shape.id} set_block: ${deviceLabel} allows ${limit.limit} ${blockType} block${limit.limit === 1 ? '' : 's'}; ` +
+              `instance ${change.instance} does not exist on the unit (source: ${limit.evidence}). Nothing was sent.`,
+          );
+        }
+      }
+      // Read the grid first: a block sits in ONE grid location, and the unit
+      // answers a second insert of a placed block by moving or ignoring it.
+      const liveBefore = await readLiveGrid(ctx, codec.modelByte, getResponseTimeoutMs);
+      if (blockId === -1) {
+        if (liveBefore === undefined) {
+          throw new DispatchError('no_ack', deviceLabel,
+            `${shape.id} set_block: placing a shunt needs a free shunt index from a live grid read, and ${deviceLabel} did not answer it. Nothing was sent.`);
+        }
+        const used = new Set(liveBefore.filter((c) => c.isShunt).map((c) => c.shuntIndex));
+        let idx = 0;
+        while (used.has(idx)) idx++;
+        blockId = SHUNT_EFFECT_ID_BASE + idx;
+      } else if (blockId > 0 && liveBefore !== undefined) {
+        const here = liveBefore.find((c) => c.row === slot.row && c.col === slot.col);
+        const elsewhere = liveBefore.find((c) => !c.isShunt && c.effectId === blockId && !(c.row === slot.row && c.col === slot.col));
+        if (elsewhere) {
+          throw new DispatchError('value_out_of_range', deviceLabel,
+            `${shape.id} set_block: ${change.block_type}${change.instance && change.instance > 1 ? ` ${change.instance}` : ''} is already placed at ` +
+              `r${elsewhere.row}c${elsewhere.col}. A block sits in one grid location: move it (clear r${elsewhere.row}c${elsewhere.col} with ` +
+              `"none", then place it here) or place another instance. Nothing was sent.`);
+        }
+        if (here && !here.isShunt && here.effectId === blockId) {
+          let bypassNote = '';
+          if (change.bypassed !== undefined) {
+            const b = await writer.setBypass!(ctx, blockType, change.bypassed, change.instance);
+            bypassNote = ` ${b.warning ?? ''}`;
+          }
+          return {
+            op: 'set_block', target, acked: true, display_value: change.block_type,
+            info: `${change.block_type} is already at ${target}; no insert was sent.${bypassNote}`,
+          };
+        }
+      }
       const bytes = codec.buildSetGridCell({ row: slot.row, col: slot.col, blockId, rows: grid.rows });
       // The insert lands at the edit cursor, not at its own target cell, unless
       // a sub=0x30 cell-select moves the cursor there first. Hardware-confirmed
       // on the FM3 (2026-06-27) and on the FM9 fw 12 (issue #23: every insert
-      // landed at r1c1 until select → insert). The FM9 fw 11 single-frame
-      // result of 2026-06-19 placed correctly only because the cursor was
-      // already there; FM9-Edit always sends the select too. Sent on every
-      // grid device: select → ~15 ms → insert.
+      // landed at r1c1 until select -> insert). Sent on every grid device.
       ctx.conn.send(codec.buildSelectCell({ row: slot.row, col: slot.col, rows: grid.rows }));
       await new Promise<void>((resolve) => setTimeout(resolve, 15));
       const errorReport = await sendAndWatchForError(ctx, bytes);
-      // The block insert rides the dual-purpose fn=0x01 (sub=0x32), so the
-      // connection-level edit classifier can't flag it by function byte alone;
-      // mark dirty explicitly here, as set_param does.
       markDirty(connectionLabel);
       if (errorReport !== undefined) {
         return {
-          op: 'set_block',
-          target: `r${slot.row}c${slot.col}`,
-          acked: false,
-          warning:
-            `${deviceLabel} rejected set_block via 0x64 MULTIPURPOSE_RESPONSE: ${formatErrorCode(errorReport)}. ` +
-            BETA_WARNING,
+          op: 'set_block', target, acked: false,
+          warning: `${deviceLabel} rejected set_block via 0x64 MULTIPURPOSE_RESPONSE: ${formatErrorCode(errorReport)}. ` + BETA_WARNING,
         };
       }
-      // No 0x64 rejection is NOT a positive ack — the gen-3 block-insert has no
-      // confirming echo, so the wire cannot tell a landed placement from a
-      // silently-dropped one. Report "sent, unconfirmed" (not acked), so the
-      // agent verifies on the device instead of asserting a build that may not
-      // exist. (FM9 hardware DOES accept placement — confirmed via fn=0x13
-      // read-back in the 2026-06-19 verify probe — but the LIVE path here still
-      // can't self-verify, so the honest label is unconfirmed.)
+      const shown = blockId === 0 ? 'cleared' : blockId >= SHUNT_EFFECT_ID_BASE ? `shunt ${blockId - SHUNT_EFFECT_ID_BASE}` : change.block_type;
+      // The insert has no confirming echo: read the grid back.
+      const liveAfter = await readLiveGrid(ctx, codec.modelByte, getResponseTimeoutMs);
+      const cell = liveAfter?.find((c) => c.row === slot.row && c.col === slot.col);
+      const landed = liveAfter !== undefined && (
+        blockId === 0 ? cell === undefined
+          : blockId >= SHUNT_EFFECT_ID_BASE ? cell?.isShunt === true
+            : cell !== undefined && !cell.isShunt && cell.effectId === blockId);
+      let bypassNote = '';
+      if (landed && blockId > 0 && blockId < SHUNT_EFFECT_ID_BASE && change.bypassed !== undefined) {
+        const b = await writer.setBypass!(ctx, blockType, change.bypassed, change.instance);
+        bypassNote = b.acked ? ` ${change.block_type} is ${change.bypassed ? 'bypassed' : 'engaged'} in the active scene.` : ` The bypass was not confirmed: ${b.warning ?? ''}`;
+      }
+      if (liveAfter === undefined) {
+        return {
+          op: 'set_block', target, acked: false, unconfirmed: true, display_value: shown,
+          warning: `${shape.id} set_block: sent (select + insert, no rejection), but ${deviceLabel} did not answer the grid read-back, ` +
+            `so the placement is unconfirmed. Check the grid on the device.${bypassNote} ` + BETA_WARNING,
+        };
+      }
+      if (!landed) {
+        return {
+          op: 'set_block', target, acked: false, display_value: shown,
+          warning: `${shape.id} set_block: sent with no rejection, but the grid read-back shows ${cell === undefined ? 'an empty cell' : cell.isShunt ? 'a shunt' : `effect ${cell.effectId}`} ` +
+            `at ${target}, not ${shown}. The placement did not land (an instance the unit lacks, or a full DSP budget). ` + BETA_WARNING,
+        };
+      }
       return {
-        op: 'set_block',
-        target: `r${slot.row}c${slot.col}`,
-        acked: false,
-        unconfirmed: true,
-        display_value: blockType === 'none' || blockType === 'empty' ? 'cleared' : change.block_type,
-        warning:
-          `🟡 ${shape.id} set_block: SENT the gen-3 block-insert op ` +
-          '(fn=0x01 sub=0x32, wire-confirmed from the editors), no device rejection; ' +
-          'but block placement has NO confirming echo, so this is unverified from the wire. ' +
-          'Confirm the block appears on the device grid / front panel before relying on it. ' + BETA_WARNING,
+        op: 'set_block', target, acked: true, display_value: shown,
+        info: `${shown} at ${target}, confirmed by a grid read-back (fn=0x01 sub=0x2E). It is not cabled: route it with apply_preset routing[] or on the device.${bypassNote}`,
       };
     },
 
@@ -771,10 +813,36 @@ export function makeWriter(opts: {
             BETA_WARNING,
         };
       }
+      if (shape.grid !== undefined) {
+        // Read the active scene's status dump back: no rejection is not proof.
+        const status = await readStatus(ctx, codec, getResponseTimeoutMs);
+        const entry = status?.find((e) => e.effectId === effectId);
+        const shown = bypassed ? 'bypassed' : 'engaged';
+        if (status === undefined) {
+          return {
+            op: 'set_bypass', target: block, acked: false, unconfirmed: true, display_value: shown,
+            warning: `${shape.id} set_bypass: sent (fn=0x0A, no rejection) but ${deviceLabel} did not answer the status read-back; check the front panel. ${BETA_WARNING}`,
+          };
+        }
+        if (entry === undefined || entry.bypassed !== bypassed) {
+          return {
+            op: 'set_bypass', target: block, acked: false,
+            warning: entry === undefined
+              ? `${shape.id} set_bypass: ${block} is not placed in the active preset (absent from the status read). ${BETA_WARNING}`
+              : `${shape.id} set_bypass: sent, but the status read-back shows ${block} ${entry.bypassed ? 'bypassed' : 'engaged'}. ${BETA_WARNING}`,
+          };
+        }
+        return {
+          op: 'set_bypass', target: block, acked: true, display_value: shown,
+          info: `${block} is ${shown} in the ACTIVE scene (fn=0x0A, confirmed by a status read). The scene keeps it once the preset is saved.`,
+        };
+      }
+      // VP4: no read-back is wired, so a sent bypass is unconfirmed, not acked.
       return {
         op: 'set_bypass',
         target: block,
-        acked: true,
+        acked: false,
+        unconfirmed: true,
         display_value: bypassed ? 'bypassed' : 'engaged',
         warning:
           (shape.id === 'vp4'
@@ -786,6 +854,77 @@ export function makeWriter(opts: {
       };
     },
 
+    async setChannel(
+      ctx: DispatchCtx,
+      block: string,
+      channel: string | number,
+      instance?: number,
+    ): Promise<WriteResult> {
+      gateWrite('set_channel');
+      const names = shape.channel_names;
+      const index = typeof channel === 'number'
+        ? channel
+        : names.findIndex((n) => n.toUpperCase() === channel.trim().toUpperCase());
+      if (!Number.isInteger(index) || index < 0 || index >= names.length) {
+        throw new DispatchError(
+          'bad_channel',
+          deviceLabel,
+          `${shape.id} set_channel: channel ${JSON.stringify(channel)} is not valid (use ${names.join('/')}).`,
+        );
+      }
+      let effectId: number;
+      try {
+        ({ effectId } = resolveBlockOrThrow(block, deviceLabel, instance ?? 1));
+      } catch (err) {
+        if (err instanceof DispatchError) throw err;
+        throw new DispatchError('unknown_block', deviceLabel, err instanceof Error ? err.message : String(err));
+      }
+      const name = names[index];
+      // The status dump both proves the block is placed (an absent block
+      // refuses before anything is sent) and lets a no-op select skip the wire.
+      const before = await readActiveChannel(ctx, effectId, 'set_channel');
+      if (before === index) {
+        return {
+          op: 'set_channel', target: block, acked: true, channel: name, display_value: name,
+          info: `${block} was already on channel ${name} in the active scene; nothing was sent.`,
+        };
+      }
+      const rejected = await sendAndWatchForError(ctx, codec.buildSetChannel(effectId, index as 0 | 1 | 2 | 3));
+      if (rejected !== undefined) {
+        return {
+          op: 'set_channel', target: block, acked: false, channel: name,
+          warning:
+            `${deviceLabel} rejected set_channel via 0x64 MULTIPURPOSE_RESPONSE: ${formatErrorCode(rejected)}. ` +
+            BETA_WARNING,
+        };
+      }
+      markDirty(connectionLabel);
+      const after = await readActiveChannel(ctx, effectId, 'set_channel');
+      if (after !== index) {
+        return {
+          op: 'set_channel', target: block, acked: false, channel: name,
+          warning:
+            `${deviceLabel} accepted the channel ${name} select, but a fresh status read reports channel ` +
+            `${names[after] ?? after}. Check the front panel. ${BETA_WARNING}`,
+        };
+      }
+      return {
+        op: 'set_channel', target: block, acked: true, channel: name, display_value: name,
+        info:
+          `${block} is on channel ${name} in the active scene (fn=0x0B, confirmed by a fresh status read). ` +
+          'The scene keeps this channel only once the preset is saved.',
+      };
+    },
+
+    validatePreset(spec: PresetSpec): void {
+      // Grid devices plan the whole build before the MIDI handle opens, so
+      // layout, duplicate-block, instance-limit and scene-key errors come back
+      // together with zero writes (buildPlan.ts).
+      if (shape.grid === undefined) return;
+      const { errors } = planForDevice({ catalog, shape, codec, deviceLabel }, spec);
+      if (errors.length > 0) throw new SpecValidationError(errors);
+    },
+
     async applyPreset(
       ctx: DispatchCtx,
       spec: PresetSpec,
@@ -793,564 +932,19 @@ export function makeWriter(opts: {
       options?: ApplyPresetOptions,
     ): Promise<ApplyResult> {
       gateWrite('apply_preset');
-      // BK-103c: enforce the mix-ready cab-polish defaults on a fresh
-      // cab-bearing build (cuts + room appended after each written cab
-      // channel window's own params), unless the spec carries any cab
-      // cut/room/slope opinion. Capability-probed per device: it only
-      // fires where the cab cut params are display-calibrated in THIS
-      // device's catalog (FM9 today; III/FM3 skip until their own range
-      // evidence lands). The injected writes ride the same community-beta
-      // set_param path below; the report surfaces as `auto_applied`.
-      const { slots: cabPolishedSlots, cabPolish } = injectGen3CabPolish(
-        spec.slots,
-        catalog.blocks['cab'],
-        shape.channel_names[0] ?? 'A',
-      );
-      spec = { ...spec, slots: cabPolishedSlots };
-      const writes: WriteResult[] = [];
-      // `anyFailed` = a write was REJECTED (0x64) or errored — a real failure
-      // that makes the apply not-ok. `anyUnconfirmed` = a write was sent and not
-      // rejected but drew no device echo (gen-3 per-param SET on this beta wire):
-      // the preset may well have applied, we just could not verify it, so it must
-      // NOT flip `ok`/`saved` to failure — it surfaces as a "verify on device"
-      // note. Conflating the two made working applies report failure to the agent.
-      let anyFailed = false;
-      let anyUnconfirmed = false;
-
-      // Total-burst budget: each write can wait its full reject window, so a
-      // device that goes silent mid-burst would otherwise stack N waits into a
-      // multi-minute hang (the v0.1.0 AM4 incident class). overBudget() pushes a
-      // single structured abort write the first time the ceiling is crossed and
-      // returns true thereafter so the remaining phases skip cleanly.
-      const applyStartMs = Date.now();
-      // BK-108: AM4-parity stderr breadcrumbs (start/done) so server logs
-      // can tell a wire failure from a Desktop host-side failure envelope
-      // (the 2026-07-16 forensics gap).
-      console.error(
-        `apply_preset start: device=${shape.id} mode=build slots=${spec.slots.length}` +
-        `${target !== undefined ? ` target=${String(target)}` : ''} save=${options?.save === true}`,
-      );
-      let budgetExceeded = false;
-      const overBudget = (): boolean => {
-        if (budgetExceeded) return true;
-        if (Date.now() - applyStartMs <= GEN3_APPLY_BUDGET_MS) return false;
-        budgetExceeded = true;
-        anyFailed = true;
-        const elapsed = Date.now() - applyStartMs;
-        writes.push({
-          op: 'apply_preset',
-          target: 'apply_preset',
-          acked: false,
-          warning:
-            `${shape.id} apply_preset: total budget (${GEN3_APPLY_BUDGET_MS} ms) exceeded after ${elapsed} ms; ` +
-            `remaining writes skipped; the device likely went silent mid-burst. ${BETA_WARNING}`,
-        });
-        console.error(
-          `apply_preset ABORTED (${shape.id}): budget ${GEN3_APPLY_BUDGET_MS} ms exceeded after ` +
-            `${writes.length} step(s), elapsed=${elapsed} ms`,
-        );
-        return true;
-      };
-
-      // 1. Place blocks (set_block per slot)
-      for (const slotSpec of spec.slots) {
-        if (overBudget()) break;
-        if (typeof slotSpec.slot !== 'object') {
-          writes.push({
-            op: 'set_block',
-            target: String(slotSpec.slot),
-            acked: false,
-            warning:
-              `${shape.id} apply_preset: skipped slot ${String(slotSpec.slot)}: ` +
-              'linear slot indexing not supported on grid device.',
-          });
-          anyFailed = true;
-          continue;
-        }
-        try {
-          const result = await writer.setBlock!(ctx, slotSpec.slot, {
-            block_type: slotSpec.block_type,
-            bypassed: slotSpec.bypassed,
-            instance: slotSpec.instance,
-          });
-          writes.push(result);
-          // set_block has no positive ack (no confirming echo), so a no-rejection
-          // placement returns unconfirmed, not acked. Treat it like the param path:
-          // unconfirmed is "sent, verify on device", NOT a failure.
-          if (!result.acked) { if (result.unconfirmed) anyUnconfirmed = true; else anyFailed = true; }
-        } catch (err) {
-          writes.push({
-            op: 'set_block',
-            target: `r${slotSpec.slot.row}c${slotSpec.slot.col}`,
-            acked: false,
-            warning: `set_block failed: ${err instanceof Error ? err.message : String(err)}`,
-          });
-          anyFailed = true;
-        }
+      if (shape.grid === undefined) {
+        throw new DispatchError('capability_not_supported', deviceLabel, `${shape.id} apply_preset: a serial build is not wired on ${deviceLabel}.`);
       }
+      return runGen3Build(buildDeps, ctx, spec, target, options);
+    },
 
-      // 1.5. Emit cable edges (routing[]).
-      // Each RoutingEdge {from, to, connect?} is resolved to grid coords via
-      // the slot id map, then emitted as fn=0x01 sub=0x35 (one from/to gridPos
-      // law: 42/42 captured FM9-Edit frames, FM9 fw 12 hardware, and the
-      // 4-row FM3 form, byte-confirmed from FM3-Edit loopMIDI captures AND
-      // hardware-confirmed on a real FM3, 2026-06-27 ForgeFX field test:
-      // connect/disconnect land, same-column moves keep cables, cross-column
-      // moves drop them, matching the device's own behavior).
-      const applyGrid = shape.grid;
-      if (spec.routing && spec.routing.length > 0 && applyGrid) {
-        // Build id -> {row, col} map from the placed slots.
-        const slotById = new Map<string, { row: number; col: number }>();
-        for (const s of spec.slots) {
-          if (typeof s.slot !== 'object') continue;
-          const id = s.id ?? `${s.block_type.toLowerCase()}${s.instance !== undefined && s.instance !== 1 ? `_${s.instance}` : ''}`;
-          slotById.set(id, s.slot as { row: number; col: number });
-        }
-        if (applyGrid.rows !== 6 && applyGrid.rows !== 4) {
-          writes.push({
-            op: 'routing',
-            target: 'routing',
-            acked: false,
-            warning: `${shape.id} routing: unsupported grid row count (rows=${applyGrid.rows}). Only 4-row (FM3) and 6-row (III/FM9) grids are validated.`,
-          });
-          anyFailed = true;
-        } else {
-          for (let ei = 0; ei < spec.routing.length; ei++) {
-            if (overBudget()) break;
-            const edge = spec.routing[ei];
-            const src = edge.from === 'OUTPUT' ? undefined : slotById.get(edge.from);
-            const dst = edge.to === 'OUTPUT' ? undefined : slotById.get(edge.to);
-            if (!src || !dst) {
-              // OUTPUT sentinel and unresolved ids are skipped — preflight already
-              // validated them; an unresolved id here is a preflight bypass.
-              continue;
-            }
-            if (dst.col !== src.col + 1) {
-              writes.push({
-                op: 'routing',
-                target: `${edge.from}->${edge.to}`,
-                acked: false,
-                warning: `${shape.id} routing edge [${ei}] ${edge.from}->${edge.to}: dest col must be src col + 1 (got src col ${src.col}, dst col ${dst.col}). Non-adjacent-column routing is not yet supported.`,
-              });
-              anyFailed = true;
-              continue;
-            }
-            const op = edge.connect === false ? ROUTING_OP_DISCONNECT : ROUTING_OP_CONNECT;
-            let routeBytes: number[];
-            try {
-              routeBytes = codec.buildSetGridRouting({ srcRow: src.row, srcCol: src.col, destRow: dst.row, rows: applyGrid.rows, op });
-            } catch (err) {
-              writes.push({
-                op: 'routing',
-                target: `${edge.from}->${edge.to}`,
-                acked: false,
-                warning: `${shape.id} routing edge [${ei}] ${edge.from}->${edge.to}: ${err instanceof Error ? err.message : String(err)}`,
-              });
-              anyFailed = true;
-              continue;
-            }
-            // A cable can still be refused on the device (no block at an end,
-            // DSP budget). Watch
-            // for a 0x64 rejection like every other structural op instead of
-            // reporting the cable as unconditionally applied, and carry the
-            // beta caveat on the success path.
-            const routeReject = await sendAndWatchForError(ctx, routeBytes);
-            if (routeReject) {
-              writes.push({
-                op: 'routing',
-                target: `${edge.from}->${edge.to}`,
-                acked: false,
-                warning:
-                  `${shape.id} routing edge [${ei}] ${edge.from}->${edge.to}: ${deviceLabel} ` +
-                  `rejected the cable via 0x64 MULTIPURPOSE_RESPONSE: ${formatErrorCode(routeReject)}. ` +
-                  BETA_WARNING,
-              });
-              anyFailed = true;
-              continue;
-            }
-            markDirty(connectionLabel);
-            writes.push({ op: 'routing', target: `${edge.from}->${edge.to}`, acked: true, warning: BETA_WARNING });
-          }
-        }
-      }
+    async preflightApplyTarget(ctx: DispatchCtx, target: LocationRef, options?: ApplyPresetOptions) {
+      if (shape.grid === undefined) return undefined;
+      return checkGen3ApplyTarget(buildDeps, ctx, target, options);
+    },
 
-      // 2. Loop per-block params. Flat (`{rate: 0.8}`) writes the current
-      //    channel; channel-nested (`{A: {gain: 6}, B: {gain: 9}}`) sends
-      //    SET_CHANNEL then loops SET_PARAMETER per channel. Mixed shape is
-      //    rejected as a spec error.
-      for (const slotSpec of spec.slots) {
-        if (overBudget()) break;
-        if (slotSpec.params === undefined) continue;
-        const blockSlugLocal = slotSpec.block_type.trim().toLowerCase();
-
-        const entries = Object.entries(slotSpec.params);
-        let nestedCount = 0;
-        let flatCount = 0;
-        for (const [, v] of entries) {
-          if (typeof v === 'object' && v !== null && !Array.isArray(v)) nestedCount++;
-          else flatCount++;
-        }
-        if (nestedCount > 0 && flatCount > 0) {
-          writes.push({
-            op: 'set_param',
-            target: blockSlugLocal,
-            acked: false,
-            warning:
-              `${shape.id} apply_preset: slot ${blockSlugLocal} mixes flat values and channel-nested objects. ` +
-              'Use one shape per slot: flat `{gain: 6}` to write the current channel, ' +
-              'or channel-nested `{A: {gain: 6}, B: {gain: 9}}` to address channels explicitly.',
-          });
-          anyFailed = true;
-          continue;
-        }
-
-        if (nestedCount > 0) {
-          let effectId: number;
-          try {
-            ({ effectId } = resolveBlockOrThrow(blockSlugLocal, deviceLabel, slotSpec.instance));
-          } catch (err) {
-            writes.push({
-              op: 'set_channel',
-              target: blockSlugLocal,
-              acked: false,
-              warning: `resolveBlock failed: ${err instanceof Error ? err.message : String(err)}`,
-            });
-            anyFailed = true;
-            continue;
-          }
-
-          for (const [channelKey, paramMap] of entries) {
-            const upper = channelKey.trim().toUpperCase();
-            const wireChannel = channelValues[upper];
-            if (wireChannel === undefined) {
-              writes.push({
-                op: 'set_channel',
-                target: `${blockSlugLocal} (channel "${channelKey}")`,
-                acked: false,
-                warning:
-                  `${shape.id} apply_preset: unknown channel key "${channelKey}" on ${blockSlugLocal}. ` +
-                  `Valid channels: ${shape.channel_names.join(', ')}.`,
-              });
-              anyFailed = true;
-              continue;
-            }
-
-            try {
-              const channelBytes = codec.buildSetChannel(effectId, wireChannel as 0 | 1 | 2 | 3);
-              const channelError = await sendAndWatchForError(ctx, channelBytes);
-              if (channelError !== undefined) {
-                writes.push({
-                  op: 'set_channel',
-                  target: `${blockSlugLocal} (channel ${upper})`,
-                  acked: false,
-                  warning:
-                    `${deviceLabel} rejected set_channel via 0x64 MULTIPURPOSE_RESPONSE: ` +
-                    `${formatErrorCode(channelError)}. ${BETA_WARNING}`,
-                });
-                anyFailed = true;
-                continue;
-              }
-              writes.push({
-                op: 'set_channel',
-                target: `${blockSlugLocal} (channel ${upper})`,
-                acked: true,
-                display_value: upper,
-                warning: BETA_WARNING,
-              });
-            } catch (err) {
-              writes.push({
-                op: 'set_channel',
-                target: `${blockSlugLocal} (channel ${upper})`,
-                acked: false,
-                warning: `set_channel failed: ${err instanceof Error ? err.message : String(err)}`,
-              });
-              anyFailed = true;
-              continue;
-            }
-
-            for (const [paramName, value] of Object.entries(paramMap as Record<string, number | string>)) {
-              try {
-                // Coerce DISPLAY → wire via the catalog schema, exactly as the
-                // set_param tool does at the dispatcher boundary. Without this,
-                // a spec value like `treble: 5.5` reaches packValue16 raw and is
-                // rejected; calibrated knobs map through their display range.
-                const wireValue = catalog.encodeParamOrThrow(blockSlugLocal, paramName, value, deviceLabel);
-                const result = await writer.setParam!(ctx, blockSlugLocal, paramName, wireValue, undefined, slotSpec.instance);
-                writes.push({ ...result, target: `${blockSlugLocal}.${upper}.${paramName}` });
-                if (!result.acked) { if (result.unconfirmed) anyUnconfirmed = true; else anyFailed = true; }
-              } catch (err) {
-                writes.push({
-                  op: 'set_param',
-                  target: `${blockSlugLocal}.${upper}.${paramName}`,
-                  acked: false,
-                  warning: `set_param failed: ${err instanceof Error ? err.message : String(err)}`,
-                });
-                anyFailed = true;
-              }
-            }
-          }
-          continue;
-        }
-
-        // Flat-shape path — writes to the block's current channel.
-        for (const [paramName, value] of entries) {
-          try {
-            // Coerce DISPLAY → wire via the catalog schema (see channel-nested
-            // path above). Calibrated knobs map through their display range; an
-            // uncalibrated param still requires a raw wire int and errors clearly.
-            const wireValue = catalog.encodeParamOrThrow(blockSlugLocal, paramName, value, deviceLabel);
-            const result = await writer.setParam!(ctx, blockSlugLocal, paramName, wireValue, undefined, slotSpec.instance);
-            writes.push(result);
-            if (!result.acked) { if (result.unconfirmed) anyUnconfirmed = true; else anyFailed = true; }
-          } catch (err) {
-            writes.push({
-              op: 'set_param',
-              target: `${blockSlugLocal}.${paramName}`,
-              acked: false,
-              warning: `set_param failed: ${err instanceof Error ? err.message : String(err)}`,
-            });
-            anyFailed = true;
-          }
-        }
-      }
-
-      // 2.5. Scenes. This step used to be missing entirely: scenes[] and
-      //      landingScene were accepted by preflight and then never sent, so a
-      //      multi-scene build left every scene on whatever channel/bypass the
-      //      last param write happened to leave. Channel (fn=0x0B) and bypass
-      //      (fn=0x0A) both target the ACTIVE scene, so each authored scene is
-      //      selected first. Hardware-confirmed on FM3 fw 12 (2026-09-14): state
-      //      written this way survives a store and decodes back per scene from
-      //      the stored preset. Scene names go out through rename('scene:N').
-      const sceneNamesNotWritten: number[] = [];
-      if (spec.scenes && spec.scenes.length > 0) {
-        // Scene-map keys follow the routing[] id rules: a slot's explicit `id`,
-        // the bare block slug (instance 1), or `<slug>_<instance>`.
-        const slotsById = new Map<string, { block: string; instance?: number }>();
-        for (const s of spec.slots) {
-          const block = s.block_type.trim().toLowerCase();
-          const derived = `${block}${s.instance !== undefined && s.instance !== 1 ? `_${s.instance}` : ''}`;
-          slotsById.set(s.id ?? derived, { block, instance: s.instance });
-        }
-        const resolveSceneBlock = (key: string): { block: string; instance?: number } => {
-          const bySlot = slotsById.get(key);
-          if (bySlot !== undefined) return bySlot;
-          const suffixed = /^(.+?)_(\d+)$/.exec(key.trim());
-          if (suffixed) return { block: suffixed[1].toLowerCase(), instance: Number(suffixed[2]) };
-          return { block: key.trim().toLowerCase() };
-        };
-
-        for (const sc of spec.scenes) {
-          if (overBudget()) break;
-          let sceneSwitch: WriteResult;
-          try {
-            sceneSwitch = await writer.switchScene!(ctx, sc.scene);
-          } catch (err) {
-            sceneSwitch = {
-              op: 'switch_scene',
-              target: String(sc.scene),
-              acked: false,
-              warning: `switch_scene failed: ${err instanceof Error ? err.message : String(err)}`,
-            };
-          }
-          writes.push(sceneSwitch);
-          if (!sceneSwitch.acked) {
-            // Writing channels/bypass now would land on the wrong scene.
-            anyFailed = true;
-            continue;
-          }
-
-          for (const [key, channelIn] of Object.entries(sc.channels ?? {})) {
-            if (overBudget()) break;
-            const upper = typeof channelIn === 'number'
-              ? shape.channel_names[channelIn]
-              : String(channelIn).trim().toUpperCase();
-            const wireChannel = upper !== undefined ? channelValues[upper] : undefined;
-            const target = `scene ${sc.scene} ${key} (channel ${upper ?? String(channelIn)})`;
-            if (wireChannel === undefined) {
-              writes.push({
-                op: 'set_channel',
-                target,
-                acked: false,
-                warning:
-                  `${shape.id} apply_preset: unknown channel "${String(channelIn)}" for ${key} on scene ` +
-                  `${sc.scene}. Valid channels: ${shape.channel_names.join(', ')}.`,
-              });
-              anyFailed = true;
-              continue;
-            }
-            try {
-              const { block, instance } = resolveSceneBlock(key);
-              const { effectId } = resolveBlockOrThrow(block, deviceLabel, instance);
-              const channelError = await sendAndWatchForError(
-                ctx,
-                codec.buildSetChannel(effectId, wireChannel as 0 | 1 | 2 | 3),
-              );
-              if (channelError !== undefined) {
-                writes.push({
-                  op: 'set_channel',
-                  target,
-                  acked: false,
-                  warning:
-                    `${deviceLabel} rejected set_channel via 0x64 MULTIPURPOSE_RESPONSE: ` +
-                    `${formatErrorCode(channelError)}. ${BETA_WARNING}`,
-                });
-                anyFailed = true;
-                continue;
-              }
-              markDirty(connectionLabel);
-              writes.push({ op: 'set_channel', target, acked: true, display_value: upper, warning: BETA_WARNING });
-            } catch (err) {
-              writes.push({
-                op: 'set_channel',
-                target,
-                acked: false,
-                warning: `set_channel failed: ${err instanceof Error ? err.message : String(err)}`,
-              });
-              anyFailed = true;
-            }
-          }
-
-          for (const [key, bypassed] of Object.entries(sc.bypassed ?? {})) {
-            if (overBudget()) break;
-            const target = `scene ${sc.scene} ${key}`;
-            try {
-              const { block, instance } = resolveSceneBlock(key);
-              const result = await writer.setBypass!(ctx, block, bypassed, instance);
-              writes.push({ ...result, target });
-              if (!result.acked) anyFailed = true;
-            } catch (err) {
-              writes.push({
-                op: 'set_bypass',
-                target,
-                acked: false,
-                warning: `set_bypass failed: ${err instanceof Error ? err.message : String(err)}`,
-              });
-              anyFailed = true;
-            }
-          }
-
-          // Scene names ride rename('scene:N') (fn=0x01 sub=0x2b, indexed by
-          // scene, so it does not depend on the active scene). A refusal (a
-          // device that gates rename) falls back to the not-written note.
-          if (sc.name !== undefined && !overBudget()) {
-            try {
-              const result = await writer.rename!(ctx, `scene:${sc.scene}`, sc.name);
-              writes.push({ ...result, target: `scene ${sc.scene} name` });
-              if (!result.acked) anyFailed = true;
-            } catch {
-              sceneNamesNotWritten.push(sc.scene);
-            }
-          }
-        }
-      }
-      // Land on the requested scene (default 1) whenever scenes were authored,
-      // so the device is not left on the last scene the walk above selected.
-      if (!budgetExceeded && (spec.landingScene !== undefined || (spec.scenes?.length ?? 0) > 0)) {
-        const landing = Math.min(shape.scene_count, Math.max(1, Math.trunc(spec.landingScene ?? 1)));
-        try {
-          const result = await writer.switchScene!(ctx, landing);
-          writes.push({ ...result, target: `landing scene ${landing}` });
-          if (!result.acked) anyFailed = true;
-        } catch (err) {
-          writes.push({
-            op: 'switch_scene',
-            target: `landing scene ${landing}`,
-            acked: false,
-            warning: `switch_scene failed: ${err instanceof Error ? err.message : String(err)}`,
-          });
-          anyFailed = true;
-        }
-      }
-
-      // 3. Optional rename + save (only if caller asked to persist).
-      //    Skipped when the burst aborted on budget — a half-applied buffer
-      //    must not be persisted, and the rename ack would itself wait a window.
-      if (!budgetExceeded && spec.name !== undefined) {
-        try {
-          const result = await writer.rename!(ctx, 'preset', spec.name);
-          writes.push(result);
-          if (!result.acked) anyFailed = true;
-        } catch (err) {
-          writes.push({
-            op: 'rename',
-            target: 'preset',
-            acked: false,
-            warning: `rename failed: ${err instanceof Error ? err.message : String(err)}`,
-          });
-          anyFailed = true;
-        }
-      }
-      // The store (sub=0x26) leg is a DESTRUCTIVE flash overwrite, so it fires
-      // ONLY when the caller authorized a save (options.save, set from
-      // save_authorized at the dispatcher). A target_location WITHOUT
-      // save_authorized is an audition (switch + apply to that location's
-      // buffer, reversible by navigating away) and must NOT store. Mirrors AM4.
-      const shouldSave = target !== undefined && options?.save === true;
-      if (!budgetExceeded && shouldSave) {
-        try {
-          const result = await writer.savePreset!(ctx, target);
-          writes.push(result);
-          if (!result.acked) anyFailed = true;
-        } catch (err) {
-          writes.push({
-            op: 'save_preset',
-            target: String(target),
-            acked: false,
-            warning: `save_preset failed: ${err instanceof Error ? err.message : String(err)}`,
-          });
-          anyFailed = true;
-        }
-      }
-      // no_save_on_done not yet wired (options.save handled above).
-
-      // A failed step is a REAL failure (rejection/error), not a merely-
-      // unconfirmed write — so `failed_step` points the agent at something that
-      // actually went wrong, never at a sent-but-unechoed continuous-param write.
-      const failedStepIdx = writes.findIndex((w) => !w.acked && !w.unconfirmed);
-      // Only name the envelopes actually emitted on this path. The store
-      // (sub=0x26) leg runs solely when a target was given and the burst did
-      // not abort on budget; advertising it on a non-saving audition apply
-      // would tell a tester a save envelope went out when none did.
-      const envelopes = ['block-insert (fn=0x01 sub=0x32)', 'SET_PARAMETER', 'SET_PRESET_NAME'];
-      if ((spec.scenes?.length ?? 0) > 0) envelopes.push('SET_SCENE / SET_CHANNEL / SET_BYPASS (fn=0x0C / 0x0B / 0x0A)');
-      if (!budgetExceeded && shouldSave) envelopes.push('store (fn=0x01 sub=0x26)');
-      const ackedCount = writes.filter((w) => w.acked).length;
-      const unconfirmedCount = writes.filter((w) => !w.acked && w.unconfirmed).length;
-      // BK-108: done breadcrumb (see start above).
-      console.error(
-        `apply_preset done: device=${shape.id} mode=build ok=${!anyFailed} steps=${writes.length} ` +
-        `acked=${ackedCount} unconfirmed=${unconfirmedCount} elapsed=${Date.now() - applyStartMs} ms`,
-      );
-      // `ok` and `saved` reflect REAL failures only. Unconfirmed writes do not
-      // fail the apply (the preset likely applied); they add a "verify" note.
-      return {
-        ok: !anyFailed,
-        steps: writes.length,
-        duration_ms: Date.now() - applyStartMs,
-        auto_applied: cabPolish,
-        failed_step: failedStepIdx >= 0 ? {
-          index: failedStepIdx,
-          description: writes[failedStepIdx].target ?? writes[failedStepIdx].op ?? 'step',
-          error: writes[failedStepIdx].warning ?? 'no warning recorded',
-        } : undefined,
-        warning:
-          `🟡 ${shape.id} apply_preset: composed of ${envelopes.join(' / ')} envelopes. ` +
-          `${writes.length} step(s) attempted; ${ackedCount} acked` +
-          (unconfirmedCount > 0
-            ? `, ${unconfirmedCount} sent but UNCONFIRMED (no device echo; the preset likely ` +
-              `applied; this gen-3 beta wire cannot confirm continuous-param writes). `
-            : '. ') +
-          (anyUnconfirmed && !anyFailed
-            ? 'Treat this as applied-pending-verification, not a failure: confirm the audible / ' +
-              'visible result on the device.'
-            : 'Confirm the audible / visible result on the device.') +
-          (sceneNamesNotWritten.length > 0
-            ? ` Scene names were NOT written for scene(s) ${sceneNamesNotWritten.join(', ')}: ` +
-              `scene rename is not available on ${deviceLabel}; name them on the device.`
-            : ''),
-        saved: shouldSave ? !anyFailed : undefined,
-      };
+    async verifyChain(ctx: DispatchCtx, spec: PresetSpec): Promise<ChainIntegrityResult> {
+      return verifyGen3Chain(buildDeps, ctx, spec);
     },
 
     async switchPreset(ctx: DispatchCtx, location: LocationRef): Promise<WriteResult> {
@@ -1387,7 +981,8 @@ export function makeWriter(opts: {
         return {
           op: 'switch_preset',
           target: String(n),
-          acked: true,
+          acked: false,
+          unconfirmed: true,
           display_value: String(n),
           warning:
             `${shape.id} switch_preset: sent MIDI Program Change + Bank Select on channel 1. ` +
@@ -1412,6 +1007,33 @@ export function makeWriter(opts: {
     async savePreset(ctx: DispatchCtx, location: LocationRef, name?: string): Promise<WriteResult> {
       gateWrite('save_preset');
       const n = parseLocation(location);
+      // Where is the unit, before the store? One report (FM3) has the store
+      // ignoring its destination and writing the LOADED preset instead, so the
+      // receipt below compares what landed against what was asked.
+      const before = await queryPatchName(ctx, 'current');
+      if (shape.saveTargetsLoadedOnly && before === undefined) {
+        // Without knowing what is loaded, a store on this unit could
+        // overwrite a preset other than the one asked for.
+        throw new DispatchError(
+          'no_ack',
+          deviceLabel,
+          `${deviceLabel} did not answer the loaded-preset query, so save_preset cannot tell which preset its ` +
+            `store would overwrite (this unit stores the LOADED preset whatever the destination). Nothing was sent. ` +
+            `Retry, or save on the front panel.`,
+        );
+      }
+      if (shape.saveTargetsLoadedOnly && before !== undefined && before.presetNumber !== n) {
+        // Refuse BEFORE the rename or the store: on this unit a store aimed at
+        // another location overwrites the loaded preset (community PR #24).
+        throw new DispatchError(
+          'capability_not_supported',
+          deviceLabel,
+          `${deviceLabel} cannot save to ${n} while preset ${before.presetNumber} is loaded: its store ` +
+            `ignores the destination and overwrites the LOADED preset. Nothing was sent. Save to ` +
+            `${before.presetNumber}, or switch to ${n} and build the preset there (switching discards ` +
+            `unsaved edits). Preset numbers are 0-based wire numbers.`,
+        );
+      }
       let renameNote = '';
       if (name !== undefined) {
         // The name is written to the working buffer first; a refused or
@@ -1419,15 +1041,12 @@ export function makeWriter(opts: {
         // used to ack while the stored name stayed unchanged).
         try {
           const r = await writer.rename!(ctx, 'preset', name);
-          if (!r.acked) renameNote = ` The rename to "${name}" was REJECTED by the unit, so the stored name is unchanged.`;
+          if (!r.acked && !r.unconfirmed) renameNote = ` The rename to "${name}" did not land (${r.warning ?? 'rejected'}), so the stored name may be unchanged.`;
+          else if (!r.acked) renameNote = ` The rename to "${name}" could not be read back.`;
         } catch (err) {
           renameNote = ` The rename to "${name}" failed (${err instanceof Error ? err.message : String(err)}), so the stored name is unchanged.`;
         }
       }
-      // Where is the unit, before the store? One report (FM3) has the store
-      // ignoring its destination and writing the LOADED preset instead, so the
-      // receipt below compares what landed against what was asked.
-      const before = await queryPatchName(ctx, 'current');
       const bytes = codec.buildStorePreset(n);
       const errorReport = await sendAndWatchForError(ctx, bytes, 200);
       if (errorReport !== undefined) {
@@ -1448,11 +1067,12 @@ export function makeWriter(opts: {
       if (shape.id !== 'vp4' && before !== undefined) {
         await new Promise((r) => setTimeout(r, 150));
         const stored = await queryPatchName(ctx, n);
-        const expect = (name !== undefined && renameNote === '' ? name : before.name).trim();
+        const renameLanded = name !== undefined && !/did not land|failed/.test(renameNote);
+        const expect = (renameLanded ? name! : before.name).trim();
         if (stored !== undefined) {
           const got = stored.name.trim();
           const elsewhere = before.presetNumber !== n;
-          if (got === expect) {
+          if (got === expect || (name !== undefined && got === name.trim())) {
             return {
               op: 'save_preset',
               target: String(n),
@@ -1482,17 +1102,21 @@ export function makeWriter(opts: {
           };
         }
       }
+      // No read-back receipt (VP4 has none; a grid unit that did not answer the
+      // name query): sent with no rejection is UNCONFIRMED, never acked.
       return {
         op: 'save_preset',
         target: String(n),
-        acked: true,
+        acked: false,
+        unconfirmed: true,
         display_value: String(n),
         warning:
           renameNote +
           (shape.id === 'vp4'
             ? `🟡 vp4 save_preset: sent the VP4 store command (fn=0x01 tc=0x1b), byte-identical to ` +
-              `the captured save. Saves the ACTIVE preset in place (no destination arg; VP4 ` +
-              `save-in-place vs index is undecoded). Untested persistence. `
+              `the captured save. It saves the ACTIVE preset IN PLACE: the location argument (${n}) is not a ` +
+              `destination on the VP4 (save-in-place vs index is undecoded), so whatever preset is loaded is ` +
+              `what was overwritten. Untested persistence. `
             : `🟡 ${shape.id} save_preset: sent the gen-3 editor store envelope (fn=0x01 sub=0x26, ` +
               `destination preset at the 14-bit arg slot). Wire shape is captured byte-exact from the ` +
               `editor, but device persistence is not yet hardware-verified. `) +
@@ -1513,7 +1137,8 @@ export function makeWriter(opts: {
         );
       }
       const bytes = codec.buildSetScene(scene - 1);
-      const errorReport = await sendAndWatchForError(ctx, bytes);
+      // Short rejection window: the scene GET below is the judge.
+      const errorReport = await sendAndWatchForError(ctx, bytes, shape.grid !== undefined ? 60 : 250);
       if (errorReport !== undefined) {
         return {
           op: 'switch_scene',
@@ -1524,11 +1149,30 @@ export function makeWriter(opts: {
             BETA_WARNING,
         };
       }
+      if (shape.grid === undefined) {
+        return {
+          op: 'switch_scene', target: String(scene), acked: false, unconfirmed: true,
+          warning: `🟡 ${shape.id} switch_scene: sent (function 0x0C), no read-back on this device; confirm on the front panel. ` + BETA_WARNING,
+        };
+      }
+      const active = await readActiveScene(ctx, codec, getResponseTimeoutMs);
+      if (active === undefined) {
+        return {
+          op: 'switch_scene', target: String(scene), acked: false, unconfirmed: true,
+          warning: `🟡 ${shape.id} switch_scene: sent (function 0x0C) but ${deviceLabel} did not answer the scene query; check the front panel. ` + BETA_WARNING,
+        };
+      }
+      if (active !== scene) {
+        return {
+          op: 'switch_scene', target: String(scene), acked: false,
+          warning: `${shape.id} switch_scene: sent, but ${deviceLabel} reports scene ${active} is active, not ${scene}. ` + BETA_WARNING,
+        };
+      }
       return {
         op: 'switch_scene',
         target: String(scene),
         acked: true,
-        warning: `🟡 ${shape.id} switch_scene: spec-documented (function 0x0C). ` + BETA_WARNING,
+        info: `scene ${scene} is active (function 0x0C, confirmed by a scene query).`,
       };
     },
 
@@ -1581,10 +1225,24 @@ export function makeWriter(opts: {
             `MULTIPURPOSE_RESPONSE: ${formatErrorCode(errorReport)}. ` + BETA_WARNING,
         };
       }
+      if (target === 'preset') {
+        // The loaded preset's name reads back with fn=0x0D (current).
+        const now = await queryPatchName(ctx, 'current');
+        if (now !== undefined) {
+          const got = now.name.trim();
+          const want = name.trim().slice(0, 32);
+          return got === want
+            ? { op: 'rename', target, acked: true, display_value: got, info: `the loaded preset is now named "${got}" (read back). Persist with save_preset.` }
+            : { op: 'rename', target, acked: false, display_value: got, warning: `${shape.id} rename: sent, but the loaded preset reads back as "${got}", not "${want}". ` + BETA_WARNING };
+        }
+      }
+      // Scene names (no model-bound read-back here) and a silent name query:
+      // sent with no rejection is unconfirmed.
       return {
         op: 'rename',
         target,
-        acked: true,
+        acked: false,
+        unconfirmed: true,
         display_value: name,
         warning:
           `🟡 ${shape.id} rename: sent the ${envelope} envelope (the gen-3 editor's own ` +
@@ -1604,6 +1262,11 @@ export function makeWriter(opts: {
       // must not emit the store op (fn=0x01 sub=0x26) during navigation.
       supportsSave: shape.supportsSave,
     }),
+  };
+
+  const buildDeps: BuildDeps = {
+    writer, codec, catalog, shape, deviceLabel, connectionLabel, betaWarning: BETA_WARNING, getResponseTimeoutMs,
+    channelValues, sendAndWatchForError, queryPatchName, formatErrorCode, parseLocation,
   };
 
   return writer;
