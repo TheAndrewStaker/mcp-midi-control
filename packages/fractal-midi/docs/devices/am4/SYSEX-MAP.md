@@ -8,6 +8,8 @@
 >
 > **See also:** [`param-rename-audit.md`](./param-rename-audit.md) for manual-name
 > to registered-name mappings (use before opening a "missing param" investigation).
+> **Hardware field report:** [external relative-controller live synchronization](./EXTERNAL-CONTROLLER-SYNC.md)
+> using existing AM4-Edit parameter readbacks (including a snap-back fix).
 
 ---
 
